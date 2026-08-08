@@ -228,6 +228,7 @@ export default async function ArticlePage({ params }: Params) {
     'team-management': '/sports-hub/team-management',
     tournaments: '/sports-hub/tournaments',
     parents: '/sports-hub/parents',
+    youth: '/sports-hub/youth',
     news: '/sports-hub/news',
   }[article.section] || '/sports-hub';
 
@@ -236,6 +237,7 @@ export default async function ArticlePage({ params }: Params) {
     'team-management': 'Team Management',
     tournaments: 'Tournaments',
     parents: 'Parents',
+    youth: 'Youth Sports',
     news: 'Latest News',
   }[article.section] || 'Sports Hub';
 
@@ -312,7 +314,7 @@ export default async function ArticlePage({ params }: Params) {
             <div className="flex items-center gap-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">
               <span className="flex items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5" />
-                {new Date(article.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                {new Date(article.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
               </span>
               <span className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5" />

@@ -314,6 +314,36 @@ test('members cannot bypass the event action API by rewriting event attendance d
   await assertSucceeds(updateDoc(ownerRef, { 'userRsvps.member-1': 'going' }));
 });
 
+test('event registration responses are staff-only and client writes remain blocked', async () => {
+  await seedTeamWithMember('member-1');
+  await seedTeamWithMember('staff-1', { position: 'Assistant Coach' });
+  await seed('teams/team-1/events/event-1', { title: 'Open Tryout' });
+  await seed('teams/team-1/events/event-1/registrations/response-1', {
+    name: 'Applicant', email: 'applicant@example.com', phone: '555-0101', status: 'pending',
+  });
+
+  const path = 'teams/team-1/events/event-1/registrations/response-1';
+  await assertFails(getDoc(doc(userDb('member-1'), path)));
+  await assertSucceeds(getDoc(doc(userDb('staff-1'), path)));
+  await assertSucceeds(getDoc(doc(userDb('coach-1'), path)));
+  await assertFails(setDoc(doc(userDb('staff-1'), 'teams/team-1/events/event-1/registrations/forged'), {
+    name: 'Forged Applicant', email: 'forged@example.com', phone: '555-9999',
+  }));
+});
+
+test('legacy tournament responses remain staff-only during migration', async () => {
+  await seedTeamWithMember('member-1');
+  await seedTeamWithMember('staff-1', { position: 'Assistant Coach' });
+  await seed('teams/team-1/registrationEntries/legacy-1', {
+    event_id: 'event-1', answers: { email: 'private@example.com' }, status: 'pending',
+  });
+
+  const path = 'teams/team-1/registrationEntries/legacy-1';
+  await assertFails(getDoc(doc(userDb('member-1'), path)));
+  await assertSucceeds(getDoc(doc(userDb('staff-1'), path)));
+  await assertSucceeds(updateDoc(doc(userDb('staff-1'), path), { status: 'accepted' }));
+});
+
 test('staff-like roles cannot modify facilities owned by another account', async () => {
   await seed('users/other-coach', { id: 'other-coach', role: 'coach' });
   await seed('facilities/facility-1', { id: 'facility-1', clubId: 'owner-1', name: 'Main Gym', isDemo: true });

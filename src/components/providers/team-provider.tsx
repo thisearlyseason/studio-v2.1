@@ -700,7 +700,7 @@ export type RegistrationEntry = {
 export type RegistrationFormField = {
   id: string;
   label: string;
-  type: 'short_text' | 'long_text' | 'dropdown' | 'header' | 'radio' | 'checkbox' | 'signature' | 'information_box';
+  type: 'short_text' | 'long_text' | 'dropdown' | 'header' | 'radio' | 'multi_select' | 'checkbox' | 'signature' | 'information_box';
   required: boolean;
   options?: string[];
   step?: 'identity' | 'contact' | 'medical' | 'guardian' | 'team_code' | 'additional' | 'compliance';
@@ -2964,10 +2964,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const submitRegistrationEntry = useCallback(async (tId: string, pId: string, a: any, v: number, signature?: string, targetType?: any, eventId?: string) => { 
     if (!db) return; 
 
+    const isTournamentEntry = targetType === 'teams' && Boolean(eventId);
+    const entryParentRef = isTournamentEntry
+      ? doc(db, 'teams', tId, 'events', eventId as string)
+      : doc(db, targetType || 'leagues', tId);
+
     // Fetch config to get waiver texts for archiving
     let waiverTextToStore = "";
     try {
-      const configSnap = await getDoc(doc(db, 'leagues', tId, 'registration', pId));
+      const configSnap = await getDoc(doc(collection(entryParentRef, 'registration'), pId));
       if (configSnap.exists()) {
         const config = configSnap.data() as LeagueRegistrationConfig;
         const parts: string[] = [];
@@ -2989,14 +2994,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       console.error("Error fetching config for waiver archive", e);
     }
 
-    // Snapshot the league's registration fee at submission time so Finance tab
-    // calculations remain accurate even if the league fee changes later.
+    // Snapshot the registration fee so financial reports remain stable if the
+    // organizer changes the configured fee later.
     let snapshotRegistrationCost = 0;
     try {
-      const leagueSnap = await getDoc(doc(db, 'leagues', tId));
-      if (leagueSnap.exists()) {
-        const ld = leagueSnap.data();
-        snapshotRegistrationCost = parseFloat(ld?.registrationCost || ld?.registration_cost || '0') || 0;
+      const feeSnap = await getDoc(entryParentRef);
+      if (feeSnap.exists()) {
+        const feeData = feeSnap.data();
+        snapshotRegistrationCost = parseFloat(feeData?.registrationCost || feeData?.registration_cost || '0') || 0;
       }
     } catch { /* non-blocking — fee defaults to 0 */ }
 
@@ -3017,12 +3022,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       entryData.status = 'accepted';
     }
     const collectionPath = targetType || 'leagues';
-    const ref = await addDoc(collection(db, collectionPath, tId, 'registrationEntries'), clean(entryData)); 
+    const ref = await addDoc(collection(entryParentRef, 'registrationEntries'), clean(entryData));
     
     // Universal Waiver Archiving
     if (signature) {
       const archId = `arch_waiver_${ref.id}`;
-      await setDoc(doc(db, collectionPath, tId, 'archived_waivers', archId), clean({
+      await setDoc(doc(collection(entryParentRef, 'archived_waivers'), archId), clean({
         id: archId,
         entryId: ref.id,
         protocolId: pId,

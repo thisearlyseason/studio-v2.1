@@ -66,7 +66,7 @@ export const metadata: Metadata = {
   },
 
   alternates: {
-    canonical: 'https://thesquad.pro',
+    canonical: 'https://www.thesquad.pro',
   },
 
   // ── Open Graph ──────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ const softwareSchema = {
   offers: {
     '@type': 'Offer',
     price: '0',
-    priceCurrency: 'USD',
+    priceCurrency: 'CAD',
     description: 'Free tier available with paid plans for advanced features',
   },
   provider: {

@@ -37,7 +37,10 @@ function sanitizeRegistrationAnswers(raw: Record<string, unknown>, config: Recor
   const allowed = new Set<string>([
     ...schema.map((field: any) => String(field.id || '')).filter(Boolean),
     'name', 'fullName', 'teamName', 'email', 'phone', 'dateOfBirth', 'dob',
+    'teamOrigin', 'experience', 'teamCode',
     'division', 'teamLogoUrl', 'recruiter_code', 'team_name', 'team_id',
+    'guardian_name', 'guardian_email', 'guardian_phone', 'guardian_relationship',
+    'primary_phone', 'residence_address', 'medical_notes',
   ]);
   const answers: Record<string, string | number | boolean | string[] | null> = {};
 
@@ -84,7 +87,8 @@ export async function POST(req: NextRequest) {
     if (action === 'lookup-team') {
       const teamCode = String(body.teamCode || '').trim().toUpperCase();
       if (teamCode.length < 3 || teamCode.length > 20) return NextResponse.json({ error: 'Invalid team code.' }, { status: 400 });
-      let matches = await adminDb.collection('teams').where('teamCode', '==', teamCode).limit(1).get();
+      let matches = await adminDb.collection('teams').where('inviteCode', '==', teamCode).limit(1).get();
+      if (matches.empty) matches = await adminDb.collection('teams').where('teamCode', '==', teamCode).limit(1).get();
       if (matches.empty) matches = await adminDb.collection('teams').where('code', '==', teamCode).limit(1).get();
       if (matches.empty) return NextResponse.json({ error: 'Team code not found.' }, { status: 404 });
       const team = matches.docs[0];
@@ -100,6 +104,7 @@ export async function POST(req: NextRequest) {
       }
 
       let parentRef: DocumentReference;
+      let entryParentRef: DocumentReference;
       let configRef: DocumentReference;
       let registrationCost = 0;
       let eventId: string | undefined;
@@ -120,6 +125,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'This subscription does not include public registration.' }, { status: 403 });
         }
         parentRef = leagueSnap.ref;
+        entryParentRef = parentRef;
         configRef = parentRef.collection('registration').doc(protocolId);
         registrationCost = parseFloat(leagueSnap.data()?.registrationCost || leagueSnap.data()?.registration_cost || '0') || 0;
       } else {
@@ -134,6 +140,7 @@ export async function POST(req: NextRequest) {
         const eventRef = parentRef.collection('events').doc(eventId);
         const eventSnap = await eventRef.get();
         if (!eventSnap.exists || !eventSnap.data()?.isTournament) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
+        entryParentRef = eventRef;
         configRef = eventRef.collection('registration').doc(protocolId);
       }
 
@@ -141,9 +148,55 @@ export async function POST(req: NextRequest) {
       if (!configSnap.exists || configSnap.data()?.is_active !== true) return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 409 });
       const config = configSnap.data()!;
       const { answers, schema } = sanitizeRegistrationAnswers(rawAnswers, config);
+      if (kind === 'tournament') {
+        const requiredCore = ['teamName', 'name', 'email'];
+        if (requiredCore.some(key => typeof answers[key] !== 'string' || !answers[key].trim())) {
+          return NextResponse.json({ error: 'Please complete the required team and contact details.' }, { status: 400 });
+        }
+
+        const baselineAliases = [
+          { key: 'teamName', pattern: /^team name$/i },
+          { key: 'name', pattern: /^(authorized contact|head coach).*name$/i },
+          { key: 'email', pattern: /^email( address)?$/i },
+          { key: 'phone', pattern: /^phone( number)?$/i },
+        ];
+        for (const alias of baselineAliases) {
+          const field = schema.find((candidate: any) => alias.pattern.test(String(candidate.label || '').trim()));
+          if (field?.id && answers[field.id] == null && answers[alias.key] != null) {
+            answers[field.id] = answers[alias.key];
+          }
+        }
+      }
+      if (kind === 'league') {
+        const registrationType = config.type || (protocolId === 'team_config' ? 'team' : protocolId === 'waiver_config' ? 'waiver' : 'player');
+        const requiredCore = registrationType === 'team'
+          ? ['teamName', 'name', 'email', 'phone']
+          : registrationType === 'waiver'
+            ? ['fullName', 'email', 'phone']
+            : ['fullName', 'email', 'phone', 'dateOfBirth'];
+        if (requiredCore.some(key => typeof answers[key] !== 'string' || !answers[key].trim())) {
+          return NextResponse.json({ error: 'Please complete the required registration details.' }, { status: 400 });
+        }
+
+        if (registrationType === 'player') {
+          const birthDate = new Date(String(answers.dateOfBirth));
+          if (Number.isNaN(birthDate.getTime())) {
+            return NextResponse.json({ error: 'Enter a valid date of birth.' }, { status: 400 });
+          }
+          const now = new Date();
+          let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
+          const beforeBirthday = now.getUTCMonth() < birthDate.getUTCMonth()
+            || (now.getUTCMonth() === birthDate.getUTCMonth() && now.getUTCDate() < birthDate.getUTCDate());
+          if (beforeBirthday) age -= 1;
+          if (age < 18 && ['guardian_name', 'guardian_email', 'guardian_phone', 'guardian_relationship'].some(key => typeof answers[key] !== 'string' || !answers[key].trim())) {
+            return NextResponse.json({ error: 'Guardian contact details are required for athletes under 18.' }, { status: 400 });
+          }
+        }
+      }
       const missingRequired = schema.some((field: any) => {
         if (field.required !== true || ['header', 'information_box'].includes(field.type)) return false;
         const value = answers[String(field.id || '')];
+        if (field.type === 'checkbox') return Array.isArray(value) ? value.length === 0 : value !== true;
         return value == null || value === '' || (Array.isArray(value) && value.length === 0);
       });
       if (missingRequired) {
@@ -158,7 +211,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'A signature is required for this registration.' }, { status: 400 });
       }
       const createdAt = new Date().toISOString();
-      const entry = await parentRef.collection('registrationEntries').add({
+      const entry = await entryParentRef.collection('registrationEntries').add({
         league_id: kind === 'league' ? parentRef.id : null,
         event_id: eventId || null,
         protocol_id: protocolId,
@@ -172,7 +225,7 @@ export async function POST(req: NextRequest) {
 
       if (signature) {
         const registrationName = configuredAnswer(answers, schema, ['teamName', 'name', 'fullName'], /team name|participant|athlete|full name/i);
-        await parentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`).set({
+        await entryParentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`).set({
           id: `arch_waiver_${entry.id}`, entryId: entry.id, protocolId,
           title: registrationName || 'Participant Registration',
           signer: signature, signedAt: createdAt, waiverText: waiverParts.join('\n\n'),

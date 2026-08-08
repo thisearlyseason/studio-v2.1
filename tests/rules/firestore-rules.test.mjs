@@ -125,6 +125,20 @@ beforeEach(async () => {
         authorId: 'owner',
         text: 'private',
       }),
+      setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a'), {
+        title: 'Open Tryout',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a', 'registrations', 'response-a'), {
+        name: 'Applicant',
+        email: 'applicant@example.test',
+        phone: '555-0101',
+        status: 'pending',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'registrationEntries', 'legacy-response'), {
+        event_id: 'event-a',
+        answers: { email: 'legacy@example.test' },
+        status: 'pending',
+      }),
       setDoc(doc(db, 'teams', 'team-a', 'alerts', 'coaches-only'), {
         audience: 'coaches',
         title: 'Private staff alert',
@@ -351,6 +365,24 @@ test('team creation is server-only and tenant reads require membership', async (
     isPro: true,
     planId: 'team',
   }));
+});
+
+test('event registration contact details are readable only by staff', async () => {
+  const responsePath = ['teams', 'team-a', 'events', 'event-a', 'registrations', 'response-a'];
+  await assertFails(getDoc(doc(authenticatedDb('member'), ...responsePath)));
+  await assertFails(getDoc(doc(authenticatedDb('outsider'), ...responsePath)));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), ...responsePath)));
+  await assertSucceeds(getDoc(doc(authenticatedDb('owner'), ...responsePath)));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams', 'team-a', 'events', 'event-a', 'registrations', 'forged'), {
+    name: 'Forged', email: 'forged@example.test', phone: '555-9999',
+  }));
+});
+
+test('legacy tournament responses remain staff-only while organizers migrate them', async () => {
+  const responsePath = ['teams', 'team-a', 'registrationEntries', 'legacy-response'];
+  await assertFails(getDoc(doc(authenticatedDb('member'), ...responsePath)));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), ...responsePath)));
+  await assertSucceeds(setDoc(doc(authenticatedDb('staff'), ...responsePath), { status: 'accepted' }, { merge: true }));
 });
 
 test('league creation is server-only and legacy invite PII is admin-only', async () => {

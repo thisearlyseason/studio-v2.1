@@ -4,11 +4,12 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Home, Newspaper, GraduationCap, Users, Trophy, BookOpen, Library, Star, HeartHandshake } from 'lucide-react';
+import { Home, Newspaper, GraduationCap, Users, Trophy, BookOpen, Library, Star, HeartHandshake, Sparkles } from 'lucide-react';
 
 const sections = [
   { name: 'The Hub', href: '/sports-hub', icon: Home },
   { name: 'Latest News', href: '/sports-hub/news', icon: Newspaper },
+  { name: 'Youth Sports', href: '/sports-hub/youth', icon: Sparkles },
   { name: 'Coaching', href: '/sports-hub/coaching', icon: GraduationCap },
   { name: 'Team Management', href: '/sports-hub/team-management', icon: Users },
   { name: 'Parents', href: '/sports-hub/parents', icon: HeartHandshake },

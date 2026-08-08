@@ -264,11 +264,11 @@ export const AUDIENCE_LANDINGS: Record<AudienceSlug, AudienceLanding> = {
   },
   municipalities: {
     slug: 'municipalities',
-    audience: 'Municipal recreation departments',
-    eyebrow: 'For municipalities',
-    headline: 'Coordinate community sport',
+    audience: 'Parks and recreation departments',
+    eyebrow: 'For parks and recreation',
+    headline: 'Coordinate community recreation',
     accent: 'across programs and places.',
-    description: 'Bring leagues, tournaments, teams, facilities, volunteers, schedules, public information, and operational accountability into one community sports framework.',
+    description: 'Bring parks and recreation programs, leagues, tournaments, teams, facilities, volunteers, schedules, public information, and operational accountability into one community sports framework.',
     primaryCta: 'Discuss Your Program',
     primaryHref: '/#contact',
     secondaryCta: 'Explore Platform Plans',
@@ -303,8 +303,8 @@ export const AUDIENCE_LANDINGS: Record<AudienceSlug, AudienceLanding> = {
     ],
     finalTitle: 'Build a clearer community sports system.',
     finalDescription: 'Talk with The Squad about your programs, facilities, and operational needs.',
-    seoTitle: 'Municipal Recreation and Community Sports Software',
-    seoDescription: 'Coordinate municipal sports programs, leagues, tournaments, facilities, volunteers, schedules, and public information with The Squad.',
+    seoTitle: 'Parks and Recreation Sports Management Software',
+    seoDescription: 'Coordinate municipal parks and recreation programs, leagues, tournaments, facilities, volunteers, schedules, and public information with The Squad.',
   },
 };
 

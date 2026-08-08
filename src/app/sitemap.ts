@@ -3,6 +3,7 @@ import { ARTICLES_LIST } from '@/lib/sports-hub-articles'
 import { RESOURCES } from '@/lib/sports-hub-resources'
 import { SPORTS_HUB_TEMPLATES } from '@/lib/sports-hub-template-catalog'
 import { AUDIENCE_SLUGS } from '@/lib/audience-landing'
+import { SPORT_SLUGS } from '@/lib/sport-landing'
 
 const baseUrl = 'https://www.thesquad.pro'
 
@@ -15,6 +16,7 @@ const staticPages: Array<{
   { path: '/how-to', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/sports-hub', changeFrequency: 'daily', priority: 0.9 },
   { path: '/sports-hub/news', changeFrequency: 'daily', priority: 0.8 },
+  { path: '/sports-hub/youth', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/sports-hub/coaching', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/sports-hub/team-management', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/sports-hub/parents', changeFrequency: 'weekly', priority: 0.8 },
@@ -27,6 +29,7 @@ const staticPages: Array<{
   { path: '/terms', changeFrequency: 'yearly', priority: 0.3 },
   { path: '/safety', changeFrequency: 'yearly', priority: 0.3 },
   { path: '/refer-a-coach', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/sports', changeFrequency: 'monthly', priority: 0.8 },
 ]
  
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -40,6 +43,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${baseUrl}/for/${audience}`,
       changeFrequency: 'monthly' as const,
       priority: 0.7,
+    })),
+    ...SPORT_SLUGS.map(sport => ({
+      url: `${baseUrl}/sports/${sport}`,
+      changeFrequency: 'monthly' as const,
+      priority: 0.8,
     })),
     ...ARTICLES_LIST.map(article => ({
       url: `${baseUrl}/sports-hub/articles/${article.slug}`,

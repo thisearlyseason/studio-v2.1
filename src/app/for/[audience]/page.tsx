@@ -45,5 +45,31 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function AudiencePage({ params }: PageProps) {
   const { audience } = await params;
   if (!isAudienceSlug(audience)) notFound();
-  return <AudienceLandingPage landing={AUDIENCE_LANDINGS[audience]} />;
+  const landing = AUDIENCE_LANDINGS[audience];
+  const pageUrl = `https://www.thesquad.pro/for/${audience}`;
+  const structuredData = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebPage',
+      name: landing.seoTitle,
+      url: pageUrl,
+      description: landing.seoDescription,
+      audience: { '@type': 'Audience', audienceType: landing.audience },
+      isPartOf: { '@type': 'WebSite', name: 'The Squad', url: 'https://www.thesquad.pro' },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'The Squad', item: 'https://www.thesquad.pro' },
+        { '@type': 'ListItem', position: 2, name: landing.audience, item: pageUrl },
+      ],
+    },
+  ];
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
+      <AudienceLandingPage landing={landing} />
+    </>
+  );
 }

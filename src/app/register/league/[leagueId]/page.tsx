@@ -2,10 +2,8 @@
 
 import React, { useState, useMemo, useEffect, Suspense, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useTeam, LeagueRegistrationConfig, RegistrationFormField } from '@/components/providers/team-provider';
-import { useDoc, useFirebase, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { LeagueRegistrationConfig, RegistrationFormField } from '@/components/providers/team-provider';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,9 +55,10 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
+import { PortalStatus } from '@/components/public/PortalStatus';
 
 const REQUIRED_STEPS = [
-  { id: 'identity', name: 'Identity', icon: Users, label: 'Identity' },
+  { id: 'identity', name: 'Athlete Information', icon: Users, label: 'Details' },
   { id: 'contact', name: 'Contact', icon: MapPin, label: 'Contact' },
   { id: 'medical', name: 'Medical', icon: Activity, label: 'Medical' },
   { id: 'guardian', name: 'Guardian', icon: ShieldCheck, label: 'Guardian' },
@@ -74,8 +73,11 @@ function RegistrationForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const protocolId = searchParams.get('protocol') || 'player_config';
-  const { submitRegistrationEntry, getTeamByCode, db } = useTeam();
-  const { firebaseApp, user: firebaseUser, isAuthResolved } = useFirebase();
+  const portalUrl = leagueId ? `/api/public/portals?kind=league-registration&leagueId=${encodeURIComponent(leagueId as string)}&protocolId=${encodeURIComponent(protocolId)}` : null;
+  const { data: portal, isLoading, error, status, retry } = usePublicPortal<{ config: LeagueRegistrationConfig; league: any }>(portalUrl);
+  const config = portal?.config || null;
+  const league = portal?.league || null;
+  const resolvedLeagueId = league?.id || null;
 
   const [currentStep, setCurrentStep] = useState(1);
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -87,46 +89,9 @@ function RegistrationForm() {
   const [teamCode, setTeamCode] = useState('');
   const [validatingCode, setValidatingCode] = useState(false);
   const [validatedTeam, setValidatedTeam] = useState<any>(null);
-  const [resolvedLeagueId, setResolvedLeagueId] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [isRedeemingInvite, setIsRedeemingInvite] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    if (!isAuthResolved) return;
-    if (!firebaseUser || !leagueId) {
-      setIsRedeemingInvite(false);
-      return;
-    }
-
-    setIsRedeemingInvite(true);
-    setInviteError(null);
-    const redeem = httpsCallable<{ inviteCode: string }, { leagueId: string }>(
-      getFunctions(firebaseApp),
-      'redeemLeagueInvite'
-    );
-    redeem({ inviteCode: leagueId as string })
-      .then(({ data }) => {
-        if (active) setResolvedLeagueId(data.leagueId);
-      })
-      .catch((error) => {
-        if (active) setInviteError(error?.message || 'This league invite is not valid.');
-      })
-      .finally(() => {
-        if (active) setIsRedeemingInvite(false);
-      });
-
-    return () => { active = false; };
-  }, [firebaseApp, firebaseUser, isAuthResolved, leagueId]);
-
-  const configRef = useMemoFirebase(() => db && resolvedLeagueId ? doc(db, 'leagues', resolvedLeagueId, 'registration', protocolId) : null, [db, resolvedLeagueId, protocolId]);
-  const leagueRef = useMemoFirebase(() => db && resolvedLeagueId ? doc(db, 'leagues', resolvedLeagueId) : null, [db, resolvedLeagueId]);
-  const { data: config, isLoading: isConfigLoading } = useDoc<LeagueRegistrationConfig>(configRef);
-  const { data: league, isLoading: isLeagueLoading } = useDoc<any>(leagueRef);
-
-  const isLoading = isRedeemingInvite || isConfigLoading || isLeagueLoading;
 
   const formSchema = config?.form_schema || [];
+  const registrationType = config?.type || (protocolId === 'team_config' ? 'team' : protocolId === 'waiver_config' ? 'waiver' : 'player');
 
   const isUnder18 = useMemo(() => {
     const dob = answers['dateOfBirth'] || answers['dob'];
@@ -214,25 +179,68 @@ function RegistrationForm() {
     });
   }, [formSchema, activeSteps, currentStep]);
 
+  const identityAliases = useMemo(() => {
+    if (activeSteps[currentStep - 1]?.id !== 'identity') return {} as Record<string, RegistrationFormField | undefined>;
+    const normalized = stepFields.map(field => ({
+      field,
+      id: field.id.toLowerCase(),
+      label: field.label.toLowerCase().trim(),
+    }));
+    const find = (keys: string[], labels: RegExp) => normalized.find(candidate =>
+      keys.includes(candidate.id) || labels.test(candidate.label)
+    )?.field;
+
+    if (registrationType === 'team') {
+      return {
+        teamName: find(['teamname', 'team_name', 'f_team_name'], /^(team|squad) name$/),
+        name: find(['name', 'fullname', 'full_name', 'f_coach_name'], /^(primary contact|contact name|coach name|representative name)$/),
+        email: find(['email', 'f_contact_email'], /^(primary |contact )?email( address)?$/),
+        phone: find(['phone', 'f_phone'], /^(mobile |contact |primary )?phone( number)?$/),
+      };
+    }
+
+    return {
+      fullName: find(['fullname', 'full_name', 'name', 'f_full_name'], /^(full|legal|athlete|participant) name$/),
+      email: find(['email', 'f_email'], /^(primary |contact )?email( address)?$/),
+      dateOfBirth: find(['dateofbirth', 'date_of_birth', 'dob', 'f_dob'], /^(date of birth|birth date|dob)$/),
+      phone: find(['phone', 'f_phone'], /^(mobile |contact |primary )?phone( number)?$/),
+    };
+  }, [activeSteps, currentStep, registrationType, stepFields]);
+
+  const visibleStepFields = useMemo(() => {
+    if (activeSteps[currentStep - 1]?.id !== 'identity') return stepFields;
+    const baselineIds = new Set(Object.values(identityAliases).filter(Boolean).map(field => field!.id));
+    return stepFields.filter(field => !baselineIds.has(field.id));
+  }, [activeSteps, currentStep, identityAliases, stepFields]);
+
   useEffect(() => {
     if (!teamCode || teamCode.length < 3) {
       setValidatedTeam(null);
       return;
     }
+    let active = true;
     const timer = setTimeout(async () => {
       setValidatingCode(true);
       try {
         if (!resolvedLeagueId) return;
-        const team = await getTeamByCode(teamCode, resolvedLeagueId);
-        setValidatedTeam(team);
-      } catch (err) {
-        console.error(err);
+        const response = await fetch('/api/public/portals/action', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'league', action: 'lookup-team', leagueId: resolvedLeagueId, teamCode }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (active) setValidatedTeam(response.ok ? payload?.team || null : null);
+      } catch {
+        if (active) setValidatedTeam(null);
       } finally {
-        setValidatingCode(false);
+        if (active) setValidatingCode(false);
       }
     }, 500);
-    return () => clearTimeout(timer);
-  }, [teamCode, getTeamByCode, resolvedLeagueId]);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [teamCode, resolvedLeagueId]);
 
   const handleInputChange = useCallback((id: string, value: any) => {
     setAnswers(prev => {
@@ -241,10 +249,98 @@ function RegistrationForm() {
     });
   }, []);
 
+  const handleBaselineChange = (key: string, value: string) => {
+    const alias = identityAliases[key];
+    setAnswers(previous => ({
+      ...previous,
+      [key]: value,
+      ...(alias ? { [alias.id]: value } : {}),
+    }));
+  };
+
+  const baselineValue = (key: string) => {
+    const alias = identityAliases[key];
+    return answers[key] || (alias ? answers[alias.id] : '') || '';
+  };
+
+  const renderFieldInput = (field: RegistrationFormField) => {
+    const value = answers[field.id];
+    if (field.type === 'long_text') {
+      return <Textarea required={field.required} value={value || ''} onChange={event => handleInputChange(field.id, event.target.value)} className="min-h-[120px] rounded-2xl border-2 font-medium bg-muted/5" />;
+    }
+    if (field.type === 'dropdown') {
+      return (
+        <Select required={field.required} value={value || ''} onValueChange={next => handleInputChange(field.id, next)}>
+          <SelectTrigger className="h-14 rounded-2xl border-2 font-bold bg-muted/5"><SelectValue placeholder="Select an option..." /></SelectTrigger>
+          <SelectContent className="rounded-xl">
+            {field.options?.map(option => <SelectItem key={option} value={option} className="font-bold">{option}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      );
+    }
+    if (field.type === 'radio') {
+      return (
+        <RadioGroup value={value || ''} onValueChange={next => handleInputChange(field.id, next)} className="space-y-3">
+          {field.options?.map(option => (
+            <Label key={option} className="flex items-center gap-3 rounded-2xl border-2 p-4 cursor-pointer">
+              <RadioGroupItem value={option} /> {option}
+            </Label>
+          ))}
+        </RadioGroup>
+      );
+    }
+    if (field.type === 'multi_select') {
+      const selected = Array.isArray(value) ? value : [];
+      return (
+        <div className="space-y-3">
+          {field.options?.map(option => (
+            <Label key={option} className="flex items-center gap-3 rounded-2xl border-2 p-4 cursor-pointer">
+              <Checkbox
+                checked={selected.includes(option)}
+                onCheckedChange={checked => handleInputChange(field.id, checked ? [...selected, option] : selected.filter(item => item !== option))}
+              />
+              {option}
+            </Label>
+          ))}
+        </div>
+      );
+    }
+    if (field.type === 'checkbox') {
+      return (
+        <Label className="flex items-center gap-3 rounded-2xl border-2 p-4 cursor-pointer">
+          <Checkbox checked={value === true} onCheckedChange={checked => handleInputChange(field.id, checked === true)} />
+          Yes, I confirm
+        </Label>
+      );
+    }
+    return (
+      <Input
+        type={field.type === 'signature' ? 'text' : 'text'}
+        required={field.required}
+        placeholder={field.type === 'signature' ? 'Type your full legal name' : field.placeholder}
+        value={value || ''}
+        onChange={event => handleInputChange(field.id, event.target.value)}
+        className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm"
+      />
+    );
+  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!config || !resolvedLeagueId || isSubmitting) return;
+
+    const fieldsForValidation = currentStepInfo.id === 'identity' ? visibleStepFields : stepFields;
+    const missingRequiredField = fieldsForValidation.some(field => {
+      if (!field.required || ['header', 'information_box'].includes(field.type)) return false;
+      const value = answers[field.id];
+      if (field.type === 'checkbox') return value !== true;
+      return value == null || value === '' || (Array.isArray(value) && value.length === 0);
+    });
+    if (missingRequiredField) {
+      toast({ title: 'Required Question Missing', description: 'Complete every required question before continuing.', variant: 'destructive' });
+      return;
+    }
 
     if (currentStep < totalSteps) {
       setCurrentStep(prev => prev + 1);
@@ -264,51 +360,44 @@ function RegistrationForm() {
         team_name: validatedTeam?.name || validatedTeam?.teamName || null,
         team_id: validatedTeam?.id || null
       };
-      await submitRegistrationEntry(resolvedLeagueId, config.id, finalAnswers, config.form_version || 0, signature, 'leagues');
+      const response = await fetch('/api/public/portals/action', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'league',
+          action: 'register',
+          leagueId: resolvedLeagueId,
+          protocolId: config.id,
+          answers: finalAnswers,
+          formVersion: config.form_version || 0,
+          signature,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || 'Registration could not be submitted.');
       setIsSuccess(true);
-    } catch (error) {
-      toast({ title: "Submission Failed", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Submission Failed", description: error?.message || 'Please try again.', variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
 
-  if (!isAuthResolved || isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        <p className="mt-4 text-[10px] font-black uppercase tracking-widest opacity-40">Connecting to Hub...</p>
+        <p className="mt-4 text-[10px] font-black uppercase tracking-widest opacity-40">Loading registration form...</p>
       </div>
     );
   }
 
-  if (!firebaseUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
-        <Card className="max-w-md text-center p-10 space-y-4">
-          <Lock className="h-12 w-12 text-primary mx-auto" />
-          <h1 className="text-2xl font-black uppercase">Sign in required</h1>
-          <p className="text-sm text-muted-foreground">Sign in or create an account to redeem this league invite.</p>
-          <Button onClick={() => router.push('/login')}>Sign in</Button>
-        </Card>
-      </div>
-    );
+  if (!config || !config.is_active || !league || !resolvedLeagueId) {
+    return <PortalStatus status={status ?? (portal ? 404 : null)} message={error} onRetry={retry} title={status === 404 || portal ? 'Registration Closed' : undefined} />;
   }
 
-  if (inviteError || !resolvedLeagueId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
-        <Card className="max-w-md text-center p-10 space-y-4">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-          <h1 className="text-2xl font-black uppercase">Invite unavailable</h1>
-          <p className="text-sm text-muted-foreground">{inviteError || 'This league invite could not be redeemed.'}</p>
-        </Card>
-      </div>
-    );
-  }
-
-  if (league?.is_active === false) {
+  if (league?.isActive === false) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6 text-center space-y-6">
         <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
@@ -317,7 +406,7 @@ function RegistrationForm() {
           <div className="flex justify-center"><AlertCircle className="h-16 w-16 text-orange-600 mb-2" /></div>
           <div className="space-y-2">
             <h2 className="text-3xl font-black uppercase tracking-tighter text-black">Registration Closed</h2>
-            <p className="text-sm text-muted-foreground font-medium italic">This recruitment portal has been deactivated by the league administration.</p>
+            <p className="text-sm text-muted-foreground font-medium italic">This registration form is not currently accepting responses.</p>
           </div>
           <Button className="w-full h-14 rounded-2xl font-black uppercase text-xs" onClick={() => router.push('/')}>Return to Hub</Button>
         </Card>
@@ -331,7 +420,7 @@ function RegistrationForm() {
         <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
         <Card className="max-w-md w-full border-none shadow-2xl rounded-[2.5rem] bg-white p-12">
           <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-xl font-black uppercase text-black">Portal not found</h2>
+          <h2 className="text-xl font-black uppercase text-black">Registration form not found</h2>
           <Button className="mt-6 w-full h-12 rounded-xl" onClick={() => router.push('/')}>Back to Home</Button>
         </Card>
       </div>
@@ -346,13 +435,13 @@ function RegistrationForm() {
           <div className="bg-green-100 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-8">
             <CheckCircle2 className="h-10 w-10 text-green-600" />
           </div>
-          <h2 className="text-3xl font-black uppercase tracking-tighter">Entry Dispatched</h2>
-          <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-2 mb-8">Application Successfully Archived</p>
+          <h2 className="text-3xl font-black uppercase tracking-tighter">Registration Submitted</h2>
+          <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-2 mb-8">Your response was received</p>
           
           <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 text-left">
             <p className="text-[10px] font-black uppercase text-primary">Status Update</p>
             <p className="text-sm font-bold mt-1 leading-relaxed">
-              {config?.confirmation_message || "Your application is currently in the recruitment pool. A league coordinator will review your data and dispatch assignments shortly."}
+              {config?.confirmation_message || "Your registration has been received. A league organizer will review it and contact you with any next steps."}
             </p>
           </div>
 
@@ -369,8 +458,8 @@ function RegistrationForm() {
       <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
         <div className="lg:col-span-4 space-y-8 lg:sticky lg:top-12">
           <div className="space-y-4">
-            <div><Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3">Portals</Badge><h1 className="text-3xl font-black uppercase tracking-tight mt-1">{config?.title || "League Registration"}</h1></div>
-            <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Official {config?.type || "Enrollment"} pipeline</p>
+            <div><Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3">Registration</Badge><h1 className="text-3xl font-black uppercase tracking-tight mt-1">{config?.title || "League Registration"}</h1></div>
+            <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Official {config?.type || "Registration"} form</p>
           </div>
 
           <div className="space-y-6">
@@ -415,10 +504,10 @@ function RegistrationForm() {
           <div className="bg-primary/5 p-6 rounded-3xl border-2 border-primary/10 space-y-2">
              <div className="flex items-center gap-2 text-primary">
                 <Info className="h-4 w-4" />
-                <p className="text-[10px] font-black uppercase tracking-widest">Protocol Support</p>
+                <p className="text-[10px] font-black uppercase tracking-widest">Privacy and Support</p>
              </div>
              <p className="text-[11px] font-medium leading-relaxed text-foreground/70">
-                Data provided via this portal is encrypted and routed directly to the {config?.type === 'team' ? 'squad management' : 'league administration'} database.
+                Your registration information is sent securely to the {config?.type === 'team' ? 'team organizers' : 'league organizers'} responsible for this form.
              </p>
           </div>
         </div>
@@ -430,19 +519,19 @@ function RegistrationForm() {
             <CardHeader className="p-8 lg:p-10 pb-4">
               <div className="space-y-1">
                 <Badge variant="outline" className="border-primary/20 text-primary font-black uppercase text-[8px] tracking-widest">
-                  {currentStepInfo.label} Phase
+                  {currentStepInfo.label}
                 </Badge>
                 <CardTitle className="text-3xl font-black uppercase tracking-tight">
-                  {currentStepInfo.name} Verification
+                  {currentStepInfo.name}
                 </CardTitle>
                 <CardDescription className="text-xs font-semibold">
-                  {currentStepInfo.id === 'identity' && (config?.type === 'team' ? "Provide basic squad identification and leadership data." : "Start your enrollment by providing basic participant data.")}
+                  {currentStepInfo.id === 'identity' && (config?.type === 'team' ? "Provide the team name and primary contact details." : "Start by providing the athlete's contact and eligibility details.")}
                   {currentStepInfo.id === 'contact' && "Provide primary contact and deployment address info."}
                   {currentStepInfo.id === 'medical' && "Verified health clearances and emergency medical data."}
                   {currentStepInfo.id === 'guardian' && "Guardian authorization is mandatory for minor participants."}
                   {currentStepInfo.id === 'additional' && "Provide supplemental information required for this registration."}
-                  {currentStepInfo.id === 'team_code' && "Enter your squad's recruitment code to auto-assign rosters."}
-                  {currentStepInfo.id === 'compliance' && "Finalize your institutional agreements and waivers."}
+                  {currentStepInfo.id === 'team_code' && "Enter your team code so the registration reaches the correct team."}
+                  {currentStepInfo.id === 'compliance' && "Review and accept the required agreements and waivers."}
                 </CardDescription>
 
               </div>
@@ -453,7 +542,7 @@ function RegistrationForm() {
               {currentStepInfo.id !== 'guardian' && currentStepInfo.id !== 'team_code' && currentStepInfo.id !== 'compliance' && (
                 <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                   {currentStepInfo.id === 'identity' && (
-                    <div className="space-y-3">
+                    <div className="space-y-6">
                       {(answers['dateOfBirth'] || answers['dob']) ? (
                         <div className={cn(
                           "flex items-center gap-2 p-3 rounded-xl border-2 animate-in fade-in slide-in-from-top-1 duration-300",
@@ -465,6 +554,51 @@ function RegistrationForm() {
                           </p>
                         </div>
                       ) : null}
+                      {registrationType === 'team' ? (
+                        <>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name <span className="text-primary">*</span></Label>
+                            <Input required value={baselineValue('teamName')} onChange={event => handleBaselineChange('teamName', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Contact <span className="text-primary">*</span></Label>
+                            <Input required value={baselineValue('name')} onChange={event => handleBaselineChange('name', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email <span className="text-primary">*</span></Label>
+                              <Input type="email" required value={baselineValue('email')} onChange={event => handleBaselineChange('email', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Phone <span className="text-primary">*</span></Label>
+                              <Input type="tel" required value={baselineValue('phone')} onChange={event => handleBaselineChange('phone', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name <span className="text-primary">*</span></Label>
+                            <Input required value={baselineValue('fullName')} onChange={event => handleBaselineChange('fullName', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email <span className="text-primary">*</span></Label>
+                              <Input type="email" required value={baselineValue('email')} onChange={event => handleBaselineChange('email', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Mobile Phone <span className="text-primary">*</span></Label>
+                              <Input type="tel" required value={baselineValue('phone')} onChange={event => handleBaselineChange('phone', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                            </div>
+                          </div>
+                          {registrationType === 'player' && (
+                            <div className="space-y-2">
+                              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
+                              <Input type="date" required value={baselineValue('dateOfBirth')} onChange={event => handleBaselineChange('dateOfBirth', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -482,10 +616,15 @@ function RegistrationForm() {
                       <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest ml-2 italic">Official competitive tier for this enrollment.</p>
                     </div>
                   )}
-                  {stepFields.map(field => (
+                  {visibleStepFields.map(field => (
                     <div key={field.id} className="space-y-3">
                       {field.type === 'header' ? (
                         <div className="pt-4 border-b pb-2"><h3 className="font-black text-lg uppercase tracking-tight">{field.label}</h3></div>
+                      ) : field.type === 'information_box' ? (
+                        <div className="rounded-2xl border-2 border-blue-100 bg-blue-50 p-5">
+                          <p className="font-black text-sm uppercase text-blue-900">{field.label}</p>
+                          {field.infoContent && <p className="mt-2 text-sm text-blue-800">{field.infoContent}</p>}
+                        </div>
                       ) : (
                         <>
                           <div className="flex justify-between items-end px-1">
@@ -493,22 +632,7 @@ function RegistrationForm() {
                               {field.label} {field.required && <span className="text-primary">*</span>}
                             </Label>
                           </div>
-                          {field.type === 'short_text' && (
-                            <Input 
-                              required={field.required} 
-                              value={answers[field.id] || ''} 
-                              onChange={e => handleInputChange(field.id, e.target.value)} 
-                              className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" 
-                            />
-                          )}
-                          {field.type === 'dropdown' && (
-                            <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
-                              <SelectTrigger className="h-14 rounded-2xl border-2 font-bold bg-muted/5"><SelectValue placeholder="Select choice..." /></SelectTrigger>
-                              <SelectContent className="rounded-xl">
-                                {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold">{opt}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          )}
+                          {renderFieldInput(field)}
                         </>
                       )}
                     </div>
@@ -585,17 +709,7 @@ function RegistrationForm() {
                                 {field.label} {field.required && <span className="text-primary">*</span>}
                               </Label>
                             </div>
-                            {field.type === 'short_text' && (
-                              <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-sm" />
-                            )}
-                            {field.type === 'dropdown' && (
-                              <Select required={field.required} value={answers[field.id] || ''} onValueChange={v => handleInputChange(field.id, v)}>
-                                <SelectTrigger className="h-14 rounded-2xl border-2 font-bold bg-muted/5"><SelectValue placeholder="Select choice..." /></SelectTrigger>
-                                <SelectContent className="rounded-xl">
-                                  {field.options?.map((opt: string) => <SelectItem key={opt} value={opt} className="font-bold">{opt}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            )}
+                            {renderFieldInput(field)}
                           </div>
                         ))}
 
@@ -634,7 +748,7 @@ function RegistrationForm() {
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Relationship to Player <span className="text-primary">*</span></Label>
+                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Relationship to Athlete <span className="text-primary">*</span></Label>
                           <Select 
                             required 
                             value={answers['guardian_relationship'] || ''} 
@@ -720,8 +834,8 @@ function RegistrationForm() {
                           <Globe className="h-6 w-6 text-muted-foreground" />
                         </div>
                         <div className="space-y-1">
-                          <h2 className="text-lg font-black uppercase tracking-tight">Portals Access Key</h2>
-                          <p className="text-[10px] font-bold text-muted-foreground leading-relaxed px-10">If you are not affiliated with a specific team, you can skip this step to enter the general recruiting pool.</p>
+                          <h2 className="text-lg font-black uppercase tracking-tight">Team Code</h2>
+                          <p className="text-[10px] font-bold text-muted-foreground leading-relaxed px-10">If you are not joining a specific team, you can skip this step and let the league organizer review your registration.</p>
                         </div>
                       </div>
                     )}
@@ -738,7 +852,7 @@ function RegistrationForm() {
                         <div className="space-y-3">
                           <div className="flex items-center gap-2 text-primary">
                             <ShieldCheck className="h-4 w-4" />
-                            <p className="text-[10px] font-black uppercase tracking-widest">Institutional Liability Waiver</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Standard Liability Waiver</p>
                           </div>
                           <ScrollArea className="h-48 rounded-[2.5rem] bg-muted/5 border-2 border-black/5 shadow-inner">
                             <div className="p-14 font-medium text-xs leading-relaxed text-foreground/80">
@@ -752,7 +866,7 @@ function RegistrationForm() {
                         <div className="space-y-3">
                           <div className="flex items-center gap-2 text-primary">
                             <FileSignature className="h-4 w-4" />
-                            <p className="text-[10px] font-black uppercase tracking-widest">Organization specific Agreement</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Organization-Specific Agreement</p>
                           </div>
                           <ScrollArea className="h-48 rounded-[2.5rem] bg-primary/5 border-2 border-primary/10 shadow-inner">
                             <div className="p-14 font-medium text-xs leading-relaxed text-primary/80">
@@ -811,7 +925,7 @@ function RegistrationForm() {
                            <Signature className="absolute right-6 top-1/2 -translate-y-1/2 h-8 w-8 opacity-20" />
                         </div>
                         <p className="text-[8px] font-black uppercase text-center opacity-40 py-2 tracking-[0.3em]">
-                          {isUnder18 ? "I certify that I am the legal guardian and authorized to sign for the minor participant." : "Protocol Handshake v" + (config.form_version || 1.0)}
+                          {isUnder18 ? "I certify that I am the legal guardian and authorized to sign for the minor participant." : "Registration form version " + (config.form_version || 1.0)}
                         </p>
                       </div>
                     </div>
@@ -843,7 +957,7 @@ function RegistrationForm() {
                 }
               >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : 
-                 currentStep === totalSteps ? "Dispatch Enrollment" : `Continue to ${activeSteps[currentStep]?.name || 'Next'}`}
+                 currentStep === totalSteps ? "Submit Registration" : `Continue to ${activeSteps[currentStep]?.name || 'Next'}`}
                  {currentStep < totalSteps && <ArrowRight className="h-5 w-5 ml-2" />}
               </Button>
             </CardFooter>

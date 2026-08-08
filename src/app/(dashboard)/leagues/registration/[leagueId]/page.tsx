@@ -99,6 +99,7 @@ export default function LeagueRegistrationAdminPage() {
     division: ''
   });
   const [isManualProcessing, setIsManualProcessing] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // --- SYNC ---
   const configId = useMemo(() => {
@@ -239,15 +240,11 @@ export default function LeagueRegistrationAdminPage() {
       setLocalConfig(config);
     } else if (!isConfigLoading && !config) {
       const defaultPlayerSchema: RegistrationFormField[] = [
-        { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
         { id: 'f_position', label: 'Position / Role', type: 'short_text', required: false, step: 'identity' },
         { id: 'f_emer_name', label: 'Emergency Contact Name', type: 'short_text', required: true, step: 'identity' },
         { id: 'f_emer_phone', label: 'Emergency Contact Phone', type: 'short_text', required: true, step: 'identity' },
       ];
       const defaultTeamSchema: RegistrationFormField[] = [
-        { id: 'f_team_name', label: 'Team Name', type: 'short_text', required: true, step: 'identity' },
-        { id: 'f_coach_name', label: 'Coach Name', type: 'short_text', required: true, step: 'identity' },
-        { id: 'f_contact_email', label: 'Contact Email', type: 'short_text', required: true, step: 'identity' },
         { id: 'f_team_color', label: 'Team Color', type: 'short_text', required: false, step: 'additional' },
       ];
       const defaultWaiverSchema: RegistrationFormField[] = [
@@ -256,7 +253,7 @@ export default function LeagueRegistrationAdminPage() {
       setLocalConfig({
         id: configId,
         type: pipelineType,
-        title: pipelineType === 'player' ? 'Athlete Registration' : pipelineType === 'team' ? 'Squad Registration' : 'Universal Waiver Portal',
+        title: pipelineType === 'player' ? 'Athlete Registration' : pipelineType === 'team' ? 'Team Registration' : 'Waiver Form',
         is_active: false,
         form_schema: pipelineType === 'player' ? defaultPlayerSchema : pipelineType === 'team' ? defaultTeamSchema : defaultWaiverSchema,
         form_version: 1
@@ -267,21 +264,17 @@ export default function LeagueRegistrationAdminPage() {
   const handleUpdateConfig = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
     if (!leagueId) return;
     const defaultPlayerSchema: RegistrationFormField[] = [
-      { id: 'f_phone', label: 'Phone Number', type: 'short_text', required: true, step: 'identity' },
       { id: 'f_position', label: 'Position / Role', type: 'short_text', required: false, step: 'identity' },
       { id: 'f_emer_name', label: 'Emergency Contact Name', type: 'short_text', required: true, step: 'identity' },
       { id: 'f_emer_phone', label: 'Emergency Contact Phone', type: 'short_text', required: true, step: 'identity' },
     ];
     const defaultTeamSchema: RegistrationFormField[] = [
-      { id: 'f_team_name', label: 'Team Name', type: 'short_text', required: true, step: 'identity' },
-      { id: 'f_coach_name', label: 'Coach Name', type: 'short_text', required: true, step: 'identity' },
-      { id: 'f_contact_email', label: 'Contact Email', type: 'short_text', required: true, step: 'identity' },
       { id: 'f_team_color', label: 'Team Color', type: 'short_text', required: false, step: 'additional' },
     ];
     const base = localConfig || config || { 
       id: configId, 
       type: pipelineType, 
-      title: pipelineType === 'player' ? 'Athlete Registration' : 'Squad Registration', 
+      title: pipelineType === 'player' ? 'Athlete Registration' : 'Team Registration',
       is_active: false, 
       form_schema: pipelineType === 'player' ? defaultPlayerSchema : defaultTeamSchema, 
       form_version: 1 
@@ -310,18 +303,26 @@ export default function LeagueRegistrationAdminPage() {
     setLocalConfig(updated);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     const performSync = async () => {
-      await saveLeagueRegistrationConfig(leagueId as string, configId, updated);
-      if (hasWaiverUpdates) {
-        const waiverUpdates: Partial<LeagueRegistrationConfig> = {};
-        for (const key of waiverKeys) {
-          if (updated[key] !== undefined) {
-            (waiverUpdates as any)[key] = updated[key];
+      setSaveStatus('saving');
+      try {
+        await saveLeagueRegistrationConfig(leagueId as string, configId, updated);
+        if (hasWaiverUpdates) {
+          const waiverUpdates: Partial<LeagueRegistrationConfig> = {};
+          for (const key of waiverKeys) {
+            if (updated[key] !== undefined) {
+              (waiverUpdates as any)[key] = updated[key];
+            }
+          }
+          const otherConfigs = ['player_config', 'team_config', 'waiver_config'].filter(id => id !== configId);
+          for (const otherId of otherConfigs) {
+            await saveLeagueRegistrationConfig(leagueId as string, otherId, waiverUpdates);
           }
         }
-        const otherConfigs = ['player_config', 'team_config', 'waiver_config'].filter(id => id !== configId);
-        for (const otherId of otherConfigs) {
-          await saveLeagueRegistrationConfig(leagueId as string, otherId, waiverUpdates);
-        }
+        setSaveStatus('saved');
+      } catch (error: any) {
+        setLocalConfig(config || null);
+        setSaveStatus('error');
+        toast({ title: 'Save Failed', description: error?.message || 'The form could not be saved. Please retry.', variant: 'destructive' });
       }
     };
     if (immediate) performSync(); else syncTimeoutRef.current = setTimeout(performSync, 1500);
@@ -359,7 +360,7 @@ export default function LeagueRegistrationAdminPage() {
         );
         setIsManualAddOpen(false);
         setManualForm({ teamName: '', coachName: '', email: '', inviteCode: '', playerName: '', playerPhone: '', division: '' });
-        toast({ title: "Squad Enrolled" });
+        toast({ title: "Team Added" });
       } finally { setIsManualProcessing(false); }
     } else {
       if (!manualForm.playerName || !manualForm.email || !leagueId) {
@@ -384,7 +385,7 @@ export default function LeagueRegistrationAdminPage() {
         );
         setIsManualAddOpen(false);
         setManualForm({ teamName: '', coachName: '', email: '', inviteCode: '', playerName: '', playerPhone: '', division: '' });
-        toast({ title: "Player Enrolled" });
+        toast({ title: "Athlete Added" });
       } finally { setIsManualProcessing(false); }
     }
   };
@@ -392,7 +393,7 @@ export default function LeagueRegistrationAdminPage() {
   if (isConfigLoading) return (
     <div className="flex flex-col items-center justify-center py-32 text-center gap-6 animate-pulse">
       <div className="bg-primary/10 p-8 rounded-[3rem] shadow-xl"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>
-      <p className="text-sm font-black uppercase tracking-[0.3em] text-muted-foreground">Synchronizing Protocols...</p>
+      <p className="text-sm font-black uppercase tracking-[0.3em] text-muted-foreground">Loading registration forms...</p>
     </div>
   );
 
@@ -401,19 +402,19 @@ export default function LeagueRegistrationAdminPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => router.push('/leagues')} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
-          <div><Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3">Portals</Badge><h1 className="text-3xl font-black uppercase tracking-tight mt-1">Personnel Pool</h1></div>
+          <div><Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3">Forms & Responses</Badge><h1 className="text-3xl font-black uppercase tracking-tight mt-1">League Registration</h1></div>
         </div>
         <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner overflow-x-auto max-w-full no-scrollbar">
-          <Button variant={pipelineType === 'player' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('player'); setActiveTab('entries'); }}><Users className="h-4 w-4 mr-2" /> Players</Button>
-          <Button variant={pipelineType === 'team' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('team'); setActiveTab('entries'); }}><Zap className="h-4 w-4 mr-2" /> Squads</Button>
+          <Button variant={pipelineType === 'player' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('player'); setActiveTab('entries'); }}><Users className="h-4 w-4 mr-2" /> Athletes</Button>
+          <Button variant={pipelineType === 'team' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('team'); setActiveTab('entries'); }}><Zap className="h-4 w-4 mr-2" /> Teams</Button>
           <Button variant={pipelineType === 'waiver' ? 'default' : 'ghost'} className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0" onClick={() => { setPipelineType('waiver'); setActiveTab('entries'); }}><FileSignature className="h-4 w-4 mr-2" /> Waivers</Button>
           <Button variant="ghost" className="rounded-xl h-10 px-6 font-black uppercase text-[10px] shrink-0 ml-4 bg-white/50 border-white" onClick={exportAllWaivers}><Download className="h-4 w-4 mr-2" /> Export Waivers</Button>
         </div>
       </div>
 
       <div className="bg-white p-1.5 rounded-2xl border-2 flex items-center shadow-sm w-fit">
-        <Button variant={activeTab === 'entries' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('entries')}>Portals Ledger</Button>
-        <Button variant={activeTab === 'config' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('config')}>Protocol Architect</Button>
+        <Button variant={activeTab === 'entries' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('entries')}>Responses</Button>
+        <Button variant={activeTab === 'config' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('config')}>Form Builder</Button>
       </div>
 
       {activeTab === 'entries' ? (
@@ -426,12 +427,12 @@ export default function LeagueRegistrationAdminPage() {
             </div>
             {pipelineType === 'team' && (
               <Button className="rounded-xl h-11 px-6 font-black uppercase text-[10px] shadow-xl" onClick={() => { setManualFormType('team'); setIsManualAddOpen(true); }}>
-                <Plus className="h-4 w-4 mr-2" /> Enroll Squad
+                <Plus className="h-4 w-4 mr-2" /> Add Team
               </Button>
             )}
             {pipelineType === 'player' && (
               <Button className="rounded-xl h-11 px-6 font-black uppercase text-[10px] shadow-xl bg-primary text-white" onClick={() => { setManualFormType('player'); setIsManualAddOpen(true); }}>
-                <Plus className="h-4 w-4 mr-2" /> Enroll Player
+                <Plus className="h-4 w-4 mr-2" /> Add Athlete
               </Button>
             )}
           </div>
@@ -443,7 +444,7 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="py-32 text-center flex flex-col items-center gap-6"><Loader2 className="h-10 w-10 animate-spin text-primary" /><p className="text-xs font-black uppercase tracking-[0.3em]">Synchronizing...</p></div>
                 ) : (
                   <table className="w-full text-left">
-                    <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-10 py-6">Applicant</th><th className="px-4 py-6 text-center">Portal Code</th><th className="px-4 py-6 text-center">Status</th><th className="px-10 py-6 text-right">Actions</th></tr></thead>
+                    <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-10 py-6">Applicant</th><th className="px-4 py-6 text-center">Form Code</th><th className="px-4 py-6 text-center">Status</th><th className="px-10 py-6 text-right">Actions</th></tr></thead>
                     <tbody className="divide-y divide-muted/50">
                       {filteredEntries.map(entry => (
                         <tr key={entry.id} className="hover:bg-primary/5 transition-colors group">
@@ -470,7 +471,7 @@ export default function LeagueRegistrationAdminPage() {
                         </tr>
                       ))}
                       {filteredEntries.length === 0 && !isEntriesLoading && (
-                        <tr><td colSpan={4} className="py-32 text-center opacity-20"><History className="h-16 w-16 mx-auto mb-4" /><p className="text-sm font-black uppercase tracking-[0.3em]">Ledger Empty</p></td></tr>
+                        <tr><td colSpan={4} className="py-32 text-center opacity-20"><History className="h-16 w-16 mx-auto mb-4" /><p className="text-sm font-black uppercase tracking-[0.3em]">No responses yet</p></td></tr>
                       )}
                     </tbody>
                   </table>
@@ -485,26 +486,26 @@ export default function LeagueRegistrationAdminPage() {
             <div className="flex bg-black text-white p-8 rounded-[3rem] items-center justify-between border-2 border-white/10 shadow-2xl mb-12">
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
-                  <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Protocol Neural Flow</Badge>
-                  <Badge variant="outline" className="border-white/20 text-white/40 font-black uppercase text-[8px] h-6 px-3">{localConfig?.form_version ? `Rev 0${localConfig.form_version}` : 'Rev 01'}</Badge>
+                  <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Registration Form</Badge>
+                  <Badge variant="outline" className="border-white/20 text-white/40 font-black uppercase text-[8px] h-6 px-3">{localConfig?.form_version ? `Version ${localConfig.form_version}` : 'Version 1'}</Badge>
                 </div>
-                <h3 className="text-3xl font-black uppercase tracking-tighter">System Architect</h3>
-                <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Active Deployment for {activeLeague?.name || 'League'}</p>
+                <h3 className="text-3xl font-black uppercase tracking-tighter">Form Builder</h3>
+                <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Registration form for {activeLeague?.name || 'League'}</p>
               </div>
               <div className="flex items-center gap-6">
                 <div className="text-right hidden md:block">
-                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest mb-1">Bridge Endpoint</p>
-                  <p className="text-[9px] font-mono text-primary font-bold">/register/league/{leagueId}?protocol={configId}</p>
+                  <p className="text-[10px] font-black uppercase text-white/40 tracking-widest mb-1">Public Registration Link</p>
+                  <p className="text-[9px] font-mono text-primary font-bold">/register/league/{leagueId}</p>
                 </div>
                 <Button 
                   className="h-14 px-8 rounded-2xl bg-white text-black font-black uppercase text-[10px] shadow-xl hover:scale-105 transition-all flex items-center gap-2" 
                   onClick={() => { 
                     const url = `${window.location.origin}/register/league/${leagueId}?protocol=${configId}`;
                     navigator.clipboard.writeText(url); 
-                    toast({ title: "Portal Link Copied", description: "Protocol link injected into clipboard." }); 
+                    toast({ title: "Registration Link Copied", description: "The public form link is ready to share." });
                   }}
                 >
-                  <Share2 className="h-4 w-4" /> Share Portal
+                  <Share2 className="h-4 w-4" /> Copy Registration Link
                 </Button>
               </div>
             </div>
@@ -521,25 +522,30 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="flex items-center gap-4">
                     <div className="bg-primary p-3 rounded-2xl text-white shadow-lg"><Globe className="h-6 w-6" /></div>
                     <div>
-                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Portal Baseline</CardTitle>
-                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-primary mt-1">Institutional Identity & Meta-Data</CardDescription>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Form Details</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-primary mt-1">Title and availability</CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="flex flex-col items-end gap-1 mr-4">
-                      <span className="text-[9px] font-black uppercase text-muted-foreground">Portal Status</span>
+                      <span className="text-[9px] font-black uppercase text-muted-foreground">Form Status</span>
                       <span className={cn("text-[10px] font-black uppercase transition-colors", localConfig?.is_active ? "text-green-600" : "text-rose-600")}>
                         {localConfig?.is_active ? "Live" : "Draft"}
                       </span>
                     </div>
-                    <Switch checked={localConfig?.is_active || false} onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} />
+                    <div className="flex items-center gap-3">
+                      {saveStatus === 'saving' && <span className="text-[9px] font-black uppercase text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Saving</span>}
+                      {saveStatus === 'saved' && <span className="text-[9px] font-black uppercase text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Saved</span>}
+                      {saveStatus === 'error' && <span className="text-[9px] font-black uppercase text-destructive">Not saved</span>}
+                      <Switch checked={localConfig?.is_active || false} onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} disabled={saveStatus === 'saving'} />
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-8 space-y-8">
                   <div className="grid grid-cols-1 gap-8">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Protocol Headline</Label>
-                      <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black shadow-sm" placeholder="e.g. 2024 Spring Season Portal" />
+                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Form Title</Label>
+                      <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black shadow-sm" placeholder="e.g. 2024 Spring Season Registration" />
                     </div>
                   </div>
                 </CardContent>
@@ -558,28 +564,37 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="flex items-center gap-4">
                     <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg"><Fingerprint className="h-6 w-6" /></div>
                     <div>
-                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Identity Hub</CardTitle>
-                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Participant Data Injection</CardDescription>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Athlete Information</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Contact and eligibility details</CardDescription>
                     </div>
                   </div>
                   <Button variant="outline" className="rounded-xl h-11 px-6 border-indigo-200 text-indigo-700 font-black uppercase text-[10px] shadow-sm hover:bg-indigo-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'identity', type: 'short_text', required: true })}>
-                    <Plus className="h-4 w-4 mr-2" /> Inject Field
+                    <Plus className="h-4 w-4 mr-2" /> Add Question
                   </Button>
                 </CardHeader>
                 <CardContent className="p-8 space-y-12">
                     {/* AUTO INJECTED FIELDS */}
                     <div className="space-y-5">
                       <div className="flex items-center justify-between px-1">
-                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Institutional Baseline (Global Injection)</p>
-                        <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">System Enforced</Badge>
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Included Questions</p>
+                        <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">Always Included</Badge>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {[
-                          { label: 'Full Name', detail: 'Legal Identity', icon: Users },
-                          { label: 'Primary Email', detail: 'System Relay', icon: Mail },
-                          { label: 'Date of Birth', detail: 'Eligibility Proto', icon: Calendar },
-                          { label: 'Mobile Phone', detail: 'Direct Link', icon: Smartphone }
-                        ].filter(f => pipelineType !== 'waiver' || f.label !== 'Date of Birth').map(f => (
+                        {(pipelineType === 'team' ? [
+                          { label: 'Team Name', detail: 'Official team name', icon: Users },
+                          { label: 'Primary Contact', detail: 'Coach or team representative', icon: UserCheck },
+                          { label: 'Contact Email', detail: 'Registration contact', icon: Mail },
+                          { label: 'Contact Phone', detail: 'Registration contact', icon: Smartphone }
+                        ] : pipelineType === 'waiver' ? [
+                          { label: 'Full Name', detail: 'Legal name', icon: Users },
+                          { label: 'Primary Email', detail: 'Contact email', icon: Mail },
+                          { label: 'Mobile Phone', detail: 'Contact number', icon: Smartphone }
+                        ] : [
+                          { label: 'Full Name', detail: 'Legal name', icon: Users },
+                          { label: 'Primary Email', detail: 'Contact email', icon: Mail },
+                          { label: 'Date of Birth', detail: 'Age eligibility', icon: Calendar },
+                          { label: 'Mobile Phone', detail: 'Contact number', icon: Smartphone }
+                        ]).map(f => (
                           <div key={f.label} className="p-5 rounded-2xl bg-muted/40 border-2 border-transparent flex flex-col gap-3 relative group/base">
                             <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
                               <f.icon className="h-5 w-5 opacity-40 text-black" />
@@ -596,7 +611,7 @@ export default function LeagueRegistrationAdminPage() {
 
                     {/* CUSTOM FIELDS */}
                     <div className="space-y-5">
-                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest px-1">Organization Protocol Specs</p>
+                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest px-1">Custom Questions</p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {((localConfig?.form_schema || []).filter(f => f.step === 'identity' || !f.step)).map(f => (
                             <div key={f.id} className="p-6 rounded-3xl border-2 border-indigo-100 bg-indigo-50/10 flex items-center justify-between group/f hover:border-indigo-400 transition-all shadow-sm">
@@ -624,7 +639,7 @@ export default function LeagueRegistrationAdminPage() {
                           {((localConfig?.form_schema || []).filter(f => f.step === 'identity' || !f.step)).length === 0 && (
                             <div className="md:col-span-2 py-12 text-center border-2 border-dashed rounded-[3rem] border-indigo-100 bg-indigo-50/5">
                               <Fingerprint className="h-10 w-10 mx-auto mb-3 opacity-10 text-indigo-600" />
-                              <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest">Awaiting Custom Input Injection</p>
+                              <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest">No custom questions yet</p>
                             </div>
                           )}
                       </div>
@@ -646,12 +661,12 @@ export default function LeagueRegistrationAdminPage() {
                     <div className="flex items-center gap-4">
                       <div className="bg-amber-600 p-3 rounded-2xl text-white shadow-lg"><UserCheck className="h-6 w-6" /></div>
                       <div>
-                        <CardTitle className="text-2xl font-black uppercase tracking-tight">Guardian Bridge</CardTitle>
-                        <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mt-1">Minor Logic & Field Injection</CardDescription>
+                        <CardTitle className="text-2xl font-black uppercase tracking-tight">Parent or Guardian Information</CardTitle>
+                        <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mt-1">Shown automatically for athletes under 18</CardDescription>
                       </div>
                     </div>
                     <Button variant="outline" className="rounded-xl h-11 px-6 border-amber-200 text-amber-700 font-black uppercase text-[10px] shadow-sm hover:bg-amber-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'guardian', type: 'short_text', required: true })}>
-                      <Plus className="h-4 w-4 mr-2" /> Inject Field
+                      <Plus className="h-4 w-4 mr-2" /> Add Question
                     </Button>
                   </CardHeader>
                   <CardContent className="p-8 space-y-12">
@@ -661,25 +676,25 @@ export default function LeagueRegistrationAdminPage() {
                       </div>
                       <div className="text-center md:text-left space-y-2">
                         <div className="text-[14px] font-black uppercase text-amber-900 tracking-tight flex items-center justify-center md:justify-start gap-4">
-                          Automated Trigger: Minor Safety Mode
-                          <Badge className="bg-amber-600 text-white border-none font-black uppercase text-[8px] h-6 px-3">Enrolled</Badge>
+                          Required for athletes under 18
+                          <Badge className="bg-amber-600 text-white border-none font-black uppercase text-[8px] h-6 px-3">Enabled</Badge>
                         </div>
-                        <p className="text-xs font-medium text-amber-800/70 leading-relaxed max-w-xl">System detects participant age via Phase 02 and automatically enforces guardian identity and legal consent to satisfy compliance standards.</p>
+                        <p className="text-xs font-medium text-amber-800/70 leading-relaxed max-w-xl">The form uses the athlete's date of birth to request guardian contact details and consent when required.</p>
                       </div>
                     </div>
 
                     <div className="space-y-8">
                       <div className="space-y-5">
                         <div className="flex items-center justify-between px-1">
-                          <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Baseline Guardian Protocol (Locked)</p>
-                          <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">Compliance Enforced</Badge>
+                          <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Included Guardian Questions</p>
+                          <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">Always Included</Badge>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                           {[
-                            { label: 'Guardian Full Name', icon: Users, detail: 'Legal Identity', req: true },
-                            { label: 'Primary Email', icon: Mail, detail: 'Communications Bridge', req: true },
-                            { label: 'Cellular Device', icon: Smartphone, detail: 'Emergency Port', req: true },
-                            { label: 'Rel. Type', icon: UserPlus, detail: 'Kinship Logic', req: true }
+                            { label: 'Guardian Full Name', icon: Users, detail: 'Legal name', req: true },
+                            { label: 'Guardian Email', icon: Mail, detail: 'Contact email', req: true },
+                            { label: 'Phone Number', icon: Smartphone, detail: 'Contact number', req: true },
+                            { label: 'Relationship', icon: UserPlus, detail: 'Relationship to athlete', req: true }
                           ].map(f => (
                             <div key={f.label} className="p-5 rounded-2xl bg-amber-500/5 border-2 border-transparent flex flex-col gap-3 relative transition-all hover:bg-amber-500/10 hover:border-amber-500/20">
                               <div className="h-10 w-10 rounded-xl bg-white flex items-center justify-center shadow-sm text-amber-600 border border-amber-100">
@@ -698,7 +713,7 @@ export default function LeagueRegistrationAdminPage() {
                       </div>
 
                       <div className="space-y-5">
-                        <p className="text-[10px] font-black uppercase text-amber-600 tracking-widest px-1">Experimental Guardian Specs</p>
+                        <p className="text-[10px] font-black uppercase text-amber-600 tracking-widest px-1">Custom Guardian Questions</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {((localConfig?.form_schema || []).filter(f => f.step === 'guardian')).map(f => (
                             <div key={f.id} className="p-6 border-2 border-amber-100 rounded-3xl flex items-center justify-between group/f bg-amber-50/10 hover:border-amber-400 transition-all shadow-sm">
@@ -714,7 +729,7 @@ export default function LeagueRegistrationAdminPage() {
                           {((localConfig?.form_schema || []).filter(f => f.step === 'guardian')).length === 0 && (
                             <div className="md:col-span-2 py-12 text-center border-2 border-dashed rounded-[3rem] border-amber-100 bg-amber-50/5">
                               <Plus className="h-10 w-10 mx-auto mb-3 opacity-10 text-amber-600" />
-                              <p className="text-[10px] font-black uppercase text-amber-300 tracking-widest">Inject Supplemental Guardian Requirements</p>
+                              <p className="text-[10px] font-black uppercase text-amber-300 tracking-widest">No custom guardian questions yet</p>
                             </div>
                           )}
                         </div>
@@ -738,24 +753,24 @@ export default function LeagueRegistrationAdminPage() {
                     <div className="flex items-center gap-4">
                       <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg"><Zap className="h-6 w-6" /></div>
                       <div>
-                        <CardTitle className="text-2xl font-black uppercase tracking-tight">Synapse Dispatch</CardTitle>
-                        <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Portal Code & Squadron Access</CardDescription>
+                        <CardTitle className="text-2xl font-black uppercase tracking-tight">Team Assignment</CardTitle>
+                        <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 mt-1">Team code and invitation link</CardDescription>
                       </div>
                     </div>
                     <Button variant="outline" className="rounded-xl h-11 px-6 border-indigo-200 text-indigo-700 font-black uppercase text-[10px] shadow-sm hover:bg-indigo-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'team_code', type: 'short_text', required: true })}>
-                      <Plus className="h-4 w-4 mr-2" /> Inject Field
+                      <Plus className="h-4 w-4 mr-2" /> Add Question
                     </Button>
                   </CardHeader>
                   <CardContent className="p-8 space-y-12">
                       <div className="space-y-5">
                         <div className="flex items-center justify-between px-1">
-                          <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Digital Synapse Baseline (Locked)</p>
-                          <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">Identity Bridge</Badge>
+                          <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Included Team Assignment Fields</p>
+                          <Badge variant="outline" className="text-[8px] font-black uppercase opacity-60">Always Included</Badge>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {[
-                            { label: 'Portal Identification', detail: 'Primary Squad Logical Sync', icon: Zap, req: true },
-                            { label: 'Invite Link Vector', detail: 'URL-Encoded Cryptographic Verification', icon: Globe, req: false }
+                            { label: 'Team Code', detail: 'Connects the athlete to a team', icon: Zap, req: true },
+                            { label: 'Team Invitation Link', detail: 'Secure invitation verification', icon: Globe, req: false }
                           ].map(f => (
                             <div key={f.label} className="p-6 rounded-[2.5rem] bg-indigo-500/5 border-2 border-transparent flex items-center gap-6 relative transition-all hover:bg-indigo-500/10 hover:border-indigo-500/20">
                               <div className="h-14 w-14 rounded-2xl bg-white flex items-center justify-center shadow-lg text-indigo-600 shrink-0 border border-indigo-100">
@@ -772,7 +787,7 @@ export default function LeagueRegistrationAdminPage() {
                       </div>
 
                       <div className="space-y-5">
-                        <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest px-1">Custom Synapse Payloads</p>
+                        <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest px-1">Custom Team Questions</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {((localConfig?.form_schema || []).filter(f => f.step === 'team_code')).map(f => (
                             <div key={f.id} className="p-6 border-2 border-indigo-100 rounded-3xl flex items-center justify-between group/f bg-indigo-50/10 hover:border-indigo-400 transition-all shadow-sm">
@@ -791,7 +806,7 @@ export default function LeagueRegistrationAdminPage() {
                           {((localConfig?.form_schema || []).filter(f => f.step === 'team_code')).length === 0 && (
                             <div className="md:col-span-2 py-12 text-center border-2 border-dashed rounded-[3rem] border-indigo-100 bg-indigo-50/5">
                               <Plus className="h-10 w-10 mx-auto mb-3 opacity-10 text-indigo-600" />
-                              <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest">Inject Tactical Verification Logic</p>
+                              <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest">No custom team questions yet</p>
                             </div>
                           )}
                         </div>
@@ -815,8 +830,8 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="flex items-center gap-4">
                     <div className="bg-rose-600 p-3 rounded-2xl text-white shadow-lg"><ShieldCheck className="h-6 w-6" /></div>
                     <div>
-                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Institutional Shield</CardTitle>
-                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-rose-600 mt-1">Compliance & Risk Ledger</CardDescription>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Waivers and Consent</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-rose-600 mt-1">Required agreements and records</CardDescription>
                     </div>
                   </div>
                 </CardHeader>
@@ -829,19 +844,19 @@ export default function LeagueRegistrationAdminPage() {
                           <Lock className="h-7 w-7" />
                         </div>
                         <div>
-                          <p className="text-[10px] font-black uppercase text-rose-200 tracking-widest px-1 mb-2">Institutional Compliance Briefing</p>
-                          <h4 className="text-xl font-black uppercase leading-tight">Secured Legal Binding Protocol</h4>
+                          <p className="text-[10px] font-black uppercase text-rose-200 tracking-widest px-1 mb-2">Legal Agreements</p>
+                          <h4 className="text-xl font-black uppercase leading-tight">Waiver Settings</h4>
                         </div>
-                        <p className="text-xs font-bold text-rose-100/60 leading-relaxed italic">The Institutional Shield protocol enforces legal binding between the organization and the participant. All signed documents are SHA-256 encrypted and stored in the permanent registration vault.</p>
+                        <p className="text-xs font-bold text-rose-100/60 leading-relaxed italic">Choose the waivers participants must review and sign. Signed documents are stored with the registration response for your records.</p>
                       </div>
                     </div>
                     
                     <div className="space-y-6 flex flex-col justify-center bg-muted/5 p-8 rounded-[2.5rem] border-2 border-dashed border-muted">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border"><History className="h-5 w-5 text-rose-600" /></div>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Permanent Audit Log</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Signed Waiver Records</span>
                       </div>
-                      <p className="text-[11px] font-bold text-muted-foreground/60 leading-relaxed">System automatically archives every unique execution of this phase, including sub-IP origin and timestamp data for legal verification.</p>
+                      <p className="text-[11px] font-bold text-muted-foreground/60 leading-relaxed">Each signed waiver is stored with its submission time so organizers can review the registration record later.</p>
                     </div>
                   </div>
 
@@ -854,8 +869,8 @@ export default function LeagueRegistrationAdminPage() {
                                   <Globe className="h-7 w-7" />
                                 </div>
                                 <div className="space-y-1">
-                                  <Label className="text-lg font-black uppercase text-rose-900 leading-none">Universal Hub Release</Label>
-                                  <p className="text-[9px] font-bold text-rose-700/60 uppercase tracking-widest mt-1">Global system-level baseline waiver</p>
+                                  <Label className="text-lg font-black uppercase text-rose-900 leading-none">Standard Waiver</Label>
+                                  <p className="text-[9px] font-bold text-rose-700/60 uppercase tracking-widest mt-1">Standard waiver provided by the platform</p>
                                 </div>
                               </div>
                               <Switch checked={localConfig?.require_default_waiver} onCheckedChange={(v) => handleUpdateConfig({ require_default_waiver: v }, true)} />
@@ -866,18 +881,18 @@ export default function LeagueRegistrationAdminPage() {
                                 <div className="flex items-center justify-between px-2">
                                    <div className="flex items-center gap-2">
                                      <Terminal className="h-3 w-3 text-rose-400" />
-                                     <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-900/40">Default Release Payload (Encrypted)</Label>
+                                     <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-900/40">Standard Waiver Text</Label>
                                    </div>
                                    <Badge variant="outline" className="text-[8px] font-black uppercase text-rose-400 border-rose-100">Global Standard</Badge>
                                 </div>
                                 <ScrollArea className="h-[150px] pr-4">
                                   <p className="text-[11px] font-bold leading-relaxed text-rose-800/70 italic bg-white/50 p-6 rounded-2xl border border-rose-100">
-                                    {localConfig?.default_waiver_text || "The standard Institutional Release covers liability, medical consent, and media participation for all organizational events. This text is managed at the system level and ensures a baseline of compliance for all participants regardless of specific league settings."}
+                                    {localConfig?.default_waiver_text || "The standard waiver covers liability, medical consent, and media participation for league activities. This text is managed by the platform and provides a consistent baseline for all participants."}
                                   </p>
                                 </ScrollArea>
                                 <div className="flex items-center gap-2 px-2">
                                   <div className="h-1 w-1 rounded-full bg-rose-300" />
-                                  <p className="text-[8px] font-bold text-rose-400 uppercase tracking-widest">Protocol-Locked Payload</p>
+                                  <p className="text-[8px] font-bold text-rose-400 uppercase tracking-widest">Platform-managed waiver</p>
                                 </div>
                               </div>
                             )}
@@ -886,7 +901,7 @@ export default function LeagueRegistrationAdminPage() {
                         <div className="space-y-3">
                            <div className="flex items-center justify-between px-2">
                               <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-900">Custom Waiver Text</Label>
-                              <Badge className="bg-rose-600 text-white border-none font-black uppercase text-[8px] h-5 px-2">Custom Injection</Badge>
+                              <Badge className="bg-rose-600 text-white border-none font-black uppercase text-[8px] h-5 px-2">Optional</Badge>
                            </div>
                            <Textarea 
                             value={localConfig?.custom_waiver_text || ''} 
@@ -896,7 +911,7 @@ export default function LeagueRegistrationAdminPage() {
                            />
                            <div className="flex items-center gap-2 justify-center mt-4">
                              <div className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
-                             <p className="text-[8px] font-black text-rose-400 uppercase tracking-widest">Permanent Record: Archive on Signature</p>
+                             <p className="text-[8px] font-black text-rose-400 uppercase tracking-widest">Stored with each signed response</p>
                            </div>
                         </div>
                       </div>
@@ -904,10 +919,10 @@ export default function LeagueRegistrationAdminPage() {
                       {!isStarter && <div className="space-y-8">
                          <div className="flex items-center justify-between px-1">
                             <div className="space-y-1">
-                               <p className="text-[11px] font-black uppercase text-rose-700 tracking-widest">Coaches Corner Libraries</p>
-                               <p className="text-[8px] font-bold text-rose-400 uppercase tracking-widest opacity-60">Syncing External Vaults</p>
+                               <p className="text-[11px] font-black uppercase text-rose-700 tracking-widest">Team Waiver Library</p>
+                               <p className="text-[8px] font-bold text-rose-400 uppercase tracking-widest opacity-60">Add waivers from connected teams</p>
                             </div>
-                            <Badge className="bg-rose-600 text-white border-none font-black uppercase text-[8px] h-6 px-3 shadow-lg shadow-rose-600/20">Sync v2.1</Badge>
+                            <Badge className="bg-rose-600 text-white border-none font-black uppercase text-[8px] h-6 px-3 shadow-lg shadow-rose-600/20">Available</Badge>
                          </div>
                          
                          <div className="space-y-4">
@@ -920,11 +935,11 @@ export default function LeagueRegistrationAdminPage() {
                                       <FileSignature className="h-6 w-6" />
                                     </div>
                                     <div className="flex flex-col gap-1 overflow-hidden">
-                                      <span className="text-[12px] font-black uppercase text-rose-900 truncate">{waiver?.title || "Unknown Specification"}</span>
+                                      <span className="text-[12px] font-black uppercase text-rose-900 truncate">{waiver?.title || "Untitled Waiver"}</span>
                                       <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="text-[7px] font-bold text-rose-400 p-0 border-none hover:bg-transparent uppercase tracking-widest">CRC-ENCRYPTED: {wid.slice(0, 12)}</Badge>
+                                        <Badge variant="outline" className="text-[7px] font-bold text-rose-400 p-0 border-none hover:bg-transparent uppercase tracking-widest">Waiver ID: {wid.slice(0, 12)}</Badge>
                                         <div className="h-1 w-1 rounded-full bg-rose-200" />
-                                        <span className="text-[7px] font-black text-rose-300 uppercase">Vault Ready</span>
+                                        <span className="text-[7px] font-black text-rose-300 uppercase">Ready to use</span>
                                       </div>
                                     </div>
                                   </div>
@@ -938,7 +953,7 @@ export default function LeagueRegistrationAdminPage() {
                                 <SelectTrigger className="rounded-[2.5rem] border-dashed border-2 h-20 text-[10px] font-black uppercase text-rose-400 bg-rose-50/10 hover:border-rose-400 hover:text-rose-600 transition-all hover:bg-rose-50/30">
                                   <div className="flex items-center gap-4 px-4">
                                     <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-rose-100"><Plus className="h-5 w-5" /></div>
-                                    <SelectValue placeholder="Inject Waiver from Coaches Corner" />
+                                    <SelectValue placeholder="Add a waiver from a connected team" />
                                   </div>
                                 </SelectTrigger>
                                 <SelectContent className="rounded-3xl shadow-2xl border-2 max-h-[400px]">
@@ -954,7 +969,7 @@ export default function LeagueRegistrationAdminPage() {
                               <div className="p-8 rounded-[2.5rem] bg-muted/20 border-2 border-transparent text-center space-y-4">
                                 <ShieldCheck className="h-10 w-10 mx-auto text-rose-200" />
                                 <p className="text-[9px] font-bold text-rose-400/60 uppercase tracking-tight px-6 italic leading-relaxed">
-                                  You are viewing active documents from the administrative team connected to this league. Injected waivers will appear as separate signing steps for participants.
+                                  These active documents come from teams connected to this league. Added waivers appear as separate signing steps for participants.
                                 </p>
                               </div>
                             </div>
@@ -979,12 +994,12 @@ export default function LeagueRegistrationAdminPage() {
                   <div className="flex items-center gap-4">
                     <div className="bg-green-600 p-3 rounded-2xl text-white shadow-lg"><Plus className="h-6 w-6" /></div>
                     <div>
-                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Additional Specs</CardTitle>
-                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-green-600 mt-1">Terminal Capture Extensions</CardDescription>
+                      <CardTitle className="text-2xl font-black uppercase tracking-tight">Additional Questions</CardTitle>
+                      <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-green-600 mt-1">Any other information you need</CardDescription>
                     </div>
                   </div>
                   <Button variant="outline" className="rounded-xl h-11 px-6 border-green-200 text-green-700 font-black uppercase text-[10px] shadow-sm hover:bg-green-50 transition-all hover:scale-105" onClick={() => setEditingField({ step: 'additional', type: 'short_text', required: false })}>
-                    <Plus className="h-4 w-4 mr-2" /> Inject Field
+                    <Plus className="h-4 w-4 mr-2" /> Add Question
                   </Button>
                 </CardHeader>
                 <CardContent className="p-8">
@@ -1015,7 +1030,7 @@ export default function LeagueRegistrationAdminPage() {
                     {((localConfig?.form_schema || []).filter(f => f.step === 'additional')).length === 0 && (
                       <div className="md:col-span-2 py-16 text-center border-2 border-dashed rounded-[3rem] border-green-100 bg-green-50/5">
                         <Sparkles className="h-10 w-10 mx-auto mb-4 opacity-10 text-green-600" />
-                        <p className="text-[10px] font-black uppercase text-green-400 tracking-[0.2em]">Awaiting Custom Spec Injection</p>
+                        <p className="text-[10px] font-black uppercase text-green-400 tracking-[0.2em]">No additional questions yet</p>
                       </div>
                     )}
                   </div>
@@ -1031,7 +1046,7 @@ export default function LeagueRegistrationAdminPage() {
         <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden max-w-sm">
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-6">
-              <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Field Architect</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Add Question</DialogTitle></DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-[10px] uppercase font-black ml-1">Field Label</Label>
@@ -1052,21 +1067,21 @@ export default function LeagueRegistrationAdminPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] uppercase font-black ml-1">Phase Placement</Label>
+                  <Label className="text-[10px] uppercase font-black ml-1">Form Section</Label>
                   <Select value={editingField?.step || 'identity'} onValueChange={(v: any) => setEditingField({ ...editingField, step: v })}>
                     <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-xl">
                       <SelectItem value="identity" className="font-bold text-[10px] uppercase">
-                        {pipelineType === 'player' ? 'Phase 2: Identity' : 'Step 2: Identity'}
+                        {pipelineType === 'player' ? 'Athlete Information' : 'Contact Information'}
                       </SelectItem>
                       {pipelineType === 'player' && (
                         <>
-                          <SelectItem value="guardian" className="font-bold text-[10px] uppercase">Phase 3: Guardian Bridge</SelectItem>
-                          <SelectItem value="team_code" className="font-bold text-[10px] uppercase">Phase 4: Synapse Dispatch</SelectItem>
+                          <SelectItem value="guardian" className="font-bold text-[10px] uppercase">Parent or Guardian Information</SelectItem>
+                          <SelectItem value="team_code" className="font-bold text-[10px] uppercase">Team Assignment</SelectItem>
                         </>
                       )}
                       <SelectItem value="additional" className="font-bold text-[10px] uppercase">
-                        {pipelineType === 'player' ? 'Phase 6: Additional specs' : 'Step 4: Additional specs'}
+                        Additional Questions
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -1079,10 +1094,10 @@ export default function LeagueRegistrationAdminPage() {
                 )}
                 <div className="flex items-center gap-2 pt-2">
                    <Checkbox id="req" checked={editingField?.required} onCheckedChange={(v) => setEditingField({...editingField, required: !!v})} className="rounded-md h-5 w-5 border-2" />
-                   <Label htmlFor="req" className="text-[10px] font-black uppercase">Mandatory Injection</Label>
+                   <Label htmlFor="req" className="text-[10px] font-black uppercase">Required Question</Label>
                 </div>
               </div>
-              <Button className="w-full h-14 rounded-2xl font-black uppercase shadow-xl" onClick={handleAddField} disabled={!editingField?.label}>Confirm Protocol Spec</Button>
+              <Button className="w-full h-14 rounded-2xl font-black uppercase shadow-xl" onClick={handleAddField} disabled={!editingField?.label}>Add Question</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1095,7 +1110,7 @@ export default function LeagueRegistrationAdminPage() {
             <div className="flex items-center gap-4">
               <div className="bg-primary p-3 rounded-2xl shrink-0"><Terminal className="h-5 w-5" /></div>
               <div>
-                <DialogTitle className="text-xl font-black uppercase tracking-tight text-white leading-none">Institutional Audit</DialogTitle>
+                <DialogTitle className="text-xl font-black uppercase tracking-tight text-white leading-none">Response Details</DialogTitle>
                 <DialogDescription className="text-white/50 text-[10px] font-black uppercase tracking-widest mt-0.5">
                   {inspectingEntry?.answers?.teamName || inspectingEntry?.answers?.team_name || inspectingEntry?.answers?.name || 'Entry Review'}
                 </DialogDescription>
@@ -1196,7 +1211,7 @@ export default function LeagueRegistrationAdminPage() {
               {/* ACTIONS */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t">
                 <div className="space-y-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Assign to Squad</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Assign to Team</p>
                   <Select
                     value={inspectingEntry?.assigned_team_id || 'unassigned'}
                     onValueChange={(tid) => {
@@ -1204,12 +1219,12 @@ export default function LeagueRegistrationAdminPage() {
                       assignEntryToTeam(leagueId as string, inspectingEntry.id, tid === 'unassigned' ? null : tid);
                     }}
                   >
-                    <SelectTrigger className="h-11 rounded-xl border-2 font-black text-sm"><SelectValue placeholder="Select Squad..." /></SelectTrigger>
+                    <SelectTrigger className="h-11 rounded-xl border-2 font-black text-sm"><SelectValue placeholder="Select Team..." /></SelectTrigger>
                     <SelectContent className="rounded-xl border-2">
                       <SelectItem value="unassigned" className="font-bold uppercase text-[10px]">Unassigned Pool</SelectItem>
                       {Object.entries((activeLeague?.teams || {})).map(([tid2, tdata]: [string, any]) => (
                         <SelectItem key={tid2} value={tid2} className="font-bold uppercase text-[10px]">
-                          {tdata.teamName || `Squad ${tid2.slice(-6)}`}
+                          {tdata.teamName || `Team ${tid2.slice(-6)}`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1248,7 +1263,7 @@ export default function LeagueRegistrationAdminPage() {
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase">
-                {manualFormType === 'team' ? "Manual Squad Enrollment" : "Manual Player Enrollment"}
+                {manualFormType === 'team' ? "Add Team Registration" : "Add Athlete Registration"}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-5">
@@ -1290,7 +1305,7 @@ export default function LeagueRegistrationAdminPage() {
             </div>
             <DialogFooter>
               <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleManualAdd} disabled={isManualProcessing}>
-                {isManualProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : manualFormType === 'team' ? "Inject Squad" : "Inject Player"}
+                {isManualProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : manualFormType === 'team' ? "Add Team" : "Add Athlete"}
               </Button>
             </DialogFooter>
           </div>

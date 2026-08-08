@@ -238,6 +238,7 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
             <Link href="/privacy" className="hover:text-primary">Privacy</Link>
             <Link href="/terms" className="hover:text-primary">Terms</Link>
             <Link href="/sports-hub" className="hover:text-primary">Sports Hub</Link>
+            <Link href="/sports" className="hover:text-primary">Sports</Link>
             <Link href="/pricing" className="hover:text-primary">Pricing</Link>
           </div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Built in Canada</p>

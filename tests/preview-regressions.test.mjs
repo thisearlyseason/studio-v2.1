@@ -55,10 +55,86 @@ test('recruitment page resolves the linked squad and requires confirmation', asy
   assert.match(page, /<AlertDialog/);
 });
 
+test('parent recruitment requires a child and preserves the invitation through family setup', async () => {
+  const signup = await readSource('../src/app/signup/page.tsx');
+  const join = await readSource('../src/app/(dashboard)/teams/join/page.tsx');
+  const family = await readSource('../src/app/(dashboard)/family/page.tsx');
+
+  assert.match(signup, /role === 'parent' && teamJoinPath/);
+  assert.match(signup, /family\?addChild=1&returnTo=/);
+  assert.match(join, /!isParent && <button/);
+  assert.match(join, /disabled=\{isJoining \|\| !effectivePlayerId\}/);
+  assert.match(family, /destination\.searchParams\.set\('playerId', cid\)/);
+});
+
+test('tournament and event registration responses are visible at their event-scoped organizer paths', async () => {
+  const publicAction = await readSource('../src/app/api/public/portals/action/route.ts');
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const tournament = await readSource('../src/app/(dashboard)/manage-tournaments/registration/[teamId]/[eventId]/page.tsx');
+  const publicTournament = await readSource('../src/app/register/tournament/[teamId]/[eventId]/page.tsx');
+  const eventDialog = await readSource('../src/app/(dashboard)/events/EventDetailDialog.tsx');
+
+  assert.match(publicAction, /entryParentRef = eventRef/);
+  assert.match(publicAction, /entryParentRef\.collection\('registrationEntries'\)/);
+  assert.match(provider, /collection\(entryParentRef, 'registrationEntries'\)/);
+  assert.match(tournament, /events', eventId as string, 'registrationEntries'/);
+  assert.match(tournament, /where\('event_id', '==', eventId as string\)/);
+  assert.match(tournament, /else if \(!isConfigLoading\)[\s\S]{0,500}is_active: false/);
+  assert.match(tournament, /form_schema: \[DIVISION_FIELD\]/);
+  assert.match(tournament, /Required Answer/);
+  assert.match(tournament, /Configure a question, answer type, form section/);
+  assert.match(tournament, /value=\{editingField\?\.type \|\| ''\}/);
+  assert.match(tournament, /BASE_REGISTRATION_ANSWER_LABELS/);
+  assert.match(tournament, /schemaField\?\.label/);
+  assert.match(tournament, /aria-label=\{`View registration for/);
+  assert.match(tournament, /aria-label=\{`Delete registration for/);
+  assert.match(tournament, /Delete the registration for \$\{teamName\}\? This cannot be undone\./);
+  for (const fieldType of ['long_text', 'dropdown', 'radio', 'checkbox', 'signature', 'information_box']) {
+    assert.match(publicTournament, new RegExp(`field\\.type === '${fieldType}'`));
+  }
+  assert.match(publicTournament, /validateCurrentStep/);
+  assert.match(publicAction, /requiredCore = \['teamName', 'name', 'email'\]/);
+  assert.match(publicAction, /Array\.isArray\(value\) \? value\.length === 0 : value !== true/);
+  assert.match(eventDialog, /value="responses"/);
+  assert.match(eventDialog, /'registrations'/);
+  assert.match(eventDialog, /<DialogDescription/);
+});
+
+test('public league registration uses server-mediated reads, lookups, and submissions', async () => {
+  const page = await readSource('../src/app/register/league/[leagueId]/page.tsx');
+  const portal = await readSource('../src/app/api/public/portals/route.ts');
+  const action = await readSource('../src/app/api/public/portals/action/route.ts');
+
+  assert.match(page, /kind=league-registration/);
+  assert.match(page, /kind: 'league',[\s\S]{0,100}action: 'lookup-team'/);
+  assert.match(page, /kind: 'league',[\s\S]{0,100}action: 'register'/);
+  assert.doesNotMatch(page, /redeemLeagueInvite|submitRegistrationEntry|useDoc</);
+  for (const fieldType of ['long_text', 'dropdown', 'radio', 'multi_select', 'checkbox', 'signature', 'information_box']) {
+    assert.match(page, new RegExp(`field\\.type === '${fieldType}'`));
+  }
+  assert.match(page, /Full Name <span/);
+  assert.match(page, /Date of Birth <span/);
+  assert.match(portal, /if \(!publicLeagueData\.isActive\)/);
+  assert.match(action, /where\('inviteCode', '==', teamCode\)/);
+  assert.match(action, /guardian_name.*guardian_email.*guardian_phone.*guardian_relationship/);
+  assert.match(action, /const requiredCore = registrationType === 'team'/);
+});
+
 test('demo batches stay below the rules-engine access-call ceiling', async () => {
   const source = await readSource('../src/lib/db-seeder.ts');
   assert.match(source, /CHUNK_SIZE = 5/);
   assert.match(source, /transientCodes/);
+});
+
+test('demo bootstrap creates the protected league before client blueprint enrichment', async () => {
+  const route = await readSource('../src/app/api/demo/seed/route.ts');
+  const seeder = await readSource('../src/lib/db-seeder.ts');
+
+  assert.match(route, /demo_league_\$\{uid\.slice\(-4\)\}/);
+  assert.match(route, /adminDb\.collection\('leagues'\)\.doc\(leagueId\)/);
+  assert.match(route, /creatorId: uid/);
+  assert.match(route, /memberUserIds: \[uid\]/);
+  assert.match(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 
 test('demo recruiting profiles stay private except for the public scout fixture', async () => {
@@ -353,6 +429,63 @@ test('Sports Hub exposes every category without horizontal scrolling and include
   assert.match(news, /flex flex-wrap gap-2/);
   assert.doesNotMatch(news, /overflow-x-auto pb-1/);
   assert.match(parentsPage, /parentArticles\.length/);
+});
+
+test('topic gap pages publish sport solutions and the recommended articles in the Youth Sports Hub', async () => {
+  const [
+    sportIndex,
+    sportLanding,
+    sportCatalog,
+    youthPage,
+    sectionNav,
+    sportsHubLayout,
+    articlePage,
+    sitemap,
+    audienceCatalog,
+    audiencePage,
+    rootLayout,
+  ] = await Promise.all([
+    readSource('../src/app/sports/page.tsx'),
+    readSource('../src/app/sports/[sport]/page.tsx'),
+    readSource('../src/lib/sport-landing.ts'),
+    readSource('../src/app/sports-hub/youth/page.tsx'),
+    readSource('../src/components/sports-hub/SectionNav.tsx'),
+    readSource('../src/components/sports-hub/SportsHubClientLayout.tsx'),
+    readSource('../src/app/sports-hub/articles/[slug]/page.tsx'),
+    readSource('../src/app/sitemap.ts'),
+    readSource('../src/lib/audience-landing.ts'),
+    readSource('../src/app/for/[audience]/page.tsx'),
+    readSource('../src/app/layout.tsx'),
+  ]);
+  const catalog = await import('../src/lib/sports-hub-articles.ts');
+
+  for (const slug of [
+    'how-to-run-a-youth-sports-camp',
+    'how-to-start-a-youth-sports-nonprofit',
+    'youth-sports-team-name-ideas',
+  ]) {
+    assert.equal(catalog.ARTICLES_DB[slug].section, 'youth');
+    assert.equal(catalog.ARTICLES_DB[slug].categories.includes('Youth Sports'), true);
+  }
+
+  assert.match(sportCatalog, /SPORT_SLUGS = \['soccer', 'basketball'\]/);
+  assert.match(sportIndex, /Sports management software by sport/i);
+  assert.match(sportLanding, /'@type': 'FAQPage'/);
+  assert.match(sportLanding, /'@type': 'SoftwareApplication'/);
+  assert.match(sportLanding, /priceCurrency: 'CAD'/);
+  assert.match(youthPage, /article\.section\.toLowerCase\(\) === 'youth'/);
+  assert.match(sectionNav, /name: 'Youth Sports', href: '\/sports-hub\/youth'/);
+  assert.match(sportsHubLayout, /\['Latest News', '\/sports-hub\/news'\]/);
+  assert.match(sportsHubLayout, /\['Youth Sports', '\/sports-hub\/youth'\]/);
+  assert.doesNotMatch(sportsHubLayout, /sports-hub\/latest-news/);
+  assert.match(articlePage, /youth: '\/sports-hub\/youth'/);
+  assert.match(articlePage, /timeZone: 'UTC'/);
+  assert.match(sitemap, /SPORT_SLUGS\.map/);
+  assert.match(sitemap, /path: '\/sports-hub\/youth'/);
+  assert.match(audienceCatalog, /seoTitle: 'Parks and Recreation Sports Management Software'/);
+  assert.match(audiencePage, /'@type': 'BreadcrumbList'/);
+  assert.match(rootLayout, /canonical: 'https:\/\/www\.thesquad\.pro'/);
+  assert.match(rootLayout, /priceCurrency: 'CAD'/);
 });
 
 test('the Elfsight chatbot and beta reporter are restricted to the landing page', async () => {

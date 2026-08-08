@@ -52,7 +52,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { format, differenceInYears, isFuture, isToday, isValid, parseISO, isAfter, startOfDay, isSameDay } from 'date-fns';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
@@ -783,10 +783,19 @@ export default function FamilyPage() {
   const db = useFirestore();
   const auth = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '', teamCode: '', email: '' });
+  const pendingReturnPath = useMemo(() => {
+    const value = searchParams.get('returnTo') || '';
+    return value.startsWith('/teams/join?') ? value : '';
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get('addChild') === '1') setIsAddOpen(true);
+  }, [searchParams]);
 
   // Single collectionGroup query is safe — the write side now always stamps
   // userId: firebaseUser.uid on every signature doc (both direct and parent-guardian),
@@ -923,6 +932,11 @@ export default function FamilyPage() {
 
       setIsAddOpen(false);
       setNewChild({ firstName: '', lastName: '', dob: '', teamCode: '', email: '' });
+      if (cid && pendingReturnPath) {
+        const destination = new URL(pendingReturnPath, window.location.origin);
+        destination.searchParams.set('playerId', cid);
+        router.push(`${destination.pathname}${destination.search}`);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -1225,8 +1239,14 @@ export default function FamilyPage() {
                     </p>
                   </div>
                 </div>
-                {/* Immediate Join Integration */}
-                <div className="space-y-2 pt-4 border-t border-dashed">
+                {pendingReturnPath ? (
+                  <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20 flex gap-3">
+                    <Users className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase leading-relaxed">
+                      After adding this athlete, you will return to the squad invitation with them selected.
+                    </p>
+                  </div>
+                ) : <div className="space-y-2 pt-4 border-t border-dashed">
                   <p className="text-[9px] font-black uppercase tracking-widest text-primary mb-2 flex items-center gap-1.5">
                     <Users className="h-3 w-3" /> Quick Squad Enrollment
                   </p>
@@ -1241,7 +1261,7 @@ export default function FamilyPage() {
                   <p className="text-[8px] font-bold text-muted-foreground uppercase leading-relaxed mt-1">
                     Enter a code provided by a coach to link this player immediately.
                   </p>
-                </div>
+                </div>}
               </div>
               <DialogFooter>
                 <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddChild} disabled={isProcessing}>

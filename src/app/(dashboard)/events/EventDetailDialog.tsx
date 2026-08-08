@@ -15,13 +15,17 @@ import {
   Dumbbell,
   Play,
   ArrowUpRight,
-  Loader2
+  Loader2,
+  Inbox,
+  Mail,
+  Phone
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { 
   Dialog, 
   DialogClose,
   DialogContent, 
+  DialogDescription,
   DialogTitle, 
   DialogTrigger 
 } from '@/components/ui/dialog';
@@ -38,6 +42,14 @@ import { cn } from '@/lib/utils';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
+
+type EventRegistration = {
+  name: string;
+  email: string;
+  phone: string;
+  status?: string;
+  responses?: Record<string, string | boolean>;
+};
 
 export const formatDateRange = (start: string | Date, end?: string | Date) => {
   const startDate = typeof start === 'string' ? (start.includes('T') ? parseISO(start) : new Date(start.replace(/-/g, '/'))) : start;
@@ -87,6 +99,17 @@ export function EventDetailDialog({
   const router = useRouter();
   const db = useFirestore();
 
+  const registrationsQuery = useMemoFirebase(() => {
+    const eventTeamId = event.teamId || activeTeam?.id;
+    if (!db || !eventTeamId || !event.id || !isStaff) return null;
+    return collection(db, 'teams', eventTeamId, 'events', event.id, 'registrations');
+  }, [activeTeam?.id, db, event.id, event.teamId, isStaff]);
+  const { data: eventRegistrations, isLoading: registrationsLoading } = useCollection<EventRegistration>(registrationsQuery);
+
+  const responseLabels = useMemo(() => new Map(
+    (event.customFormFields || []).map((field: any) => [String(field.id), String(field.label || field.id)])
+  ), [event.customFormFields]);
+
   const drillsQuery = useMemoFirebase(() => {
     if (!activeTeam?.id || !db || !event.drillIds?.length) return null;
     // Note: 'in' query limited to 30 items
@@ -129,6 +152,9 @@ export function EventDetailDialog({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-4xl w-[95vw] sm:w-[100vw] p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Event details, attendance, logistics, registration responses, and staff actions for {event.title}.
+        </DialogDescription>
         <DialogClose asChild>
           <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md transition-all">
             <X className="h-5 w-5" />
@@ -308,6 +334,11 @@ export function EventDetailDialog({
                   )}
                   <TabsTrigger value="plan" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0" disabled={!event.drillIds?.length}>Tactical Plan</TabsTrigger>
                   <TabsTrigger value="assignments" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Logistics</TabsTrigger>
+                  {isStaff && (
+                    <TabsTrigger value="responses" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">
+                      Responses{eventRegistrations?.length ? ` (${eventRegistrations.length})` : ''}
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="intel" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Briefing</TabsTrigger>
                 </TabsList>
               </div>
@@ -590,6 +621,53 @@ export function EventDetailDialog({
                     )}
                   </div>
                 </TabsContent>
+
+                {isStaff && (
+                  <TabsContent value="responses" className="mt-0 space-y-6 animate-in fade-in duration-300">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-xl text-primary"><Inbox className="h-5 w-5" /></div>
+                      <div>
+                        <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Registration Responses</h3>
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase mt-1">Submitted through the public event form</p>
+                      </div>
+                    </div>
+                    {registrationsLoading ? (
+                      <div className="py-12 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
+                    ) : eventRegistrations?.length ? (
+                      <div className="grid grid-cols-1 gap-4">
+                        {eventRegistrations.map(registration => (
+                          <div key={registration.id} className="p-5 rounded-2xl border bg-muted/10 space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                              <div>
+                                <p className="font-black text-sm uppercase tracking-tight">{registration.name}</p>
+                                <div className="flex flex-col gap-1 mt-2 text-[10px] font-bold text-muted-foreground">
+                                  <a className="flex items-center gap-2 hover:text-primary" href={`mailto:${registration.email}`}><Mail className="h-3 w-3" />{registration.email}</a>
+                                  <a className="flex items-center gap-2 hover:text-primary" href={`tel:${registration.phone}`}><Phone className="h-3 w-3" />{registration.phone}</a>
+                                </div>
+                              </div>
+                              <Badge variant="outline" className="w-fit text-[8px] font-black uppercase">{registration.status || 'pending'}</Badge>
+                            </div>
+                            {Object.entries(registration.responses || {}).length > 0 && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t">
+                                {Object.entries(registration.responses || {}).map(([fieldId, value]) => (
+                                  <div key={fieldId} className="space-y-1">
+                                    <p className="text-[8px] font-black uppercase text-muted-foreground">{responseLabels.get(fieldId) || fieldId.replace(/_/g, ' ')}</p>
+                                    <p className="text-xs font-bold leading-relaxed">{typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value || '--'}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-12 text-center bg-muted/10 rounded-[2rem] border-2 border-dashed">
+                        <Inbox className="h-8 w-8 mx-auto mb-3 text-muted-foreground/30" />
+                        <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">No registration responses yet</p>
+                      </div>
+                    )}
+                  </TabsContent>
+                )}
 
                 <TabsContent value="intel" className="mt-0 space-y-6 animate-in fade-in duration-300">
                   <div className="flex items-center gap-3">

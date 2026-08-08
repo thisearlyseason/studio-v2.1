@@ -291,6 +291,27 @@ service cloud.firestore {
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
         allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
 
+        // Registration forms and responses contain applicant contact details,
+        // so only the squad owner and staff may access them from the client.
+        match /registration/{configId} {
+          allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        }
+
+        match /registrationEntries/{entryId} {
+          allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        }
+
+        match /archived_waivers/{waiverId} {
+          allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        }
+
+        // Public event submissions are created by the Admin SDK. The client may
+        // display them to staff but may not forge or modify attendee responses.
+        match /registrations/{registrationId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
+        }
+
         match /brackets/{bracketId} {
           allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
           allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
@@ -431,13 +452,23 @@ service cloud.firestore {
         ) || isTeamOwner(teamId));
       }
 
+      // Compatibility path for tournament responses created before entries
+      // moved beneath their event. Keep applicant data staff-only.
+      match /registrationEntries/{entryId} {
+        allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+      }
+
+      match /archived_waivers/{waiverId} {
+        allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+      }
+
       match /{subCollection}/{docId} {
         // Do not let this compatibility fallback broaden any explicitly
         // authorized subcollection above. Firestore ORs overlapping matches.
         allow read: if !(subCollection in [
           'members', 'events', 'incidents', 'games', 'fundraising',
           'paymentItems', 'payments', 'alerts', 'groupChats',
-          'coachWaiverSignatures'
+          'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
         ]) && (
           isSuperAdmin() ||
           (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
@@ -445,7 +476,7 @@ service cloud.firestore {
         allow write: if !(subCollection in [
           'members', 'events', 'incidents', 'games', 'fundraising',
           'paymentItems', 'payments', 'alerts', 'groupChats',
-          'coachWaiverSignatures'
+          'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
         ]) && (
           isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))
         );

@@ -30,8 +30,8 @@ const SIGNUP_OPTIONS: { id: RegTarget; icon: any; label: string; desc: string; b
   {
     id: 'self',
     icon: User,
-    label: 'Player / Athlete',
-    desc: 'I am the player — join or get recruited',
+    label: 'Adult Athlete (18+)',
+    desc: 'Youth athletes activate an account from a parent or coach invitation',
     badge: 'Athlete Hub',
   },
   {
@@ -58,9 +58,9 @@ const SIGNUP_OPTIONS: { id: RegTarget; icon: any; label: string; desc: string; b
   {
     id: 'league_creator',
     icon: Medal,
-    label: 'League Organizer',
-    desc: 'I create and run leagues across teams',
-    badge: 'League Hub',
+    label: 'League / Tournament Organizer',
+    desc: 'I create and run leagues or tournaments',
+    badge: 'Competition Hub',
   },
 ];
 
@@ -214,11 +214,16 @@ export default function SignupPage() {
       };
       const role = roleMap[regTarget as string] || 'adult_player';
 
+      const teamJoinPath = joinCode.trim()
+        ? `/teams/join?code=${encodeURIComponent(joinCode.trim().toUpperCase())}`
+        : '';
       const postVerificationPath =
         planChoice && planChoice !== 'starter'
           ? '/pricing'
-          : joinCode.trim()
-            ? `/teams/join?code=${encodeURIComponent(joinCode.trim().toUpperCase())}`
+          : role === 'parent' && teamJoinPath
+            ? `/family?addChild=1&returnTo=${encodeURIComponent(teamJoinPath)}`
+          : teamJoinPath
+            ? teamJoinPath
             : role === 'parent'
               ? '/family'
               : role === 'league_creator'
@@ -456,6 +461,13 @@ export default function SignupPage() {
                   </button>
                 )}
               </div>
+
+              {regTarget === 'self' && (
+                <p className="text-center text-[10px] font-semibold text-muted-foreground leading-relaxed">
+                  Under 18? Youth accounts are activated from an invitation sent by a parent or coach.{' '}
+                  <Link href="/signup/youth" className="text-primary font-black hover:underline">Activate a youth invitation</Link>
+                </p>
+              )}
 
               <button
                 type="button"

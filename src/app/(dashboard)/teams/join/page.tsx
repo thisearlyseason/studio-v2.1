@@ -52,8 +52,8 @@ export default function JoinTeamPage() {
   
   const [teamCode, setTeamCode] = useState('');
   const [leagueCode, setLeagueCode] = useState('');
-  // 'self' means the signed-in user (player), or any child id for parent
-  const [selectedId, setSelectedId] = useState<'self' | string>('self');
+  // Parent accounts must select a child; only adult athletes may join as self.
+  const [selectedId, setSelectedId] = useState<string>('');
   const [isJoining, setIsJoining] = useState(false);
   const [isResolvingInvite, setIsResolvingInvite] = useState(false);
   const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
@@ -65,7 +65,13 @@ export default function JoinTeamPage() {
   // Build the effective player ID for the join call
   const effectivePlayerId = selectedId === 'self'
     ? `p_${user?.id}`
-    : selectedId; // child ID
+    : selectedId || null;
+
+  const addChildHref = useCallback(() => {
+    const code = teamCode.trim().toUpperCase();
+    const returnTo = code ? `/teams/join?code=${encodeURIComponent(code)}` : '/teams/join';
+    return `/family?addChild=1&returnTo=${encodeURIComponent(returnTo)}`;
+  }, [teamCode]);
 
   const resolveInvite = useCallback(async (rawCode: string, openConfirmation = true) => {
     const normalizedCode = rawCode.trim().toUpperCase();
@@ -101,8 +107,21 @@ export default function JoinTeamPage() {
     void resolveInvite(linkedCode);
   }, [resolveInvite, searchParams, user?.id]);
 
+  useEffect(() => {
+    if (isParent) {
+      const requestedPlayerId = searchParams.get('playerId');
+      setSelectedId(requestedPlayerId && myChildren.some(child => child.id === requestedPlayerId) ? requestedPlayerId : '');
+    } else if (isPlayer) {
+      setSelectedId('self');
+    }
+  }, [isParent, isPlayer, myChildren, searchParams]);
+
   const handleReviewTeam = async () => {
     if (!teamCode.trim()) return;
+    if (isParent && !hasChildren) {
+      router.push(addChildHref());
+      return;
+    }
     await resolveInvite(teamCode);
   };
 
@@ -114,7 +133,7 @@ export default function JoinTeamPage() {
     }
     setIsJoining(true);
     try {
-      const role = selectedId === 'self' ? (isParent ? 'Parent' : 'Player') : 'Player';
+      const role = selectedId === 'self' ? 'Player' : 'Player';
       const success = await joinTeamWithCode(teamCode.trim().toUpperCase(), effectivePlayerId, role);
       if (success) {
         setIsConfirmOpen(false);
@@ -162,12 +181,11 @@ export default function JoinTeamPage() {
             </CardHeader>
             <CardContent className="p-8 lg:p-10 pt-0 flex-1 space-y-6">
 
-              {/* Player selector — always shows signed-in user first, then children */}
+              {/* Adult athletes may select self; parents must select a child. */}
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Enrolling As</Label>
                 <div className="space-y-2">
-                  {/* Signed-in user row */}
-                  <button
+                  {!isParent && <button
                     onClick={() => setSelectedId('self')}
                     className={cn(
                       "w-full flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all text-left",
@@ -192,7 +210,7 @@ export default function JoinTeamPage() {
                       </Badge>
                       {selectedId === 'self' && <CheckCircle2 className="h-4 w-4 text-primary" />}
                     </div>
-                  </button>
+                  </button>}
 
                   {/* Children rows (parents only) */}
                   {isParent && hasChildren && myChildren.map(child => (
@@ -226,7 +244,7 @@ export default function JoinTeamPage() {
                       <p className="text-[10px] font-bold text-center text-muted-foreground uppercase leading-relaxed">
                         Add children to your Family Hub to enroll them.
                       </p>
-                      <Button variant="outline" size="sm" onClick={() => router.push('/family')} className="h-8 rounded-lg text-[8px] font-black uppercase">
+                      <Button variant="outline" size="sm" onClick={() => router.push(addChildHref())} className="h-8 rounded-lg text-[8px] font-black uppercase">
                         <Plus className="h-3 w-3 mr-1" /> Add Child
                       </Button>
                     </div>
@@ -362,7 +380,7 @@ export default function JoinTeamPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isJoining}>Cancel</AlertDialogCancel>
             {isAthlete && (
-              <AlertDialogAction onClick={handleJoinTeam} disabled={isJoining}>
+              <AlertDialogAction onClick={handleJoinTeam} disabled={isJoining || !effectivePlayerId}>
                 {isJoining ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Join Squad'}
               </AlertDialogAction>
             )}

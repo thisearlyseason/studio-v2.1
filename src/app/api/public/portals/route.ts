@@ -37,11 +37,13 @@ export async function GET(req: NextRequest) {
       if (creator?.exists && !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
+      const publicLeagueData = publicLeague(league.id, league.data());
+      if (!publicLeagueData.isActive) return NextResponse.json({ error: 'League portal is inactive.' }, { status: 404 });
       const config = await league.ref.collection('registration').doc(protocolId).get();
       if (!config.exists || config.data()?.is_active !== true) {
         return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 404 });
       }
-      return NextResponse.json({ data: { league: publicLeague(league.id, league.data()), config: publicRegistrationConfig(config.id, config.data()) } });
+      return NextResponse.json({ data: { league: publicLeagueData, config: publicRegistrationConfig(config.id, config.data()) } });
     }
 
     if (kind === 'tournament-registration') {
