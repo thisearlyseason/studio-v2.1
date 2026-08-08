@@ -98,6 +98,7 @@ test('terms match the current CAD checkout contract without stale hardcoded pric
 });
 
 test('staging deployment fails closed when App Hosting is linked to another repository', async () => {
+  const ciWorkflow = await readSource('../.github/workflows/ci.yml');
   const workflow = await readSource('../.github/workflows/deploy-staging.yml');
   const runbook = await readSource('../docs/release-runbook.md');
   const firebaseProjects = JSON.parse(await readSource('../.firebaserc'));
@@ -112,4 +113,7 @@ test('staging deployment fails closed when App Hosting is linked to another repo
   assert.match(runbook, /GitHub account `thisearlyseason`/);
   assert.match(runbook, /Stripe test-mode products and webhooks/);
   assert.equal(firebaseProjects.projects.staging, 'the-squad-v2-staging');
+  assert.doesNotMatch(`${ciWorkflow}\n${workflow}`, /actions\/(?:checkout|setup-node)@v4/);
+  assert.doesNotMatch(`${ciWorkflow}\n${workflow}`, /actions\/setup-java@v4/);
+  assert.match(workflow, /google-github-actions\/auth@v3/);
 });
