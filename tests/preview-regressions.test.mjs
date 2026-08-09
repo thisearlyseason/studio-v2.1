@@ -242,6 +242,21 @@ test('chat controls have a functional menu trigger and accessible names', async 
   }
 });
 
+test('member-filtered chat lists declare their sorting index', async () => {
+  const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
+  const chatIndex = indexes.indexes.find(index =>
+    index.collectionGroup === 'groupChats' && index.queryScope === 'COLLECTION'
+  );
+
+  assert.ok(chatIndex);
+  assert.ok(chatIndex.fields.some(field =>
+    field.fieldPath === 'memberIds' && field.arrayConfig === 'CONTAINS'
+  ));
+  assert.ok(chatIndex.fields.some(field =>
+    field.fieldPath === 'createdAt' && field.order === 'DESCENDING'
+  ));
+});
+
 test('family signature lookups declare their collection-group indexes', async () => {
   const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
 
