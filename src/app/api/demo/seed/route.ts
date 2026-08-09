@@ -71,6 +71,27 @@ export async function POST(req: NextRequest) {
         createdAt: now,
         updatedAt: now,
       }, { merge: true });
+
+      // Chat messages are server-authored in production. Seed the deterministic
+      // demo conversation here so the client blueprint never has to bypass the
+      // protected message-create route.
+      const demoMessages = [
+        { chatId: `chat1_${shell.id}`, id: `msg1_${shell.id}`, author: 'Head Coach', authorId: `u1_${shell.id}`, content: 'Ready for the tournament this weekend! Brackets are live.' },
+        { chatId: `chat1_${shell.id}`, id: `msg2_${shell.id}`, author: 'Team Player', authorId: `u3_${shell.id}`, content: 'Practiced all morning. See everyone there.' },
+        { chatId: `chat1_${shell.id}`, id: `msg3_${shell.id}`, author: 'Team Player', authorId: `u4_${shell.id}`, content: 'Can someone share the updated game plan?' },
+        { chatId: `chat1_${shell.id}`, id: `msg4_${shell.id}`, author: 'Head Coach', authorId: `u1_${shell.id}`, content: 'The new Playbook drills are mandatory viewing.' },
+        { chatId: `chat2_${shell.id}`, id: `coachmsg1_${shell.id}`, author: 'Head Coach', authorId: `u1_${shell.id}`, content: 'Reviewing film from the last game. Defense was excellent.' },
+        { chatId: `chat2_${shell.id}`, id: `coachmsg2_${shell.id}`, author: 'Assistant Coach', authorId: `u2_${shell.id}`, content: 'Agreed. Transition attack needs work this week.' },
+      ];
+      for (const message of demoMessages) {
+        const { chatId, ...messageData } = message;
+        batch.set(teamRef.collection('groupChats').doc(chatId).collection('messages').doc(message.id), {
+          ...messageData,
+          type: 'text',
+          createdAt: now,
+          isDemo: true,
+        });
+      }
     }
 
     // League documents are server-created in production. Bootstrap the demo

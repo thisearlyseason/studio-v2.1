@@ -888,7 +888,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             await batch.flush();
             data.chats.forEach(c => {
               batch.set(doc(db, 'teams', v.id, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: v.id, createdAt: c.createdAt }));
-              c.messages.forEach(m => batch.set(doc(db, 'teams', v.id, 'groupChats', c.id, 'messages', m.id), clean(m)));
             });
             await batch.flush();
         }
@@ -1303,7 +1302,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         await batch.flush();
         data.chats.forEach(c => {
             batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt, isDemo: true }));
-            c.messages.forEach(m => batch.set(doc(db, 'teams', teamId, 'groupChats', c.id, 'messages', m.id), clean({ ...m, isDemo: true })));
         });
         await batch.flush();
     }
