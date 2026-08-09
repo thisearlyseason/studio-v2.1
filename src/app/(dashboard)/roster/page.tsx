@@ -1056,7 +1056,7 @@ export default function RosterPage() {
                         {isStaff && <p className="text-[9px] font-bold text-muted-foreground opacity-40 uppercase tracking-widest">Edit skills in Pack Architect (Coaches Corner &rarr; Recruit tab &rarr; Skills)</p>}
                       </div>
                     )}
-                    {selectedMember.playerId && (
+                    {selectedMember.playerId && selectedMember.recruitingProfileEnabled === true && (
                       <a href={`/recruit/player/${selectedMember.playerId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-primary hover:underline pt-2">
                         <ExternalLink className="h-3 w-3" /> View Public Scout Portal
                       </a>

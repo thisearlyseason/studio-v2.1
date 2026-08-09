@@ -166,7 +166,7 @@ export default function PublicScorekeeperHub() {
           ))}
         </div>
       </div>
-      <p className="mt-12 text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-40">Official Result Ledger v1.0 • Powered by SquadForge</p>
+      <p className="mt-12 text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-40">Official Result Ledger v1.0 • Powered by The Squad</p>
     </div>
   );
 }

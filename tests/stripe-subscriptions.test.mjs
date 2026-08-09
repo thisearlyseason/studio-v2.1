@@ -132,7 +132,7 @@ function subscription(status, priceId = teamMonthlyPrice, extras = 0, created = 
   };
 }
 
-for (const status of ['active', 'trialing', 'past_due']) {
+for (const status of ['active', 'trialing']) {
   test(`${status} subscriptions retain paid entitlements and add-on teams`, () => {
     assert.deepEqual(resolveSubscriptionEntitlements(subscription(status, eliteAnnualPrice, 3)), {
       planType: 'elite', teamLimit: 11, extraTeams: 3,
@@ -141,7 +141,7 @@ for (const status of ['active', 'trialing', 'past_due']) {
   });
 }
 
-for (const status of ['incomplete', 'incomplete_expired', 'canceled', 'unpaid', 'paused']) {
+for (const status of ['past_due', 'incomplete', 'incomplete_expired', 'canceled', 'unpaid', 'paused']) {
   test(`${status} subscriptions cannot grant paid entitlements`, () => {
     assert.deepEqual(resolveSubscriptionEntitlements(subscription(status, eliteAnnualPrice, 3)), {
       planType: 'free', teamLimit: 1, extraTeams: 0,

@@ -20,6 +20,8 @@ function isProtectedPath(pathname: string) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-squad-pathname', pathname)
   
   // 1. Mitigate log noise from common bot probes (WordPress, PHP, Env files)
   const botProbes = [
@@ -74,7 +76,7 @@ export async function middleware(request: NextRequest) {
     }
   }
  
-  return NextResponse.next()
+  return NextResponse.next({ request: { headers: requestHeaders } })
 }
 
 export const config = {

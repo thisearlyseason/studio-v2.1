@@ -126,6 +126,15 @@ beforeEach(async () => {
         authorId: 'owner',
         text: 'private',
       }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat'), {
+        createdBy: 'owner',
+        memberIds: ['owner', 'staff'],
+        staffOnly: true,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat', 'messages', 'staff-message'), {
+        authorId: 'owner',
+        text: 'staff only',
+      }),
       setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a'), {
         title: 'Open Tryout',
       }),
@@ -583,6 +592,14 @@ test('team chat messages are server-authored and cannot be impersonated by clien
     'messages',
     'existing',
   )));
+});
+
+test('parents and players cannot read staff-only channels or their messages', async () => {
+  for (const uid of ['member', 'youth']) {
+    const db = authenticatedDb(uid);
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat')));
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat', 'messages', 'staff-message')));
+  }
 });
 
 test('team alert audiences and targets are enforced by rules, not only the UI', async () => {

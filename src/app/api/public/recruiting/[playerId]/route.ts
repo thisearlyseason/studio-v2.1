@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { buildPublicRecruitingProfile } from '@/lib/public-recruiting-profile';
 import { enforcePublicRateLimit } from '@/lib/server-request-guards';
-
-const PLAYER_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+import { isValidFirestoreDocumentId } from '@/lib/firestore-document-id';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ playerId: string }> },
 ) {
   const { playerId } = await params;
-  if (!PLAYER_ID_PATTERN.test(playerId)) {
-    return NextResponse.json({ error: 'Profile not found.' }, { status: 404 });
+  if (!isValidFirestoreDocumentId(playerId)) {
+    return NextResponse.json({ error: 'A valid profile ID is required.' }, { status: 400 });
   }
 
   const rateLimit = await enforcePublicRateLimit(request, 'recruiting-profile', 120, 15 * 60 * 1000, playerId);

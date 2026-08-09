@@ -101,7 +101,7 @@ function PDFTemplate({ title, description, category, content, tags }: Omit<Props
             {today}
           </div>
           <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.55)' }}>
-            thesquad.app/sports-hub
+            www.thesquad.pro/sports-hub
           </div>
         </div>
       </div>
@@ -198,7 +198,7 @@ function PDFTemplate({ title, description, category, content, tags }: Omit<Props
           © {new Date().getFullYear()} The Squad · Free to use, not for resale
         </span>
         <span style={{ fontSize: '8px', color: BRAND_GRAY }}>
-          thesquad.app/sports-hub/playbook
+          www.thesquad.pro/sports-hub/playbook
         </span>
       </div>
     </div>

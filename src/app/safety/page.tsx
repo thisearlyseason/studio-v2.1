@@ -47,7 +47,7 @@ export default function SafetyCenterPage() {
               <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center text-green-600">
                 <ShieldCheck className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold">Verified Membership</h3>
+              <h2 className="text-xl font-bold">Verified Membership</h2>
               <p className="text-muted-foreground leading-relaxed">
                 Teams are private hubs. Access is only granted via a unique 6-character team code provided by your coach or admin. Never share your team code publicly.
               </p>
@@ -59,7 +59,7 @@ export default function SafetyCenterPage() {
               <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
                 <Users className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold">Role-Based Controls</h3>
+              <h2 className="text-xl font-bold">Role-Based Controls</h2>
               <p className="text-muted-foreground leading-relaxed">
                 Coaches and Admins have full control over the roster. They can manage member roles, remove users, and moderate content to ensure a safe team environment.
               </p>
@@ -71,7 +71,7 @@ export default function SafetyCenterPage() {
               <div className="w-12 h-12 bg-purple-100 rounded-2xl flex items-center justify-center text-purple-600">
                 <MessageSquare className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold">Safe Communication</h3>
+              <h2 className="text-xl font-bold">Safe Communication</h2>
               <p className="text-muted-foreground leading-relaxed">
                 Our group chats are designed for team coordination. We encourage respectful dialogue. Harassment or bullying is strictly prohibited and should be reported to team leadership.
               </p>
@@ -83,7 +83,7 @@ export default function SafetyCenterPage() {
               <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
                 <AlertTriangle className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold">Reporting Issues</h3>
+              <h2 className="text-xl font-bold">Reporting Issues</h2>
               <p className="text-muted-foreground leading-relaxed">
                 If you encounter inappropriate behavior or a security concern, please notify your team admin immediately or contact our safety team at <strong>safety@thesquad.pro</strong>.
               </p>

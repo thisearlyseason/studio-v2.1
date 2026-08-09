@@ -996,10 +996,10 @@ export default function FamilyPage() {
 
     const enrollmentTotal = enrollmentItems.reduce((s, i) => s + i.amount, 0);
     const duesTotal = dueItems.reduce((s, i) => s + i.amount, 0);
-    const grandTotal = enrollmentTotal + duesTotal;
+    const grandTotal = householdBalance;
 
     return { enrollmentItems, dueItems, enrollmentTotal, duesTotal, grandTotal };
-  }, [myChildren, teams]);
+  }, [householdBalance, myChildren, teams]);
 
   const upcomingEvents = useMemo(() => {
     const rawEvents = householdEvents || [];

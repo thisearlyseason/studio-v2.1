@@ -177,10 +177,15 @@ export default function TeamProfilePage() {
     );
   }
 
-  const isAdmin = activeTeam?.role === 'Admin' || isSuperAdmin;
+  const isAdmin = isStaff || isSuperAdmin;
   const activePlan = plans.find(p => p.id === activeTeam.planId);
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isStaff && !isSuperAdmin) {
+      toast({ title: 'Staff Access Required', description: 'Only squad staff can update branding.', variant: 'destructive' });
+      e.target.value = '';
+      return;
+    }
     if (e.target.files && e.target.files[0] && activeTeam?.id) {
       setIsUpdatingLogo(true);
       try {
@@ -507,7 +512,7 @@ export default function TeamProfilePage() {
             </Card>
           )}
 
-          <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
+          {isAdmin && <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
             <CardHeader className="bg-primary p-8 text-white">
               <div className="flex items-center gap-4">
                  <div className="bg-white/20 p-3 rounded-2xl"><Camera className="h-6 w-6" /></div>
@@ -576,7 +581,7 @@ export default function TeamProfilePage() {
                   </div>
                </div>
             </CardContent>
-          </Card>
+          </Card>}
 
           <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
             <CardHeader className="bg-primary/5 border-b border-primary/5">

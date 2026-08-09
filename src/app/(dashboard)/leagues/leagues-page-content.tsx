@@ -2711,10 +2711,14 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6 text-foreground">
           <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl"><Shield className="h-10 w-10 text-primary opacity-20" /></div>
           <div className="space-y-2">
-            <h3 className="text-2xl font-black uppercase">No Competitive Enrollment</h3>
-            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">Initialize your own {leagueLabel.toLowerCase()} architect to begin the competitive season.</p>
+            <h3 className="text-2xl font-black uppercase">{leagues.length > 0 ? `Select a ${leagueLabel}` : 'No Competitive Enrollment'}</h3>
+            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">
+              {leagues.length > 0
+                ? `Choose an existing ${leagueLabel.toLowerCase()} above to open its operations hub.`
+                : `Initialize your own ${leagueLabel.toLowerCase()} architect to begin the competitive season.`}
+            </p>
           </div>
-          {canCreateLeague && (
+          {canCreateLeague && leagues.length === 0 && (
             <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Initialize Free {leagueLabel}</Button>
           )}
         </div>

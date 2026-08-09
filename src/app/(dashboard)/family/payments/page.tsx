@@ -21,6 +21,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { format, parseISO } from 'date-fns';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
+import { calculateHouseholdPayments } from '@/lib/household-payments';
 
 const STATUS_CONFIG = {
   paid: { label: 'PAID', icon: CheckCircle2, bg: 'bg-green-500/10', text: 'text-green-600', border: 'border-green-200' },
@@ -98,14 +99,12 @@ export default function PaymentsPage() {
   const payments = useMemo(() => rawPayments || [], [rawPayments]);
 
   const stats = useMemo(() => {
-    const paid = payments.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
-    const outstanding = payments.filter(p => p.status !== 'paid').reduce((s, p) => s + p.amount, 0);
-    const overdue = payments.filter(p => p.status === 'overdue').reduce((s, p) => s + p.amount, 0);
-    const nextDue = payments
-      .filter(p => p.status === 'pending' && p.dueDate)
-      .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!))
-      .at(0);
-    return { paid, outstanding, overdue, nextDue };
+    return calculateHouseholdPayments(payments) as {
+      paid: number;
+      outstanding: number;
+      overdue: number;
+      nextDue?: Payment;
+    };
   }, [payments]);
 
   const filtered = useMemo(() => {

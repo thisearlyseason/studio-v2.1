@@ -55,6 +55,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
+import { hasStaffRole } from '@/lib/staff-position';
 
 const RSVP_STATUSES = [
   { id: 'going', label: 'Going', icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-500/10' },
@@ -103,8 +104,7 @@ export default function AttendanceTrackingPage() {
 
   // Player roster pipeline
   const athletes = useMemo(() => {
-    const coachPositions = ['Coach', 'Assistant Coach', 'Manager', 'Staff', 'Athletic Director'];
-    return members.filter(m => !coachPositions.includes(m.position))
+    return members.filter(m => !hasStaffRole(m))
       .filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [members, searchTerm]);

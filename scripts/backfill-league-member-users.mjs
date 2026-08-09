@@ -17,9 +17,25 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
-const leagues = await db.collection('leagues').get();
 let membershipChanges = 0;
-let publicViewCreates = 0;
+let publicViewWrites = 0;
+let stalePublicViewDeletes = 0;
+
+const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+async function withQuotaRetry(operation, attempt = 0) {
+  try {
+    return await operation();
+  } catch (error) {
+    const retryable = error?.code === 8 || error?.code === 10 || error?.code === 14;
+    if (!retryable || attempt >= 7) throw error;
+    const delay = Math.min(500 * (2 ** attempt), 15_000) + Math.floor(Math.random() * 250);
+    await sleep(delay);
+    return withQuotaRetry(operation, attempt + 1);
+  }
+}
+
+const leagues = await withQuotaRetry(() => db.collection('leagues').get());
 
 function publicLeagueView(leagueId, data) {
   const teams = Object.fromEntries(Object.entries(data.teams || {}).map(([teamId, team]) => [teamId, {
@@ -54,7 +70,7 @@ async function inspectLeague(league) {
 
   for (const teamId of data.memberTeamIds || []) {
     if (teamId.startsWith('manual_') || teamId.startsWith('recruit_')) continue;
-    const members = await db.collection('teams').doc(teamId).collection('members').get();
+    const members = await withQuotaRetry(() => db.collection('teams').doc(teamId).collection('members').get());
     members.forEach(member => {
       const uid = member.data().userId;
       if (uid) memberUserIds.add(uid);
@@ -62,29 +78,42 @@ async function inspectLeague(league) {
   }
 
   const next = [...memberUserIds].sort();
-  const previous = [...(data.memberUserIds || [])].sort();
-  const needsMembershipUpdate = JSON.stringify(next) !== JSON.stringify(previous);
+  const hasMembershipCache = Array.isArray(data.memberUserIds);
+  const previous = [...(hasMembershipCache ? data.memberUserIds : [])].sort();
+  const needsMembershipUpdate = !hasMembershipCache || JSON.stringify(next) !== JSON.stringify(previous);
   const publicViewRef = db.collection('publicLeagueViews').doc(league.id);
-  const publicViewExists = (await publicViewRef.get()).exists;
+  const publicViewExists = verbose
+    ? (await withQuotaRetry(() => publicViewRef.get())).exists
+    : undefined;
 
   if (needsMembershipUpdate) {
     membershipChanges += 1;
     if (verbose) console.log(`${apply ? 'Updating' : 'Would update'} ${league.id}: ${next.length} member users`);
   }
-  if (!publicViewExists) {
-    publicViewCreates += 1;
-    if (verbose) console.log(`${apply ? 'Creating' : 'Would create'} public spectator view for ${league.id}`);
-  }
+  publicViewWrites += 1;
+  if (verbose) console.log(`${apply ? 'Writing' : 'Would write'} ${publicViewExists ? 'updated' : 'new'} public spectator view for ${league.id}`);
   if (apply) {
-    if (needsMembershipUpdate) await league.ref.update({ memberUserIds: next });
-    if (!publicViewExists) await publicViewRef.set(publicLeagueView(league.id, data));
+    if (needsMembershipUpdate) {
+      await withQuotaRetry(() => league.ref.update({ memberUserIds: next }));
+    }
+    await withQuotaRetry(() => publicViewRef.set(publicLeagueView(league.id, data)));
   }
 }
 
-// Limit concurrent reads to keep the audit quick without overwhelming Firestore.
-const CONCURRENCY = 20;
+// Production writes use lower concurrency so a large recovery stays below the
+// Firestore burst quota. Retry handles brief throttling and transport failures.
+const CONCURRENCY = apply ? 4 : 10;
 for (let index = 0; index < leagues.docs.length; index += CONCURRENCY) {
   await Promise.all(leagues.docs.slice(index, index + CONCURRENCY).map(inspectLeague));
 }
 
-console.log(`${apply ? 'Updated' : 'Dry run found'} ${membershipChanges} membership records and ${publicViewCreates} public spectator records to create.`);
+const leagueIds = new Set(leagues.docs.map(league => league.id));
+const publicViews = await withQuotaRetry(() => db.collection('publicLeagueViews').get());
+for (const publicView of publicViews.docs) {
+  if (leagueIds.has(publicView.id)) continue;
+  stalePublicViewDeletes += 1;
+  if (verbose) console.log(`${apply ? 'Deleting' : 'Would delete'} stale spectator view ${publicView.id}`);
+  if (apply) await withQuotaRetry(() => publicView.ref.delete());
+}
+
+console.log(`${apply ? 'Updated' : 'Dry run found'} ${membershipChanges} membership records, ${publicViewWrites} spectator projections to write, and ${stalePublicViewDeletes} stale projections to delete.`);

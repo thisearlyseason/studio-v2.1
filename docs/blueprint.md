@@ -1,4 +1,4 @@
-# **App Name**: SquadForge
+# **App Name**: The Squad
 
 ## Core Features:
 

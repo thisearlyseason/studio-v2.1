@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-
-function cleanId(value: string): string | null {
-  return /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : null;
-}
+import { validFirestoreDocumentId } from '@/lib/firestore-document-id';
 
 function publicGame(game: Record<string, any>) {
   return {
@@ -44,10 +41,10 @@ export async function GET(
 ) {
   try {
     const params = await context.params;
-    const teamId = cleanId(params.teamId);
-    const eventId = cleanId(params.eventId);
+    const teamId = validFirestoreDocumentId(params.teamId);
+    const eventId = validFirestoreDocumentId(params.eventId);
     if (!teamId || !eventId) {
-      return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 });
+      return NextResponse.json({ error: 'Valid team and tournament IDs are required.' }, { status: 400 });
     }
 
     const snapshot = await adminDb

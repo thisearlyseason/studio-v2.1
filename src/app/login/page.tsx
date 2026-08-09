@@ -98,10 +98,10 @@ export default function LoginPage() {
               router.push('/dashboard');
             }
           } else {
-            router.push('/dashboard');
+            router.push('/onboarding');
           }
         } catch (e) {
-          router.push('/dashboard');
+          router.push('/onboarding');
         } finally {
           setIsLoading(false);
         }
@@ -273,6 +273,7 @@ export default function LoginPage() {
                     <Input
                       id="forgot-email"
                       type="email"
+                      autoComplete="email"
                       placeholder="name@organization.com"
                       required
                       autoFocus
@@ -344,6 +345,7 @@ export default function LoginPage() {
                 <Input 
                   id="email" 
                   type="email" 
+                  autoComplete="email"
                   placeholder="name@organization.com" 
                   required 
                   value={email}
@@ -360,6 +362,7 @@ export default function LoginPage() {
                   <Input 
                     id="password" 
                     type={showPassword ? "text" : "password"} 
+                    autoComplete="current-password"
                     required 
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

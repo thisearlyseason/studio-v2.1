@@ -495,6 +495,8 @@ exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)({
 exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)({
     schedule: 'every 15 minutes',
     region: 'us-central1',
+    timeoutSeconds: 540,
+    memory: '512MiB',
 }, async () => {
     const auth = admin.auth();
     const DEMO_LIFETIME_MS = 15 * 60 * 1000;
@@ -515,29 +517,54 @@ exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)({
                 }
             });
             if (usersToDelete.length > 0) {
-                // Delete Auth accounts
-                await auth.deleteUsers(usersToDelete);
-                // Recursively delete all Firestore data for each user
-                // This includes teams, events, members, and all subcollections
-                await Promise.allSettled(usersToDelete.map(async (uid) => {
+                // Keep the Auth identity until its data is gone. A failed Firestore
+                // operation then remains discoverable and can be retried next run.
+                for (const uid of usersToDelete) {
                     try {
-                        // Delete user doc + all subcollections recursively
-                        await db.recursiveDelete(db.collection('users').doc(uid));
-                        // Delete all teams owned by this user
-                        const [ownedTeamsSnap, demoTeamsSnap] = await Promise.all([
+                        const [ownedTeamsSnap, demoTeamsSnap, leaguesSnap, playersSnap, facilitiesSnap] = await Promise.all([
                             db.collection('teams').where('ownerUserId', '==', uid).get(),
                             db.collection('teams').where('demoSessionOwnerId', '==', uid).get(),
+                            db.collection('leagues').where('creatorId', '==', uid).get(),
+                            db.collection('players').where('demoOwnerUserId', '==', uid).get(),
+                            db.collection('facilities').where('clubId', '==', uid).get(),
                         ]);
                         const teams = new Map();
                         ownedTeamsSnap.docs.forEach((team) => teams.set(team.id, team));
                         demoTeamsSnap.docs.forEach((team) => teams.set(team.id, team));
-                        await Promise.allSettled([...teams.values()].map(teamDoc => db.recursiveDelete(teamDoc.ref)));
+                        for (const team of teams.values()) {
+                            if (team.data().isDemo === true || team.data().demoSessionOwnerId === uid) {
+                                await db.recursiveDelete(team.ref);
+                            }
+                        }
+                        for (const league of leaguesSnap.docs) {
+                            if (league.data().isDemo !== true)
+                                continue;
+                            await db.recursiveDelete(league.ref);
+                            await db.collection('publicLeagueViews').doc(league.id).delete();
+                        }
+                        for (const player of playersSnap.docs) {
+                            if (player.data().isDemo === true)
+                                await db.recursiveDelete(player.ref);
+                        }
+                        for (const facility of facilitiesSnap.docs) {
+                            if (facility.data().isDemo === true)
+                                await db.recursiveDelete(facility.ref);
+                        }
+                        await db.recursiveDelete(db.collection('users').doc(uid));
+                        try {
+                            await auth.deleteUser(uid);
+                        }
+                        catch (error) {
+                            if (error.code !== 'auth/user-not-found')
+                                throw error;
+                        }
+                        deletedCount += 1;
                     }
-                    catch (err) {
-                        console.error(`[cleanup] Failed to delete data for uid ${uid}:`, err.message);
+                    catch (error) {
+                        const message = error instanceof Error ? error.message : String(error);
+                        console.error(`[cleanup] Failed to delete data for uid ${uid}:`, message);
                     }
-                }));
-                deletedCount += usersToDelete.length;
+                }
             }
             pageToken = listUsersResult.pageToken;
         } while (pageToken);

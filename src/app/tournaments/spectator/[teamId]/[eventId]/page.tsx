@@ -474,7 +474,7 @@ export default function PublicSpectatorHub() {
     </div>
 
       <footer className="mt-16 lg:mt-24 text-center">
-        <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-40">The Squad Coordination Hub v1.0 • Powered by SquadForge</p>
+        <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-40">The Squad Coordination Hub v1.0 • Powered by The Squad</p>
       </footer>
     </div>
   );

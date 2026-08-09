@@ -5,6 +5,7 @@ import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStora
 import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
+import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 
 /**
  * Dispatch push + email notifications to all team members.
@@ -213,6 +214,7 @@ export type PlayerStat = {
   season: string;
   gamesPlayed: number;
   points: number;
+  pointsPerSlot?: number;
   assists: number;
   efficiency?: number;
   [key: string]: any;
@@ -362,6 +364,7 @@ export type Member = {
   email?: string;
   skills?: string[];
   achievements?: string[];
+  recruitingProfileEnabled?: boolean;
   schoolId?: string;
   signatures?: Record<string, any>;
   volunteerPoints?: number;
@@ -992,7 +995,7 @@ interface TeamContextType {
   updateChild: (childId: string, updates: Partial<PlayerProfile>) => Promise<void>;
   sendChildInvite: (child: PlayerProfile, email: string) => Promise<string | null>;
   revokeChildInvite: (childId: string) => Promise<void>;
-  assignManualPlan: (uid: string, planId: string, limit: number) => Promise<void>;
+  assignManualPlan: (uid: string, planId: string, _limit?: number) => Promise<void>;
   deleteFundraisingOpportunity: (id: string) => Promise<void>;
   addGame: (data: any) => Promise<void>;
   updateGame: (gameId: string, data: any) => Promise<void>;
@@ -1523,7 +1526,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved && isParent) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved, isParent]);
   const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
-  const householdBalance = useMemo(() => (householdMembersData || []).reduce((acc, m) => acc + (m.amountOwed || 0), 0), [householdMembersData]);
+  const householdPaymentsQuery = useMemoFirebase(
+    () => (db && firebaseUser?.uid && isAuthResolved && isParent)
+      ? query(collection(db, 'users', firebaseUser.uid, 'payments'))
+      : null,
+    [db, firebaseUser?.uid, isAuthResolved, isParent]
+  );
+  const { data: householdPaymentsData } = useCollection<HouseholdPayment>(householdPaymentsQuery);
+  const householdBalance = useMemo(
+    () => calculateHouseholdPayments(householdPaymentsData || []).outstanding,
+    [householdPaymentsData]
+  );
 
 
   
@@ -3352,7 +3365,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return null;
     }
   }, [firebaseAuth, firebaseUser]);
-  const assignManualPlan = useCallback(async (uid: string, planId: string, limit: number) => { if (db) await updateDoc(doc(db, 'users', uid), { activePlanId: planId, proTeamLimit: limit, planSource: 'manual' }); }, [db]);
+  const assignManualPlan = useCallback(async (uid: string, planId: string, _limit?: number) => {
+    if (!firebaseUser) throw new Error('Authentication is required.');
+    const token = await firebaseUser.getIdToken();
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/entitlement`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ planId, reason: 'Manual assignment from plan administration' }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to assign this plan.');
+  }, [firebaseUser]);
 
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);
   const updateIncident = useCallback(async (teamId: string, id: string, data: any) => { if (db) await updateDoc(doc(db, 'teams', teamId, 'incidents', id), clean(data)); }, [db]);

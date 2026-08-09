@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { generateTournamentSchedule } from '@/lib/scheduler-utils';
 import { format, parseISO } from 'date-fns';
-import { getPlanTeamLimit } from '@/lib/plan-catalog';
+import { sportForDemoVariant } from '@/lib/demo-plan-config';
 
 /**
  * BatchHelper — safely accumulates Firestore writes and auto-commits every
@@ -206,7 +206,14 @@ const PLAYER_POOLS = [
   ],
 ];
 
-const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', teamName: string = '', teamIndex: number = 0) => {
+const GET_DEMO_DATA = (
+  teamId: string,
+  userId: string,
+  teamSuffix: string = '',
+  teamName: string = '',
+  teamIndex: number = 0,
+  includeCurrentUserInStaffChat = true,
+) => {
   const staff = COACHING_STAFF[teamIndex % COACHING_STAFF.length];
   const playerPool = PLAYER_POOLS[teamIndex % PLAYER_POOLS.length];
   const now = new Date();
@@ -470,8 +477,8 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
       { id: `a1_${teamId}`, title: 'Venue Change', message: 'Match moved to Court 4 due to maintenance.', audience: 'everyone', createdAt: yesterday, createdBy: userId }
     ],
     volunteers: [
-      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, location: 'Premier Sports Park', startTime: '09:00', endTime: '15:00', spots: 5, hoursPerSlot: 2, pointsPerSlot: 10, isShareable: true, signups: { [`u3_${teamId}`]: { userId: `u3_${teamId}`, userName: playerPool[0].name, status: 'pending', createdAt: yesterday } } },
-      { id: `vol2_${teamId}`, title: 'Match Day Photography', description: 'Capture high-quality action shots for the social feed.', date: later, startTime: '18:00', endTime: '20:00', spots: 2, hoursPerSlot: 2, pointsPerSlot: 25, signups: {} }
+      { id: `vol1_${teamId}`, title: 'Tournament Concessions', description: 'Help run the stand during the multi-day event.', date: tomorrow, location: 'Premier Sports Park', startTime: '09:00', endTime: '15:00', spots: 5, hoursPerSlot: 2, points: 10, isShareable: true, signups: { [`u3_${teamId}`]: { userId: `u3_${teamId}`, userName: playerPool[0].name, status: 'pending', createdAt: yesterday } } },
+      { id: `vol2_${teamId}`, title: 'Match Day Photography', description: 'Capture high-quality action shots for the social feed.', date: later, startTime: '18:00', endTime: '20:00', spots: 2, hoursPerSlot: 2, points: 25, signups: {} }
     ],
     fundraising: [
       { 
@@ -539,7 +546,11 @@ const GET_DEMO_DATA = (teamId: string, userId: string, teamSuffix: string = '', 
         id: `chat2_${teamId}`,
         name: 'Coaching Staff',
         createdBy: userId,
-        memberIds: [userId, `u1_${teamId}`, `u2_${teamId}`],
+        memberIds: [
+          ...(includeCurrentUserInStaffChat ? [userId] : []),
+          `u1_${teamId}`,
+          `u2_${teamId}`,
+        ],
         isDeleted: false,
         teamId: teamId,
         createdAt: weekAgo,
@@ -855,7 +866,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             }
 
             // Pull rich sub-resources from the static blueprint (NO EVENTS — handled by staggered parent block below)
-            const data = GET_DEMO_DATA(v.id, userId, v.name, v.name, variants.indexOf(v));
+            const data = GET_DEMO_DATA(v.id, userId, v.name, v.name, variants.indexOf(v), false);
             data.members.forEach(m => {
               batch.set(doc(db, 'teams', v.id, 'members', m.id), clean({ ...m, teamId: v.id, joinedAt: now, isDemo: true }));
             });
@@ -1174,6 +1185,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         // All school variants are squads — the institution is a separate record created above
         const teamType = isSchoolDemo ? 'school_squad' : 'youth';
         const schoolId = isSchoolDemo ? `demo_${planId}_${userId.slice(-4)}_institution` : undefined;
+        const squadSport = isSchoolDemo ? sportForDemoVariant(variant) : 'Multi-Sport';
 
 
         const uniqueCode = (h => Math.abs(h).toString(36).toUpperCase().padStart(8,'0'))(teamId.split('').reduce((h,c)=>(Math.imul(31,h)+c.charCodeAt(0))|0,0));
@@ -1182,7 +1194,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             name,       // canonical field used by Team type
             teamName: name, // legacy alias kept for compatibility
             code: uniqueCode, teamCode: uniqueCode, inviteCode: uniqueCode,
-            ownerUserId: userId, demoOwnerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: isSchoolDemo ? 'Basketball' : 'Multi-Sport',
+            ownerUserId: userId, demoOwnerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: squadSport,
             isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? leagueId : undefined,
             createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
             teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
@@ -1233,7 +1245,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     gradYear: (m as any).gradYear,
                     gpa: (m as any).gpa,
                     primaryPosition: m.position,
-                    sports: [isSchoolDemo ? 'Basketball' : 'Multi-Sport'],
+                    sports: [squadSport],
                     // Keep recruiting private by default. Alex is the single
                     // deterministic public demo used to exercise the scout portal.
                     recruitingProfileEnabled: m.name === 'Alex Rivera'

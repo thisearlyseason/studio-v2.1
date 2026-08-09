@@ -6,13 +6,13 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { validFirestoreDocumentId } from '@/lib/firestore-document-id';
 
-const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const KEY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const RELATIONSHIPS = new Set(['parent', 'family_member', 'friend', 'other']);
 
 function cleanId(value: string | null) {
-  return value && ID_PATTERN.test(value) ? value : null;
+  return validFirestoreDocumentId(value);
 }
 
 async function getOpportunity(req: NextRequest) {

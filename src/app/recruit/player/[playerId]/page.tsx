@@ -108,7 +108,7 @@ export default function PublicScoutPortalPage() {
     const name = profile?.fullName || player?.name || 'Athlete';
     generateBrandedPDF({
       title: 'VERIFIED ATHLETE SCOUTING PACK',
-      subtitle: 'SQUADFORGE RECRUITING COURIER • INSTITUTIONAL DATA',
+      subtitle: 'THE SQUAD RECRUITING COURIER • INSTITUTIONAL DATA',
       filename: `SCOUTING_${name.replace(/\s+/g, '_').toUpperCase()}`,
     }, (doc, startY) => {
       const pageWidth = doc.internal.pageSize.getWidth();

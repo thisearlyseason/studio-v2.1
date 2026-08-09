@@ -6,6 +6,7 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { validFirestoreDocumentId } from '@/lib/firestore-document-id';
 
 const MAX_DONATION = 100_000;
 const MAX_NAME_LENGTH = 120;
@@ -13,8 +14,7 @@ const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const RELATIONSHIPS = new Set(['parent', 'family_member', 'friend', 'other']);
 
 function cleanId(value: string | null): string | null {
-  if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) return null;
-  return value;
+  return validFirestoreDocumentId(value);
 }
 
 function publicCampaign(data: Record<string, any>, id: string) {

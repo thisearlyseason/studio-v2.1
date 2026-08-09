@@ -1,6 +1,6 @@
-# SquadForge Institutional Operational Manual
+# The Squad Institutional Operational Manual
 
-This authoritative guide provides granular, step-by-step instructions for every role within the SquadForge ecosystem. Use this document as the primary training resource for institutional personnel, coaches, and guardians.
+This authoritative guide provides granular, step-by-step instructions for every role within The Squad ecosystem. Use this document as the primary training resource for institutional personnel, coaches, and guardians.
 
 ---
 
@@ -153,7 +153,7 @@ This authoritative guide provides granular, step-by-step instructions for every 
 
 ## 🛡️ Security & Institutional Governance
 
-SquadForge uses an **Institutional-Grade Security Layer** (RBAC) to ensure athlete safety and financial integrity:
+The Squad uses an **Institutional-Grade Security Layer** (RBAC) to ensure athlete safety and financial integrity:
 
 - **PII Protection**: Athlete data (birthdates, medical info) is restricted to verified Guardians and Coaches.
 - **Financial Lock**: 'Amount Owed' and 'Fees Paid' fields are immutable for non-staff. Only Team Owners/Admins can modify financial standing.

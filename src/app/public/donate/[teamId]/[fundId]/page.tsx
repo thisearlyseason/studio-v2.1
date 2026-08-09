@@ -231,8 +231,10 @@ export default function PublicDonationPortalPage() {
             <CardContent className="p-8 lg:p-10 space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Your Name (Internal Audit)</Label>
+                  <Label htmlFor="donor-name" className="text-[10px] font-black uppercase tracking-widest ml-1">Your Name (Internal Audit)</Label>
                   <Input 
+                    id="donor-name"
+                    autoComplete="name"
                     required 
                     placeholder="Full Name" 
                     value={donorName} 
@@ -241,8 +243,9 @@ export default function PublicDonationPortalPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Amount ($)</Label>
+                  <Label htmlFor="donation-amount" className="text-[10px] font-black uppercase tracking-widest ml-1">Amount ($)</Label>
                   <Input 
+                    id="donation-amount"
                     required 
                     type="number" 
                     placeholder="0.00" 
@@ -254,17 +257,17 @@ export default function PublicDonationPortalPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
-                  <Input required type="email" value={donorEmail} onChange={e => setDonorEmail(e.target.value)} className="h-14 rounded-2xl border-2 font-bold" />
+                  <Label htmlFor="donor-email" className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
+                  <Input id="donor-email" autoComplete="email" required type="email" value={donorEmail} onChange={e => setDonorEmail(e.target.value)} className="h-14 rounded-2xl border-2 font-bold" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Phone Number</Label>
-                  <Input required type="tel" value={donorPhone} onChange={e => setDonorPhone(e.target.value)} className="h-14 rounded-2xl border-2 font-bold" />
+                  <Label htmlFor="donor-phone" className="text-[10px] font-black uppercase tracking-widest ml-1">Phone Number</Label>
+                  <Input id="donor-phone" autoComplete="tel" required type="tel" value={donorPhone} onChange={e => setDonorPhone(e.target.value)} className="h-14 rounded-2xl border-2 font-bold" />
                 </div>
               </div>
               <div className="space-y-3">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Your Connection</Label>
-                <RadioGroup value={relationship} onValueChange={setRelationship} className="grid grid-cols-2 gap-3">
+                <Label id="donor-relationship-label" className="text-[10px] font-black uppercase tracking-widest ml-1">Your Connection</Label>
+                <RadioGroup aria-labelledby="donor-relationship-label" value={relationship} onValueChange={setRelationship} className="grid grid-cols-2 gap-3">
                   {[
                     ['parent', 'Parent'],
                     ['family_member', 'Family Member'],
@@ -280,8 +283,8 @@ export default function PublicDonationPortalPage() {
               </div>
 
               <div className="space-y-4 pt-4 border-t">
-                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Payment Protocol</Label>
-                <RadioGroup value={method} onValueChange={(v: any) => setMethod(v)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Label id="payment-protocol-label" className="text-[10px] font-black uppercase tracking-widest ml-1">Select Payment Protocol</Label>
+                <RadioGroup aria-labelledby="payment-protocol-label" value={method} onValueChange={(v: any) => setMethod(v)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={cn(
                     "p-5 rounded-2xl border-2 transition-all cursor-pointer group",
                     method === 'external' ? "border-primary bg-primary/5 shadow-md" : "border-muted/50 hover:border-muted"
@@ -368,7 +371,7 @@ export default function PublicDonationPortalPage() {
       </div>
 
       <footer className="mt-16 text-center opacity-30 space-y-2">
-        <p className="text-[9px] font-black uppercase tracking-[0.3em]">Institutional Capital Engine v1.0 • SquadForge</p>
+        <p className="text-[9px] font-black uppercase tracking-[0.3em]">Institutional Capital Engine v1.0 • The Squad</p>
       </footer>
     </div>
   );

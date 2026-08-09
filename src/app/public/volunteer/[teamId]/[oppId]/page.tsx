@@ -170,8 +170,10 @@ function VolunteerSignupForm() {
             
             <CardContent className="p-8 lg:p-10 space-y-6">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase ml-1">Full Name</Label>
+                <Label htmlFor="volunteer-name" className="text-[10px] font-black uppercase ml-1">Full Name</Label>
                 <Input 
+                  id="volunteer-name"
+                  autoComplete="name"
                   required 
                   value={formData.name} 
                   onChange={e => setFormData({...formData, name: e.target.value})}
@@ -180,8 +182,10 @@ function VolunteerSignupForm() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Email Address</Label>
+                  <Label htmlFor="volunteer-email" className="text-[10px] font-black uppercase ml-1">Email Address</Label>
                   <Input 
+                    id="volunteer-email"
+                    autoComplete="email"
                     type="email"
                     required 
                     value={formData.email} 
@@ -190,8 +194,10 @@ function VolunteerSignupForm() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Phone Number</Label>
+                  <Label htmlFor="volunteer-phone" className="text-[10px] font-black uppercase ml-1">Phone Number</Label>
                   <Input 
+                    id="volunteer-phone"
+                    autoComplete="tel"
                     type="tel"
                     required 
                     value={formData.phone} 
@@ -201,8 +207,9 @@ function VolunteerSignupForm() {
                 </div>
               </div>
               <div className="space-y-3">
-                <Label className="text-[10px] font-black uppercase ml-1">Your Connection</Label>
+                <Label id="volunteer-relationship-label" className="text-[10px] font-black uppercase ml-1">Your Connection</Label>
                 <RadioGroup
+                  aria-labelledby="volunteer-relationship-label"
                   value={formData.relationship}
                   onValueChange={relationship => setFormData({ ...formData, relationship })}
                   className="grid grid-cols-2 gap-3"

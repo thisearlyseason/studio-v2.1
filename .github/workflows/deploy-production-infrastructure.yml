@@ -72,6 +72,18 @@ jobs:
       - name: Deploy Firestore and Storage rules
         run: npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only firestore:rules,storage --non-interactive
 
+      - name: Verify deployed Firestore rules match this revision
+        run: |
+          ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          curl --fail --silent --show-error -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://firebaserules.googleapis.com/v1/projects/$FIREBASE_PROJECT_ID/releases/cloud.firestore" \
+            > "$RUNNER_TEMP/firestore-release.json"
+          RULESET_NAME="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).rulesetName" "$RUNNER_TEMP/firestore-release.json")"
+          curl --fail --silent --show-error -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://firebaserules.googleapis.com/v1/$RULESET_NAME" \
+            > "$RUNNER_TEMP/firestore-ruleset.json"
+          node scripts/check-firestore-rules-drift.mjs firestore.rules "$RUNNER_TEMP/firestore-ruleset.json"
+
       - name: Verify production Functions
         run: |
           npx firebase functions:list --project "$FIREBASE_PROJECT_ID" --json > "$RUNNER_TEMP/functions.json"
