@@ -60,7 +60,7 @@ import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { useUser, useAuth } from '@/firebase';
 import { signInAnonymously, signOut } from 'firebase/auth';
-import { clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
+import { bootstrapDemoWorkspace, clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 import { toast } from '@/hooks/use-toast';
 import { 
   Dialog, 
@@ -474,6 +474,7 @@ export default function LandingPage() {
       sessionStorage.removeItem('squad_demo_start_time');
       
       const demoCredential = await signInAnonymously(auth);
+      await bootstrapDemoWorkspace(demoCredential.user, planId);
       await establishBrowserSession(demoCredential.user);
       
       // Use window.replace to bypass internal router cache 

@@ -63,6 +63,22 @@ export async function establishBrowserSession(user: User): Promise<void> {
   if (!response.ok) throw new Error('Unable to establish a secure browser session.');
 }
 
+export async function bootstrapDemoWorkspace(user: User, planId: string): Promise<void> {
+  const token = await user.getIdToken(true);
+  const response = await fetch('/api/demo/seed', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ planId }),
+  });
+  if (response.ok) return;
+
+  const payload = await response.json().catch(() => ({}));
+  throw new Error(payload.error || 'Unable to initialize the demo workspace.');
+}
+
 export async function clearBrowserSession(): Promise<void> {
   await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
 }

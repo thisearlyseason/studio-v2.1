@@ -154,6 +154,22 @@ test('anonymous demos reset on expiry or page exit with the scheduler as fallbac
   assert.match(functions, /cleanupAnonymousUsers = onSchedule\(\{[\s\S]*schedule: 'every 15 minutes'/);
 });
 
+test('demo launch creates its protected profile before entering dashboard routes', async () => {
+  const [login, landing, clientAuth] = await Promise.all([
+    source('../src/app/login/page.tsx'),
+    source('../src/app/page.tsx'),
+    source('../src/lib/client-auth.ts'),
+  ]);
+
+  for (const launcher of [login, landing]) {
+    const bootstrap = launcher.indexOf('await bootstrapDemoWorkspace(demoCredential.user, planId)');
+    const session = launcher.indexOf('await establishBrowserSession(demoCredential.user)');
+    assert.ok(bootstrap >= 0 && bootstrap < session);
+  }
+  assert.match(clientAuth, /fetch\('\/api\/demo\/seed'/);
+  assert.match(clientAuth, /Authorization: `Bearer \$\{token\}`/);
+});
+
 test('shared navigation uses plain language and role-specific primary actions', async () => {
   const [shell, dashboard, family, login, alerts, demoLayout] = await Promise.all([
     source('../src/components/layout/Shell.tsx'),

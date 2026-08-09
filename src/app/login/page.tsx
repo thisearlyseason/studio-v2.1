@@ -15,7 +15,7 @@ import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
-import { clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
+import { bootstrapDemoWorkspace, clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return Promise.race([
@@ -195,6 +195,7 @@ export default function LoginPage() {
       sessionStorage.removeItem('squad_demo_start_time');
       
       const demoCredential = await signInAnonymously(auth);
+      await bootstrapDemoWorkspace(demoCredential.user, planId);
       await establishBrowserSession(demoCredential.user);
       
       // Use window.location.replace to bypass internal router cache 
