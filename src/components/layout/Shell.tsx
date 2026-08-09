@@ -130,14 +130,14 @@ const coordinationTabs = [
   { name: 'Playbook', href: '/drills', icon: GraduationCap, pro: true },
   { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
   { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
-  { name: 'Tactical Chat', href: '/chats', icon: MessageCircle, pro: false },
+  { name: 'Team Chat', href: '/chats', icon: MessageCircle, pro: false },
   { name: 'Library', href: '/files', icon: FolderClosed, pro: false },
 ];
 
 const adminTabs = [
-  { name: 'Coaches Corner', href: '/coaches-corner', icon: PenTool, pro: true, desc: 'Waivers & Docs' },
-  { name: 'Facilities', href: '/facilities', icon: MapPin, pro: false, desc: 'Venue Control' },
-  { name: 'Equipment', href: '/equipment', icon: Package, pro: true, desc: 'Inventory Vault' },
+  { name: 'Coach Tools', href: '/coaches-corner', icon: PenTool, pro: true, desc: 'Waivers and documents' },
+  { name: 'Facilities', href: '/facilities', icon: MapPin, pro: false, desc: 'Venues and fields' },
+  { name: 'Equipment', href: '/equipment', icon: Package, pro: true, desc: 'Team inventory' },
 ];
 
 const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boolean, isLocked: boolean }) => {
@@ -269,7 +269,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
         <>
           {primarySchoolTeam && (
             <>
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pt-1.5 pb-1">School Institution</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pt-1.5 pb-1">School</p>
               <InstitutionCard
                 name={user?.schoolName || user?.clubName || primarySchoolTeam.name}
                 subtitle={user?.institutionTitle || 'Athletic Director'}
@@ -303,7 +303,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           )}
           <DropdownMenuSeparator className="my-1.5" />
           <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-            <Settings className="h-3.5 w-3.5 text-primary" /> View Squad Profile
+            <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
@@ -314,7 +314,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
         <>
           {isEliteClubMode ? (
             <>
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pt-1.5 pb-1">Club Organizer</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pt-1.5 pb-1">Club</p>
               <InstitutionCard
                 name={user?.clubName || user?.schoolName || 'Elite Club'}
                 subtitle={user?.institutionTitle || 'Club Organizer'}
@@ -327,7 +327,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Sub-Squads ({teams.length})</p>
               <div className="overflow-y-auto max-h-[220px] overscroll-contain space-y-0.5 pr-0.5">
                 {teams.length === 0
-                  ? <p className="text-xs text-muted-foreground text-center py-3">No squads deployed yet.</p>
+                  ? <p className="text-xs text-muted-foreground text-center py-3">No squads created yet.</p>
                   : teams.map(team => (
                     <SquadRow
                       key={team.id}
@@ -380,17 +380,17 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
 
           {/* Footer — always visible */}
           <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-            <Settings className="h-3.5 w-3.5 text-primary" /> View Squad Profile
+            <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
           </DropdownMenuItem>
           <DropdownMenuSeparator className="my-1.5" />
           <DropdownMenuItem onClick={() => router.push('/teams/new?tier=starter')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-            <PlusCircle className="h-3.5 w-3.5 text-primary" /> Deploy Free Team
+            <PlusCircle className="h-3.5 w-3.5 text-primary" /> Create Free Team
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push('/teams/new?tier=pro')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-            <Zap className="h-3.5 w-3.5 text-amber-500" /> Deploy Elite Pro Team
+            <Zap className="h-3.5 w-3.5 text-amber-500" /> Create Pro Team
           </DropdownMenuItem>
         </>
       )}
@@ -412,7 +412,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const hasDemoBanner = !!user?.isDemo && !user?.isBetaTester;
   const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
   const isAdminTabLocked = (tab: (typeof adminTabs)[number]) =>
-    tab.name === 'Coaches Corner'
+    tab.href === '/coaches-corner'
       ? !canAccessCoachesCorner
       : tab.pro && !isPro;
   const canManageFacilities = isSuperAdmin || !activeTeam || activeTeam.ownerUserId === auth?.currentUser?.uid;
@@ -489,6 +489,19 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const showInstallBtn = !isStandalone && !installDismissed;
 
+  const roleNavigationOrder = isParent
+    ? ['/events', '/chats', '/files', '/volunteers', '/competition']
+    : isPlayer
+      ? ['/events', '/chats', '/practice', '/drills', '/roster']
+      : user?.role === 'league_creator'
+        ? ['/competition', '/events', '/games', '/roster', '/chats']
+        : ['/events', '/roster', '/chats', '/practice', '/games'];
+
+  const navigationPriority = (href: string) => {
+    const index = roleNavigationOrder.indexOf(href);
+    return index === -1 ? roleNavigationOrder.length : index;
+  };
+
   const filteredCoordTabs = coordinationTabs
     .filter(tab => {
       // League creators without a team: only show Competition Hub so they can manage leagues
@@ -503,7 +516,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (tab.name === 'Playbook' && activeTeam?.features?.playbook === false) return false;
       if (tab.name === 'Volunteer' && activeTeam?.features?.volunteer === false) return false;
       if (tab.name === 'Fundraising' && activeTeam?.features?.fundraising === false) return false;
-      if (tab.name === 'Tactical Chat' && activeTeam?.features?.tacticalChat === false) return false;
+      if (tab.href === '/chats' && activeTeam?.features?.tacticalChat === false) return false;
       if (tab.name === 'Library' && activeTeam?.features?.library === false) return false;
 
       // Feed is filtered by plan/feature
@@ -515,11 +528,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       return true;
     })
     .map(tab => {
-      if (tab.name === 'Competition Hub' && isSchoolMode) {
+      if (tab.href === '/competition' && isSchoolMode) {
         return { ...tab, name: 'Program League Hub' };
       }
       return tab;
-    });
+    })
+    .sort((a, b) => navigationPriority(a.href) - navigationPriority(b.href));
+
+  const primaryCoordTabs = filteredCoordTabs.slice(0, 5);
+  const additionalCoordTabs = filteredCoordTabs.slice(5);
 
   const filteredAdminTabs = adminTabs.filter(tab => {
     // League creators without a team: show Facilities (free) + Equipment (locked if free)
@@ -545,7 +562,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   // Used in the More menu so the hub link + squad switcher ALWAYS appear for these users.
   const isInstitutionAuthority = (isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode;
 
-  const bottomNavItems = (
+  const bottomNavItems: Array<{
+    name: string;
+    href: string;
+    icon: typeof Home;
+    gate?: () => boolean;
+  }> = (
     // League creator without a team: only league-related shortcuts
     user?.role === 'league_creator' && !activeTeam
       ? [
@@ -554,17 +576,32 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           { name: 'Hub', href: '/sports-hub', icon: BookOpen },
         ]
       : isSchoolInstitutionMode || isEliteHubMode
-      ? [{ name: 'Hub', href: '/sports-hub', icon: BookOpen }] // always show sports hub even in hub mode
-      : [
-          // Show Home/dashboard only when a squad is active (ADs in hub mode use /club instead)
-          ...(!isSchoolInstitutionMode && !isEliteHubMode
-            ? [{ name: 'Home', href: '/dashboard', icon: Home }]
-            : []),
-          { name: 'Schedule', href: '/events', icon: CalendarDays },
-          ...(activeTeam?.features?.feed !== false && !(isParent && activeTeam?.parentFeedEnabled === false) ? [{ name: 'Feed', href: '/feed', icon: LayoutDashboard, gate: () => hasFeature?.('live_feed_read') }] : []),
-          ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Tactical Chat', href: '/chats', icon: MessageCircle }] : []),
-          { name: 'Hub', href: '/sports-hub', icon: BookOpen },
-        ]
+        ? [
+            { name: 'Overview', href: '/club', icon: Home },
+            { name: 'Facilities', href: '/facilities', icon: MapPin },
+            { name: 'Leagues', href: '/competition', icon: Medal },
+            { name: 'Resources', href: '/sports-hub', icon: BookOpen },
+          ]
+        : isParent
+          ? [
+              { name: 'Family', href: '/family', icon: Baby },
+              { name: 'Schedule', href: '/calendar', icon: CalendarDays },
+              ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
+              { name: 'Waivers', href: '/files', icon: ShieldCheck },
+            ]
+          : isPlayer
+            ? [
+                { name: 'Home', href: '/dashboard', icon: Home },
+                { name: 'Schedule', href: '/calendar', icon: CalendarDays },
+                ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
+                { name: 'Profile', href: '/roster', icon: User },
+              ]
+            : [
+                { name: 'Home', href: '/dashboard', icon: Home },
+                { name: 'Schedule', href: '/events', icon: CalendarDays },
+                { name: 'Roster', href: '/roster', icon: Users },
+                ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
+              ]
   );
 
   if (!activeTeam && !user) return null;
@@ -583,7 +620,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     if (!activeTeam?.id) return;
     try {
       await deleteTeam(activeTeam.id);
-      toast({ title: "Team Deleted", description: "The squad has been decommissioned." });
+      toast({ title: "Team Deleted", description: "The squad and its data were deleted." });
       window.location.reload();
     } catch (error) {
       toast({ title: "Deletion Failed", variant: "destructive" });
@@ -776,23 +813,27 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               {/* School institution mode OR Elite Hub mode: hide all nav items */}
               {(!isSchoolInstitutionMode && !isEliteHubMode) && (
                 <SidebarMenu className="space-y-6">
+                  <div className="space-y-1.5">
+                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2">Your Main Tools</p>
+                    {primaryCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
+                  </div>
                   {isStaff && (
                     <div className="space-y-1.5">
-                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2">Command</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground px-2 mb-2">Management</p>
                       {filteredAdminTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={isAdminTabLocked(tab)} />)}
                     </div>
                   )}
-                  <div className="space-y-1.5">
-                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground px-2 mb-2">Operations</p>
-                    {filteredCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
-                  </div>
+                  {additionalCoordTabs.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/70 px-2 mb-2">More Tools</p>
+                      {additionalCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
+                    </div>
+                  )}
                 </SidebarMenu>
               )}
               {(isSchoolInstitutionMode || isEliteHubMode) && (
                 <div className="px-4 py-6 text-center space-y-3">
-                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/50">
-                    {isEliteHubMode ? 'Select a squad above to access team operations' : 'Select a squad above to access team operations'}
-                  </p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/50">Select a squad above to open its team tools</p>
                 </div>
               )}
             </SidebarContent>
@@ -820,7 +861,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               {/* Hide invite code for Athletic Director / primary school — they don't share a join code */}
               {activeTeam?.type !== 'school' && user?.role !== 'league_creator' && (
                 <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
-                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Squad Identity Code</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Team Join Code</p>
                   <div className="flex items-center gap-2">
                     <p className="font-black text-primary tracking-wider text-sm truncate flex-1 min-w-0">
                       {activeTeam?.code || activeTeam?.teamCode || (activeTeam as any)?.inviteCode || '---'}
@@ -909,7 +950,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
-                     pathname === '/dashboard' ? 'Strategic Command' : 
+                     pathname === '/dashboard' ? 'Dashboard' :
                      (pathname === '/leagues' && isSchoolMode ? 'Programs' : 
                       pathname === '/club' ? (isSchoolMode ? 'School Hub' : 'Club Hub') :
                       filteredCoordTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard')}
@@ -979,7 +1020,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     )}
                     
                     <DropdownMenuItem onClick={() => router.push('/how-to')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
-                      <BookOpen className="h-4 w-4 text-primary" /> Tactical Manual
+                      <BookOpen className="h-4 w-4 text-primary" /> Help Guide
                     </DropdownMenuItem>
 
                     <DropdownMenuSeparator className="my-1 mx-2" />
@@ -995,13 +1036,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           <div className="h-2 bg-destructive w-full" />
                           <div className="p-8 space-y-6">
                             <AlertDialogHeader>
-                              <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Decommission Squad</AlertDialogTitle>
+                              <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Delete Team</AlertDialogTitle>
                               <AlertDialogDescription className="text-sm font-medium text-foreground/70">
-                                This will permanently delete <strong>{activeTeam?.name}</strong> and all associated data, including rosters, schedules, and analytics. This operation is IRREVERSIBLE.
+                                This permanently deletes <strong>{activeTeam?.name}</strong> and its rosters, schedules, files, and reports. This cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter className="pt-4">
-                              <AlertDialogCancel className="rounded-xl h-14 font-black uppercase text-[10px] tracking-widest">Abort</AlertDialogCancel>
+                            <AlertDialogCancel className="rounded-xl h-14 font-black uppercase text-[10px] tracking-widest">Cancel</AlertDialogCancel>
                               <AlertDialogAction onClick={handleDeleteTeam} className="rounded-xl h-14 bg-destructive hover:bg-destructive/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-destructive/20">
                                 Confirm Deletion
                               </AlertDialogAction>
@@ -1021,17 +1062,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <div className="h-2 bg-destructive w-full" />
                         <div className="p-8 space-y-6">
                           <AlertDialogHeader>
-                            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Identity Termination</AlertDialogTitle>
+                            <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Delete Account</AlertDialogTitle>
                             <AlertDialogDescription className="text-sm font-medium text-foreground/70">
-                              You are about to schedule deletion of your global account identity. Your account is retained for seven days, then permanently removed. Accounts that own teams or leagues must transfer or delete them first so organization data is never orphaned.
+                              Your account will be scheduled for deletion and retained for seven days before it is permanently removed. Transfer or delete any teams and leagues you own first.
                               <br /><br />
-                              <span className="font-bold text-destructive">WARNING: This action signs you out and begins the seven-day deletion period.</span>
+                              <span className="font-bold text-destructive">This signs you out and begins the seven-day deletion period.</span>
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter className="pt-4">
-                            <AlertDialogCancel className="rounded-xl h-14 font-black uppercase text-[10px] tracking-widest">Stay Active</AlertDialogCancel>
+                            <AlertDialogCancel className="rounded-xl h-14 font-black uppercase text-[10px] tracking-widest">Cancel</AlertDialogCancel>
                             <AlertDialogAction onClick={deleteAccount} className="rounded-xl h-14 bg-destructive hover:bg-destructive/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-destructive/20">
-                              Terminate Account
+                              Delete Account
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </div>
@@ -1099,9 +1140,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <SheetContent side="bottom" className="rounded-t-[3rem] p-0 border-none shadow-2xl h-[80vh] flex flex-col bg-white">
                     <div className="h-2 bg-primary w-full shrink-0" />
                     <SheetHeader className="px-8 pt-6 pb-4 text-center">
-                      <SheetTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Tactical Menu</SheetTitle>
+                      <SheetTitle className="text-2xl font-black uppercase tracking-tight text-foreground">All Tools</SheetTitle>
                       <SheetDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">
-                        {isInstitutionAuthority ? (isSchoolMode ? 'School Hub Command' : 'Club Hub Command') : 'Extended Squad Operations'}
+                        {isInstitutionAuthority ? (isSchoolMode ? 'School and squad navigation' : 'Club and squad navigation') : 'Team navigation'}
                       </SheetDescription>
                     </SheetHeader>
                     <ScrollArea className="flex-1 px-6 pb-10">
@@ -1126,7 +1167,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                 </div>
                                 <div className="flex flex-col text-left">
                                   <span className="text-xs font-black uppercase tracking-widest">{isSchoolMode ? 'School Hub' : 'Club Hub'}</span>
-                                  <span className="text-[8px] font-bold text-white/60 uppercase">Institutional Command</span>
+                                  <span className="text-[8px] font-bold text-white/60 uppercase">Organization overview</span>
                                 </div>
                               </div>
                               <ChevronRight className="h-4 w-4 text-white/40" />
@@ -1144,7 +1185,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         {activeTeam && activeTeam.type !== 'school' && (
                           <>
                             <div className="space-y-3">
-                              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Operational Hub</p>
+                              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Team Tools</p>
                               <div className="grid grid-cols-2 gap-3">
                                 {/* Dashboard — always first */}
                                 <Link
@@ -1194,7 +1235,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
                             {isStaff && (
                               <div className="space-y-3">
-                                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Command Hub</p>
+                                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Management</p>
                                 <div className="grid grid-cols-1 gap-2">
                                   {filteredAdminTabs.map((tab) => {
                                     const isLocked = isAdminTabLocked(tab);
@@ -1269,7 +1310,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                     <div className="bg-primary/20 p-2 rounded-xl text-primary"><Baby className="h-5 w-5" /></div>
                                     <div className="flex flex-col">
                                       <span className="text-xs font-black uppercase tracking-widest">Family Hub</span>
-                                      <span className="text-[8px] font-bold text-white/40 uppercase">Household Command</span>
+                                      <span className="text-[8px] font-bold text-white/40 uppercase">Family Hub</span>
                                     </div>
                                   </div>
                                   <ChevronRight className="h-4 w-4 text-white/20" />
@@ -1369,8 +1410,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                   <Shield className="h-4 w-4 text-primary" />
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">Squad Profile</span>
-                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Identity & Branding</span>
+                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">Team Profile</span>
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Name and Branding</span>
                                 </div>
                               </div>
                               <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
@@ -1385,8 +1426,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                   <Users className="h-4 w-4 text-primary" />
                                 </div>
                                 <div className="flex flex-col">
-                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">Squad Roster</span>
-                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Members & Profiles</span>
+                                  <span className="text-xs font-black uppercase tracking-widest text-foreground">Team Roster</span>
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Players and Staff</span>
                                 </div>
                               </div>
                               <ChevronRight className="h-4 w-4 text-muted-foreground/30" />
@@ -1403,7 +1444,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                 </Avatar>
                                 <div className="flex flex-col">
                                   <span className="text-xs font-black uppercase tracking-widest text-foreground">Profile & Settings</span>
-                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Managed Global ID</span>
+                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">Account and Preferences</span>
                                 </div>
                               </div>
                               <ChevronRight className="h-4 w-4 text-muted-foreground/30" />

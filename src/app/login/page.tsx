@@ -212,11 +212,11 @@ export default function LoginPage() {
 
   const DEMO_LIST = [
     { id: 'starter_squad', name: 'Starter Plan Demo', icon: Users, desc: 'Grassroots essentials' },
-    { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Professional elite coordination' },
-    { id: 'elite_teams', name: 'Elite Org Demo', icon: Trophy, desc: 'Institutional multi-team hub' },
+    { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Complete team management' },
+    { id: 'elite_teams', name: 'Elite Org Demo', icon: Trophy, desc: 'Manage multiple teams' },
     { id: 'school_demo', name: 'School Demo', icon: GraduationCap, desc: 'Full K-12 Program Hub' },
-    { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Teammate recruiting view' },
-    { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' },
+    { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Schedule, chat, and profile' },
+    { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Family schedule and waivers' },
     { id: 'league_demo', name: 'FREE League Creator Demo', icon: ShieldAlert, desc: 'Free plan · manage leagues without Pro' },
   ];
 
@@ -250,10 +250,10 @@ export default function LoginPage() {
         <Card className="border-none shadow-2xl rounded-[2rem] sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
           <CardHeader className="space-y-2 pt-8 sm:pt-12 text-center">
             <h1 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
-              {forgotMode ? 'Reset Password' : 'Authorized Access'}
+              {forgotMode ? 'Reset Password' : 'Sign In'}
             </h1>
             <CardDescription className="text-base font-bold uppercase tracking-widest text-primary/60 text-[10px]">
-              {forgotMode ? 'Enter your email to receive a reset link' : 'Credential Verification Hub'}
+              {forgotMode ? 'Enter your email to receive a reset link' : 'Use your account credentials'}
             </CardDescription>
           </CardHeader>
 
@@ -341,7 +341,7 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email" className="font-black text-[10px] uppercase tracking-widest px-1 ml-1 text-muted-foreground">Official Email</Label>
+                <Label htmlFor="email" className="font-black text-[10px] uppercase tracking-widest px-1 ml-1 text-muted-foreground">Email Address</Label>
                 <Input 
                   id="email" 
                   type="email" 
@@ -355,7 +355,7 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
-                  <Label htmlFor="password" className="font-black text-[10px] uppercase tracking-widest ml-1 text-muted-foreground">Encrypted Password</Label>
+                  <Label htmlFor="password" className="font-black text-[10px] uppercase tracking-widest ml-1 text-muted-foreground">Password</Label>
                   <button type="button" onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
                 </div>
                 <div className="relative">
@@ -382,11 +382,11 @@ export default function LoginPage() {
             </CardContent>
             <CardFooter className="flex flex-col space-y-6 pb-10 sm:pb-12 px-6 sm:px-10 pt-4">
               <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading || isDemoLoading}>
-                {isLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Verify Identity"}
+                {isLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Sign In"}
               </Button>
               <div className="text-center space-y-2">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                  {BETA_MODE ? 'Private beta — use email & password above' : <>Not enrolled? <Link href="/signup" className="text-primary hover:underline font-black">Join the League</Link></>}
+                  {BETA_MODE ? 'Private beta — use email & password above' : <>Need an account? <Link href="/signup" className="text-primary hover:underline font-black">Create One</Link></>}
                 </p>
               </div>
             </CardFooter>
@@ -400,10 +400,10 @@ export default function LoginPage() {
               <ShieldAlert className="h-48 w-48" />
             </div>
             <div className="relative z-10 space-y-4">
-              <Badge className="bg-white/20 text-white border-none font-black uppercase tracking-widest text-[10px] px-3 h-6">Instant Deployment</Badge>
-              <h3 className="text-4xl font-black tracking-tighter leading-none uppercase">Explore Guest <br />Tactical Hubs</h3>
+              <Badge className="bg-white/20 text-white border-none font-black uppercase tracking-widest text-[10px] px-3 h-6">Interactive Demos</Badge>
+              <h3 className="text-4xl font-black tracking-tighter leading-none uppercase">Explore Demo <br />Workspaces</h3>
               <p className="text-white/80 font-medium text-sm leading-relaxed max-w-xs">
-                Enter a fully-configured organizational environment to audit our professional coordination suite.
+                Open a ready-to-use sample workspace for the role you want to explore.
               </p>
             </div>
           </div>
@@ -435,7 +435,7 @@ export default function LoginPage() {
       </div>
 
       <div className="text-center pt-12 relative z-10 opacity-40">
-        <p className="text-[10px] text-white font-black uppercase tracking-[0.3em]">The Squad Coordination Engine v1.0 • thesquad.pro</p>
+        <p className="text-[10px] text-white font-black uppercase tracking-[0.3em]">The Squad • thesquad.pro</p>
       </div>
     </div>
   );

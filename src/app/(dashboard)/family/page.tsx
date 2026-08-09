@@ -433,7 +433,7 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
             {child.firstName} {child.lastName}
           </h3>
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest leading-none">
-            Minor Player Hub • {child.ageGroup ? `${child.ageGroup} Division` : 'No Division Set'}
+            Player Profile • {child.ageGroup ? `${child.ageGroup} Division` : 'No Division Set'}
           </p>
         </div>
 
@@ -482,10 +482,10 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
           )}
         </div>
 
-        {/* Enrolled Squads */}
+        {/* Enrolled Teams */}
         <div className="space-y-3 pt-2 border-t">
           <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">
-            Active Squads ({childTeams.length})
+            Active Teams ({childTeams.length})
           </p>
           <div className="space-y-2">
             {childTeams.map(t => (
@@ -503,7 +503,7 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
             ))}
             {childTeams.length === 0 && (
               <Button variant="ghost" className="w-full h-12 rounded-2xl border-2 border-dashed text-[10px] font-black uppercase text-muted-foreground hover:bg-primary/5 hover:text-primary hover:border-primary/20 transition-all" onClick={() => router.push('/teams/join')}>
-                <Plus className="h-4 w-4 mr-2" /> Enroll in first squad
+                <Plus className="h-4 w-4 mr-2" /> Join a Team
               </Button>
             )}
           </div>
@@ -521,7 +521,7 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
         <div className="grid grid-cols-2 gap-3 pt-2">
           <Button variant="outline" className="rounded-2xl h-14 border-2 font-black uppercase text-[10px] tracking-widest flex flex-col items-center justify-center gap-1 hover:border-primary transition-all" onClick={handleExecuteWaivers}>
             <Signature className="h-4 w-4" />
-            <span>Execute Waivers</span>
+            <span>Review Waivers</span>
           </Button>
 
           {/* Login Enabled Button + Info */}
@@ -692,14 +692,14 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
 
       <CardFooter className="px-8 lg:p-10 pb-8 pt-0">
         <Button className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl group-hover:bg-primary transition-colors active:scale-95 border-none" onClick={() => router.push('/teams/join')}>
-          Enroll in New League <ArrowRight className="ml-2 h-5 w-5" />
+          Join Another Team <ArrowRight className="ml-2 h-5 w-5" />
         </Button>
       </CardFooter>
     </Card>
   );
 }
 
-// --- Master Squad Wall ---
+// --- Family Teams ---
 function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Team; members: PlayerProfile[] }[] }) {
   const router = useRouter();
   if (consolidatedTeams.length === 0) return null;
@@ -709,10 +709,10 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
       <div className="flex items-center justify-between px-2">
         <div className="flex items-center gap-3">
           <ShieldCheck className="h-5 w-5 text-primary" />
-          <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Consolidated Squad Wall</h2>
+          <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Your Teams</h2>
         </div>
         <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest border-primary/20 text-primary bg-primary/5">
-          {consolidatedTeams.length} Active Directives
+          {consolidatedTeams.length} Active {consolidatedTeams.length === 1 ? 'Team' : 'Teams'}
         </Badge>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -758,7 +758,7 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
           className="rounded-[2.5rem] border-2 border-dashed border-primary/20 bg-primary/5 h-32 flex flex-col gap-2 hover:bg-primary/10 hover:border-primary/40 transition-all"
         >
           <Plus className="h-6 w-6 text-primary" />
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Join New Squad</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Join New Team</span>
         </Button>
       </div>
     </div>
@@ -927,7 +927,7 @@ export default function FamilyPage() {
           toast({ title: "Team Join Handled", description: "Athlete added, but team code was not recognized.", variant: "default" });
         }
       } else if (cid) {
-        toast({ title: "Player Registered", description: "Athlete hub initialized. You can join squads later." });
+        toast({ title: "Player Added", description: "The player profile is ready. You can join teams later." });
       }
 
       setIsAddOpen(false);
@@ -1182,31 +1182,31 @@ export default function FamilyPage() {
   }, [myChildren, householdEvents, householdGames]);
 
   if (!isParent) {
-    return <AccessRestricted type="role" title="Household Domain Restricted" description="This sector is reserved for Guardians and Household Administrators." />;
+    return <AccessRestricted type="role" title="Family Access Required" description="This page is available to parents and guardians." />;
   }
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Household Command</Badge>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none text-foreground">Guardianship</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Managing {myChildren?.length || 0} Minor Players</p>
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Family Hub</Badge>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none text-foreground">Family Overview</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Managing {myChildren?.length || 0} {(myChildren?.length || 0) === 1 ? 'Player' : 'Players'}</p>
         </div>
 
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all">
-              <Plus className="h-5 w-5 mr-2" /> Register Player
+              <Plus className="h-5 w-5 mr-2" /> Add Player
             </Button>
           </DialogTrigger>
           <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md bg-white text-foreground">
-            <DialogTitle className="sr-only">Minor Player Registration</DialogTitle>
+            <DialogTitle className="sr-only">Add Player</DialogTitle>
             <div className="h-2 bg-primary w-full" />
             <div className="p-8 lg:p-10 space-y-8">
               <DialogHeader>
-                <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Athlete Data</DialogTitle>
-                <DialogDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Under-18 Enrollment Hub</DialogDescription>
+                <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Player Details</DialogTitle>
+                <DialogDescription className="font-bold text-primary text-[10px] uppercase tracking-widest">Add a player to your family</DialogDescription>
               </DialogHeader>
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
@@ -1248,9 +1248,9 @@ export default function FamilyPage() {
                   </div>
                 ) : <div className="space-y-2 pt-4 border-t border-dashed">
                   <p className="text-[9px] font-black uppercase tracking-widest text-primary mb-2 flex items-center gap-1.5">
-                    <Users className="h-3 w-3" /> Quick Squad Enrollment
+                    <Users className="h-3 w-3" /> Join a Team Now
                   </p>
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Squad Join Code (Optional)</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Team Join Code (Optional)</Label>
                   <Input 
                     placeholder="6-DIGIT CODE" 
                     value={newChild.teamCode} 
@@ -1364,18 +1364,18 @@ export default function FamilyPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Master Wall - Strategic Visibility Layer */}
+      {/* Family teams */}
       <MasterSquadWall consolidatedTeams={consolidatedTeams} />
 
       {/* Stats + Events Layer */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 pt-4">
         <div className="lg:col-span-1 space-y-6">
-          {/* Household Budget Summary */}
+          {/* Family payment summary */}
           <Card className="rounded-[2.5rem] border-none shadow-xl bg-black text-white overflow-hidden group border-b-8 border-primary">
             <CardContent className="p-8 space-y-6">
               <div className="flex justify-between items-start">
                 <div className="bg-primary p-4 rounded-2xl shadow-lg ring-4 ring-primary/20"><DollarSign className="h-8 w-8 text-white" /></div>
-                <Badge className="bg-white/20 text-white border-none font-black text-[10px] uppercase tracking-widest px-3 h-6">Household Budget</Badge>
+                <Badge className="bg-white/20 text-white border-none font-black text-[10px] uppercase tracking-widest px-3 h-6">Family Payments</Badge>
               </div>
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.2em] opacity-60 mb-1">Total Outstanding</p>
@@ -1421,12 +1421,12 @@ export default function FamilyPage() {
               {budgetBreakdown.grandTotal === 0 && (
                 <div className="flex items-center gap-2 bg-green-500/20 rounded-2xl px-4 py-3">
                   <Check className="h-4 w-4 text-green-400 shrink-0" />
-                  <p className="text-[10px] font-black uppercase tracking-widest text-green-300">All fees settled — household in good standing</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-green-300">All family fees are paid</p>
                 </div>
               )}
 
               <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-[10px] tracking-widest hover:bg-primary hover:text-white transition-all shadow-xl" onClick={() => router.push('/family/payments')}>
-                <CreditCard className="h-4 w-4 mr-2" /> Manage Payments Hub
+                <CreditCard className="h-4 w-4 mr-2" /> Manage Payments
               </Button>
             </CardContent>
           </Card>
@@ -1435,13 +1435,13 @@ export default function FamilyPage() {
             <CardHeader className="bg-muted/30 border-b p-6">
               <div className="flex items-center gap-3">
                 <Activity className="h-5 w-5 text-primary" />
-                <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground">Operational Pulse</CardTitle>
+                <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground">Family Summary</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border shadow-inner">
                 <div>
-                  <p className="text-[10px] font-black uppercase opacity-40">Active Squads</p>
+                  <p className="text-[10px] font-black uppercase opacity-40">Active Teams</p>
                   <p className="text-xl font-black">{consolidatedTeams.length}</p>
                 </div>
                 <Users className="h-6 w-6 text-primary/40" />
@@ -1468,10 +1468,10 @@ export default function FamilyPage() {
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-3">
               <CalendarDays className="h-5 w-5 text-primary" />
-              <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Household Itinerary</h2>
+              <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Family Schedule</h2>
             </div>
             <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 hover:text-primary rounded-full px-6" onClick={() => router.push('/calendar')}>
-              Master Schedule <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              View Full Schedule <ChevronRight className="ml-1 h-3.5 w-3.5" />
             </Button>
           </div>
 
@@ -1483,8 +1483,8 @@ export default function FamilyPage() {
                      {child.firstName[0]}{child.lastName[0]}
                    </div>
                    <div>
-                     <h3 className="text-sm font-black uppercase tracking-tight text-foreground">{child.firstName}'s Itinerary</h3>
-                     <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">Next 4 Active Directives</p>
+                     <h3 className="text-sm font-black uppercase tracking-tight text-foreground">{child.firstName}'s Schedule</h3>
+                     <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">Next 4 Events</p>
                    </div>
                 </div>
 
@@ -1506,7 +1506,7 @@ export default function FamilyPage() {
                               </div>
                               <div className="flex items-center justify-between mt-1 pt-1 border-t border-black/5">
                                 <p className="text-[9px] font-bold text-muted-foreground flex items-center gap-1.5 truncate">
-                                  <Users className="h-2.5 w-2.5 opacity-40" /> {team?.name || 'Squad'}
+                                  <Users className="h-2.5 w-2.5 opacity-40" /> {team?.name || 'Team'}
                                 </p>
                                 <span className="text-[9px] font-black text-foreground/80 whitespace-nowrap ml-4">{event.startTime || 'TBD'}</span>
                               </div>
@@ -1525,8 +1525,8 @@ export default function FamilyPage() {
             )) : (
               <div className="p-12 text-center rounded-[3rem] border-4 border-dashed border-muted/30 bg-muted/5">
                 <Calendar className="h-12 w-12 text-muted-foreground opacity-20 mx-auto mb-4" />
-                <h4 className="text-xl font-black uppercase tracking-tight text-muted-foreground">Tactical Silence</h4>
-                <p className="text-xs font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">No upcoming household directives found.</p>
+                <h4 className="text-xl font-black uppercase tracking-tight text-muted-foreground">No Upcoming Events</h4>
+                <p className="text-xs font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">Your family's upcoming events will appear here.</p>
               </div>
             )}
           </div>
@@ -1550,12 +1550,12 @@ export default function FamilyPage() {
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl mb-6 ring-1 ring-black/5">
                 <Baby className="h-16 w-16 text-primary/40" />
               </div>
-              <h3 className="text-3xl font-black uppercase tracking-tight mb-2">Initialize Your Household</h3>
+              <h3 className="text-3xl font-black uppercase tracking-tight mb-2">Add Your First Player</h3>
               <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-w-md mx-auto mb-10 leading-relaxed">
-                Connect your athletes to our coordination grid to manage schedules, waivers, and recruitment potential.
+                Add a player to manage their teams, schedules, waivers, and profile in one place.
               </p>
               <Button size="lg" className="h-16 px-12 rounded-2xl text-xl font-black shadow-2xl shadow-primary/20" onClick={() => setIsAddOpen(true)}>
-                Initialize Athlete 01
+                Add Player
               </Button>
             </Card>
           )}
@@ -1568,10 +1568,10 @@ export default function FamilyPage() {
           <ShieldCheck className="h-48 w-48" />
         </div>
         <CardContent className="p-12 relative z-10 space-y-6">
-          <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 uppercase tracking-widest">Institutional Compliance</Badge>
-          <h2 className="text-4xl font-black tracking-tight leading-tight uppercase">Unified Household Control</h2>
+          <Badge className="bg-primary text-white border-none font-black text-[10px] px-4 h-7 uppercase tracking-widest">Family Account</Badge>
+          <h2 className="text-4xl font-black tracking-tight leading-tight uppercase">Manage Your Family</h2>
           <p className="text-white/60 font-medium text-lg leading-relaxed max-w-2xl">
-            As a guardian, you maintain absolute authority over your children's data and schedules. Click the <strong className="text-white">pencil icon</strong> on any athlete card to edit their profile — including sports, positions, academic info, and notes.
+            Parents and guardians control their children's profiles and schedules. Use the <strong className="text-white">pencil icon</strong> on a player card to update sports, positions, school information, and notes.
           </p>
         </CardContent>
       </Card>

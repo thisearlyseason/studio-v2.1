@@ -734,7 +734,7 @@ function AuthorizedClubManagementPage() {
         </div>
         <div className="relative z-10 flex flex-col gap-4 md:gap-6">
           <div className="space-y-2">
-            <Badge className="bg-primary text-white border-none font-black uppercase tracking-[0.2em] text-[9px] md:text-[10px] h-6 md:h-7 px-3 md:px-4 shadow-lg">Institutional Command</Badge>
+            <Badge className="bg-primary text-white border-none font-black uppercase tracking-[0.2em] text-[9px] md:text-[10px] h-6 md:h-7 px-3 md:px-4 shadow-lg">Organization Overview</Badge>
             <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-black tracking-tighter uppercase leading-[0.9] text-white break-words">
               {user?.schoolName || user?.clubName || (isSchoolMode ? 'School Hub' : 'Club Hub')}
             </h1>
@@ -1843,7 +1843,7 @@ function AuthorizedClubManagementPage() {
           <div className="h-2 bg-red-600 w-full" />
           <div className="p-5 sm:p-8 space-y-5">
             <AlertDialogHeader>
-              <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Decommission Squad?</AlertDialogTitle>
+              <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Delete Squad?</AlertDialogTitle>
               <AlertDialogDescription className="font-bold text-foreground/80 leading-relaxed pt-1">This will remove <strong>{teamToDelete?.name}</strong> from your institutional oversight permanently. This action is irreversible.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="pt-2 flex-col sm:flex-row gap-2">

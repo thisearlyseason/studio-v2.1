@@ -643,7 +643,7 @@ export default function TeamProfilePage() {
               </div>
               
               <div className="p-6 bg-white/10 rounded-2xl border border-white/10 space-y-3 text-center transition-all group-hover:bg-white/20">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Squad Identity Code</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/50">Team Join Code</p>
                 <div className="flex items-center justify-center gap-3">
                   <p className={cn(
                     "font-black break-all leading-tight flex-1",

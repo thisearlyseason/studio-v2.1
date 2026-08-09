@@ -3648,7 +3648,7 @@ export default function CoachesCornerPage() {
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Command Hub</Badge>
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Coach Tools</Badge>
             <div className="flex items-center gap-4 flex-wrap">
             <h1 className="text-4xl font-black uppercase tracking-tight text-foreground">Coaches Corner</h1>
             {isStaff && activeTeam && (

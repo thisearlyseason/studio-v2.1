@@ -89,8 +89,8 @@ export function AlertOverlay() {
       if (!open) handleDismiss();
     }}>
       <DialogContent className="!left-1/2 !top-1/2 !h-auto !max-h-[90dvh] !-translate-x-1/2 !-translate-y-1/2 w-[calc(100vw-2rem)] max-w-lg p-0 rounded-[2rem] sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
-        <DialogTitle className="sr-only">High Priority Squad Alert</DialogTitle>
-        <DialogDescription className="sr-only">Important directive from squad command</DialogDescription>
+        <DialogTitle className="sr-only">High Priority Team Alert</DialogTitle>
+        <DialogDescription className="sr-only">Important message from your team</DialogDescription>
         {/* Championship Header */}
         <div className="bg-primary text-white p-6 sm:p-8 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none">
@@ -101,7 +101,7 @@ export function AlertOverlay() {
               <div className="bg-white/20 backdrop-blur-md p-2.5 rounded-2xl border border-white/20 animate-pulse">
                 <Bell className="h-6 w-6 text-white" />
               </div>
-              <Badge className="bg-white text-primary border-none font-black uppercase tracking-[0.2em] text-[9px] h-6 px-3 shadow-lg">Priority Broadcast</Badge>
+              <Badge className="bg-white text-primary border-none font-black uppercase tracking-[0.2em] text-[9px] h-6 px-3 shadow-lg">Priority Alert</Badge>
             </div>
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-black leading-[0.9] tracking-tighter uppercase">
               {latestAlert.title}
@@ -121,14 +121,14 @@ export function AlertOverlay() {
             <div className="bg-muted/20 p-4 rounded-2xl flex items-center gap-3 border border-transparent">
               <div className="bg-white p-2 rounded-lg shadow-sm border shrink-0"><Users className="h-4 w-4 text-primary" /></div>
               <div className="min-w-0">
-                <p className="text-[8px] font-black uppercase text-muted-foreground">Target</p>
+                <p className="text-[8px] font-black uppercase text-muted-foreground">Audience</p>
                 <p className="text-[10px] font-bold uppercase truncate">{latestAlert.audience}</p>
               </div>
             </div>
             <div className="bg-muted/20 p-4 rounded-2xl flex items-center gap-3 border border-transparent">
               <div className="bg-white p-2 rounded-lg shadow-sm border shrink-0"><Clock className="h-4 w-4 text-primary" /></div>
               <div className="min-w-0">
-                <p className="text-[8px] font-black uppercase text-muted-foreground">Dispatch</p>
+                <p className="text-[8px] font-black uppercase text-muted-foreground">Sent</p>
                 <p className="text-[10px] font-bold uppercase truncate">{(() => { try { return formatDistanceToNow(new Date(latestAlert.createdAt)); } catch { return 'recently'; } })()} ago</p>
               </div>
             </div>
@@ -138,7 +138,7 @@ export function AlertOverlay() {
             className="w-full h-14 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-2xl shadow-primary/30 active:scale-95 transition-all"
             onClick={handleUnderstood}
           >
-            Acknowledged Hub Directive
+            Got It
           </Button>
         </div>
       </DialogContent>

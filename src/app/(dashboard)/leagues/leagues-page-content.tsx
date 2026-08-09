@@ -1970,7 +1970,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       {!embedded ? (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
-            <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Hub</Badge>
+            <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Competition Management</Badge>
             <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">{leaguesLabel}</h1>
           </div>
           <div className="flex gap-2">
@@ -1982,7 +1982,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             ) : null}
             {!activeLeague && canCreateLeague && (
               <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="h-5 w-5 mr-2" /> Launch {leagueLabel} Architect
+                <Plus className="h-5 w-5 mr-2" /> Create {leagueLabel}
               </Button>
             )}
           </div>
@@ -1997,7 +1997,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
           ) : null}
           {!activeLeague && canCreateLeague && (
             <Button className="h-11 px-6 rounded-2xl font-black shadow-xl shadow-primary/20 text-xs" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" /> Launch {leagueLabel} Architect
+              <Plus className="h-4 w-4 mr-2" /> Create {leagueLabel}
             </Button>
           )}
         </div>
@@ -2677,12 +2677,12 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             <h3 className="text-2xl font-black uppercase">{leagues.length > 0 ? `Select a ${leagueLabel}` : 'No Competitive Enrollment'}</h3>
             <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">
               {leagues.length > 0
-                ? `Choose an existing ${leagueLabel.toLowerCase()} above to open its operations hub.`
-                : `Initialize your own ${leagueLabel.toLowerCase()} architect to begin the competitive season.`}
+                ? `Choose an existing ${leagueLabel.toLowerCase()} above to manage it.`
+                : `Create your first ${leagueLabel.toLowerCase()} to begin the competitive season.`}
             </p>
           </div>
           {canCreateLeague && leagues.length === 0 && (
-            <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Initialize Free {leagueLabel}</Button>
+            <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Create Free {leagueLabel}</Button>
           )}
         </div>
       )}
@@ -2691,7 +2691,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 space-y-8">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase">{leagueLabel} Architect</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="text-3xl font-black uppercase">Create {leagueLabel}</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase">{leagueLabel} Title</Label>

@@ -697,7 +697,7 @@ export default function SettingsPage() {
               { id: 'playbook', name: 'Playbook', icon: GraduationCap },
               { id: 'volunteer', name: 'Volunteer', icon: HandHelping },
               { id: 'fundraising', name: 'Fundraising', icon: PiggyBank },
-              { id: 'tacticalChat', name: 'Tactical Chat', icon: MessageCircle },
+              { id: 'tacticalChat', name: 'Team Chat', icon: MessageCircle },
               { id: 'library', name: 'Library', icon: FolderClosed },
             ].map(module => {
               const Icon = module.icon;
@@ -759,7 +759,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-4">
             <div className="bg-blue-100 p-3 rounded-2xl text-blue-600 group-hover:bg-primary group-hover:text-white transition-colors"><BookOpen className="h-6 w-6" /></div>
             <div className="text-left">
-              <p className="font-black text-sm uppercase tracking-tight">Tactical Manual</p>
+              <p className="font-black text-sm uppercase tracking-tight">Help Guide</p>
               <p className="text-[10px] text-muted-foreground font-bold uppercase">Full How-To Guide — All Modules & Features</p>
             </div>
           </div>

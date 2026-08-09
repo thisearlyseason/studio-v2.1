@@ -138,10 +138,10 @@ export default function HowToGuidePage() {
   };
 
   const BLOCK_COMMUNICATION = {
-    title: "5. Tactical Chat & Communication",
+    title: "5. Team Chat & Communication",
     icon: MessageCircle,
     steps: [
-      { step: "Create a Channel", detail: <>Open the <strong>Tactical Chat</strong> module and tap <strong>+ Establish Channel</strong>. Name your channel (e.g., "Offense Unit", "Tournament Travel", "Parents"). All squad members or specific groups can be added.</> },
+      { step: "Create a Channel", detail: <>Open <strong>Team Chat</strong> and tap <strong>+ New Channel</strong>. Name your channel (e.g., "Offense Unit", "Tournament Travel", "Parents"). All squad members or specific groups can be added.</> },
       { step: "Who Can See What", detail: <>Channels can be set to <strong>All Members</strong>, <strong>Staff Only</strong>, or <strong>Custom Group</strong>. Staff-only channels are completely invisible to athletes and parents.</> },
       { step: "Send Messages", detail: <>Type in the message field and tap <strong>Send</strong>. You can also attach images, files from the Library, or link to an event on your schedule for context.</> },
       { step: "Notifications", detail: <>All members in a channel receive a push notification when a new message is sent. Coaches can mark messages as <strong>High Priority</strong> to trigger an urgent, heads-up notification.</> },
@@ -231,7 +231,7 @@ export default function HowToGuidePage() {
     steps: [
       { step: "What Is Module Visibility?", detail: <>Some squads don't use every feature. <strong>Module Visibility</strong> lets Admin staff toggle specific sidebar modules on or off. When a module is disabled, it disappears completely from the sidebar for every member on the squad — keeping the interface clean and focused.</> },
       { step: "Accessing the Controls", detail: <>Go to <strong>Settings</strong> (gear icon in the sidebar footer). Scroll to the <strong>Module Visibility</strong> section. This section is only visible to users with <strong>Coach</strong>, <strong>Staff</strong>, or <strong>Admin</strong> roles.</> },
-      { step: "Toggle a Module Off", detail: <>Each of the 8 modules has its own toggle switch: <strong>Feed</strong>, <strong>Roster</strong>, <strong>Practice</strong>, <strong>Playbook</strong>, <strong>Volunteer</strong>, <strong>Fundraising</strong>, <strong>Tactical Chat</strong>, and <strong>Library</strong>. Flip the switch to OFF and it saves instantly to Firestore — no page reload required.</> },
+      { step: "Toggle a Module Off", detail: <>Each module has its own toggle switch: <strong>Feed</strong>, <strong>Roster</strong>, <strong>Practice</strong>, <strong>Playbook</strong>, <strong>Volunteer</strong>, <strong>Fundraising</strong>, <strong>Team Chat</strong>, and <strong>Library</strong>. Turn a switch off to hide that module for the team.</> },
       { step: "Route Protection", detail: <>Disabled modules are <strong>fully protected</strong>. Even if a member tries to navigate to a hidden module by typing the URL directly (e.g., <code>/practice</code>), the system will automatically redirect them back to the Dashboard and display an <em>"Access Denied"</em> notification.</> },
       { step: "Re-enabling a Module", detail: <>Simply flip the toggle back to ON at any time. The module instantly reappears in all members' sidebars. Module settings are stored per-squad, so each squad you manage can have a different configuration.</>}
     ]
@@ -317,7 +317,7 @@ export default function HowToGuidePage() {
     steps: [
       { step: "Connect Your Stripe Account", detail: <>From <strong>Coaches Corner → Finance tab</strong>, find the black <em>"Connect Stripe to Accept Payments"</em> card. Click <strong>"Connect Stripe."</strong> You'll be redirected to Stripe to create or link a free Stripe Express account. Once complete, you're redirected back to The Squad automatically.</> },
       { step: "Create a Payment Item", detail: <>Once connected, use the <strong>"+ New Payment Item"</strong> button to create a named payable line item: e.g., <em>"Spring Tournament Registration Fee — $45."</em> Give it a name, amount, and optional description.</> },
-      { step: "Share a Payment Link", detail: <>Each payment item generates a unique Stripe-hosted payment link. Share the link in the squad Feed, Tactical Chat, or by text. Players or parents click it and pay securely directly to your Stripe account.</> },
+      { step: "Share a Payment Link", detail: <>Each payment item generates a unique Stripe-hosted payment link. Share the link in the squad Feed, Team Chat, or by text. Players or parents click it and pay securely directly to your Stripe account.</> },
       { step: "Track Payments", detail: <>Payment records appear in the <strong>Finance tab ledger</strong> in real-time. See who has paid, amounts received, and outstanding balances — all without leaving the app.</> },
       { step: "Hub Payment Routing (Elite/Org)", detail: <>In <strong>Club Hub → Finance tab</strong>, choose between <strong>Shared Hub Account</strong> (all squad payments route to one hub Stripe account) or <strong>Per-Squad Accounts</strong> (each squad connects their own Stripe). Toggle the mode and connect at the appropriate level.</> }
     ]
@@ -438,14 +438,14 @@ export default function HowToGuidePage() {
   // ─── PLAYER / PARENT BLOCKS ────────────────────────────────────────────────
 
   const BLOCK_PLAYER_HUB = {
-    title: "Athlete Operational Hub",
+    title: "Player Dashboard",
     icon: User,
     steps: [
       { step: "Join a Squad", detail: <>Enter the 6-character <strong>Squad Code</strong> provided by your coach in the <strong>Recruitment Hub</strong>. Your profile instantly links to the squad and you gain full access to the team's content.</> },
       { step: "View Your Schedule", detail: <>The <strong>Schedule</strong> tab shows every upcoming practice, match, and event. RSVP to each event using the <strong>Going / Maybe / Not Going</strong> buttons so your coach knows who to expect.</> },
       { step: "Watch Assigned Film", detail: <>In <strong>Playbook</strong>, find videos assigned by your coach. You must watch at least <strong>75%</strong> of any mandatory video to be marked Compliant in the staff ledger — this can affect your eligibility and playing time.</> },
       { step: "Generate Your Scouting Pack", detail: <>In your Roster profile, tap <strong>Generate Scouting Pack</strong> to export a certified PDF highlighting your stats, position, team, and coach contact — a professional recruiting document for college scouts.</> },
-      { step: "Use Tactical Chat", detail: <>The <strong>Tactical Chat</strong> module gives you access to any channels your coach has added you to. Use it for squad coordination, travel logistics, and staying in the loop with teammates.</>}
+      { step: "Use Team Chat", detail: <>The <strong>Team Chat</strong> module gives you access to channels your coach has added you to. Use it for team updates, travel logistics, and conversations with teammates.</>}
     ]
   };
 
@@ -476,7 +476,7 @@ export default function HowToGuidePage() {
     starter: {
       label: "Starter (Free)",
       desc: "Foundational coordination for grassroots squads — zero cost, forever.",
-      highlights: ["Unlimited Teams", "Live Tactical Chat", "Match Scheduling", "Manual Fee Ledgers", "Drill Archiving", "Document Library", "Module Visibility Controls"],
+      highlights: ["Unlimited Teams", "Live Team Chat", "Match Scheduling", "Manual Fee Ledgers", "Drill Archiving", "Document Library", "Module Visibility Controls"],
       sections: [
         BLOCK_DEPLOYMENT,
         BLOCK_SCHEDULING,
@@ -584,7 +584,7 @@ export default function HowToGuidePage() {
     player: {
       label: "Individual Athlete",
       desc: "Stay coordinated, compliant, and ready. Manage your personal recruiting portfolio.",
-      highlights: ["Squad Join via Code", "RSVP to Events", "75% Film Compliance", "Recruiting Portfolio PDF", "Tactical Chat", "Volunteer Hours Tracking"],
+      highlights: ["Squad Join via Code", "RSVP to Events", "75% Film Compliance", "Recruiting Portfolio PDF", "Team Chat", "Volunteer Hours Tracking"],
       sections: [
         BLOCK_PLAYER_HUB,
         BLOCK_SCHEDULING,
@@ -649,7 +649,7 @@ export default function HowToGuidePage() {
         {!selectedType ? (
           <div className="space-y-16 animate-in fade-in duration-700">
             <section className="text-center space-y-6">
-              <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px] px-4 h-7">Tactical Manual</Badge>
+              <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px] px-4 h-7">Help Guide</Badge>
               <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-none uppercase">Operational <span className="text-primary italic">Manual.</span></h1>
               <p className="text-xl text-muted-foreground font-medium max-w-2xl mx-auto leading-relaxed">Complete module-by-module documentation for every account type. Select your role to access your personalized guide.</p>
             </section>

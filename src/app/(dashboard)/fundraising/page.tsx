@@ -781,7 +781,7 @@ function AuthorizedFundraisingPage() {
 
       <Dialog open={isAuditOpen} onOpenChange={setIsAuditOpen}>
         <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-lg text-foreground">
-          <DialogTitle className="sr-only">Donation Audit Ledger</DialogTitle>
+          <DialogTitle className="sr-only">Donation Details</DialogTitle>
           <DialogDescription className="sr-only">Verify and confirm receipt of manual or digital donations</DialogDescription>
           <div className="h-2 bg-black w-full" />
           <div className="p-8 lg:p-10 space-y-8">

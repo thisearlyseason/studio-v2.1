@@ -30,14 +30,14 @@ test('free league creators receive a first-league CTA instead of a permanent spi
   assert.match(leagues, /window\.setTimeout\(\(\) => setLoadingGraceExpired\(true\), 8000\)/);
   assert.match(leagues, /isLeaguesLoading && !loadingGraceExpired/);
   assert.match(leagues, /No Competitive Enrollment/);
-  assert.match(leagues, /Initialize Free \{leagueLabel\}/);
+  assert.match(leagues, /Create Free \{leagueLabel\}/);
 });
 
 test('empty dashboard schedule directs the user to the next useful action', async () => {
   const dashboard = await source('../src/app/(dashboard)/dashboard/page.tsx');
 
   assert.match(dashboard, /Schedule First Event/);
-  assert.match(dashboard, /Open Master Schedule/);
-  assert.match(dashboard, /Create Your Squad/);
-  assert.match(dashboard, /Join a Squad/);
+  assert.match(dashboard, /Open Schedule/);
+  assert.match(dashboard, /Create Your Team/);
+  assert.match(dashboard, /Join a Team/);
 });

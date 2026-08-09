@@ -83,11 +83,11 @@ import { Menu } from 'lucide-react';
 
 const DEMO_OPTIONS = [
   { id: 'starter_squad', name: 'Starter Plan Demo', icon: Users, desc: 'Grassroots essentials' },
-  { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Professional elite coordination' },
-  { id: 'elite_teams', name: 'Elite Org Demo', icon: Trophy, desc: 'Institutional multi-team hub' },
+  { id: 'squad_pro', name: 'Squad Pro Demo', icon: Zap, desc: 'Complete team management' },
+  { id: 'elite_teams', name: 'Elite Org Demo', icon: Trophy, desc: 'Manage multiple teams' },
   { id: 'school_demo', name: 'School Demo', icon: GraduationCap, desc: 'Full K-12 Program Hub' },
-  { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Teammate recruiting view' },
-  { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Guardian safety view' },
+  { id: 'player_demo', name: 'Player Demo', icon: User, desc: 'Schedule, chat, and profile' },
+  { id: 'parent_demo', name: 'Parent Demo', icon: Baby, desc: 'Family schedule and waivers' },
   { id: 'league_demo', name: 'FREE League Creator Demo', icon: ShieldCheck, desc: 'Free plan · manage leagues without Pro' }
 ];
 
@@ -549,7 +549,7 @@ export default function LandingPage() {
               <SheetContent side="right" className="w-[300px] sm:w-[400px] border-none p-0 bg-white">
                 <SheetHeader className="p-8 pb-4 text-left">
                   <div className="h-1 bg-primary w-12 rounded-full mb-6" />
-                  <SheetTitle className="text-3xl font-black uppercase tracking-tighter">Tactical Menu</SheetTitle>
+                  <SheetTitle className="text-3xl font-black uppercase tracking-tighter">Menu</SheetTitle>
                   <SheetDescription className="text-primary font-black uppercase text-[10px] tracking-widest pt-1">
                     Squad Control Protocols
                   </SheetDescription>
@@ -833,7 +833,7 @@ export default function LandingPage() {
             ) : (
               <Link href="/signup" className="w-full">
                 <Button size="lg" className="h-12 px-8 rounded-full text-sm font-black shadow-2xl shadow-primary/40 active:scale-95 transition-all w-full">
-                  Deploy Your Squad <ArrowRight className="ml-2 h-4 w-4" />
+                  Create Your Squad <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
             )}
@@ -844,14 +844,14 @@ export default function LandingPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-4xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white">
-                <DialogTitle className="sr-only">Experience Tactical Demo Hub</DialogTitle>
+                <DialogTitle className="sr-only">Explore Demo Workspaces</DialogTitle>
                 <DialogDescription className="sr-only">
                   Choose a demo role to open an isolated sample workspace.
                 </DialogDescription>
                 <div className="h-2 bg-primary w-full" />
                 <div className="p-8 lg:p-12 space-y-8">
                   <div className="text-center space-y-2">
-                    <h2 className="text-4xl font-black uppercase tracking-tight">Tactical Perspectives</h2>
+                    <h2 className="text-4xl font-black uppercase tracking-tight">Choose a Demo Role</h2>
                     <p className="text-base font-bold text-primary uppercase tracking-widest">Select your role to begin</p>
                   </div>
 
@@ -1549,7 +1549,7 @@ export default function LandingPage() {
                     <p className="text-[9px] font-black uppercase text-white/30">Included</p>
                     <ul className="space-y-2">
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-primary" /> Scheduling</li>
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-primary" /> Tactical Chats</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-primary" /> Team Chat</li>
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-primary" /> Score Tracking</li>
                     </ul>
                   </div>
@@ -1600,7 +1600,7 @@ export default function LandingPage() {
                   <CardFooter className="p-8 pt-0 relative z-10">
                     <Link href="/signup" className="w-full">
                       <Button className="w-full h-12 rounded-xl font-black shadow-xl shadow-primary/40 bg-primary text-black hover:bg-primary/90 text-xs uppercase tracking-widest active:scale-95 transition-all">
-                        Deploy Pro Team <ChevronRight className="h-4 w-4 ml-1" />
+                        Start Pro Team <ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
                     </Link>
                   </CardFooter>
@@ -1632,7 +1632,7 @@ export default function LandingPage() {
                 </CardContent>
                 <CardFooter className="p-8 pt-0">
                   <Link href="/signup" className="w-full">
-                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-white/20 text-white hover:bg-white/10 bg-transparent">Deploy Club</Button>
+                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-white/20 text-white hover:bg-white/10 bg-transparent">Start Club</Button>
                   </Link>
                 </CardFooter>
               </Card>
@@ -1665,7 +1665,7 @@ export default function LandingPage() {
                 </CardContent>
                 <CardFooter className="p-8 pt-0">
                   <Link href="/signup" className="w-full">
-                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-white/20 text-white hover:bg-white/10 hover:border-primary/40 hover:text-primary bg-transparent">Deploy League</Button>
+                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-white/20 text-white hover:bg-white/10 hover:border-primary/40 hover:text-primary bg-transparent">Start League</Button>
                   </Link>
                 </CardFooter>
               </Card>
@@ -1696,7 +1696,7 @@ export default function LandingPage() {
                 </CardContent>
                 <CardFooter className="p-8 pt-0">
                   <Link href="/signup" className="w-full">
-                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-[#10b981]/30 text-[#10b981] hover:bg-[#10b981]/10 hover:border-[#10b981]/50 bg-transparent">Deploy School</Button>
+                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-[#10b981]/30 text-[#10b981] hover:bg-[#10b981]/10 hover:border-[#10b981]/50 bg-transparent">Start School</Button>
                   </Link>
                 </CardFooter>
               </Card>
@@ -1895,7 +1895,7 @@ export default function LandingPage() {
             </Link>
                         <div className="flex flex-wrap items-center justify-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center mb-4">
               <Link href="/how-to" className="hover:text-primary transition-colors">How to Guide</Link>
-              <Link href="/Tactical_User_Manual.md" className="hidden hover:text-primary transition-colors text-primary font-black scale-110">Tactical Manual</Link>
+              <Link href="/Tactical_User_Manual.md" className="hidden hover:text-primary transition-colors text-primary font-black scale-110">Help Guide</Link>
               <Link href="/AI_KNOWLEDGE_BASE.md" className="hidden hover:text-primary transition-colors">AI Knowledge Base</Link>
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>

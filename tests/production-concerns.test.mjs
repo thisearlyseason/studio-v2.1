@@ -153,3 +153,38 @@ test('anonymous demos reset on expiry or page exit with the scheduler as fallbac
   assert.ok(cleanup.indexOf("recursiveDelete(adminDb.collection('users').doc(uid))") < cleanup.indexOf('auth.deleteUser(uid)'));
   assert.match(functions, /cleanupAnonymousUsers = onSchedule\(\{[\s\S]*schedule: 'every 15 minutes'/);
 });
+
+test('shared navigation uses plain language and role-specific primary actions', async () => {
+  const [shell, dashboard, family, login, alerts, demoLayout] = await Promise.all([
+    source('../src/components/layout/Shell.tsx'),
+    source('../src/app/(dashboard)/dashboard/page.tsx'),
+    source('../src/app/(dashboard)/family/page.tsx'),
+    source('../src/app/login/page.tsx'),
+    source('../src/components/layout/AlertOverlay.tsx'),
+    source('../src/app/(dashboard)/layout.tsx'),
+  ]);
+
+  assert.match(shell, /const roleNavigationOrder = isParent/);
+  assert.match(shell, /const primaryCoordTabs = filteredCoordTabs\.slice\(0, 5\)/);
+  assert.match(shell, /Your Main Tools/);
+  assert.match(shell, /More Tools/);
+  assert.match(shell, /Team Join Code/);
+  assert.match(shell, /\{ name: 'Family', href: '\/family'/);
+  assert.match(shell, /\{ name: 'Profile', href: '\/roster'/);
+  assert.match(dashboard, /Next Actions/);
+  assert.match(dashboard, /Family Schedule/);
+  assert.match(dashboard, /Manage Roster/);
+  assert.match(dashboard, /Waivers and Documents/);
+  assert.match(family, /Family Overview/);
+  assert.match(family, /Review Waivers/);
+  assert.match(family, /Family Payments/);
+  assert.match(login, /\{forgotMode \? 'Reset Password' : 'Sign In'\}/);
+  assert.match(login, /Email Address/);
+  assert.match(alerts, /Priority Alert/);
+  assert.match(alerts, /Got It/);
+  assert.match(demoLayout, /Resets In:/);
+  assert.doesNotMatch(shell, /Strategic Command|Tactical Menu|Identity Termination/);
+  assert.doesNotMatch(dashboard, /Mission Itinerary|Community Intelligence|Audit Ledger|Tactical Silence/);
+  assert.doesNotMatch(family, /Household Command|Operational Pulse|Active Directives|Execute Waivers/);
+  assert.doesNotMatch(alerts, /High Priority Squad Alert|Acknowledged Hub Directive/);
+});

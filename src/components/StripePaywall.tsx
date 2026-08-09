@@ -82,7 +82,7 @@ export function StripePaywall() {
       <DialogContent className="sm:max-w-5xl rounded-[3rem] overflow-hidden p-0 border-none shadow-2xl bg-white">
         {/* Visually hidden title for screen reader accessibility (Radix requirement) */}
         <VisuallyHidden.Root>
-          <DialogTitle>Deploy Protocol — Select Your Plan</DialogTitle>
+          <DialogTitle>Upgrade — Select Your Plan</DialogTitle>
         </VisuallyHidden.Root>
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[600px]">
           {/* Left Sidebar / Image */}
@@ -92,23 +92,23 @@ export function StripePaywall() {
             </div>
             
             <div className="relative z-10 space-y-6">
-              <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] tracking-[0.2em] px-3 h-6">Infrastructure Upgrade</Badge>
+              <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] tracking-[0.2em] px-3 h-6">Upgrade Your Plan</Badge>
               <h2 className="text-4xl lg:text-5xl font-black text-white tracking-tighter italic leading-[0.9]">
-                SCALE YOUR <span className="text-primary">LEGACY.</span>
+                GROW YOUR <span className="text-primary">PROGRAM.</span>
               </h2>
               <p className="text-sm font-medium text-white/60 leading-relaxed uppercase tracking-wider">
-                Unlock institutional-grade management tools and limitless squad scaling.
+                Unlock advanced team tools and support more squads as your organization grows.
               </p>
             </div>
 
             <div className="relative z-10 space-y-4">
               <div className="flex items-center gap-3 text-white/40">
                 <ShieldCheck className="h-5 w-5" />
-                <span className="text-[10px] font-black uppercase tracking-widest">PCI Secure Terminal</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">Secure Stripe Checkout</span>
               </div>
               <div className="flex items-center gap-3 text-white/40">
                 <Zap className="h-5 w-5" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Prorated Syncing</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">Automatic Proration</span>
               </div>
             </div>
           </div>
@@ -117,8 +117,8 @@ export function StripePaywall() {
           <div className="lg:col-span-8 p-8 lg:p-12 space-y-8 flex flex-col">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div className="space-y-1">
-                <h3 className="text-2xl font-black uppercase tracking-tight">Deploy Protocol</h3>
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Select your operational tier</p>
+                <h3 className="text-2xl font-black uppercase tracking-tight">Choose a Plan</h3>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Select the plan that fits your organization</p>
               </div>
 
               {/* Billing Toggle */}

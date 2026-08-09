@@ -22,7 +22,11 @@ import {
   FileText,
   MapPin,
   ArrowRight,
-  Star
+  Star,
+  MessageCircle,
+  CreditCard,
+  Dumbbell,
+  User
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { format, isFuture, isToday, isSameDay, isSameMonth, startOfDay, isPast, isAfter, isValid, parseISO } from 'date-fns';
@@ -44,7 +48,7 @@ import {
 export default function UniversalAccountDashboard() {
   const { 
     user, activeTeam, activeTeamEvents, 
-    householdBalance, isYouth, isParent,
+    householdBalance, isYouth, isParent, isPlayer,
     householdEvents, householdGames, myChildren, teams,
     isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff,
     alerts, seenAlertIds
@@ -107,6 +111,27 @@ export default function UniversalAccountDashboard() {
     return query(collection(db, 'teams', activeTeam.id, 'fundraising'), limit(5));
   }, [db, activeTeam?.id]);
   const { data: fundraisers } = useCollection(fundQuery);
+
+  const quickActions = isParent
+    ? [
+        { label: 'Family Schedule', href: '/calendar', icon: CalendarDays },
+        { label: 'Payments', href: '/family/payments', icon: CreditCard },
+        { label: 'Waivers', href: '/files', icon: FileText },
+        { label: 'Volunteer', href: '/volunteers', icon: HandHelping },
+      ]
+    : isPlayer
+      ? [
+          { label: 'My Schedule', href: '/calendar', icon: CalendarDays },
+          { label: 'Team Chat', href: '/chats', icon: MessageCircle },
+          { label: 'Practice', href: '/practice', icon: Dumbbell },
+          { label: 'My Profile', href: '/roster', icon: User },
+        ]
+      : [
+          { label: 'Manage Schedule', href: '/events', icon: CalendarDays },
+          { label: 'Manage Roster', href: '/roster', icon: Users },
+          { label: 'Team Chat', href: '/chats', icon: MessageCircle },
+          { label: 'Attendance', href: '/coaches-corner/attendance', icon: ClipboardCheck },
+        ];
 
   const upcomingItinerary = useMemo(() => {
     const list = isParent ? (householdEvents || []) : (activeTeamEvents || []);
@@ -189,7 +214,7 @@ export default function UniversalAccountDashboard() {
   if (!mounted || !user) return (
     <div className="flex flex-col items-center justify-center py-20 animate-pulse">
       <div className="h-12 w-12 bg-primary/10 rounded-full mb-4" />
-      <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Synchronizing Dashboard...</p>
+      <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Loading Dashboard...</p>
     </div>
   );
 
@@ -197,28 +222,48 @@ export default function UniversalAccountDashboard() {
     <div className="space-y-10 pb-20 animate-in fade-in duration-700">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Master Intelligence</Badge>
-          <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none text-foreground">Command Hub</h1>
-          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Status: Operational • {user.role?.replace(/_/g, ' ')}</p>
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Overview</Badge>
+          <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">{activeTeam?.name || 'Your account'} • {user.role?.replace(/_/g, ' ')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {!isYouth && (
             <>
               <Button onClick={() => router.push('/teams/new')} variant="outline" className="rounded-xl h-12 border-2 font-black uppercase text-[10px] text-foreground">
-                <Plus className="h-4 w-4 mr-2" /> New Squad
+                <Plus className="h-4 w-4 mr-2" /> New Team
               </Button>
               <Button onClick={() => router.push('/teams/join')} className="rounded-xl h-12 px-6 font-black uppercase text-[10px] shadow-lg shadow-primary/20">
-                <UserPlus className="h-4 w-4 mr-2" /> Portals
+                <UserPlus className="h-4 w-4 mr-2" /> Join with Code
               </Button>
             </>
           )}
         </div>
       </header>
 
+      <section aria-labelledby="quick-actions-heading" className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <h2 id="quick-actions-heading" className="text-xs font-black uppercase tracking-widest text-foreground">Next Actions</h2>
+          <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{isParent ? 'Family' : isPlayer ? 'Player' : 'Coach'} shortcuts</span>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {quickActions.map((action) => (
+            <Button
+              key={action.href}
+              variant="outline"
+              onClick={() => router.push(action.href)}
+              className="h-14 justify-start rounded-xl border-2 px-3 sm:px-4 font-black uppercase text-[10px] tracking-wider text-foreground hover:border-primary hover:text-primary"
+            >
+              <action.icon className="h-4 w-4 mr-2 sm:mr-3 text-primary shrink-0" />
+              <span className="min-w-0 whitespace-normal text-left leading-tight">{action.label}</span>
+            </Button>
+          ))}
+        </div>
+      </section>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-primary text-white p-5 sm:p-8 space-y-2 relative overflow-hidden group">
           <TrendingUp className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
-          <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Victory Ratio</p>
+          <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Win Rate</p>
           <p className="text-3xl sm:text-5xl font-black">{winRate}%</p>
         </Card>
         <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-black text-white p-5 sm:p-8 space-y-2 relative overflow-hidden group">
@@ -229,7 +274,7 @@ export default function UniversalAccountDashboard() {
         <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-white p-5 sm:p-8 space-y-2 ring-1 ring-black/5 relative overflow-hidden group">
           <Zap className="absolute -right-4 -bottom-4 h-24 w-24 text-primary opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
           <p className="text-[9px] sm:text-[10px] font-black uppercase text-muted-foreground">Community</p>
-          <div className="flex items-baseline gap-1"><p className="text-3xl sm:text-5xl font-black text-primary">{(volunteers?.length || 0) + (fundraisers?.length || 0)}</p><span className="text-sm font-black text-foreground uppercase">Ops</span></div>
+          <div className="flex items-baseline gap-1"><p className="text-3xl sm:text-5xl font-black text-primary">{(volunteers?.length || 0) + (fundraisers?.length || 0)}</p><span className="text-sm font-black text-foreground uppercase">Open</span></div>
         </Card>
         {isYouth ? (
           <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-muted/20 p-5 sm:p-8 space-y-2 relative overflow-hidden group">
@@ -244,7 +289,7 @@ export default function UniversalAccountDashboard() {
           <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-muted/20 p-5 sm:p-8 space-y-2">
             <p className="text-[9px] sm:text-[10px] font-black uppercase text-muted-foreground">Household</p>
             <p className="text-2xl sm:text-3xl font-black text-foreground">${householdBalance.toLocaleString()}</p>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/family')}>Audit Detail</Button>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/family/payments')}>Payment Details</Button>
           </Card>
         )}
       </div>
@@ -256,11 +301,11 @@ export default function UniversalAccountDashboard() {
               <div className="flex items-center gap-3">
                 <CalendarDays className="h-5 w-5 text-primary" />
                 <h3 className="text-xl font-black uppercase text-foreground">
-                  {isParent ? "Household Itinerary" : "Mission Itinerary"}
+                  {isParent ? "Family Schedule" : "Upcoming Schedule"}
                 </h3>
               </div>
               <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest text-foreground hover:bg-primary/5 hover:text-primary rounded-full px-4" onClick={() => router.push('/calendar')}>
-                Master Schedule <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                Full Schedule <ChevronRight className="h-3.5 w-3.5 ml-1" />
               </Button>
             </div>
             
@@ -312,7 +357,7 @@ export default function UniversalAccountDashboard() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <Badge className="bg-primary/10 text-primary border-none text-[8px] uppercase font-black px-2 h-5">{event.eventType}</Badge>
-                            <span className="text-[10px] font-black uppercase text-muted-foreground truncate max-w-[120px]">{team?.name || 'Squad Deployment'}</span>
+                            <span className="text-[10px] font-black uppercase text-muted-foreground truncate max-w-[120px]">{team?.name || 'Your Squad'}</span>
                           </div>
                           <div className="flex gap-1 shrink-0">
                             {participants.map((p, idx) => (
@@ -328,7 +373,7 @@ export default function UniversalAccountDashboard() {
                         <h4 className="font-black text-base uppercase truncate group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
                         <div className="flex items-center justify-between mt-1">
                           <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1 opacity-60">
-                            <MapPin className="h-3 w-3" /> {event.location || 'Tactical HQ'}
+                            <MapPin className="h-3 w-3" /> {event.location || 'Location TBD'}
                           </p>
                           <span className="text-[10px] font-black tracking-tight text-foreground/80">{event.startTime || 'TBD'}</span>
                         </div>
@@ -340,8 +385,8 @@ export default function UniversalAccountDashboard() {
                 <div className="flex flex-col items-center justify-center py-12 px-6 bg-muted/5 rounded-[2.5rem] border-2 border-dashed border-muted/20 text-center space-y-4">
                   <CalendarDays className="h-10 w-10 text-primary/40" />
                   <div>
-                    <h4 className="text-lg font-black uppercase tracking-tight text-muted-foreground">Tactical Silence</h4>
-                    <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">No upcoming squad directives found</p>
+                    <h4 className="text-lg font-black uppercase tracking-tight text-muted-foreground">No Upcoming Events</h4>
+                    <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">Scheduled events will appear here</p>
                   </div>
                   <Button
                     className="h-11 rounded-full px-7 text-[10px] font-black uppercase tracking-widest"
@@ -352,8 +397,8 @@ export default function UniversalAccountDashboard() {
                     )}
                   >
                     {activeTeam
-                      ? (isStaff ? 'Schedule First Event' : 'Open Master Schedule')
-                      : (user.role === 'coach' ? 'Create Your Squad' : 'Join a Squad')}
+                      ? (isStaff ? 'Schedule First Event' : 'Open Schedule')
+                      : (user.role === 'coach' ? 'Create Your Team' : 'Join a Team')}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </div>
@@ -367,23 +412,23 @@ export default function UniversalAccountDashboard() {
                   className="rounded-full h-11 px-8 font-black uppercase text-[10px] tracking-widest border-2 hover:bg-primary hover:text-white hover:border-primary transition-all"
                   onClick={() => router.push('/calendar')}
                 >
-                  <CalendarDays className="h-3.5 w-3.5 mr-2" /> View Master Schedule
+                  <CalendarDays className="h-3.5 w-3.5 mr-2" /> View Full Schedule
                 </Button>
               </div>
             )}
           </section>
           <section className="space-y-4">
-            <div className="flex items-center gap-3 px-2"><HandHelping className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Community Intelligence</h3></div>
+            <div className="flex items-center gap-3 px-2"><HandHelping className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Community Opportunities</h3></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4">
-                <p className="text-[10px] font-black uppercase text-foreground">Open Volunteer Ops</p>
+                <p className="text-[10px] font-black uppercase text-foreground">Volunteer Opportunities</p>
                 {volunteers && volunteers.length > 0 ? volunteers.slice(0, 2).map((v: any) => (
                   <div key={v.id} className="flex items-center justify-between gap-4">
                     <p className="text-xs font-black uppercase truncate text-foreground">{v.title}</p>
                     <Button size="sm" variant="ghost" className="h-7 text-[8px] font-black border uppercase" onClick={() => router.push('/volunteers')}>Claim</Button>
                   </div>
                 )) : (
-                  <div className="text-center py-4 bg-muted/10 rounded-xl border border-dashed"><p className="text-[10px] font-bold text-muted-foreground uppercase">No open ops</p></div>
+                  <div className="text-center py-4 bg-muted/10 rounded-xl border border-dashed"><p className="text-[10px] font-bold text-muted-foreground uppercase">No open opportunities</p></div>
                 )}
               </Card>
               <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4">
@@ -405,11 +450,11 @@ export default function UniversalAccountDashboard() {
             <Card className="rounded-[2rem] bg-black text-white p-8 space-y-6 relative overflow-hidden group">
               <ShieldCheck className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 h-32 w-32 group-hover:scale-110 transition-transform duration-700" />
               <h3 className="text-2xl font-black uppercase tracking-tight">Join a League</h3>
-              <p className="text-xs text-white/60 font-medium leading-relaxed italic">Enter a coordinate league code provided by your organization manager to instantly enroll your household into competitive standings.</p>
-              <Button onClick={() => router.push('/teams/join')} className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl">Open Portal <ArrowRight className="ml-2 h-5 w-5" /></Button>
+              <p className="text-xs text-white/60 font-medium leading-relaxed">Enter the league code from your organizer to connect your account to its schedule and standings.</p>
+              <Button onClick={() => router.push('/teams/join')} className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl">Enter League Code <ArrowRight className="ml-2 h-5 w-5" /></Button>
             </Card>
           )}
-          <Card className="rounded-[2rem] shadow-xl bg-white p-6 space-y-4 ring-1 ring-black/5"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><CardTitle className="text-[10px] font-black uppercase text-foreground">Roster Compliance</CardTitle></div><p className="text-[10px] font-medium text-muted-foreground leading-relaxed">Ensure all teammates have signed their liability and media release waivers before match day.</p><Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] border-2">Audit Ledger</Button></Card>
+          <Card className="rounded-[2rem] shadow-xl bg-white p-6 space-y-4 ring-1 ring-black/5"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><CardTitle className="text-[10px] font-black uppercase text-foreground">Waivers and Documents</CardTitle></div><p className="text-[10px] font-medium text-muted-foreground leading-relaxed">Review required liability and media-release documents before game day.</p><Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] border-2">Review Documents</Button></Card>
         </aside>
       </div>
 

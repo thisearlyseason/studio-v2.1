@@ -567,7 +567,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
             {(isDemoInitializing || isSeedingDemo) && (
               <p className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed">
-                Seeding tactical data — this takes a few seconds to verify integrity.
+                Preparing sample data. This usually takes a few seconds.
               </p>
             )}
 
@@ -593,10 +593,10 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-[40] border-b border-primary/20 shrink-0 sticky top-0">
           <Timer className="h-3.5 w-3.5 text-primary animate-pulse" />
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-black uppercase tracking-widest">Guest Tactical Mode</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">Demo Mode</span>
             <div className="h-3 w-px bg-white/20" />
             <span className="text-[10px] font-mono font-bold text-primary">
-              Session Expiration: {timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}
+              Resets In: {timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}
             </span>
           </div>
         </div>
