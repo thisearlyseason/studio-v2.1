@@ -134,6 +134,9 @@ test('demo bootstrap creates the protected league before client blueprint enrich
   assert.match(route, /adminDb\.collection\('leagues'\)\.doc\(leagueId\)/);
   assert.match(route, /creatorId: uid/);
   assert.match(route, /memberUserIds: \[uid\]/);
+  assert.doesNotMatch(route, /if \(plan\.role !== 'parent'\)/);
+  assert.match(seeder, /const activeDemoLeagueId = `demo_league_\$\{userId\.slice\(-4\)\}`/);
+  assert.match(seeder, /if \(lDoc\.id !== activeDemoLeagueId\)/);
   assert.match(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 

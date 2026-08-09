@@ -15,6 +15,7 @@ import {
   query,
   setDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 
 const projectId = 'demo-the-squad-rules-test';
@@ -410,6 +411,51 @@ test('anonymous demo sessions can read only their server-scoped demo teams', asy
 
   await assertSucceeds(getDoc(doc(demoDb, 'teams', 'demo-team')));
   await assertFails(getDoc(doc(otherDemoDb, 'teams', 'demo-team')));
+});
+
+test('anonymous demos can enrich protected server-created shells', async () => {
+  const demoDb = authenticatedDb('demo-user', {
+    firebase: { sign_in_provider: 'anonymous' },
+  });
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await Promise.all([
+      setDoc(doc(db, 'users', 'demo-user'), {
+        role: 'coach',
+        isDemo: true,
+      }),
+      setDoc(doc(db, 'leagues', 'demo-league'), {
+        creatorId: 'demo-user',
+        memberUserIds: ['demo-user'],
+        memberTeamIds: ['demo-team'],
+        isDemo: true,
+      }),
+    ]);
+  });
+
+  const batch = writeBatch(demoDb);
+  batch.set(doc(demoDb, 'leagues', 'demo-league'), {
+    creatorId: 'demo-user',
+    memberUserIds: ['demo-user'],
+    memberTeamIds: ['demo-team'],
+    name: 'Demo League',
+  }, { merge: true });
+  batch.set(doc(demoDb, 'teams', 'demo-team'), {
+    name: 'Demo Team',
+    ownerUserId: 'fictional-coach',
+    demoSessionOwnerId: 'demo-user',
+    isDemo: true,
+    isPro: true,
+    planId: 'team',
+  }, { merge: true });
+  batch.set(doc(demoDb, 'users', 'demo-user', 'teamMemberships', 'demo-team'), {
+    teamId: 'demo-team',
+    ownerUserId: 'fictional-coach',
+    isDemo: true,
+  });
+
+  await assertSucceeds(batch.commit());
 });
 
 test('linked youth members retain access while removed members lose it', async () => {
