@@ -30,6 +30,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { getPlanTeamLimit } from '@/lib/plan-catalog';
 
 export default function AdminPlansPage() {
   const { isSuperAdmin, plans, assignManualPlan } = useTeam();
@@ -44,8 +45,7 @@ export default function AdminPlansPage() {
 
   // Manual Provisioning State
   const [targetUid, setTargetUid] = useState('');
-  const [provisionLimit, setProvisionLimit] = useState('15');
-  const [provisionPlanId, setProvisionPlanId] = useState('squad_organization');
+  const [provisionPlanId, setProvisionPlanId] = useState('school');
   const [isProvisioning, setIsProvisioning] = useState(false);
 
   if (!isSuperAdmin) {
@@ -75,7 +75,7 @@ export default function AdminPlansPage() {
   const handleManualProvision = async () => {
     if (!targetUid.trim()) return;
     setIsProvisioning(true);
-    await assignManualPlan(targetUid, provisionPlanId, parseInt(provisionLimit) || 15);
+    await assignManualPlan(targetUid, provisionPlanId, getPlanTeamLimit(provisionPlanId));
     setIsProvisioning(false);
     setTargetUid('');
   };
@@ -276,8 +276,8 @@ export default function AdminPlansPage() {
                           <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Pro Team Quota</Label>
                           <Input 
                             type="number" 
-                            value={provisionLimit} 
-                            onChange={e => setProvisionLimit(e.target.value)} 
+                            value={getPlanTeamLimit(provisionPlanId)}
+                            readOnly
                             className="h-14 rounded-xl border-2 font-black text-lg" 
                           />
                         </div>
@@ -288,9 +288,11 @@ export default function AdminPlansPage() {
                             onChange={e => setProvisionPlanId(e.target.value)}
                             className="w-full h-14 rounded-xl border-2 bg-background px-3 font-bold text-sm focus:ring-2 focus:ring-primary outline-none"
                           >
-                            {plans.map(p => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
+                            <option value="free">Free</option>
+                            <option value="team">Team</option>
+                            <option value="elite">Elite</option>
+                            <option value="league">League</option>
+                            <option value="school">School</option>
                           </select>
                         </div>
                       </div>

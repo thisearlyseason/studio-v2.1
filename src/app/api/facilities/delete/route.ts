@@ -5,8 +5,8 @@ import {
   FacilityDeletionContext,
   getFacilityReferenceReasons,
 } from '@/lib/facility-deletion';
+import { validFirestoreDocumentId } from '@/lib/firestore-document-id';
 
-const MAX_ID_LENGTH = 200;
 const MAX_DELETE_WRITES = 450;
 const MAX_SCANNED_RECORDS = 2_500;
 
@@ -19,9 +19,7 @@ type LinkedRecord = {
 
 function cleanId(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const cleaned = value.trim();
-  if (!cleaned || cleaned.length > MAX_ID_LENGTH || cleaned.includes('/')) return undefined;
-  return cleaned;
+  return validFirestoreDocumentId(value.trim()) || undefined;
 }
 
 function cleanName(value: unknown): string {

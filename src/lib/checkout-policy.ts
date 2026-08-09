@@ -11,6 +11,21 @@ const BLOCKING_SUBSCRIPTION_STATUSES = new Set([
   'paused',
 ]);
 
+export function isBlockingSubscriptionStatus(status: unknown): boolean {
+  return BLOCKING_SUBSCRIPTION_STATUSES.has(String(status || '').trim().toLowerCase());
+}
+
+export function hasUnresolvedSubscription(profile: Record<string, unknown>): boolean {
+  const status = profile.subscriptionStatus ??
+    profile.subscription_status ??
+    profile.stripe_subscription_status;
+  if (isBlockingSubscriptionStatus(status)) return true;
+  if (['canceled', 'cancelled', 'ended', 'inactive', 'incomplete_expired'].includes(
+    String(status || '').trim().toLowerCase()
+  )) return false;
+  return Boolean(profile.stripe_subscription_id || profile.stripeSubscriptionId);
+}
+
 export function calculateSignupTrialDays(input: {
   accountCreatedAt: number;
   now: number;
@@ -33,7 +48,7 @@ export function calculateSignupTrialDays(input: {
 export function hasBlockingSubscription(
   statuses: readonly string[]
 ): boolean {
-  return statuses.some(status => BLOCKING_SUBSCRIPTION_STATUSES.has(status));
+  return statuses.some(isBlockingSubscriptionStatus);
 }
 
 export function buildCheckoutIdempotencyKey(input: {

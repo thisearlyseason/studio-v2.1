@@ -135,20 +135,20 @@ function ChatRoomInner() {
   };
 
   const handleRename = () => {
-    if (!newName.trim() || !chatId || !effectiveTeamId) return;
+    if (!isStaff || !newName.trim() || !chatId || !effectiveTeamId) return;
     setIsRenameDialogOpen(false);
     updateDocumentNonBlocking(doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string), { name: newName.trim() });
     toast({ title: "Channel Identity Updated" });
   };
 
   const handleAddMember = (memberId: string) => {
-    if (!chatId || !effectiveTeamId) return;
+    if (!isStaff || !chatId || !effectiveTeamId) return;
     updateDocumentNonBlocking(doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string), { memberIds: arrayUnion(memberId) });
     toast({ title: "Squad Member Added" });
   };
 
   const handleRemoveMember = (memberId: string) => {
-    if (!chatId || !effectiveTeamId || !currentChat) return;
+    if (!isStaff || !chatId || !effectiveTeamId || !currentChat) return;
     const newIds = (currentChat.memberIds || []).filter((id: string) => id !== memberId);
     updateDocumentNonBlocking(doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string), { memberIds: newIds });
     toast({ title: 'Member Removed' });
@@ -261,13 +261,17 @@ function ChatRoomInner() {
                 </TooltipContent>
               </Tooltip>
               <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-2xl">
-                <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
-                  <Edit3 className="h-4 w-4 text-primary" /> Rename Tactical Group
-                </DropdownMenuItem>
-                <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsMembersDialogOpen(true)}>
-                  <UserPlus className="h-4 w-4 text-primary" /> Manage Squad Members
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="my-2" />
+                {isStaff && (
+                  <>
+                    <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
+                      <Edit3 className="h-4 w-4 text-primary" /> Rename Tactical Group
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsMembersDialogOpen(true)}>
+                      <UserPlus className="h-4 w-4 text-primary" /> Manage Squad Members
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="my-2" />
+                  </>
+                )}
                 <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3 text-destructive" onClick={handleDeleteChat}>
                   <Trash2 className="h-4 w-4" /> {isStaff ? 'Delete Global Hub' : 'Hide from Operations'}
                 </DropdownMenuItem>

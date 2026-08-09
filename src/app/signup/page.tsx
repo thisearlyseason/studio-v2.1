@@ -686,8 +686,11 @@ export default function SignupPage() {
 
               <div className="space-y-3.5">
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Full Name</Label>
+                  <Label htmlFor="signup-name" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Full Name</Label>
                   <Input
+                    id="signup-name"
+                    name="name"
+                    autoComplete="name"
                     required
                     maxLength={120}
                     placeholder="John Smith"
@@ -697,8 +700,11 @@ export default function SignupPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Email Address</Label>
+                  <Label htmlFor="signup-email" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Email Address</Label>
                   <Input
+                    id="signup-email"
+                    name="email"
+                    autoComplete="email"
                     required
                     type="email"
                     maxLength={254}
@@ -709,8 +715,11 @@ export default function SignupPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Password</Label>
+                  <Label htmlFor="signup-password" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Password</Label>
                   <Input
+                    id="signup-password"
+                    name="password"
+                    autoComplete="new-password"
                     required
                     type="password"
                     minLength={8}
@@ -722,8 +731,10 @@ export default function SignupPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Confirm Password</Label>
+                  <Label htmlFor="signup-password-confirmation" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Confirm Password</Label>
                   <Input
+                    id="signup-password-confirmation"
+                    name="passwordConfirmation"
                     required
                     type="password"
                     minLength={8}

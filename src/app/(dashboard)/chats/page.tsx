@@ -32,6 +32,7 @@ import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
+import { isStaffPosition } from '@/lib/staff-position';
 
 type ChatContext = {
   id: string;
@@ -61,17 +62,6 @@ export default function ChatsPage() {
   const chatsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db || !user?.id) return null;
     
-    /**
-     * TACTICAL OPTIMIZATION: For demo guest users, we allow listing all team chats
-     * to ensure immediate coordination availability without roster field delays.
-     */
-    if (activeTeam.id.startsWith('demo_')) {
-      return query(
-        collection(db, 'teams', activeTeam.id, 'groupChats'),
-        orderBy('createdAt', 'desc')
-      );
-    }
-
     return query(
       collection(db, 'teams', activeTeam.id, 'groupChats'), 
       where('memberIds', 'array-contains', user.id),
@@ -109,8 +99,7 @@ export default function ChatsPage() {
     if (isParent) {
       return members.filter(m => {
         // Parents can ONLY message other parents and staff/coaches
-        const isStaffPos = ['Coach', 'Assistant Coach', 'Team Lead', 'Squad Leader', 'Platform Admin', 'Manager', 'Team Representative'].includes(m.position);
-        if (isStaffPos) return true;
+        if (isStaffPosition(m.position)) return true;
         if (m.position === 'Parent') return true;
         return false;
       });

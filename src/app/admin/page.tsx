@@ -107,6 +107,19 @@ export default function AdminPortalPage() {
   } | null>(null);
   const [upgradingExisting, setUpgradingExisting] = useState(false);
 
+  const provisionEntitlement = useCallback(async (uid: string, planId: string, reason: string) => {
+    if (!firebaseUser) throw new Error('Authentication is required.');
+    const token = await firebaseUser.getIdToken();
+    const response = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/entitlement`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ planId, reason }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to provision entitlement.');
+    return payload as { planId: string; teamLimit: number };
+  }, [firebaseUser]);
+
   // ── Users Directory state ──────────────────────────────────────────────────
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -508,10 +521,9 @@ export default function AdminPortalPage() {
         role: selectedBetaApp.role,
         organization: selectedBetaApp.organization,
         isBetaTester: true,
-        plan_type: betaPlanType,
-        team_limit: betaPlanType === 'elite' ? 5 : (betaPlanType === 'league' || betaPlanType === 'school' ? 100 : (betaPlanType === 'team' ? 1 : 0)),
         createdAt: new Date().toISOString()
       });
+      await provisionEntitlement(newUid, betaPlanType, 'Approved beta application');
       
       // Update beta app status
       await updateDoc(doc(db, 'beta_applications', selectedBetaApp.id), { status: 'approved' });
@@ -573,13 +585,8 @@ export default function AdminPortalPage() {
       const { existingUid, pendingPlanType } = existingAccountConfirm;
 
       if (existingUid) {
-        // Update the existing Firestore user doc
-        await updateDoc(doc(db, 'users', existingUid), {
-          isBetaTester: true,
-          plan_type: pendingPlanType,
-          team_limit: pendingPlanType === 'elite' ? 5 : (pendingPlanType === 'league' || pendingPlanType === 'school' ? 100 : (pendingPlanType === 'team' ? 1 : 0)),
-          betaUpgradedAt: new Date().toISOString(),
-        });
+        await updateDoc(doc(db, 'users', existingUid), { isBetaTester: true, betaUpgradedAt: new Date().toISOString() });
+        await provisionEntitlement(existingUid, pendingPlanType, 'Approved existing beta account');
       }
 
       // Mark the application as approved
@@ -615,12 +622,8 @@ export default function AdminPortalPage() {
 
       if (!emailSnap.empty) {
         const existingUid = emailSnap.docs[0].id;
-        await updateDoc(doc(db, 'users', existingUid), {
-          isBetaTester: true,
-          plan_type: betaPlanType,
-          team_limit: betaPlanType === 'elite' ? 5 : (betaPlanType === 'league' || betaPlanType === 'school' ? 100 : (betaPlanType === 'team' ? 1 : 0)),
-          betaUpgradedAt: new Date().toISOString(),
-        });
+        await updateDoc(doc(db, 'users', existingUid), { isBetaTester: true, betaUpgradedAt: new Date().toISOString() });
+        await provisionEntitlement(existingUid, betaPlanType, 'Direct beta approval');
       }
 
       await updateDoc(doc(db, 'beta_applications', selectedBetaApp.id), {
@@ -744,8 +747,7 @@ export default function AdminPortalPage() {
     if (!db || !selectedUser || !newPlan) return;
     setUpdatingPlan(true);
     try {
-      const newLimit = newPlan === 'elite' ? 5 : (newPlan === 'league' || newPlan === 'school' ? 100 : (newPlan === 'team' ? 1 : 0));
-      await updateDoc(doc(db, 'users', selectedUser.id), { plan_type: newPlan, team_limit: newLimit });
+      await provisionEntitlement(selectedUser.id, newPlan, 'Users Directory plan update');
       setSelectedUser(prev => prev ? { ...prev, plan_type: newPlan } : null);
       setResults(prev => prev.map(r => r.id === selectedUser.id ? { ...r, plan_type: newPlan } : r));
       toast({ title: 'Plan Updated', description: `${selectedUser.name || selectedUser.email} → ${PLAN_LABELS[newPlan]?.label || newPlan}` });

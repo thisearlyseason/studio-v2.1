@@ -1,14 +1,6 @@
-const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+import { hasStaffRole } from '@/lib/staff-position';
 
-const STAFF_POSITIONS = new Set([
-  'coach',
-  'head coach',
-  'assistant coach',
-  'manager',
-  'squad leader',
-  'athletic director',
-  'staff',
-]);
+const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
 type RepairCandidate = {
   status?: unknown;
@@ -23,9 +15,7 @@ type RepairCandidate = {
 export function isRepairableAthlete(member: RepairCandidate | undefined): boolean {
   if (!member || member.status === 'removed' || member.isDeleted === true || member.playerId) return false;
 
-  const role = String(member.role || '').trim().toLowerCase();
-  const position = String(member.position || '').trim().toLowerCase();
-  return role !== 'admin' && role !== 'staff' && !STAFF_POSITIONS.has(position);
+  return !hasStaffRole(member);
 }
 
 export function playerIdentityForMember(teamId: string, memberId: string, member: RepairCandidate): string {

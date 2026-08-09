@@ -32,6 +32,7 @@ export async function requireDashboardSession(pathname: string): Promise<void> {
 
   const snapshot = await adminDb.collection('users').doc(decoded.uid).get();
   const profile = snapshot.exists ? snapshot.data() as DashboardAccessProfile : null;
+  if (!profile) redirect('/onboarding');
   const decision = authorizeDashboardRoute(pathname, profile, decoded.role);
   if (!decision.allowed) redirect(decision.redirectTo);
 }

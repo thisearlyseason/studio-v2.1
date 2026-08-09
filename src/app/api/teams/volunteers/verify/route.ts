@@ -8,6 +8,7 @@ import {
   RequestBodyError,
 } from '@/lib/server-request-guards';
 import { adminDb } from '@/lib/firebase-admin';
+import { volunteerPoints } from '@/lib/volunteer-points';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
       const signup = signupEntry?.[1];
       if (!signup) return { status: 404 as const, missingSignup: true };
 
-      const points = Math.max(0, Math.min(100_000, Math.round(Number(opportunity.points) || 0)));
+      const points = Math.min(100_000, volunteerPoints(opportunity));
       if (signup.status === 'verified') {
         return {
           status: 200 as const,

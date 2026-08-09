@@ -58,12 +58,46 @@ export async function POST(req: NextRequest) {
     const signatureRef = memberRef.collection('signatures').doc(documentId);
     const archiveRef = teamRef.collection('archived_waivers').doc(`arch_team_${memberId}_${documentId}`);
     const protocolRef = teamRef.collection('protocol_signatures').doc(`${documentId}_${auth.uid}_${memberId}`);
+    const certificateRef = teamRef.collection('files').doc(`cert_${memberId}_${documentId}`);
     const signedAt = new Date().toISOString();
     const memberName = memberData.name || [playerData.firstName, playerData.lastName].filter(Boolean).join(' ') || 'Participant';
     const signedByParent = isGuardian && !isSelf;
+    const waiverType = documentId === 'default_medical'
+      ? 'Medical'
+      : documentId === 'default_travel'
+        ? 'Travel'
+        : documentId === 'default_parental'
+          ? 'Parental'
+          : 'General';
 
     const result = await adminDb.runTransaction(async transaction => {
-      const existing = await transaction.get(signatureRef);
+      const [existing, existingCertificate] = await Promise.all([
+        transaction.get(signatureRef),
+        transaction.get(certificateRef),
+      ]);
+      const existingSignature = existing.data() || {};
+
+      if (!existingCertificate.exists) {
+        transaction.set(certificateRef, {
+          id: certificateRef.id,
+          name: `Signed Certificate: ${documentId}`,
+          category: 'Signed Certificate',
+          url: '#',
+          type: 'cert',
+          size: '1kb',
+          date: existingSignature.signedAt || signedAt,
+          memberId,
+          documentId,
+          teamId,
+          teamName: team.data()?.name || 'Squad',
+          waiverType,
+          resolvedMemberName: memberName,
+          resolvedDocTitle: waiverData.title || 'Waiver',
+          signedByParent: existing.exists ? existingSignature.signedByParent === true : signedByParent,
+          signerName: existingSignature.signatureName || existingSignature.signature || signatureName,
+        });
+      }
+
       if (existing.exists) return 'existing';
 
       const signature = {

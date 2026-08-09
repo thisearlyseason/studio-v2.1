@@ -4,8 +4,6 @@ import { getSportsHubTemplate, SPORTS_HUB_TEMPLATES } from '@/lib/sports-hub-tem
 
 const SITE_URL = 'https://www.thesquad.pro';
 
-export const dynamicParams = false;
-
 export function generateStaticParams() {
   return SPORTS_HUB_TEMPLATES.map(template => ({ slug: template.slug }));
 }

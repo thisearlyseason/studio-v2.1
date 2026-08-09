@@ -1,7 +1,7 @@
-# SquadForge Product Requirements Document (PRD)
+# The Squad Product Requirements Document (PRD)
 
 ## 1. Executive Summary
-SquadForge is a comprehensive institutional athletic management platform designed to unify club-level oversight with squad-level tactical execution. It serves four distinct personas: Institutional Stakeholders (Club Admins), Squad Coordinators (Coaches), Athletes (Players), and Guardians (Parents). The platform bridges the gap between high-level policy/finance and on-field performance through real-time communication, automated logistics, and professional recruiting tools.
+The Squad is a comprehensive institutional athletic management platform designed to unify club-level oversight with squad-level tactical execution. It serves four distinct personas: Institutional Stakeholders (Club Admins), Squad Coordinators (Coaches), Athletes (Players), and Guardians (Parents). The platform bridges the gap between high-level policy/finance and on-field performance through real-time communication, automated logistics, and professional recruiting tools.
 
 ---
 

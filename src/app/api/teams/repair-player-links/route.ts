@@ -7,10 +7,10 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { hasStaffRole, isStaffPosition } from '@/lib/staff-position';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const MAX_REPAIRS_PER_REQUEST = 200;
-const NON_ATHLETE_POSITIONS = new Set(['coach', 'head coach', 'assistant coach', 'manager', 'squad leader', 'athletic director', 'staff']);
 
 function identityForMember(teamId: string, memberId: string, member: FirebaseFirestore.DocumentData) {
   const userId = typeof member.userId === 'string' && ID_PATTERN.test(member.userId) ? member.userId : '';
@@ -23,8 +23,6 @@ function namesFromMember(member: FirebaseFirestore.DocumentData) {
   return { firstName, lastName: lastName.join(' ') };
 }
 
-const STAFF_POSITIONS = new Set(['coach', 'head coach', 'assistant coach', 'manager', 'squad leader', 'athletic director', 'staff']);
-
 async function hasRepairAuthority(teamId: string, uid: string, role?: string) {
   const teamRef = adminDb.collection('teams').doc(teamId);
   const teamSnapshot = await teamRef.get();
@@ -35,8 +33,7 @@ async function hasRepairAuthority(teamId: string, uid: string, role?: string) {
   const candidates = direct.exists ? [direct] : (await membersRef.where('userId', '==', uid).limit(10).get()).docs;
   const membership = candidates.find(snapshot => {
     const member = snapshot.data() || {};
-    const position = String(member.position || '').trim().toLowerCase();
-    return member.status !== 'removed' && member.isDeleted !== true && (member.role === 'Admin' || STAFF_POSITIONS.has(position));
+    return member.status !== 'removed' && member.isDeleted !== true && hasStaffRole(member);
   });
   return membership ? teamRef : null;
 }
@@ -69,7 +66,7 @@ export async function POST(req: NextRequest) {
 
     const eligible = members.filter(snapshot => {
       const member = snapshot.data();
-      return snapshot.exists && member?.status !== 'removed' && member?.isDeleted !== true && !member?.playerId && !NON_ATHLETE_POSITIONS.has(String(member?.position || '').trim().toLowerCase());
+      return snapshot.exists && member?.status !== 'removed' && member?.isDeleted !== true && !member?.playerId && !isStaffPosition(member?.position);
     });
     if (memberId && !members[0]?.exists) return NextResponse.json({ error: 'Roster member not found.' }, { status: 404 });
 

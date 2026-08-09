@@ -1,4 +1,5 @@
 import { EXTRA_TEAM_PRICE_IDS, PLAN_PRICE_MAP } from '@/lib/stripe-price-map';
+import { isEntitledSubscriptionStatus } from '@/lib/subscription-seat-policy';
 
 export type SubscriptionItemLike = {
   price: { id: string };
@@ -20,8 +21,6 @@ export type SubscriptionEntitlements = {
   isEntitled: boolean;
 };
 
-const ENTITLED_STATUSES = new Set(['active', 'trialing', 'past_due']);
-
 export function resolveSubscriptionEntitlements(
   subscription: SubscriptionLike,
 ): SubscriptionEntitlements {
@@ -42,7 +41,7 @@ export function resolveSubscriptionEntitlements(
     }
   }
 
-  const isEntitled = ENTITLED_STATUSES.has(subscription.status) && paidPlan !== null;
+  const isEntitled = isEntitledSubscriptionStatus(subscription.status) && paidPlan !== null;
   return {
     planType: isEntitled ? paidPlan!.id : 'free',
     teamLimit: isEntitled ? paidPlan!.teamLimit + extraTeams : 1,

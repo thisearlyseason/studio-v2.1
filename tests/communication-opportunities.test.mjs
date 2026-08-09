@@ -76,7 +76,7 @@ test('volunteer contribution awards are server-authorized, atomic, and use confi
   assert.match(route, /getTeamAuthority/);
   assert.match(route, /runTransaction/);
   assert.match(route, /FieldValue\.increment\(points\)/);
-  assert.match(route, /Number\(opportunity\.points\)/);
+  assert.match(route, /volunteerPoints\(opportunity\)/);
   assert.match(page, /signup\.verifiedPoints \?\? opportunity\.points/);
   assert.match(page, /contributionTotals/);
   assert.doesNotMatch(page, /verifyVolunteerPoints\(opp\.id, signup\.userId, 1\)/);

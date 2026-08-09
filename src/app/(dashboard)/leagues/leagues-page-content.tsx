@@ -59,7 +59,7 @@ import { LocationAutocomplete } from '@/components/ui/LocationAutocomplete';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser, useAuth } from '@/firebase';
 import { collection, query, orderBy, where, doc, updateDoc, limit } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -78,6 +78,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { getFacilityFieldName } from '@/lib/facility-rename';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 const DAYS_OF_WEEK = [
   { id: 1, label: 'Mon' },
@@ -1297,6 +1298,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     updateLeagueSchedule
   } = useTeam();
   const db = useFirestore();
+  const firebaseAuth = useAuth();
   const { user: authUser, isAuthResolved } = useUser();
   const router = useRouter();
   
@@ -1327,7 +1329,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       return;
     }
 
-    if (activeLeague.requiredSquads && leagueTeams.length < leagueTeams.length) {
+    if (activeLeague.requiredSquads && leagueTeams.length < activeLeague.requiredSquads) {
       const confirmProceed = window.confirm(`League requires ${activeLeague.requiredSquads} squads, but only ${leagueTeams.length} are enrolled. The generated schedule will be incomplete. Proceed anyway?`);
       if (!confirmProceed) return;
     }
@@ -1854,60 +1856,21 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   };
 
   const handleDuplicateLeague = async () => {
-    if (!duplicatingLeague || !duplicateTitle.trim() || !db || !authUser?.uid) {
+    if (!duplicatingLeague || !duplicateTitle.trim() || !firebaseAuth || !authUser?.uid) {
       toast({ title: "Inaccessible Auth State", description: "Authorization required for institutional replication.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
     try {
-      const newLeagueRef = doc(collection(db, 'leagues'));
-      
-      // Explicitly pick only the framework fields to avoid carrying over runtime state or large collections
-      const newLeagueData = {
-        name: duplicateTitle.trim(),
-        sport: duplicatingLeague.sport || '',
-        description: duplicatingLeague.description || '',
-        startDate: duplicatingLeague.startDate || '',
-        endDate: duplicatingLeague.endDate || '',
-        ages: duplicatingLeague.ages || '',
-        contactEmail: duplicatingLeague.contactEmail || '',
-        contactPhone: duplicatingLeague.contactPhone || '',
-        registrationCost: duplicatingLeague.registrationCost || '',
-        paymentInstructions: duplicatingLeague.paymentInstructions || '',
-        socialLinks: duplicatingLeague.socialLinks || {},
-        slug: `${newLeagueRef.id.slice(-6)}-clone`,
-        requiredSquads: duplicatingLeague.requiredSquads || null,
-        blackoutDaysOfWeek: duplicatingLeague.blackoutDaysOfWeek || [],
-        divisions: duplicatingLeague.divisions || [],
-        
-        // Reset operational fields
-        id: newLeagueRef.id,
-        creatorId: authUser.uid,
-        createdAt: new Date().toISOString(),
-        isArchived: false,
-        is_active: false,
-        teams: {},
-        individualRecruits: {},
-        schedule: [],
-        memberTeamIds: [],
-        memberUserIds: [authUser.uid],
-        memberIndivIds: []
-      };
-      
-      const { setDoc, getDoc } = await import('firebase/firestore');
-      await setDoc(newLeagueRef, newLeagueData);
-
-      // Duplicate Registration Configs
-      const configs = ['player_config', 'team_config', 'waiver_config'];
-      for (const configId of configs) {
-        const sourceRef = doc(db, 'leagues', duplicatingLeague.id, 'registration_config', configId);
-        const sourceCfg = await getDoc(sourceRef);
-        if (sourceCfg.exists()) {
-          const cfgData = sourceCfg.data();
-          // Reset any per-league overrides if necessary
-          await setDoc(doc(db, 'leagues', newLeagueRef.id, 'registration_config', configId), cfgData);
-        }
-      }
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Please sign in again.');
+      const response = await fetch('/api/leagues/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ leagueId: duplicatingLeague.id, name: duplicateTitle.trim() }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to clone this league.');
 
       setIsDuplicateOpen(false);
       setDuplicateTitle('');
@@ -1916,7 +1879,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       
       // Force a query refresh by briefly toggling a state or just letting useCollection handle it
       // Actually, we could select it right away
-      setSelectedLeagueId(newLeagueRef.id);
+      setSelectedLeagueId(payload.leagueId);
       
     } catch (e: any) {
       console.error("[Leagues] Duplication failed:", e);
@@ -2711,10 +2674,14 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6 text-foreground">
           <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl"><Shield className="h-10 w-10 text-primary opacity-20" /></div>
           <div className="space-y-2">
-            <h3 className="text-2xl font-black uppercase">No Competitive Enrollment</h3>
-            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">Initialize your own {leagueLabel.toLowerCase()} architect to begin the competitive season.</p>
+            <h3 className="text-2xl font-black uppercase">{leagues.length > 0 ? `Select a ${leagueLabel}` : 'No Competitive Enrollment'}</h3>
+            <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">
+              {leagues.length > 0
+                ? `Choose an existing ${leagueLabel.toLowerCase()} above to open its operations hub.`
+                : `Initialize your own ${leagueLabel.toLowerCase()} architect to begin the competitive season.`}
+            </p>
           </div>
-          {canCreateLeague && (
+          {canCreateLeague && leagues.length === 0 && (
             <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Initialize Free {leagueLabel}</Button>
           )}
         </div>

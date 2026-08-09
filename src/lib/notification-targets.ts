@@ -1,7 +1,7 @@
 import { adminDb } from '@/lib/firebase-admin';
 import { isActiveTeamMembership } from '@/lib/team-membership-security';
+import { hasStaffRole } from '@/lib/staff-position';
 
-const STAFF_POSITIONS = new Set(['coach', 'head coach', 'assistant coach', 'manager', 'squad leader', 'athletic director', 'staff']);
 const EMAIL_PATTERN = /^[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+$/;
 
 export type TeamDeliveryTargets = {
@@ -24,16 +24,12 @@ export async function isAuthorizedTeamNotifier(teamId: string, uid: string, role
   if (direct.exists) {
     const data = direct.data() || {};
     if (!isActiveTeamMembership(data)) return false;
-    if (String(data.role || '').toLowerCase() === 'admin') return true;
-    if (STAFF_POSITIONS.has(String(data.position || '').toLowerCase())) return true;
+    if (hasStaffRole(data)) return true;
   }
   const query = await teamRef.collection('members').where('userId', '==', uid).limit(5).get();
   return query.docs.some(snapshot => {
     const data = snapshot.data();
-    return isActiveTeamMembership(data) && (
-      String(data.role || '').toLowerCase() === 'admin' ||
-      STAFF_POSITIONS.has(String(data.position || '').toLowerCase())
-    );
+    return isActiveTeamMembership(data) && hasStaffRole(data);
   });
 }
 

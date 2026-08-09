@@ -37,7 +37,7 @@ export function SportsHubClientLayout({ children }: { children: React.ReactNode 
           <div className="hidden md:flex flex-1 max-w-sm"><SearchBar className="w-full" /></div>
           <div className="flex items-center gap-2">
             <Link href="/dashboard" className="hidden md:block"><Button variant="ghost" size="sm" className="font-black text-xs uppercase tracking-widest text-muted-foreground hover:text-primary gap-1.5"><ChevronLeft className="h-3.5 w-3.5" />Back to App</Button></Link>
-            <Link href="/sports-hub/search" className="md:hidden"><Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl"><Search className="h-4 w-4" /></Button></Link>
+            <Link href="/sports-hub/search" className="md:hidden"><Button aria-label="Search Sports Hub" variant="ghost" size="icon" className="h-10 w-10 rounded-xl"><Search className="h-4 w-4" /></Button></Link>
             <Link href="/login"><Button size="sm" className="font-black text-xs uppercase tracking-widest hidden sm:flex">Get Started</Button></Link>
           </div>
         </div>

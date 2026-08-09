@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import { hasUnresolvedSubscription } from '@/lib/checkout-policy';
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const RECENT_SIGN_IN_MS = 5 * 60 * 1000;
@@ -30,8 +31,14 @@ export async function POST(req: NextRequest) {
       adminDb.collection('leagues').where('creatorId', '==', auth.uid).limit(1).get(),
     ]);
 
-    if (userSnap.data()?.isDemo === true) {
+    const profile = userSnap.data() ?? {};
+    if (profile.isDemo === true) {
       return NextResponse.json({ error: 'Demo accounts reset automatically and cannot be queued for live-account deletion.' }, { status: 400 });
+    }
+    if (hasUnresolvedSubscription(profile)) {
+      return NextResponse.json({
+        error: 'Cancel or resolve the active Stripe subscription before scheduling account deletion.',
+      }, { status: 409 });
     }
     if (!ownedTeams.empty || !ownedLeagues.empty) {
       return NextResponse.json({

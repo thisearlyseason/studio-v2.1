@@ -263,21 +263,21 @@ function ContactForm() {
     <form className="space-y-6" onSubmit={handleSubmit}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div className="space-y-2">
-          <Label className="text-xs font-black uppercase tracking-widest">Name *</Label>
-          <Input value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" className="h-12 rounded-xl bg-muted/50 border-none" required />
+          <Label htmlFor="contact-name" className="text-xs font-black uppercase tracking-widest">Name *</Label>
+          <Input id="contact-name" value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" autoComplete="name" className="h-12 rounded-xl bg-muted/50 border-none" required />
         </div>
         <div className="space-y-2">
-          <Label className="text-xs font-black uppercase tracking-widest">Email *</Label>
-          <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@example.com" className="h-12 rounded-xl bg-muted/50 border-none" required />
+          <Label htmlFor="contact-email" className="text-xs font-black uppercase tracking-widest">Email *</Label>
+          <Input id="contact-email" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@example.com" className="h-12 rounded-xl bg-muted/50 border-none" required />
         </div>
       </div>
       <div className="space-y-2">
-        <Label className="text-xs font-black uppercase tracking-widest">Organization</Label>
-        <Input value={org} onChange={e => setOrg(e.target.value)} placeholder="State Varsity League" className="h-12 rounded-xl bg-muted/50 border-none" />
+        <Label htmlFor="contact-organization" className="text-xs font-black uppercase tracking-widest">Organization</Label>
+        <Input id="contact-organization" value={org} onChange={e => setOrg(e.target.value)} placeholder="State Varsity League" className="h-12 rounded-xl bg-muted/50 border-none" />
       </div>
       <div className="space-y-2">
-        <Label className="text-xs font-black uppercase tracking-widest">Inquiry *</Label>
-        <Textarea value={inquiry} onChange={e => setInquiry(e.target.value)} placeholder="Define your institutional needs..." className="min-h-[120px] rounded-xl bg-muted/50 border-none resize-none" required />
+        <Label htmlFor="contact-inquiry" className="text-xs font-black uppercase tracking-widest">Inquiry *</Label>
+        <Textarea id="contact-inquiry" value={inquiry} onChange={e => setInquiry(e.target.value)} placeholder="Define your institutional needs..." className="min-h-[120px] rounded-xl bg-muted/50 border-none resize-none" required />
       </div>
       <Button
         type="submit"
@@ -1049,6 +1049,7 @@ export default function LandingPage() {
 
                         <div className="space-y-3">
                           <motion.input
+                            aria-label="Newsletter name"
                             whileFocus={{ scale: 1.01 }}
                             type="text"
                             placeholder="Your Name"
@@ -1057,6 +1058,7 @@ export default function LandingPage() {
                             className="w-full h-13 px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
                           />
                           <motion.input
+                            aria-label="Newsletter email"
                             whileFocus={{ scale: 1.01 }}
                             type="email"
                             placeholder="your@email.com"
@@ -1649,7 +1651,7 @@ export default function LandingPage() {
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Elite League</CardTitle>
                     <PricingDisplay monthly="$279" annual="$2,790" annualMonthly="$233" color="text-primary" />
                   </div>
-                  <CardDescription className="text-[10px] font-bold text-white/40 uppercase">20 Pro Teams + Public Hubs.</CardDescription>
+                  <CardDescription className="text-[10px] font-bold text-white/40 uppercase">18 Pro Teams + Public Hubs.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">

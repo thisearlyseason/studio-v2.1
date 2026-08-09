@@ -73,12 +73,20 @@ export function AlertOverlay() {
     }
   };
 
+  const handleDismiss = () => {
+    if (currentAlertId) {
+      setLocallyAcknowledgedIds(previous => [...previous, currentAlertId]);
+    }
+    setIsAlertOpen(false);
+    setCurrentAlertId(null);
+  };
+
   const latestAlert = alerts.find(a => a.id === currentAlertId);
   if (!latestAlert) return null;
 
   return (
     <Dialog open={isAlertOpen} onOpenChange={(open) => {
-      if (!open) handleUnderstood();
+      if (!open) handleDismiss();
     }}>
       <DialogContent className="!left-1/2 !top-1/2 !h-auto !max-h-[90dvh] !-translate-x-1/2 !-translate-y-1/2 w-[calc(100vw-2rem)] max-w-lg p-0 rounded-[2rem] sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
         <DialogTitle className="sr-only">High Priority Squad Alert</DialogTitle>

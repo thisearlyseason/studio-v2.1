@@ -110,7 +110,7 @@ test('Super Admin account controls fail closed and use the seven-day purge lifec
   assert.match(route, /uid === auth\.uid/);
   assert.match(route, /profileRole === 'superadmin' \|\| authRole === 'superadmin'/);
   assert.match(route, /confirmationEmail !== targetEmail/);
-  assert.match(route, /isActiveSubscription\(profile\)/);
+  assert.match(route, /hasUnresolvedSubscription\(profile\)/);
   assert.match(route, /findOwnedOrganizations\(uid\)/);
   assert.match(route, /RETENTION_MS = 7 \* 24 \* 60 \* 60 \* 1000/);
   assert.match(route, /revokeRefreshTokens\(uid\)/);

@@ -3,23 +3,12 @@ import * as admin from 'firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
+import { hasUnresolvedSubscription } from '@/lib/checkout-policy';
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 type AccountAction = 'suspend' | 'restore' | 'schedule_deletion' | 'cancel_deletion';
-
-function isActiveSubscription(profile: FirebaseFirestore.DocumentData): boolean {
-  const status = String(
-    profile.subscriptionStatus ??
-    profile.subscription_status ??
-    profile.stripe_subscription_status ??
-    '',
-  ).toLowerCase();
-  if (['active', 'trialing', 'past_due', 'unpaid', 'incomplete'].includes(status)) return true;
-  if (['canceled', 'cancelled', 'ended', 'inactive'].includes(status)) return false;
-  return Boolean(profile.stripe_subscription_id || profile.stripeSubscriptionId);
-}
 
 async function writeAuditLog(input: {
   action: AccountAction;
@@ -154,7 +143,7 @@ export async function POST(
     if (!targetEmail || confirmationEmail !== targetEmail) {
       return NextResponse.json({ error: 'Enter the account email exactly to confirm deletion.' }, { status: 400 });
     }
-    if (isActiveSubscription(profile)) {
+    if (hasUnresolvedSubscription(profile)) {
       return NextResponse.json({
         error: 'Cancel or resolve the active Stripe subscription before scheduling account deletion.',
       }, { status: 409 });

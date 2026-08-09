@@ -272,7 +272,7 @@ function YouthSignupContent() {
         </Card>
 
         <p className="text-center text-[9px] font-black uppercase text-white/20 tracking-widest">
-          Secured by SquadForge Youth Infrastructure
+          Secured by The Squad Youth Infrastructure
         </p>
       </div>
     </div>

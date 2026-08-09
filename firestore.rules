@@ -105,7 +105,7 @@ service cloud.firestore {
       return member.get('role', '') == 'Admin' ||
         member.get('position', '') in [
           'Coach', 'Head Coach', 'Assistant Coach', 'Team Representative',
-          'Athletic Director', 'Staff', 'Manager', 'Squad Leader',
+          'Athletic Director', 'Director of Athletics', 'Staff', 'Manager', 'Squad Leader',
           'Coach Guest', 'Team Lead', 'Platform Admin'
         ];
     }

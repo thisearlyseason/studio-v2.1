@@ -53,6 +53,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
 import { DatePicker } from "@/components/ui/date-picker";
+import { volunteerPoints } from '@/lib/volunteer-points';
 import {
   Tooltip,
   TooltipContent,
@@ -91,7 +92,10 @@ export default function VolunteerHubPage() {
   }, [activeTeam?.id, db]);
 
   const { data: rawOpps, isLoading: isOppsLoading } = useCollection<VolunteerOpportunity>(oppsQuery);
-  const opportunities = useMemo(() => rawOpps || [], [rawOpps]);
+  const opportunities = useMemo(
+    () => (rawOpps || []).map(opportunity => ({ ...opportunity, points: volunteerPoints(opportunity) })),
+    [rawOpps]
+  );
 
   const eventsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;

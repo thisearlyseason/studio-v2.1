@@ -242,6 +242,21 @@ test('chat controls have a functional menu trigger and accessible names', async 
   }
 });
 
+test('member-filtered chat lists declare their sorting index', async () => {
+  const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
+  const chatIndex = indexes.indexes.find(index =>
+    index.collectionGroup === 'groupChats' && index.queryScope === 'COLLECTION'
+  );
+
+  assert.ok(chatIndex);
+  assert.ok(chatIndex.fields.some(field =>
+    field.fieldPath === 'memberIds' && field.arrayConfig === 'CONTAINS'
+  ));
+  assert.ok(chatIndex.fields.some(field =>
+    field.fieldPath === 'createdAt' && field.order === 'DESCENDING'
+  ));
+});
+
 test('family signature lookups declare their collection-group indexes', async () => {
   const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
 
@@ -585,4 +600,103 @@ test('a product transition separates contact from the permanent newsletter signu
   assert.match(landing, /Leagues & Tournaments/);
   assert.match(landing, /Sign up for our/);
   assert.match(landing, /Unsubscribe anytime/);
+});
+
+test('member feed mutations use the validated team feed endpoint', async () => {
+  const feed = await readSource('../src/app/(dashboard)/feed/page.tsx');
+  const route = await readSource('../src/app/api/teams/feed/action/route.ts');
+
+  assert.match(feed, /fetch\('\/api\/teams\/feed\/action'/);
+  assert.doesNotMatch(feed, /addDocumentNonBlocking|deleteDocumentNonBlocking|updateDoc\(ref/);
+  for (const action of ['create-post', 'create-comment', 'delete-post', 'delete-comment', 'toggle-like', 'vote']) {
+    assert.match(route, new RegExp(`'${action}'`));
+  }
+  assert.match(route, /getTeamAuthority/);
+  assert.match(route, /parentPostingEnabled === true/);
+  assert.match(route, /parentCommentsEnabled === true/);
+});
+
+test('team waiver signing is server-mediated for members and guardians', async () => {
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const route = await readSource('../src/app/api/teams/waivers/sign/route.ts');
+
+  assert.match(provider, /fetch\('\/api\/teams\/waivers\/sign'/);
+  assert.match(route, /isGuardian = memberData\.parentId === auth\.uid \|\| playerData\.parentId === auth\.uid/);
+  assert.match(route, /transaction\.set\(signatureRef/);
+  assert.match(route, /transaction\.update\(memberRef/);
+  assert.match(route, /transaction\.set\(archiveRef/);
+  assert.match(route, /transaction\.set\(protocolRef/);
+  assert.match(route, /transaction\.update\(documentRef, \{ signatureCount: FieldValue\.increment\(1\) \}\)/);
+});
+
+test('league registration, assignment, and clone projections use trusted server routes', async () => {
+  const publicAction = await readSource('../src/app/api/public/portals/action/route.ts');
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const assignments = await readSource('../src/app/api/leagues/assignments/route.ts');
+  const team = await readSource('../src/app/(dashboard)/team/page.tsx');
+  const leagues = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
+  const clone = await readSource('../src/app/api/leagues/clone/route.ts');
+
+  assert.match(publicAction, /const batch = adminDb\.batch\(\)/);
+  assert.match(publicAction, /\[`teams\.\$\{recruitId\}`\]/);
+  assert.match(publicAction, /memberTeamIds: FieldValue\.arrayUnion\(recruitId\)/);
+  assert.match(publicAction, /\[`individualRecruits\.\$\{recruitId\}`\]/);
+  assert.match(publicAction, /memberIndivIds: FieldValue\.arrayUnion\(recruitId\)/);
+  assert.match(provider, /fetch\('\/api\/leagues\/assignments'/);
+  assert.match(team, /fetch\(`\/api\/leagues\/assignments\?teamId=/);
+  assert.match(assignments, /assigned_team_owner_id: ownerId/);
+  assert.match(assignments, /getTeamAuthority\(teamId, auth\.uid, auth\.role\)/);
+  assert.match(leagues, /fetch\('\/api\/leagues\/clone'/);
+  assert.match(clone, /batch\.create\(destination/);
+  assert.match(leagues, /leagueTeams\.length < activeLeague\.requiredSquads/);
+  assert.doesNotMatch(leagues, /leagueTeams\.length < leagueTeams\.length/);
+});
+
+test('School Hub administrators are invited, claimed, and revoked on the server', async () => {
+  const club = await readSource('../src/app/(dashboard)/club/page.tsx');
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const route = await readSource('../src/app/api/schools/admins/route.ts');
+
+  assert.match(club, /fetch\('\/api\/schools\/admins'/);
+  assert.doesNotMatch(club, /collection\(db, 'users'\), where\('email'/);
+  assert.match(provider, /method: 'PATCH'/);
+  assert.match(provider, /fetch\('\/api\/schools\/admins'/);
+  assert.match(provider, /firebaseUser\.isAnonymous/);
+  assert.match(route, /schoolAdminIds: admin\.firestore\.FieldValue\.arrayUnion\(userId\)/);
+  assert.match(route, /collection\('teamMemberships'\)\.doc\(teamRef\.id\)/);
+  assert.match(route, /teamRef\.collection\('members'\)\.doc\(userId\)/);
+  assert.match(route, /pendingAdminEmails: admin\.firestore\.FieldValue\.arrayRemove\(email\)/);
+});
+
+test('role-gated workflows match their secured routes', async () => {
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const roster = await readSource('../src/app/(dashboard)/roster/page.tsx');
+  const chat = await readSource('../src/app/(dashboard)/chats/[chatId]/page.tsx');
+  const fundraising = await readSource('../src/app/(dashboard)/fundraising/page.tsx');
+  const facilities = await readSource('../src/app/(dashboard)/facilities/page.tsx');
+  const signup = await readSource('../src/app/signup/page.tsx');
+
+  assert.match(provider, /action: 'claim-assignment'/);
+  assert.match(provider, /fetch\('\/api\/teams\/events\/action'/);
+  assert.match(roster, /router\.push\(`\/chats\/\$\{chatId\}`\)/);
+  assert.doesNotMatch(roster, /router\.push\(`\/messages/);
+  assert.match(chat, /if \(!isStaff \|\| !newName\.trim\(\)/);
+  assert.match(fundraising, /if \(!isStaff\)[\s\S]{0,180}<AccessRestricted/);
+  assert.match(facilities, /activeTeam\.ownerUserId === firebaseUser\?\.uid/);
+  assert.match(signup, /autoComplete="name"/);
+  assert.match(signup, /autoComplete="email"/);
+  assert.equal((signup.match(/autoComplete="new-password"/g) || []).length, 2);
+});
+
+test('staff authority uses the shared complete position vocabulary', async () => {
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const events = await readSource('../src/app/api/teams/events/action/route.ts');
+  const rsvp = await readSource('../src/app/api/teams/rsvp/route.ts');
+  const notifications = await readSource('../src/lib/notification-targets.ts');
+  const positions = await readSource('../src/lib/staff-position.ts');
+
+  for (const source of [provider, events, rsvp, notifications]) assert.match(source, /hasStaffRole/);
+  for (const position of ['head coach', 'director of athletics', 'team representative', 'coach guest', 'team lead', 'platform admin']) {
+    assert.match(positions, new RegExp(`'${position}'`));
+  }
 });

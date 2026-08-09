@@ -2021,6 +2021,7 @@ function TournamentDetailView({
       <Dialog open={!!celebrationWinner} onOpenChange={() => setCelebrationWinner(null)}>
         <DialogContent className="sm:max-w-md bg-black border-none rounded-[4rem] p-12 overflow-hidden">
           <DialogTitle className="sr-only">Championship Celebration</DialogTitle>
+          <DialogDescription className="sr-only">Tournament champion result and celebration.</DialogDescription>
           <div className="absolute inset-0 bg-gradient-to-b from-primary/20 via-transparent to-transparent opacity-50" />
           <div className="relative z-10 text-center space-y-8 py-10">
              <div className="flex justify-center">

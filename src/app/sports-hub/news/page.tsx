@@ -314,6 +314,7 @@ export default function NewsPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
+              aria-label="Search news articles"
               placeholder="Search articles, topics, authors…"
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -329,6 +330,7 @@ export default function NewsPage() {
           <div className="flex gap-2 flex-wrap">
             {/* Sort */}
             <select
+              aria-label="Sort news articles"
               value={sort}
               onChange={e => setSort(e.target.value as SortOption)}
               className="h-10 px-3 rounded-xl border bg-card text-xs font-bold text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"

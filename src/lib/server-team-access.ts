@@ -1,19 +1,6 @@
 import type { DocumentData, DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
-
-const STAFF_POSITIONS = new Set([
-  'coach',
-  'head coach',
-  'assistant coach',
-  'team representative',
-  'athletic director',
-  'staff',
-  'manager',
-  'squad leader',
-  'coach guest',
-  'team lead',
-  'platform admin',
-]);
+import { hasStaffRole } from '@/lib/staff-position';
 
 export type ActiveTeamMember = {
   ref: DocumentReference<DocumentData>;
@@ -22,7 +9,7 @@ export type ActiveTeamMember = {
 
 export function isStaffMember(data: DocumentData | undefined): boolean {
   if (!data) return false;
-  return data.role === 'Admin' || STAFF_POSITIONS.has(String(data.position || '').trim().toLowerCase());
+  return hasStaffRole(data);
 }
 
 export function isParentMember(data: DocumentData | undefined): boolean {
