@@ -272,8 +272,9 @@ function RapidJoinForm() {
                 <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name</Label>
+                      <Label htmlFor="squad-join-name" className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name</Label>
                       <Input 
+                        id="squad-join-name"
                         required 
                         value={formData.name} 
                         onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
@@ -281,8 +282,9 @@ function RapidJoinForm() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
+                      <Label htmlFor="squad-join-email" className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
                       <Input 
+                        id="squad-join-email"
                         required 
                         type="email"
                         value={formData.email} 
@@ -292,8 +294,9 @@ function RapidJoinForm() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
+                    <Label htmlFor="squad-join-date-of-birth" className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
                     <Input 
+                      id="squad-join-date-of-birth"
                       required
                       type="date"
                       value={formData.dateOfBirth} 
@@ -309,10 +312,13 @@ function RapidJoinForm() {
 
                   {isParent && (
                     <div className="space-y-3 pt-4 border-t">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Active Player <span className="text-primary">*</span></Label>
-                      <div className="grid grid-cols-1 gap-3">
+                      <Label id="squad-player-label" className="text-[10px] font-black uppercase tracking-widest ml-1">Select Active Player <span className="text-primary">*</span></Label>
+                      <div role="radiogroup" aria-labelledby="squad-player-label" className="grid grid-cols-1 gap-3">
                         {myChildren.map(child => (
-                          <div 
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={formData.playerId === child.id}
                             key={child.id}
                             onClick={() => setFormData(p => ({ ...p, playerId: child.id }))}
                             className={cn(
@@ -327,7 +333,7 @@ function RapidJoinForm() {
                               <span className="font-black uppercase text-xs tracking-tight">{child.firstName} {child.lastName}</span>
                             </div>
                             <CheckCircle2 className={cn("h-5 w-5", formData.playerId === child.id ? "text-primary opacity-100" : "opacity-0")} />
-                          </div>
+                          </button>
                         ))}
                         {myChildren.length === 0 && (
                             <p className="text-[10px] font-bold text-muted-foreground uppercase italic px-1">No players found in your registry. Please add them in the family dashboard.</p>
@@ -346,8 +352,9 @@ function RapidJoinForm() {
                   </div>
                   <div className="space-y-6">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Full Name <span className="text-primary">*</span></Label>
+                      <Label htmlFor="squad-guardian-name" className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Full Name <span className="text-primary">*</span></Label>
                       <Input 
+                        id="squad-guardian-name"
                         required
                         placeholder="e.g. Sarah Thompson" 
                         value={formData.guardianName} 
@@ -357,8 +364,9 @@ function RapidJoinForm() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Email <span className="text-primary">*</span></Label>
+                        <Label htmlFor="squad-guardian-email" className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Email <span className="text-primary">*</span></Label>
                         <Input 
+                          id="squad-guardian-email"
                           required
                           type="email"
                           placeholder="guardian@email.com" 
@@ -368,8 +376,9 @@ function RapidJoinForm() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Phone</Label>
+                        <Label htmlFor="squad-guardian-phone" className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Phone</Label>
                         <Input 
+                          id="squad-guardian-phone"
                           type="tel"
                           placeholder="(555) 000-0000" 
                           value={formData.guardianPhone} 
@@ -417,8 +426,9 @@ function RapidJoinForm() {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Digital Execution (Full Legal Name)</Label>
+                    <Label htmlFor="squad-waiver-signature" className="text-[10px] font-black uppercase tracking-widest ml-1">Digital Execution (Full Legal Name)</Label>
                     <Input 
+                        id="squad-waiver-signature"
                         placeholder="Type legal name to execute..." 
                         value={signature} 
                         onChange={e => setSignature(e.target.value)} 

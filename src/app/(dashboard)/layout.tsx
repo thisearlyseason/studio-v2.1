@@ -398,7 +398,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted, isDemoInitializing]);
 
   useEffect(() => {
-    if (!mounted || !userProfile?.isDemo || !user) return;
+    if (!mounted || isDemoInitializing || isSeedingDemo || !userProfile?.isDemo || !user) return;
+    let expirySubmitted = false;
     let startTime = sessionStorage.getItem(DEMO_START_KEY);
     if (!startTime) {
       startTime = Date.now().toString();
@@ -408,9 +409,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       const elapsed = Date.now() - parseInt(startTime!);
       const remaining = Math.max(0, DEMO_TIMEOUT_MS - elapsed);
       setTimeLeft(remaining);
-      if (remaining <= 0) {
+      if (remaining <= 0 && !expirySubmitted) {
+        expirySubmitted = true;
         sessionStorage.removeItem(DEMO_START_KEY);
-        void clearBrowserSession()
+        void fetch('/api/demo/exit', { method: 'POST', keepalive: true })
+          .catch(() => undefined)
+          .then(() => clearBrowserSession())
           .then(() => signOut(auth))
           .finally(() => { window.location.href = `/login?reason=expired`; });
       }
@@ -418,7 +422,27 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     checkSession();
     heartbeatInterval.current = setInterval(checkSession, 1000);
     return () => { if (heartbeatInterval.current) clearInterval(heartbeatInterval.current); };
-  }, [mounted, userProfile?.isDemo, user, auth]);
+  }, [mounted, isDemoInitializing, isSeedingDemo, userProfile?.isDemo, user, auth]);
+
+  useEffect(() => {
+    if (
+      !mounted ||
+      isDemoInitializing ||
+      isSeedingDemo ||
+      !userProfile?.isDemo ||
+      !user?.isAnonymous
+    ) return;
+
+    let cleanupSubmitted = false;
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (event.persisted || cleanupSubmitted) return;
+      cleanupSubmitted = true;
+      navigator.sendBeacon('/api/demo/exit');
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [mounted, isDemoInitializing, isSeedingDemo, userProfile?.isDemo, user?.isAnonymous]);
 
   const formatTimeLeft = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);

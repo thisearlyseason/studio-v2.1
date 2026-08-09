@@ -337,6 +337,7 @@ export default function SignupPage() {
       </div>
 
       <div className="w-full max-w-md relative z-10">
+        <h1 className="sr-only">Create your The Squad account</h1>
         <div className="rounded-[2.5rem] bg-white/95 backdrop-blur-md shadow-2xl overflow-hidden">
           {/* Brand accent bar */}
           <div className="h-1.5 hero-gradient w-full" />

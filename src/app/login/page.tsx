@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth, useUser, useFirestore } from '@/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -249,9 +249,9 @@ export default function LoginPage() {
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center relative z-10">
         <Card className="border-none shadow-2xl rounded-[2rem] sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
           <CardHeader className="space-y-2 pt-8 sm:pt-12 text-center">
-            <CardTitle className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
               {forgotMode ? 'Reset Password' : 'Authorized Access'}
-            </CardTitle>
+            </h1>
             <CardDescription className="text-base font-bold uppercase tracking-widest text-primary/60 text-[10px]">
               {forgotMode ? 'Enter your email to receive a reset link' : 'Credential Verification Hub'}
             </CardDescription>

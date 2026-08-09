@@ -202,9 +202,10 @@ function YouthSignupContent() {
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Password</Label>
+                  <Label htmlFor="youth-password" className="text-[10px] font-black uppercase tracking-widest ml-1">Password</Label>
                   <div className="relative">
                     <Input
+                      id="youth-password"
                       type={showPassword ? 'text' : 'password'}
                       required
                       minLength={8}
@@ -215,6 +216,7 @@ function YouthSignupContent() {
                     />
                     <button
                       type="button"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground"
                     >
@@ -223,8 +225,9 @@ function YouthSignupContent() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Confirm Password</Label>
+                  <Label htmlFor="youth-password-confirmation" className="text-[10px] font-black uppercase tracking-widest ml-1">Confirm Password</Label>
                   <Input
+                    id="youth-password-confirmation"
                     type="password"
                     required
                     value={confirmPassword}
