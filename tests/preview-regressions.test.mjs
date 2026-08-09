@@ -140,6 +140,15 @@ test('demo bootstrap creates the protected league before client blueprint enrich
   assert.match(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 
+test('demo chat messages are server-seeded through the protected message boundary', async () => {
+  const route = await readSource('../src/app/api/demo/seed/route.ts');
+  const seeder = await readSource('../src/lib/db-seeder.ts');
+
+  assert.match(route, /const demoMessages = \[/);
+  assert.match(route, /collection\('groupChats'\).*collection\('messages'\)/s);
+  assert.doesNotMatch(seeder, /c\.messages\.forEach/);
+});
+
 test('demo recruiting profiles stay private except for the public scout fixture', async () => {
   const source = await readSource('../src/lib/db-seeder.ts');
 
