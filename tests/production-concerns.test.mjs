@@ -91,7 +91,7 @@ test('route-aware authorization, private recruiting, and alert dismissal fail cl
   assert.match(alerts, /if \(!open\) handleDismiss\(\)/);
   assert.doesNotMatch(alerts.match(/const handleDismiss[\s\S]*?\n  };/)?.[0] || '', /markAlertAsSeen/);
   assert.equal((recruitingLayout.match(/notFound\(\)/g) || []).length, 2);
-  assert.match(middleware, /publicProjectionExists\(pathname\)/);
+  assert.match(middleware, /publicProjectionExists\(request\)/);
   assert.match(middleware, /NextResponse\.rewrite\(new URL\('\/__not-found'/);
   assert.match(middleware, /X-Robots-Tag', 'noindex, nofollow'/);
   assert.match(spectatorLayout, /collection\('publicLeagueViews'\)/);
@@ -129,4 +129,27 @@ test('anonymous cleanup retains retry evidence until every demo projection is re
   assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);
   assert.ok(cleanup.indexOf("db.recursiveDelete(db.collection('users').doc(uid))") < cleanup.indexOf('auth.deleteUser(uid)'));
   assert.doesNotMatch(cleanup, /auth\.deleteUsers\(usersToDelete\)/);
+});
+
+test('anonymous demos reset on expiry or page exit with the scheduler as fallback', async () => {
+  const [layout, endpoint, cleanup, functions] = await Promise.all([
+    source('../src/app/(dashboard)/layout.tsx'),
+    source('../src/app/api/demo/exit/route.ts'),
+    source('../src/lib/server-demo-cleanup.ts'),
+    source('../functions/src/index.ts'),
+  ]);
+
+  assert.match(layout, /DEMO_TIMEOUT_MS = 15 \* 60 \* 1000/);
+  assert.match(layout, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
+  assert.match(layout, /window\.addEventListener\('pagehide', handlePageHide\)/);
+  assert.match(layout, /navigator\.sendBeacon\('\/api\/demo\/exit'\)/);
+  assert.match(layout, /isDemoInitializing \|\|\s+isSeedingDemo \|\|\s+!userProfile\?\.isDemo/);
+  assert.match(layout, /user\?\.isAnonymous/);
+  assert.match(endpoint, /origin !== request\.nextUrl\.origin/);
+  assert.match(endpoint, /verifySessionCookie\(sessionCookie, true\)/);
+  assert.match(endpoint, /sign_in_provider !== 'anonymous'/);
+  assert.match(cleanup, /user\.providerData\.length > 0/);
+  assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);
+  assert.ok(cleanup.indexOf("recursiveDelete(adminDb.collection('users').doc(uid))") < cleanup.indexOf('auth.deleteUser(uid)'));
+  assert.match(functions, /cleanupAnonymousUsers = onSchedule\(\{[\s\S]*schedule: 'every 15 minutes'/);
 });

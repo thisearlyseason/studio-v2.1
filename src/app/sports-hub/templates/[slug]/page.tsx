@@ -54,6 +54,29 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
   );
 }
 
+function BlankTable({ columns, rows = 10 }: { columns: string[]; rows?: number }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <table className="w-full text-left">
+        <thead>
+          <tr className="border-b-2 border-border bg-muted/30">
+            {columns.map(column => (
+              <th key={column} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-muted-foreground whitespace-nowrap">{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: rows }, (_, row) => (
+            <tr key={row} className="border-b border-dashed border-border">
+              {columns.map(column => <td key={column} className="px-3 py-3"><div className="h-5 min-w-20 border-b border-dashed border-border/50" /></td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function WeekRow({ week, theme, load, notes }: { week: number; theme: string; load: string; notes?: string }) {
   const loadColor = load === 'High' ? 'bg-red-100 text-red-700' : load === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700';
   return (
@@ -588,6 +611,136 @@ const PARENT_COMM_TABS: TemplateSection[] = [
   },
 ];
 
+const INCIDENT_REPORT_TABS: TemplateSection[] = [
+  {
+    id: 'incident',
+    label: 'Incident Details',
+    component: (
+      <div className="space-y-6">
+        <SectionHeader title="Incident and Injury Report" subtitle="Complete promptly using factual observations. Do not diagnose an injury." />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <FieldRow label="Organization / Team" />
+          <FieldRow label="Report Number" />
+          <FieldRow label="Date and Time" />
+          <FieldRow label="Location" />
+          <FieldRow label="Person Involved" />
+          <FieldRow label="Age / Date of Birth" />
+          <FieldRow label="Reporter Name" />
+          <FieldRow label="Reporter Role" />
+        </div>
+        <SectionHeader title="What Happened" subtitle="Record the sequence of events, conditions, and observable facts." />
+        <div className="border rounded-xl bg-muted/10 min-h-40" />
+        <FieldRow label="Witnesses" hint="Names and contact information" />
+        <FieldRow label="Equipment Involved" />
+      </div>
+    ),
+  },
+  {
+    id: 'response',
+    label: 'Response and Follow-up',
+    component: (
+      <div className="space-y-6">
+        <SectionHeader title="Immediate Response" subtitle="Document actions taken and who made each decision." />
+        <BlankTable columns={['Time', 'Action Taken', 'Person Responsible', 'Outcome']} rows={6} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <FieldRow label="First Aid Provided By" />
+          <FieldRow label="EMS Called" hint="Yes / No and time" />
+          <FieldRow label="Guardian Notified" hint="Name, time, method" />
+          <FieldRow label="Disposition" hint="Returned / Removed / Transported" />
+        </div>
+        <SectionHeader title="Follow-up" />
+        <FieldRow label="Return-to-Play Status" />
+        <FieldRow label="Corrective Action" />
+        <FieldRow label="Report Submitted To" />
+        <FieldRow label="Reporter Signature / Date" />
+        <FieldRow label="Supervisor Signature / Date" />
+      </div>
+    ),
+  },
+];
+
+const TOURNAMENT_RUNSHEET_TABS: TemplateSection[] = [
+  {
+    id: 'command-sheet',
+    label: 'Command Sheet',
+    component: (
+      <div className="space-y-6">
+        <SectionHeader title="Tournament Command Sheet" subtitle="Keep this page with the tournament director throughout the event." />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <FieldRow label="Tournament" />
+          <FieldRow label="Date" />
+          <FieldRow label="Venue" />
+          <FieldRow label="Director / Mobile" />
+          <FieldRow label="Medical Lead / Mobile" />
+          <FieldRow label="Officials Lead / Mobile" />
+          <FieldRow label="Venue Contact" />
+          <FieldRow label="Emergency Address" />
+        </div>
+        <SectionHeader title="Day-of Timeline" subtitle="Add setup, check-in, games, ceremonies, teardown, and handoff times." />
+        <BlankTable columns={['Time', 'Milestone', 'Owner', 'Location', 'Status / Notes']} rows={14} />
+      </div>
+    ),
+  },
+  {
+    id: 'operations',
+    label: 'Operations',
+    component: (
+      <div className="space-y-6">
+        <SectionHeader title="Venue Operations" />
+        <BlankTable columns={['Area', 'Opening Check', 'Assigned To', 'Close Check']} rows={8} />
+        <SectionHeader title="Game and Officials Control" />
+        <BlankTable columns={['Game / Court', 'Start', 'Teams', 'Officials', 'Result / Issue']} rows={10} />
+        <SectionHeader title="Escalations and Decisions" subtitle="Log schedule changes, safety issues, disputes, and communications." />
+        <BlankTable columns={['Time', 'Issue', 'Decision', 'Approved By', 'Communicated To']} rows={6} />
+      </div>
+    ),
+  },
+];
+
+const ATHLETE_TRACKER_TABS: TemplateSection[] = [
+  {
+    id: 'profile',
+    label: 'Athlete Profile',
+    component: (
+      <div className="space-y-6">
+        <SectionHeader title="Athlete Development Profile" subtitle="Define measurable goals with the athlete at the start of each review cycle." />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <FieldRow label="Athlete Name" />
+          <FieldRow label="Team / Season" />
+          <FieldRow label="Position / Role" />
+          <FieldRow label="Review Period" />
+          <FieldRow label="Coach" />
+          <FieldRow label="Baseline Date" />
+        </div>
+        <SectionHeader title="Development Goals" />
+        <BlankTable columns={['Goal', 'Baseline', 'Target', 'Measure', 'Review Date']} rows={5} />
+        <SectionHeader title="Athlete Commitments" />
+        <div className="border rounded-xl bg-muted/10 min-h-28" />
+      </div>
+    ),
+  },
+  {
+    id: 'session-log',
+    label: 'Session Log',
+    component: (
+      <div className="space-y-6">
+        <SectionHeader title="Performance and Attendance Log" subtitle="Use consistent measures across the review period." />
+        <BlankTable columns={['Date', 'Session / Game', 'Attendance', 'Load 1-5', 'Metric / Result', 'Coach Note']} rows={14} />
+        <SectionHeader title="Review Summary" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <FieldRow label="Attendance Rate" />
+          <FieldRow label="Games / Sessions" />
+          <FieldRow label="Goals Achieved" />
+          <FieldRow label="Next Review Date" />
+        </div>
+        <FieldRow label="Athlete Reflection" />
+        <FieldRow label="Coach Recommendation" />
+        <FieldRow label="Athlete / Coach Sign-off" />
+      </div>
+    ),
+  },
+];
+
 // ---------------------------------------------------------------------------
 // Template registry
 // ---------------------------------------------------------------------------
@@ -643,10 +796,9 @@ const TEMPLATE_CONFIGS: Record<string, TemplateConfig> = {
     color: 'bg-rose-100 text-rose-700',
     tabs: PARENT_COMM_TABS,
   },
-  // Stub templates for other pages — redirect to hub
-  'incident-report-form': { id: 'incident-report-form', title: 'Incident & Injury Report Form', description: 'A legally sound incident report form.', category: 'Admin', useCount: '892', icon: AlertCircle, color: 'bg-red-100 text-red-700', tabs: [] },
-  'tournament-runsheet': { id: 'tournament-runsheet', title: 'Tournament Run Sheet', description: 'The day-of operations timeline for tournament directors.', category: 'Game Day', useCount: '678', icon: Layout, color: 'bg-indigo-100 text-indigo-700', tabs: [] },
-  'athlete-performance-tracker': { id: 'athlete-performance-tracker', title: 'Athlete Performance Tracker', description: 'Track individual player stats, attendance, and development goals.', category: 'Tracking', useCount: '1,654', icon: Star, color: 'bg-yellow-100 text-yellow-700', tabs: [] },
+  'incident-report-form': { id: 'incident-report-form', title: 'Incident & Injury Report Form', description: 'Document incident facts, immediate response, notifications, and follow-up in one consistent report.', category: 'Admin', useCount: '892', icon: AlertCircle, color: 'bg-red-100 text-red-700', tabs: INCIDENT_REPORT_TABS },
+  'tournament-runsheet': { id: 'tournament-runsheet', title: 'Tournament Run Sheet', description: 'Coordinate the day-of timeline, venue operations, game control, and escalations for tournament staff.', category: 'Game Day', useCount: '678', icon: Layout, color: 'bg-indigo-100 text-indigo-700', tabs: TOURNAMENT_RUNSHEET_TABS },
+  'athlete-performance-tracker': { id: 'athlete-performance-tracker', title: 'Athlete Performance Tracker', description: 'Set development goals and track attendance, workload, results, reflections, and coach reviews.', category: 'Tracking', useCount: '1,654', icon: Star, color: 'bg-yellow-100 text-yellow-700', tabs: ATHLETE_TRACKER_TABS },
 };
 
 // ---------------------------------------------------------------------------
@@ -686,29 +838,6 @@ export default function TemplatePage({ params }: { params: Promise<{ slug: strin
   };
 
   const handlePrint = () => window.print();
-
-  // Stub page for coming-soon templates
-  if (config.tabs.length === 0) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 md:px-8 py-8 md:py-12">
-        <div className="mb-8">
-          <Link href="/sports-hub/templates">
-            <Button variant="ghost" size="sm" className="font-black text-xs uppercase tracking-widest gap-1.5 text-muted-foreground hover:text-primary -ml-2">
-              <ChevronLeft className="h-3.5 w-3.5" /> All Templates
-            </Button>
-          </Link>
-        </div>
-        <div className="text-center py-20 bg-card border rounded-3xl">
-          <div className={cn('h-16 w-16 rounded-3xl mx-auto flex items-center justify-center mb-5', config.color)}>
-            <Icon className="h-8 w-8" />
-          </div>
-          <h1 className="text-2xl font-black tracking-tighter mb-2">{config.title}</h1>
-          <p className="text-muted-foreground font-medium max-w-sm mx-auto mb-6">{config.description}</p>
-          <Badge className="bg-primary/10 text-primary border-0 font-black uppercase tracking-widest">Coming Soon</Badge>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-12">
@@ -751,13 +880,13 @@ export default function TemplatePage({ params }: { params: Promise<{ slug: strin
       </motion.header>
 
       {/* Tab nav */}
-      <div className="flex overflow-x-auto gap-1 mb-6 pb-1 print:hidden">
+      <div className="grid grid-cols-2 sm:flex sm:overflow-x-auto gap-1 mb-6 pb-1 print:hidden">
         {config.tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              'px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all shrink-0',
+              'min-h-10 px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest text-center whitespace-normal sm:whitespace-nowrap transition-all sm:shrink-0',
               activeTab === tab.id
                 ? 'bg-primary text-primary-foreground shadow'
                 : 'bg-muted/60 text-muted-foreground hover:bg-muted'

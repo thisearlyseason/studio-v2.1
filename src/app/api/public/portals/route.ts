@@ -57,12 +57,14 @@ export async function GET(req: NextRequest) {
         eventRef.collection('registration').doc(protocolId).get(),
         adminDb.collection('teams').doc(teamId).get(),
       ]);
-      if (!event.exists || !event.data()?.isTournament) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
-      if (team.exists && !permitsLegacyOrPaidPortals(team.data()?.planId)) {
+      if (!team.exists || !event.exists || !event.data()?.isTournament) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
+      if (!permitsLegacyOrPaidPortals(team.data()?.planId, team.data()?.plan_type, team.data()?.subscriptionPlanId)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
+      const publicEvent = publicTournament(event.id, event.data());
+      if (!publicEvent.isActive) return NextResponse.json({ error: 'Tournament portal is inactive.' }, { status: 404 });
       if (!config.exists || config.data()?.is_active !== true) return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 404 });
-      return NextResponse.json({ data: { event: publicTournament(event.id, event.data()), config: publicRegistrationConfig(config.id, config.data()) } });
+      return NextResponse.json({ data: { event: publicEvent, config: publicRegistrationConfig(config.id, config.data()) } });
     }
 
     if (kind === 'league') {
@@ -91,7 +93,8 @@ export async function GET(req: NextRequest) {
       const event = await adminDb.collection('teams').doc(teamId).collection('events').doc(eventId).get();
       if (!event.exists) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
       const team = await adminDb.collection('teams').doc(teamId).get();
-      if (team.exists && !permitsLegacyOrPaidPortals(team.data()?.planId)) {
+      if (!team.exists) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
+      if (!permitsLegacyOrPaidPortals(team.data()?.planId, team.data()?.plan_type, team.data()?.subscriptionPlanId)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       const eventData = event.data()!;

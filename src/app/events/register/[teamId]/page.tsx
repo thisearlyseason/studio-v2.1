@@ -177,9 +177,10 @@ function RegistrationForm() {
                 <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest border-b pb-1">Required Information</p>
                 {event.customFormFields.map((field) => (
                   <div key={field.id} className="space-y-2">
-                    <Label>{field.label}</Label>
+                    {field.type !== 'checkbox' && <Label htmlFor={`event-field-${field.id}`}>{field.label}</Label>}
                     {field.type === 'short_text' && (
                       <Input 
+                        id={`event-field-${field.id}`}
                         required={field.required}
                         value={customResponses[field.id] || ''}
                         onChange={e => handleCustomChange(field.id, e.target.value)}
@@ -188,6 +189,7 @@ function RegistrationForm() {
                     )}
                     {field.type === 'long_text' && (
                       <Textarea 
+                        id={`event-field-${field.id}`}
                         required={field.required}
                         value={customResponses[field.id] || ''}
                         onChange={e => handleCustomChange(field.id, e.target.value)}
@@ -197,11 +199,11 @@ function RegistrationForm() {
                     {field.type === 'checkbox' && (
                       <div className="flex items-center space-x-3 p-3 bg-muted/20 rounded-xl">
                         <Checkbox 
-                          id={field.id}
+                          id={`event-field-${field.id}`}
                           checked={customResponses[field.id] || false}
                           onCheckedChange={v => handleCustomChange(field.id, !!v)}
                         />
-                        <Label htmlFor={field.id} className="cursor-pointer">{field.label}</Label>
+                        <Label htmlFor={`event-field-${field.id}`} className="cursor-pointer">{field.label}</Label>
                       </div>
                     )}
                   </div>

@@ -27,7 +27,8 @@ function routeSegments(pathname: string) {
   }
 }
 
-async function publicProjectionExists(pathname: string): Promise<boolean | undefined> {
+async function publicProjectionExists(request: NextRequest): Promise<boolean | undefined> {
+  const { pathname, searchParams } = request.nextUrl;
   const segments = routeSegments(pathname);
   if (segments.length < 2) return undefined;
 
@@ -44,6 +45,7 @@ async function publicProjectionExists(pathname: string): Promise<boolean | undef
   const isSport = root === 'sports' && segments.length === 2;
   const isAudience = root === 'for' && segments.length === 2;
   const isSquadRegistration = root === 'register' && area === 'squad' && segments.length === 3;
+  const isEventRegistration = root === 'events' && area === 'register' && segments.length === 3;
   const isTournament = (
     (root === 'register' && area === 'tournament') ||
     (root === 'tournaments' && ['public', 'spectator', 'referee', 'scorekeeper'].includes(area))
@@ -53,7 +55,7 @@ async function publicProjectionExists(pathname: string): Promise<boolean | undef
 
   if (!isLeagueSpectator && !isLeagueRegistration && !isRecruitingProfile &&
       !isArticle && !isResource && !isTemplate && !isSport && !isAudience &&
-      !isSquadRegistration && !isTournament && !isDonation && !isVolunteer) {
+      !isSquadRegistration && !isEventRegistration && !isTournament && !isDonation && !isVolunteer) {
     return undefined;
   }
 
@@ -75,7 +77,8 @@ async function publicProjectionExists(pathname: string): Promise<boolean | undef
   }
 
   if (!isDocumentId(identifier)) return false;
-  if ((isTournament || isDonation || isVolunteer) && !isDocumentId(secondaryId)) return false;
+  const requestedEventId = isEventRegistration ? searchParams.get('eventId') || undefined : secondaryId;
+  if ((isTournament || isDonation || isVolunteer || isEventRegistration) && !isDocumentId(requestedEventId)) return false;
 
   const database = () => {
     ensureAdminInit();
@@ -88,8 +91,16 @@ async function publicProjectionExists(pathname: string): Promise<boolean | undef
   if (isLeagueRegistration) {
     const db = database();
     const direct = await db.collection('leagues').doc(identifier).get();
-    if (direct.exists) return true;
-    return !(await db.collection('leagues').where('slug', '==', identifier).limit(1).get()).empty;
+    const league = direct.exists
+      ? direct
+      : (await db.collection('leagues').where('slug', '==', identifier).limit(1).get()).docs[0];
+    if (!league?.exists) return false;
+    const leagueData = league.data() || {};
+    if (leagueData.is_active === false || leagueData.isArchived === true) return false;
+    const protocolId = searchParams.get('protocol') || 'player_config';
+    if (!isDocumentId(protocolId)) return false;
+    const config = await league.ref.collection('registration').doc(protocolId).get();
+    return config.exists && config.data()?.is_active === true;
   }
   if (isRecruitingProfile) {
     const player = await database().collection('players').doc(identifier).get();
@@ -102,16 +113,65 @@ async function publicProjectionExists(pathname: string): Promise<boolean | undef
     return !custom.empty && custom.docs[0].data().isDraft !== true;
   }
   if (isSquadRegistration) {
-    return (await database().collection('teams').doc(identifier).get()).exists;
+    const team = await database().collection('teams').doc(identifier).get();
+    if (!team.exists || team.data()?.isArchived === true || team.data()?.isActive === false) return false;
+    const code = searchParams.get('code')?.trim().toUpperCase();
+    if (!code) return false;
+    const teamData = team.data() || {};
+    return [teamData.code, teamData.teamCode, teamData.inviteCode]
+      .some(value => typeof value === 'string' && value.trim().toUpperCase() === code);
+  }
+  if (isEventRegistration) {
+    const db = database();
+    const team = await db.collection('teams').doc(identifier).get();
+    const event = await db.collection('teams').doc(identifier).collection('events').doc(requestedEventId!).get();
+    if (!team.exists || !event.exists) return false;
+    const { permitsLegacyOrPaidPortals } = await import('@/lib/public-portal-data');
+    const teamData = team.data() || {};
+    const eventData = event.data() || {};
+    if (!permitsLegacyOrPaidPortals(teamData.planId, teamData.plan_type, teamData.subscriptionPlanId)) return false;
+    if (teamData.isArchived === true || teamData.isActive === false || eventData.isArchived === true || eventData.registrationOpen === false) return false;
+    const eventDate = new Date(eventData.endDate || eventData.date);
+    return Number.isNaN(eventDate.getTime()) || eventDate.getTime() + 24 * 60 * 60 * 1000 >= Date.now();
   }
   if (isTournament) {
-    const event = await database().collection('teams').doc(identifier).collection('events').doc(secondaryId).get();
-    return event.exists && event.data()?.isTournament === true;
+    const db = database();
+    const team = await db.collection('teams').doc(identifier).get();
+    const event = await db.collection('teams').doc(identifier).collection('events').doc(secondaryId).get();
+    if (!team.exists || !event.exists || event.data()?.isTournament !== true || event.data()?.isArchived === true) return false;
+    const { permitsLegacyOrPaidPortals } = await import('@/lib/public-portal-data');
+    const teamData = team.data() || {};
+    if (!permitsLegacyOrPaidPortals(teamData.planId, teamData.plan_type, teamData.subscriptionPlanId)) return false;
+    if (root === 'register') {
+      const protocolId = searchParams.get('protocol') || 'team_config';
+      if (!isDocumentId(protocolId)) return false;
+      const config = await event.ref.collection('registration').doc(protocolId).get();
+      return config.exists && config.data()?.is_active === true;
+    }
+    return true;
   }
   if (isDonation) {
-    return (await database().collection('teams').doc(identifier).collection('fundraising').doc(secondaryId).get()).exists;
+    const campaign = await database().collection('teams').doc(identifier).collection('fundraising').doc(secondaryId).get();
+    const data = campaign.data() || {};
+    if (!campaign.exists || data.isShareable !== true || data.status === 'closed') return false;
+    if (typeof data.deadline !== 'string' || !data.deadline) return true;
+    const deadline = new Date(data.deadline);
+    return !Number.isNaN(deadline.getTime()) && deadline.getTime() >= Date.now();
   }
-  return (await database().collection('teams').doc(identifier).collection('volunteers').doc(secondaryId).get()).exists;
+  const opportunity = await database().collection('teams').doc(identifier).collection('volunteers').doc(secondaryId).get();
+  const data = opportunity.data() || {};
+  if (!opportunity.exists || data.isShareable !== true) return false;
+  if (typeof data.endDate !== 'string' || !data.endDate) return true;
+  const endDate = new Date(data.endDate);
+  return Number.isNaN(endDate.getTime()) || endDate.getTime() >= Date.now();
+}
+
+function shouldNoIndex(pathname: string) {
+  return isProtectedPath(pathname) ||
+    pathname === '/login' || pathname.startsWith('/signup') ||
+    pathname === '/onboarding' || pathname === '/verify-email' ||
+    pathname.startsWith('/events/register/') || pathname.startsWith('/public/') ||
+    pathname.startsWith('/register/') || pathname.startsWith('/tournaments/');
 }
 
 export async function middleware(request: NextRequest) {
@@ -137,7 +197,7 @@ export async function middleware(request: NextRequest) {
 
   if (request.method === 'GET' || request.method === 'HEAD') {
     try {
-      if (await publicProjectionExists(pathname) === false) {
+      if (await publicProjectionExists(request) === false) {
         const response = NextResponse.rewrite(new URL('/__not-found', request.url), { status: 404 });
         response.headers.set('X-Robots-Tag', 'noindex, nofollow');
         return response;
@@ -184,7 +244,9 @@ export async function middleware(request: NextRequest) {
     }
   }
  
-  return NextResponse.next({ request: { headers: requestHeaders } })
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  if (shouldNoIndex(pathname)) response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return response
 }
 
 export const config = {

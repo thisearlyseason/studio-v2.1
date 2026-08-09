@@ -65,6 +65,7 @@ function PDFTemplate({ title, description, category, content, tags }: Omit<Props
   return (
     <div
       id="squad-pdf-target"
+      aria-hidden="true"
       style={{
         position: 'fixed',
         left: '-9999px',

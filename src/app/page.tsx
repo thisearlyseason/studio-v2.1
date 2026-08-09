@@ -900,7 +900,7 @@ export default function LandingPage() {
               { value: 1100, label: 'Athletes Managed', suffix: '' },
               { value: 98,   label: 'Uptime SLA',        suffix: '%' },
               { value: 220,  label: 'Teams Deployed',    suffix: '+' },
-              { value: 5,    label: 'Day Free Trial',    suffix: '-Day' },
+              { value: 5,    label: 'Free Trial',        suffix: '-Day' },
             ].map((stat, i) => (
               <motion.div
                 key={i}

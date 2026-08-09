@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { validFirestoreDocumentId } from '@/lib/firestore-document-id';
+import { permitsLegacyOrPaidPortals, publicTournament } from '@/lib/public-portal-data';
 
-function publicGame(game: Record<string, any>) {
+function publicBracketGame(game: Record<string, any>) {
   return {
     id: typeof game.id === 'string' ? game.id : '',
     team1: typeof game.team1 === 'string' ? game.team1 : 'TBD',
@@ -20,15 +21,9 @@ function publicGame(game: Record<string, any>) {
     round: typeof game.round === 'string' ? game.round : '',
     stage: typeof game.stage === 'string' ? game.stage : '',
     winnerTo: typeof game.winnerTo === 'string' ? game.winnerTo : '',
-    winnerToSlot:
-      game.winnerToSlot === 'team1' || game.winnerToSlot === 'team2'
-        ? game.winnerToSlot
-        : undefined,
+    winnerToSlot: game.winnerToSlot === 'team1' || game.winnerToSlot === 'team2' ? game.winnerToSlot : undefined,
     loserTo: typeof game.loserTo === 'string' ? game.loserTo : '',
-    loserToSlot:
-      game.loserToSlot === 'team1' || game.loserToSlot === 'team2'
-        ? game.loserToSlot
-        : undefined,
+    loserToSlot: game.loserToSlot === 'team1' || game.loserToSlot === 'team2' ? game.loserToSlot : undefined,
     pool: Number.isInteger(game.pool) ? game.pool : undefined,
     isResetMatch: game.isResetMatch === true,
     isConditional: game.isConditional === true,
@@ -47,44 +42,31 @@ export async function GET(
       return NextResponse.json({ error: 'Valid team and tournament IDs are required.' }, { status: 400 });
     }
 
-    const snapshot = await adminDb
-      .collection('teams')
-      .doc(teamId)
-      .collection('events')
-      .doc(eventId)
-      .get();
+    const teamRef = adminDb.collection('teams').doc(teamId);
+    const [team, snapshot] = await Promise.all([
+      teamRef.get(),
+      teamRef.collection('events').doc(eventId).get(),
+    ]);
     const data = snapshot.data() || {};
-    if (!snapshot.exists || data.isTournament !== true) {
+    if (!team.exists || !snapshot.exists || data.isTournament !== true) {
+      return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 });
+    }
+    const teamData = team.data() || {};
+    if (!permitsLegacyOrPaidPortals(teamData.planId, teamData.plan_type, teamData.subscriptionPlanId)) {
+      return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
+    }
+    const tournament = {
+      ...publicTournament(eventId, data),
+      teamId,
+      tournamentGames: Array.isArray(data.tournamentGames)
+        ? data.tournamentGames.map(publicBracketGame)
+        : [],
+    };
+    if (!tournament.isActive) {
       return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 });
     }
 
-    const tournamentTeams = Array.isArray(data.tournamentTeams)
-      ? data.tournamentTeams.filter((team: unknown): team is string => typeof team === 'string')
-      : [];
-    const tournamentTeamsData = Array.isArray(data.tournamentTeamsData)
-      ? data.tournamentTeamsData.map((team: Record<string, any>) => ({
-          id: typeof team.id === 'string' ? team.id : '',
-          name: typeof team.name === 'string' ? team.name : '',
-          logoUrl: typeof team.logoUrl === 'string' ? team.logoUrl : '',
-        }))
-      : [];
-
-    return NextResponse.json({
-      tournament: {
-        id: eventId,
-        teamId,
-        title: typeof data.title === 'string' ? data.title : 'Tournament',
-        date: typeof data.date === 'string' ? data.date : '',
-        endDate: typeof data.endDate === 'string' ? data.endDate : '',
-        location: typeof data.location === 'string' ? data.location : '',
-        isTournament: true,
-        tournamentTeams,
-        tournamentTeamsData,
-        tournamentGames: Array.isArray(data.tournamentGames)
-          ? data.tournamentGames.map(publicGame)
-          : [],
-      },
-    });
+    return NextResponse.json({ tournament });
   } catch (error: any) {
     console.error('[public/tournaments GET] Error:', error?.message || error);
     return NextResponse.json(

@@ -151,6 +151,10 @@ export default function PricingPage() {
           >
             <span className={cn("text-sm font-black uppercase tracking-widest transition-opacity", billingCycle === 'annual' ? 'opacity-40' : 'opacity-100')}>Monthly</span>
             <button 
+              type="button"
+              role="switch"
+              aria-label="Use annual billing"
+              aria-checked={billingCycle === 'annual'}
               onClick={() => setBillingCycle(prev => prev === 'monthly' ? 'annual' : 'monthly')}
               className="w-14 h-7 bg-muted rounded-full p-1 relative transition-colors hover:bg-muted/80"
             >

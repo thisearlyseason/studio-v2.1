@@ -193,48 +193,50 @@ function RegistrationForm() {
       );
     }
 
+    const inputId = `tournament-field-${field.id.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+    const labelId = `${inputId}-label`;
     return (
       <div key={field.id} className="space-y-3">
-        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">
+        <Label id={labelId} htmlFor={['short_text', 'long_text', 'dropdown', 'signature'].includes(field.type) ? inputId : undefined} className="text-[10px] font-black uppercase tracking-widest ml-1">
           {field.label} {field.required && <span className="text-primary">*</span>}
         </Label>
         {field.type === 'short_text' && (
-          <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" />
+          <Input id={inputId} required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" />
         )}
         {field.type === 'long_text' && (
-          <Textarea required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all p-5 shadow-inner" />
+          <Textarea id={inputId} required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} className="rounded-2xl min-h-[120px] border-2 font-medium bg-muted/5 focus:bg-white transition-all p-5 shadow-inner" />
         )}
         {field.type === 'dropdown' && (
           <Select required={field.required} value={answers[field.id] || ''} onValueChange={value => handleInputChange(field.id, value)}>
-            <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select an option..." /></SelectTrigger>
+            <SelectTrigger id={inputId} aria-labelledby={labelId} className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select an option..." /></SelectTrigger>
             <SelectContent className="rounded-2xl">
               {field.options?.map(option => <SelectItem key={option} value={option} className="font-bold">{option}</SelectItem>)}
             </SelectContent>
           </Select>
         )}
         {field.type === 'radio' && (
-          <RadioGroup required={field.required} value={answers[field.id] || ''} onValueChange={value => handleInputChange(field.id, value)} className="flex flex-col gap-3 py-2">
-            {field.options?.map(option => (
+          <RadioGroup aria-labelledby={labelId} required={field.required} value={answers[field.id] || ''} onValueChange={value => handleInputChange(field.id, value)} className="flex flex-col gap-3 py-2">
+            {field.options?.map((option, optionIndex) => (
               <div key={option} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2">
-                <RadioGroupItem value={option} id={`${field.id}_${option}`} />
-                <Label htmlFor={`${field.id}_${option}`} className="font-bold cursor-pointer flex-1">{option}</Label>
+                <RadioGroupItem value={option} id={`${inputId}-${optionIndex}`} />
+                <Label htmlFor={`${inputId}-${optionIndex}`} className="font-bold cursor-pointer flex-1">{option}</Label>
               </div>
             ))}
           </RadioGroup>
         )}
         {field.type === 'checkbox' && (
-          <div className="flex flex-col gap-3 py-2">
-            {field.options?.map(option => (
+          <div role="group" aria-labelledby={labelId} className="flex flex-col gap-3 py-2">
+            {field.options?.map((option, optionIndex) => (
               <div key={option} className="flex items-center space-x-3 bg-muted/5 p-4 rounded-2xl border-2">
                 <Checkbox
-                  id={`${field.id}_${option}`}
+                  id={`${inputId}-${optionIndex}`}
                   checked={(Array.isArray(answers[field.id]) ? answers[field.id] : []).includes(option)}
                   onCheckedChange={checked => {
                     const current = Array.isArray(answers[field.id]) ? answers[field.id] : [];
                     handleInputChange(field.id, checked ? [...current, option] : current.filter((item: string) => item !== option));
                   }}
                 />
-                <Label htmlFor={`${field.id}_${option}`} className="font-bold cursor-pointer flex-1">{option}</Label>
+                <Label htmlFor={`${inputId}-${optionIndex}`} className="font-bold cursor-pointer flex-1">{option}</Label>
               </div>
             ))}
           </div>
@@ -242,7 +244,7 @@ function RegistrationForm() {
         {field.type === 'signature' && (
           <div className="relative">
             <Signature className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} placeholder="Type the signer's full legal name" className="h-14 rounded-2xl border-2 pl-12 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" />
+            <Input id={inputId} required={field.required} value={answers[field.id] || ''} onChange={e => handleInputChange(field.id, e.target.value)} placeholder="Type the signer's full legal name" className="h-14 rounded-2xl border-2 pl-12 font-bold bg-muted/5 focus:bg-white transition-all shadow-inner" />
           </div>
         )}
       </div>
@@ -428,8 +430,9 @@ function RegistrationForm() {
                   {currentStepInfo.id === 'identity' && (
                     <div className="space-y-8">
                       <div className="space-y-3">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name <span className="text-primary">*</span></Label>
+                        <Label htmlFor="tournament-full-name" className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name <span className="text-primary">*</span></Label>
                         <Input 
+                          id="tournament-full-name"
                           placeholder="e.g. Marcus Thompson" 
                           value={answers['fullName'] || ''} 
                           onChange={e => handleInputChange('fullName', e.target.value)} 
@@ -439,8 +442,9 @@ function RegistrationForm() {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-3">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Email <span className="text-primary">*</span></Label>
+                          <Label htmlFor="tournament-email" className="text-[10px] font-black uppercase tracking-widest ml-1">Email <span className="text-primary">*</span></Label>
                           <Input 
+                            id="tournament-email"
                             type="email"
                             placeholder="player@email.com" 
                             value={answers['email'] || ''} 
@@ -450,8 +454,9 @@ function RegistrationForm() {
                           />
                         </div>
                         <div className="space-y-3">
-                          <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
+                          <Label htmlFor="tournament-date-of-birth" className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
                           <Input 
+                            id="tournament-date-of-birth"
                             type="date"
                             value={answers['dateOfBirth'] || ''} 
                             onChange={e => handleInputChange('dateOfBirth', e.target.value)} 
@@ -467,8 +472,9 @@ function RegistrationForm() {
                   {currentStepInfo.id === 'details' && (
                     <div className="space-y-8">
                       <div className="space-y-3">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Official Team Name <span className="text-primary">*</span></Label>
+                        <Label htmlFor="tournament-team-name" className="text-[10px] font-black uppercase tracking-widest ml-1">Official Team Name <span className="text-primary">*</span></Label>
                         <Input 
+                          id="tournament-team-name"
                           placeholder="e.g. Phoenix Elite Academy" 
                           value={answers['teamName'] || ''} 
                           onChange={e => handleInputChange('teamName', e.target.value)} 
@@ -477,8 +483,9 @@ function RegistrationForm() {
                         />
                       </div>
                       <div className="space-y-3">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Origin Organization / City</Label>
+                        <Label htmlFor="tournament-team-origin" className="text-[10px] font-black uppercase tracking-widest ml-1">Origin Organization / City</Label>
                         <Input 
+                          id="tournament-team-origin"
                           placeholder="e.g. Chicago, IL" 
                           value={answers['teamOrigin'] || ''} 
                           onChange={e => handleInputChange('teamOrigin', e.target.value)} 
@@ -486,9 +493,9 @@ function RegistrationForm() {
                         />
                       </div>
                       <div className="space-y-3">
-                        <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Competitive Experience</Label>
+                        <Label id="tournament-experience-label" htmlFor="tournament-experience" className="text-[10px] font-black uppercase tracking-widest ml-1">Team Competitive Experience</Label>
                         <Select value={answers['experience'] || ''} onValueChange={v => handleInputChange('experience', v)}>
-                          <SelectTrigger className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Level..." /></SelectTrigger>
+                          <SelectTrigger id="tournament-experience" aria-labelledby="tournament-experience-label" className="h-14 rounded-2xl border-2 font-black bg-muted/5 shadow-inner"><SelectValue placeholder="Select Level..." /></SelectTrigger>
                           <SelectContent className="rounded-2xl">
                             <SelectItem value="Elite" className="font-bold text-[10px] uppercase">Elite / National</SelectItem>
                             <SelectItem value="Advanced" className="font-bold text-[10px] uppercase">Advanced / Regional</SelectItem>
