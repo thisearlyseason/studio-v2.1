@@ -17,7 +17,7 @@ import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
+import { DEMO_EXIT_PENDING_KEY, getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -437,6 +437,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     const handlePageHide = (event: PageTransitionEvent) => {
       if (event.persisted || cleanupSubmitted) return;
       cleanupSubmitted = true;
+      localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
       navigator.sendBeacon('/api/demo/exit');
     };
 

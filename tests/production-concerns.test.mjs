@@ -132,8 +132,9 @@ test('anonymous cleanup retains retry evidence until every demo projection is re
 });
 
 test('anonymous demos reset on expiry or page exit with the scheduler as fallback', async () => {
-  const [layout, endpoint, cleanup, functions] = await Promise.all([
+  const [layout, provider, endpoint, cleanup, functions] = await Promise.all([
     source('../src/app/(dashboard)/layout.tsx'),
+    source('../src/firebase/provider.tsx'),
     source('../src/app/api/demo/exit/route.ts'),
     source('../src/lib/server-demo-cleanup.ts'),
     source('../functions/src/index.ts'),
@@ -142,12 +143,15 @@ test('anonymous demos reset on expiry or page exit with the scheduler as fallbac
   assert.match(layout, /DEMO_TIMEOUT_MS = 15 \* 60 \* 1000/);
   assert.match(layout, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(layout, /window\.addEventListener\('pagehide', handlePageHide\)/);
+  assert.match(layout, /localStorage\.setItem\(DEMO_EXIT_PENDING_KEY, 'true'\)/);
   assert.match(layout, /navigator\.sendBeacon\('\/api\/demo\/exit'\)/);
   assert.match(layout, /isDemoInitializing \|\|\s+isSeedingDemo \|\|\s+!userProfile\?\.isDemo/);
   assert.match(layout, /user\?\.isAnonymous/);
   assert.match(endpoint, /origin !== request\.nextUrl\.origin/);
   assert.match(endpoint, /verifySessionCookie\(sessionCookie, true\)/);
   assert.match(endpoint, /sign_in_provider !== 'anonymous'/);
+  assert.match(provider, /firebaseUser\?\.isAnonymous && localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);
+  assert.match(provider, /await signOut\(auth\)/);
   assert.match(cleanup, /user\.providerData\.length > 0/);
   assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);
   assert.ok(cleanup.indexOf("recursiveDelete(adminDb.collection('users').doc(uid))") < cleanup.indexOf('auth.deleteUser(uid)'));
@@ -166,6 +170,7 @@ test('demo launch creates its protected profile before entering dashboard routes
     const session = launcher.indexOf('await establishBrowserSession(demoCredential.user)');
     assert.ok(bootstrap >= 0 && bootstrap < session);
   }
+  assert.match(login, /if \(isDemoLoading\) return;/);
   assert.match(clientAuth, /fetch\('\/api\/demo\/seed'/);
   assert.match(clientAuth, /Authorization: `Bearer \$\{token\}`/);
 });

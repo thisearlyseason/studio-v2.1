@@ -54,6 +54,7 @@ export default function LoginPage() {
   }, []);
 
   React.useEffect(() => {
+    if (isDemoLoading) return;
     if (!isUserLoading && user) {
       const fetchRole = async () => {
         if (!user.isAnonymous && !user.emailVerified) {
@@ -108,7 +109,7 @@ export default function LoginPage() {
       };
       fetchRole();
     }
-  }, [user, isUserLoading, db, router, auth]);
+  }, [user, isUserLoading, db, router, auth, isDemoLoading]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

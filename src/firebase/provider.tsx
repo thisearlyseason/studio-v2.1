@@ -3,9 +3,10 @@
 import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Firestore } from 'firebase/firestore';
-import { Auth, User, onAuthStateChanged } from 'firebase/auth';
+import { Auth, User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
+import { DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
 
 interface FirebaseProviderProps {
   children: ReactNode;
@@ -87,8 +88,21 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 
     const unsubscribe = onAuthStateChanged(
       auth,
-      (firebaseUser) => { // Auth state determined
+      async (firebaseUser) => { // Auth state determined
         console.log("FirebaseProvider: Auth state changed. User:", firebaseUser ? `${firebaseUser.uid} (${firebaseUser.email})` : "Logged out");
+        if (firebaseUser?.isAnonymous && localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true') {
+          try {
+            await signOut(auth);
+            localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+          } catch (error) {
+            console.error('FirebaseProvider: demo sign-out failed:', error);
+          }
+          setUserAuthState({ user: null, isUserLoading: false, userError: null });
+          return;
+        }
+        if (firebaseUser && !firebaseUser.isAnonymous) {
+          localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+        }
         if (!firebaseUser) {
           // If we log out, we must ensure any stale demo locks or session pointers are purged
           localStorage.removeItem('squad_seeding_lock');

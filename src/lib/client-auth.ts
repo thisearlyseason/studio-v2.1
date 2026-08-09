@@ -9,6 +9,8 @@
  */
 import { sendEmailVerification, type Auth, type User } from 'firebase/auth';
 
+export const DEMO_EXIT_PENDING_KEY = 'squad_demo_exit_pending';
+
 /** Gets the current user's Firebase ID token. Returns null if not authenticated. */
 export async function getAuthToken(auth: Auth): Promise<string | null> {
   try {
