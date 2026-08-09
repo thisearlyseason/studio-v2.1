@@ -76,20 +76,18 @@ export async function POST(req: NextRequest) {
     // League documents are server-created in production. Bootstrap the demo
     // league here before the client blueprint enriches it, otherwise the
     // browser's first write is rejected by the creation rule.
-    if (plan.role !== 'parent') {
-      const leagueId = `demo_league_${uid.slice(-4)}`;
-      batch.set(adminDb.collection('leagues').doc(leagueId), {
-        id: leagueId,
-        creatorId: uid,
-        createdBy: uid,
-        memberUserIds: [uid],
-        memberTeamIds: shells.map((shell) => shell.id),
-        isDemo: true,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      }, { merge: true });
-    }
+    const leagueId = `demo_league_${uid.slice(-4)}`;
+    batch.set(adminDb.collection('leagues').doc(leagueId), {
+      id: leagueId,
+      creatorId: uid,
+      createdBy: uid,
+      memberUserIds: [uid],
+      memberTeamIds: shells.map((shell) => shell.id),
+      isDemo: true,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    }, { merge: true });
 
     await batch.commit();
     return NextResponse.json({

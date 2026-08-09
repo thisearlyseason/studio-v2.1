@@ -576,6 +576,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const isSchoolDemo = planId === 'school_demo' || planId === 'school';
   // league_demo gets facilities/equipment seeded (like a Pro demo) but NO paid Pro team quota
   const isProTier = planId !== 'starter_squad' && planId !== 'free';
+  const activeDemoLeagueId = `demo_league_${userId.slice(-4)}`;
 
   // --- PRE-FLIGHT CLEANUP ROUTINE ---
   // If the user is running the seeder multiple times, ghost events and overlapping teams pile up.
@@ -602,10 +603,15 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       await deleteDoc(doc(db, 'users', userId, 'teamMemberships', existingTeamId));
     }
 
-    // Cleanup prior leagues created by the user
+    // Cleanup prior leagues created by the user. The seed API has already
+    // created the current protected league shell, so preserve it for the
+    // client blueprint to enrich. Deleting it here would make the next write
+    // a client-side league create, which production rules correctly reject.
     const leaguesSnap = await getDocs(query(collection(db, 'leagues'), where('creatorId', '==', userId)));
     for (const lDoc of leaguesSnap.docs) {
-      await deleteDoc(doc(db, 'leagues', lDoc.id));
+      if (lDoc.id !== activeDemoLeagueId) {
+        await deleteDoc(doc(db, 'leagues', lDoc.id));
+      }
     }
   } catch (err) {
     console.warn("Cleanup routine skipped or failed (safe to ignore if first run): ", err);
