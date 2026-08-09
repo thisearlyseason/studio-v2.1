@@ -38,6 +38,7 @@ import {
   Filter,
   ExternalLink
 } from 'lucide-react';
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
 import { 
   Dialog, 
   DialogContent, 
@@ -249,6 +250,14 @@ function DonationAuditLedger({ fundId }: { fundId: string }) {
 }
 
 export default function FundraisingPage() {
+  const { isStaff } = useTeam();
+  if (!isStaff) {
+    return <AccessRestricted type="role" title="Fundraising Access Restricted" description="Campaign management is reserved for authorized squad staff." />;
+  }
+  return <AuthorizedFundraisingPage />;
+}
+
+function AuthorizedFundraisingPage() {
   const { activeTeam, user, isStaff, isParent, isPlayer, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
   const db = useFirestore();
   const auth = useAuth();

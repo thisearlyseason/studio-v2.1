@@ -6,18 +6,9 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { hasStaffRole } from '@/lib/staff-position';
 
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no_response']);
-const STAFF_POSITIONS = new Set([
-  'Coach',
-  'Assistant Coach',
-  'Team Representative',
-  'Athletic Director',
-  'Staff',
-  'Manager',
-  'Squad Leader',
-  'Coach Guest',
-]);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/;
 
 function isActiveMember(data: FirebaseFirestore.DocumentData | undefined): boolean {
@@ -95,10 +86,7 @@ export async function POST(request: NextRequest) {
       team.ownerUserId === auth.uid ||
       (
         isActiveMember(callerMembership) &&
-        (
-          callerMembership?.role === 'Admin' ||
-          STAFF_POSITIONS.has(callerMembership?.position || '')
-        )
+        hasStaffRole(callerMembership)
       );
     const callerOwnsParticipant =
       participantId === auth.uid ||

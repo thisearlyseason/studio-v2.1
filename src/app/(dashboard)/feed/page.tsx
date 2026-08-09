@@ -46,8 +46,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, limit, doc, increment, arrayUnion, arrayRemove, getDoc, updateDoc } from 'firebase/firestore';
+import { useAuth, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { 
   Dialog, 
@@ -58,10 +58,10 @@ import {
   DialogDescription, 
   DialogFooter
 } from '@/components/ui/dialog';
-import { addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { useToast } from '@/hooks/use-toast';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
-function CommentList({ postId, teamId, isAdmin, currentUserId, canComment }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string, canComment: boolean }) {
+function CommentList({ postId, teamId, isAdmin, currentUserId, onDeleteComment }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string, onDeleteComment: (postId: string, commentId: string) => Promise<void> }) {
   const db = useFirestore();
   const q = useMemoFirebase(() => {
     if (!db || !teamId || !postId) return null;
@@ -88,7 +88,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId, canComment }: { p
                 {(isAdmin || comment.authorId === currentUserId) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button aria-label={`Delete comment by ${comment.authorName || 'squad member'}`} variant="ghost" size="icon" className="h-5 w-5 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-destructive" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', teamId, 'feedPosts', postId, 'comments', comment.id))}>
+                      <Button aria-label={`Delete comment by ${comment.authorName || 'squad member'}`} variant="ghost" size="icon" className="h-5 w-5 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-destructive" onClick={() => void onDeleteComment(postId, comment.id)}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </TooltipTrigger>
@@ -107,6 +107,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId, canComment }: { p
 
 export default function FeedPage() {
   const { activeTeam, user, updateTeamHero, isSuperAdmin, purchasePro, hasFeature, isStaff, isParent, isPlayer } = useTeam();
+  const firebaseAuth = useAuth();
   const db = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
@@ -207,23 +208,39 @@ export default function FeedPage() {
     );
   }
 
-  const handlePost = () => {
-    if (!newPostContent.trim() && !imageUrl) return;
-    addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts'), {
-      teamId: activeTeam.id,
-      content: newPostContent,
-      imageUrl: imageUrl || null,
-      type: 'user',
-      authorId: user?.id,
-      author: { name: user?.name, avatar: user?.avatar },
-      createdAt: new Date().toISOString(),
-      likes: []
+  const runFeedAction = async (payload: Record<string, unknown>) => {
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Please sign in again.');
+    const response = await fetch('/api/teams/feed/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ teamId: activeTeam.id, ...payload }),
     });
-    setNewPostContent('');
-    setImageUrl(undefined);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Unable to update the squad feed.');
+    return result;
   };
 
-  const handleCreatePoll = () => {
+  const reportFeedError = (error: unknown) => {
+    toast({
+      title: 'Feed Update Failed',
+      description: error instanceof Error ? error.message : 'Unable to update the squad feed.',
+      variant: 'destructive',
+    });
+  };
+
+  const handlePost = async () => {
+    if (!newPostContent.trim() && !imageUrl) return;
+    try {
+      await runFeedAction({ action: 'create-post', content: newPostContent, imageUrl: imageUrl || null });
+      setNewPostContent('');
+      setImageUrl(undefined);
+    } catch (error) {
+      reportFeedError(error);
+    }
+  };
+
+  const handleCreatePoll = async () => {
     const validOptions = pollOptions.filter(o => o.text.trim() !== '');
     if (!pollQuestion.trim() || validOptions.length < 2) {
       toast({
@@ -233,45 +250,61 @@ export default function FeedPage() {
       });
       return;
     }
-    addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts'), {
-      teamId: activeTeam.id,
-      content: pollQuestion.trim(),
-      type: 'poll',
-      poll: {
-        id: 'p' + Date.now(),
-        question: pollQuestion.trim(),
-        options: validOptions.map(o => ({ text: o.text.trim(), imageUrl: o.image || null, votes: 0 })),
-        totalVotes: 0,
-        voters: {},
-        isClosed: false
-      },
-      authorId: user?.id,
-      author: { name: user?.name, avatar: user?.avatar },
-      createdAt: new Date().toISOString()
-    });
-    setIsPollDialogOpen(false);
-    setPollQuestion('');
-    setPollOptions([{text: '', image: undefined}, {text: '', image: undefined}]);
+    try {
+      await runFeedAction({
+        action: 'create-post',
+        content: pollQuestion.trim(),
+        poll: { options: validOptions.map(o => ({ text: o.text.trim(), imageUrl: o.image || null })) },
+      });
+      setIsPollDialogOpen(false);
+      setPollQuestion('');
+      setPollOptions([{text: '', image: undefined}, {text: '', image: undefined}]);
+    } catch (error) {
+      reportFeedError(error);
+    }
   };
 
   const handleVote = async (postId: string, optionIdx: number) => {
-    const ref = doc(db, 'teams', activeTeam.id, 'feedPosts', postId);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return;
-    const poll = snap.data().poll;
-    const current = poll.voters?.[user?.id || ''];
-    const u: any = { [`poll.voters.${user?.id}`]: optionIdx };
-    if (current === undefined) { u[`poll.options.${optionIdx}.votes`] = increment(1); u['poll.totalVotes'] = increment(1); }
-    else if (current !== optionIdx) { u[`poll.options.${current}.votes`] = increment(-1); u[`poll.options.${optionIdx}.votes`] = increment(1); }
-    await updateDoc(ref, u);
+    try {
+      await runFeedAction({ action: 'vote', postId, optionIdx });
+    } catch (error) {
+      reportFeedError(error);
+    }
   };
 
   const handleToggleLike = async (postId: string) => {
-    const ref = doc(db, 'teams', activeTeam.id, 'feedPosts', postId);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return;
-    const isLiked = snap.data().likes?.includes(user?.id);
-    await updateDoc(ref, { likes: isLiked ? arrayRemove(user?.id) : arrayUnion(user?.id) });
+    try {
+      await runFeedAction({ action: 'toggle-like', postId });
+    } catch (error) {
+      reportFeedError(error);
+    }
+  };
+
+  const handleComment = async (postId: string) => {
+    const content = commentInputs[postId]?.trim();
+    if (!content) return;
+    try {
+      await runFeedAction({ action: 'create-comment', postId, content });
+      setCommentInputs(previous => ({ ...previous, [postId]: '' }));
+    } catch (error) {
+      reportFeedError(error);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    try {
+      await runFeedAction({ action: 'delete-post', postId });
+    } catch (error) {
+      reportFeedError(error);
+    }
+  };
+
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    try {
+      await runFeedAction({ action: 'delete-comment', postId, commentId });
+    } catch (error) {
+      reportFeedError(error);
+    }
   };
 
   return (
@@ -384,7 +417,7 @@ export default function FeedPage() {
                 {(isAdmin || post.authorId === user?.id) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button aria-label={`Delete post by ${post.author?.name || 'squad member'}`} variant="ghost" size="icon" className="h-8 w-8 lg:h-10 lg:w-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-destructive hover:bg-destructive/10 rounded-full" onClick={() => deleteDocumentNonBlocking(doc(db, 'teams', activeTeam.id, 'feedPosts', post.id))}>
+                      <Button aria-label={`Delete post by ${post.author?.name || 'squad member'}`} variant="ghost" size="icon" className="h-8 w-8 lg:h-10 lg:w-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-destructive hover:bg-destructive/10 rounded-full" onClick={() => void handleDeletePost(post.id)}>
                         <Trash2 className="h-4 w-4 lg:h-5 lg:w-5" />
                       </Button>
                     </TooltipTrigger>
@@ -430,7 +463,7 @@ export default function FeedPage() {
                   </Button>
                   <div className="flex items-center gap-1.5 lg:gap-2 text-muted-foreground font-black uppercase tracking-widest text-[8px] lg:text-[10px]"><MessageSquare className="h-3.5 w-3.5 lg:h-4 lg:w-4" /> Discussion</div>
                 </div>
-                <CommentList postId={post.id} teamId={activeTeam.id} isAdmin={isAdmin} currentUserId={user?.id || ''} canComment={!!canComment} />
+                <CommentList postId={post.id} teamId={activeTeam.id} isAdmin={isAdmin} currentUserId={user?.id || ''} onDeleteComment={handleDeleteComment} />
                 <div className="flex gap-2 lg:gap-3 w-full">
                   <Input 
                     placeholder={canComment ? "Write to squad..." : "Comments restricted"} 
@@ -438,7 +471,12 @@ export default function FeedPage() {
                     className="bg-muted/50 border-none rounded-xl lg:rounded-2xl h-10 lg:h-12 text-xs lg:text-sm font-bold px-4 lg:px-6 shadow-inner" 
                     value={commentInputs[post.id] || ''} 
                     onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))} 
-                    onKeyDown={(e) => e.key === 'Enter' && commentInputs[post.id]?.trim() && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts', post.id, 'comments'), { postId: post.id, content: commentInputs[post.id], authorId: user?.id, authorName: user?.name, createdAt: new Date().toISOString() }).then(() => setCommentInputs(p => ({ ...p, [post.id]: '' })))} 
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && commentInputs[post.id]?.trim()) {
+                        e.preventDefault();
+                        void handleComment(post.id);
+                      }
+                    }}
                   />
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -447,7 +485,7 @@ export default function FeedPage() {
                         aria-label="Post comment"
                         disabled={!canComment}
                         className="rounded-xl lg:rounded-2xl h-10 w-10 lg:h-12 lg:w-12 shrink-0 shadow-lg lg:shadow-xl shadow-primary/20" 
-                        onClick={() => commentInputs[post.id]?.trim() && addDocumentNonBlocking(collection(db, 'teams', activeTeam.id, 'feedPosts', post.id, 'comments'), { postId: post.id, content: commentInputs[post.id], authorId: user?.id, authorName: user?.name, createdAt: new Date().toISOString() }).then(() => setCommentInputs(p => ({ ...p, [post.id]: '' })))}
+                        onClick={() => void handleComment(post.id)}
                       >
                         <Send className="h-4 w-4 lg:h-5 lg:w-5" />
                       </Button>

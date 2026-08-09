@@ -211,7 +211,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'A signature is required for this registration.' }, { status: 400 });
       }
       const createdAt = new Date().toISOString();
-      const entry = await entryParentRef.collection('registrationEntries').add({
+      const entry = entryParentRef.collection('registrationEntries').doc();
+      const entryData = {
         league_id: kind === 'league' ? parentRef.id : null,
         event_id: eventId || null,
         protocol_id: protocolId,
@@ -221,11 +222,73 @@ export async function POST(req: NextRequest) {
         signature_date: signature ? createdAt : null,
         status: 'pending', registrationCost, payment_received: false,
         created_at: createdAt, createdAt,
-      });
+      };
+
+      // Public registrations cross a trusted server boundary. Persist the raw
+      // response and the league's operational projection in one atomic batch so
+      // organizers never receive an entry that is absent from team/player tools.
+      const batch = adminDb.batch();
+      batch.create(entry, entryData);
+
+      if (kind === 'league') {
+        const registrationType = String(config.type || (
+          protocolId === 'team_config' ? 'team' : protocolId === 'waiver_config' ? 'waiver' : 'player'
+        )).toLowerCase();
+        const recruitId = `recruit_${entry.id}`;
+
+        if (registrationType === 'team' || protocolId === 'team_config') {
+          const teamName = configuredAnswer(answers, schema, ['teamName'], /team name|squad name/i).slice(0, 200);
+          const coachName = configuredAnswer(answers, schema, ['name', 'fullName'], /coach|contact name|captain/i).slice(0, 200);
+          if (teamName) {
+            batch.update(parentRef, {
+              [`teams.${recruitId}`]: {
+                teamName,
+                coachName: coachName || 'Recruit Coach',
+                coachEmail: typeof answers.email === 'string' ? answers.email.slice(0, 320) : '',
+                coachPhone: typeof answers.phone === 'string' ? answers.phone.slice(0, 100) : '',
+                teamLogoUrl: typeof answers.teamLogoUrl === 'string' && /^https:\/\//i.test(answers.teamLogoUrl)
+                  ? answers.teamLogoUrl.slice(0, 2_000)
+                  : '',
+                wins: 0,
+                losses: 0,
+                ties: 0,
+                points: 0,
+                status: 'pending',
+                signedAt: signature ? createdAt : null,
+                inviteCode: entry.id.slice(-6).toUpperCase(),
+              },
+              memberTeamIds: FieldValue.arrayUnion(recruitId),
+            });
+          }
+        } else if (
+          registrationType === 'player' || registrationType === 'individual' ||
+          protocolId === 'player_config' || protocolId === 'individual_config'
+        ) {
+          const participantName = configuredAnswer(
+            answers,
+            schema,
+            ['fullName', 'name'],
+            /participant|athlete|player|full name/i,
+          ).slice(0, 200) || 'Recruit Athlete';
+          batch.update(parentRef, {
+            [`individualRecruits.${recruitId}`]: {
+              name: participantName,
+              email: typeof answers.email === 'string' ? answers.email.slice(0, 320) : '',
+              phone: typeof answers.phone === 'string' ? answers.phone.slice(0, 100) : '',
+              status: 'pending',
+              signedAt: signature ? createdAt : null,
+              teamCode: typeof answers.recruiter_code === 'string' ? answers.recruiter_code.slice(0, 100) : null,
+              teamName: typeof answers.team_name === 'string' ? answers.team_name.slice(0, 200) : null,
+              teamId: typeof answers.team_id === 'string' ? answers.team_id.slice(0, 200) : null,
+            },
+            memberIndivIds: FieldValue.arrayUnion(recruitId),
+          });
+        }
+      }
 
       if (signature) {
         const registrationName = configuredAnswer(answers, schema, ['teamName', 'name', 'fullName'], /team name|participant|athlete|full name/i);
-        await entryParentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`).set({
+        batch.set(entryParentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`), {
           id: `arch_waiver_${entry.id}`, entryId: entry.id, protocolId,
           title: registrationName || 'Participant Registration',
           signer: signature, signedAt: createdAt, waiverText: waiverParts.join('\n\n'),
@@ -240,12 +303,13 @@ export async function POST(req: NextRequest) {
           ? answers.teamLogoUrl.slice(0, 2_000)
           : '';
         if (teamName) {
-          await parentRef.collection('events').doc(eventId).update({
+          batch.update(parentRef.collection('events').doc(eventId), {
             tournamentTeams: FieldValue.arrayUnion(teamName),
             tournamentTeamsData: FieldValue.arrayUnion({ id: `p_${entry.id}`, name: teamName, coach: coachName || 'Pipeline Coach', logoUrl, source: 'pipeline' }),
           });
         }
       }
+      await batch.commit();
       return NextResponse.json({ success: true, entryId: entry.id });
     }
 

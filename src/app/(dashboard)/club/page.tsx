@@ -78,8 +78,9 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collectionGroup, query, where, collection, getDocs, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useFirestore, useCollection, useMemoFirebase, useAuth } from '@/firebase';
+import { collectionGroup, query, where, collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/incident-detail-dialog';
 import { format, parseISO } from 'date-fns';
@@ -146,10 +147,11 @@ export default function ClubManagementPage() {
 }
 
 function AuthorizedClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, updateTeam, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
 
   const router = useRouter();
+  const firebaseAuth = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -616,7 +618,7 @@ function AuthorizedClubManagementPage() {
       try {
         const profiles = [];
         for (const uid of schoolHub.schoolAdminIds) {
-          const snap = await getDoc(doc(db, 'users', uid));
+          const snap = await getDoc(doc(db, 'teams', schoolHub.id, 'members', uid));
           if (snap.exists()) {
             profiles.push({ id: snap.id, ...snap.data() });
           }
@@ -627,7 +629,7 @@ function AuthorizedClubManagementPage() {
       }
     }
     fetchAdmins();
-  }, [schoolHub?.schoolAdminIds, db]);
+  }, [schoolHub?.id, schoolHub?.schoolAdminIds, db]);
 
   const filteredTeams = useMemo(() => clubTeams.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase())), [clubTeams, searchTerm]);
 
@@ -677,51 +679,49 @@ function AuthorizedClubManagementPage() {
   };
 
   const handleAddAdmin = async () => {
-    if (!newAdminEmail.trim() || !db || !schoolHub) return;
+    if (!newAdminEmail.trim() || !schoolHub || !firebaseAuth) return;
     setIsAddingAdmin(true);
     const emailToAdd = newAdminEmail.trim().toLowerCase();
     try {
-      const usersQuery = query(collection(db, 'users'), where('email', '==', emailToAdd), limit(1));
-      const snaps = await getDocs(usersQuery);
-      const currentAdmins = schoolHub.schoolAdminIds || [];
-      const pendingEmails: string[] = (schoolHub as any).pendingAdminEmails || [];
-      const totalSlots = currentAdmins.length + pendingEmails.length;
-
-      if (!snaps.empty) {
-        const newAdminId = snaps.docs[0].id;
-        if (currentAdmins.includes(newAdminId) || schoolHub.ownerUserId === newAdminId) {
-          toast({ title: 'Already Admin', description: 'This user is already an admin.', variant: 'destructive' });
-        } else if (totalSlots >= 3) {
-          toast({ title: 'Limit Reached', description: 'You can only have up to 3 additional hub admins.', variant: 'destructive' });
-        } else {
-          const updatedEmails = pendingEmails.includes(emailToAdd) ? pendingEmails : [...pendingEmails, emailToAdd];
-          await updateTeam(schoolHub.id, { schoolAdminIds: [...currentAdmins, newAdminId], pendingAdminEmails: updatedEmails });
-          toast({ title: 'Hub Admin Added', description: `${emailToAdd} now has Hub access.` });
-          setNewAdminEmail('');
-        }
-      } else {
-        if (pendingEmails.includes(emailToAdd)) {
-          toast({ title: 'Already Pending', description: 'An invitation is already pending for this email.', variant: 'destructive' });
-        } else if (totalSlots >= 3) {
-          toast({ title: 'Limit Reached', description: 'You can only have up to 3 additional hub admins.', variant: 'destructive' });
-        } else {
-          await updateTeam(schoolHub.id, { pendingAdminEmails: [...pendingEmails, emailToAdd] });
-          toast({ title: 'Invitation Saved', description: `${emailToAdd} will get Hub access automatically when they sign up.` });
-          setNewAdminEmail('');
-        }
-      }
-    } catch (e) {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired.');
+      const response = await fetch('/api/schools/admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: schoolHub.id, email: emailToAdd }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Failed to add Hub administrator.');
+      toast({
+        title: payload.status === 'added' ? 'Hub Admin Added' : 'Invitation Saved',
+        description: payload.status === 'added'
+          ? `${emailToAdd} now has Hub access.`
+          : `${emailToAdd} will get Hub access automatically when they sign up.`,
+      });
+      setNewAdminEmail('');
+    } catch (e: any) {
       console.error(e);
-      toast({ title: 'Error', description: 'Failed to add hub admin', variant: 'destructive' });
+      toast({ title: 'Administrator Update Failed', description: e.message || 'Failed to add Hub administrator.', variant: 'destructive' });
     }
     setIsAddingAdmin(false);
   };
 
   const handleRemoveAdmin = async (adminId: string) => {
-    if (!schoolHub) return;
-    const currentAdmins = schoolHub.schoolAdminIds || [];
-    await updateTeam(schoolHub.id, { schoolAdminIds: currentAdmins.filter(id => id !== adminId) });
-    toast({ title: "Admin Removed", description: "Access revoked." });
+    if (!schoolHub || !firebaseAuth) return;
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired.');
+      const response = await fetch('/api/schools/admins', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: schoolHub.id, userId: adminId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Failed to revoke Hub access.');
+      toast({ title: 'Admin Removed', description: 'Access revoked.' });
+    } catch (e: any) {
+      toast({ title: 'Access Revoke Failed', description: e.message, variant: 'destructive' });
+    }
   };
 
   return (
@@ -1249,9 +1249,20 @@ function AuthorizedClubManagementPage() {
                                   variant="ghost"
                                   size="icon"
                                   onClick={async () => {
-                                    const updated = ((schoolHub as any).pendingAdminEmails as string[]).filter((e) => e !== pendingEmail);
-                                    await updateTeam(schoolHub.id, { pendingAdminEmails: updated });
-                                    toast({ title: 'Invite Revoked', description: `${pendingEmail} removed from pending invitations.` });
+                                    try {
+                                      const token = await getAuthToken(firebaseAuth);
+                                      if (!token) throw new Error('Your session has expired.');
+                                      const response = await fetch('/api/schools/admins', {
+                                        method: 'DELETE',
+                                        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+                                        body: JSON.stringify({ teamId: schoolHub.id, email: pendingEmail }),
+                                      });
+                                      const payload = await response.json();
+                                      if (!response.ok) throw new Error(payload.error || 'Failed to revoke the invitation.');
+                                      toast({ title: 'Invite Revoked', description: `${pendingEmail} removed from pending invitations.` });
+                                    } catch (e: any) {
+                                      toast({ title: 'Invite Revoke Failed', description: e.message, variant: 'destructive' });
+                                    }
                                   }}
                                   className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10 h-8 w-8 rounded-xl"
                                 >

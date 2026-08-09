@@ -56,9 +56,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from '@/hooks/use-toast';
-import { collectionGroup, query, where, doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { cn, compressImage } from '@/lib/utils';
-import { useUser, useCollection, useMemoFirebase, useAuth } from '@/firebase';
+import { useUser, useAuth } from '@/firebase';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import Link from 'next/link';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
@@ -67,7 +67,7 @@ export default function TeamProfilePage() {
   const { user: authUser } = useUser();
   const firebaseAuth = useAuth();
   const { 
-    activeTeam, setActiveTeam, teams, user, members, updateTeamDetails, 
+    activeTeam, setActiveTeam, teams, user, members, updateTeamDetails, firebaseUser,
     isSuperAdmin, plans, updateTeamPlan, isStaff, hasFeature, 
     respondToAssignment, db, updateTeamCode, checkCodeUniqueness, propagateLogoToLeagues 
   } = useTeam();
@@ -107,23 +107,37 @@ export default function TeamProfilePage() {
     }
   };
 
-  const assignmentsQuery = useMemoFirebase(() => {
-    if (!db || !authUser?.uid || !activeTeam?.id || !isStaff || !hasFeature?.('league_registration')) return null;
-    
-    const constraints = [
-      where('assigned_team_id', '==', activeTeam.id),
-      where('status', '==', 'assigned')
-    ];
-    
-    if (!activeTeam.id.startsWith('demo_')) {
-      constraints.push(where('assigned_team_owner_id', '==', authUser.uid));
-    }
-    
-    return query(collectionGroup(db, 'registrationEntries'), ...constraints);
-  }, [activeTeam?.id, db, isStaff, authUser?.uid, hasFeature]);
+  const [assignments, setAssignments] = useState<RegistrationEntry[]>([]);
 
-  const { data: rawAssignments } = useCollection<RegistrationEntry>(assignmentsQuery);
-  const assignments = useMemo(() => rawAssignments || [], [rawAssignments]);
+  useEffect(() => {
+    if (!firebaseAuth || !activeTeam?.id || !isStaff || !hasFeature?.('league_registration')) {
+      setAssignments([]);
+      return;
+    }
+    let cancelled = false;
+    const loadAssignments = async () => {
+      try {
+        const token = await getAuthToken(firebaseAuth);
+        if (!token) return;
+        const response = await fetch(`/api/leagues/assignments?teamId=${encodeURIComponent(activeTeam.id)}`, {
+          headers: authHeader(token),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Unable to load league assignments.');
+        if (!cancelled) setAssignments(Array.isArray(payload.assignments) ? payload.assignments : []);
+      } catch (error) {
+        console.error('[TeamProfile] Failed to load league assignments:', error);
+        if (!cancelled) setAssignments([]);
+      }
+    };
+    loadAssignments();
+    return () => { cancelled = true; };
+  }, [activeTeam?.id, firebaseAuth, hasFeature, isStaff]);
+
+  const handleAssignmentResponse = async (entry: RegistrationEntry, status: 'accepted' | 'declined') => {
+    const updated = await respondToAssignment(entry.league_id, entry.id, status);
+    if (updated) setAssignments(current => current.filter(candidate => candidate.id !== entry.id));
+  };
 
   const [editForm, setEditForm] = useState({
     name: '',
@@ -324,15 +338,17 @@ export default function TeamProfilePage() {
                   </div>
                 </Link>
               </Button>
-              <Button asChild variant="outline" className="h-20 rounded-2xl bg-white/5 border-white/10 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-widest justify-start gap-4 px-6 group/btn">
-                <Link href="/facilities" className="flex items-center w-full">
-                  <MapPin className="h-6 w-6 text-primary group-hover/btn:scale-110 transition-transform" />
-                  <div className="flex flex-col items-start min-w-0 ml-3">
-                    <span>Facilities</span>
-                    <span className="text-[7px] text-white/40">Venue Control</span>
-                  </div>
-                </Link>
-              </Button>
+              {(isSuperAdmin || activeTeam?.ownerUserId === firebaseUser?.uid) && (
+                <Button asChild variant="outline" className="h-20 rounded-2xl bg-white/5 border-white/10 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-widest justify-start gap-4 px-6 group/btn">
+                  <Link href="/facilities" className="flex items-center w-full">
+                    <MapPin className="h-6 w-6 text-primary group-hover/btn:scale-110 transition-transform" />
+                    <div className="flex flex-col items-start min-w-0 ml-3">
+                      <span>Facilities</span>
+                      <span className="text-[7px] text-white/40">Venue Control</span>
+                    </div>
+                  </Link>
+                </Button>
+              )}
               <Button asChild variant="outline" className="h-20 rounded-2xl bg-white/5 border-white/10 hover:bg-white/10 text-white font-black uppercase text-[10px] tracking-widest justify-start gap-4 px-6 group/btn">
                 <Link href="/roster" className="flex items-center w-full">
                   <Users className="h-6 w-6 text-primary group-hover/btn:scale-110 transition-transform" />
@@ -384,8 +400,8 @@ export default function TeamProfilePage() {
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <Button size="sm" variant="ghost" className="rounded-xl h-10 w-10 text-destructive hover:bg-destructive/5" onClick={() => respondToAssignment(entry.league_id, entry.id, 'declined')}><XCircle className="h-5 w-5" /></Button>
-                    <Button size="sm" className="rounded-xl h-10 px-4 font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/20" onClick={() => respondToAssignment(entry.league_id, entry.id, 'accepted')}><CheckCircle2 className="h-4 w-4 mr-2" /> Accept</Button>
+                    <Button size="sm" variant="ghost" className="rounded-xl h-10 w-10 text-destructive hover:bg-destructive/5" onClick={() => void handleAssignmentResponse(entry, 'declined')}><XCircle className="h-5 w-5" /></Button>
+                    <Button size="sm" className="rounded-xl h-10 px-4 font-black uppercase text-[10px] tracking-widest shadow-lg shadow-primary/20" onClick={() => void handleAssignmentResponse(entry, 'accepted')}><CheckCircle2 className="h-4 w-4 mr-2" /> Accept</Button>
                   </div>
                 </div>
               ))}

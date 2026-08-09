@@ -352,9 +352,12 @@ function EditFacilityDialog({ facility }: { facility: Facility }) {
 }
 
 export default function FacilityManagementPage() {
-  const { isStaff } = useTeam();
+  const { isStaff, isSuperAdmin, activeTeam, firebaseUser } = useTeam();
 
-  if (!isStaff) return <AccessRestricted type="role" />;
+  const ownsFacilityScope = isSuperAdmin || !activeTeam || activeTeam.ownerUserId === firebaseUser?.uid;
+  if (!isStaff || !ownsFacilityScope) {
+    return <AccessRestricted type="role" title="Facilities Access Restricted" description="Facility records and private access notes are managed by the squad owner." />;
+  }
 
   return <AuthorizedFacilityManagementPage />;
 }

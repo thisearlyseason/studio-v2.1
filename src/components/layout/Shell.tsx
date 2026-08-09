@@ -415,6 +415,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     tab.name === 'Coaches Corner'
       ? !canAccessCoachesCorner
       : tab.pro && !isPro;
+  const canManageFacilities = isSuperAdmin || !activeTeam || activeTeam.ownerUserId === auth?.currentUser?.uid;
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   // Controlled open state for both squad switcher instances
@@ -525,6 +526,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     if (user?.role === 'league_creator' && !activeTeam) {
       return tab.name === 'Facilities' || tab.name === 'Equipment';
     }
+    if (tab.name === 'Facilities' && !canManageFacilities) return false;
     return true;
   });
 
@@ -1194,7 +1196,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                               <div className="space-y-3">
                                 <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary px-2">Command Hub</p>
                                 <div className="grid grid-cols-1 gap-2">
-                                  {adminTabs.map((tab) => {
+                                  {filteredAdminTabs.map((tab) => {
                                     const isLocked = isAdminTabLocked(tab);
                                     const handleClick = (e: React.MouseEvent) => {
                                       if (isLocked) { e.preventDefault(); purchasePro(); }

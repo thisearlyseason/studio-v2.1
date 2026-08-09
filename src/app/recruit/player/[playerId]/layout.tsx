@@ -15,7 +15,7 @@ async function publicPlayer(playerId: string) {
 export async function generateMetadata({ params }: Omit<Props, 'children'>): Promise<Metadata> {
   const { playerId } = await params;
   const player = await publicPlayer(playerId).catch(() => null);
-  if (!player) return { title: 'Recruiting Profile Unavailable', robots: { index: false, follow: false } };
+  if (!player) notFound();
   const name = [player.firstName, player.lastName].filter(Boolean).join(' ') || 'Athlete';
   return {
     title: `${name} | The Squad Scout Portal`,

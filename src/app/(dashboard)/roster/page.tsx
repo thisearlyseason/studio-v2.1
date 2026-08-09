@@ -276,7 +276,7 @@ export default function RosterPage() {
     try {
       const chatId = await createChat(`Direct: ${parent.name}`, [parent.parentId]);
       if (chatId) {
-        router.push(`/messages?chatId=${chatId}`);
+        router.push(`/chats/${chatId}`);
         toast({ title: "Secure Channel Established", description: `You are now in a direct encrypted chat with ${parent.name}.` });
       }
     } catch (e) {

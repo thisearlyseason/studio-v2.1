@@ -26,7 +26,7 @@ const SITE_URL = 'https://www.thesquad.pro';
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const article = ARTICLES_DB[slug] || await getPublicSportsHubArticle(slug).catch(() => null);
-  if (!article) return { title: 'Article Not Found | Sports Hub', robots: { index: false, follow: false } };
+  if (!article) notFound();
   const title = article.seoTitle || `${article.title} | Sports Hub`;
   const description = article.seoDescription || article.excerpt;
   const url = `${SITE_URL}/sports-hub/articles/${slug}`;

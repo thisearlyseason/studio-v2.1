@@ -78,18 +78,27 @@ test('shared normalization covers staff, volunteer, payment, sport, and document
 });
 
 test('route-aware authorization, private recruiting, and alert dismissal fail closed', async () => {
-  const [middleware, roster, alerts, recruitingLayout] = await Promise.all([
+  const [middleware, roster, alerts, recruitingLayout, spectatorLayout, registrationLayout] = await Promise.all([
     source('../src/middleware.ts'),
     source('../src/app/(dashboard)/roster/page.tsx'),
     source('../src/components/layout/AlertOverlay.tsx'),
     source('../src/app/recruit/player/[playerId]/layout.tsx'),
+    source('../src/app/leagues/spectator/[leagueId]/layout.tsx'),
+    source('../src/app/register/league/[leagueId]/layout.tsx'),
   ]);
   assert.match(middleware, /requestHeaders\.set\('x-squad-pathname', pathname\)/);
   assert.match(roster, /recruitingProfileEnabled === true/);
   assert.match(alerts, /if \(!open\) handleDismiss\(\)/);
   assert.doesNotMatch(alerts.match(/const handleDismiss[\s\S]*?\n  };/)?.[0] || '', /markAlertAsSeen/);
-  assert.match(recruitingLayout, /notFound\(\)/);
-  assert.match(recruitingLayout, /index: false, follow: false/);
+  assert.equal((recruitingLayout.match(/notFound\(\)/g) || []).length, 2);
+  assert.match(middleware, /publicProjectionExists\(pathname\)/);
+  assert.match(middleware, /NextResponse\.rewrite\(new URL\('\/__not-found'/);
+  assert.match(middleware, /X-Robots-Tag', 'noindex, nofollow'/);
+  assert.match(spectatorLayout, /collection\('publicLeagueViews'\)/);
+  assert.equal((spectatorLayout.match(/notFound\(\)/g) || []).length, 2);
+  assert.match(registrationLayout, /collection\('leagues'\)/);
+  assert.match(registrationLayout, /where\('slug', '==', identifier\)/);
+  assert.equal((registrationLayout.match(/notFound\(\)/g) || []).length, 2);
 });
 
 test('production automation checks billing-backed invocation and deployed rules drift', async () => {

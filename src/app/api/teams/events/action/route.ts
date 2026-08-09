@@ -7,13 +7,10 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { hasStaffRole } from '@/lib/staff-position';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no', 'no_response']);
-const STAFF_POSITIONS = new Set([
-  'coach', 'head coach', 'assistant coach', 'manager',
-  'squad leader', 'athletic director', 'staff',
-]);
 
 async function teamAccess(teamId: string, uid: string) {
   const teamRef = adminDb.collection('teams').doc(teamId);
@@ -24,9 +21,8 @@ async function teamAccess(teamId: string, uid: string) {
   if (!team.exists) return null;
   const member = membership.data() || {};
   const isActiveMember = membership.exists && isActiveTeamMembership(member);
-  const position = String(member.position || '').trim().toLowerCase();
   const isOwner = team.data()?.ownerUserId === uid;
-  const isStaff = isOwner || (isActiveMember && (member.role === 'Admin' || STAFF_POSITIONS.has(position)));
+  const isStaff = isOwner || (isActiveMember && hasStaffRole(member));
   return { teamRef, isMember: isActiveMember || isOwner, isStaff };
 }
 

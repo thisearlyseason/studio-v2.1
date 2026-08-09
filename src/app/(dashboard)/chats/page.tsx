@@ -32,6 +32,7 @@ import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
+import { isStaffPosition } from '@/lib/staff-position';
 
 type ChatContext = {
   id: string;
@@ -98,8 +99,7 @@ export default function ChatsPage() {
     if (isParent) {
       return members.filter(m => {
         // Parents can ONLY message other parents and staff/coaches
-        const isStaffPos = ['Coach', 'Assistant Coach', 'Team Lead', 'Squad Leader', 'Platform Admin', 'Manager', 'Team Representative'].includes(m.position);
-        if (isStaffPos) return true;
+        if (isStaffPosition(m.position)) return true;
         if (m.position === 'Parent') return true;
         return false;
       });
