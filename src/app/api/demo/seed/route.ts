@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const messageTimestamp = new Date().toISOString();
     const shells = getDemoTeamShells(uid, planId, plan);
     const isElite = ['elite_teams', 'elite', 'league'].includes(planId);
     const name = plan.role === 'admin' ? 'Guest Admin' : `Guest ${plan.position}`;
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
         batch.set(teamRef.collection('groupChats').doc(chatId).collection('messages').doc(message.id), {
           ...messageData,
           type: 'text',
-          createdAt: now,
+          createdAt: messageTimestamp,
           isDemo: true,
         });
       }

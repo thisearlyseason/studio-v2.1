@@ -146,6 +146,7 @@ test('demo chat messages are server-seeded through the protected message boundar
 
   assert.match(route, /const demoMessages = \[/);
   assert.match(route, /collection\('groupChats'\).*collection\('messages'\)/s);
+  assert.match(route, /createdAt: messageTimestamp/);
   assert.doesNotMatch(seeder, /c\.messages\.forEach/);
 });
 
