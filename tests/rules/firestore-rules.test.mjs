@@ -137,6 +137,21 @@ beforeEach(async () => {
       }),
       setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a'), {
         title: 'Open Tryout',
+        date: '2026-09-01',
+        endDate: '2026-09-03',
+        tournamentType: 'single_elimination',
+        tournamentTeams: ['Alpha', 'Beta'],
+        tournamentTeamsData: [{ id: 'alpha', name: 'Alpha' }, { id: 'beta', name: 'Beta' }],
+        selectedFields: ['facility-a:main'],
+        manualVenue: '',
+        gameLength: 60,
+        breakLength: 15,
+        gamesPerTeam: 1,
+        maxDailyGamesPerTeam: 2,
+        poolCount: 0,
+        advancePerPool: 0,
+        dailyWindows: [{ date: '2026-09-01', startTime: '08:00', endTime: '18:00' }],
+        tournamentGames: [{ id: 'final', team1Id: 'alpha', team2Id: 'beta' }],
       }),
       setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a', 'registrations', 'response-a'), {
         name: 'Applicant',
@@ -199,6 +214,19 @@ beforeEach(async () => {
       setDoc(doc(db, 'leagues', 'league-a'), {
         creatorId: 'owner',
         memberUserIds: ['owner', 'member'],
+      }),
+      setDoc(doc(db, 'leagues', 'scheduled-league'), {
+        creatorId: 'owner',
+        memberUserIds: ['owner'],
+        startDate: '2026-09-01',
+        endDate: '2026-09-30',
+        schedule: [],
+        schedulerConfig: {
+          startDate: '2026-09-01',
+          endDate: '2026-09-30',
+          startTime: '18:00',
+          endTime: '21:00',
+        },
       }),
       setDoc(doc(db, 'publicLeagueViews', 'league-a'), {
         schedule: [],
@@ -554,6 +582,56 @@ test('delegated staff can run team operations without changing authority or bill
     { planId: 'school', isPro: true },
     { merge: true },
   ));
+});
+
+test('published league and tournament schedules are server-owned', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const staffDb = authenticatedDb('staff');
+
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a'), {
+    schedule: [{ id: 'forged-game', date: '2026-09-01' }],
+  }, { merge: true }));
+  await assertSucceeds(setDoc(doc(ownerDb, 'leagues', 'league-a'), {
+    name: 'Updated League Name',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'scheduled-league'), {
+    schedulerConfig: {
+      startDate: '2026-10-01',
+      endDate: '2026-10-31',
+      startTime: '18:00',
+      endTime: '21:00',
+    },
+  }, { merge: true }));
+
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'timed-bypass'), {
+    title: 'Conflicting practice',
+    date: '2026-09-01',
+    startTime: '18:00',
+    location: 'Main Field',
+  }));
+  await assertSucceeds(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'tournament-shell'), {
+    title: 'Tournament shell',
+    isTournament: true,
+    tournamentGames: [],
+  }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'tournament-shell'), {
+    date: '2026-09-01',
+    startTime: '18:00',
+    location: 'Main Field',
+  }, { merge: true }));
+
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    tournamentGames: [{ id: 'forged-bracket-game' }],
+  }, { merge: true }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    date: '2026-09-02',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    selectedFields: ['facility-b:other'],
+  }, { merge: true }));
+  await assertSucceeds(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    title: 'Updated Tournament Title',
+  }, { merge: true }));
 });
 
 test('unsupported root tournament hubs cannot bypass team-scoped tournament controls', async () => {

@@ -121,6 +121,7 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 
 function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { user: authUser } = useUser();
+  const firebaseAuth = useAuth();
   const { db, updateLeagueSchedule, hasFeature, isSchoolMode, submitRegistrationEntry } = useTeam();
   const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const [isProcessing, setIsProcessing] = useState(false);
@@ -234,6 +235,24 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       return;
     }
 
+    const gameLength = Number(config.gameLength);
+    const breakLength = Number(config.breakLength);
+    const gamesPerTeam = Number(config.gamesPerTeam);
+    if (
+      !Number.isInteger(gameLength) || gameLength <= 0 ||
+      !Number.isInteger(breakLength) || breakLength < 0 ||
+      !Number.isInteger(gamesPerTeam) || gamesPerTeam <= 0 ||
+      !config.startTime || !config.endTime || config.startTime >= config.endTime ||
+      config.playDays.length === 0
+    ) {
+      toast({
+        title: "Invalid Schedule Parameters",
+        description: "Use positive whole-number match and game counts, non-negative breaks, at least one play day, and a valid daily time window.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsProcessing(true);
     try {
       const serializableConfig = {
@@ -247,16 +266,28 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         gamesPerTeam: config.gamesPerTeam,
         doubleHeaderOption: config.doubleHeaderOption,
         selectedFields: config.selectedFields,
-        blackoutDates: config.blackoutDates.map(d => d.toISOString()),
+        blackoutDates: config.blackoutDates.map(d => format(d, 'yyyy-MM-dd')),
         blackoutDaysOfWeek: config.blackoutDaysOfWeek
       };
 
-      if (!db) return;
-      await updateDoc(doc(db, 'leagues', league.id), {
-        schedulerConfig: serializableConfig,
-        startDate: config.startDate,
-        endDate: config.endDate
+      const previousConfig = (league as any).schedulerConfig || {};
+      const scheduleDefinitionChanged = JSON.stringify(previousConfig) !== JSON.stringify(serializableConfig) ||
+        league.startDate !== config.startDate || league.endDate !== config.endDate;
+      if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/leagues/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          action: 'configure',
+          leagueId: league.id,
+          config: serializableConfig,
+          invalidateExisting: scheduleDefinitionChanged && (league.schedule || []).length > 0,
+        }),
       });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to save the league schedule configuration.');
 
       toast({ 
         title: "Season Parameters Locked", 
@@ -362,9 +393,9 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
                   <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Daily Start</Label><Input type="time" value={config.startTime} onChange={e => setConfig({...config, startTime: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-4" /></div>
                   <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Daily End</Label><Input type="time" value={config.endTime} onChange={e => setConfig({...config, endTime: e.target.value})} style={{ colorScheme: 'dark' }} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-4" /></div>
-                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Break (Min)</Label><Input type="number" value={config.breakLength} onChange={e => setConfig({...config, breakLength: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-6" /></div>
-                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Match Length</Label><Input type="number" value={config.gameLength} onChange={e => setConfig({...config, gameLength: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-6" /></div>
-                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Games / Team</Label><Input type="number" value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-14 rounded-xl bg-white/15 border-primary/50 font-black text-primary px-6" /></div>
+                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Break (Min)</Label><Input type="number" min={0} step={1} value={config.breakLength} onChange={e => setConfig({...config, breakLength: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-6" /></div>
+                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Match Length</Label><Input type="number" min={1} step={1} value={config.gameLength} onChange={e => setConfig({...config, gameLength: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-6" /></div>
+                  <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Games / Team</Label><Input type="number" min={1} step={1} value={config.gamesPerTeam} onChange={e => setConfig({...config, gamesPerTeam: e.target.value})} className="h-14 rounded-xl bg-white/15 border-primary/50 font-black text-primary px-6" /></div>
                   <div className="space-y-3"><Label className="text-[10px] font-black uppercase text-white/60 ml-1">Double Headers</Label>
                     <Select value={config.doubleHeaderOption} onValueChange={(v: any) => setConfig({...config, doubleHeaderOption: v})}>
                       <SelectTrigger className="h-14 rounded-xl bg-white/15 border-white/20 font-bold text-white px-4"><SelectValue /></SelectTrigger>
@@ -834,7 +865,7 @@ function LeagueOverview({
           </Button>
           {isStaff && (
             <Button variant="default" className="flex-1 sm:flex-none h-11 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20 hover:scale-105 transition-all" onClick={onOpenManualGame}>
-              <Plus className="h-4 w-4 mr-2" /> Generate Match
+              <Plus className="h-4 w-4 mr-2" /> Add Exhibition
             </Button>
           )}
           <div className="bg-muted/50 p-1.5 rounded-2xl border-2 flex items-center shadow-inner mt-2 sm:mt-0 w-full sm:w-auto overflow-x-auto">
@@ -862,7 +893,10 @@ function LeagueOverview({
                       <div className="min-w-[90px] shrink-0 text-left">
                         <p className="font-black text-[11px] uppercase tracking-tight leading-none">{format(new Date(game.date), 'MMM d, yyyy')}</p>
                         <p className="text-[10px] font-bold text-muted-foreground mt-0.5">{game.time}</p>
-                        {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black mt-1">DH</Badge>}
+                        <div className="flex gap-1 mt-1">
+                          {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">DH</Badge>}
+                          {game.isExhibition && <Badge variant="outline" className="text-[7px] h-4 font-black">Exhibition</Badge>}
+                        </div>
                       </div>
 
                       {/* Fixture face-off */}
@@ -1066,9 +1100,18 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
     date: format(new Date(), 'yyyy-MM-dd'),
     time: '18:00',
     location: '',
+    resourceId: '',
     team1Id: '',
     team2Id: ''
   });
+
+  const configuredFields = useMemo(() => {
+    const fields = ((league as any).schedulerConfig?.selectedFields || []) as string[];
+    return [...new Set(fields.filter(Boolean))].map(resourceId => ({
+      resourceId,
+      name: getFacilityFieldName(resourceId),
+    }));
+  }, [league]);
 
   const leagueTeams = useMemo(() => {
     if (!league?.teams) return [];
@@ -1086,6 +1129,10 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
       toast({ title: "Invalid Matchup", description: "Select two different squads.", variant: "destructive" });
       return;
     }
+    if (!form.date || !form.time || !form.location.trim()) {
+      toast({ title: "Fixture Details Required", description: "Select a date, start time, and field or location.", variant: "destructive" });
+      return;
+    }
     setIsProcessing(true);
     try {
       const t1 = leagueTeams.find(t => t.id === form.team1Id);
@@ -1093,11 +1140,18 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
       
       await addLeagueGame(league.id, {
         ...form,
+        resourceId: form.resourceId || `custom:${form.location.trim().toLowerCase()}`,
         team1: t1?.name,
         team2: t2?.name,
       });
       onOpenChange(false);
       toast({ title: "Match Appended", description: "Manual entry successfully synced." });
+    } catch (error: any) {
+      toast({
+        title: "Fixture Conflict",
+        description: error?.message || "The match could not be added.",
+        variant: "destructive"
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -1111,9 +1165,9 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
           <DialogHeader>
             <div className="flex items-center gap-3">
               <div className="bg-primary/5 p-3 rounded-xl text-primary"><Plus className="h-5 w-5" /></div>
-              <DialogTitle className="text-2xl font-black uppercase">Manual Match Entry</DialogTitle>
+              <DialogTitle className="text-2xl font-black uppercase">Exhibition Match</DialogTitle>
             </div>
-            <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-1">Append custom fixture to season schedule</DialogDescription>
+            <DialogDescription className="font-bold text-[10px] uppercase tracking-widest mt-1">Add a non-standings fixture without changing official game totals</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -1187,12 +1241,33 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
 
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase">Location / Court</Label>
-                            <LocationAutocomplete
-                value={form.location}
-                onChange={(val) => setForm({...form, location: val})}
-                placeholder="Search venue or enter address…"
-                inputClassName="h-12 border-2 font-bold bg-white"
-              />
+              {configuredFields.length > 0 ? (
+                <Select
+                  value={form.resourceId}
+                  onValueChange={(resourceId) => {
+                    const selected = configuredFields.find(field => field.resourceId === resourceId);
+                    setForm({ ...form, resourceId, location: selected?.name || '' });
+                  }}
+                >
+                  <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
+                    <SelectValue placeholder="Select configured field" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-[100]">
+                    {configuredFields.map(field => (
+                      <SelectItem key={field.resourceId} value={field.resourceId} className="font-bold uppercase text-[10px] py-3">
+                        {field.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <LocationAutocomplete
+                  value={form.location}
+                  onChange={(location) => setForm({ ...form, location, resourceId: '' })}
+                  placeholder="Search venue or enter address..."
+                  inputClassName="h-12 border-2 font-bold bg-white"
+                />
+              )}
             </div>
           </div>
 
@@ -1343,7 +1418,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     try {
       const { games: scheduleGames, report } = generateIntelligentLeagueSchedule({
         teams: leagueTeams,
-        fields: config.selectedFields.map(getFacilityFieldName),
+        fields: config.selectedFields.map((resourceId: string) => ({
+          id: resourceId,
+          name: getFacilityFieldName(resourceId),
+        })),
         startDate: config.startDate,
         endDate: config.endDate || undefined,
         startTime: config.startTime,
@@ -1361,10 +1439,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         toast({ title: 'Schedule Warnings', description: report.warnings[0] });
       }
 
-      if (scheduleGames.length === 0) {
+      if (!report.isValid || scheduleGames.length === 0) {
         toast({ 
           title: "Distribution Failure", 
-          description: "Could not satisfy scheduling constraints. Check play days or field availability.", 
+          description: report.conflicts[0] || "Could not satisfy scheduling constraints. Check play days or field availability.",
           variant: "destructive" 
         });
         return;
@@ -1373,9 +1451,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       if (!updateLeagueSchedule) return;
       await updateLeagueSchedule(activeLeague.id, scheduleGames);
       toast({ title: "Schedule Deployed", description: "Season schedule successfully generated and synced." });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast({ title: "Failed to Deploy", description: "An error occurred during schedule generation.", variant: "destructive" });
+      toast({ title: "Failed to Deploy", description: err?.message || "An error occurred during schedule generation.", variant: "destructive" });
     } finally {
       setIsDeployingSchedule(false);
     }
@@ -1772,15 +1850,37 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     setIsEditLeagueOpen(true);
   };
 
+  const clearLeagueScheduleOnServer = useCallback(async (
+    leagueId: string,
+    mode: 'archive' | 'purge'
+  ) => {
+    if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/leagues/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'clear', leagueId, mode }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to clear the league schedule.');
+  }, [firebaseAuth]);
+
   const handleArchiveLeague = async () => {
     if (!activeLeague) return;
     if (!window.confirm(`Are you sure you want to archive ${activeLeague.name}? It will be removed from active dashboards but remain in the Historical Archives.`)) return;
     setIsProcessing(true);
     try {
-      await updateDoc(doc(db, 'leagues', activeLeague.id), { isArchived: true });
+      await clearLeagueScheduleOnServer(activeLeague.id, 'archive');
       setSelectedLeagueId(null);
       setIsEditLeagueOpen(false);
       toast({ title: "Hub Archived", description: "League moved to historical storage." });
+    } catch (error: any) {
+      toast({
+        title: "Archive Failed",
+        description: error?.message || "The league could not be archived.",
+        variant: "destructive"
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -1790,8 +1890,14 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     if (!window.confirm(`Are you sure you want to archive ${name}? It will be removed from active dashboards but remain in the Historical Archives.`)) return;
     setIsProcessing(true);
     try {
-      await updateDoc(doc(db, 'leagues', leagueId), { isArchived: true });
+      await clearLeagueScheduleOnServer(leagueId, 'archive');
       toast({ title: "Hub Archived", description: "League moved to historical storage." });
+    } catch (error: any) {
+      toast({
+        title: "Archive Failed",
+        description: error?.message || "The league could not be archived.",
+        variant: "destructive"
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -1832,6 +1938,30 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     if (!activeLeague || !db) return;
     setIsProcessing(true);
     try {
+      const schedulerConfig = (activeLeague as any).schedulerConfig;
+      const datesChanged = activeLeague.startDate !== editLeagueForm.startDate ||
+        activeLeague.endDate !== editLeagueForm.endDate;
+      if (schedulerConfig && datesChanged) {
+        if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+        const token = await getAuthToken(firebaseAuth);
+        if (!token) throw new Error('Your session has expired. Sign in again.');
+        const response = await fetch('/api/leagues/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({
+            action: 'configure',
+            leagueId: activeLeague.id,
+            config: {
+              ...schedulerConfig,
+              startDate: editLeagueForm.startDate,
+              endDate: editLeagueForm.endDate,
+            },
+            invalidateExisting: (activeLeague.schedule || []).length > 0,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Unable to update the season dates.');
+      }
       await updateDoc(doc(db, 'leagues', activeLeague.id), {
         name: editLeagueForm.name,
         sport: editLeagueForm.sport,
@@ -3044,9 +3174,15 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                              if (!window.confirm(`CRITICAL: You are about to purge all matches and standings for ${activeLeague.name}. This action cannot be reversed. Continue?`)) return;
                              setIsProcessing(true);
                              try {
-                               await updateDoc(doc(db, 'leagues', activeLeague.id), { schedule: [], teams: {} }); 
+                               await clearLeagueScheduleOnServer(activeLeague.id, 'purge');
                                setIsEditLeagueOpen(false);
                                toast({ title: "Season Purged", description: "Operational environment reset." });
+                             } catch (error: any) {
+                               toast({
+                                 title: "Season Purge Failed",
+                                 description: error?.message || "The season could not be purged.",
+                                 variant: "destructive"
+                               });
                              } finally { setIsProcessing(false); }
                            }}>
                              Authorize Purge

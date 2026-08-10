@@ -218,6 +218,14 @@ const GET_DEMO_DATA = (
   const playerPool = PLAYER_POOLS[teamIndex % PLAYER_POOLS.length];
   const now = new Date();
   const day = (d: number) => new Date(now.getTime() + d * 86400000).toISOString();
+  const localDay = (d: number) => {
+    const value = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d);
+    return [
+      value.getFullYear(),
+      String(value.getMonth() + 1).padStart(2, '0'),
+      String(value.getDate()).padStart(2, '0'),
+    ].join('-');
+  };
   
   const yesterday = day(-1);
   const weekAgo = day(-7);
@@ -306,50 +314,14 @@ const GET_DEMO_DATA = (
             { id: 'tt_7', name: 'Bears' }
           ],
           fields: ['Main Arena', 'Championship Field', 'Field 1'],
-          startDate: tomorrow,
-          endDate: day3,
+          startDate: localDay(1),
+          endDate: localDay(3),
           startTime: '08:00',
           endTime: '20:00',
           gameLength: 60,
           breakLength: 15,
           tournamentType: 'double_elimination'
         }).map((g, idx) => {
-          // ── Day assignment — matched against exact scheduler round name strings ──
-          // Scheduler emits: "WB Round 1/2/3", "Winners Bracket Semi-Finals",
-          //   "Winners Bracket Final", "LB Round 1/2/3/4", "Losers Bracket Final",
-          //   "Championship", "Championship Decider"
-          // Day 1 (tomorrow): WB Round 1, LB Round 1, LB Round 2
-          // Day 2 (later):    WB Round 2+, Winners Bracket Semi-Finals, LB Round 3+
-          // Day 3 (day3):     Winners Bracket Final, Losers Bracket Final, Championship, Championship Decider
-          const r = (g.round || '').toLowerCase();
-
-          // Championship Decider is conditional — only played if LB winner defeats
-          // the undefeated WB champion. It is excluded from the scheduling pool
-          // entirely (isConditional flag) and should never receive a demo date.
-          const isConditional = r === 'championship decider' || (g as any).isConditional;
-
-          const isDay3 =
-            r === 'winners bracket final' ||
-            r === 'losers bracket final' ||
-            r === 'championship' ||
-            r.includes('grand final');
-
-          const lbRoundMatch = r.match(/lb round\s+(\d+)/);
-          const lbRoundNum = lbRoundMatch ? parseInt(lbRoundMatch[1], 10) : 0;
-
-          const isDay2 = !isDay3 && !isConditional && (
-            r.includes('winners bracket semi-finals') ||
-            r.includes('semi') ||
-            r.match(/wb round\s+[2-9]/) !== null ||
-            (lbRoundNum >= 3)
-          );
-
-          // Day 1: WB Round 1, LB Round 1, LB Round 2 (and anything unclassified)
-          let gameDate = tomorrow;
-          if (isConditional) gameDate = day3; // Park conditional match on day3 if ever surfaced
-          else if (isDay3) gameDate = day3;
-          else if (isDay2) gameDate = later;
-
           const completed = idx < 4;
 
           // Cycle through all 5 pool members deterministically for every game
@@ -365,7 +337,6 @@ const GET_DEMO_DATA = (
           return {
             ...g,
             ...refAssignment,
-            date: gameDate,
             isCompleted: completed,
             score1: completed ? [5, 4, 8, 10][idx] : 0,
             score2: completed ? [2, 6, 1, 9][idx] : 0,

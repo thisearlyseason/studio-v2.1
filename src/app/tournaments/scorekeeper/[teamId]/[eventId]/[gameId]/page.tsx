@@ -18,6 +18,11 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { PortalStatus } from '@/components/public/PortalStatus';
+import {
+  hasCompletedBracketDescendant,
+  isTournamentGameScorable,
+  validateBracketScoreSubmission,
+} from '@/lib/scheduler-utils';
 
 export default function PublicScorekeeperEntryPage() {
   const { teamId, eventId, gameId } = useParams();
@@ -65,16 +70,47 @@ export default function PublicScorekeeperEntryPage() {
   if (!event) return <PortalStatus status={status} message={error} onRetry={retry} />;
   if (!game) return <PortalStatus status={404} title="Match Inactive" message="This match is no longer available in the tournament schedule." />;
 
+  const hasCompletedDownstream = hasCompletedBracketDescendant(event.tournamentGames || [], game.id);
+  if (!isTournamentGameScorable(game)) {
+    const title = game.isConditional ? 'Match Not Active' : 'Awaiting Participants';
+    const message = game.isConditional
+      ? 'This match will open only if the tournament result requires it.'
+      : 'Both teams must be resolved through bracket progression before this match can be scored.';
+    return (
+      <div className="min-h-screen bg-muted/10 flex items-center justify-center p-6">
+        <Card className="max-w-md w-full text-center p-10 rounded-[2rem] border-none shadow-xl bg-white">
+          <AlertCircle className="h-12 w-12 mx-auto mb-5 text-primary" />
+          <h1 className="text-2xl font-black uppercase tracking-tight">{title}</h1>
+          <p className="text-sm text-muted-foreground mt-3 leading-relaxed">{message}</p>
+          <Button className="mt-6 rounded-xl font-black uppercase text-[10px] tracking-widest" onClick={() => router.push(`/tournaments/scorekeeper/${teamId}/${eventId}`)}>
+            <ChevronLeft className="h-4 w-4 mr-2" /> Back to Schedule
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   const handleSubmit = async () => {
     // Use explicit empty-string check so a score of 0 is valid
     if (!selectedTeam || score1 === '' || score2 === '' || isSubmitting) return;
+    const parsedScore1 = parseInt(score1, 10);
+    const parsedScore2 = parseInt(score2, 10);
+    const validation = validateBracketScoreSubmission(
+      event.tournamentGames || [],
+      game.id,
+      parsedScore1,
+      parsedScore2
+    );
+    if (!validation.valid) {
+      toast({ title: 'Result Not Accepted', description: validation.message, variant: 'destructive' });
+      return;
+    }
     setIsSubmitting(true);
-    const isTeam1 = selectedTeam === game.team1;
     try {
       const sessionCode = typeof window !== 'undefined' ? sessionStorage.getItem(`scorer_verified_${eventId}`) : null;
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'tournament', action: 'score', teamId, eventId, gameId, score1: parseInt(score1), score2: parseInt(score2), code: pin || sessionCode || '' }),
+        body: JSON.stringify({ kind: 'tournament', action: 'score', teamId, eventId, gameId, score1: parsedScore1, score2: parsedScore2, code: pin || sessionCode || '' }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Score could not be posted.');
@@ -130,6 +166,15 @@ export default function PublicScorekeeperEntryPage() {
       </div>
     );
   }
+
+  const currentScoreValidation = score1 !== '' && score2 !== ''
+    ? validateBracketScoreSubmission(
+        event.tournamentGames || [],
+        game.id,
+        parseInt(score1, 10),
+        parseInt(score2, 10)
+      )
+    : null;
 
   return (
     <div className="min-h-screen bg-muted/10 flex flex-col items-center py-12 px-6">
@@ -189,8 +234,9 @@ export default function PublicScorekeeperEntryPage() {
             <div className="space-y-4">
               <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Submitter Identification</Label>
               <div className="grid grid-cols-2 gap-4">
-                <Button 
-                  variant={selectedTeam === game.team1 ? "default" : "outline"} 
+                  <Button
+                    variant={selectedTeam === game.team1 ? "default" : "outline"}
+                    disabled={hasCompletedDownstream}
                   className={cn("h-24 rounded-2xl font-black text-xs uppercase flex flex-col gap-2 transition-all", selectedTeam === game.team1 ? "bg-primary shadow-lg" : "border-2 opacity-60")}
                   onClick={() => setSelectedTeam(game.team1)}
                 >
@@ -202,8 +248,9 @@ export default function PublicScorekeeperEntryPage() {
                   />
                   <span>{game.team1} Rep</span>
                 </Button>
-                <Button 
-                  variant={selectedTeam === game.team2 ? "default" : "outline"} 
+                  <Button
+                    variant={selectedTeam === game.team2 ? "default" : "outline"}
+                    disabled={hasCompletedDownstream}
                   className={cn("h-24 rounded-2xl font-black text-xs uppercase flex flex-col gap-2 transition-all", selectedTeam === game.team2 ? "bg-primary shadow-lg" : "border-2 opacity-60")}
                   onClick={() => setSelectedTeam(game.team2)}
                 >
@@ -227,6 +274,8 @@ export default function PublicScorekeeperEntryPage() {
                       type="number" 
                       placeholder="0"
                       min={0}
+                      max={999}
+                      disabled={hasCompletedDownstream}
                       value={score1} 
                       onChange={e => setScore1(e.target.value)} 
                       className="h-16 text-center font-black text-3xl rounded-2xl border-2 focus:border-primary bg-muted/10" 
@@ -238,12 +287,17 @@ export default function PublicScorekeeperEntryPage() {
                       type="number" 
                       placeholder="0"
                       min={0}
+                      max={999}
+                      disabled={hasCompletedDownstream}
                       value={score2} 
                       onChange={e => setScore2(e.target.value)} 
                       className="h-16 text-center font-black text-3xl rounded-2xl border-2 focus:border-primary bg-muted/10" 
                     />
                   </div>
                 </div>
+                {currentScoreValidation?.valid === false && (
+                  <p className="text-center text-xs font-bold text-destructive">{currentScoreValidation.message}</p>
+                )}
 
                 <div className="space-y-3">
                   <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
@@ -265,7 +319,7 @@ export default function PublicScorekeeperEntryPage() {
           <CardFooter className="p-8 lg:p-10 pt-0 flex flex-col gap-4">
             <Button 
               className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-              disabled={!selectedTeam || score1 === '' || score2 === '' || (event.requiresCode && !pin) || isSubmitting}
+              disabled={!selectedTeam || score1 === '' || score2 === '' || (event.requiresCode && !pin) || isSubmitting || currentScoreValidation?.valid === false}
               onClick={handleSubmit}
             >
               {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}

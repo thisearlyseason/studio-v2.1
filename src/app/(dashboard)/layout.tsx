@@ -17,11 +17,10 @@ import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { DEMO_EXIT_PENDING_KEY, getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
+import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
-const DEMO_START_KEY = 'squad_demo_start_time';
 const SEEDING_ATTEMPTED_KEY = 'squad_seeding_attempted'; // sessionStorage – survives remounts, cleared on tab close
 const LOADING_HARD_TIMEOUT_MS = 30_000; // 30 s max wait before forcing the loading state to resolve
 
@@ -438,7 +437,6 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       if (event.persisted || cleanupSubmitted) return;
       cleanupSubmitted = true;
       localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
-      navigator.sendBeacon('/api/demo/exit');
     };
 
     window.addEventListener('pagehide', handlePageHide);

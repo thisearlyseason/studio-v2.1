@@ -10,6 +10,7 @@
 import { sendEmailVerification, type Auth, type User } from 'firebase/auth';
 
 export const DEMO_EXIT_PENDING_KEY = 'squad_demo_exit_pending';
+export const DEMO_START_KEY = 'squad_demo_start_time';
 
 /** Gets the current user's Firebase ID token. Returns null if not authenticated. */
 export async function getAuthToken(auth: Auth): Promise<string | null> {

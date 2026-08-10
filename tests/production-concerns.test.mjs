@@ -131,7 +131,7 @@ test('anonymous cleanup retains retry evidence until every demo projection is re
   assert.doesNotMatch(cleanup, /auth\.deleteUsers\(usersToDelete\)/);
 });
 
-test('anonymous demos reset on expiry or page exit with the scheduler as fallback', async () => {
+test('anonymous demos survive reloads and clean up abandoned sessions with the scheduler as fallback', async () => {
   const [layout, provider, endpoint, cleanup, functions] = await Promise.all([
     source('../src/app/(dashboard)/layout.tsx'),
     source('../src/firebase/provider.tsx'),
@@ -144,13 +144,15 @@ test('anonymous demos reset on expiry or page exit with the scheduler as fallbac
   assert.match(layout, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(layout, /window\.addEventListener\('pagehide', handlePageHide\)/);
   assert.match(layout, /localStorage\.setItem\(DEMO_EXIT_PENDING_KEY, 'true'\)/);
-  assert.match(layout, /navigator\.sendBeacon\('\/api\/demo\/exit'\)/);
+  assert.doesNotMatch(layout, /navigator\.sendBeacon\('\/api\/demo\/exit'\)/);
   assert.match(layout, /isDemoInitializing \|\|\s+isSeedingDemo \|\|\s+!userProfile\?\.isDemo/);
   assert.match(layout, /user\?\.isAnonymous/);
   assert.match(endpoint, /origin !== request\.nextUrl\.origin/);
   assert.match(endpoint, /verifySessionCookie\(sessionCookie, true\)/);
   assert.match(endpoint, /sign_in_provider !== 'anonymous'/);
   assert.match(provider, /firebaseUser\?\.isAnonymous && localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);
+  assert.match(provider, /sessionStorage\.getItem\(DEMO_START_KEY\)/);
+  assert.match(provider, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(provider, /await signOut\(auth\)/);
   assert.match(cleanup, /user\.providerData\.length > 0/);
   assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);

@@ -30,8 +30,25 @@ export async function POST(req: NextRequest) {
     const now = admin.firestore.FieldValue.serverTimestamp();
     const messageTimestamp = new Date().toISOString();
     const shells = getDemoTeamShells(uid, planId, plan);
+    const leagueId = `demo_league_${uid.slice(-4)}`;
     const isElite = ['elite_teams', 'elite', 'league'].includes(planId);
     const name = plan.role === 'admin' ? 'Guest Admin' : `Guest ${plan.position}`;
+
+    const bookingSnapshots = await Promise.all([
+      ...shells.map(shell =>
+        adminDb.collection('scheduleBookings').where('hostTeamId', '==', shell.id).get()
+      ),
+      adminDb.collection('scheduleBookings').where('leagueId', '==', leagueId).get(),
+    ]);
+    const staleBookings = [...new Map(
+      bookingSnapshots.flatMap(snapshot => snapshot.docs).map(document => [document.ref.path, document])
+    ).values()];
+    for (let index = 0; index < staleBookings.length; index += 400) {
+      const cleanupBatch = adminDb.batch();
+      staleBookings.slice(index, index + 400).forEach(document => cleanupBatch.delete(document.ref));
+      await cleanupBatch.commit();
+    }
+
     const batch = adminDb.batch();
 
     if (isAnonymousDemo) {
@@ -98,7 +115,6 @@ export async function POST(req: NextRequest) {
     // League documents are server-created in production. Bootstrap the demo
     // league here before the client blueprint enriches it, otherwise the
     // browser's first write is rejected by the creation rule.
-    const leagueId = `demo_league_${uid.slice(-4)}`;
     batch.set(adminDb.collection('leagues').doc(leagueId), {
       id: leagueId,
       creatorId: uid,

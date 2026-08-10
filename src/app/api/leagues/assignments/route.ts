@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { getTeamAuthority } from '@/lib/server-team-access';
+import { clearLeagueSchedule, ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -232,6 +233,29 @@ export async function PATCH(req: NextRequest) {
       if (result === 'missing') return NextResponse.json({ error: 'League registration not found.' }, { status: 404 });
       if (result === 'stale') return NextResponse.json({ error: 'This assignment is no longer pending for your squad.' }, { status: 409 });
       if (result === 'unsupported') return NextResponse.json({ error: 'This registration cannot be accepted by a squad.' }, { status: 409 });
+
+      const [freshLeague, freshEntry] = await Promise.all([leagueRef.get(), entryRef.get()]);
+      const protocolId = String(freshEntry.data()?.protocol_id || '');
+      const recruitId = `recruit_${entryId}`;
+      const schedule = Array.isArray(freshLeague.data()?.schedule) ? freshLeague.data()!.schedule : [];
+      const rosterChangeTouchesSchedule = protocolId === 'team_config' && schedule.some((game: any) =>
+        [game.team1Id, game.team2Id].some(id => id === recruitId || id === teamId)
+      );
+      if (rosterChangeTouchesSchedule) {
+        const creatorId = String(freshLeague.data()?.creatorId || '');
+        if (!validId(creatorId)) {
+          throw new ScheduleDeploymentError(
+            'LEAGUE_OWNER_MISSING',
+            'The league organizer could not be verified before clearing the outdated schedule.',
+            409
+          );
+        }
+        await clearLeagueSchedule({
+          leagueId,
+          mode: 'clear',
+          actor: { uid: creatorId, role: 'server' },
+        });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -239,6 +263,9 @@ export async function PATCH(req: NextRequest) {
   } catch (error) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof ScheduleDeploymentError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
     console.error('[leagues/assignments] Error:', error);
     return NextResponse.json({ error: 'Unable to update the league assignment.' }, { status: 500 });

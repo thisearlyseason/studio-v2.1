@@ -2,9 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { FieldPath, FieldValue, type DocumentReference } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
-import { advanceBracketMatch } from '@/lib/scheduler-utils';
+import { recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
 import { credentialsMatch, isLegacyOpenPortal, validScore } from '@/lib/score-action-security';
 import { permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
+import {
+  publicLeagueGameProjection,
+  recalculatePublicLeagueStandings,
+} from '@/lib/public-league-scoring';
+import {
+  TournamentScheduleDeploymentError,
+  withTournamentScheduleMutationLock,
+} from '@/lib/server-tournament-schedule-deployment';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -224,6 +232,50 @@ export async function POST(req: NextRequest) {
         created_at: createdAt, createdAt,
       };
 
+      if (kind === 'tournament' && protocolId === 'team_config' && eventId) {
+        const teamName = configuredAnswer(answers, schema, ['teamName'], /team name|squad name/i).slice(0, 200);
+        const coachName = configuredAnswer(answers, schema, ['name', 'fullName'], /coach|contact name|captain/i).slice(0, 200);
+        const logoUrl = typeof answers.teamLogoUrl === 'string' && /^https:\/\//i.test(answers.teamLogoUrl)
+          ? answers.teamLogoUrl.slice(0, 2_000)
+          : '';
+        if (!teamName) return NextResponse.json({ error: 'A team name is required.' }, { status: 400 });
+
+        const tournamentEventRef = parentRef.collection('events').doc(eventId);
+        const result = await adminDb.runTransaction(async transaction => {
+          const [freshEvent, freshConfig] = await Promise.all([
+            transaction.get(tournamentEventRef),
+            transaction.get(configRef),
+          ]);
+          if (!freshEvent.exists || freshEvent.data()?.isTournament !== true || freshEvent.data()?.isArchived === true) {
+            return { accepted: false as const, code: 'TOURNAMENT_NOT_FOUND', message: 'Tournament registration is inactive.', status: 404 };
+          }
+          if (!freshConfig.exists || freshConfig.data()?.is_active !== true) {
+            return { accepted: false as const, code: 'REGISTRATION_INACTIVE', message: 'Registration portal is inactive.', status: 409 };
+          }
+          if (Array.isArray(freshEvent.data()?.tournamentGames) && freshEvent.data()!.tournamentGames.length > 0) {
+            return { accepted: false as const, code: 'TOURNAMENT_ROSTER_LOCKED', message: 'Registration is closed because the tournament bracket has already been published.', status: 409 };
+          }
+
+          transaction.create(entry, entryData);
+          if (signature) {
+            transaction.set(entryParentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`), {
+              id: `arch_waiver_${entry.id}`, entryId: entry.id, protocolId,
+              title: teamName, signer: signature, signedAt: createdAt,
+              waiverText: waiverParts.join('\n\n'), type: 'Squad', answers,
+            });
+          }
+          transaction.update(tournamentEventRef, {
+            tournamentTeams: FieldValue.arrayUnion(teamName),
+            tournamentTeamsData: FieldValue.arrayUnion({ id: `p_${entry.id}`, name: teamName, coach: coachName || 'Pipeline Coach', logoUrl, source: 'pipeline' }),
+          });
+          return { accepted: true as const };
+        });
+        if (!result.accepted) {
+          return NextResponse.json({ error: result.message, code: result.code }, { status: result.status });
+        }
+        return NextResponse.json({ success: true, entryId: entry.id });
+      }
+
       // Public registrations cross a trusted server boundary. Persist the raw
       // response and the league's operational projection in one atomic batch so
       // organizers never receive an entry that is absent from team/player tools.
@@ -296,19 +348,6 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      if (kind === 'tournament' && protocolId === 'team_config' && eventId) {
-        const teamName = configuredAnswer(answers, schema, ['teamName'], /team name|squad name/i).slice(0, 200);
-        const coachName = configuredAnswer(answers, schema, ['name', 'fullName'], /coach|contact name|captain/i).slice(0, 200);
-        const logoUrl = typeof answers.teamLogoUrl === 'string' && /^https:\/\//i.test(answers.teamLogoUrl)
-          ? answers.teamLogoUrl.slice(0, 2_000)
-          : '';
-        if (teamName) {
-          batch.update(parentRef.collection('events').doc(eventId), {
-            tournamentTeams: FieldValue.arrayUnion(teamName),
-            tournamentTeamsData: FieldValue.arrayUnion({ id: `p_${entry.id}`, name: teamName, coach: coachName || 'Pipeline Coach', logoUrl, source: 'pipeline' }),
-          });
-        }
-      }
       await batch.commit();
       return NextResponse.json({ success: true, entryId: entry.id });
     }
@@ -344,17 +383,28 @@ export async function POST(req: NextRequest) {
         if (!gameId || !validScore(body.score1) || !validScore(body.score2)) {
           return NextResponse.json({ error: 'A valid game and scores from 0 to 999 are required.' }, { status: 400 });
         }
-        const result = await adminDb.runTransaction(async transaction => {
+        const result = await withTournamentScheduleMutationLock(() => adminDb.runTransaction(async transaction => {
           const fresh = await transaction.get(ref);
           const games = [...(fresh.data()?.tournamentGames || [])];
           const index = games.findIndex((game: any) => game.id === gameId);
-          if (index < 0) return false;
-          games[index] = { ...games[index], score1: body.score1, score2: body.score2, isCompleted: true, isDisputed: false, disputeNotes: null, updatedAt: new Date().toISOString() };
-          transaction.update(ref, { tournamentGames: advanceBracketMatch(games, gameId, body.score1, body.score2) });
+          if (index < 0) return { valid: false as const, code: 'MATCH_NOT_FOUND', message: 'Match not found.' };
+          const validation = validateBracketScoreSubmission(games, gameId, body.score1, body.score2);
+          if (!validation.valid) return validation;
+          let updatedGames;
+          try {
+            updatedGames = recordTournamentScore(games, gameId, body.score1, body.score2)
+              .map(game => game.id === gameId ? { ...game, updatedAt: new Date().toISOString() } : game);
+          } catch (error: any) {
+            return { valid: false as const, code: error.code || 'INVALID_SCORE', message: error.message || 'Score could not be posted.' };
+          }
+          transaction.update(ref, { tournamentGames: updatedGames });
           transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'score', gameId, { score1: body.score1, score2: body.score2 }));
-          return true;
-        });
-        if (!result) return NextResponse.json({ error: 'Match not found.' }, { status: 404 });
+          return { valid: true as const };
+        }));
+        if (!result.valid) {
+          const status = result.code === 'MATCH_NOT_FOUND' ? 404 : result.code === 'INVALID_SCORE' ? 400 : 409;
+          return NextResponse.json({ error: result.message, code: result.code }, { status });
+        }
         return NextResponse.json({ success: true });
       }
 
@@ -425,17 +475,76 @@ export async function POST(req: NextRequest) {
         }
         const result = await adminDb.runTransaction(async transaction => {
           const fresh = await transaction.get(ref);
-          const schedule = (fresh.data()?.schedule || []).map((game: any) => game.id === gameId ? {
-            ...game, score1: body.score1, score2: body.score2, isCompleted: true,
-            isDisputed: false, disputeNotes: null, reportedBy: body.reportedBy || 'Scorekeeper Portal',
-            updatedAt: new Date().toISOString(),
-          } : game);
-          if (!schedule.some((game: any) => game.id === gameId)) return false;
-          transaction.update(ref, { schedule, updatedAt: FieldValue.serverTimestamp() });
+          const freshLeague = fresh.data() || {};
+          const schedule: Array<Record<string, unknown>> = Array.isArray(freshLeague.schedule)
+            ? freshLeague.schedule.map((game: Record<string, unknown>) => ({ ...game }))
+            : [];
+          const gameIndex = schedule.findIndex((game: Record<string, unknown>) => game.id === gameId);
+          if (gameIndex < 0) {
+            return { valid: false as const, code: 'MATCH_NOT_FOUND', message: 'Match not found.' };
+          }
+          const currentGame = schedule[gameIndex];
+          const team1Id = currentGame.team1Id;
+          const team2Id = currentGame.team2Id;
+          if (!isSafeId(team1Id) || !isSafeId(team2Id) || team1Id === team2Id) {
+            return {
+              valid: false as const,
+              code: 'INVALID_MATCH_TEAMS',
+              message: 'This match does not have two valid team assignments.',
+            };
+          }
+          const updatedAt = new Date().toISOString();
+          const updatedGame: Record<string, unknown> = {
+            ...currentGame,
+            score1: body.score1,
+            score2: body.score2,
+            isCompleted: true,
+            isDisputed: false,
+            disputeNotes: null,
+            reportedBy: body.reportedBy || 'Scorekeeper Portal',
+            updatedAt,
+          };
+          schedule[gameIndex] = updatedGame;
+          const teams = recalculatePublicLeagueStandings(freshLeague.teams, schedule);
+          const leagueName = typeof freshLeague.name === 'string' && freshLeague.name.trim()
+            ? freshLeague.name.trim().slice(0, 160)
+            : 'League';
+          const team1Projection = publicLeagueGameProjection({
+            leagueId: ref.id,
+            leagueName,
+            game: updatedGame,
+            teamId: team1Id,
+            opponentTeamId: team2Id,
+            opponent: typeof updatedGame.team2 === 'string' ? updatedGame.team2 : 'Opponent',
+            myScore: body.score1,
+            opponentScore: body.score2,
+            updatedAt,
+          });
+          const team2Projection = publicLeagueGameProjection({
+            leagueId: ref.id,
+            leagueName,
+            game: updatedGame,
+            teamId: team2Id,
+            opponentTeamId: team1Id,
+            opponent: typeof updatedGame.team1 === 'string' ? updatedGame.team1 : 'Opponent',
+            myScore: body.score2,
+            opponentScore: body.score1,
+            updatedAt,
+          });
+          const team1Ref = adminDb.collection('teams').doc(team1Id).collection('games').doc(String(team1Projection.id));
+          const team2Ref = adminDb.collection('teams').doc(team2Id).collection('games').doc(String(team2Projection.id));
+          transaction.update(ref, { schedule, teams, updatedAt: FieldValue.serverTimestamp() });
+          transaction.set(team1Ref, team1Projection);
+          transaction.set(team2Ref, team2Projection);
           transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'score', gameId, { score1: body.score1, score2: body.score2 }));
-          return true;
+          return { valid: true as const };
         });
-        if (!result) return NextResponse.json({ error: 'Match not found.' }, { status: 404 });
+        if (!result.valid) {
+          return NextResponse.json(
+            { error: result.message, code: result.code },
+            { status: result.code === 'MATCH_NOT_FOUND' ? 404 : 409 },
+          );
+        }
         return NextResponse.json({ success: true });
       }
       if (action === 'dispute') {
@@ -460,6 +569,9 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof TournamentScheduleDeploymentError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     }
     console.error('[public/portals/action] Error:', error.message);
     return NextResponse.json({ error: 'Portal action could not be completed.' }, { status: 500 });

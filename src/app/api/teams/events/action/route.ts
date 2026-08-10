@@ -8,9 +8,113 @@ import {
   RequestBodyError,
 } from '@/lib/server-request-guards';
 import { hasStaffRole } from '@/lib/staff-position';
+import { withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no', 'no_response']);
+
+class EventMutationError extends Error {
+  constructor(message: string, readonly status = 400) {
+    super(message);
+  }
+}
+
+function cleanDate(value: unknown): string {
+  const candidate = typeof value === 'string' ? value.trim().split('T')[0] : '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : '';
+}
+
+function parseTime(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = value.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (minute > 59) return null;
+  if (match[3]) {
+    if (hour < 1 || hour > 12) return null;
+    if (match[3] === 'PM' && hour !== 12) hour += 12;
+    if (match[3] === 'AM' && hour === 12) hour = 0;
+  } else if (hour > 23) return null;
+  return hour * 60 + minute;
+}
+
+function eventInterval(data: Record<string, unknown>) {
+  const date = cleanDate(data.date);
+  const startMinute = parseTime(data.startTime ?? data.time);
+  if (!date || startMinute === null) return null;
+  const explicitEnd = parseTime(data.endTime);
+  const requestedDuration = Number(data.durationMinutes);
+  const duration = Number.isInteger(requestedDuration) && requestedDuration > 0 && requestedDuration <= 24 * 60
+    ? requestedDuration
+    : 60;
+  const endMinute = explicitEnd !== null && explicitEnd > startMinute
+    ? explicitEnd
+    : startMinute + duration;
+  if (endMinute > 24 * 60) return null;
+  return { date, startMinute, endMinute };
+}
+
+function overlaps(
+  left: { date: string; startMinute: number; endMinute: number },
+  right: { date: string; startMinute: number; endMinute: number }
+) {
+  return left.date === right.date && left.startMinute < right.endMinute && right.startMinute < left.endMinute;
+}
+
+function eventBookingId(teamId: string, eventId: string) {
+  return `team_event_${teamId}_${eventId}`;
+}
+
+function safeEventData(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new EventMutationError('A valid event payload is required.');
+  }
+  const data = { ...(value as Record<string, unknown>) };
+  for (const key of ['id', 'teamId', 'ownerUserId', 'sourceId', 'sourceType', 'sourceGameId', 'leagueId']) {
+    delete data[key];
+  }
+  return data;
+}
+
+async function assertEventAvailability(
+  teamId: string,
+  eventId: string,
+  data: Record<string, unknown>
+) {
+  const interval = eventInterval(data);
+  if (!interval) return null;
+  const [bookings, events] = await Promise.all([
+    adminDb.collection('scheduleBookings').where('date', '==', interval.date).get(),
+    adminDb.collection('teams').doc(teamId).collection('events').get(),
+  ]);
+  const resourceId = typeof data.resourceId === 'string' ? data.resourceId.trim() : '';
+  const location = typeof data.location === 'string' ? data.location.trim().toLocaleLowerCase() : '';
+  for (const booking of bookings.docs) {
+    const bookingData = booking.data();
+    if (booking.id === eventBookingId(teamId, eventId)) continue;
+    const other = {
+      date: cleanDate(bookingData.date),
+      startMinute: Number(bookingData.startMinute),
+      endMinute: Number(bookingData.endMinute),
+    };
+    if (!Number.isFinite(other.startMinute) || !Number.isFinite(other.endMinute) || !overlaps(interval, other)) continue;
+    const teamIds = Array.isArray(bookingData.teamIds) ? bookingData.teamIds : [];
+    const sameResource = resourceId && bookingData.resourceId === resourceId;
+    const sameLocation = location && String(bookingData.location || '').trim().toLocaleLowerCase() === location;
+    if (teamIds.includes(teamId) || sameResource || sameLocation) {
+      throw new EventMutationError('This event conflicts with an existing team or facility reservation.', 409);
+    }
+  }
+  for (const event of events.docs) {
+    if (event.id === eventId) continue;
+    const other = eventInterval(event.data());
+    if (other && overlaps(interval, other)) {
+      throw new EventMutationError('This squad already has an event during the selected time.', 409);
+    }
+  }
+  return interval;
+}
 
 async function teamAccess(teamId: string, uid: string) {
   const teamRef = adminDb.collection('teams').doc(teamId);
@@ -23,7 +127,7 @@ async function teamAccess(teamId: string, uid: string) {
   const isActiveMember = membership.exists && isActiveTeamMembership(member);
   const isOwner = team.data()?.ownerUserId === uid;
   const isStaff = isOwner || (isActiveMember && hasStaffRole(member));
-  return { teamRef, isMember: isActiveMember || isOwner, isStaff };
+  return { teamRef, teamData: team.data() || {}, isMember: isActiveMember || isOwner, isStaff };
 }
 
 export async function POST(req: NextRequest) {
@@ -34,17 +138,83 @@ export async function POST(req: NextRequest) {
     const limited = await enforceUserRateLimit(auth.uid, 'team-event-action', 120, 60 * 60 * 1000);
     if (limited) return limited;
 
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 10_000);
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 100_000);
     const action = String(body.action || '');
     const teamId = String(body.teamId || '');
-    const eventId = String(body.eventId || '');
-    if (!ID_PATTERN.test(teamId) || !ID_PATTERN.test(eventId)) {
+    const requestedEventId = String(body.eventId || '');
+    if (!ID_PATTERN.test(teamId) || (action !== 'create' && !ID_PATTERN.test(requestedEventId))) {
       return NextResponse.json({ error: 'Invalid squad or event.' }, { status: 400 });
     }
 
     const access = await teamAccess(teamId, auth.uid);
     if (!access?.isMember) return NextResponse.json({ error: 'Squad membership required.' }, { status: 403 });
-    const eventRef = access.teamRef.collection('events').doc(eventId);
+    const eventRef = action === 'create'
+      ? access.teamRef.collection('events').doc()
+      : access.teamRef.collection('events').doc(requestedEventId);
+    const eventId = eventRef.id;
+
+    if (action === 'create' || action === 'update' || action === 'delete') {
+      if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
+      const result = await withScheduleMutationLock(async () => {
+        const existing = await eventRef.get();
+        if (action !== 'create' && !existing.exists) return { status: 'missing' as const };
+        const existingData = existing.data() || {};
+        if (existingData.sourceType === 'league' || existingData.sourceType === 'tournament' ||
+            existingData.leagueId || existingData.sourceGameId) {
+          return { status: 'managed' as const };
+        }
+        const bookingRef = adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, eventId));
+        if (action === 'delete') {
+          const batch = adminDb.batch();
+          batch.delete(eventRef);
+          batch.delete(bookingRef);
+          await batch.commit();
+          return { status: 'deleted' as const };
+        }
+
+        const submitted = safeEventData(body.event);
+        const eventData = action === 'update' ? { ...existingData, ...submitted } : submitted;
+        const interval = await assertEventAvailability(teamId, eventId, eventData);
+        const now = new Date().toISOString();
+        const persisted = {
+          ...submitted,
+          id: eventId,
+          teamId,
+          ownerUserId: access.teamData.ownerUserId || auth.uid,
+          updatedAt: now,
+          ...(action === 'create' ? { createdAt: now } : {}),
+        };
+        const batch = adminDb.batch();
+        batch.set(eventRef, persisted, { merge: action === 'update' });
+        if (interval) {
+          const resourceId = typeof eventData.resourceId === 'string' ? eventData.resourceId.trim() : '';
+          const location = typeof eventData.location === 'string' ? eventData.location.trim() : '';
+          batch.set(bookingRef, {
+            id: bookingRef.id,
+            sourceType: 'team-event',
+            sourceId: `team-event:${teamId}:${eventId}`,
+            sourceGameId: eventId,
+            hostTeamId: teamId,
+            teamIds: [teamId],
+            resourceId,
+            location,
+            date: interval.date,
+            startMinute: interval.startMinute,
+            endMinute: interval.endMinute,
+            updatedAt: now,
+          });
+        } else {
+          batch.delete(bookingRef);
+        }
+        await batch.commit();
+        return { status: action === 'create' ? 'created' as const : 'updated' as const, eventId };
+      });
+      if (result.status === 'missing') return NextResponse.json({ error: 'Event not found.' }, { status: 404 });
+      if (result.status === 'managed') {
+        return NextResponse.json({ error: 'Published schedule events must be changed through their schedule.' }, { status: 409 });
+      }
+      return NextResponse.json({ success: true, eventId: 'eventId' in result ? result.eventId : eventId });
+    }
 
     if (action === 'rsvp') {
       const participantId = String(body.participantId || auth.uid);
@@ -105,6 +275,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid event action.' }, { status: 400 });
   } catch (error) {
     if (error instanceof RequestBodyError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof EventMutationError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error('[teams/events/action] Error:', error);

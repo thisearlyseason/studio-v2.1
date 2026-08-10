@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { toast } from '@/hooks/use-toast';
 import { PortalStatus } from '@/components/public/PortalStatus';
+import { hasCompletedBracketDescendant, isTournamentGameScorable } from '@/lib/scheduler-utils';
 
 export default function PublicScorekeeperHub() {
   const { teamId, eventId } = useParams();
@@ -111,15 +112,22 @@ export default function PublicScorekeeperHub() {
 
         <div className="grid grid-cols-1 gap-4">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground ml-4">Tournament Matches</h2>
-          {event.tournamentGames?.map((game) => (
-            <Card 
-              key={game.id} 
-              className={cn(
-                "rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:ring-primary/20 transition-all cursor-pointer group bg-white",
-                game.isCompleted && "opacity-60 grayscale-[0.5]"
-              )}
-              onClick={() => router.push(`/tournaments/scorekeeper/${teamId}/${eventId}/${game.id}`)}
-            >
+          {event.tournamentGames?.map((game) => {
+            const isUnavailable = !isTournamentGameScorable(game);
+            const isResultLocked = hasCompletedBracketDescendant(event.tournamentGames || [], game.id);
+            return (
+              <Card
+                key={game.id}
+                aria-disabled={isUnavailable}
+                className={cn(
+                  "rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 transition-all group bg-white",
+                  isUnavailable ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:ring-primary/20",
+                  game.isCompleted && "grayscale-[0.5]"
+                )}
+                onClick={() => {
+                  if (!isUnavailable) router.push(`/tournaments/scorekeeper/${teamId}/${eventId}/${game.id}`);
+                }}
+              >
               <CardContent className="p-6 flex items-center justify-between">
                 <div className="flex items-center gap-6 flex-1 min-w-0">
                   <div className="w-16 h-16 rounded-2xl bg-muted/30 flex flex-col items-center justify-center border shrink-0">
@@ -154,6 +162,8 @@ export default function PublicScorekeeperHub() {
                       <div className="flex gap-2">
                         {game.isCompleted && <Badge className="bg-black text-white font-black text-[7px] h-4 uppercase">FINAL: {game.score1}-{game.score2}</Badge>}
                         {game.isDisputed && <Badge className="bg-red-600 text-white font-black text-[7px] h-4">DISPUTED</Badge>}
+                        {isUnavailable && !game.isCompleted && <Badge variant="outline" className="font-black text-[7px] h-4 uppercase">Awaiting Teams</Badge>}
+                        {isResultLocked && <Badge variant="outline" className="font-black text-[7px] h-4 uppercase">Result Locked</Badge>}
                       </div>
                     <p className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
                       <MapPin className="h-3 w-3" /> {game.location || event.location}
@@ -162,8 +172,9 @@ export default function PublicScorekeeperHub() {
                 </div>
                 <ChevronRight className="h-6 w-6 text-primary opacity-20 group-hover:opacity-100 transition-all" />
               </CardContent>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       </div>
       <p className="mt-12 text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-40">Official Result Ledger v1.0 • Powered by The Squad</p>

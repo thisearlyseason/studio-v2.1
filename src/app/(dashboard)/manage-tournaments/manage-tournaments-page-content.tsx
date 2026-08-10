@@ -68,13 +68,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam, TeamEvent, TournamentGame, TournamentReferee, Member, Facility, Field, TeamDocument, League, RegistrationEntry } from '@/components/providers/team-provider';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useUser, useAuth } from '@/firebase';
 import { collection, query, orderBy, where, doc, updateDoc, getDoc, getDocs, collectionGroup } from 'firebase/firestore';
 import { cn, compressImage } from '@/lib/utils';
 import { format, isPast, isSameDay, eachDayOfInterval, parseISO } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/hooks/use-toast';
-import { DailyWindow, TeamIdentity, advanceBracketMatch } from '@/lib/scheduler-utils';
+import { DailyWindow, TeamIdentity } from '@/lib/scheduler-utils';
 import { generateIntelligentTournamentSchedule } from '@/lib/intelligent-scheduler';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import html2canvas from 'html2canvas';
@@ -82,6 +82,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import TournamentBracket from '@/components/TournamentBracket';
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { getFacilityFieldName } from '@/lib/facility-rename';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { calculateTournamentStandings } from '@/lib/tournament-standings';
 
 interface TournamentTeam extends TeamIdentity {
   coach?: string;
@@ -90,60 +92,6 @@ interface TournamentTeam extends TeamIdentity {
   rosterLimit?: number;
   logoUrl?: string;
   division?: string;
-}
-
-function calculateTournamentStandings(teams: TournamentTeam[], games: TournamentGame[], poolFilter?: number) {
-  // MISS-4 FIX: Isolate by pool when poolFilter is provided (pool_play_knockout mode)
-  const relevantGames = poolFilter !== undefined
-    ? (games || []).filter(g => (g as any).pool === poolFilter)
-    : (games || []);
-
-  const standings = (teams || []).reduce((acc, team) => {
-    acc[team.name] = { name: team.name, wins: 0, losses: 0, ties: 0, points: 0, netScore: 0, h2hWins: 0 };
-    return acc;
-  }, {} as Record<string, any>);
-  
-  // MISS-3 FIX: Track head-to-head wins for tiebreaker
-  const h2hMap: Record<string, Record<string, number>> = {}; // h2hMap[teamA][teamB] = wins of A vs B
-
-  relevantGames.forEach(game => {
-    if (!game.isCompleted) return;
-    const t1 = game.team1; const t2 = game.team2;
-    if (!standings[t1] || !standings[t2]) return;
-    
-    standings[t1].netScore += (game.score1 - (game.score2 || 0));
-    standings[t2].netScore += (game.score2 - (game.score1 || 0));
-
-    if (!h2hMap[t1]) h2hMap[t1] = {};
-    if (!h2hMap[t2]) h2hMap[t2] = {};
-
-    if (game.score1 > game.score2) { 
-      standings[t1].wins += 1; standings[t1].points += 3; 
-      standings[t2].losses += 1;
-      h2hMap[t1][t2] = (h2hMap[t1][t2] || 0) + 1;
-    }
-    else if (game.score2 > game.score1) { 
-      standings[t2].wins += 1; standings[t2].points += 3; 
-      standings[t1].losses += 1;
-      h2hMap[t2][t1] = (h2hMap[t2][t1] || 0) + 1;
-    }
-    else { 
-      standings[t1].ties += 1; standings[t1].points += 1;
-      standings[t2].ties += 1; standings[t2].points += 1;
-    }
-  });
-
-  // Roll up h2h wins into standings for sort access
-  Object.keys(standings).forEach(name => {
-    standings[name].h2hWins = Object.values(h2hMap[name] || {}).reduce((s: number, v: any) => s + v, 0);
-  });
-
-  return Object.values(standings).sort((a, b) =>
-    b.points - a.points ||
-    b.h2hWins - a.h2hWins ||   // MISS-3: Head-to-head wins
-    b.netScore - a.netScore ||
-    b.wins - a.wins
-  );
 }
 
 function parseGameMinutes(time: string): number {
@@ -204,6 +152,9 @@ interface DivisionConfig {
   gameLength: string;
   breakLength: string;
   gamesPerTeam: string;
+  maxDailyGamesPerTeam: string;
+  poolCount: string;
+  advancePerPool: string;
   venueType: 'club' | 'custom';
   selectedFacilityId: string;
   allocatedFields: string[];
@@ -235,6 +186,9 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
     gameLength: '60',
     breakLength: '15',
     gamesPerTeam: '3',
+    maxDailyGamesPerTeam: '3',
+    poolCount: '2',
+    advancePerPool: '2',
     venueType: 'club',
     selectedFacilityId: '',
     allocatedFields: [],
@@ -247,6 +201,7 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
 function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, editEvent?: TeamEvent }) {
   const { activeTeam, user, hasFeature, isStarter, addEvent } = useTeam();
   const db = useFirestore();
+  const firebaseAuth = useAuth();
 
   const [step, setStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -263,6 +218,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
     gameLength: '60',
     breakLength: '15',
     gamesPerTeam: '3',
+    maxDailyGamesPerTeam: '3',
+    poolCount: '2',
+    advancePerPool: '2',
     dailyWindows: [] as DailyWindow[],
     selectedFields: [] as string[],
     manualVenue: '',
@@ -303,6 +261,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
         gameLength: editEvent.gameLength?.toString() || '60',
         breakLength: editEvent.breakLength?.toString() || '15',
         gamesPerTeam: editEvent.gamesPerTeam?.toString() || '3',
+        maxDailyGamesPerTeam: String(editEvent.maxDailyGamesPerTeam || 3),
+        poolCount: String((editEvent as any).poolCount || 2),
+        advancePerPool: String((editEvent as any).advancePerPool || 2),
         venueType: editEvent.manualVenue ? 'custom' : 'club',
         selectedFacilityId: '',
         allocatedFields: editEvent.selectedFields || [],
@@ -321,6 +282,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
         gameLength: editEvent.gameLength?.toString() || '60',
         breakLength: editEvent.breakLength?.toString() || '15',
         gamesPerTeam: editEvent.gamesPerTeam?.toString() || '3',
+        maxDailyGamesPerTeam: String(editEvent.maxDailyGamesPerTeam || 3),
+        poolCount: String((editEvent as any).poolCount || 2),
+        advancePerPool: String((editEvent as any).advancePerPool || 2),
         dailyWindows: editEvent.dailyWindows || [],
         selectedFields: editEvent.selectedFields || [],
         manualVenue: editEvent.manualVenue || '',
@@ -348,6 +312,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
         gameLength: '60',
         breakLength: '15',
         gamesPerTeam: '3',
+        maxDailyGamesPerTeam: '3',
+        poolCount: '2',
+        advancePerPool: '2',
         dailyWindows: [],
         selectedFields: [],
         manualVenue: '',
@@ -473,8 +440,39 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
       const divConfig = form.divisionConfigs[divKey] || getDefaultDivisionConfig(form.startDate, form.endDate);
 
       // Determine fields and manual venue based on venueType
-      const selectedFields = divConfig.venueType === 'club' ? divConfig.allocatedFields : (divConfig.customFieldsText.split(',').map(f => f.trim()).filter(Boolean));
+      const rawFields = divConfig.venueType === 'club'
+        ? divConfig.allocatedFields
+        : divConfig.customFieldsText.split(',').map(field => field.trim()).filter(Boolean);
+      const selectedFields = rawFields.filter((field, index) =>
+        rawFields.findIndex(candidate => candidate.toLowerCase() === field.toLowerCase()) === index
+      );
       const manualVenue = divConfig.venueType === 'club' ? '' : divConfig.customVenueName;
+      const gameLength = Number(divConfig.gameLength);
+      const breakLength = Number(divConfig.breakLength);
+      const gamesPerTeam = Number(divConfig.gamesPerTeam);
+      const maxDailyGamesPerTeam = Number(divConfig.maxDailyGamesPerTeam);
+      const configuredPoolCount = Number(divConfig.poolCount);
+      const configuredAdvancePerPool = Number(divConfig.advancePerPool);
+      if (
+        !Number.isInteger(gameLength) || gameLength <= 0 ||
+        !Number.isInteger(breakLength) || breakLength < 0 ||
+        !Number.isInteger(gamesPerTeam) || gamesPerTeam <= 0 ||
+        !Number.isInteger(maxDailyGamesPerTeam) || maxDailyGamesPerTeam <= 0 ||
+        selectedFields.length === 0 ||
+        (divConfig.dailyWindows || []).some(window => !window.startTime || !window.endTime || window.startTime >= window.endTime)
+      ) {
+        throw new Error(`Invalid scheduling settings for ${divTitle || 'the tournament'}. Check fields, match length, rest time, games, and daily windows.`);
+      }
+      if (divConfig.tournamentType === 'pool_play_knockout') {
+        const maxPoolCount = Math.floor(filteredTeams.length / 2);
+        if (
+          !Number.isInteger(configuredPoolCount) || configuredPoolCount < 2 || configuredPoolCount > maxPoolCount ||
+          !Number.isInteger(configuredAdvancePerPool) || configuredAdvancePerPool < 1 ||
+          configuredAdvancePerPool > Math.floor(filteredTeams.length / configuredPoolCount)
+        ) {
+          throw new Error(`Pool settings for ${divTitle || 'the tournament'} require at least two teams per pool and a valid number of qualifiers per pool.`);
+        }
+      }
       let finalLocation = form.location;
       if (divConfig.venueType === 'club' && divConfig.selectedFacilityId) {
         const fac = facilities?.find(f => f.id === divConfig.selectedFacilityId);
@@ -493,12 +491,14 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
         isTournament: true,
         tournamentTeamsData: filteredTeams,
         tournamentTeams: filteredTeams.map(t => t.name),
-        tournamentGames: editEvent ? editEvent.tournamentGames || [] : [],
         waiverIds: form.waiverIds,
         registrationCost: form.registration_cost,
-        gameLength: parseInt(divConfig.gameLength) || 60,
-        breakLength: parseInt(divConfig.breakLength) || 15,
-        gamesPerTeam: parseInt(divConfig.gamesPerTeam) || 3,
+        gameLength,
+        breakLength,
+        gamesPerTeam,
+        maxDailyGamesPerTeam,
+        poolCount: Math.max(2, configuredPoolCount || 2),
+        advancePerPool: Math.max(1, configuredAdvancePerPool || 2),
         dailyWindows: divConfig.dailyWindows || [],
         selectedFields: selectedFields,
         manualVenue: manualVenue,
@@ -509,6 +509,48 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
       };
 
       if (editEvent) {
+        const previousDefinition = {
+          date: editEvent.date ? new Date(editEvent.date).toISOString().split('T')[0] : '',
+          endDate: editEvent.endDate ? new Date(editEvent.endDate).toISOString().split('T')[0] : '',
+          tournamentType: editEvent.tournamentType || 'round_robin',
+          teamIds: (editEvent.tournamentTeamsData || []).map(team => `${team.id}:${team.name}`),
+          gameLength: Number(editEvent.gameLength || 60),
+          breakLength: Number(editEvent.breakLength || 15),
+          gamesPerTeam: Number(editEvent.gamesPerTeam || 3),
+          maxDailyGamesPerTeam: Number(editEvent.maxDailyGamesPerTeam || 3),
+          poolCount: Number((editEvent as any).poolCount || 2),
+          advancePerPool: Number((editEvent as any).advancePerPool || 2),
+          selectedFields: editEvent.selectedFields || [],
+          dailyWindows: editEvent.dailyWindows || [],
+          manualVenue: editEvent.manualVenue || '',
+        };
+        const nextDefinition = {
+          date: form.startDate,
+          endDate: form.endDate || form.startDate,
+          tournamentType: divConfig.tournamentType || 'round_robin',
+          teamIds: filteredTeams.map(team => `${team.id}:${team.name}`),
+          gameLength,
+          breakLength,
+          gamesPerTeam,
+          maxDailyGamesPerTeam,
+          poolCount: Math.max(2, configuredPoolCount || 2),
+          advancePerPool: Math.max(1, configuredAdvancePerPool || 2),
+          selectedFields,
+          dailyWindows: divConfig.dailyWindows || [],
+          manualVenue,
+        };
+        const scheduleDefinitionChanged = JSON.stringify(previousDefinition) !== JSON.stringify(nextDefinition);
+        if (scheduleDefinitionChanged && (editEvent.tournamentGames || []).length > 0) {
+          const token = await getAuthToken(firebaseAuth);
+          if (!token) throw new Error('Your session has expired. Sign in again.');
+          const response = await fetch('/api/tournaments/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+            body: JSON.stringify({ action: 'clear', teamId: activeTeam!.id, eventId: editEvent.id }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || 'Unable to invalidate the previous tournament schedule.');
+        }
         await updateDoc(doc(db, 'teams', activeTeam!.id, 'events', editEvent.id), eventPayload);
         return true;
       } else {
@@ -913,7 +955,12 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                                         let newGames = activeConfig.gamesPerTeam;
                                         if (val === 'single_elimination') newGames = '1';
                                         if (val === 'double_elimination') newGames = '2';
-                                        updateActiveConfig({ tournamentType: val, gamesPerTeam: newGames });
+                                        updateActiveConfig({
+                                          tournamentType: val,
+                                          gamesPerTeam: newGames,
+                                          poolCount: activeConfig.poolCount || '2',
+                                          advancePerPool: activeConfig.advancePerPool || '2',
+                                        });
                                       }}
                                     >
                                       <SelectTrigger className="bg-white/5 border-white/15 h-12 rounded-xl text-white font-bold uppercase text-[10px] focus:ring-primary">
@@ -933,6 +980,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                                   <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Match Duration (Min)</Label>
                                   <Input 
                                     type="number" 
+                                    min={1}
+                                    step={1}
                                     value={activeConfig.gameLength} 
                                     onChange={e => updateActiveConfig({ gameLength: e.target.value })} 
                                     className="h-12 bg-white/5 border-white/15 rounded-xl text-white font-bold" 
@@ -943,6 +992,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                                   <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Rest / Turnaround (Min)</Label>
                                   <Input 
                                     type="number" 
+                                    min={0}
+                                    step={1}
                                     value={activeConfig.breakLength} 
                                     onChange={e => updateActiveConfig({ breakLength: e.target.value })} 
                                     className="h-12 bg-white/5 border-white/15 rounded-xl text-white font-bold" 
@@ -953,12 +1004,51 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                                   <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Min Games Per Squad</Label>
                                   <Input 
                                     type="number" 
+                                    min={1}
+                                    step={1}
                                     value={activeConfig.gamesPerTeam} 
                                     onChange={e => updateActiveConfig({ gamesPerTeam: e.target.value })} 
                                     disabled={activeConfig.tournamentType === 'single_elimination' || activeConfig.tournamentType === 'double_elimination'} 
                                     className="h-12 bg-white/5 border-white/15 rounded-xl text-white font-bold" 
                                   />
                                 </div>
+                                <div className="space-y-2">
+                                  <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Max Games / Squad / Day</Label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    step={1}
+                                    value={activeConfig.maxDailyGamesPerTeam}
+                                    onChange={e => updateActiveConfig({ maxDailyGamesPerTeam: e.target.value })}
+                                    className="h-12 bg-white/5 border-white/15 rounded-xl text-white font-bold"
+                                  />
+                                </div>
+                                {activeConfig.tournamentType === 'pool_play_knockout' && (
+                                  <>
+                                    <div className="space-y-2">
+                                      <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Number of Pools</Label>
+                                      <Input
+                                        type="number"
+                                        min={2}
+                                        step={1}
+                                        value={activeConfig.poolCount}
+                                        onChange={e => updateActiveConfig({ poolCount: e.target.value })}
+                                        className="h-12 bg-white/5 border-white/15 rounded-xl text-white font-bold"
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Advance Per Pool</Label>
+                                      <Input
+                                        type="number"
+                                        min={1}
+                                        step={1}
+                                        value={activeConfig.advancePerPool}
+                                        onChange={e => updateActiveConfig({ advancePerPool: e.target.value })}
+                                        className="h-12 bg-white/5 border-white/15 rounded-xl text-white font-bold"
+                                      />
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -1195,6 +1285,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
 
 function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEvent, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { activeTeam, db } = useTeam();
+  const firebaseAuth = useAuth();
   const [isSaving, setIsSaving] = useState(false);
 
   const handleArchive = async () => {
@@ -1202,12 +1293,20 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
     if(!window.confirm("Authorize Archival Protocol? This series will be moved to historical datastores.")) return;
     setIsSaving(true);
     try {
-      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { isArchived: true });
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/tournaments/schedule', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, eventId: event.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to archive this tournament.');
       onOpenChange(false);
       window.location.reload(); // Refresh to clear selected state
       toast({ title: "Series Decommissioned", description: "Tournament moved to historical archives." });
-    } catch(e) {
-      toast({ title: "Archival Failed", variant: "destructive" });
+    } catch(e: any) {
+      toast({ title: "Archival Failed", description: e?.message, variant: "destructive" });
     }
     setIsSaving(false);
   };
@@ -1245,6 +1344,7 @@ function TournamentDetailView({
   onSelectEvent?: (id: string) => void 
 }) {
   const { isStaff: isTeamStaff, activeTeam, db, user, isStarter } = useTeam();
+  const firebaseAuth = useAuth();
   const isStaff = isTeamStaff || !!(event.adminEmails && user?.email && event.adminEmails.includes(user.email));
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('itinerary');
@@ -1324,7 +1424,7 @@ function TournamentDetailView({
   };
 
   const handleAddTeamDirectly = async (name: string, coach: string, email: string) => {
-    if (!db || !activeTeam) return;
+    if (!db || !activeTeam || !firebaseAuth) return;
     if (!name.trim()) {
       toast({ title: "Name Required", description: "Please enter a team name.", variant: "destructive" });
       return;
@@ -1339,6 +1439,17 @@ function TournamentDetailView({
     };
     const updatedTeams = [...(event.tournamentTeamsData || []), newTeam];
     try {
+      if ((event.tournamentGames || []).length > 0) {
+        const token = await getAuthToken(firebaseAuth);
+        if (!token) throw new Error('Your session has expired. Sign in again.');
+        const response = await fetch('/api/tournaments/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({ action: 'clear', teamId: activeTeam.id, eventId: event.id }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Unable to invalidate the published schedule.');
+      }
       await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
         tournamentTeamsData: updatedTeams,
         tournamentTeams: updatedTeams.map(t => t.name)
@@ -1350,10 +1461,21 @@ function TournamentDetailView({
   };
 
   const handleRemoveTeamDirectly = async (teamId: string, teamName: string) => {
-    if (!db || !activeTeam) return;
+    if (!db || !activeTeam || !firebaseAuth) return;
     if (!window.confirm(`Are you sure you want to remove ${teamName} from this tournament division?`)) return;
     const updatedTeams = (event.tournamentTeamsData || []).filter((t: any) => t.id !== teamId);
     try {
+      if ((event.tournamentGames || []).length > 0) {
+        const token = await getAuthToken(firebaseAuth);
+        if (!token) throw new Error('Your session has expired. Sign in again.');
+        const response = await fetch('/api/tournaments/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({ action: 'clear', teamId: activeTeam.id, eventId: event.id }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Unable to invalidate the published schedule.');
+      }
       await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
         tournamentTeamsData: updatedTeams,
         tournamentTeams: updatedTeams.map(t => t.name)
@@ -1378,14 +1500,24 @@ function TournamentDetailView({
 
     setIsProcessing(true);
     try {
-      const mappedFields = (event.selectedFields || []).map((fId: string) => {
+      const uniqueFieldIds = (event.selectedFields || []).filter((fieldId: string, index: number, fields: string[]) =>
+        fields.findIndex(candidate => candidate.toLowerCase() === fieldId.toLowerCase()) === index
+      );
+      const mappedFields = uniqueFieldIds.map((fId: string) => {
         if (fId.includes(':')) {
           const facId = fId.slice(0, fId.indexOf(':'));
           const fieldName = getFacilityFieldName(fId);
           const facility = facilities?.find(fac => fac.id === facId);
-          return facility ? `${facility.name} - ${fieldName}` : fieldName;
+          return {
+            id: fId,
+            name: facility ? `${facility.name} - ${fieldName}` : fieldName,
+          };
         }
-        return fId;
+        const venueKey = (event.manualVenue || event.location || 'custom').trim().toLowerCase();
+        return {
+          id: `custom:${venueKey}:${fId.trim().toLowerCase()}`,
+          name: fId,
+        };
       });
 
       const config = {
@@ -1398,14 +1530,17 @@ function TournamentDetailView({
         gameLength: event.gameLength || 60,
         breakLength: event.breakLength || 15,
         gamesPerTeam: event.gamesPerTeam || 3,
+        maxDailyGamesPerTeam: event.maxDailyGamesPerTeam || 3,
         tournamentType: event.tournamentType || 'round_robin',
-        dailyWindows: event.dailyWindows || []
+        dailyWindows: event.dailyWindows || [],
+        poolCount: (event as any).poolCount || 2,
+        advancePerPool: (event as any).advancePerPool || 2,
       };
 
       const { games, report } = generateIntelligentTournamentSchedule(config);
 
-      if (games.length === 0) {
-        throw new Error("No games could be generated. Check your date range, daily windows, and fields constraints.");
+      if (!report.isValid || games.length === 0) {
+        throw new Error(report.conflicts[0] || "No games could be generated. Check your date range, daily windows, and fields constraints.");
       }
 
       const sanitizedGames = games.map(g => {
@@ -1416,9 +1551,24 @@ function TournamentDetailView({
         return cleaned as TournamentGame;
       });
 
-      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-        tournamentGames: sanitizedGames
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/tournaments/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          teamId: activeTeam.id,
+          eventId: event.id,
+          games: sanitizedGames,
+        }),
       });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = Array.isArray(payload.conflicts) && payload.conflicts.length > 0
+          ? ` ${payload.conflicts[0]}`
+          : '';
+        throw new Error(`${payload.error || 'Unable to deploy the tournament schedule.'}${detail}`);
+      }
 
       toast({
         title: "Schedule Generated",
@@ -1552,11 +1702,18 @@ function TournamentDetailView({
   };
 
   const handleRemoveReferee = async (refId: string) => {
-    if (!db || !activeTeam) return;
+    if (!db || !activeTeam || !firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'clear-referee', teamId: activeTeam.id, eventId: event.id, refereeId: refId }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to clear referee assignments.');
     await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
       refereePool: (event.refereePool || []).filter((r: TournamentReferee) => r.id !== refId),
-      tournamentGames: (event.tournamentGames || []).map((g: any) =>
-        g.refereeId === refId ? { ...g, refereeId: null, refereeName: null } : g),
     });
     toast({ title: 'Official Removed', description: 'Referee and all assignments cleared.' });
   };
@@ -1579,10 +1736,22 @@ function TournamentDetailView({
         return;
       }
     }
-    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-      tournamentGames: (event.tournamentGames || []).map((g: TournamentGame) =>
-        g.id === gameId ? { ...g, refereeId: referee?.id ?? null, refereeName: referee?.name ?? null } : g),
+    if (!firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({
+        action: 'assign-referee',
+        teamId: activeTeam.id,
+        eventId: event.id,
+        gameId,
+        refereeId: referee?.id || '',
+      }),
     });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update the referee assignment.');
     toast({ title: 'Assignment Updated', description: referee ? `${referee.name} assigned.` : 'Official unassigned.' });
   };
 
@@ -1687,121 +1856,71 @@ function TournamentDetailView({
 
   const seedBracketFromStandings = async () => {
     if (!db || !activeTeam || !event.tournamentGames) return;
-    const top4 = standings.slice(0, 4);
-    if (top4.length < 4) {
-      toast({ title: "Insufficient Data", description: "Need 4 ranked squads to initiate semi-finals.", variant: "destructive" });
+    if (event.tournamentType !== 'pool_play_knockout' || !poolStandings) {
+      toast({ title: "Pool Qualification Only", description: "Standings seeding is available only for pool-play tournaments.", variant: "destructive" });
+      return;
+    }
+    const poolGames = event.tournamentGames.filter(game => (game as any).pool !== undefined);
+    if (poolGames.length === 0 || poolGames.some(game => !game.isCompleted)) {
+      toast({ title: "Pool Play Incomplete", description: "Every pool match must have a final score before qualifiers can be seeded.", variant: "destructive" });
+      return;
+    }
+    const expectedPools = (event as any).poolCount || poolStandings.length;
+    const advancePerPool = (event as any).advancePerPool || 2;
+    if (poolStandings.length !== expectedPools || poolStandings.some(pool => pool.rows.length < advancePerPool)) {
+      toast({ title: "Qualification Mismatch", description: "The completed pools do not match the configured qualifier count.", variant: "destructive" });
       return;
     }
 
-    const updatedGames = [...event.tournamentGames];
-    // Find Semi-Final slots (handle both standard and Winners Bracket variants)
-    const semiFinals = updatedGames.filter(g => 
-      (g.round === 'Semi-Finals' || g.round === 'Winners Bracket Semi-Finals') && 
-      (g.team1.includes('TBD') || g.team1.includes('Seed'))
-    );
-
-    if (semiFinals.length < 2) {
-      toast({ title: "Architectural Mismatch", description: "No eligible TBD semi-final slots found. Use 'Refactor Architecture' to inject slots if this is a manual bracket.", variant: "destructive" });
-      return;
-    }
-
-    // Sort semiFinals to ensure we seed 1v4 and 2v3 consistently
-    // If they have "Seed 1" or "Seed 2" labels, use those. Otherwise, just pick the first two.
-    let s1Idx = updatedGames.findIndex(g => g.id === semiFinals[0].id);
-    let s2Idx = updatedGames.findIndex(g => g.id === semiFinals[1].id);
-
-    // Try to be specific if labels exist
-    const label1Idx = updatedGames.findIndex(g => (g.round === 'Semi-Finals' || g.round === 'Winners Bracket Semi-Finals') && g.team1.includes('Seed 1'));
-    const label2Idx = updatedGames.findIndex(g => (g.round === 'Semi-Finals' || g.round === 'Winners Bracket Semi-Finals') && g.team1.includes('Seed 2'));
-    
-    if (label1Idx !== -1) s1Idx = label1Idx;
-    if (label2Idx !== -1) s2Idx = label2Idx;
-
-    updatedGames[s1Idx] = { 
-      ...updatedGames[s1Idx], 
-      team1: top4[0].name, team1Id: (event.tournamentTeamsData?.find(t => t.name === top4[0].name) as any)?.id || 'tbd',
-      team2: top4[3].name, team2Id: (event.tournamentTeamsData?.find(t => t.name === top4[3].name) as any)?.id || 'tbd'
-    };
-    updatedGames[s2Idx] = { 
-      ...updatedGames[s2Idx], 
-      team1: top4[1].name, team1Id: (event.tournamentTeamsData?.find(t => t.name === top4[1].name) as any)?.id || 'tbd',
-      team2: top4[2].name, team2Id: (event.tournamentTeamsData?.find(t => t.name === top4[2].name) as any)?.id || 'tbd'
-    };
-
-    // SANITIZATION: Strip 'undefined' values before Firestore sync.
-    const sanitizedGames = updatedGames.map(g => {
-      const cleaned: any = {};
-      Object.entries(g).forEach(([k, v]) => {
-        if (v !== undefined) cleaned[k] = v;
+    const qualifiers = new Map<string, any>();
+    poolStandings.forEach(pool => {
+      pool.rows.slice(0, advancePerPool).forEach((team: any, index: number) => {
+        qualifiers.set(`${pool.label}:${index + 1}`, team);
       });
-      return cleaned as TournamentGame;
     });
 
-    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: sanitizedGames });
-    toast({ title: "Bracket Initialized", description: "Seeds 1-4 have been deployed to semi-finals." });
-  };
-
-  const injectBracketSlots = async () => {
-    if (!db || !activeTeam || !event.tournamentGames) return;
-    const hasSemis = event.tournamentGames.some(g => g.round === 'Semi-Finals');
-    if (hasSemis) {
-      toast({ title: "Architecture Current", description: "Bracket slots already exist for this series." });
+    let seededSlots = 0;
+    const updatedGames = event.tournamentGames.map(game => {
+      if (game.stage !== 'Knockout') return game;
+      const update: Partial<TournamentGame> = {};
+      (['team1', 'team2'] as const).forEach(slot => {
+        const label = game[slot] || '';
+        const match = label.match(/Pool ([A-Z])\s*-\s*(\d+)(?:st|nd|rd|th)/i);
+        if (!match) return;
+        const qualifier = qualifiers.get(`${match[1].toUpperCase()}:${Number(match[2])}`);
+        if (!qualifier) return;
+        update[slot] = qualifier.name;
+        update[`${slot}Id` as 'team1Id' | 'team2Id'] = qualifier.id;
+        update[`${slot}LogoUrl` as 'team1LogoUrl' | 'team2LogoUrl'] = event.tournamentTeamsData?.find(team => team.id === qualifier.id)?.logoUrl;
+        seededSlots++;
+      });
+      return Object.keys(update).length > 0 ? { ...game, ...update } : game;
+    });
+    if (seededSlots === 0) {
+      toast({ title: "Architectural Mismatch", description: "No pool qualifier placeholders were found in the knockout bracket.", variant: "destructive" });
       return;
     }
 
-    const updatedGames = [...event.tournamentGames];
-    const semi1Id = `s1_${Date.now()}`;
-    const semi2Id = `s2_${Date.now()}`;
-    const finalId = `f1_${Date.now()}`;
-    const lastDate = event.tournamentGames[event.tournamentGames.length - 1]?.date || event.date;
-
-    updatedGames.push({ 
-      id: semi1Id, team1: 'TBD (Seed 1)', team2: 'TBD (Seed 4)', 
-      team1Id: 'tbd', team2Id: 'tbd', 
-      score1: 0, score2: 0,
-      round: 'Semi-Finals', stage: 'Main',
-      date: lastDate, time: 'TBA', location: 'TBD',
-      isCompleted: false, updatedAt: new Date().toISOString(),
-      winnerTo: finalId, winnerToSlot: 'team1' 
+    if (!firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'seed-pools', teamId: activeTeam.id, eventId: event.id }),
     });
-    updatedGames.push({ 
-      id: semi2Id, team1: 'TBD (Seed 2)', team2: 'TBD (Seed 3)', 
-      team1Id: 'tbd', team2Id: 'tbd', 
-      score1: 0, score2: 0,
-      round: 'Semi-Finals', stage: 'Main',
-      date: lastDate, time: 'TBA', location: 'TBD',
-      isCompleted: false, updatedAt: new Date().toISOString(),
-      winnerTo: finalId, winnerToSlot: 'team2' 
-    });
-    updatedGames.push({ 
-      id: finalId, team1: 'TBD (Semi 1 Winner)', team2: 'TBD (Semi 2 Winner)', 
-      team1Id: 'tbd', team2Id: 'tbd', 
-      score1: 0, score2: 0,
-      round: 'Championship', stage: 'Main',
-      date: lastDate, time: 'TBA', location: 'TBD',
-      isCompleted: false, updatedAt: new Date().toISOString() 
-    });
-
-    // SANITIZATION: Strip 'undefined' values before Firestore sync.
-    const sanitizedGames = updatedGames.map(g => {
-      const cleaned: any = {};
-      Object.entries(g).forEach(([k, v]) => {
-        if (v !== undefined) cleaned[k] = v;
-      });
-      return cleaned as TournamentGame;
-    });
-
-    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: sanitizedGames });
-    toast({ title: "Architecture Refactored", description: "New bracket slots injected into series itinerary." });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to seed the knockout bracket.');
+    toast({ title: "Bracket Initialized", description: `${seededSlots} pool qualifier slots were populated from completed standings.` });
   };
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-500 text-black">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 text-left">
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 items-center gap-4">
           <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
-          <div className="bg-primary/5 px-4 py-2 rounded-xl text-primary font-black uppercase text-[10px] tracking-widest border border-primary/10 flex items-center gap-1.5">
-            <span>Active Context: {event.title}</span>
+          <div className="min-w-0 bg-primary/5 px-4 py-2 rounded-xl text-primary font-black uppercase text-[10px] tracking-widest border border-primary/10 flex items-center gap-1.5">
+            <span className="break-words">Active Context: {event.title}</span>
             {event.divisionTitle && (
               <span className="text-muted-foreground/80">• {event.divisionTitle}</span>
             )}
@@ -1833,8 +1952,8 @@ function TournamentDetailView({
              <div className="flex items-center gap-6 text-left">
                <div>
                  <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase tracking-widest mb-1">Elite Series Platform</Badge>
-                 <div className="flex flex-wrap items-center gap-3">
-                   <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter max-w-[800px] leading-tight">{event.title}</h1>
+                 <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
+                   <h1 className="max-w-full break-words text-3xl sm:text-4xl md:text-6xl font-black uppercase tracking-normal leading-tight">{event.title}</h1>
                    {event.divisionTitle && (
                      <Badge className="bg-primary text-white border-none font-black text-[10px] h-6 px-3.5 uppercase tracking-wider">
                        {event.divisionTitle}
@@ -1925,48 +2044,24 @@ function TournamentDetailView({
               }
 
               try {
-                // 1. Mark the game completed with the real scores and any round rename
-                let updatedGames: TournamentGame[] = event.tournamentGames.map(g => {
-                  if (g.id !== selectedGame.id) return g;
-                  return {
-                    ...g,
+                if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+                const token = await getAuthToken(firebaseAuth);
+                if (!token) throw new Error('Your session has expired. Sign in again.');
+                const response = await fetch('/api/tournaments/schedule', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+                  body: JSON.stringify({
+                    action: 'score',
+                    teamId: activeTeam.id,
+                    eventId: event.id,
+                    gameId: selectedGame.id,
                     score1: rawScore1,
                     score2: rawScore2,
-                    round: roundName || g.round,
-                    isCompleted: true,
-                    updatedAt: new Date().toISOString(),
-                  };
+                    explicitWinner,
+                  }),
                 });
-
-                // 2. Run the canonical bracket advancement engine with effective scores.
-                //    This handles: winner/loser routing, logo propagation, score reset on
-                //    destination slots, and the Grand Final Reset (DE Championship Decider).
-                updatedGames = advanceBracketMatch(updatedGames, selectedGame.id, effectiveScore1, effectiveScore2);
-
-                // 3. If the Grand Final Reset was just triggered (LB winner beat WB winner),
-                //    make the Championship Decider visible by clearing its isConditional flag.
-                const gfResetTriggered = updatedGames.some(g =>
-                  g.isResetMatch &&
-                  !g.isConditional &&
-                  g.team1 && !g.team1.includes('TBD') &&
-                  g.team2 && !g.team2.includes('TBD')
-                );
-                if (gfResetTriggered) {
-                  updatedGames = updatedGames.map(g =>
-                    g.isResetMatch ? { ...g, isConditional: false } : g
-                  );
-                }
-
-                // 4. SANITIZATION: Strip 'undefined' values before Firestore sync to prevent crashes.
-                const sanitizedGames = updatedGames.map(g => {
-                  const cleaned: any = {};
-                  Object.entries(g).forEach(([k, v]) => {
-                    if (v !== undefined) cleaned[k] = v;
-                  });
-                  return cleaned as TournamentGame;
-                });
-
-                await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentGames: sanitizedGames });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.error || 'Unable to submit the tournament score.');
 
                 // 4. Championship celebration for the ultimate final
                 const rLower = (roundName || selectedGame.round || '').toLowerCase();
@@ -2121,20 +2216,19 @@ function TournamentDetailView({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className={cn("grid grid-cols-1 gap-6", event.tournamentType === 'pool_play_knockout' && "md:grid-cols-2")}>
+                      {event.tournamentType === 'pool_play_knockout' && (
                       <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6">
                         <div className="space-y-2">
                           <Badge className="bg-primary/20 text-primary border border-primary/30 font-black text-[8px] uppercase tracking-widest">Pro Tool</Badge>
                           <h4 className="text-lg font-black uppercase tracking-tight text-white">Seed from Standings</h4>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 leading-relaxed">Automatically promote the current Top 4 squads into the Semi-Final bracket.</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 leading-relaxed">Populate knockout slots from completed, pool-specific standings and configured qualifier counts.</p>
                         </div>
                         <Button onClick={seedBracketFromStandings} className="w-full h-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest transition-all active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-                          Initialize Seeds 1–4 <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" onClick={injectBracketSlots} className="w-full text-white/40 hover:text-white font-black uppercase text-[9px] tracking-widest hover:bg-white/5">
-                          Inject Missing Bracket Slots &rarr;
+                          Seed Pool Qualifiers <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
                       </div>
+                      )}
 
                       <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 relative overflow-hidden">
                         <div className="absolute inset-0 bg-emerald-500/[0.03]" />

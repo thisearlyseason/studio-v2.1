@@ -3,6 +3,17 @@ import 'server-only';
 import * as admin from 'firebase-admin';
 import { adminDb, getAdminAuth } from '@/lib/firebase-admin';
 
+async function deleteDocuments(
+  documents: admin.firestore.QueryDocumentSnapshot[]
+): Promise<void> {
+  const unique = [...new Map(documents.map(document => [document.ref.path, document])).values()];
+  for (let index = 0; index < unique.length; index += 400) {
+    const batch = adminDb.batch();
+    unique.slice(index, index + 400).forEach(document => batch.delete(document.ref));
+    await batch.commit();
+  }
+}
+
 export async function deleteAnonymousDemo(uid: string): Promise<void> {
   const auth = getAdminAuth();
 
@@ -27,6 +38,16 @@ export async function deleteAnonymousDemo(uid: string): Promise<void> {
   const teams = new Map<string, admin.firestore.QueryDocumentSnapshot>();
   ownedTeams.docs.forEach(team => teams.set(team.id, team));
   demoTeams.docs.forEach(team => teams.set(team.id, team));
+
+  const bookingSnapshots = await Promise.all([
+    ...[...teams.keys()].map(teamId =>
+      adminDb.collection('scheduleBookings').where('hostTeamId', '==', teamId).get()
+    ),
+    ...leagues.docs.map(league =>
+      adminDb.collection('scheduleBookings').where('leagueId', '==', league.id).get()
+    ),
+  ]);
+  await deleteDocuments(bookingSnapshots.flatMap(snapshot => snapshot.docs));
 
   for (const team of teams.values()) {
     const data = team.data();

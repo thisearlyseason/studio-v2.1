@@ -289,7 +289,59 @@ service cloud.firestore {
 
       match /events/{eventId} {
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-        allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        // Timed calendar events are server-mediated so schedule reservations and
+        // the event document are committed under the same scheduling lock.
+        allow create: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && (
+          get(/databases/$(database)/documents/teams/$(teamId)).data.get('isDemo', false) == true ||
+          (
+            request.resource.data.get('startTime', '') == '' &&
+            request.resource.data.get('time', '') == ''
+          )
+        ));
+        allow delete: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+          resource.data.get('startTime', '') == '' &&
+          resource.data.get('time', '') == '' &&
+          resource.data.get('sourceType', '') == ''
+        );
+        // Published tournament brackets, progression, scores, and assignments
+        // are written only by authenticated server actions.
+        allow update: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+          resource.data.get('sourceType', '') == '' &&
+          (
+            (
+              resource.data.get('isTournament', false) == true &&
+              request.resource.data.get('startTime', '') == '' &&
+              request.resource.data.get('time', '') == ''
+            ) ||
+            (
+              request.resource.data.get('date', '') == resource.data.get('date', '') &&
+              request.resource.data.get('endDate', '') == resource.data.get('endDate', '') &&
+              request.resource.data.get('startTime', '') == resource.data.get('startTime', '') &&
+              request.resource.data.get('time', '') == resource.data.get('time', '') &&
+              request.resource.data.get('endTime', '') == resource.data.get('endTime', '') &&
+              request.resource.data.get('location', '') == resource.data.get('location', '') &&
+              request.resource.data.get('resourceId', '') == resource.data.get('resourceId', '') &&
+              request.resource.data.get('durationMinutes', 0) == resource.data.get('durationMinutes', 0)
+            )
+          ) &&
+          request.resource.data.get('tournamentGames', []) == resource.data.get('tournamentGames', []) &&
+          (resource.data.get('tournamentGames', []).size() == 0 || (
+            request.resource.data.get('date', '') == resource.data.get('date', '') &&
+            request.resource.data.get('endDate', '') == resource.data.get('endDate', '') &&
+            request.resource.data.get('tournamentType', '') == resource.data.get('tournamentType', '') &&
+            request.resource.data.get('tournamentTeams', []) == resource.data.get('tournamentTeams', []) &&
+            request.resource.data.get('tournamentTeamsData', []) == resource.data.get('tournamentTeamsData', []) &&
+            request.resource.data.get('selectedFields', []) == resource.data.get('selectedFields', []) &&
+            request.resource.data.get('manualVenue', '') == resource.data.get('manualVenue', '') &&
+            request.resource.data.get('gameLength', 0) == resource.data.get('gameLength', 0) &&
+            request.resource.data.get('breakLength', 0) == resource.data.get('breakLength', 0) &&
+            request.resource.data.get('gamesPerTeam', 0) == resource.data.get('gamesPerTeam', 0) &&
+            request.resource.data.get('maxDailyGamesPerTeam', 0) == resource.data.get('maxDailyGamesPerTeam', 0) &&
+            request.resource.data.get('poolCount', 0) == resource.data.get('poolCount', 0) &&
+            request.resource.data.get('advancePerPool', 0) == resource.data.get('advancePerPool', 0) &&
+            request.resource.data.get('dailyWindows', []) == resource.data.get('dailyWindows', [])
+          ))
+        );
 
         // Registration forms and responses contain applicant contact details,
         // so only the squad owner and staff may access them from the client.
@@ -599,7 +651,16 @@ service cloud.firestore {
       // change the access cache; trusted server code is the sole writer.
       allow update: if isSuperAdmin() || (isSignedIn() &&
         resource.data.creatorId == request.auth.uid &&
-        request.resource.data.get('memberUserIds', []) == resource.data.get('memberUserIds', [])
+        request.resource.data.get('memberUserIds', []) == resource.data.get('memberUserIds', []) &&
+        request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&
+        request.resource.data.get('schedulerConfig', null) == resource.data.get('schedulerConfig', null) &&
+        (
+          resource.data.get('schedulerConfig', null) == null ||
+          (
+            request.resource.data.get('startDate', '') == resource.data.get('startDate', '') &&
+            request.resource.data.get('endDate', '') == resource.data.get('endDate', '')
+          )
+        )
       );
       allow delete: if isSuperAdmin() || (isSignedIn() &&
         resource.data.creatorId == request.auth.uid
@@ -668,6 +729,17 @@ service cloud.firestore {
       allow get: if true;
       allow list: if false;
       allow write: if false;
+    }
+
+    // Schedule reservations and deployment locks are maintained exclusively by
+    // trusted server routes. Clients must not be able to inspect other clubs'
+    // resource usage or forge reservations that block legitimate schedules.
+    match /scheduleBookings/{bookingId} {
+      allow read, write: if false;
+    }
+
+    match /scheduleBookingLocks/{lockId} {
+      allow read, write: if false;
     }
 
     // ─── Leagues global invites ───────────────────────────────────────────────

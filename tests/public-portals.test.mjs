@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import * as publicPortalModule from '../src/lib/public-portal-data.ts';
 const {
@@ -12,6 +13,11 @@ const securityModule = await import('../src/lib/score-action-security.ts');
 const { credentialsMatch, isLegacyOpenPortal, validScore } = securityModule;
 const recruitingModule = await import('../src/lib/public-recruiting-data.ts');
 const { buildPublicRecruitingDto } = recruitingModule;
+const publicActionModule = await import('../src/lib/public-league-scoring.ts');
+const {
+  publicLeagueGameProjection,
+  recalculatePublicLeagueStandings,
+} = publicActionModule;
 
 for (const plan of ['team', 'elite', 'league', 'school']) {
   test(`${plan} subscriptions support every public portal`, () => {
@@ -60,6 +66,54 @@ test('public tournament payload excludes scoring codes and referee contact detai
   assert.equal('signedAt' in result.teamAgreements.Alpha, false);
 });
 
+test('public tournament games expose only safe bracket topology needed for score locking', () => {
+  const result = publicTournament('event-1', {
+    isTournament: true,
+    tournamentGames: [{
+      id: 'semi', team1: 'Alpha', team2: 'Bravo', team1Id: 'a', team2Id: 'b',
+      winnerTo: 'final', winnerToSlot: 'team1', loserTo: 'consolation', loserToSlot: 'team2',
+      pool: 0, isResetMatch: false, isConditional: false,
+    }],
+  });
+  assert.deepEqual(
+    {
+      winnerTo: result.tournamentGames[0].winnerTo,
+      winnerToSlot: result.tournamentGames[0].winnerToSlot,
+      loserTo: result.tournamentGames[0].loserTo,
+      loserToSlot: result.tournamentGames[0].loserToSlot,
+      pool: result.tournamentGames[0].pool,
+      isConditional: result.tournamentGames[0].isConditional,
+    },
+    { winnerTo: 'final', winnerToSlot: 'team1', loserTo: 'consolation', loserToSlot: 'team2', pool: 0, isConditional: false }
+  );
+});
+
+test('tournament team registration is transactional and fails closed after bracket publication', async () => {
+  const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  assert.match(source, /adminDb\.runTransaction/);
+  assert.match(source, /TOURNAMENT_ROSTER_LOCKED/);
+  assert.match(source, /tournamentGames\.length > 0/);
+  assert.match(source, /transaction\.create\(entry, entryData\)/);
+  assert.match(source, /transaction\.update\(tournamentEventRef/);
+  assert.match(source, /freshEvent\.data\(\)\?\.tournamentGames/);
+});
+
+test('public tournament scoring shares the deployment lock without changing league scoring', async () => {
+  const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  const tournamentScoreStart = source.indexOf("      if (action === 'score')", source.indexOf("    if (kind === 'tournament')"));
+  const tournamentDisputeStart = source.indexOf("      if (action === 'dispute')", tournamentScoreStart);
+  const tournamentScore = source.slice(tournamentScoreStart, tournamentDisputeStart);
+  const leagueStart = source.indexOf("    if (kind === 'league')", tournamentDisputeStart);
+  const leagueScoreStart = source.indexOf("      if (action === 'score')", leagueStart);
+  const leagueDisputeStart = source.indexOf("      if (action === 'dispute')", leagueScoreStart);
+  const leagueScore = source.slice(leagueScoreStart, leagueDisputeStart);
+
+  assert.ok(tournamentScoreStart >= 0 && tournamentDisputeStart > tournamentScoreStart);
+  assert.match(tournamentScore, /withTournamentScheduleMutationLock\(\(\) => adminDb\.runTransaction/);
+  assert.ok(leagueStart >= 0 && leagueDisputeStart > leagueScoreStart);
+  assert.doesNotMatch(leagueScore, /withTournamentScheduleMutationLock/);
+});
+
 test('public registration config excludes scoring credentials and internal fields', () => {
   const result = publicRegistrationConfig('team_config', {
     title: 'Team Registration',
@@ -87,6 +141,80 @@ test('scorekeeper credentials preserve demo compatibility but protect new portal
   assert.equal(validScore(999), true);
   assert.equal(validScore(1000), false);
   assert.equal(validScore(1.5), false);
+});
+
+test('public league scoring rebuilds standings from completed games without double counting corrections', () => {
+  const teams = {
+    alpha: { teamName: 'Alpha', status: 'accepted', wins: 9, losses: 9, ties: 9, points: 99 },
+    beta: { teamName: 'Beta', status: 'accepted', wins: 9, losses: 9, ties: 9, points: 99 },
+    gamma: { teamName: 'Gamma', status: 'accepted', wins: 9, losses: 9, ties: 9, points: 99 },
+  };
+  const schedule = [
+    { id: 'g1', team1Id: 'alpha', team2Id: 'beta', score1: 4, score2: 2, isCompleted: true },
+    { id: 'g2', team1Id: 'beta', team2Id: 'gamma', score1: 1, score2: 1, isCompleted: true },
+    { id: 'g3', team1Id: 'gamma', team2Id: 'alpha', score1: 8, score2: 0, isCompleted: false },
+    { id: 'exhibition', team1Id: 'gamma', team2Id: 'alpha', score1: 8, score2: 0, isCompleted: true, isExhibition: true },
+  ];
+
+  const standings = recalculatePublicLeagueStandings(teams, schedule);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(standings).map(([id, team]) => [id, {
+      wins: team.wins, losses: team.losses, ties: team.ties, points: team.points,
+    }])),
+    {
+      alpha: { wins: 1, losses: 0, ties: 0, points: 3 },
+      beta: { wins: 0, losses: 1, ties: 1, points: 1 },
+      gamma: { wins: 0, losses: 0, ties: 1, points: 1 },
+    },
+  );
+  assert.equal(standings.alpha.teamName, 'Alpha');
+  assert.equal(standings.alpha.status, 'accepted');
+
+  const corrected = recalculatePublicLeagueStandings(teams, [
+    { ...schedule[0], score1: 0, score2: 2 },
+    ...schedule.slice(1),
+  ]);
+  assert.deepEqual(
+    { wins: corrected.alpha.wins, losses: corrected.alpha.losses, points: corrected.alpha.points },
+    { wins: 0, losses: 1, points: 0 },
+  );
+  assert.deepEqual(
+    { wins: corrected.beta.wins, losses: corrected.beta.losses, ties: corrected.beta.ties, points: corrected.beta.points },
+    { wins: 1, losses: 0, ties: 1, points: 4 },
+  );
+});
+
+test('public league scoring creates mirrored official game projections for both teams', async () => {
+  const game = { id: 'match_1', date: '2026-08-09', location: 'North Field' };
+  const updatedAt = '2026-08-09T20:00:00.000Z';
+  const alpha = publicLeagueGameProjection({
+    leagueId: 'league_1', leagueName: 'Summer League', game,
+    teamId: 'alpha', opponentTeamId: 'beta', opponent: 'Beta',
+    myScore: 5, opponentScore: 3, updatedAt,
+  });
+  const beta = publicLeagueGameProjection({
+    leagueId: 'league_1', leagueName: 'Summer League', game,
+    teamId: 'beta', opponentTeamId: 'alpha', opponent: 'Alpha',
+    myScore: 3, opponentScore: 5, updatedAt,
+  });
+
+  assert.equal(alpha.id, 'lg_match_1');
+  assert.equal(beta.id, 'lg_match_1');
+  assert.deepEqual(
+    { result: alpha.result, myScore: alpha.myScore, opponentScore: alpha.opponentScore, matchTeamIds: alpha.matchTeamIds },
+    { result: 'Win', myScore: 5, opponentScore: 3, matchTeamIds: ['alpha', 'beta'] },
+  );
+  assert.deepEqual(
+    { result: beta.result, myScore: beta.myScore, opponentScore: beta.opponentScore, matchTeamIds: beta.matchTeamIds },
+    { result: 'Loss', myScore: 3, opponentScore: 5, matchTeamIds: ['beta', 'alpha'] },
+  );
+  assert.equal(alpha.notes, 'Official result from Summer League');
+  assert.equal(beta.notes, 'Official result from Summer League');
+
+  const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  assert.match(source, /transaction\.update\(ref, \{ schedule, teams,/);
+  assert.match(source, /transaction\.set\(team1Ref, team1Projection\)/);
+  assert.match(source, /transaction\.set\(team2Ref, team2Projection\)/);
 });
 
 test('public recruiting DTO excludes household linkage and unsafe media', () => {

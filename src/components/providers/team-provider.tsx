@@ -96,7 +96,6 @@ import {
   collectionGroup,
   serverTimestamp,
   deleteField,
-  arrayRemove,
   or,
   runTransaction
 } from 'firebase/firestore';
@@ -452,6 +451,9 @@ export type TeamEvent = {
   gameLength?: number;
   breakLength?: number;
   gamesPerTeam?: number;
+  maxDailyGamesPerTeam?: number;
+  poolCount?: number;
+  advancePerPool?: number;
   dailyWindows?: Array<{ date: string; startTime: string; endTime: string }>;
   selectedFields?: string[];
   manualVenue?: string;
@@ -747,7 +749,11 @@ export type TournamentGame = {
   date: string;
   time: string;
   location?: string;
+  /** Stable facility/field identity used for cross-schedule conflict checks. */
+  resourceId?: string;
   isCompleted: boolean;
+  /** Organizer-added fixture that does not affect official game caps or standings. */
+  isExhibition?: boolean;
   isDisputed?: boolean;
   disputeNotes?: string;
   updatedAt?: string;
@@ -2178,7 +2184,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return false;
     }
     if (activeTeam?.id && db) {
-      await addDoc(collection(db, 'teams', activeTeam.id, 'events'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId }));
+      if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/teams/events/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'create', teamId: activeTeam.id, event: clean(data) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to create this event.');
 
       // Fire push + email to all team members
       if (!activeTeam.isDemo) Promise.resolve().then(async () => {
@@ -2219,18 +2234,39 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return true;
     }
     return false;
-  }, [db, activeTeam, isStaff, members]);
+  }, [db, activeTeam, isStaff, members, firebaseAuth]);
 
   const updateEvent = useCallback(async (id: string, data: any) => { 
     if (!isStaff) return false;
-    if (activeTeam?.id && db) { await updateDoc(doc(db, 'teams', activeTeam.id, 'events', id), clean(data)); return true; } 
+    if (activeTeam?.id && firebaseAuth) {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/teams/events/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'update', teamId: activeTeam.id, eventId: id, event: clean(data) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to update this event.');
+      return true;
+    }
     return false; 
-  }, [db, activeTeam, isStaff]);
+  }, [activeTeam, isStaff, firebaseAuth]);
 
   const deleteEvent = useCallback(async (id: string) => { 
     if (!isStaff) return;
-    if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'events', id)); 
-  }, [db, activeTeam, isStaff]);
+    if (activeTeam?.id && firebaseAuth) {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/teams/events/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'delete', teamId: activeTeam.id, eventId: id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to delete this event.');
+    }
+  }, [activeTeam, isStaff, firebaseAuth]);
   const updateRSVP = useCallback(async (eventId: string, status: string, teamId?: string, userId?: string) => { 
     const tid = teamId || activeTeam?.id;
     const uid = userId || firebaseUser?.uid;
@@ -2787,106 +2823,55 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
   const addLeagueGame = useCallback(async (lId: string, game: any) => {
-    if (!db) return;
-    const leagueRef = doc(db, 'leagues', lId);
-    const leagueSnap = await getDoc(leagueRef);
-    const leagueData = leagueSnap.data();
-    if (!leagueData) return;
-
-    const gameId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    const newGame = {
-      ...game,
-      id: gameId,
-      isCompleted: false,
-      score1: 0,
-      score2: 0,
-      createdAt: new Date().toISOString()
-    };
-
-    const batch = writeBatch(db);
-    batch.update(leagueRef, { schedule: arrayUnion(newGame) });
-
-    const createEvent = (tid: string, myName: string, oppName: string, isHome: boolean, oppTid?: string) => {
-      if (!tid) return;
-      const eid = `lg_${lId}_${gameId}`;
-      batch.set(doc(db, 'teams', tid, 'events', eid), clean({ 
-        id: eid, 
-        teamId: tid, 
-        title: `League Match vs ${oppName}`, 
-        eventType: 'game', 
-        isLeagueGame: true, 
-        isHome,
-        leagueId: lId,
-        leagueName: leagueData.name || '',
-        date: game.date, 
-        startTime: game.time, 
-        location: game.location, 
-        description: `Official season fixture for ${leagueData.name}. Matchup: ${myName} vs ${oppName}`, 
-        matchTeamIds: [tid, oppTid].filter(Boolean),
-        createdAt: new Date().toISOString() 
-      }));
-    };
-
-    if (game.team1Id) createEvent(game.team1Id, game.team1, game.team2, true, game.team2Id);
-    if (game.team2Id) createEvent(game.team2Id, game.team2, game.team1, false, game.team1Id);
-
-    await batch.commit();
-  }, [db]);
+    if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/leagues/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'append', leagueId: lId, game }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = Array.isArray(payload.conflicts) && payload.conflicts.length > 0
+        ? ` ${payload.conflicts[0]}`
+        : '';
+      throw new Error(`${payload.error || 'Unable to add the league match.'}${detail}`);
+    }
+  }, [firebaseAuth]);
 
   const updateLeagueSchedule = useCallback(async (lId: string, s: any[]) => { 
-    if (!db) return; 
-    
-    const leagueSnap = await getDoc(doc(db, 'leagues', lId));
-    const leagueData = leagueSnap.data();
-    if (!leagueData) return;
-
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'leagues', lId), { schedule: clean(s) }); 
-    
-    s.forEach(game => {
-      const createEvent = (tid: string, myName: string, oppName: string, isHome: boolean, oppTid?: string) => {
-        if (!tid) return;
-        const eid = `lg_${lId}_${game.id}`;
-        batch.set(doc(db, 'teams', tid, 'events', eid), clean({ 
-          id: eid, 
-          teamId: tid, 
-          title: `League Match vs ${oppName}`, 
-          eventType: 'game', 
-          isLeagueGame: true, 
-          isHome,
-          leagueId: lId,
-          leagueName: leagueData.name || '',
-          date: game.date, 
-          startTime: game.time, 
-          location: game.location, 
-          description: `Official season fixture for ${leagueData.name}. Matchup: ${myName} vs ${oppName}`, 
-          matchTeamIds: [tid, oppTid].filter(Boolean),
-          createdAt: new Date().toISOString() 
-        }));
-      };
-      if (game.team1Id) createEvent(game.team1Id, game.team1, game.team2, true, game.team2Id);
-      if (game.team2Id) createEvent(game.team2Id, game.team2, game.team1, false, game.team1Id);
+    if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/leagues/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'replace', leagueId: lId, games: s }),
     });
-    
-    await batch.commit();
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = Array.isArray(payload.conflicts) && payload.conflicts.length > 0
+        ? ` ${payload.conflicts[0]}`
+        : '';
+      throw new Error(`${payload.error || 'Unable to deploy the league schedule.'}${detail}`);
+    }
     toast({ title: "Season Synchronized", description: "League matches pushed to all squad itineraries." });
-  }, [db]);
+  }, [firebaseAuth]);
 
   const removeTeamFromLeague = useCallback(async (lId: string, tId: string) => {
-    if (!db) return;
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'leagues', lId), {
-      [`teams.${tId}`]: deleteField(),
-      memberTeamIds: arrayRemove(tId)
+    if (!firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/leagues/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'remove-team', leagueId: lId, teamId: tId }),
     });
-    if (!tId.startsWith('manual_') && !tId.startsWith('recruit_')) {
-      batch.update(doc(db, 'teams', tId), {
-        [`leagueIds.${lId}`]: deleteField()
-      });
-    }
-    await batch.commit();
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to remove the team from the league.');
     toast({ title: "Squad Excised", description: "Team removed from league standings." });
-  }, [db]);
+  }, [firebaseAuth]);
 
   const inviteTeamToLeague = useCallback(async (lId: string, lN: string, e: string, tN?: string) => {
     if (db) {
@@ -3486,142 +3471,56 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
 
-  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => { 
-    if (!db) return; 
-    const eventRef = doc(db, 'teams', teamId, 'events', eventId);
-    const snap = await getDoc(eventRef);
-    if (!snap.exists()) return; 
-    
-    const data = snap.data();
-    // Validate scorekeeper code if the event has one set
-    const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'superadmin';
-    if ((data as any).scoringCode && pin !== (data as any).scoringCode && !isAdmin) {
-      throw new Error('UNAUTHORIZED_ACCESS: Invalid Scorekeeper Code.');
-    }
-    let games = [...(data.tournamentGames || [])]; 
-    const idx = games.findIndex((g: any) => g.id === gameId); 
-    if (idx === -1) return; 
-    
-    const game = games[idx];
-    const updatedGame = { 
-      ...game, 
-      score1, 
-      score2, 
-      isCompleted: true, 
-      updatedAt: new Date().toISOString() 
-    };
-    games[idx] = updatedGame; 
-
-    // MISS-5: Bracket Auto-Advancement
-    // Use the unified helper to handle winner/loser progression and DE GF Reset logic.
-    const { advanceBracketMatch } = await import('@/lib/scheduler-utils');
-    games = advanceBracketMatch(games, gameId, score1, score2);
-
-    await updateDoc(eventRef, { tournamentGames: games }); 
-  }, [db]);
+  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => {
+    if (!firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'score', teamId, eventId, gameId, isTeam1, score1, score2, pin }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to submit the tournament score.');
+  }, [firebaseAuth]);
   
-  const submitLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => { 
-    if (!db) return; 
-    const leagueRef = doc(db, 'leagues', leagueId);
-    const snap = await getDoc(leagueRef);
-    if (!snap.exists()) return;
-    const leagueData = snap.data() as League;
-
-    // Hardening: Enforce Scorekeeper PIN
-    const isAdmin = userProfile?.role === 'admin' || userProfile?.role === 'superadmin';
-    if (leagueData.scorekeeperPin && pin !== leagueData.scorekeeperPin && !isAdmin) {
-      throw new Error("UNAUTHORIZED_ACCESS: Invalid Scorekeeper Verification PIN.");
-    }
-
-    const schedule = (leagueData.schedule || []).map(g => {
-      if (g.id === gameId) {
-        // If no PIN provided, assume it's from the dashboard (Staff)
-        const attribution = pin ? (isTeam1 ? g.team1 : g.team2) : "League Office";
-        
-        return { 
-          ...g, 
-          score1, 
-          score2, 
-          isCompleted: true, 
-          isDisputed: false, 
-          disputeNotes: null,
-          reportedBy: attribution,
-          updatedAt: new Date().toISOString() 
-        };
-      }
-      return g;
+  const submitLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => {
+    if (!firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/leagues/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'score', leagueId, gameId, isTeam1, score1, score2, pin }),
     });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to submit the league score.');
+  }, [firebaseAuth]);
 
-    const game = schedule.find(g => g.id === gameId);
-    if (!game) return;
-
-    const teams = leagueData.teams || {};
-    Object.keys(teams).forEach(id => { teams[id] = { ...teams[id], wins: 0, losses: 0, ties: 0, points: 0 }; });
-    
-    const teamNamesToIds: Record<string, string> = {};
-    Object.entries(teams).forEach(([id, t]: [string, any]) => { teamNamesToIds[t.teamName] = id; });
-    
-    schedule.forEach((g: any) => {
-      if (!g.isCompleted) return;
-      const t1Id = teamNamesToIds[g.team1];
-      const t2Id = teamNamesToIds[g.team2];
-      if (!t1Id || !t2Id) return;
-      if (g.score1 > g.score2) { teams[t1Id].wins++; teams[t1Id].points += 3; teams[t2Id].losses++; }
-      else if (g.score2 > g.score1) { teams[t2Id].wins++; teams[t2Id].points += 3; teams[t1Id].losses++; }
-      else { teams[t1Id].ties++; teams[t1Id].points += 1; teams[t2Id].ties++; teams[t2Id].points += 1; }
+  const disputeMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, notes: string) => {
+    if (!firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'dispute', teamId, eventId, gameId, notes }),
     });
-
-    const batch = writeBatch(db);
-    batch.update(leagueRef, { schedule, teams }); 
-
-    const syncToTeamHub = (tid: string, myScore: number, oppScore: number, opponentName: string, oppTeamId?: string) => {
-      if (!tid || tid.startsWith('manual_') || tid.startsWith('recruit_')) return;
-      const result = myScore > oppScore ? 'Win' : myScore < oppScore ? 'Loss' : 'Tie';
-      const gameRecord = clean({
-        id: `lg_${gameId}`,
-        teamId: tid,
-        opponent: opponentName, 
-        date: game.date,
-        myScore, 
-        opponentScore: oppScore, 
-        result,
-        location: game.location || 'League Venue',
-        notes: `Official result from ${leagueData.name}`,
-        leagueId, 
-        leagueGameId: gameId, 
-        matchTeamIds: [tid, oppTeamId].filter(Boolean),
-        createdAt: new Date().toISOString()
-      });
-      batch.set(doc(db, 'teams', tid, 'games', `lg_${gameId}`), gameRecord);
-    };
-
-    if (game.team1Id) syncToTeamHub(game.team1Id, score1, score2, game.team2, game.team2Id);
-    if (game.team2Id) syncToTeamHub(game.team2Id, score2, score1, game.team1, game.team1Id);
-
-    await batch.commit();
-  }, [db, userProfile]);
-
-  const disputeMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, notes: string) => { if (!db) return; const snap = await getDoc(doc(db, 'teams', teamId, 'events', eventId)); if (!snap.exists()) return; const games = snap.data().tournamentGames || []; const idx = games.findIndex((g: any) => g.id === gameId); if (idx === -1) return; games[idx] = { ...games[idx], isDisputed: true, disputeNotes: notes }; await updateDoc(doc(db, 'teams', teamId, 'events', eventId), { tournamentGames: games }); }, [db]);
-  const disputeLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, notes: string) => { 
-    if (!db) return; 
-    const snap = await getDoc(doc(db, 'leagues', leagueId)); 
-    if (!snap.exists()) return; 
-    
-    const leagueData = snap.data();
-    const schedule = (leagueData.schedule || []).map((g: any) => {
-      if (g.id === gameId) {
-        return { 
-          ...g, 
-          isDisputed: true, 
-          disputeNotes: notes,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return g;
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to dispute the tournament score.');
+  }, [firebaseAuth]);
+  const disputeLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, notes: string) => {
+    if (!firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/leagues/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'dispute', leagueId, gameId, notes }),
     });
-
-    await updateDoc(doc(db, 'leagues', leagueId), { schedule }); 
-  }, [db]);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to dispute the league score.');
+  }, [firebaseAuth]);
 
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => {
     if (!firebaseAuth || !userProfile?.id) return;
