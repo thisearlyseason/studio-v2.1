@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { 
   ChevronLeft, 
   CalendarDays, 
@@ -626,6 +627,30 @@ export default function HowToGuidePage() {
     parent: 'bg-purple-500'
   };
 
+  const RECENT_WALKTHROUGHS = [
+    {
+      title: 'Review Your Family Hub',
+      role: 'Parent / Guardian',
+      description: 'See where each child\'s team, schedule, waivers, and combined family balance appear.',
+      image: '/faq/family-hub-mobile.png',
+      imageAlt: 'The Squad Family Hub shown on a mobile phone',
+    },
+    {
+      title: 'Use the Player Dashboard',
+      role: 'Athlete',
+      description: 'Find upcoming activities, team communication, practice resources, and profile actions.',
+      image: '/faq/player-dashboard-tablet.png',
+      imageAlt: 'The Squad player dashboard shown on a tablet',
+    },
+    {
+      title: 'Create and Edit a League',
+      role: 'League Organizer',
+      description: 'Confirm a new league, its division, and organizer management controls after deployment.',
+      image: '/faq/league-created.png',
+      imageAlt: 'A newly created league in The Squad Competition Hub',
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
       <nav className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-50">
@@ -652,6 +677,52 @@ export default function HowToGuidePage() {
               <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[10px] px-4 h-7">Help Guide</Badge>
               <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-none uppercase">Operational <span className="text-primary italic">Manual.</span></h1>
               <p className="text-xl text-muted-foreground font-medium max-w-2xl mx-auto leading-relaxed">Complete module-by-module documentation for every account type. Select your role to access your personalized guide.</p>
+            </section>
+
+            <section className="space-y-8" aria-labelledby="recent-walkthroughs-title">
+              <div className="space-y-2">
+                <Badge className="bg-black text-white border-none font-black uppercase tracking-widest text-[10px] px-4 h-7">Recently Added</Badge>
+                <h2 id="recent-walkthroughs-title" className="text-3xl font-black uppercase tracking-tight">Latest Walkthroughs</h2>
+                <p className="text-muted-foreground font-medium">Verified examples captured from the current app experience.</p>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+                <article className="overflow-hidden rounded-lg border bg-black text-white shadow-xl">
+                  <video
+                    className="aspect-video w-full bg-black object-contain"
+                    controls
+                    preload="metadata"
+                    playsInline
+                    aria-label="How to create a game walkthrough"
+                  >
+                    <source src="/faq/how-to-create-a-game.mp4" type="video/mp4" />
+                    Your browser does not support embedded video.
+                  </video>
+                  <div className="space-y-2 p-6">
+                    <div className="flex items-center gap-2 text-primary">
+                      <Video className="h-4 w-4" />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Coach · Schedule</span>
+                    </div>
+                    <h3 className="text-2xl font-black uppercase tracking-tight">How to Create a Game</h3>
+                    <p className="text-sm font-medium leading-relaxed text-white/70">Add a game, enter its opponent and location, save it to the schedule, and verify the details.</p>
+                  </div>
+                </article>
+
+                <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
+                  {RECENT_WALKTHROUGHS.map((walkthrough) => (
+                    <article key={walkthrough.title} className="grid min-h-40 grid-cols-[112px_1fr] overflow-hidden rounded-lg border bg-white shadow-md sm:grid-cols-1 lg:grid-cols-[112px_1fr]">
+                      <div className="relative min-h-40 bg-muted sm:aspect-[4/3] lg:aspect-auto">
+                        <Image src={walkthrough.image} alt={walkthrough.imageAlt} fill sizes="112px" className="object-cover object-top" />
+                      </div>
+                      <div className="flex min-w-0 flex-col justify-center space-y-2 p-4">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary">{walkthrough.role}</span>
+                        <h3 className="text-base font-black uppercase leading-tight">{walkthrough.title}</h3>
+                        <p className="text-xs font-medium leading-relaxed text-muted-foreground">{walkthrough.description}</p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
             </section>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

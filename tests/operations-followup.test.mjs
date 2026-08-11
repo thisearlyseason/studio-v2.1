@@ -148,3 +148,24 @@ test('production configuration has no external AI provider dependency', async ()
   assert.equal(packageJson.dependencies['@google/genai'], undefined);
   assert.equal(functionsPackage.dependencies.googleapis, undefined);
 });
+
+test('the public help guide ships the verified FAQ walkthrough media', async () => {
+  const guide = await readSource('../src/app/how-to/page.tsx');
+  const faqAssets = [
+    '../public/faq/how-to-create-a-game.mp4',
+    '../public/faq/family-hub-mobile.png',
+    '../public/faq/player-dashboard-tablet.png',
+    '../public/faq/league-created.png',
+  ];
+
+  assert.match(guide, /Latest Walkthroughs/);
+  assert.match(guide, /\/faq\/how-to-create-a-game\.mp4/);
+  assert.match(guide, /\/faq\/family-hub-mobile\.png/);
+  assert.match(guide, /\/faq\/player-dashboard-tablet\.png/);
+  assert.match(guide, /\/faq\/league-created\.png/);
+
+  for (const asset of faqAssets) {
+    const contents = await readFile(new URL(asset, import.meta.url));
+    assert.ok(contents.byteLength > 0, `${asset} must be included in the production bundle`);
+  }
+});
