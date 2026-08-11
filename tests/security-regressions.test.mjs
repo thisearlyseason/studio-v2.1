@@ -259,6 +259,7 @@ test('organization squad seats are explicit, capacity-bound, and organizer-contr
   assert.match(route, /otherAllocated >= organization\.teamLimit/);
   assert.match(route, /isPro: allocated/);
   assert.match(route, /const allocatedSnapshots = organizationTeams\.filter/);
+  assert.match(route, /allocated: allocatedCount/);
   assert.match(route, /squads,/);
   assert.match(route, /const teams = organizationTeams/);
   assert.match(route, /teams,/);
@@ -271,6 +272,9 @@ test('organization squad seats are explicit, capacity-bound, and organizer-contr
   assert.doesNotMatch(provider, /activeTeam\?\.type === 'school' \|\| activeTeam\?\.type === 'school_squad' \|\| activeTeam\?\.schoolId/);
 
   assert.match(hub, /if \(team\.isPro !== true\) return false/);
+  assert.match(hub, /isBillableSquadSeat\(t\)/);
+  assert.match(hub, /Math\.max\(0, limit - remaining\)/);
+  assert.match(hub, /allocated: payload\.allocated, remaining: payload\.remaining/);
   assert.match(hub, /Available Starter Squads/);
   assert.match(hub, /fetch\('\/api\/organizations\/squads'/);
   assert.match(hub, /Return to Starter/);

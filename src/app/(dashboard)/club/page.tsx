@@ -83,6 +83,7 @@ import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/incident-detail-dialog';
 import { format, parseISO } from 'date-fns';
+import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 
 function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: TeamDocument[] }) {
   const db = useFirestore();
@@ -247,8 +248,7 @@ function AuthorizedClubManagementPage() {
     return Array.from(new Map(
       [...resolvedTeams, ...authoritativeOrganizationTeams]
         .filter(t =>
-          t.type !== 'school' &&
-          t.type !== 'school_hub' &&
+          isBillableSquadSeat(t) &&
           (!organizationOwnerId || t.ownerUserId === organizationOwnerId) &&
           (!isSchoolMode || !schoolHub?.id || t.schoolId === schoolHub.id)
         )
@@ -287,7 +287,12 @@ function AuthorizedClubManagementPage() {
         if (!response.ok) return;
         const payload = await response.json();
         if (!cancelled) {
-          setOrganizationCapacity({ allocated: payload.allocated, limit: payload.limit, remaining: payload.remaining });
+          const limit = Number(payload.limit);
+          const remaining = Number(payload.remaining);
+          const allocated = Number.isInteger(payload.allocated)
+            ? payload.allocated
+            : Math.max(0, limit - remaining);
+          setOrganizationCapacity({ allocated, limit, remaining });
           setAuthoritativeOrganizationTeams((payload.teams || payload.squads || []).map((team: Team) => ({
             ...team,
             id: team.id,
@@ -789,7 +794,7 @@ function AuthorizedClubManagementPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Unable to update this squad seat.');
       setOrganizationCapacity(current => current
-        ? { ...current, remaining: payload.remaining }
+        ? { ...current, allocated: payload.allocated, remaining: payload.remaining }
         : current
       );
       toast({

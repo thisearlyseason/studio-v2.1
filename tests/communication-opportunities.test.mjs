@@ -61,6 +61,7 @@ test('institution hub stats resolve authoritative squads and stay team-scoped', 
 
   assert.match(hub, /getDoc\(doc\(db, 'teams', membership\.id\)\)/);
   assert.match(hub, /const clubTeams = useMemo\(\(\) => organizationSquadCandidates\.filter/);
+  assert.match(hub, /isBillableSquadSeat\(t\)/);
   assert.match(hub, /if \(team\.isPro !== true\) return false/);
   assert.match(hub, /for \(const team of organizationSquadCandidates\)/);
   assert.match(hub, /organizationTeamIds\.map\(teamId => getDocs\(collection\(db, 'teams', teamId, 'incidents'\)\)\)/);

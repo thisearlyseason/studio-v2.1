@@ -107,7 +107,7 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
     const teamId = typeof input.teamId === 'string' ? input.teamId : '';
     if (!teamId) return NextResponse.json({ error: 'Missing teamId.' }, { status: 400 });
 
-    let response: { planId: string; remaining: number } | undefined;
+    let response: { allocated: number; planId: string; remaining: number } | undefined;
     await adminDb.runTransaction(async transaction => {
       const organization = await resolveOrganization(transaction, auth, input.hubTeamId);
       const teamRef = adminDb.collection('teams').doc(teamId);
@@ -162,9 +162,11 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
           { merge: true }
         );
       }
+      const allocatedCount = otherAllocated + (allocated ? 1 : 0);
       response = {
+        allocated: allocatedCount,
         planId: allocated ? organization.planId : 'free',
-        remaining: Math.max(0, organization.teamLimit - (otherAllocated + (allocated ? 1 : 0))),
+        remaining: Math.max(0, organization.teamLimit - allocatedCount),
       };
     });
 
