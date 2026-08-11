@@ -65,7 +65,8 @@ test('institution hub stats resolve authoritative squads and stay team-scoped', 
   assert.doesNotMatch(hub, /t\.ownerUserId === organizationOwnerId/);
   assert.match(hub, /const allocatedSquadCount = clubTeams\.length/);
   assert.match(hub, /Math\.max\(0, organizationSeatLimit - allocatedSquadCount\)/);
-  assert.match(hub, /if \(team\.isPro !== true\) return false/);
+  assert.match(hub, /new Set\(teams\.filter\(team => team\.isPro === true\)\.map\(team => team\.id\)\)/);
+  assert.match(hub, /if \(!allocatedMembershipIds\.has\(team\.id\)\) return false/);
   assert.match(hub, /for \(const team of organizationSquadCandidates\)/);
   assert.match(hub, /Promise\.allSettled/);
   assert.match(hub, /organizationTeamIds\.map\(teamId => getDocs\(collection\(db, 'teams', teamId, 'incidents'\)\)\)/);

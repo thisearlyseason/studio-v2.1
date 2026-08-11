@@ -254,13 +254,18 @@ function AuthorizedClubManagementPage() {
     ).values());
   }, [resolvedTeams, isSchoolMode, schoolHub?.id]);
 
-  // Organization linkage alone is not an entitlement. Only squads with an
-  // explicitly allocated Pro seat participate in Hub totals and operations.
+  // Use the organizer's membership projections for seat allocation so the Hub
+  // agrees with the squad switcher. The resolved team documents still provide
+  // authoritative squad details for members, incidents, and operations.
+  const allocatedMembershipIds = useMemo(
+    () => new Set(teams.filter(team => team.isPro === true).map(team => team.id)),
+    [teams]
+  );
   const clubTeams = useMemo(() => organizationSquadCandidates.filter(team => {
-    if (team.isPro !== true) return false;
+    if (!allocatedMembershipIds.has(team.id)) return false;
     if (isSchoolMode && schoolHub?.id) return team.schoolId === schoolHub.id;
     return true;
-  }), [organizationSquadCandidates, isSchoolMode, schoolHub?.id]);
+  }), [organizationSquadCandidates, allocatedMembershipIds, isSchoolMode, schoolHub?.id]);
   const schoolSquads = clubTeams;
   const organizationTeamIds = useMemo(() => organizationSquadCandidates.map(t => t.id), [organizationSquadCandidates]);
   const availableStarterSquads = useMemo(

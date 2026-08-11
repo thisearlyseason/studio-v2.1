@@ -271,7 +271,7 @@ test('organization squad seats are explicit, capacity-bound, and organizer-contr
   assert.doesNotMatch(provider, /activeTeam\?\.clubId && clubData\?\.subscriptionStatus/);
   assert.doesNotMatch(provider, /activeTeam\?\.type === 'school' \|\| activeTeam\?\.type === 'school_squad' \|\| activeTeam\?\.schoolId/);
 
-  assert.match(hub, /if \(team\.isPro !== true\) return false/);
+  assert.match(hub, /if \(!allocatedMembershipIds\.has\(team\.id\)\) return false/);
   assert.match(hub, /isBillableSquadSeat\(t\)/);
   assert.match(hub, /Math\.max\(0, limit - remaining\)/);
   assert.match(hub, /allocated: payload\.allocated, remaining: payload\.remaining/);
