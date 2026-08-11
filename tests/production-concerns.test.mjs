@@ -212,3 +212,19 @@ test('shared navigation uses plain language and role-specific primary actions', 
   assert.doesNotMatch(family, /Household Command|Operational Pulse|Active Directives|Execute Waivers/);
   assert.doesNotMatch(alerts, /High Priority Squad Alert|Acknowledged Hub Directive/);
 });
+
+test('Playbook is contained within the Practice workspace', async () => {
+  const [shell, practice, playbook, legacyRoute] = await Promise.all([
+    source('../src/components/layout/Shell.tsx'),
+    source('../src/app/(dashboard)/practice/page.tsx'),
+    source('../src/components/practice/PlaybookPanel.tsx'),
+    source('../src/app/(dashboard)/drills/page.tsx'),
+  ]);
+
+  assert.match(practice, /Practice Planner/);
+  assert.match(practice, /PlaybookPanel embedded/);
+  assert.match(practice, /aria-label="Practice workspace views"/);
+  assert.doesNotMatch(shell, /name: 'Playbook', href: '\/drills'/);
+  assert.match(playbook, /export function PlaybookPanel/);
+  assert.match(legacyRoute, /return <PlaybookPanel \/>/);
+});

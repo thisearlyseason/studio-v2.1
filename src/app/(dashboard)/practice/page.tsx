@@ -22,7 +22,8 @@ import {
   CheckCircle2,
   Info,
   Loader2,
-  Lock
+  Lock,
+  GraduationCap
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -41,6 +42,7 @@ import { toast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format, parseISO } from 'date-fns';
 import { EventDetailDialog } from '../events/EventDetailDialog';
+import { PlaybookPanel } from '@/components/practice/PlaybookPanel';
 
 export default function PracticeManagementPage() {
   const { 
@@ -61,6 +63,7 @@ export default function PracticeManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PracticeTemplate | null>(null);
+  const [activeView, setActiveView] = useState<'practice' | 'playbook'>('practice');
   
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -171,12 +174,44 @@ export default function PracticeManagementPage() {
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest">Training Logistics</Badge>
           <h1 className="text-4xl font-black uppercase tracking-tight">Practice Hub</h1>
         </div>
-        {isStaff && (
+        {isStaff && activeView === 'practice' && (
           <Button onClick={() => { resetForm(); setIsCreateOpen(true); }} className="rounded-full h-12 px-8 font-black uppercase text-xs shadow-xl shadow-primary/20">
             <Plus className="h-5 w-5 mr-2" /> Design Template
           </Button>
         )}
       </div>
+
+      <div className="inline-flex w-full max-w-md items-center rounded-lg border bg-muted/30 p-1" role="tablist" aria-label="Practice workspace views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeView === 'practice'}
+          onClick={() => setActiveView('practice')}
+          className={cn(
+            "flex h-11 flex-1 items-center justify-center gap-2 rounded-md px-4 text-xs font-black uppercase transition-colors",
+            activeView === 'practice' ? "bg-black text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Dumbbell className="h-4 w-4" /> Practice Planner
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeView === 'playbook'}
+          onClick={() => setActiveView('playbook')}
+          className={cn(
+            "flex h-11 flex-1 items-center justify-center gap-2 rounded-md px-4 text-xs font-black uppercase transition-colors",
+            activeView === 'playbook' ? "bg-black text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <GraduationCap className="h-4 w-4" /> Playbook
+        </button>
+      </div>
+
+      {activeView === 'playbook' ? (
+        <PlaybookPanel embedded />
+      ) : (
+        <>
 
       <div className={cn("grid gap-10", isStaff ? "grid-cols-1 lg:grid-cols-3" : "grid-cols-1 max-w-3xl mx-auto")}>
         {isStaff && (
@@ -396,6 +431,8 @@ export default function PracticeManagementPage() {
           </div>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }

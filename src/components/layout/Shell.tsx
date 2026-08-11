@@ -42,7 +42,6 @@ import {
   Menu,
   MoreHorizontal,
   Radio,
-  GraduationCap,
   LogOut,
   Trash2,
   UserX,
@@ -127,7 +126,6 @@ const coordinationTabs = [
   { name: 'Practice', href: '/practice', icon: Dumbbell, pro: true },
   { name: 'Competition Hub', href: '/competition', icon: Medal, pro: false },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
-  { name: 'Playbook', href: '/drills', icon: GraduationCap, pro: true },
   { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
   { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
   { name: 'Team Chat', href: '/chats', icon: MessageCircle, pro: false },
@@ -492,7 +490,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const roleNavigationOrder = isParent
     ? ['/events', '/chats', '/files', '/volunteers', '/competition']
     : isPlayer
-      ? ['/events', '/chats', '/practice', '/drills', '/roster']
+      ? ['/events', '/chats', '/practice', '/roster']
       : user?.role === 'league_creator'
         ? ['/competition', '/events', '/games', '/roster', '/chats']
         : ['/events', '/roster', '/chats', '/practice', '/games'];
@@ -513,7 +511,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (tab.name === 'Feed' && activeTeam?.features?.feed === false) return false;
       if (tab.name === 'Roster' && activeTeam?.features?.roster === false) return false;
       if (tab.name === 'Practice' && activeTeam?.features?.practice === false) return false;
-      if (tab.name === 'Playbook' && activeTeam?.features?.playbook === false) return false;
       if (tab.name === 'Volunteer' && activeTeam?.features?.volunteer === false) return false;
       if (tab.name === 'Fundraising' && activeTeam?.features?.fundraising === false) return false;
       if (tab.href === '/chats' && activeTeam?.features?.tacticalChat === false) return false;

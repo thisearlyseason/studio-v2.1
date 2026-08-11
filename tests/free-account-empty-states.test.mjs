@@ -7,7 +7,7 @@ const source = path => readFile(new URL(path, import.meta.url), 'utf8');
 test('team-scoped free-account hubs stop loading and offer squad onboarding', async () => {
   const [emptyState, drills, files, games, roster] = await Promise.all([
     source('../src/components/layout/NoActiveTeamState.tsx'),
-    source('../src/app/(dashboard)/drills/page.tsx'),
+    source('../src/components/practice/PlaybookPanel.tsx'),
     source('../src/app/(dashboard)/files/page.tsx'),
     source('../src/app/(dashboard)/games/page.tsx'),
     source('../src/app/(dashboard)/roster/page.tsx'),
