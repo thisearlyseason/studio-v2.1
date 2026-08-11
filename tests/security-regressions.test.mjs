@@ -245,3 +245,30 @@ test('offline payments are validated and written only through the finance-author
     index.fields?.some(field => field.fieldPath === 'createdAt' && field.order === 'DESCENDING')
   ));
 });
+
+test('organization squad seats are explicit, capacity-bound, and organizer-controlled', async () => {
+  const route = await readSource('../src/app/api/organizations/squads/route.ts');
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const hub = await readSource('../src/app/(dashboard)/club/page.tsx');
+
+  assert.match(route, /verifyFirebaseToken/);
+  assert.match(route, /adminDb\.runTransaction/);
+  assert.match(route, /hub\.ownerUserId === auth\.uid/);
+  assert.match(route, /includesUser\(hub\.schoolAdminIds, auth\.uid\)/);
+  assert.match(route, /team\.ownerUserId !== organization\.ownerId/);
+  assert.match(route, /otherAllocated >= organization\.teamLimit/);
+  assert.match(route, /isPro: allocated/);
+  assert.match(route, /planId: allocated \? organization\.planId : 'free'/);
+  assert.match(route, /schoolId:[\s\S]*FieldValue\.delete\(\)/);
+  assert.match(route, /clubId:[\s\S]*FieldValue\.delete\(\)/);
+
+  assert.match(provider, /return activeTeam\?\.isPro === true/);
+  assert.doesNotMatch(provider, /activeTeam\?\.clubId && clubData\?\.subscriptionStatus/);
+  assert.doesNotMatch(provider, /activeTeam\?\.type === 'school' \|\| activeTeam\?\.type === 'school_squad' \|\| activeTeam\?\.schoolId/);
+
+  assert.match(hub, /if \(team\.isPro !== true\) return false/);
+  assert.match(hub, /Available Starter Squads/);
+  assert.match(hub, /fetch\('\/api\/organizations\/squads'/);
+  assert.match(hub, /Return to Starter/);
+  assert.doesNotMatch(hub, /await deleteTeam\(teamToDelete\.id\)/);
+});

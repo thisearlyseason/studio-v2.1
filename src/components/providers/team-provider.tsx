@@ -1672,36 +1672,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const isPro = useMemo(() => {
     if (isSuperAdmin) return true;
 
-    // 1. Check Team Level Pro (Team Subscription)
-    if (activeTeam?.isPro) return true;
-
-    // 2. Check Club Level Pro (Elite Subscription)
-    if (activeTeam?.clubId && clubData?.subscriptionStatus === 'active') return true;
-
-    // 3. Check School Level Pro
-    if (activeTeam?.type === 'school' || activeTeam?.type === 'school_squad' || activeTeam?.schoolId) {
-       return true; 
-    }
-    
-    // If the active team is owned by the current user and they are a school admin, it's Pro
-    if (activeTeam?.ownerUserId === userProfile?.id && isSchoolAdmin) {
-       return true;
-    }
-
-    // 4. Check for Squad Pro Demo / Primary Team Logic
-    const ownedProTeam = teamsRaw.find((t: any) => t.ownerUserId === userProfile?.id && t.isPro);
-    if (ownedProTeam && activeTeam?.id === teamsRaw[0]?.id) {
-       return true;
-    }
-
-    // 5. Legacy User Level Pro (Fallback)
-    return userProfile?.plan_type === 'team' || 
-           userProfile?.plan_type === 'elite' ||
-           userProfile?.plan_type === 'league' ||
-           userProfile?.plan_type === 'school' ||
-           userProfile?.plan_type === 'squad_pro_demo' ||
-           ['elite', 'league', 'school', 'team', 'squad_pro', 'squad_pro_demo'].includes(activeTeam?.planId || '');
-  }, [activeTeam, clubData, userProfile, isSuperAdmin, isSchoolAdmin, teamsRaw]);
+    // Paid access is allocated per canonical team document. Organization links,
+    // account plans, and staff roles never grant an unallocated squad Pro access.
+    return activeTeam?.isPro === true;
+  }, [activeTeam?.isPro, isSuperAdmin]);
 
   const isStarter = useMemo(() => {
     if (isPro) return false;

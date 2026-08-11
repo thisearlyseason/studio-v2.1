@@ -27,7 +27,6 @@ import {
   Activity,
   ShieldAlert,
   BarChart3,
-  Trash2,
   Edit3,
   FileText,
   Clock,
@@ -147,7 +146,7 @@ export default function ClubManagementPage() {
 }
 
 function AuthorizedClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount, isSuperAdmin } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount, isSuperAdmin, proQuotaStatus } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
 
   const router = useRouter();
@@ -163,6 +162,8 @@ function AuthorizedClubManagementPage() {
   const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any });
   const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
+  const [updatingSquadId, setUpdatingSquadId] = useState<string | null>(null);
+  const [organizationCapacity, setOrganizationCapacity] = useState<{ limit: number; remaining: number } | null>(null);
   
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
@@ -240,23 +241,57 @@ function AuthorizedClubManagementPage() {
     return null;
   }, [resolvedTeams, isSchoolMode, isEliteAccount, isPrimaryClubAuthority, user?.id]);
 
-  // One canonical organization-scoped squad set powers every hub statistic.
-  // The provider's membership list is already access-scoped; resolving the
-  // underlying documents supplies the fields needed for correct aggregation.
-  const schoolSquads = useMemo(() => {
-    if (isSchoolMode) {
-      // A school institution document is a container, not a squad.
-      return resolvedTeams.filter(t => t.type !== 'school' && t.type !== 'school_hub');
-    }
-    // Elite/club hubs have no synthetic team container: every accessible row
-    // shown under "Sub-Squads" is a real squad and must be counted.
-    return resolvedTeams.filter(t => t.type !== 'school' && t.type !== 'school_hub');
-  }, [resolvedTeams, isSchoolMode]);
+  const organizationOwnerId = schoolHub?.ownerUserId || user?.id;
+  const organizationSquadCandidates = useMemo(() => {
+    return Array.from(new Map(
+      resolvedTeams
+        .filter(t =>
+          t.type !== 'school' &&
+          t.type !== 'school_hub' &&
+          (!organizationOwnerId || t.ownerUserId === organizationOwnerId)
+        )
+        .map(t => [t.id, t])
+    ).values());
+  }, [resolvedTeams, organizationOwnerId]);
 
-  const clubTeams = useMemo(() => {
-    return Array.from(new Map(schoolSquads.map(t => [t.id, t])).values());
-  }, [schoolSquads]);
+  // Organization linkage alone is not an entitlement. Only squads with an
+  // explicitly allocated Pro seat participate in Hub totals and operations.
+  const clubTeams = useMemo(() => organizationSquadCandidates.filter(team => {
+    if (team.isPro !== true) return false;
+    if (isSchoolMode && schoolHub?.id) return team.schoolId === schoolHub.id;
+    return true;
+  }), [organizationSquadCandidates, isSchoolMode, schoolHub?.id]);
+  const schoolSquads = clubTeams;
+  const availableStarterSquads = useMemo(
+    () => organizationSquadCandidates.filter(team => !clubTeams.some(active => active.id === team.id)),
+    [organizationSquadCandidates, clubTeams]
+  );
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
+
+  useEffect(() => {
+    if (!firebaseAuth || !organizationOwnerId) return;
+    let cancelled = false;
+    const loadCapacity = async () => {
+      try {
+        const token = await getAuthToken(firebaseAuth);
+        if (!token) return;
+        const hubParam = isSchoolMode && schoolHub?.type && ['school', 'school_hub'].includes(schoolHub.type)
+          ? `?hubTeamId=${encodeURIComponent(schoolHub.id)}`
+          : '';
+        const response = await fetch(`/api/organizations/squads${hubParam}`, {
+          headers: authHeader(token),
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!cancelled) setOrganizationCapacity({ limit: payload.limit, remaining: payload.remaining });
+      } catch {
+        // The canonical mutation endpoint still enforces capacity if this
+        // supplementary display request is interrupted.
+      }
+    };
+    loadCapacity();
+    return () => { cancelled = true; };
+  }, [firebaseAuth, organizationOwnerId, isSchoolMode, schoolHub?.id, schoolHub?.type, clubTeams.length]);
 
   // Fetch members from ALL squad sub-collections independently so we don't
   // rely on a collectionGroup+in composite index (which causes partial results).
@@ -724,6 +759,48 @@ function AuthorizedClubManagementPage() {
     }
   };
 
+  const handleSquadSeatUpdate = async (team: Team, allocated: boolean) => {
+    if (!firebaseAuth || updatingSquadId) return false;
+    setUpdatingSquadId(team.id);
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired.');
+      const response = await fetch('/api/organizations/squads', {
+        method: allocated ? 'POST' : 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          teamId: team.id,
+          ...(isSchoolMode && schoolHub?.type && ['school', 'school_hub'].includes(schoolHub.type)
+            ? { hubTeamId: schoolHub.id }
+            : {}),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to update this squad seat.');
+      setOrganizationCapacity(current => current
+        ? { ...current, remaining: payload.remaining }
+        : current
+      );
+      toast({
+        title: allocated ? 'Squad Added to Organization' : 'Squad Returned to Starter',
+        description: allocated
+          ? `${team.name} now uses a Pro squad seat.`
+          : `${team.name} kept its data, lost Pro features, and released its paid seat.`,
+      });
+      return true;
+    } catch (error) {
+      toast({
+        title: 'Squad Seat Update Failed',
+        description: error instanceof Error ? error.message : 'Unable to update this squad seat.',
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      setUpdatingSquadId(null);
+      setTeamToDelete(null);
+    }
+  };
+
   return (
     <div className="space-y-5 md:space-y-8 pb-24 animate-in fade-in duration-700 w-full" style={{maxWidth:'100%', overflowX:'hidden'}}>
 
@@ -853,7 +930,7 @@ function AuthorizedClubManagementPage() {
                    setIsCreating(true);
                    try {
                      const targetSchoolId = schoolHub?.id;
-                     await createNewTeam(
+                     const teamId = await createNewTeam(
                        newSquadForm.name, 
                        'school_squad', 
                        'Coach', 
@@ -866,6 +943,9 @@ function AuthorizedClubManagementPage() {
                        newSquadForm.coachEmail,
                        schoolHub?.ownerUserId
                      );
+                     if (!teamId) throw new Error('The squad could not be created.');
+                     const allocated = await handleSquadSeatUpdate({ id: teamId, name: newSquadForm.name } as Team, true);
+                     if (!allocated) return;
                      setIsSubSquadModalOpen(false);
                      setNewSquadForm({ name: '', coachName: '', coachEmail: '' });
                      toast({ title: 'Operational Unit Provisioned', description: 'Squad and Head Coach profile initialized.' });
@@ -951,9 +1031,12 @@ function AuthorizedClubManagementPage() {
       {/* ── Stats Grid ── */}
       <div className="grid grid-cols-2 gap-3 md:gap-5">
         <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-primary text-white p-4 md:p-6 space-y-1">
-          <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Squads</p>
+          <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Pro Squads</p>
           <p className="text-3xl md:text-4xl font-black" aria-live="polite">
             {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : clubTeams.length}
+          </p>
+          <p className="text-[8px] font-bold uppercase opacity-60">
+            {organizationCapacity?.remaining ?? proQuotaStatus.remaining} of {organizationCapacity?.limit ?? proQuotaStatus.limit} seats available
           </p>
         </Card>
         <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-black text-white p-4 md:p-6 space-y-2">
@@ -1065,11 +1148,11 @@ function AuthorizedClubManagementPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/5 rounded-xl" onClick={() => setTeamToDelete(team)}>
-                            <Trash2 className="h-4 w-4" />
+                          <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/5 rounded-xl" onClick={() => setTeamToDelete(team)} disabled={updatingSquadId === team.id}>
+                            {updatingSquadId === team.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent className="bg-destructive">Decommission</TooltipContent>
+                        <TooltipContent className="bg-destructive">Remove from organization</TooltipContent>
                       </Tooltip>
                       <Button variant="outline" className="rounded-xl h-9 px-3 md:px-5 font-black uppercase text-[9px] text-foreground border-2 hover:bg-black hover:text-white transition-all whitespace-nowrap" onClick={() => { setActiveTeam(team); router.push('/team'); }}>
                         Access <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
@@ -1078,8 +1161,42 @@ function AuthorizedClubManagementPage() {
                   </div>
                 </Card>
               ))}
+              {!isHubDataLoading && filteredTeams.length === 0 && (
+                <div className="rounded-2xl border border-dashed p-6 text-center">
+                  <p className="text-sm font-black uppercase">No Pro squads allocated</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Add an available Starter squad to use an organization seat.</p>
+                </div>
+              )}
             </div>
           </div>
+
+          {availableStarterSquads.length > 0 && (
+            <div className="space-y-4 border-t pt-6">
+              <div className="px-1">
+                <h3 className="text-base font-black uppercase tracking-tight">Available Starter Squads</h3>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Not counted in this Hub and no Pro features</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                {availableStarterSquads.map(team => (
+                  <div key={team.id} className="flex items-center gap-3 rounded-2xl border bg-muted/10 p-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black uppercase">{team.name}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Starter squad</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-9 rounded-xl px-3 text-[9px] font-black uppercase"
+                      disabled={(organizationCapacity?.remaining ?? proQuotaStatus.remaining) < 1 || updatingSquadId === team.id}
+                      onClick={() => handleSquadSeatUpdate(team, true)}
+                    >
+                      {updatingSquadId === team.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
+                      Add to Hub
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(clubMembers.some(m => m.status === 'removed')) && (
             <div className="space-y-4">
@@ -1837,18 +1954,18 @@ function AuthorizedClubManagementPage() {
         </div>
       )}
 
-      {/* Decommission Alert */}
+      {/* Organization seat release */}
       <AlertDialog open={!!teamToDelete} onOpenChange={o => !o && setTeamToDelete(null)}>
         <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl overflow-hidden p-0 bg-white w-[calc(100vw-2rem)] max-w-md">
           <div className="h-2 bg-red-600 w-full" />
           <div className="p-5 sm:p-8 space-y-5">
             <AlertDialogHeader>
-              <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Delete Squad?</AlertDialogTitle>
-              <AlertDialogDescription className="font-bold text-foreground/80 leading-relaxed pt-1">This will remove <strong>{teamToDelete?.name}</strong> from your institutional oversight permanently. This action is irreversible.</AlertDialogDescription>
+              <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Remove from Organization?</AlertDialogTitle>
+              <AlertDialogDescription className="font-bold text-foreground/80 leading-relaxed pt-1"><strong>{teamToDelete?.name}</strong> will keep its roster and data, but it will return to the free Starter plan and lose Pro features. The paid squad seat becomes available immediately.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="pt-2 flex-col sm:flex-row gap-2">
               <AlertDialogCancel className="rounded-xl font-bold border-2 h-11 flex-1">Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={async () => { if(teamToDelete) await deleteTeam(teamToDelete.id); setTeamToDelete(null); toast({ title: "Squad Decommissioned" }); }} className="rounded-xl font-black bg-red-600 hover:bg-red-700 h-11 flex-1 shadow-lg shadow-red-600/20 border-none">Decommission</AlertDialogAction>
+              <AlertDialogAction onClick={async () => { if (teamToDelete) await handleSquadSeatUpdate(teamToDelete, false); }} className="rounded-xl font-black bg-red-600 hover:bg-red-700 h-11 flex-1 shadow-lg shadow-red-600/20 border-none">Return to Starter</AlertDialogAction>
             </AlertDialogFooter>
           </div>
         </AlertDialogContent>
