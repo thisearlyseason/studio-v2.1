@@ -123,7 +123,6 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
       }
       if (
         organization.hubId &&
-        !allocated &&
         team.schoolId !== organization.hubId &&
         team.organizationHubId !== organization.hubId
       ) {
@@ -133,7 +132,10 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
       const otherAllocated = ownedTeams.docs.filter(snapshot =>
         snapshot.id !== teamId &&
         snapshot.data().isPro === true &&
-        isBillableSquadSeat(snapshot.data())
+        isBillableSquadSeat(snapshot.data()) &&
+        (!organization.hubId ||
+          snapshot.data().schoolId === organization.hubId ||
+          snapshot.data().organizationHubId === organization.hubId)
       ).length;
       if (allocated && otherAllocated >= organization.teamLimit) throw new Error('NO_SEATS');
 
@@ -205,13 +207,31 @@ export async function GET(req: NextRequest) {
       const ownedTeams = await transaction.get(
         adminDb.collection('teams').where('ownerUserId', '==', organization.ownerId)
       );
-      const allocated = ownedTeams.docs.filter(snapshot =>
-        snapshot.data().isPro === true && isBillableSquadSeat(snapshot.data())
-      ).length;
+      const organizationTeams = ownedTeams.docs.filter(snapshot => {
+        const team = snapshot.data();
+        return isBillableSquadSeat(team) &&
+          (!organization.hubId || team.schoolId === organization.hubId || team.organizationHubId === organization.hubId);
+      });
+      const allocatedSnapshots = organizationTeams.filter(snapshot =>
+        snapshot.data().isPro === true
+      );
+      const squads = allocatedSnapshots.map(snapshot => ({
+        id: snapshot.id,
+        ...snapshot.data(),
+        name: snapshot.data().name || snapshot.data().teamName || 'Squad',
+      }));
+      const teams = organizationTeams
+        .map(snapshot => ({
+          id: snapshot.id,
+          ...snapshot.data(),
+          name: snapshot.data().name || snapshot.data().teamName || 'Squad',
+        }));
       return {
-        allocated,
+        allocated: squads.length,
         limit: organization.teamLimit,
-        remaining: Math.max(0, organization.teamLimit - allocated),
+        remaining: Math.max(0, organization.teamLimit - squads.length),
+        squads,
+        teams,
       };
     });
     return NextResponse.json(capacity);

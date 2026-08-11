@@ -163,7 +163,8 @@ function AuthorizedClubManagementPage() {
   const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
   const [updatingSquadId, setUpdatingSquadId] = useState<string | null>(null);
-  const [organizationCapacity, setOrganizationCapacity] = useState<{ limit: number; remaining: number } | null>(null);
+  const [organizationCapacity, setOrganizationCapacity] = useState<{ allocated: number; limit: number; remaining: number } | null>(null);
+  const [authoritativeOrganizationTeams, setAuthoritativeOrganizationTeams] = useState<Team[]>([]);
   
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
@@ -244,15 +245,16 @@ function AuthorizedClubManagementPage() {
   const organizationOwnerId = schoolHub?.ownerUserId || user?.id;
   const organizationSquadCandidates = useMemo(() => {
     return Array.from(new Map(
-      resolvedTeams
+      [...resolvedTeams, ...authoritativeOrganizationTeams]
         .filter(t =>
           t.type !== 'school' &&
           t.type !== 'school_hub' &&
-          (!organizationOwnerId || t.ownerUserId === organizationOwnerId)
+          (!organizationOwnerId || t.ownerUserId === organizationOwnerId) &&
+          (!isSchoolMode || !schoolHub?.id || t.schoolId === schoolHub.id)
         )
         .map(t => [t.id, t])
     ).values());
-  }, [resolvedTeams, organizationOwnerId]);
+  }, [resolvedTeams, authoritativeOrganizationTeams, organizationOwnerId, isSchoolMode, schoolHub?.id]);
 
   // Organization linkage alone is not an entitlement. Only squads with an
   // explicitly allocated Pro seat participate in Hub totals and operations.
@@ -262,6 +264,7 @@ function AuthorizedClubManagementPage() {
     return true;
   }), [organizationSquadCandidates, isSchoolMode, schoolHub?.id]);
   const schoolSquads = clubTeams;
+  const organizationTeamIds = useMemo(() => organizationSquadCandidates.map(t => t.id), [organizationSquadCandidates]);
   const availableStarterSquads = useMemo(
     () => organizationSquadCandidates.filter(team => !clubTeams.some(active => active.id === team.id)),
     [organizationSquadCandidates, clubTeams]
@@ -283,7 +286,14 @@ function AuthorizedClubManagementPage() {
         });
         if (!response.ok) return;
         const payload = await response.json();
-        if (!cancelled) setOrganizationCapacity({ limit: payload.limit, remaining: payload.remaining });
+        if (!cancelled) {
+          setOrganizationCapacity({ allocated: payload.allocated, limit: payload.limit, remaining: payload.remaining });
+          setAuthoritativeOrganizationTeams((payload.teams || payload.squads || []).map((team: Team) => ({
+            ...team,
+            id: team.id,
+            name: team.name || team.teamName || 'Squad',
+          })));
+        }
       } catch {
         // The canonical mutation endpoint still enforces capacity if this
         // supplementary display request is interrupted.
@@ -298,13 +308,13 @@ function AuthorizedClubManagementPage() {
   const [allRawMembers, setAllRawMembers] = useState<Member[]>([]);
 
   const fetchAllSquadMembers = useCallback(async () => {
-    if (!db || clubTeams.length === 0) {
+    if (!db || organizationSquadCandidates.length === 0) {
       setAllRawMembers([]);
       return;
     }
     try {
       const results: Member[] = [];
-      for (const team of clubTeams) {
+      for (const team of organizationSquadCandidates) {
         const snap = await getDocs(collection(db, 'teams', team.id, 'members'));
         snap.forEach(d => results.push({ id: d.id, ...d.data() } as Member));
       }
@@ -312,7 +322,7 @@ function AuthorizedClubManagementPage() {
     } catch (e) {
       console.warn('Failed to fetch squad members:', e);
     }
-  }, [db, clubTeams]);
+  }, [db, organizationSquadCandidates]);
 
   // Hub Broadcast Channel state
   const [hubChannel, setHubChannel] = useState<{ id: string; name: string; memberIds: string[] } | null>(null);
@@ -426,7 +436,7 @@ function AuthorizedClubManagementPage() {
 
   // Aggregate all members from all school teams
   const clubMembers = useMemo(() => {
-    const squadIds = new Set(clubTeamIds);
+    const squadIds = new Set(organizationTeamIds);
     
     const validMembers = (allRawMembers || []).filter(m => squadIds.has(m.teamId));
     
@@ -439,7 +449,7 @@ function AuthorizedClubManagementPage() {
       }
     });
     return Array.from(uniqueMap.values());
-  }, [allRawMembers, clubTeamIds]);
+  }, [allRawMembers, organizationTeamIds]);
 
 
 
@@ -486,17 +496,17 @@ function AuthorizedClubManagementPage() {
   useEffect(() => {
     let cancelled = false;
     const fetchClubIncidents = async () => {
-      if (!db || clubTeamIds.length === 0) {
+      if (!db || organizationTeamIds.length === 0) {
         if (!cancelled) setClubIncidents([]);
         return;
       }
       try {
         const snapshots = await Promise.all(
-          clubTeamIds.map(teamId => getDocs(collection(db, 'teams', teamId, 'incidents')))
+          organizationTeamIds.map(teamId => getDocs(collection(db, 'teams', teamId, 'incidents')))
         );
         const incidents = snapshots.flatMap((snapshot, index) => {
-          const teamId = clubTeamIds[index];
-          const teamName = clubTeams.find(team => team.id === teamId)?.name || 'Unknown Squad';
+          const teamId = organizationTeamIds[index];
+          const teamName = organizationSquadCandidates.find(team => team.id === teamId)?.name || 'Unknown Squad';
 
           return snapshot.docs.map(incident => {
             const data = incident.data();
@@ -518,16 +528,17 @@ function AuthorizedClubManagementPage() {
     };
     fetchClubIncidents();
     return () => { cancelled = true; };
-  }, [db, clubTeamIds, clubTeams]);
+  }, [db, organizationTeamIds, organizationSquadCandidates]);
 
   const stats = useMemo(() => {
     let owed = 0, total = 0, cleared = 0;
-    clubMembers.forEach(m => { owed += m.amountOwed || 0; total += m.totalFees || 0; if (m.medicalClearance) cleared++; });
+    const activeMembers = clubMembers.filter(m => m.status !== 'removed' && (m as any).isDeleted !== true);
+    activeMembers.forEach(m => { owed += m.amountOwed || 0; total += m.totalFees || 0; if (m.medicalClearance) cleared++; });
     const collected = total - owed;
     const rate = total > 0 ? Math.round((collected / total) * 100) : 0;
-    const compliance = clubMembers.length > 0 ? Math.round((cleared / clubMembers.length) * 100) : 0;
+    const compliance = organizationTeamIds.length > 0 && activeMembers.length > 0 ? Math.round((cleared / activeMembers.length) * 100) : 0;
     return { owed, collected, total, rate, compliance };
-  }, [clubMembers]);
+  }, [clubMembers, organizationTeamIds]);
 
   // ─── FISCAL PULSE: Real enrollment fee + fundraiser data ────────────────────
   const [enrollmentEntries, setEnrollmentEntries] = useState<any[]>([]);
@@ -1033,7 +1044,7 @@ function AuthorizedClubManagementPage() {
         <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-primary text-white p-4 md:p-6 space-y-1">
           <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Pro Squads</p>
           <p className="text-3xl md:text-4xl font-black" aria-live="polite">
-            {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : clubTeams.length}
+            {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : organizationCapacity?.allocated ?? clubTeams.length}
           </p>
           <p className="text-[8px] font-bold uppercase opacity-60">
             {organizationCapacity?.remaining ?? proQuotaStatus.remaining} of {organizationCapacity?.limit ?? proQuotaStatus.limit} seats available

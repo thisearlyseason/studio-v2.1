@@ -258,6 +258,10 @@ test('organization squad seats are explicit, capacity-bound, and organizer-contr
   assert.match(route, /team\.ownerUserId !== organization\.ownerId/);
   assert.match(route, /otherAllocated >= organization\.teamLimit/);
   assert.match(route, /isPro: allocated/);
+  assert.match(route, /const allocatedSnapshots = organizationTeams\.filter/);
+  assert.match(route, /squads,/);
+  assert.match(route, /const teams = organizationTeams/);
+  assert.match(route, /teams,/);
   assert.match(route, /planId: allocated \? organization\.planId : 'free'/);
   assert.match(route, /schoolId:[\s\S]*FieldValue\.delete\(\)/);
   assert.match(route, /clubId:[\s\S]*FieldValue\.delete\(\)/);
