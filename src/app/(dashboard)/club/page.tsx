@@ -165,7 +165,6 @@ function AuthorizedClubManagementPage() {
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
   const [updatingSquadId, setUpdatingSquadId] = useState<string | null>(null);
   const [organizationCapacity, setOrganizationCapacity] = useState<{ allocated: number; limit: number; remaining: number } | null>(null);
-  const [authoritativeOrganizationTeams, setAuthoritativeOrganizationTeams] = useState<Team[]>([]);
   
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
@@ -246,15 +245,14 @@ function AuthorizedClubManagementPage() {
   const organizationOwnerId = schoolHub?.ownerUserId || user?.id;
   const organizationSquadCandidates = useMemo(() => {
     return Array.from(new Map(
-      [...resolvedTeams, ...authoritativeOrganizationTeams]
+      resolvedTeams
         .filter(t =>
           isBillableSquadSeat(t) &&
-          (!organizationOwnerId || t.ownerUserId === organizationOwnerId) &&
           (!isSchoolMode || !schoolHub?.id || t.schoolId === schoolHub.id)
         )
         .map(t => [t.id, t])
     ).values());
-  }, [resolvedTeams, authoritativeOrganizationTeams, organizationOwnerId, isSchoolMode, schoolHub?.id]);
+  }, [resolvedTeams, isSchoolMode, schoolHub?.id]);
 
   // Organization linkage alone is not an entitlement. Only squads with an
   // explicitly allocated Pro seat participate in Hub totals and operations.
@@ -270,6 +268,9 @@ function AuthorizedClubManagementPage() {
     [organizationSquadCandidates, clubTeams]
   );
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
+  const organizationSeatLimit = organizationCapacity?.limit ?? proQuotaStatus.limit;
+  const allocatedSquadCount = clubTeams.length;
+  const remainingSquadSeats = Math.max(0, organizationSeatLimit - allocatedSquadCount);
 
   useEffect(() => {
     if (!firebaseAuth || !organizationOwnerId) return;
@@ -293,11 +294,6 @@ function AuthorizedClubManagementPage() {
             ? payload.allocated
             : Math.max(0, limit - remaining);
           setOrganizationCapacity({ allocated, limit, remaining });
-          setAuthoritativeOrganizationTeams((payload.teams || payload.squads || []).map((team: Team) => ({
-            ...team,
-            id: team.id,
-            name: team.name || team.teamName || 'Squad',
-          })));
         }
       } catch {
         // The canonical mutation endpoint still enforces capacity if this
@@ -506,10 +502,15 @@ function AuthorizedClubManagementPage() {
         return;
       }
       try {
-        const snapshots = await Promise.all(
+        const snapshots = await Promise.allSettled(
           organizationTeamIds.map(teamId => getDocs(collection(db, 'teams', teamId, 'incidents')))
         );
-        const incidents = snapshots.flatMap((snapshot, index) => {
+        const incidents = snapshots.flatMap((result, index) => {
+          if (result.status !== 'fulfilled') {
+            console.warn(`Failed to load incidents for squad ${organizationTeamIds[index]}:`, result.reason);
+            return [];
+          }
+          const snapshot = result.value;
           const teamId = organizationTeamIds[index];
           const teamName = organizationSquadCandidates.find(team => team.id === teamId)?.name || 'Unknown Squad';
 
@@ -1049,10 +1050,10 @@ function AuthorizedClubManagementPage() {
         <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-primary text-white p-4 md:p-6 space-y-1">
           <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Pro Squads</p>
           <p className="text-3xl md:text-4xl font-black" aria-live="polite">
-            {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : organizationCapacity?.allocated ?? clubTeams.length}
+            {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : allocatedSquadCount}
           </p>
           <p className="text-[8px] font-bold uppercase opacity-60">
-            {organizationCapacity?.remaining ?? proQuotaStatus.remaining} of {organizationCapacity?.limit ?? proQuotaStatus.limit} seats available
+            {remainingSquadSeats} of {organizationSeatLimit} seats available
           </p>
         </Card>
         <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-black text-white p-4 md:p-6 space-y-2">
@@ -1202,7 +1203,7 @@ function AuthorizedClubManagementPage() {
                     <Button
                       size="sm"
                       className="h-9 rounded-xl px-3 text-[9px] font-black uppercase"
-                      disabled={(organizationCapacity?.remaining ?? proQuotaStatus.remaining) < 1 || updatingSquadId === team.id}
+                      disabled={remainingSquadSeats < 1 || updatingSquadId === team.id}
                       onClick={() => handleSquadSeatUpdate(team, true)}
                     >
                       {updatingSquadId === team.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
