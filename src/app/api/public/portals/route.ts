@@ -7,6 +7,7 @@ import {
   publicTournament,
 } from '@/lib/public-portal-data';
 import { enforceUserRateLimit } from '@/lib/server-request-guards';
+import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
 
 function isSafeId(value: string | null): value is string {
   return !!value && value.length <= 200 && !value.includes('/');
@@ -101,6 +102,17 @@ export async function GET(req: NextRequest) {
       const data: any = publicTournament(event.id, eventData);
       const refereeEmail = req.nextUrl.searchParams.get('refereeEmail')?.trim().toLowerCase();
       if (refereeEmail) {
+        const auth = await verifyFirebaseToken(req);
+        if (auth instanceof NextResponse) return auth;
+        const anonymousError = assertNonAnonymous(auth);
+        if (anonymousError) return anonymousError;
+        const authenticatedEmail = auth.email?.trim().toLowerCase();
+        if (!authenticatedEmail || authenticatedEmail !== refereeEmail) {
+          return NextResponse.json(
+            { error: 'Referee access could not be verified for this signed-in account.' },
+            { status: 403 }
+          );
+        }
         const referee = (eventData.refereePool || []).find(
           (candidate: any) => String(candidate.email || '').toLowerCase() === refereeEmail
         );

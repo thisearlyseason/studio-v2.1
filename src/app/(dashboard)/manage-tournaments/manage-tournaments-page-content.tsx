@@ -391,17 +391,55 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
     return true;
   };
 
+  const validateRosterMatrix = () => {
+    const namedTeams = form.teams.filter(team => team.name.trim());
+    if (namedTeams.length !== form.teams.length) {
+      toast({
+        title: 'Squad Matrix Incomplete',
+        description: 'Name every staged squad or remove unused squad rows before continuing.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    if (form.stagedDivisions.length > 0) {
+      const incompleteDivisions = form.stagedDivisions.filter(division =>
+        namedTeams.filter(team => team.division === division).length < 2
+      );
+      if (incompleteDivisions.length > 0) {
+        toast({
+          title: 'Squad Matrix Incomplete',
+          description: `Add at least two named squads to: ${incompleteDivisions.join(', ')}.`,
+          variant: 'destructive',
+        });
+        return false;
+      }
+    } else if (namedTeams.length < 2) {
+      toast({
+        title: 'Squad Matrix Incomplete',
+        description: 'Add at least two named squads before configuring tournament logistics.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    return true;
+  };
+
   const handleNext = () => {
     if (step === 1) {
       if (!validateBaseConfiguration()) return;
       initDailyWindows();
     }
+    if (step === 2 && !validateRosterMatrix()) return;
     setStep(step + 1);
   };
 
   const handleStepSelection = (nextStep: number) => {
     if (nextStep > 1 && !validateBaseConfiguration()) {
       setStep(1);
+      return;
+    }
+    if (nextStep > 2 && !validateRosterMatrix()) {
+      setStep(2);
       return;
     }
     if (nextStep > step && step === 1) initDailyWindows();
@@ -429,6 +467,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
       setStep(1);
       return;
     }
+    if (!validateRosterMatrix()) {
+      setStep(2);
+      return;
+    }
     setIsProcessing(true);
 
     const deploySingleEvent = async (divTitle?: string) => {
@@ -438,6 +480,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
 
       const divKey = divTitle || 'Default';
       const divConfig = form.divisionConfigs[divKey] || getDefaultDivisionConfig(form.startDate, form.endDate);
+      if (filteredTeams.length < 2) {
+        throw new Error(`At least two squads are required for ${divTitle || 'the tournament'}. Add squads in Phase 2 before deployment.`);
+      }
 
       // Determine fields and manual venue based on venueType
       const rawFields = divConfig.venueType === 'club'
@@ -589,6 +634,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent hideClose className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl overflow-hidden bg-[#050505] text-white h-[95vh] flex flex-col">
         <DialogTitle className="sr-only">Elite Series Architect</DialogTitle>
+        <DialogDescription className="sr-only">
+          Configure tournament identity, teams, format, venues, and schedule before deployment.
+        </DialogDescription>
         <DialogClose className="absolute right-6 top-6 z-50 h-10 w-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/15 transition-all flex items-center justify-center backdrop-blur-sm">
           <X className="h-5 w-5 text-white" />
           <span className="sr-only">Close</span>
@@ -716,6 +764,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                                   {div}
                                   <button 
                                     type="button" 
+                                    aria-label={`Remove ${div} division`}
                                     onClick={() => setForm({ ...form, stagedDivisions: form.stagedDivisions.filter(d => d !== div) })}
                                     className="hover:text-red-500 transition-colors"
                                   >
@@ -1357,6 +1406,33 @@ function TournamentDetailView({
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const handleDeleteTournament = async () => {
+    if (!activeTeam || isProcessing) return;
+    if (!window.confirm(`Delete ${event.title}${event.divisionTitle ? ` - ${event.divisionTitle}` : ''}? This permanently removes the tournament, schedule, registrations, and portal access.`)) return;
+    setIsProcessing(true);
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/tournaments/schedule', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'delete', teamId: activeTeam.id, eventId: event.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to delete this tournament.');
+      toast({ title: 'Tournament Deleted', description: `${event.title} was permanently removed.` });
+      onBack();
+    } catch (error) {
+      toast({
+        title: 'Delete Failed',
+        description: error instanceof Error ? error.message : 'Unable to delete this tournament.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Queries for logistics editor
   const facilitiesQuery = useMemoFirebase(() => {
     if (!db || !user?.id) return null;
@@ -1966,9 +2042,21 @@ function TournamentDetailView({
                </div>
              </div>
              {isStaff && (
-               <Button onClick={() => setIsEditModalOpen(true)} className="h-12 rounded-2xl bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase tracking-widest text-[10px] backdrop-blur-sm self-start shrink-0">
-                 <Edit3 className="h-4 w-4 mr-2" /> Modify Series
-               </Button>
+               <div className="flex flex-wrap gap-2 self-start">
+                 <Button onClick={() => setIsEditModalOpen(true)} className="h-12 rounded-2xl bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase tracking-widest text-[10px] backdrop-blur-sm shrink-0">
+                   <Edit3 className="h-4 w-4 mr-2" /> Modify Series
+                 </Button>
+                 <Button
+                   variant="destructive"
+                   onClick={handleDeleteTournament}
+                   disabled={isProcessing}
+                   aria-label={`Delete tournament ${event.title}`}
+                   className="h-12 rounded-2xl font-black uppercase tracking-widest text-[10px] shrink-0"
+                 >
+                   {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                   {isProcessing ? 'Deleting' : 'Delete'}
+                 </Button>
+               </div>
              )}
            </div>
            <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 pt-8 border-t border-white/10">

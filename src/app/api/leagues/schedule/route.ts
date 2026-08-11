@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import { adminDb } from '@/lib/firebase-admin';
 import {
   clearLeagueSchedule,
   configureLeagueSchedule,
@@ -16,6 +18,31 @@ import {
 
 export const runtime = 'nodejs';
 
+const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+
+function requestedLeagueIds(body: Record<string, unknown>): string[] {
+  const candidates = Array.isArray(body.leagueIds) ? body.leagueIds : [body.leagueId];
+  const ids = [...new Set(candidates.filter((value): value is string => typeof value === 'string'))];
+  if (ids.length === 0 || ids.length > 100 || ids.some(id => !ID_PATTERN.test(id))) {
+    throw new RequestBodyError('Select at least one valid league to delete.', 400);
+  }
+  return ids;
+}
+
+async function purgeLeagueProjectionsForDeletion(leagueId: string): Promise<void> {
+  const sourceId = `league:${leagueId}`;
+  const [bookings, events] = await Promise.all([
+    adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId).get(),
+    adminDb.collectionGroup('events').where('leagueId', '==', leagueId).get(),
+  ]);
+  const refs = [...bookings.docs, ...events.docs].map(document => document.ref);
+  for (let index = 0; index < refs.length; index += 400) {
+    const batch = adminDb.batch();
+    refs.slice(index, index + 400).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+}
+
 export async function POST(request: NextRequest) {
   const auth = await verifyFirebaseToken(request);
   if (auth instanceof NextResponse) return auth;
@@ -23,10 +50,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(request, 1_000_000);
     const isLiveMutation = body.action === 'score' || body.action === 'dispute';
+    const isDelete = body.action === 'delete';
+    const baseLimit = isLiveMutation ? 300 : 30;
     const limited = await enforceUserRateLimit(
       auth.uid,
       isLiveMutation ? 'league-schedule-game-mutation' : 'league-schedule-deployment',
-      isLiveMutation ? 300 : 30,
+      isDelete ? 300 : baseLimit,
       60 * 60 * 1_000
     );
     if (limited) return limited;
@@ -65,6 +94,44 @@ export async function POST(request: NextRequest) {
         actor: { uid: auth.uid, role: auth.role },
       });
       return NextResponse.json({ success: true, schedule: [] });
+    }
+    if (body.action === 'delete') {
+      const leagueIds = requestedLeagueIds(body);
+      const leagueRefs = leagueIds.map(leagueId => adminDb.collection('leagues').doc(leagueId));
+      const leagues = await adminDb.getAll(...leagueRefs);
+      if (leagues.some(league => !league.exists)) {
+        return NextResponse.json({ error: 'One or more leagues no longer exist. Refresh and try again.' }, { status: 409 });
+      }
+      if (auth.role !== 'superadmin' && leagues.some(league => league.data()?.creatorId !== auth.uid)) {
+        return NextResponse.json({ error: 'Only the league organizer can delete this league.' }, { status: 403 });
+      }
+
+      // Authorize the complete workspace before mutating any division. This
+      // prevents a group delete from stopping halfway through its league.
+      await Promise.all(leagueIds.map(purgeLeagueProjectionsForDeletion));
+
+      for (const league of leagues) {
+        const data = league.data() || {};
+        const teamIds = [...new Set([
+          ...(Array.isArray(data.memberTeamIds) ? data.memberTeamIds : []),
+          ...Object.keys(data.teams || {}),
+        ].filter((teamId): teamId is string =>
+          typeof teamId === 'string' &&
+          ID_PATTERN.test(teamId) &&
+          !teamId.startsWith('manual_') &&
+          !teamId.startsWith('recruit_')
+        ))];
+        const teamRefs = teamIds.map(teamId => adminDb.collection('teams').doc(teamId));
+        const teams = teamRefs.length > 0 ? await adminDb.getAll(...teamRefs) : [];
+        await Promise.all([
+          ...teams.filter(team => team.exists).map(team => team.ref.update({
+            [`leagueIds.${league.id}`]: FieldValue.delete(),
+          })),
+          adminDb.collection('publicLeagueViews').doc(league.id).delete(),
+          adminDb.recursiveDelete(league.ref),
+        ]);
+      }
+      return NextResponse.json({ success: true, deletedLeagueIds: leagueIds });
     }
     if (body.action === 'configure') {
       await configureLeagueSchedule({

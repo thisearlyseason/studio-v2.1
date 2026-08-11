@@ -79,6 +79,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { getFacilityFieldName } from '@/lib/facility-rename';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const DAYS_OF_WEEK = [
   { id: 1, label: 'Mon' },
@@ -556,7 +566,8 @@ function LeagueOverview({
   onDeploySchedule?: () => Promise<void>, 
   isDeployingSchedule?: boolean 
 }) {
-  const { isStaff, submitLeagueMatchScore, activeTeam, teams } = useTeam();
+  const { isStaff, user, submitLeagueMatchScore, activeTeam, teams } = useTeam();
+  const canManageLeague = isStaff || user?.role === 'league_creator';
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [teamFilter, setTeamFilter] = useState<string>('all');
@@ -790,7 +801,7 @@ function LeagueOverview({
                   </div>
                 </div>
 
-                {isStaff && (
+                {canManageLeague && (
                   <div className="pt-6 flex flex-col sm:flex-row items-center gap-4">
                     <Button 
                       variant="outline"
@@ -825,7 +836,7 @@ function LeagueOverview({
                     </p>
                   </div>
                 </div>
-                {isStaff && (
+                {canManageLeague && (
                   <Button 
                     className="w-full h-16 rounded-2xl bg-black text-white hover:bg-black/90 font-black uppercase text-sm tracking-widest shadow-lg flex items-center justify-center gap-2"
                     onClick={onOpenScheduler}
@@ -833,7 +844,7 @@ function LeagueOverview({
                     <Settings className="h-5 w-5" /> Configure Season Architect
                   </Button>
                 )}
-                {!isStaff && (
+                {!canManageLeague && (
                   <p className="text-center text-xs font-bold text-muted-foreground uppercase tracking-wider">
                     The schedule for this season has not been published yet.
                   </p>
@@ -863,7 +874,7 @@ function LeagueOverview({
           <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px] text-foreground" onClick={exportSchedule}>
             <Download className="h-4 w-4 mr-2" /> Download Schedule
           </Button>
-          {isStaff && (
+          {canManageLeague && (
             <Button variant="default" className="flex-1 sm:flex-none h-11 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20 hover:scale-105 transition-all" onClick={onOpenManualGame}>
               <Plus className="h-4 w-4 mr-2" /> Add Exhibition
             </Button>
@@ -936,7 +947,7 @@ function LeagueOverview({
                       {/* Location + Edit */}
                       <div className="min-w-[100px] shrink-0 text-right flex flex-col items-end gap-1.5">
                         <p className="text-[10px] font-bold text-muted-foreground uppercase truncate">{game.location || 'TBD'}</p>
-                        {isStaff && (
+                        {canManageLeague && (
                           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg opacity-100 lg:opacity-0 lg:group-hover:opacity-100" onClick={() => { setEditingGame(game); setScoreForm({ s1: (game.score1 ?? 0).toString(), s2: (game.score2 ?? 0).toString() }); }}>
                             <Edit3 className="h-3.5 w-3.5" />
                           </Button>
@@ -986,7 +997,7 @@ function LeagueOverview({
                   <Card
                     key={game.id}
                     className="rounded-[2rem] border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 hover:shadow-xl hover:ring-primary/20 transition-all cursor-pointer group"
-                    onClick={() => isStaff && setEditingGame(game)}
+                    onClick={() => canManageLeague && setEditingGame(game)}
                   >
                     {/* Meta strip */}
                     <div className="flex justify-between items-center px-6 pt-5 pb-3 border-b border-muted/30">
@@ -1379,7 +1390,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   
   const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const leaguesLabel = isSchoolMode ? 'Programs' : 'Leagues';
-  const canCreateLeague = isPrimaryClubAuthority || userProfile?.role === 'league_creator';
+  const hasLeagueCreationAccess = isPrimaryClubAuthority || userProfile?.role === 'league_creator';
+  const canManageLeagues = isStaff || userProfile?.role === 'league_creator';
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
@@ -1532,35 +1544,50 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const [duplicateTitle, setDuplicateTitle] = useState('');
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
   const [duplicatingLeague, setDuplicatingLeague] = useState<League | null>(null);
+  const [pendingLeagueDeletion, setPendingLeagueDeletion] = useState<{
+    ids: string[];
+    name: string;
+    divisionCount: number;
+  } | null>(null);
 
   const ownedLeaguesQuery = useMemoFirebase(() => {
     if (!isAuthResolved || !db || !authUser?.uid) return null;
     
-    if (isSuperAdmin) return query(collection(db, 'leagues'), limit(50));
-
     return query(
       collection(db, 'leagues'),
       where('creatorId', '==', authUser.uid),
-      limit(isStaff ? 50 : 20)
+      limit(isSuperAdmin ? 100 : canManageLeagues ? 50 : 20)
     );
-  }, [isAuthResolved, db, authUser?.uid, isStaff, isSuperAdmin]);
+  }, [isAuthResolved, db, authUser?.uid, canManageLeagues, isSuperAdmin]);
 
   const memberLeaguesQuery = useMemoFirebase(() => {
     if (!isAuthResolved || !db || !authUser?.uid || isSuperAdmin) return null;
     return query(
       collection(db, 'leagues'),
       where('memberUserIds', 'array-contains', authUser.uid),
-      limit(isStaff ? 50 : 20)
+      limit(canManageLeagues ? 50 : 20)
     );
-  }, [isAuthResolved, db, authUser?.uid, isStaff, isSuperAdmin]);
+  }, [isAuthResolved, db, authUser?.uid, canManageLeagues, isSuperAdmin]);
 
   const { data: ownedLeagues, isLoading: ownedLeaguesLoading } = useCollection<League>(ownedLeaguesQuery);
   const { data: memberLeagues, isLoading: memberLeaguesLoading } = useCollection<League>(memberLeaguesQuery);
   const allLeagues = useMemo(() => {
     const merged = new Map<string, League>();
     [...(ownedLeagues || []), ...(memberLeagues || [])].forEach(league => merged.set(league.id, league));
-    return Array.from(merged.values());
-  }, [ownedLeagues, memberLeagues]);
+    const result = Array.from(merged.values());
+    // Superadmin sees operational leagues by default; demo seed artifacts stay
+    // out of the working list so they cannot be mistaken for real leagues.
+    return isSuperAdmin
+      ? result.filter(league => league.demoSeeded !== true && !league.id.startsWith('demo_'))
+      : result;
+  }, [ownedLeagues, memberLeagues, isSuperAdmin]);
+  const leagueCreationLimitReached =
+    userProfile?.isDemo === true &&
+    userProfile.role === 'league_creator' &&
+    allLeagues.some(league =>
+      league.creatorId === authUser?.uid && league.demoSeeded !== true
+    );
+  const canCreateLeague = hasLeagueCreationAccess && !leagueCreationLimitReached;
   const isLeaguesLoading = ownedLeaguesLoading || memberLeaguesLoading;
 
   useEffect(() => {
@@ -1903,6 +1930,44 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     }
   };
 
+  const handleDeleteLeagueId = (leagueId: string, name: string) => {
+    setPendingLeagueDeletion({ ids: [leagueId], name, divisionCount: 1 });
+  };
+
+  const handleDeleteLeagueGroup = (items: League[], name: string) => {
+    setPendingLeagueDeletion({
+      ids: items.map(item => item.id),
+      name,
+      divisionCount: items.length,
+    });
+  };
+
+  const confirmLeagueDeletion = async () => {
+    if (!pendingLeagueDeletion) return;
+    setIsProcessing(true);
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/leagues/schedule', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ action: 'delete', leagueIds: pendingLeagueDeletion.ids }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to delete the league.');
+      if (selectedLeagueId && pendingLeagueDeletion.ids.includes(selectedLeagueId)) {
+        setSelectedLeagueId(null);
+      }
+      toast({
+        title: 'League Deleted',
+        description: pendingLeagueDeletion.divisionCount > 1
+          ? `Removed all ${pendingLeagueDeletion.divisionCount} divisions.`
+          : 'The league and its connected records were removed.',
+      });
+      setPendingLeagueDeletion(null);
+    } catch (error: any) {
+      toast({ title: 'Delete Failed', description: error.message, variant: 'destructive' });
+    } finally { setIsProcessing(false); }
+  };
+
   const handleUnarchiveLeague = async (leagueId: string) => {
     setIsProcessing(true);
     try {
@@ -2110,9 +2175,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                  {showArchived ? 'View Active Hubs' : 'View Archived Hubs'}
               </Button>
             ) : null}
-            {!activeLeague && canCreateLeague && (
-              <Button className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="h-5 w-5 mr-2" /> Create {leagueLabel}
+            {!activeLeague && hasLeagueCreationAccess && (
+              <Button disabled={leagueCreationLimitReached} className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="h-5 w-5 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : `Create ${leagueLabel}`}
               </Button>
             )}
           </div>
@@ -2125,9 +2190,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                {showArchived ? 'Active Hubs' : 'Archived Hubs'}
             </Button>
           ) : null}
-          {!activeLeague && canCreateLeague && (
-            <Button className="h-11 px-6 rounded-2xl font-black shadow-xl shadow-primary/20 text-xs" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" /> Create {leagueLabel}
+          {!activeLeague && hasLeagueCreationAccess && (
+            <Button disabled={leagueCreationLimitReached} className="h-11 px-6 rounded-2xl font-black shadow-xl shadow-primary/20 text-xs" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : `Create ${leagueLabel}`}
             </Button>
           )}
         </div>
@@ -2154,9 +2219,22 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                           <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
                             <Trophy className="h-10 w-10" />
                           </div>
-                          <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">
-                            {league.sport}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">
+                              {league.sport}
+                            </Badge>
+                            {canManageLeagues && (league.creatorId === authUser?.uid || isSuperAdmin) && (
+                              <Button
+                                aria-label={`Delete ${league.name}`}
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:bg-red-500 hover:text-white"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteLeagueId(league.id, league.name); }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         <div className="space-y-1 min-w-0">
                           <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight group-hover:text-primary transition-colors leading-tight break-words overflow-hidden">{league.name}</h3>
@@ -2170,7 +2248,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                              <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center shrink-0"><Zap className="h-4 w-4 opacity-40" /></div>
                            </div>
                            <div className="flex gap-2 w-full sm:w-auto">
-                             {isStaff && league.creatorId === authUser?.uid && (
+                             {canManageLeagues && userProfile?.isDemo !== true && (league.creatorId === authUser?.uid || isSuperAdmin) && (
                                <Button 
                                  variant="outline" 
                                  size="sm" 
@@ -2219,9 +2297,14 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             </div>
                           </div>
                         </div>
-                        <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">
-                          {primaryLeague.sport}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">{primaryLeague.sport}</Badge>
+                          {canManageLeagues && (primaryLeague.creatorId === authUser?.uid || isSuperAdmin) && (
+                            <Button aria-label={`Delete entire league ${group.name}`} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-red-500 hover:text-white" onClick={() => handleDeleteLeagueGroup(group.items, group.name)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2247,14 +2330,15 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                   <Badge className={`border font-black text-[9px] h-6 px-3 uppercase tracking-wider ${badgeBg}`}>
                                     {divisionName}
                                   </Badge>
-                                  {isStaff && divLeague.creatorId === authUser?.uid && (
-                                    <Button 
-                                      variant="ghost" 
+                                  {canManageLeagues && (divLeague.creatorId === authUser?.uid || isSuperAdmin) && (
+                                    <Button
+                                      aria-label={`Delete ${divLeague.name} ${divisionName}`}
+                                      variant="ghost"
                                       size="sm" 
                                       className="h-7 w-7 p-0 rounded-lg hover:bg-red-500 hover:text-white text-muted-foreground/60 transition-all opacity-0 group-hover/div:opacity-100"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleArchiveLeagueId(divLeague.id, `${divLeague.name} (${divisionName})`);
+                                        handleDeleteLeagueId(divLeague.id, `${divLeague.name} (${divisionName})`);
                                       }}
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
@@ -2272,7 +2356,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                               </div>
                               <div className="pt-3 border-t border-black/5 flex items-center justify-between gap-2">
                                 <div className="flex gap-2">
-                                  {isStaff && divLeague.creatorId === authUser?.uid && (
+                                  {canManageLeagues && userProfile?.isDemo !== true && (divLeague.creatorId === authUser?.uid || isSuperAdmin) && (
                                     <Button 
                                       variant="outline" 
                                       size="sm" 
@@ -2288,8 +2372,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                     </Button>
                                   )}
                                 </div>
-                                <Button 
-                                  variant="ghost" 
+                                <Button
+                                  variant="ghost"
                                   size="sm" 
                                   className="h-8 rounded-lg text-[8px] font-black uppercase border border-primary/20 text-primary group-hover/div:bg-primary group-hover/div:text-white transition-all px-3"
                                 >
@@ -2304,7 +2388,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </Card>
                 );
               })}
-              {isStaff && (
+              {canManageLeagues && !leagueCreationLimitReached && (
               <Card 
                 className="rounded-[3rem] border-2 border-dashed border-muted bg-transparent flex flex-col items-center justify-center p-12 group hover:border-primary/40 transition-all cursor-pointer min-h-[250px]"
                 onClick={() => setIsCreateOpen(true)}
@@ -2321,7 +2405,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       {selectedLeagueId && activeLeague ? (
         <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
           <div className="flex items-center gap-3 mb-4 min-w-0">
-            <Button variant="ghost" size="icon" onClick={() => setSelectedLeagueId(null)} className="rounded-full h-10 w-10 md:h-12 md:w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-5 w-5 md:h-6 md:w-6" /></Button>
+            <Button aria-label="Back to leagues" variant="ghost" size="icon" onClick={() => setSelectedLeagueId(null)} className="rounded-full h-10 w-10 md:h-12 md:w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-5 w-5 md:h-6 md:w-6" /></Button>
             <div className="bg-primary/5 px-3 py-2 rounded-xl text-primary font-black uppercase text-[10px] tracking-widest border border-primary/10 flex items-center gap-1.5 min-w-0 overflow-hidden">
               <span className="truncate">Active Context: {activeLeague.name}</span>
               {activeLeague.divisionTitle && (
@@ -2349,7 +2433,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <div className="flex flex-wrap items-center gap-2 mt-3">
                     <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 h-9 max-w-full overflow-hidden">
                       <LinkIcon className="h-3 w-3 text-white/40 shrink-0" />
-                      {isStaff && activeLeague.creatorId === authUser?.uid ? (
+                      {canManageLeagues && (activeLeague.creatorId === authUser?.uid || isSuperAdmin) ? (
                         <input
                           defaultValue={activeLeague.slug || activeLeague.id}
                           onBlur={async (e) => {
@@ -2370,6 +2454,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                         <span className="text-white/60 font-black text-[10px] uppercase tracking-widest truncate max-w-[120px] md:max-w-none">{activeLeague.slug || activeLeague.id}</span>
                       )}
                       <button
+                        aria-label="Copy league ID"
                         onClick={() => { navigator.clipboard.writeText(activeLeague.slug || activeLeague.id); toast({ title: 'League ID Copied' }); }}
                         className="text-white/30 hover:text-white transition-colors ml-1 shrink-0"
                       >
@@ -2380,9 +2465,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </div>
                 </div>
               </div>
-              {isStaff && activeLeague.creatorId === authUser?.uid && (
+              {canManageLeagues && (activeLeague.creatorId === authUser?.uid || isSuperAdmin) && (
                 <div className="flex flex-wrap gap-2 justify-start md:justify-end w-full md:w-auto">
                   <Button 
+                    aria-label="Copy public registration link"
                     onClick={() => {
                       navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=team_config`);
                       toast({ title: "Public Link Copied", description: "The registration portal link is ready to share." });
@@ -2393,7 +2479,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   >
                     <Share2 className="h-4 w-4 md:h-5 md:w-5" />
                   </Button>
-                  <Button onClick={handleEditLeague} variant="ghost" size="icon" className="h-10 w-10 md:h-12 md:w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"><Settings className="h-4 w-4 md:h-5 md:w-5" /></Button>
+                  <Button aria-label={`Edit ${leagueLabel.toLowerCase()}`} onClick={handleEditLeague} variant="ghost" size="icon" className="h-10 w-10 md:h-12 md:w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"><Settings className="h-4 w-4 md:h-5 md:w-5" /></Button>
                   <Button onClick={() => setIsSeasonOpen(true)} variant="outline" className="rounded-xl h-10 md:h-12 px-4 md:px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all flex items-center gap-2 text-xs">
                     Season Architect
                   </Button>
@@ -2434,7 +2520,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     onClick={() => setActiveTab('teams')}
                   >
                     Teams
-                    {activeTab === 'teams' && isStaff && activeLeague.creatorId === authUser?.uid && (
+                    {activeTab === 'teams' && canManageLeagues && activeLeague.creatorId === authUser?.uid && (
                       <span 
                         onClick={(e) => { 
                           e.stopPropagation(); 
@@ -2447,9 +2533,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     )}
                   </Button>
                   <Button variant={activeTab === 'schedule' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('schedule')}>Schedule</Button>
-                  {isStaff && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
-                  {isStaff && !isStarter && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
-                  {isStaff && !isStarter && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
+                  {canManageLeagues && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
+                  {canManageLeagues && !isStarter && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
+                  {canManageLeagues && !isStarter && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
                 </div>
                 
                 {activeTab === 'teams' && activeLeague.divisions && activeLeague.divisions.length > 0 && (
@@ -2549,7 +2635,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                           </td>
                           <td className="px-4 md:px-10 py-4 md:py-6 text-right">
                             <div className="flex items-center justify-end gap-4">
-                              {isStaff && activeLeague.creatorId === authUser?.uid && (
+                              {canManageLeagues && activeLeague.creatorId === authUser?.uid && (
                                 <div className="flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                                   <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => handleEditTeam(team)}>
                                     <Edit3 className="h-4 w-4" />
@@ -2583,7 +2669,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 <div className="flex items-center justify-between px-2">
                   <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Personnel Hub</h3></div>
                   <div className="flex items-center gap-3">
-                    {isStaff && activeLeague.creatorId === authUser?.uid && (
+                    {canManageLeagues && activeLeague.creatorId === authUser?.uid && (
                       <Button 
                         variant="outline" 
                         onClick={() => setIsManualPlayerOpen(true)}
@@ -2614,7 +2700,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Affiliation: {p.teamName}
                                     </p>
                                   ) : (
-                                    isStaff && activeLeague.creatorId === authUser?.uid && (
+                                    canManageLeagues && activeLeague.creatorId === authUser?.uid && (
                                       <div onClick={(e) => e.stopPropagation()}>
                                         <Select
                                           onValueChange={(tId) => handleAssignPlayerToTeam(id, tId)}
@@ -2821,20 +2907,26 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 space-y-8">
-            <DialogHeader><DialogTitle className="text-3xl font-black uppercase">Create {leagueLabel}</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-black uppercase">Create {leagueLabel}</DialogTitle>
+              <DialogDescription>
+                Set the competition name, sport, and optional divisions.
+              </DialogDescription>
+            </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">{leagueLabel} Title</Label>
-                <Input placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black" />
+                <Label htmlFor="create-league-title" className="text-[10px] font-black uppercase">{leagueLabel} Title</Label>
+                <Input id="create-league-title" placeholder="e.g. State Varsity Premier" value={leagueName} onChange={e => setLeagueName(e.target.value)} className="h-14 rounded-2xl border-2 font-black" />
               </div>
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Sport Type</Label>
-                <Input placeholder="e.g. Basketball, Soccer" value={sport} onChange={e => setSport(e.target.value)} className="h-14 rounded-2xl border-2 font-black" />
+                <Label htmlFor="create-league-sport" className="text-[10px] font-black uppercase">Sport Type</Label>
+                <Input id="create-league-sport" placeholder="e.g. Basketball, Soccer" value={sport} onChange={e => setSport(e.target.value)} className="h-14 rounded-2xl border-2 font-black" />
               </div>
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Divisions <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+                <Label htmlFor="create-league-division" className="text-[10px] font-black uppercase">Divisions <span className="text-muted-foreground font-normal">(Optional)</span></Label>
                 <div className="flex gap-2">
                   <Input 
+                    id="create-league-division"
                     placeholder="Press enter or click Add to stage multiple" 
                     value={divisionTitle} 
                     onChange={e => setDivisionTitle(e.target.value)} 
@@ -2877,6 +2969,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       {div}
                       <button 
                         type="button" 
+                        aria-label={`Remove ${div} division`}
                         onClick={() => setStagedDivisions(stagedDivisions.filter(d => d !== div))}
                         className="hover:text-red-500 transition-colors"
                       >
@@ -2987,6 +3080,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       <Dialog open={isEditLeagueOpen} onOpenChange={setIsEditLeagueOpen}>
         <DialogContent hideClose className="max-w-[98vw] lg:max-w-[1600px] rounded-[3rem] p-0 border border-white/10 shadow-2xl bg-[#050505] text-white max-h-[95vh] lg:h-[95vh] flex flex-col overflow-y-auto lg:overflow-hidden">
           <DialogTitle className="sr-only">{leagueLabel} Profile</DialogTitle>
+          <DialogDescription className="sr-only">
+            Edit league identity, season details, registration settings, and contact information.
+          </DialogDescription>
           <DialogClose className="absolute right-6 top-6 z-50 h-10 w-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/15 transition-all flex items-center justify-center backdrop-blur-sm">
             <X className="h-5 w-5 text-white" />
             <span className="sr-only">Close</span>
@@ -3242,6 +3338,40 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         </DialogContent>
       </Dialog>
 
+      <AlertDialog
+        open={pendingLeagueDeletion !== null}
+        onOpenChange={(open) => {
+          if (!open && !isProcessing) setPendingLeagueDeletion(null);
+        }}
+      >
+        <AlertDialogContent className="rounded-2xl border-none shadow-2xl bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-black uppercase">Delete League Permanently?</AlertDialogTitle>
+            <AlertDialogDescription className="font-medium text-muted-foreground">
+              {pendingLeagueDeletion?.divisionCount && pendingLeagueDeletion.divisionCount > 1
+                ? `This removes "${pendingLeagueDeletion.name}" and all ${pendingLeagueDeletion.divisionCount} divisions, teams, registrations, and schedules.`
+                : `This removes "${pendingLeagueDeletion?.name || 'this league'}", its teams, registrations, and schedule.`}
+              {' '}This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isProcessing} className="rounded-xl font-black">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isProcessing}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmLeagueDeletion();
+              }}
+              className="rounded-xl bg-destructive text-white hover:bg-destructive/90 font-black"
+            >
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete Permanently'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {activeLeague && <SeasonSchedulerDialog league={activeLeague} isOpen={isSeasonOpen} onOpenChange={setIsSeasonOpen} />}
       {activeLeague && <ManualGameDialog league={activeLeague} isOpen={isManualGameOpen} onOpenChange={setIsManualGameOpen} />}
       {activeLeague && <ManualPlayerDialog league={activeLeague} isOpen={isManualPlayerOpen} onOpenChange={setIsManualPlayerOpen} />}
@@ -3250,8 +3380,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 }
 
 function LeaguesPageGuard() {
-  const { isStaff } = useTeam();
-  if (!isStaff) return <AccessRestricted />;
+  const { isStaff, user } = useTeam();
+  if (!isStaff && user?.role !== 'league_creator') return <AccessRestricted />;
   return <LeaguesPageContent />;
 }
 

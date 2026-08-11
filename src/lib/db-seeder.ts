@@ -1086,6 +1086,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             memberTeamIds,
             memberUserIds: [userId],
             isDemo: true,
+            demoSessionOwnerId: userId,
+            demoSeeded: true,
             status: 'active',
             createdAt: now,
             teams: leagueTeams,

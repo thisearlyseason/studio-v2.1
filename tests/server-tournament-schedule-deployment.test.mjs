@@ -318,3 +318,28 @@ test('tournament schedules, live mutations, clearing, archiving, and demo cleanu
   assert.match(seed, /collection\('scheduleBookings'\)/);
   assert.match(rules, /match \/scheduleBookings\/\{bookingId\}[\s\S]*allow read, write: if false;/);
 });
+
+test('whole-tournament deletion removes nested portal data through the server boundary', async () => {
+  const [server, route, manager] = await Promise.all([
+    readFile(new URL('../src/lib/server-tournament-schedule-deployment.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/app/api/tournaments/schedule/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx', import.meta.url), 'utf8'),
+  ]);
+
+  assert.match(server, /export async function deleteTournament/);
+  assert.match(server, /adminDb\.recursiveDelete\(eventRef\)/);
+  assert.match(route, /body\.action === 'delete'/);
+  assert.match(manager, /action: 'delete'/);
+  assert.match(manager, /Delete tournament \$\{event\.title\}/);
+});
+
+test('superadmins can create tournament event shells without a team membership document', async () => {
+  const eventAction = await readFile(
+    new URL('../src/app/api/teams/events/action/route.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(eventAction, /if \(role === 'superadmin'\)/);
+  assert.match(eventAction, /isMember: true, isStaff: true/);
+  assert.match(eventAction, /teamAccess\(teamId, auth\.uid, auth\.role\)/);
+});

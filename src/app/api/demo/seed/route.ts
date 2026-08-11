@@ -122,6 +122,8 @@ export async function POST(req: NextRequest) {
       memberUserIds: [uid],
       memberTeamIds: shells.map((shell) => shell.id),
       isDemo: true,
+      demoSessionOwnerId: uid,
+      demoSeeded: true,
       status: 'active',
       createdAt: now,
       updatedAt: now,

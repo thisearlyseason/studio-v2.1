@@ -307,7 +307,16 @@ function AuthorizedFundraisingPage() {
   const isLimitReached = !isPro && activeCampaigns.length >= 2;
 
   const handleAddCampaign = async () => {
-    if (!newFund.title || !newFund.goal || !activeTeam?.id || !user?.id) return;
+    if (!newFund.title || !newFund.goal || !newFund.deadline || !activeTeam?.id || !user?.id) {
+      toast({ title: 'Campaign details required', description: 'Enter a title, goal, and valid deadline before deployment.', variant: 'destructive' });
+      return;
+    }
+    const deadlineDate = new Date(newFund.deadline);
+    const goalAmount = Number(newFund.goal);
+    if (!Number.isFinite(goalAmount) || goalAmount <= 0 || Number.isNaN(deadlineDate.getTime())) {
+      toast({ title: 'Campaign details invalid', description: 'Use a positive goal and a valid campaign deadline.', variant: 'destructive' });
+      return;
+    }
     if (configMethod === 'stripe' && !stripeChargesEnabled) {
       toast({
         title: 'Connect Stripe First',
@@ -321,7 +330,7 @@ function AuthorizedFundraisingPage() {
     try {
       const campaignId = await addFundraisingOpportunity({
         ...newFund,
-        goalAmount: parseFloat(newFund.goal),
+        goalAmount,
         paymentMethod: configMethod,
         externalLink: '',
         eTransferDetails: configMethod === 'e-transfer' ? newFund.eTransferDetails : '',
@@ -704,7 +713,7 @@ function AuthorizedFundraisingPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal || (configMethod === 'stripe' && !stripeChargesEnabled)}>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal || !newFund.deadline || (configMethod === 'stripe' && !stripeChargesEnabled)}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Deployment"}
               </Button>
             </DialogFooter>

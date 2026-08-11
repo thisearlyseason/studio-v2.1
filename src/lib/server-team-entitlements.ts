@@ -125,7 +125,7 @@ export async function getPaidTeamFeatureAccess(
       error: 'Your squad access has been removed.',
     };
   }
-  if (team.isDemo === true || user.isDemo === true) {
+  if (!isSuperAdmin && (team.isDemo === true || user.isDemo === true)) {
     return {
       allowed: false,
       paid: false,
@@ -235,7 +235,7 @@ export async function getTeamFinanceAccess(
     };
   }
 
-  if (requirePaid && (team.isDemo === true || user.isDemo === true)) {
+  if (requirePaid && !isSuperAdmin && (team.isDemo === true || user.isDemo === true)) {
     return {
       allowed: false,
       paid: false,

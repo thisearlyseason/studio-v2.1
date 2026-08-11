@@ -561,7 +561,9 @@ export default function RosterPage() {
     );
   }
 
-  const isPro = activeTeam.isPro;
+  // Superadmins retain full roster intelligence access regardless of the
+  // subscription flag on the currently selected team.
+  const isPro = isSuperAdmin || activeTeam.isPro;
   const filteredRoster = visibleMembers.filter(member =>
     member.status !== 'removed' &&
     member.name.toLowerCase().includes(searchTerm.toLowerCase())

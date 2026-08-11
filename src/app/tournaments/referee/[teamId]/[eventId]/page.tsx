@@ -1,17 +1,16 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useUser } from '@/firebase';
 import { usePublicPortal } from '@/hooks/use-public-portal';
 import { format, parseISO } from 'date-fns';
 import { 
   UserCheck, Calendar, MapPin, Clock, 
-  Trophy, Shield, ChevronRight, Search,
-  Loader2, AlertCircle
+  Trophy, Shield, Loader2, LogIn, RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PortalStatus } from '@/components/public/PortalStatus';
@@ -51,14 +50,45 @@ interface EventData {
 
 export default function RefereePortalPage({ params: rawParams }: { params: Promise<{ teamId: string; eventId: string }> }) {
   const params = React.use(rawParams);
-  const { user: firebaseUser } = useUser();
-  const [searchEmail, setSearchEmail] = useState('');
-  const [confirmedEmail, setConfirmedEmail] = useState('');
+  const { user: firebaseUser, isAuthResolved } = useUser();
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [isTokenResolved, setIsTokenResolved] = useState(false);
+  const [tokenRetryKey, setTokenRetryKey] = useState(0);
 
-  // Determine which referee we're viewing as
-  const activeEmail = firebaseUser?.email || confirmedEmail;
-  const portalUrl = `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(params.teamId)}&eventId=${encodeURIComponent(params.eventId)}${activeEmail ? `&refereeEmail=${encodeURIComponent(activeEmail)}` : ''}`;
-  const { data: event, isLoading: loading, error, status, retry } = usePublicPortal<EventData>(portalUrl);
+  useEffect(() => {
+    let cancelled = false;
+    setAuthToken(null);
+    setIsTokenResolved(false);
+    if (!firebaseUser || firebaseUser.isAnonymous) {
+      setIsTokenResolved(true);
+      return () => { cancelled = true; };
+    }
+    firebaseUser.getIdToken()
+      .then(token => {
+        if (!cancelled) {
+          setAuthToken(token);
+          setIsTokenResolved(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAuthToken(null);
+          setIsTokenResolved(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [firebaseUser, tokenRetryKey]);
+
+  const registeredUser = firebaseUser && !firebaseUser.isAnonymous ? firebaseUser : null;
+  const tokenFailed = Boolean(registeredUser && isTokenResolved && !authToken);
+  const portalReady = isAuthResolved && isTokenResolved;
+  const activeEmail = authToken ? registeredUser?.email?.trim().toLowerCase() || '' : '';
+  const portalUrl = portalReady
+    ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(params.teamId)}&eventId=${encodeURIComponent(params.eventId)}${activeEmail ? `&refereeEmail=${encodeURIComponent(activeEmail)}` : ''}`
+    : null;
+  const { data: event, isLoading: loading, error, status, retry } = usePublicPortal<EventData>(portalUrl, {
+    authorizationToken: authToken,
+  });
   const activeRef = event?.activeReferee || null;
 
   // Games assigned to this referee
@@ -77,7 +107,7 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
   }, [myGames]);
 
-  if (loading) {
+  if (!portalReady || loading) {
     return (
       <div className="min-h-screen bg-[#f5f5f3] flex items-center justify-center">
         <Loader2 className="h-10 w-10 animate-spin opacity-30" />
@@ -136,53 +166,38 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
                 <UserCheck className="h-8 w-8" />
               </div>
               <div>
-                <h2 className="text-2xl font-black uppercase tracking-tight">Identify Yourself</h2>
+                <h2 className="text-2xl font-black uppercase tracking-tight">
+                  {registeredUser ? 'Assignment Access' : 'Sign In Required'}
+                </h2>
                 <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
-                  Enter your registered referee email to view your assignments
+                  {registeredUser
+                    ? 'Assignments are matched to your verified account email'
+                    : 'Use the account email registered by the tournament organizer'}
                 </p>
               </div>
             </div>
-            <div className="space-y-3">
-              <Input
-                type="email"
-                placeholder="referee@email.com"
-                value={searchEmail}
-                onChange={e => setSearchEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && setConfirmedEmail(searchEmail)}
-                className="h-14 rounded-2xl border-2 text-sm font-bold"
-              />
-              <Button
-                onClick={() => setConfirmedEmail(searchEmail)}
-                disabled={!searchEmail.trim()}
-                className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Search className="h-4 w-4 mr-2" /> Find My Assignments
-              </Button>
-              {confirmedEmail && !activeRef && (
-                <div className="bg-red-50 border-2 border-red-100 rounded-2xl p-4 flex items-center gap-3">
-                  <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
-                  <p className="text-[11px] font-black uppercase tracking-widest text-red-600">
-                    No referee found for <span className="italic">{confirmedEmail}</span>. 
-                    Contact your tournament director.
+            {registeredUser ? (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border-2 border-blue-100 rounded-2xl p-5">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-blue-700">
+                    {tokenFailed
+                      ? 'Your signed-in session could not be verified. Refresh the session or sign in again.'
+                      : 'No assignments are available for this signed-in account. Confirm that the organizer used the same email, then try again.'}
                   </p>
                 </div>
-              )}
-            </div>
-
-            {/* Show all officials as a hint */}
-            {(event.referees || []).length > 0 && (
-              <div className="border-t pt-6 space-y-3">
-                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                  Registered Officials ({(event.referees || []).length})
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {(event.referees || []).map((ref: TournamentReferee) => (
-                    <Badge key={ref.id} className="bg-muted text-foreground border font-black text-[9px] uppercase tracking-widest">
-                      {ref.name}
-                    </Badge>
-                  ))}
-                </div>
+                <Button
+                  onClick={() => tokenFailed ? setTokenRetryKey(value => value + 1) : retry()}
+                  className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" /> {tokenFailed ? 'Refresh Session' : 'Refresh Assignments'}
+                </Button>
               </div>
+            ) : (
+              <Button asChild className="w-full h-14 rounded-2xl font-black uppercase text-xs tracking-widest bg-blue-600 hover:bg-blue-700 text-white">
+                <Link href={`/login?returnTo=${encodeURIComponent(`/tournaments/referee/${params.teamId}/${params.eventId}`)}`}>
+                  <LogIn className="h-4 w-4 mr-2" /> Sign In to Continue
+                </Link>
+              </Button>
             )}
           </Card>
         ) : (
@@ -284,14 +299,6 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
                 </div>
               </div>
             ))}
-
-            {/* Change identity link */}
-            <button
-              onClick={() => { setConfirmedEmail(''); setSearchEmail(''); }}
-              className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 hover:text-muted-foreground transition-colors flex items-center gap-1.5 mx-auto"
-            >
-              <ChevronRight className="h-3 w-3" /> Not you? Switch referee
-            </button>
           </>
         )}
       </div>

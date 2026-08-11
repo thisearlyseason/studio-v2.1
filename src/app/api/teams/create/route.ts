@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
         transaction.get(ownedTeamsQuery),
       ]);
       if (!ownerSnapshot.exists) throw new Error('OWNER_PROFILE_MISSING');
-      const limit = accountCreationLimit(ownerSnapshot.data());
+      const limit = auth.role === 'superadmin' ? 100 : accountCreationLimit(ownerSnapshot.data());
       if (ownedTeams.size >= limit) throw new Error('TEAM_LIMIT_REACHED');
 
       const baseTeam = {

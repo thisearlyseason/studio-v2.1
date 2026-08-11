@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-export function usePublicPortal<T>(url: string | null) {
+interface PublicPortalOptions {
+  authorizationToken?: string | null;
+}
+
+export function usePublicPortal<T>(url: string | null, options: PublicPortalOptions = {}) {
+  const authorizationToken = options.authorizationToken || null;
   const [data, setData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +29,10 @@ export function usePublicPortal<T>(url: string | null) {
     setError(null);
     setStatus(null);
 
-    fetch(url, { signal: controller.signal })
+    fetch(url, {
+      signal: controller.signal,
+      headers: authorizationToken ? { Authorization: `Bearer ${authorizationToken}` } : undefined,
+    })
       .then(async response => {
         const body = await response.json();
         if (!response.ok) {
@@ -47,7 +55,7 @@ export function usePublicPortal<T>(url: string | null) {
       });
 
     return () => controller.abort();
-  }, [url, retryKey]);
+  }, [authorizationToken, url, retryKey]);
 
   const retry = useCallback(() => setRetryKey(value => value + 1), []);
 

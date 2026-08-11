@@ -157,6 +157,8 @@ export default function LeagueRegistrationAdminPage() {
 
   const [inspectingEntryId, setInspectingEntryId] = useState<string | null>(null);
   const inspectingEntry = useMemo(() => filteredEntries.find(e => e.id === inspectingEntryId), [filteredEntries, inspectingEntryId]);
+  const inspectingIndividualEntry = inspectingEntry?.protocol_id === 'player_config'
+    || inspectingEntry?.protocol_id === 'individual_config';
 
   const exportAllWaivers = () => {
     if (archivedWaivers.length === 0) {
@@ -1209,27 +1211,29 @@ export default function LeagueRegistrationAdminPage() {
               </div>
 
               {/* ACTIONS */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Assign to Team</p>
-                  <Select
-                    value={inspectingEntry?.assigned_team_id || 'unassigned'}
-                    onValueChange={(tid) => {
-                      if (!inspectingEntry?.id) return;
-                      assignEntryToTeam(leagueId as string, inspectingEntry.id, tid === 'unassigned' ? null : tid);
-                    }}
-                  >
-                    <SelectTrigger className="h-11 rounded-xl border-2 font-black text-sm"><SelectValue placeholder="Select Team..." /></SelectTrigger>
-                    <SelectContent className="rounded-xl border-2">
-                      <SelectItem value="unassigned" className="font-bold uppercase text-[10px]">Unassigned Pool</SelectItem>
-                      {Object.entries((activeLeague?.teams || {})).map(([tid2, tdata]: [string, any]) => (
-                        <SelectItem key={tid2} value={tid2} className="font-bold uppercase text-[10px]">
-                          {tdata.teamName || `Team ${tid2.slice(-6)}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className={cn("grid grid-cols-1 gap-3 pt-3 border-t", inspectingIndividualEntry && "sm:grid-cols-2")}>
+                {inspectingIndividualEntry && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Assign to Team</p>
+                    <Select
+                      value={inspectingEntry?.assigned_team_id || 'unassigned'}
+                      onValueChange={(tid) => {
+                        if (!inspectingEntry?.id) return;
+                        assignEntryToTeam(leagueId as string, inspectingEntry.id, tid === 'unassigned' ? null : tid);
+                      }}
+                    >
+                      <SelectTrigger className="h-11 rounded-xl border-2 font-black text-sm"><SelectValue placeholder="Select Team..." /></SelectTrigger>
+                      <SelectContent className="rounded-xl border-2">
+                        <SelectItem value="unassigned" className="font-bold uppercase text-[10px]">Unassigned Pool</SelectItem>
+                        {Object.entries((activeLeague?.teams || {})).map(([tid2, tdata]: [string, any]) => (
+                          <SelectItem key={tid2} value={tid2} className="font-bold uppercase text-[10px]">
+                            {tdata.teamName || `Team ${tid2.slice(-6)}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Verification Status</p>
                   <Button

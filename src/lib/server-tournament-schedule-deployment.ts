@@ -883,6 +883,40 @@ export async function archiveTournamentSchedule(input: {
   }
 }
 
+export async function deleteTournament(input: {
+  teamId: string;
+  eventId: string;
+  actor: Actor;
+}): Promise<void> {
+  if (!ID_PATTERN.test(input.teamId) || !ID_PATTERN.test(input.eventId)) {
+    throw new TournamentScheduleDeploymentError('INVALID_TOURNAMENT', 'Invalid tournament identifier.');
+  }
+  if (!await isAuthorizedTeamStaff(input.teamId, input.actor)) {
+    throw new TournamentScheduleDeploymentError('FORBIDDEN', 'Only authorized team staff can delete this tournament.', 403);
+  }
+  const eventRef = adminDb.collection('teams').doc(input.teamId).collection('events').doc(input.eventId);
+  const eventSnapshot = await eventRef.get();
+  if (!eventSnapshot.exists || eventSnapshot.data()?.isTournament !== true) {
+    throw new TournamentScheduleDeploymentError('TOURNAMENT_NOT_FOUND', 'Tournament not found.', 404);
+  }
+
+  const holder = randomUUID();
+  await acquireLock(holder);
+  try {
+    const bookings = await adminDb.collection('scheduleBookings')
+      .where('sourceId', '==', tournamentSourceId(input.teamId, input.eventId))
+      .get();
+    await executeCompensatedScheduleMutation({
+      mutate: () => commitOperations(bookings.docs.map(document => batch => batch.delete(document.ref))),
+      publish: () => adminDb.recursiveDelete(eventRef),
+      compensate: () => commitOperations(bookingRestoreOperations(bookings.docs, [])),
+      onCompensationFailure: error => markLockRecoveryRequired(holder, error),
+    });
+  } finally {
+    await releaseLock(holder);
+  }
+}
+
 export async function clearTournamentSchedule(input: {
   teamId: string;
   eventId: string;

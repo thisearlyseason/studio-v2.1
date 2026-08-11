@@ -116,8 +116,14 @@ async function assertEventAvailability(
   return interval;
 }
 
-async function teamAccess(teamId: string, uid: string) {
+async function teamAccess(teamId: string, uid: string, role?: string) {
   const teamRef = adminDb.collection('teams').doc(teamId);
+  if (role === 'superadmin') {
+    const team = await teamRef.get();
+    return team.exists
+      ? { teamRef, teamData: team.data() || {}, isMember: true, isStaff: true }
+      : null;
+  }
   const [team, membership] = await Promise.all([
     teamRef.get(),
     teamRef.collection('members').doc(uid).get(),
@@ -146,7 +152,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid squad or event.' }, { status: 400 });
     }
 
-    const access = await teamAccess(teamId, auth.uid);
+    const access = await teamAccess(teamId, auth.uid, auth.role);
     if (!access?.isMember) return NextResponse.json({ error: 'Squad membership required.' }, { status: 403 });
     const eventRef = action === 'create'
       ? access.teamRef.collection('events').doc()

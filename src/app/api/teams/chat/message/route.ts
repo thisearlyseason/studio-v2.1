@@ -30,15 +30,18 @@ export async function POST(req: NextRequest) {
 
     const teamRef = adminDb.collection('teams').doc(teamId);
     const chatRef = teamRef.collection('groupChats').doc(chatId);
-    const [team, chat, activeMembership, profile] = await Promise.all([
+    const [team, chat, profile] = await Promise.all([
       teamRef.get(),
       chatRef.get(),
-      findActiveTeamMember(teamId, auth.uid),
       adminDb.collection('users').doc(auth.uid).get(),
     ]);
     const chatMembers = Array.isArray(chat.data()?.memberIds) ? chat.data()?.memberIds : [];
     const isOwner = team.data()?.ownerUserId === auth.uid;
-    if (!team.exists || !chat.exists || (!isOwner && (!activeMembership || !chatMembers.includes(auth.uid)))) {
+    const isSuperAdmin = auth.role === 'superadmin';
+    const activeMembership = isOwner || isSuperAdmin
+      ? null
+      : await findActiveTeamMember(teamId, auth.uid);
+    if (!team.exists || !chat.exists || (!isOwner && !isSuperAdmin && (!activeMembership || !chatMembers.includes(auth.uid)))) {
       return NextResponse.json({ error: 'You are no longer authorized for this chat.' }, { status: 403 });
     }
 

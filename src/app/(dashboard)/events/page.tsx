@@ -541,10 +541,13 @@ export default function EventsPage() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsCreateOpen(o); }}>
-        <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-y-auto max-h-[90vh] custom-scrollbar">
+        <DialogContent hideClose className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-y-auto max-h-[90vh] custom-scrollbar">
           <DialogTitle className="sr-only">Schedule New Team Activity</DialogTitle>
+          <DialogDescription className="sr-only">
+            Create or update a team activity, including its date, time, location, and logistics assignments.
+          </DialogDescription>
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+            <Button aria-label="Close activity form" variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
               <X className="h-4 w-4" />
             </Button>
           </DialogClose>
@@ -715,7 +718,7 @@ export default function EventsPage() {
                           onChange={e => updateAssignmentField(as.id, { title: e.target.value })}
                           className="h-10 rounded-xl font-bold bg-white text-[11px]"
                         />
-                        <Button variant="ghost" size="icon" onClick={() => removeAssignmentField(as.id)} className="h-10 w-10 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50">
+                        <Button aria-label={`Remove logistics task ${idx + 1}`} variant="ghost" size="icon" onClick={() => removeAssignmentField(as.id)} className="h-10 w-10 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

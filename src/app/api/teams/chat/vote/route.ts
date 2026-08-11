@@ -38,22 +38,24 @@ export async function POST(req: NextRequest) {
     const activeMembershipsQuery = adminDb.collectionGroup('members').where('userId', '==', auth.uid).limit(50);
     const messageRef = teamRef.collection('groupChats').doc(chatId).collection('messages').doc(messageId);
     await adminDb.runTransaction(async (transaction) => {
-      const [team, chat, activeMemberships, message] = await Promise.all([
+      const [team, chat, message] = await Promise.all([
         transaction.get(teamRef),
         transaction.get(chatRef),
-        transaction.get(activeMembershipsQuery),
         transaction.get(messageRef),
       ]);
       const chatMembers = Array.isArray(chat.data()?.memberIds) ? chat.data()?.memberIds : [];
-      const hasActiveMembership = activeMemberships.docs.some(member => {
-        const data = member.data();
-        return data.status !== 'removed' && data.isDeleted !== true;
-      });
+      const isPrivileged = auth.role === 'superadmin' || team.data()?.ownerUserId === auth.uid;
+      const hasActiveMembership = isPrivileged
+        ? true
+        : (await transaction.get(activeMembershipsQuery)).docs.some(member => {
+            const data = member.data();
+            return data.status !== 'removed' && data.isDeleted !== true;
+          });
       if (
         !team.exists ||
         !chat.exists ||
         (
-          team.data()?.ownerUserId !== auth.uid &&
+          !isPrivileged &&
           (!chatMembers.includes(auth.uid) || !hasActiveMembership)
         )
       ) {

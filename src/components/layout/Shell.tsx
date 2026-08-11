@@ -858,32 +858,27 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </div>
                 </button>
               )}
-              {/* Hide invite code for Athletic Director / primary school — they don't share a join code */}
-              {activeTeam?.type !== 'school' && user?.role !== 'league_creator' && (
-                <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
-                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Team Join Code</p>
-                  <div className="flex items-center gap-2">
-                    <p className="font-black text-primary tracking-wider text-sm truncate flex-1 min-w-0">
-                      {activeTeam?.code || activeTeam?.teamCode || (activeTeam as any)?.inviteCode || '---'}
-                    </p>
-                    <button
-                      className="shrink-0 text-primary/40 hover:text-primary transition-colors"
-                      onClick={async () => { await navigator.clipboard.writeText(activeTeam?.code || ''); }}
-                      title="Copy code"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
+              <div className={cn("flex items-center gap-2", showInstallBtn ? "flex-col" : "flex-row")}>
+              <Link href="/teams/join" className={cn("block group", showInstallBtn ? "w-full" : "flex-1")} title="Join & Invite">
+                <div className={cn("flex items-center gap-3 rounded-2xl border-2 border-primary/20 bg-primary/10 hover:bg-primary/15 transition-all", showInstallBtn ? "w-full px-4 py-3" : "justify-center p-2.5")}>
+                  <div className="p-2 rounded-xl bg-primary text-white shrink-0 shadow-md">
+                    <UserPlus className="h-4 w-4" />
                   </div>
+                  <div className={cn("flex flex-col min-w-0", !showInstallBtn && "hidden")}>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">Join &amp; Invite</span>
+                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-tight mt-1 truncate">Players, teams &amp; competition links</span>
+                  </div>
+                  <ChevronRight className={cn("h-4 w-4 text-primary shrink-0", showInstallBtn ? "ml-auto" : "hidden")} />
                 </div>
-              )}
+              </Link>
 
               {/* Sports Hub Link */}
-              <Link href="/sports-hub" className="w-full block group">
-                <div className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-primary/15 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all">
+              <Link href="/sports-hub" className={cn("block group", showInstallBtn ? "w-full" : "flex-1")} title="Sports Hub">
+                <div className={cn("flex items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all", showInstallBtn ? "w-full px-4 py-3" : "justify-center p-2.5")}>
                   <div className="p-2 rounded-xl hero-gradient text-white shrink-0 shadow-md shadow-primary/10 group-hover:scale-105 transition-transform">
                     <BookOpen className="h-4 w-4" />
                   </div>
-                  <div className="flex flex-col min-w-0">
+                  <div className={cn("flex flex-col min-w-0", !showInstallBtn && "hidden")}>
                     <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">Sports Hub</span>
                     <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-tight mt-1 truncate">
                       Articles, drills &amp; resources
@@ -891,28 +886,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
               </Link>
+              </div>
 
               {/* PWA Install Button */}
               {showInstallBtn && (
                 <div className="relative group/install">
                   <button
                     onClick={handleInstallClick}
-                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-dashed border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 active:scale-95 transition-all text-left group pr-10"
+                    className="w-full flex items-center justify-center p-2.5 rounded-2xl border border-dashed border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 active:scale-95 transition-all text-left group"
                   >
                     <div className="p-2 rounded-xl bg-primary text-white shrink-0 group-hover:scale-105 transition-transform shadow-md shadow-primary/10">
                       <Download className="h-4 w-4" />
                     </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-[10px] font-black uppercase tracking-widest leading-none">Install App</span>
-                      <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-tight mt-1 truncate">
-                        Launch from home screen
-                      </span>
-                    </div>
+                    <span className="sr-only">Install App</span>
                   </button>
                   <button
                     onClick={handleDismissInstall}
                     aria-label="Dismiss install prompt"
-                    className="absolute top-1/2 right-3 -translate-y-1/2 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 transition-all opacity-0 group-hover/install:opacity-100"
+                    className="absolute top-1/2 right-1 -translate-y-1/2 p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 transition-all opacity-0 group-hover/install:opacity-100"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -1326,6 +1317,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground px-2">Resources</p>
                           <Link
                             href="/sports-hub"
+                            aria-label="Sports Hub"
                             onClick={() => setIsMoreMenuOpen(false)}
                             className={cn(
                               "flex items-center justify-between p-4 rounded-2xl border transition-all active:scale-[0.98]",
@@ -1338,7 +1330,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                               <div className={cn("p-2 rounded-xl transition-colors", pathname.startsWith('/sports-hub') ? "bg-primary text-white" : "bg-primary/10 text-primary")}>
                                 <BookOpen className="h-5 w-5" />
                               </div>
-                              <div className="flex flex-col">
+                              <div className="hidden flex-col">
                                 <span className={cn("text-xs font-black uppercase tracking-widest", pathname.startsWith('/sports-hub') ? "text-primary" : "text-foreground")}>Sports Hub</span>
                                 <span className="text-[8px] font-bold text-muted-foreground uppercase">Articles &amp; Resources</span>
                               </div>
@@ -1375,13 +1367,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                     setIsMoreMenuOpen(false);
                                     handleInstallClick();
                                   }}
-                                  className="w-full flex items-center justify-between p-4 rounded-2xl border border-dashed border-primary/20 bg-primary/5 transition-all text-left active:scale-[0.98] group pr-12"
+                                  aria-label="Install App"
+                                  className="w-full flex items-center justify-center p-3 rounded-2xl border border-dashed border-primary/20 bg-primary/5 transition-all text-left active:scale-[0.98] group"
                                 >
                                   <div className="flex items-center gap-4">
                                     <div className="p-2 rounded-xl bg-primary text-white shrink-0 group-hover:scale-105 transition-transform shadow-md shadow-primary/10">
                                       <Download className="h-4 w-4" />
                                     </div>
-                                    <div className="flex flex-col">
+                                    <div className="hidden flex-col">
                                       <span className="text-xs font-black uppercase tracking-widest text-primary">Install Application</span>
                                       <span className="text-[8px] font-bold text-muted-foreground uppercase">Launch from your home screen</span>
                                     </div>

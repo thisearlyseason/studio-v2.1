@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 
 interface Props {
@@ -11,23 +11,56 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  redirectTo: string | null;
+}
+
+function nextRedirectPath(error: unknown): string | null {
+  if (!error || typeof error !== 'object' || !('digest' in error)) return null;
+  const digest = (error as { digest?: unknown }).digest;
+  if (typeof digest !== 'string') return null;
+
+  const parts = digest.split(';');
+  const destination = parts.slice(2, -2).join(';');
+  const status = Number(parts.at(-2));
+  const isRedirect = parts[0] === 'NEXT_REDIRECT' &&
+    (parts[1] === 'replace' || parts[1] === 'push') &&
+    Number.isFinite(status);
+
+  return isRedirect && destination.startsWith('/') && !destination.startsWith('//')
+    ? destination
+    : null;
+}
+
+function RedirectFallback({ destination }: { destination: string }) {
+  useEffect(() => {
+    window.location.replace(destination);
+  }, [destination]);
+  return null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, redirectTo: null };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    const redirectTo = nextRedirectPath(error);
+    return redirectTo
+      ? { hasError: false, error: null, redirectTo }
+      : { hasError: true, error, redirectTo: null };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    if (nextRedirectPath(error)) return;
     console.error('[ErrorBoundary] Uncaught error:', error, errorInfo);
   }
 
   render() {
+    if (this.state.redirectTo) {
+      return <RedirectFallback destination={this.state.redirectTo} />;
+    }
+
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
       return (
@@ -51,7 +84,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => { this.setState({ hasError: false, error: null }); }}
+                onClick={() => { this.setState({ hasError: false, error: null, redirectTo: null }); }}
                 className="rounded-full font-black uppercase text-xs px-6"
               >
                 Try Again

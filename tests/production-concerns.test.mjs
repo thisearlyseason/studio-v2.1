@@ -191,7 +191,8 @@ test('shared navigation uses plain language and role-specific primary actions', 
   assert.match(shell, /const primaryCoordTabs = filteredCoordTabs\.slice\(0, 5\)/);
   assert.match(shell, /Your Main Tools/);
   assert.match(shell, /More Tools/);
-  assert.match(shell, /Team Join Code/);
+  assert.match(shell, /Join & Invite/);
+  assert.doesNotMatch(shell, /Team Join Code/);
   assert.match(shell, /\{ name: 'Family', href: '\/family'/);
   assert.match(shell, /\{ name: 'Profile', href: '\/roster'/);
   assert.match(dashboard, /Next Actions/);

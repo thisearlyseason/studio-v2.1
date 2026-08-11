@@ -66,6 +66,18 @@ test('public tournament payload excludes scoring codes and referee contact detai
   assert.equal('signedAt' in result.teamAgreements.Alpha, false);
 });
 
+test('referee assignment lookup requires a verified token matching the requested email', async () => {
+  const source = await readFile(new URL('../src/app/api/public/portals/route.ts', import.meta.url), 'utf8');
+  const refereeLookup = source.slice(
+    source.indexOf('      const refereeEmail ='),
+    source.indexOf('      if (!data.isActive)', source.indexOf('      const refereeEmail =')),
+  );
+  assert.match(refereeLookup, /verifyFirebaseToken\(req\)/);
+  assert.match(refereeLookup, /assertNonAnonymous\(auth\)/);
+  assert.match(refereeLookup, /authenticatedEmail !== refereeEmail/);
+  assert.match(refereeLookup, /Referee access could not be verified/);
+});
+
 test('public tournament games expose only safe bracket topology needed for score locking', () => {
   const result = publicTournament('event-1', {
     isTournament: true,
@@ -96,6 +108,24 @@ test('tournament team registration is transactional and fails closed after brack
   assert.match(source, /transaction\.create\(entry, entryData\)/);
   assert.match(source, /transaction\.update\(tournamentEventRef/);
   assert.match(source, /freshEvent\.data\(\)\?\.tournamentGames/);
+});
+
+test('public tournament actions honor every supported team plan marker', async () => {
+  const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  const tournamentRegistration = source.slice(
+    source.indexOf("      } else {\n        const teamId"),
+    source.indexOf("      const configSnap =", source.indexOf("      } else {\n        const teamId")),
+  );
+  const tournamentActions = source.slice(
+    source.indexOf("    if (kind === 'tournament')", source.indexOf("    if (kind === 'tournament')") + 1),
+    source.indexOf("    if (kind === 'league')", source.indexOf("    if (kind === 'tournament')", source.indexOf("    if (kind === 'tournament')") + 1)),
+  );
+
+  for (const section of [tournamentRegistration, tournamentActions]) {
+    assert.match(section, /teamSnap\.data\(\)\?\.planId/);
+    assert.match(section, /teamSnap\.data\(\)\?\.plan_type/);
+    assert.match(section, /teamSnap\.data\(\)\?\.subscriptionPlanId/);
+  }
 });
 
 test('public tournament scoring shares the deployment lock without changing league scoring', async () => {

@@ -37,11 +37,12 @@ export async function findActiveTeamMember(
 
 export async function getTeamAuthority(teamId: string, uid: string, tokenRole?: string) {
   const teamRef = adminDb.collection('teams').doc(teamId);
-  const [team, member] = await Promise.all([teamRef.get(), findActiveTeamMember(teamId, uid)]);
+  const team = await teamRef.get();
   if (!team.exists) return null;
   const teamData = team.data() || {};
   const isOwner = teamData.ownerUserId === uid;
   const isSuperAdmin = tokenRole === 'superadmin';
+  const member = isOwner || isSuperAdmin ? null : await findActiveTeamMember(teamId, uid);
   return {
     teamRef,
     teamData,

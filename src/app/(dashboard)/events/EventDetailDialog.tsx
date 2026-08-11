@@ -150,13 +150,13 @@ export function EventDetailDialog({
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-4xl w-[95vw] sm:w-[100vw] p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
+      <DialogContent hideClose className="sm:max-w-4xl w-[95vw] sm:w-[100vw] p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
         <DialogDescription className="sr-only">
           Event details, attendance, logistics, registration responses, and staff actions for {event.title}.
         </DialogDescription>
         <DialogClose asChild>
-          <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md transition-all">
+          <Button aria-label="Close event details" variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md transition-all">
             <X className="h-5 w-5" />
           </Button>
         </DialogClose>
@@ -303,7 +303,7 @@ export function EventDetailDialog({
                     <Button variant="secondary" className="flex-1 rounded-2xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Activity</Button>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => onDelete(event.id)}>
+                        <Button aria-label={`Delete ${event.title}`} variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => onDelete(event.id)}>
                           <Trash2 className="h-5 w-5" />
                         </Button>
                       </TooltipTrigger>

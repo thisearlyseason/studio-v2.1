@@ -8,6 +8,7 @@ import {
 import {
   archiveTournamentSchedule,
   clearTournamentSchedule,
+  deleteTournament,
   deployTournamentSchedule,
   mutateTournamentSchedule,
   TournamentScheduleDeploymentError,
@@ -97,11 +98,13 @@ export async function DELETE(request: NextRequest) {
     );
     if (limited) return limited;
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(request, 10_000);
-    await archiveTournamentSchedule({
+    const input = {
       teamId: typeof body.teamId === 'string' ? body.teamId : '',
       eventId: typeof body.eventId === 'string' ? body.eventId : '',
       actor: { uid: auth.uid, email: auth.email, role: auth.role },
-    });
+    };
+    if (body.action === 'delete') await deleteTournament(input);
+    else await archiveTournamentSchedule(input);
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof RequestBodyError) {

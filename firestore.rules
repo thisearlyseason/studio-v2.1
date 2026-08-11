@@ -652,8 +652,21 @@ service cloud.firestore {
       allow update: if isSuperAdmin() || (isSignedIn() &&
         resource.data.creatorId == request.auth.uid &&
         request.resource.data.get('memberUserIds', []) == resource.data.get('memberUserIds', []) &&
-        request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&
-        request.resource.data.get('schedulerConfig', null) == resource.data.get('schedulerConfig', null) &&
+        request.resource.data.get('isDemo', false) == resource.data.get('isDemo', false) &&
+        request.resource.data.get('demoSessionOwnerId', '') == resource.data.get('demoSessionOwnerId', '') &&
+        request.resource.data.get('demoSeeded', false) == resource.data.get('demoSeeded', false) &&
+        (
+          (
+            request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&
+            request.resource.data.get('schedulerConfig', null) == resource.data.get('schedulerConfig', null)
+          ) ||
+          (
+            isAnonymousSession() &&
+            resource.data.get('isDemo', false) == true &&
+            resource.data.get('demoSeeded', false) == true &&
+            resource.data.get('demoSessionOwnerId', '') == request.auth.uid
+          )
+        ) &&
         (
           resource.data.get('schedulerConfig', null) == null ||
           (
@@ -674,8 +687,8 @@ service cloud.firestore {
       }
 
       match /archived_waivers/{waiverId} {
-        allow read, write: if isSignedIn() && 
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid;
+        allow read, write: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
       }
 
       match /registration/{configId} {

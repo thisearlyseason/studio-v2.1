@@ -15,8 +15,9 @@ export function permitsLegacyOrPaidPortals(...planIds: Array<string | null | und
   // Older team documents can retain a free planId after a user-level subscription
   // sync. Any paid marker is authoritative when more than one plan field exists.
   if (markers.some(planId => PUBLIC_PLAN_IDS.has(planId))) return true;
-  return markers.every(planId => !['free', 'starter', 'starter_squad', 'school_demo'].includes(planId))
-    && markers.length === 0;
+  // Legacy records may use a paid plan name that is not in the current catalog.
+  // Only explicit free/demo markers should disable a public portal.
+  return markers.every(planId => !['free', 'starter', 'starter_squad', 'school_demo', 'basic_demo', 'parent_demo', 'player_demo', 'league_demo'].includes(planId));
 }
 
 export function publicGame(game: any) {

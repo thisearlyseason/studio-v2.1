@@ -94,6 +94,32 @@ test('quota resolution uses an authenticated atomic server transaction', async (
   assert.match(route, /selected\.size > teamLimit/);
 });
 
+test('anonymous league creation is limited to server-seeded League Creator demos', async () => {
+  const route = await readSource('../src/app/api/leagues/create/route.ts');
+  const seedRoute = await readSource('../src/app/api/demo/seed/route.ts');
+  const seeder = await readSource('../src/lib/db-seeder.ts');
+  const leaguePage = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
+  const rules = await readSource('../firestore.rules');
+
+  assert.match(route, /assertNonAnonymous/);
+  assert.match(route, /profileData\?\.isDemo === true/);
+  assert.match(route, /profileData\?\.role === 'league_creator'/);
+  assert.match(route, /if \(isAnonymous && !isAnonymousDemo\)/);
+  assert.match(route, /league\.data\(\)\.demoSeeded !== true/);
+  assert.match(route, /demoSessionOwnerId: auth\.uid/);
+  assert.match(route, /demoSeeded: false/);
+  for (const source of [seedRoute, seeder]) {
+    assert.match(source, /demoSessionOwnerId:/);
+    assert.match(source, /demoSeeded: true/);
+  }
+  assert.match(rules, /request\.resource\.data\.get\('demoSessionOwnerId', ''\) == resource\.data\.get\('demoSessionOwnerId', ''\)/);
+  assert.match(rules, /request\.resource\.data\.get\('demoSeeded', false\) == resource\.data\.get\('demoSeeded', false\)/);
+  assert.match(leaguePage, /const canManageLeagues = isStaff \|\| userProfile\?\.role === 'league_creator'/);
+  assert.match(leaguePage, /const canManageLeague = isStaff \|\| user\?\.role === 'league_creator'/);
+  assert.match(leaguePage, /if \(!isStaff && user\?\.role !== 'league_creator'\)/);
+  assert.match(leaguePage, /league\.creatorId === authUser\?\.uid && league\.demoSeeded !== true/);
+});
+
 test('live deletion immediately revokes access and purges on a short schedule', async () => {
   const route = await readSource('../src/app/api/account/deletion-request/route.ts');
   const functions = await readSource('../functions/src/index.ts');
@@ -133,6 +159,20 @@ test('removed members cannot use payment or poll member access checks', async ()
     assert.match(source, /status !== 'removed'/);
     assert.match(source, /isDeleted !== true/);
   }
+});
+
+test('referee assignments cannot be enumerated by anonymous email lookup', async () => {
+  const [route, page] = await Promise.all([
+    readSource('../src/app/api/public/portals/route.ts'),
+    readSource('../src/app/tournaments/referee/[teamId]/[eventId]/page.tsx'),
+  ]);
+  assert.match(route, /verifyFirebaseToken\(req\)/);
+  assert.match(route, /assertNonAnonymous\(auth\)/);
+  assert.match(route, /authenticatedEmail !== refereeEmail/);
+  assert.match(page, /firebaseUser\.getIdToken\(\)/);
+  assert.match(page, /Sign In to Continue/);
+  assert.doesNotMatch(page, /Find My Assignments/);
+  assert.doesNotMatch(page, /No referee found for/);
 });
 
 test('calendar feeds are server-issued and revalidate current squad membership', async () => {

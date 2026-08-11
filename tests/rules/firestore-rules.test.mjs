@@ -467,6 +467,8 @@ test('anonymous demos can enrich protected server-created shells', async () => {
         memberUserIds: ['demo-user'],
         memberTeamIds: ['demo-team'],
         isDemo: true,
+        demoSessionOwnerId: 'demo-user',
+        demoSeeded: true,
       }),
     ]);
   });
@@ -493,6 +495,12 @@ test('anonymous demos can enrich protected server-created shells', async () => {
   });
 
   await assertSucceeds(batch.commit());
+  await assertFails(setDoc(doc(demoDb, 'leagues', 'demo-league'), {
+    demoSessionOwnerId: 'other-demo-user',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(demoDb, 'leagues', 'demo-league'), {
+    demoSeeded: false,
+  }, { merge: true }));
 });
 
 test('linked youth members retain access while removed members lose it', async () => {

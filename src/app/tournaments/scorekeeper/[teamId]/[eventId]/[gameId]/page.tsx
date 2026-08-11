@@ -92,9 +92,10 @@ export default function PublicScorekeeperEntryPage() {
 
   const handleSubmit = async () => {
     // Use explicit empty-string check so a score of 0 is valid
-    if (!selectedTeam || score1 === '' || score2 === '' || isSubmitting) return;
-    const parsedScore1 = parseInt(score1, 10);
-    const parsedScore2 = parseInt(score2, 10);
+    if (!selectedTeam || isSubmitting) return;
+    const parsedScore1 = score1.trim() === '' ? 0 : parseInt(score1, 10);
+    const parsedScore2 = score2.trim() === '' ? 0 : parseInt(score2, 10);
+    if (!Number.isFinite(parsedScore1) || !Number.isFinite(parsedScore2)) return;
     const validation = validateBracketScoreSubmission(
       event.tournamentGames || [],
       game.id,
@@ -319,7 +320,7 @@ export default function PublicScorekeeperEntryPage() {
           <CardFooter className="p-8 lg:p-10 pt-0 flex flex-col gap-4">
             <Button 
               className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-              disabled={!selectedTeam || score1 === '' || score2 === '' || (event.requiresCode && !pin) || isSubmitting || currentScoreValidation?.valid === false}
+              disabled={!selectedTeam || (event.requiresCode && !pin) || isSubmitting || currentScoreValidation?.valid === false}
               onClick={handleSubmit}
             >
               {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit Score Result"}

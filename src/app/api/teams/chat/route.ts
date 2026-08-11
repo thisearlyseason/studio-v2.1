@@ -55,7 +55,7 @@ async function teamRecipients(teamId: string, onlyStaff = false): Promise<Recipi
   const name = String(team.data()?.name || team.data()?.teamName || 'Squad');
   return members.docs
     .filter(doc => !onlyStaff || isStaffMember(doc.data()))
-    .map(doc => recipientFrom(doc.data(), name))
+    .map(doc => recipientFrom({ ...doc.data(), userId: doc.data().userId || doc.id }, name))
     .filter((value): value is Recipient => Boolean(value));
 }
 

@@ -122,6 +122,7 @@ import { PaymentItemsManager } from '@/components/finance/PaymentItemsManager';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { useAuth } from '@/firebase';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
+import { AccessRestricted as RouteAccessRestricted } from '@/components/layout/AccessRestricted';
 
 const DEFAULT_PROTOCOLS = [
   { id: 'default_medical', title: 'Medical Clearance', type: 'waiver' },
@@ -653,7 +654,7 @@ function VolunteerOpportunityManager() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-4 border-t-2 border-dashed border-muted/20">
-                <Button onClick={() => setManagingOpp(opp)} className="h-12 rounded-xl text-[10px] font-black uppercase tracking-widest bg-black text-white hover:bg-black/90">Manage Personnel</Button>
+                <Button onClick={() => setManagingOpp(opp)} className="h-12 min-w-0 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest bg-black text-white hover:bg-black/90 px-2 sm:px-3 whitespace-normal leading-tight">Manage Personnel</Button>
                 <div className="grid grid-cols-2 gap-1">
                   <Button variant="outline" size="icon" onClick={() => { setEditingOpp(opp); setForm(opp); }} className="h-12 rounded-xl border-2"><Edit3 className="h-4 w-4" /></Button>
                   <Button variant="outline" size="icon" onClick={() => deleteVolunteerOpportunity(opp.id)} className="h-12 rounded-xl border-2 text-red-600 hover:bg-red-50 hover:border-red-100"><Trash2 className="h-4 w-4" /></Button>
@@ -3421,7 +3422,7 @@ function StaffEvalPanel({
   );
 }
 
-export default function CoachesCornerPage() {
+function CoachesCornerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { activeTeam, isStaff, isPro, isStarter, isSuperAdmin, createTeamDocument, updateTeamDocument, deleteTeamDocument, db, members, createAlert, isSchoolMode, user, teams, getLeagueMembers, updateMember, signGlobalWaiverAsCoach } = useTeam();
@@ -3558,9 +3559,6 @@ export default function CoachesCornerPage() {
 
   const eRef = useMemoFirebase(() => db && activeTeam?.id && canAccessCoachesCorner ? query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'desc')) : null, [db, activeTeam?.id, canAccessCoachesCorner]);
   const { data: events } = useCollection<TeamEvent>(eRef);
-
-  if (!isStaff) return <AccessRestricted type="feature" />;
-  if (!canAccessCoachesCorner) return <AccessRestricted type="feature" />;
 
   const handleSaveProtocolUpdate = async () => {
     if (!editingWaiver || !activeTeam) return;
@@ -4183,8 +4181,26 @@ export default function CoachesCornerPage() {
   );
 }
 
+export default function CoachesCornerPage() {
+  const { activeTeam, isStaff, isSuperAdmin } = useTeam();
+  const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
+
+  if (!isStaff) {
+    return (
+      <RouteAccessRestricted
+        type="role"
+        title="Coaches Corner Access Restricted"
+        description="Coaching tools are reserved for authorized squad staff."
+      />
+    );
+  }
+  if (!canAccessCoachesCorner) return <AccessRestricted type="feature" />;
+
+  return <CoachesCornerContent />;
+}
+
 function SquadFinancialHub() {
-  const { db, activeTeam, members, isPro, user } = useTeam();
+  const { db, activeTeam, members, isPro, isSuperAdmin, user } = useTeam();
   const auth = useAuth();
   const [searchQ, setSearchQ] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -4328,7 +4344,7 @@ function SquadFinancialHub() {
       </div>
 
       {/* ── Stripe Connect Setup (Pro only — free/starter never reach here) ── */}
-      {(user?.isDemo || activeTeam?.isDemo) ? (
+      {(user?.isDemo || activeTeam?.isDemo) && !isSuperAdmin ? (
         <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
           <div className="flex items-start gap-3">
             <CreditCard className="h-5 w-5 text-muted-foreground shrink-0" />

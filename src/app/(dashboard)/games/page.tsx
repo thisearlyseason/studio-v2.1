@@ -173,20 +173,21 @@ export default function GamesPage() {
   const isAdmin = isStaff || isSuperAdmin;
 
   const handleRecordGame = async () => {
-    if (!opponent.trim() || !date || myScore === '' || opponentScore === '') {
-      toast({ title: 'Missing Match Details', description: 'Enter the opponent, date, and both final scores.', variant: 'destructive' });
+    if (!opponent.trim() || !date) {
+      toast({ title: 'Missing Match Details', description: 'Enter the opponent and match date.', variant: 'destructive' });
       return;
     }
-    const myS = parseInt(myScore, 10);
-    const oppS = parseInt(opponentScore, 10);
+    const myS = myScore.trim() === '' ? 0 : parseInt(myScore, 10);
+    const oppS = opponentScore.trim() === '' ? 0 : parseInt(opponentScore, 10);
     if (isNaN(myS) || isNaN(oppS) || myS < 0 || oppS < 0) {
       toast({ title: 'Invalid Scores', description: 'Scores must be non-negative numbers.', variant: 'destructive' });
       return;
     }
     let result: 'Win' | 'Loss' | 'Tie' = 'Tie'; if (myS > oppS) result = 'Win'; if (myS < oppS) result = 'Loss';
+    const matchDate = new Date(`${date}T12:00:00`);
     const payload: any = { 
       opponent, 
-      date: new Date(date).toISOString(), 
+      date: matchDate.toISOString(),
       myScore: myS, 
       opponentScore: oppS, 
       result, 

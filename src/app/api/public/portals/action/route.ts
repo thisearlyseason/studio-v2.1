@@ -142,7 +142,11 @@ export async function POST(req: NextRequest) {
         if (!isSafeId(teamId) || !isSafeId(eventId)) return NextResponse.json({ error: 'Missing or invalid tournament identifiers.' }, { status: 400 });
         parentRef = adminDb.collection('teams').doc(teamId);
         const teamSnap = await parentRef.get();
-        if (!teamSnap.exists || !permitsLegacyOrPaidPortals(teamSnap.data()?.planId)) {
+        if (!teamSnap.exists || !permitsLegacyOrPaidPortals(
+          teamSnap.data()?.planId,
+          teamSnap.data()?.plan_type,
+          teamSnap.data()?.subscriptionPlanId,
+        )) {
           return NextResponse.json({ error: 'This subscription does not include public registration.' }, { status: 403 });
         }
         const eventRef = parentRef.collection('events').doc(eventId);
@@ -360,7 +364,14 @@ export async function POST(req: NextRequest) {
         ref.get(),
         adminDb.collection('teams').doc(teamId).get(),
       ]);
-      if (teamSnap.exists && !permitsLegacyOrPaidPortals(teamSnap.data()?.planId)) {
+      if (!teamSnap.exists) {
+        return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
+      }
+      if (!permitsLegacyOrPaidPortals(
+        teamSnap.data()?.planId,
+        teamSnap.data()?.plan_type,
+        teamSnap.data()?.subscriptionPlanId,
+      )) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       if (!snap.exists || !snap.data()?.isTournament) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const auth = await verifyFirebaseToken(request);
   if (auth instanceof NextResponse) return auth;
   const anonymousError = assertNonAnonymous(auth);
-  if (anonymousError) return anonymousError;
+  const isAnonymous = anonymousError !== null;
 
   try {
     const input = await readJsonBodyWithLimit<Record<string, unknown>>(request, 8_000);
@@ -31,7 +31,8 @@ export async function POST(request: NextRequest) {
     let team: FirebaseFirestore.DocumentSnapshot | undefined;
     if (teamId) {
       team = await adminDb.collection('teams').doc(teamId).get();
-      if (!team.exists || team.data()?.ownerUserId !== auth.uid) {
+      const teamOwnerId = team.data()?.ownerUserId;
+      if (!team.exists || (teamOwnerId !== auth.uid && auth.role !== 'superadmin')) {
         return NextResponse.json(
           { error: 'Only the team owner can create a league for this team.' },
           { status: 403 }
@@ -52,7 +53,21 @@ export async function POST(request: NextRequest) {
         transaction.get(leaguesQuery),
       ]);
       if (!profile.exists) throw new Error('OWNER_PROFILE_MISSING');
-      if (leagues.size >= accountCreationLimit(profile.data())) {
+      const profileData = profile.data();
+      const isAnonymousDemo =
+        isAnonymous &&
+        profileData?.isDemo === true &&
+        profileData?.role === 'league_creator';
+      if (isAnonymous && !isAnonymousDemo) throw new Error('REGISTERED_ACCOUNT_REQUIRED');
+      if (isAnonymousDemo && teamId) throw new Error('DEMO_TEAM_LEAGUE_FORBIDDEN');
+
+      // The seeded showcase is fixture data, not a league the user created.
+      // It must not consume the Free demo's one interactive creation slot.
+      const createdLeagueCount = isAnonymousDemo
+        ? leagues.docs.filter(league => league.data().demoSeeded !== true).length
+        : leagues.size;
+      const creationLimit = auth.role === 'superadmin' ? 100 : accountCreationLimit(profileData);
+      if (createdLeagueCount >= creationLimit) {
         throw new Error('LEAGUE_LIMIT_REACHED');
       }
       transaction.create(actualLeagueRef, {
@@ -79,6 +94,13 @@ export async function POST(request: NextRequest) {
         finances: {},
         inviteCode: leagueId.slice(-6).toUpperCase(),
         createdAt: now,
+        ...(isAnonymousDemo
+          ? {
+              isDemo: true,
+              demoSessionOwnerId: auth.uid,
+              demoSeeded: false,
+            }
+          : {}),
       });
       if (teamId) {
         transaction.update(adminDb.collection('teams').doc(teamId), {
@@ -100,6 +122,9 @@ export async function POST(request: NextRequest) {
     }
     if (code === 'OWNER_PROFILE_MISSING') {
       return NextResponse.json({ error: 'Account profile is incomplete.' }, { status: 409 });
+    }
+    if (code === 'REGISTERED_ACCOUNT_REQUIRED' || code === 'DEMO_TEAM_LEAGUE_FORBIDDEN') {
+      return anonymousError!;
     }
     if (code.endsWith('_REQUIRED') || code.endsWith('_INVALID')) {
       return NextResponse.json({ error: 'One or more league fields are invalid.' }, { status: 400 });

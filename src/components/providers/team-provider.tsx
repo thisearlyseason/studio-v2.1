@@ -640,6 +640,9 @@ export type League = {
   divisions?: string[]; // List of available divisions (e.g. 'Gold', 'Silver', 'U12')
   divisionTitle?: string;
   schedulerConfig?: any;
+  isDemo?: boolean;
+  demoSessionOwnerId?: string;
+  demoSeeded?: boolean;
 };
 
 export type Facility = {

@@ -147,7 +147,7 @@ export default function ClubManagementPage() {
 }
 
 function AuthorizedClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deleteTeam, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount, isSuperAdmin } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
 
   const router = useRouter();
@@ -1832,7 +1832,7 @@ function AuthorizedClubManagementPage() {
             hubTeamId={schoolHub.id}
             subSquads={schoolSquads.map(s => ({ id: s.id, name: s.name }))}
             isSchoolMode={isSchoolMode}
-            isDemo={user.isDemo === true}
+            isDemo={user.isDemo === true && !isSuperAdmin}
           />
         </div>
       )}

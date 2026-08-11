@@ -23,7 +23,10 @@ import {
   Plus,
   User,
   CheckCircle2,
-  Lock
+  Lock,
+  UserPlus,
+  CalendarDays,
+  Copy
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -48,10 +51,11 @@ export default function JoinTeamPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const auth = useAuth();
-  const { user, myChildren, joinTeamWithCode, isParent, isPlayer, isStaff } = useTeam();
+  const { user, activeTeam, myChildren, joinTeamWithCode, isParent, isPlayer, isStaff } = useTeam();
   
   const [teamCode, setTeamCode] = useState('');
   const [leagueCode, setLeagueCode] = useState('');
+  const [tournamentLink, setTournamentLink] = useState('');
   // Parent accounts must select a child; only adult athletes may join as self.
   const [selectedId, setSelectedId] = useState<string>('');
   const [isJoining, setIsJoining] = useState(false);
@@ -155,11 +159,32 @@ export default function JoinTeamPage() {
     router.push(`/register/league/${leagueCode.trim()}`);
   };
 
+  const handleGoToTournament = () => {
+    const match = tournamentLink.trim().match(/register\/tournament\/([^/?#]+)\/([^/?#]+)/i);
+    if (!match) {
+      toast({ title: 'Tournament link required', description: 'Paste the registration link shared by the organizer.', variant: 'destructive' });
+      return;
+    }
+    router.push(`/register/tournament/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`);
+  };
+
+  const handleCopyInviteLink = async () => {
+    const code = activeTeam?.code || activeTeam?.teamCode || activeTeam?.inviteCode || '';
+    if (!code) return;
+    await navigator.clipboard.writeText(`${window.location.origin}/teams/join?code=${encodeURIComponent(code)}`);
+    toast({ title: 'Player invite link copied', description: 'Send this link to athletes or parents.' });
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 py-8 animate-in fade-in duration-500">
       <div className="text-center space-y-2">
-        <h1 className="text-4xl font-black uppercase tracking-tight">Recruitment Hub</h1>
-        <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Onboarding Coordination</p>
+        <h1 className="text-4xl font-black uppercase tracking-tight">Join & Invite</h1>
+        <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Choose what you are joining</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-5"><UserPlus className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a team as a player</p><p className="text-xs text-muted-foreground mt-1">Use your coach&apos;s squad code. Parents can select a child.</p></div>
+        <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><Trophy className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a league as a team</p><p className="text-xs text-muted-foreground mt-1">Team staff submit the team registration.</p></div>
+        <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><CalendarDays className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a tournament as a team</p><p className="text-xs text-muted-foreground mt-1">Paste the organizer&apos;s registration link.</p></div>
       </div>
 
       <div className={cn("grid gap-8", isStaff ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto")}>
@@ -174,8 +199,8 @@ export default function JoinTeamPage() {
                   <Users className="h-6 w-6" />
                 </div>
                 <div>
-                  <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Join Squad</CardTitle>
-                  <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Direct Team Enrollment</CardDescription>
+                  <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Join Team As Player</CardTitle>
+                  <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Your coach&apos;s squad code connects you instantly</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -278,7 +303,7 @@ export default function JoinTeamPage() {
               >
                 {isJoining || isResolvingInvite
                   ? <Loader2 className="h-6 w-6 animate-spin" />
-                  : "Review Squad Invitation"}
+                  : "Review Team"}
               </Button>
             </CardFooter>
           </Card>
@@ -294,8 +319,8 @@ export default function JoinTeamPage() {
                   <Trophy className="h-6 w-6" />
                 </div>
                 <div>
-                  <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">League Portal</CardTitle>
-                  <CardDescription className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Enroll Your Team in a League</CardDescription>
+                  <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Join Competition As Team</CardTitle>
+                  <CardDescription className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">League and tournament registration</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -314,6 +339,11 @@ export default function JoinTeamPage() {
                 <p className="text-[9px] font-bold text-white/40 uppercase italic ml-1 leading-relaxed">
                   Enter the unique ID shared via the league's public coordination link.
                 </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-1">Tournament Registration Link</Label>
+                <div className="relative"><CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" /><Input placeholder="Paste /register/tournament/... link" value={tournamentLink} onChange={e => setTournamentLink(e.target.value)} className="h-14 pl-10 text-sm font-bold rounded-2xl border-none bg-white/10 text-white placeholder:text-white/20" /></div>
+                <Button variant="outline" className="w-full h-11 rounded-xl border-white/20 bg-transparent text-white font-black uppercase text-[10px]" onClick={handleGoToTournament} disabled={!tournamentLink.trim()}>Open Tournament Registration</Button>
               </div>
 
               <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-3">
@@ -352,6 +382,15 @@ export default function JoinTeamPage() {
           )
         )}
       </div>
+
+      {isStaff && activeTeam && (
+        <Card className="rounded-[2rem] border-primary/20 bg-primary/5">
+          <CardContent className="p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="font-black uppercase tracking-tight">Invite players to {activeTeam.name}</p><p className="text-xs text-muted-foreground mt-1">Share the link. Players join themselves; you do not need to create their account.</p></div>
+            <Button onClick={handleCopyInviteLink} className="h-11 rounded-xl font-black uppercase text-[10px] shrink-0"><Copy className="h-4 w-4 mr-2" /> Copy Player Invite Link</Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="bg-primary/5 p-8 rounded-[3rem] border-2 border-dashed border-primary/20 text-center space-y-4">
         <div className="bg-white w-12 h-12 rounded-2xl flex items-center justify-center mx-auto shadow-sm">

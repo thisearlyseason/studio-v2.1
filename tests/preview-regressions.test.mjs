@@ -198,7 +198,7 @@ test('demo organization hubs do not call Stripe Connect', async () => {
 
   assert.match(settings, /if \(isDemo\)/);
   assert.match(settings, /Online Payments Disabled in Demo/);
-  assert.match(club, /isDemo=\{user\.isDemo === true\}/);
+  assert.match(club, /isDemo=\{user\.isDemo === true && !isSuperAdmin\}/);
 });
 
 test('demo workspaces never dispatch external team notifications', async () => {
@@ -230,7 +230,19 @@ test('creation workflows reject incomplete required fields', async () => {
   assert.match(leagues, /disabled=\{isProcessing \|\| !leagueName\.trim\(\)\}/);
   assert.match(tournaments, /Base Configuration Incomplete/);
   assert.match(tournaments, /form\.endDate < form\.startDate/);
+  assert.match(tournaments, /filteredTeams\.length < 2/);
+  assert.match(tournaments, /At least two squads are required/);
+  assert.match(tournaments, /validateRosterMatrix/);
+  assert.match(tournaments, /Squad Matrix Incomplete/);
+  assert.match(tournaments, /step === 2 && !validateRosterMatrix\(\)/);
   assert.match(tournaments, /onClick=\{\(\) => handleStepSelection\(s\.num\)\}/);
+});
+
+test('fundraising creation requires a valid deadline and positive goal', async () => {
+  const fundraising = await readSource('../src/app/(dashboard)/fundraising/page.tsx');
+  assert.match(fundraising, /!newFund\.deadline/);
+  assert.match(fundraising, /Number\.isNaN\(deadlineDate\.getTime\(\)\)/);
+  assert.match(fundraising, /goalAmount <= 0/);
 });
 
 test('chat controls have a functional menu trigger and accessible names', async () => {
@@ -633,6 +645,7 @@ test('league registration, assignment, and clone projections use trusted server 
   const publicAction = await readSource('../src/app/api/public/portals/action/route.ts');
   const provider = await readSource('../src/components/providers/team-provider.tsx');
   const assignments = await readSource('../src/app/api/leagues/assignments/route.ts');
+  const registrationAdmin = await readSource('../src/app/(dashboard)/leagues/registration/[leagueId]/page.tsx');
   const team = await readSource('../src/app/(dashboard)/team/page.tsx');
   const leagues = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
   const clone = await readSource('../src/app/api/leagues/clone/route.ts');
@@ -646,10 +659,37 @@ test('league registration, assignment, and clone projections use trusted server 
   assert.match(team, /fetch\(`\/api\/leagues\/assignments\?teamId=/);
   assert.match(assignments, /assigned_team_owner_id: ownerId/);
   assert.match(assignments, /getTeamAuthority\(teamId, auth\.uid, auth\.role\)/);
+  assert.match(registrationAdmin, /inspectingEntry\?\.protocol_id === 'player_config'/);
+  assert.match(registrationAdmin, /inspectingEntry\?\.protocol_id === 'individual_config'/);
+  assert.match(registrationAdmin, /\{inspectingIndividualEntry && \([\s\S]*Assign to Team/);
   assert.match(leagues, /fetch\('\/api\/leagues\/clone'/);
   assert.match(clone, /batch\.create\(destination/);
   assert.match(leagues, /leagueTeams\.length < activeLeague\.requiredSquads/);
   assert.doesNotMatch(leagues, /leagueTeams\.length < leagueTeams\.length/);
+});
+
+test('league deletion cannot create replacement leagues or partially delete division workspaces', async () => {
+  const leagues = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
+  const schedule = await readSource('../src/app/api/leagues/schedule/route.ts');
+
+  assert.match(leagues, /where\('creatorId', '==', authUser\.uid\)/);
+  assert.match(leagues, /limit\(isSuperAdmin \? 100/);
+  assert.doesNotMatch(leagues, /isSuperAdmin\)[\s\S]{0,120}orderBy\('createdAt', 'desc'\), limit\(50\)/);
+  assert.match(leagues, /ids: items\.map\(item => item\.id\)/);
+  assert.match(leagues, /leagueIds: pendingLeagueDeletion\.ids/);
+  assert.match(leagues, /Delete League Permanently\?/);
+  assert.match(leagues, /void confirmLeagueDeletion\(\)/);
+  assert.doesNotMatch(leagues, /window\.confirm\(`Delete/);
+  assert.match(schedule, /const leagues = await adminDb\.getAll\(\.\.\.leagueRefs\)/);
+  assert.match(schedule, /Authorize the complete workspace before mutating any division/);
+  assert.match(schedule, /collectionGroup\('events'\)\.where\('leagueId', '==', leagueId\)/);
+  assert.match(schedule, /Promise\.all\(leagueIds\.map\(purgeLeagueProjectionsForDeletion\)\)/);
+  assert.match(schedule, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);
+  assert.match(schedule, /recursiveDelete\(league\.ref\)/);
+  const indexes = await readSource('../firestore.indexes.json');
+  assert.match(indexes, /"fieldPath": "sourceId"[\s\S]*"queryScope": "COLLECTION_GROUP"/);
+  assert.doesNotMatch(schedule, /collection\('leagues'\)\.add\(/);
+  assert.doesNotMatch(schedule, /collection\('leagues'\)\.doc\(\)\.create\(/);
 });
 
 test('School Hub administrators are invited, claimed, and revoked on the server', async () => {
