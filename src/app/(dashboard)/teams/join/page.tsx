@@ -17,11 +17,9 @@ import {
   ArrowRight, 
   Loader2, 
   Hash, 
-  Globe, 
   Trophy,
   Baby,
   Plus,
-  User,
   CheckCircle2,
   Lock,
   UserPlus,
@@ -30,7 +28,6 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -155,8 +152,14 @@ export default function JoinTeamPage() {
   };
 
   const handleGoToLeague = () => {
-    if (!leagueCode.trim()) return;
-    router.push(`/register/league/${leagueCode.trim()}`);
+    if (!leagueCode.trim() || !activeTeam?.id) return;
+    const params = new URLSearchParams({
+      protocol: 'team_config',
+      squadId: activeTeam.id,
+      squadName: activeTeam.name,
+    });
+    if (activeTeam.teamLogoUrl) params.set('squadLogoUrl', activeTeam.teamLogoUrl);
+    router.push(`/register/league/${encodeURIComponent(leagueCode.trim())}?${params.toString()}`);
   };
 
   const handleGoToTournament = () => {
@@ -165,7 +168,14 @@ export default function JoinTeamPage() {
       toast({ title: 'Tournament link required', description: 'Paste the registration link shared by the organizer.', variant: 'destructive' });
       return;
     }
-    router.push(`/register/tournament/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`);
+    if (!activeTeam?.id) return;
+    const params = new URLSearchParams({
+      protocol: 'team_config',
+      squadId: activeTeam.id,
+      squadName: activeTeam.name,
+    });
+    if (activeTeam.teamLogoUrl) params.set('squadLogoUrl', activeTeam.teamLogoUrl);
+    router.push(`/register/tournament/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}?${params.toString()}`);
   };
 
   const handleCopyInviteLink = async () => {
@@ -187,7 +197,7 @@ export default function JoinTeamPage() {
         <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><CalendarDays className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a tournament as a team</p><p className="text-xs text-muted-foreground mt-1">Paste the organizer&apos;s registration link.</p></div>
       </div>
 
-      <div className={cn("grid gap-8", isStaff ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto")}>
+      <div className={cn("grid gap-8", isStaff ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto")}>
 
         {/* ── JOIN SQUAD (Athletes + Parents only) ── */}
         {isAthlete && (
@@ -309,64 +319,48 @@ export default function JoinTeamPage() {
           </Card>
         )}
 
-        {/* ── LEAGUE PORTAL (Staff / Coaches only — teams join leagues, not individuals) ── */}
+        {/* League and tournament enrollment always act on the active squad. */}
         {isStaff ? (
-          <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-black text-white flex flex-col">
-            <div className="h-2 bg-primary w-full" />
-            <CardHeader className="p-8 lg:p-10">
-              <div className="flex items-center gap-4 mb-2">
-                <div className="bg-primary p-3 rounded-2xl text-white shadow-lg shadow-primary/20">
-                  <Trophy className="h-6 w-6" />
+          <>
+            <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-black text-white flex flex-col">
+              <div className="h-2 bg-primary w-full" />
+              <CardHeader className="p-8 lg:p-10">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="bg-primary p-3 rounded-2xl text-white shadow-lg shadow-primary/20"><Trophy className="h-6 w-6" /></div>
+                  <div>
+                    <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Join League As Team</CardTitle>
+                    <CardDescription className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">Register {activeTeam?.name || 'the current squad'}</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Join Competition As Team</CardTitle>
-                  <CardDescription className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">League and tournament registration</CardDescription>
+              </CardHeader>
+              <CardContent className="p-8 lg:p-10 pt-0 flex-1 space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-1">League ID / Slug</Label>
+                  <Input placeholder="e.g. winter-varsity-2024" value={leagueCode} onChange={e => setLeagueCode(e.target.value)} className="h-14 text-base font-bold rounded-2xl border-none bg-white/10 text-white placeholder:text-white/20" />
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-8 lg:p-10 pt-0 flex-1 space-y-6">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-1">League ID / Slug</Label>
-                <div className="relative">
-                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
-                  <Input
-                    placeholder="e.g. winter-varsity-2024"
-                    value={leagueCode}
-                    onChange={e => setLeagueCode(e.target.value)}
-                    className="h-14 pl-10 text-base font-bold rounded-2xl border-none bg-white/10 text-white placeholder:text-white/20"
-                  />
+                <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary">Current Squad</p>
+                  <p className="mt-2 text-sm font-bold">{activeTeam?.name || 'Select a squad before registering'}</p>
                 </div>
-                <p className="text-[9px] font-bold text-white/40 uppercase italic ml-1 leading-relaxed">
-                  Enter the unique ID shared via the league's public coordination link.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-1">Tournament Registration Link</Label>
-                <div className="relative"><CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" /><Input placeholder="Paste /register/tournament/... link" value={tournamentLink} onChange={e => setTournamentLink(e.target.value)} className="h-14 pl-10 text-sm font-bold rounded-2xl border-none bg-white/10 text-white placeholder:text-white/20" /></div>
-                <Button variant="outline" className="w-full h-11 rounded-xl border-white/20 bg-transparent text-white font-black uppercase text-[10px]" onClick={handleGoToTournament} disabled={!tournamentLink.trim()}>Open Tournament Registration</Button>
-              </div>
+              </CardContent>
+              <CardFooter className="p-8 lg:p-10 pt-0"><Button variant="secondary" className="w-full h-14 rounded-2xl text-lg font-black bg-white text-black hover:bg-white/90 shadow-xl" onClick={handleGoToLeague} disabled={!leagueCode.trim() || !activeTeam}><span>Open League Registration</span><ArrowRight className="ml-2 h-5 w-5" /></Button></CardFooter>
+            </Card>
 
-              <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-3">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  <p className="text-[10px] font-black uppercase tracking-widest text-primary">Team Enrollment</p>
+            <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col">
+              <div className="h-2 bg-primary w-full" />
+              <CardHeader className="p-8 lg:p-10">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="bg-primary/10 p-3 rounded-2xl text-primary"><CalendarDays className="h-6 w-6" /></div>
+                  <div><CardTitle className="text-2xl font-black uppercase tracking-tight leading-none">Join Tournament As Team</CardTitle><CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Register {activeTeam?.name || 'the current squad'}</CardDescription></div>
                 </div>
-                <p className="text-[11px] font-medium text-white/60 leading-relaxed italic">
-                  This portal enrolls your squad into a competitive league. Only coaches and organizers can register teams.
-                </p>
-              </div>
-            </CardContent>
-            <CardFooter className="p-8 lg:p-10 pt-0">
-              <Button
-                variant="secondary"
-                className="w-full h-14 rounded-2xl text-lg font-black bg-white text-black hover:bg-white/90 shadow-xl"
-                onClick={handleGoToLeague}
-                disabled={!leagueCode.trim()}
-              >
-                Enter Portal <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </CardFooter>
-          </Card>
+              </CardHeader>
+              <CardContent className="p-8 lg:p-10 pt-0 flex-1 space-y-6">
+                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Registration Link</Label><Input placeholder="Paste /register/tournament/... link" value={tournamentLink} onChange={e => setTournamentLink(e.target.value)} className="h-14 text-sm font-bold rounded-2xl border-2" /></div>
+                <div className="bg-primary/5 p-5 rounded-2xl border border-primary/10"><p className="text-[10px] font-black uppercase tracking-widest text-primary">Current Squad</p><p className="mt-2 text-sm font-bold">{activeTeam?.name || 'Select a squad before registering'}</p></div>
+              </CardContent>
+              <CardFooter className="p-8 lg:p-10 pt-0"><Button className="w-full h-14 rounded-2xl text-lg font-black" onClick={handleGoToTournament} disabled={!tournamentLink.trim() || !activeTeam}><span>Open Tournament Registration</span><ArrowRight className="ml-2 h-5 w-5" /></Button></CardFooter>
+            </Card>
+          </>
         ) : (
           /* Non-staff users see a read-only info card explaining league enrollment */
           !isAthlete && (

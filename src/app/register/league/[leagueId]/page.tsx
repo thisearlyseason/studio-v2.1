@@ -56,6 +56,8 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
 import { PortalStatus } from '@/components/public/PortalStatus';
+import { useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 const REQUIRED_STEPS = [
   { id: 'identity', name: 'Athlete Information', icon: Users, label: 'Details' },
@@ -71,8 +73,12 @@ function RegistrationForm() {
 
   const { leagueId } = useParams();
   const router = useRouter();
+  const auth = useAuth();
   const searchParams = useSearchParams();
   const protocolId = searchParams.get('protocol') || 'player_config';
+  const squadId = searchParams.get('squadId') || '';
+  const squadName = searchParams.get('squadName') || '';
+  const squadLogoUrl = searchParams.get('squadLogoUrl') || '';
   const portalUrl = leagueId ? `/api/public/portals?kind=league-registration&leagueId=${encodeURIComponent(leagueId as string)}&protocolId=${encodeURIComponent(protocolId)}` : null;
   const { data: portal, isLoading, error, status, retry } = usePublicPortal<{ config: LeagueRegistrationConfig; league: any }>(portalUrl);
   const config = portal?.config || null;
@@ -263,6 +269,19 @@ function RegistrationForm() {
     return answers[key] || (alias ? answers[alias.id] : '') || '';
   };
 
+  useEffect(() => {
+    if (registrationType !== 'team' || !squadId || !squadName) return;
+    const teamNameAlias = identityAliases.teamName;
+    setValidatedTeam({ id: squadId, name: squadName, teamLogoUrl: squadLogoUrl });
+    setAnswers(previous => ({
+      ...previous,
+      teamName: squadName,
+      team_id: squadId,
+      teamLogoUrl: squadLogoUrl || previous.teamLogoUrl,
+      ...(teamNameAlias ? { [teamNameAlias.id]: squadName } : {}),
+    }));
+  }, [identityAliases.teamName, registrationType, squadId, squadLogoUrl, squadName]);
+
   const renderFieldInput = (field: RegistrationFormField) => {
     const value = answers[field.id];
     if (field.type === 'long_text') {
@@ -354,15 +373,17 @@ function RegistrationForm() {
 
     setIsSubmitting(true);
     try {
+      const token = squadId ? await getAuthToken(auth) : null;
       const finalAnswers = {
         ...answers,
         recruiter_code: teamCode,
         team_name: validatedTeam?.name || validatedTeam?.teamName || null,
-        team_id: validatedTeam?.id || null
+        team_id: squadId || validatedTeam?.id || null,
+        teamLogoUrl: squadLogoUrl || answers.teamLogoUrl || null,
       };
       const response = await fetch('/api/public/portals/action', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           kind: 'league',
           action: 'register',
@@ -558,7 +579,7 @@ function RegistrationForm() {
                         <>
                           <div className="space-y-2">
                             <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name <span className="text-primary">*</span></Label>
-                            <Input required value={baselineValue('teamName')} onChange={event => handleBaselineChange('teamName', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5" />
+                            <Input required readOnly={Boolean(squadId)} value={baselineValue('teamName')} onChange={event => handleBaselineChange('teamName', event.target.value)} className="h-14 rounded-2xl border-2 font-bold bg-muted/5 read-only:cursor-not-allowed read-only:opacity-70" />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Contact <span className="text-primary">*</span></Label>

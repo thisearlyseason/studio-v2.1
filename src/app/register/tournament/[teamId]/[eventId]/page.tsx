@@ -51,11 +51,17 @@ import BrandLogo from '@/components/BrandLogo';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { PortalStatus } from '@/components/public/PortalStatus';
+import { useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 function RegistrationForm() {
   const { teamId, eventId } = useParams();
+  const auth = useAuth();
   const searchParams = useSearchParams();
   const protocolId = searchParams.get('protocol') || 'team_config';
+  const squadId = searchParams.get('squadId') || '';
+  const squadName = searchParams.get('squadName') || '';
+  const squadLogoUrl = searchParams.get('squadLogoUrl') || '';
   const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament-registration&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}&protocolId=${encodeURIComponent(protocolId)}` : null;
   const { data: portal, isLoading, error, status, retry } = usePublicPortal<{ config: LeagueRegistrationConfig; event: TeamEvent }>(portalUrl);
   const config = portal?.config || null;
@@ -67,6 +73,16 @@ function RegistrationForm() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
+
+  useEffect(() => {
+    if (protocolId !== 'team_config' || !squadId || !squadName) return;
+    setAnswers(previous => ({
+      ...previous,
+      teamName: squadName,
+      team_id: squadId,
+      teamLogoUrl: squadLogoUrl || previous.teamLogoUrl,
+    }));
+  }, [protocolId, squadId, squadLogoUrl, squadName]);
 
   const isPlayerPipeline = protocolId === 'player_config';
   const formSchema = useMemo(() => {
@@ -148,8 +164,9 @@ function RegistrationForm() {
 
     setIsSubmitting(true);
     try {
+      const token = squadId ? await getAuthToken(auth) : null;
       const response = await fetch('/api/public/portals/action', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ kind: 'tournament', action: 'register', teamId, eventId, protocolId: config.id, answers, formVersion: config.form_version || 0, signature }),
       });
       const result = await response.json();
@@ -477,8 +494,9 @@ function RegistrationForm() {
                           id="tournament-team-name"
                           placeholder="e.g. Phoenix Elite Academy" 
                           value={answers['teamName'] || ''} 
-                          onChange={e => handleInputChange('teamName', e.target.value)} 
-                          className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner" 
+                          onChange={e => handleInputChange('teamName', e.target.value)}
+                          readOnly={Boolean(squadId)}
+                          className="h-16 rounded-2xl border-2 font-black bg-muted/5 focus:bg-white transition-all text-xl shadow-inner read-only:cursor-not-allowed read-only:opacity-70"
                           required
                         />
                       </div>

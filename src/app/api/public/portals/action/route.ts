@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
-import { FieldPath, FieldValue, type DocumentReference } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, type DocumentReference, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
 import { credentialsMatch, isLegacyOpenPortal, validScore } from '@/lib/score-action-security';
@@ -18,6 +18,8 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { verifyFirebaseToken } from '@/lib/api-auth';
+import { getTeamAuthority } from '@/lib/server-team-access';
 
 function requestFingerprint(req: NextRequest) {
   const address = (req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local').slice(0, 100);
@@ -79,6 +81,13 @@ function configuredAnswer(
   return field && typeof answers[field.id] === 'string' ? answers[field.id].trim() : '';
 }
 
+async function findTeamByCode(teamCode: string) {
+  let matches = await adminDb.collection('teams').where('inviteCode', '==', teamCode).limit(1).get();
+  if (matches.empty) matches = await adminDb.collection('teams').where('teamCode', '==', teamCode).limit(1).get();
+  if (matches.empty) matches = await adminDb.collection('teams').where('code', '==', teamCode).limit(1).get();
+  return matches.empty ? null : matches.docs[0];
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await readJsonBodyWithLimit<Record<string, any>>(req, 20_000);
@@ -95,11 +104,8 @@ export async function POST(req: NextRequest) {
     if (action === 'lookup-team') {
       const teamCode = String(body.teamCode || '').trim().toUpperCase();
       if (teamCode.length < 3 || teamCode.length > 20) return NextResponse.json({ error: 'Invalid team code.' }, { status: 400 });
-      let matches = await adminDb.collection('teams').where('inviteCode', '==', teamCode).limit(1).get();
-      if (matches.empty) matches = await adminDb.collection('teams').where('teamCode', '==', teamCode).limit(1).get();
-      if (matches.empty) matches = await adminDb.collection('teams').where('code', '==', teamCode).limit(1).get();
-      if (matches.empty) return NextResponse.json({ error: 'Team code not found.' }, { status: 404 });
-      const team = matches.docs[0];
+      const team = await findTeamByCode(teamCode);
+      if (!team) return NextResponse.json({ error: 'Team code not found.' }, { status: 404 });
       return NextResponse.json({ success: true, team: { id: team.id, name: team.data().name || team.data().teamName, teamLogoUrl: team.data().teamLogoUrl } });
     }
 
@@ -160,6 +166,54 @@ export async function POST(req: NextRequest) {
       if (!configSnap.exists || configSnap.data()?.is_active !== true) return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 409 });
       const config = configSnap.data()!;
       const { answers, schema } = sanitizeRegistrationAnswers(rawAnswers, config);
+      const isTeamRegistration = String(
+        config.type || (protocolId === 'team_config' ? 'team' : '')
+      ).toLowerCase() === 'team';
+
+      // Linked squad identity is untrusted client input. Player registration may
+      // resolve a shared team code, while a direct staff handoff requires a
+      // verified Firebase session and current staff authority. Both paths use
+      // the canonical squad document values below.
+      const recruiterCode = typeof answers.recruiter_code === 'string'
+        ? answers.recruiter_code.trim().toUpperCase()
+        : '';
+      let linkedTeam: DocumentSnapshot | null = null;
+      if (recruiterCode) {
+        linkedTeam = await findTeamByCode(recruiterCode);
+        if (!linkedTeam) return NextResponse.json({ error: 'Team code not found.' }, { status: 400 });
+        answers.recruiter_code = recruiterCode;
+      } else if (typeof answers.team_id === 'string' && answers.team_id) {
+        const sourceTeamId = answers.team_id;
+        if (!isSafeId(sourceTeamId)) return NextResponse.json({ error: 'Invalid squad identity.' }, { status: 400 });
+        const auth = await verifyFirebaseToken(req);
+        if (auth instanceof NextResponse) return auth;
+        const authority = await getTeamAuthority(sourceTeamId, auth.uid, auth.role);
+        if (!authority?.isStaff) {
+          return NextResponse.json({ error: 'Squad staff access is required for linked registration.' }, { status: 403 });
+        }
+        linkedTeam = await authority.teamRef.get();
+      }
+
+      if (linkedTeam) {
+        const linkedData = linkedTeam.data() || {};
+        const canonicalName = String(linkedData.name || linkedData.teamName || '').trim().slice(0, 200);
+        if (!canonicalName) return NextResponse.json({ error: 'The linked squad does not have a valid name.' }, { status: 409 });
+        const canonicalLogo = typeof linkedData.teamLogoUrl === 'string' && /^https:\/\//i.test(linkedData.teamLogoUrl)
+          ? linkedData.teamLogoUrl.slice(0, 2_000)
+          : '';
+        answers.team_id = linkedTeam.id;
+        answers.team_name = canonicalName;
+        answers.teamLogoUrl = canonicalLogo;
+        if (isTeamRegistration) {
+          answers.teamName = canonicalName;
+          for (const field of schema) {
+            if (/^(team|squad) name$/i.test(String(field.label || '').trim()) && field.id) {
+              answers[String(field.id)] = canonicalName;
+            }
+          }
+        }
+      }
+
       if (kind === 'tournament') {
         const requiredCore = ['teamName', 'name', 'email'];
         if (requiredCore.some(key => typeof answers[key] !== 'string' || !answers[key].trim())) {
@@ -270,7 +324,14 @@ export async function POST(req: NextRequest) {
           }
           transaction.update(tournamentEventRef, {
             tournamentTeams: FieldValue.arrayUnion(teamName),
-            tournamentTeamsData: FieldValue.arrayUnion({ id: `p_${entry.id}`, name: teamName, coach: coachName || 'Pipeline Coach', logoUrl, source: 'pipeline' }),
+            tournamentTeamsData: FieldValue.arrayUnion({
+              id: `p_${entry.id}`,
+              name: teamName,
+              coach: coachName || 'Pipeline Coach',
+              logoUrl,
+              source: 'pipeline',
+              sourceTeamId: typeof answers.team_id === 'string' ? answers.team_id.slice(0, 200) : null,
+            }),
           });
           return { accepted: true as const };
         });
@@ -305,6 +366,7 @@ export async function POST(req: NextRequest) {
                 teamLogoUrl: typeof answers.teamLogoUrl === 'string' && /^https:\/\//i.test(answers.teamLogoUrl)
                   ? answers.teamLogoUrl.slice(0, 2_000)
                   : '',
+                teamId: typeof answers.team_id === 'string' ? answers.team_id.slice(0, 200) : null,
                 wins: 0,
                 losses: 0,
                 ties: 0,

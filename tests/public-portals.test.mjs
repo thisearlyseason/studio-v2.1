@@ -110,6 +110,22 @@ test('tournament team registration is transactional and fails closed after brack
   assert.match(source, /freshEvent\.data\(\)\?\.tournamentGames/);
 });
 
+test('linked squad registrations verify staff authority and canonicalize client identity', async () => {
+  const action = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  const leaguePage = await readFile(new URL('../src/app/register/league/[leagueId]/page.tsx', import.meta.url), 'utf8');
+  const tournamentPage = await readFile(new URL('../src/app/register/tournament/[teamId]/[eventId]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(action, /verifyFirebaseToken\(req\)/);
+  assert.match(action, /getTeamAuthority\(sourceTeamId, auth\.uid, auth\.role\)/);
+  assert.match(action, /if \(!authority\?\.isStaff\)/);
+  assert.match(action, /answers\.teamName = canonicalName/);
+  assert.match(action, /answers\.teamLogoUrl = canonicalLogo/);
+  assert.match(action, /id: `p_\$\{entry\.id\}`/);
+  assert.match(action, /sourceTeamId:/);
+  assert.match(leaguePage, /headers: \{ 'content-type': 'application\/json', \.\.\.authHeader\(token\) \}/);
+  assert.match(tournamentPage, /headers: \{ 'Content-Type': 'application\/json', \.\.\.authHeader\(token\) \}/);
+});
+
 test('public tournament actions honor every supported team plan marker', async () => {
   const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
   const tournamentRegistration = source.slice(
