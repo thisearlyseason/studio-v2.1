@@ -418,6 +418,7 @@ export type TeamEvent = {
   description: string;
   eventType: string;
   isTournament?: boolean;
+  registrationCode?: string;
   isTournamentMatch?: boolean; // Indicates this is a match within a tournament (not a standalone event)
   isLeagueGame?: boolean;
   isHome?: boolean;
@@ -1942,7 +1943,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const response = await fetch('/api/teams/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ code, playerId, position }),
+      body: JSON.stringify({
+        code,
+        playerId,
+        enrollmentIntent: position === 'Player' ? 'player' : undefined,
+      }),
     });
     return response.ok;
   }, [firebaseUser, firebaseAuth]);

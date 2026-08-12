@@ -7,8 +7,10 @@ const PLAYER_ROLES = new Set(['adult_player', 'youth_player', 'player']);
 export function safeJoinPosition(input: {
   profileRole: unknown;
   joiningLinkedChild: boolean;
+  requestedPlayerEnrollment?: boolean;
 }): 'Parent' | 'Player' | 'Member' {
   if (input.joiningLinkedChild) return 'Player';
+  if (input.requestedPlayerEnrollment) return 'Player';
   const role = typeof input.profileRole === 'string'
     ? input.profileRole.trim().toLowerCase()
     : '';

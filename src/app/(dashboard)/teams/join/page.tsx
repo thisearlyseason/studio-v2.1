@@ -21,7 +21,6 @@ import {
   Baby,
   Plus,
   CheckCircle2,
-  Lock,
   UserPlus,
   CalendarDays,
   Copy
@@ -44,11 +43,17 @@ type InvitePreview = {
   teamName: string;
 };
 
+type TournamentPreview = {
+  teamId: string;
+  eventId: string;
+  title: string;
+};
+
 export default function JoinTeamPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const auth = useAuth();
-  const { user, activeTeam, myChildren, joinTeamWithCode, isParent, isPlayer, isStaff } = useTeam();
+  const { user, activeTeam, myChildren, joinTeamWithCode, isParent, isStaff } = useTeam();
   
   const [teamCode, setTeamCode] = useState('');
   const [leagueCode, setLeagueCode] = useState('');
@@ -59,8 +64,9 @@ export default function JoinTeamPage() {
   const [isResolvingInvite, setIsResolvingInvite] = useState(false);
   const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isResolvingTournament, setIsResolvingTournament] = useState(false);
+  const [tournamentPreview, setTournamentPreview] = useState<TournamentPreview | null>(null);
 
-  const isAthlete = isPlayer || isParent;
   const hasChildren = myChildren.length > 0;
 
   // Build the effective player ID for the join call
@@ -112,10 +118,10 @@ export default function JoinTeamPage() {
     if (isParent) {
       const requestedPlayerId = searchParams.get('playerId');
       setSelectedId(requestedPlayerId && myChildren.some(child => child.id === requestedPlayerId) ? requestedPlayerId : '');
-    } else if (isPlayer) {
+    } else {
       setSelectedId('self');
     }
-  }, [isParent, isPlayer, myChildren, searchParams]);
+  }, [isParent, myChildren, searchParams]);
 
   const handleReviewTeam = async () => {
     if (!teamCode.trim()) return;
@@ -134,8 +140,7 @@ export default function JoinTeamPage() {
     }
     setIsJoining(true);
     try {
-      const role = selectedId === 'self' ? 'Player' : 'Player';
-      const success = await joinTeamWithCode(teamCode.trim().toUpperCase(), effectivePlayerId, role);
+      const success = await joinTeamWithCode(teamCode.trim().toUpperCase(), effectivePlayerId, 'Player');
       if (success) {
         setIsConfirmOpen(false);
         router.push('/feed');
@@ -164,18 +169,51 @@ export default function JoinTeamPage() {
 
   const handleGoToTournament = () => {
     const match = tournamentLink.trim().match(/register\/tournament\/([^/?#]+)\/([^/?#]+)/i);
-    if (!match) {
-      toast({ title: 'Tournament link required', description: 'Paste the registration link shared by the organizer.', variant: 'destructive' });
+    if (!activeTeam?.id) return;
+    const destination = match
+      ? { teamId: match[1], eventId: match[2] }
+      : tournamentPreview;
+    if (!destination) {
+      toast({ title: 'Tournament code or ID required', description: 'Enter the organizer’s tournament code, tournament ID, or registration link.', variant: 'destructive' });
       return;
     }
-    if (!activeTeam?.id) return;
     const params = new URLSearchParams({
       protocol: 'team_config',
       squadId: activeTeam.id,
       squadName: activeTeam.name,
     });
     if (activeTeam.teamLogoUrl) params.set('squadLogoUrl', activeTeam.teamLogoUrl);
-    router.push(`/register/tournament/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}?${params.toString()}`);
+    router.push(`/register/tournament/${encodeURIComponent(destination.teamId)}/${encodeURIComponent(destination.eventId)}?${params.toString()}`);
+  };
+
+  const handleResolveTournament = async () => {
+    const input = tournamentLink.trim();
+    if (!input) return;
+    const match = input.match(/register\/tournament\/([^/?#]+)\/([^/?#]+)/i);
+    if (match) {
+      setTournamentPreview({ teamId: match[1], eventId: match[2], title: 'Tournament registration link' });
+      return;
+    }
+    setIsResolvingTournament(true);
+    setTournamentPreview(null);
+    try {
+      const token = await getAuthToken(auth);
+      const response = await fetch(
+        `/api/tournaments/resolve?code=${encodeURIComponent(input)}`,
+        { headers: authHeader(token) }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Tournament code or ID not found.');
+      setTournamentPreview(payload.tournament);
+    } catch (error) {
+      toast({
+        title: 'Tournament Not Found',
+        description: error instanceof Error ? error.message : 'Check the tournament code or ID and try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResolvingTournament(false);
+    }
   };
 
   const handleCopyInviteLink = async () => {
@@ -194,14 +232,13 @@ export default function JoinTeamPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-5"><UserPlus className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a team as a player</p><p className="text-xs text-muted-foreground mt-1">Use your coach&apos;s squad code. Parents can select a child.</p></div>
         <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><Trophy className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a league as a team</p><p className="text-xs text-muted-foreground mt-1">Team staff submit the team registration.</p></div>
-        <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><CalendarDays className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a tournament as a team</p><p className="text-xs text-muted-foreground mt-1">Paste the organizer&apos;s registration link.</p></div>
+        <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><CalendarDays className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a tournament as a team</p><p className="text-xs text-muted-foreground mt-1">Use the tournament code, ID, or registration link.</p></div>
       </div>
 
       <div className={cn("grid gap-8", isStaff ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto")}>
 
-        {/* ── JOIN SQUAD (Athletes + Parents only) ── */}
-        {isAthlete && (
-          <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col">
+        {/* Every signed-in account may enroll itself as an ordinary player. */}
+        <Card className={cn("rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col", isStaff && "lg:col-span-2")}>
             <div className="h-2 bg-primary w-full" />
             <CardHeader className="p-8 lg:p-10">
               <div className="flex items-center gap-4 mb-2">
@@ -241,7 +278,7 @@ export default function JoinTeamPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge className="bg-primary/10 text-primary border-none font-black text-[8px] h-5 px-2">
-                        {isParent ? 'Parent' : 'Athlete'}
+                        Athlete
                       </Badge>
                       {selectedId === 'self' && <CheckCircle2 className="h-4 w-4 text-primary" />}
                     </div>
@@ -317,7 +354,6 @@ export default function JoinTeamPage() {
               </Button>
             </CardFooter>
           </Card>
-        )}
 
         {/* League and tournament enrollment always act on the active squad. */}
         {isStaff ? (
@@ -355,26 +391,30 @@ export default function JoinTeamPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-8 lg:p-10 pt-0 flex-1 space-y-6">
-                <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Registration Link</Label><Input placeholder="Paste /register/tournament/... link" value={tournamentLink} onChange={e => setTournamentLink(e.target.value)} className="h-14 text-sm font-bold rounded-2xl border-2" /></div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tournament Code, ID, or Registration Link</Label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      placeholder="e.g. CUP-2026 or teamId:eventId"
+                      value={tournamentLink}
+                      onChange={event => {
+                        setTournamentLink(event.target.value);
+                        setTournamentPreview(null);
+                      }}
+                      className="h-14 min-w-0 flex-1 text-sm font-bold rounded-2xl border-2"
+                    />
+                    <Button type="button" variant="outline" onClick={handleResolveTournament} disabled={!tournamentLink.trim() || isResolvingTournament} className="h-14 rounded-2xl font-black uppercase text-[10px]">
+                      {isResolvingTournament ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Find Tournament'}
+                    </Button>
+                  </div>
+                  {tournamentPreview && <p className="text-xs font-bold text-green-700">Found: {tournamentPreview.title}</p>}
+                </div>
                 <div className="bg-primary/5 p-5 rounded-2xl border border-primary/10"><p className="text-[10px] font-black uppercase tracking-widest text-primary">Current Squad</p><p className="mt-2 text-sm font-bold">{activeTeam?.name || 'Select a squad before registering'}</p></div>
               </CardContent>
-              <CardFooter className="p-8 lg:p-10 pt-0"><Button className="w-full h-14 rounded-2xl text-lg font-black" onClick={handleGoToTournament} disabled={!tournamentLink.trim() || !activeTeam}><span>Open Tournament Registration</span><ArrowRight className="ml-2 h-5 w-5" /></Button></CardFooter>
+              <CardFooter className="p-8 lg:p-10 pt-0"><Button className="w-full h-14 rounded-2xl text-lg font-black" onClick={handleGoToTournament} disabled={!tournamentPreview || !activeTeam}><span>Open Tournament Registration</span><ArrowRight className="ml-2 h-5 w-5" /></Button></CardFooter>
             </Card>
           </>
-        ) : (
-          /* Non-staff users see a read-only info card explaining league enrollment */
-          !isAthlete && (
-            <div className="col-span-full py-24 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 space-y-4 px-8">
-              <div className="bg-muted p-4 rounded-2xl w-max mx-auto">
-                <Lock className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <p className="font-black uppercase tracking-widest text-sm">No Portals Available</p>
-              <p className="text-xs text-muted-foreground font-medium max-w-sm mx-auto">
-                Contact your team lead or organization manager for enrollment access.
-              </p>
-            </div>
-          )
-        )}
+        ) : null}
       </div>
 
       {isStaff && activeTeam && (
@@ -405,18 +445,14 @@ export default function JoinTeamPage() {
               Join {invitePreview?.teamName || 'this squad'}?
             </AlertDialogTitle>
             <AlertDialogDescription className="font-medium">
-              {isAthlete
-                ? `Confirm joining “${invitePreview?.teamName || 'this squad'}”.`
-                : `This recruitment link is for “${invitePreview?.teamName || 'this squad'}”. Sign in with a player or parent account to enroll an athlete.`}
+              {`Confirm joining “${invitePreview?.teamName || 'this squad'}” as a player.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isJoining}>Cancel</AlertDialogCancel>
-            {isAthlete && (
-              <AlertDialogAction onClick={handleJoinTeam} disabled={isJoining || !effectivePlayerId}>
-                {isJoining ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Join Squad'}
-              </AlertDialogAction>
-            )}
+            <AlertDialogAction onClick={handleJoinTeam} disabled={isJoining || !effectivePlayerId}>
+              {isJoining ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Join Squad As Player'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

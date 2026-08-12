@@ -13,4 +13,5 @@ test('ordinary account roles receive only their safe join position', () => {
   assert.equal(safeJoinPosition({ profileRole: 'adult_player', joiningLinkedChild: false }), 'Player');
   assert.equal(safeJoinPosition({ profileRole: 'youth_player', joiningLinkedChild: false }), 'Player');
   assert.equal(safeJoinPosition({ profileRole: 'coach', joiningLinkedChild: true }), 'Player');
+  assert.equal(safeJoinPosition({ profileRole: 'coach', joiningLinkedChild: false, requestedPlayerEnrollment: true }), 'Player');
 });

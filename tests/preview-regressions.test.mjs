@@ -51,8 +51,33 @@ test('recruitment page resolves the linked squad and requires confirmation', asy
   assert.match(route, /enforceUserRateLimit/);
   assert.match(route, /readJsonBodyWithLimit/);
   assert.match(page, /Join \{invitePreview\?\.teamName/);
-  assert.match(page, /'Join Squad'/);
+  assert.match(page, /'Join Squad As Player'/);
   assert.match(page, /<AlertDialog/);
+  assert.match(page, /Every signed-in account may enroll itself as an ordinary player/);
+  assert.doesNotMatch(page, /\{isAthlete && \(/);
+  assert.match(route, /enrollmentIntent === 'player'/);
+  assert.match(route, /STAFF_MEMBERSHIP_EXISTS/);
+});
+
+test('tournament enrollment accepts a code, event ID, or registration link', async () => {
+  const join = await readSource('../src/app/(dashboard)/teams/join/page.tsx');
+  const resolver = await readSource('../src/app/api/tournaments/resolve/route.ts');
+  const events = await readSource('../src/app/api/teams/events/action/route.ts');
+  const tournamentAdmin = await readSource('../src/app/(dashboard)/manage-tournaments/registration/[teamId]/[eventId]/page.tsx');
+
+  assert.match(join, /Tournament Code, ID, or Registration Link/);
+  assert.match(join, /api\/tournaments\/resolve\?code=/);
+  assert.match(join, /Found: \{tournamentPreview\.title\}/);
+  assert.match(resolver, /collection\('tournamentRegistrationCodes'\)/);
+  assert.match(resolver, /directory\.doc\(normalizedCode\)/);
+  assert.match(resolver, /DIRECT_ID_PATTERN/);
+  assert.match(events, /directory\.doc\(eventId\)/);
+  assert.match(events, /That tournament code is already in use/);
+  assert.match(events, /REGISTRATION_CODE_PATTERN/);
+  assert.match(resolver, /collection\('registration'\)\.doc\('team_config'\)/);
+  assert.match(events, /randomBytes\(5\)\.toString\('hex'\)/);
+  assert.match(tournamentAdmin, /Tournament Code \/ ID/);
+  assert.match(tournamentAdmin, /Generate Code/);
 });
 
 test('parent recruitment requires a child and preserves the invitation through family setup', async () => {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'node:crypto';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { isActiveTeamMembership } from '@/lib/team-membership-security';
@@ -11,6 +12,7 @@ import { hasStaffRole } from '@/lib/staff-position';
 import { withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+const REGISTRATION_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no', 'no_response']);
 
 class EventMutationError extends Error {
@@ -174,6 +176,11 @@ export async function POST(req: NextRequest) {
           const batch = adminDb.batch();
           batch.delete(eventRef);
           batch.delete(bookingRef);
+          batch.delete(adminDb.collection('tournamentRegistrationCodes').doc(eventId));
+          const registrationCode = typeof existingData.registrationCode === 'string'
+            ? existingData.registrationCode.trim().toUpperCase()
+            : '';
+          if (registrationCode) batch.delete(adminDb.collection('tournamentRegistrationCodes').doc(registrationCode));
           await batch.commit();
           return { status: 'deleted' as const };
         }
@@ -182,6 +189,22 @@ export async function POST(req: NextRequest) {
         const eventData = action === 'update' ? { ...existingData, ...submitted } : submitted;
         const interval = await assertEventAvailability(teamId, eventId, eventData);
         const now = new Date().toISOString();
+        const registrationCode = action === 'create' && submitted.isTournament === true
+          ? randomBytes(5).toString('hex').toUpperCase()
+          : typeof submitted.registrationCode === 'string'
+            ? submitted.registrationCode.trim().toUpperCase()
+            : '';
+        if (registrationCode && !REGISTRATION_CODE_PATTERN.test(registrationCode)) {
+          throw new EventMutationError('Tournament codes must be 4–32 letters, numbers, dashes, or underscores.');
+        }
+        if (registrationCode) {
+          const existingMapping = await adminDb.collection('tournamentRegistrationCodes').doc(registrationCode).get();
+          const mappedTeamId = String(existingMapping.data()?.teamId || '');
+          const mappedEventId = String(existingMapping.data()?.eventId || '');
+          if (existingMapping.exists && (mappedTeamId !== teamId || mappedEventId !== eventId)) {
+            throw new EventMutationError('That tournament code is already in use. Generate another code.', 409);
+          }
+        }
         const persisted = {
           ...submitted,
           id: eventId,
@@ -189,9 +212,22 @@ export async function POST(req: NextRequest) {
           ownerUserId: access.teamData.ownerUserId || auth.uid,
           updatedAt: now,
           ...(action === 'create' ? { createdAt: now } : {}),
+          ...(registrationCode ? { registrationCode } : {}),
         };
         const batch = adminDb.batch();
         batch.set(eventRef, persisted, { merge: action === 'update' });
+        if (eventData.isTournament === true) {
+          const directory = adminDb.collection('tournamentRegistrationCodes');
+          const mapping = { teamId, eventId, updatedAt: now };
+          batch.set(directory.doc(eventId), mapping);
+          if (registrationCode) batch.set(directory.doc(registrationCode), mapping);
+          const previousCode = typeof existingData.registrationCode === 'string'
+            ? existingData.registrationCode.trim().toUpperCase()
+            : '';
+          if (previousCode && registrationCode && previousCode !== registrationCode) {
+            batch.delete(directory.doc(previousCode));
+          }
+        }
         if (interval) {
           const resourceId = typeof eventData.resourceId === 'string' ? eventData.resourceId.trim() : '';
           const location = typeof eventData.location === 'string' ? eventData.location.trim() : '';

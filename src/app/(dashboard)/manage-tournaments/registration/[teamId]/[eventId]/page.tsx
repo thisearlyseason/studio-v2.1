@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, TeamEvent, TeamDocument } from '@/components/providers/team-provider';
-import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { useAuth, useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { doc, collection, query, orderBy, where, setDoc, updateDoc, getDocs, addDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 // CRITICAL BUILD FIX: Prevent static generation failures for dynamic enrollment routes
 export const dynamic = 'force-dynamic';
@@ -69,6 +70,7 @@ export default function TournamentRegistrationAdminPage() {
   const { teamId, eventId } = useParams();
   const router = useRouter();
   const { isAuthResolved } = useUser();
+  const auth = useAuth();
   const { submitRegistrationEntry } = useTeam();
   const db = useFirestore();
 
@@ -82,6 +84,7 @@ export default function TournamentRegistrationAdminPage() {
   const [isManualProcessing, setIsManualProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasSaved, setHasSaved] = useState(false);
+  const [isGeneratingRegistrationCode, setIsGeneratingRegistrationCode] = useState(false);
   // Multi-form state
   const [formsListMode, setFormsListMode] = useState(true); // start on forms list
   const [allForms, setAllForms] = useState<{ id: string; title: string; is_active: boolean; form_version?: number }[]>([]);
@@ -152,6 +155,31 @@ export default function TournamentRegistrationAdminPage() {
     return doc(db, 'teams', teamId as string, 'events', eventId as string);
   }, [db, teamId, eventId, isAuthResolved]);
   const { data: event, isLoading: isEventLoading } = useDoc<TeamEvent>(eventRef);
+
+  const generateRegistrationCode = async () => {
+    if (!teamId || !eventId) return;
+    setIsGeneratingRegistrationCode(true);
+    try {
+      const token = await getAuthToken(auth);
+      const response = await fetch('/api/teams/events/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          action: 'update',
+          teamId,
+          eventId,
+          event: { registrationCode: crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase() },
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to generate a tournament code.');
+      toast({ title: 'Tournament Code Generated' });
+    } catch (error) {
+      toast({ title: 'Code Generation Failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    } finally {
+      setIsGeneratingRegistrationCode(false);
+    }
+  };
 
   const configRef = useMemoFirebase(() => {
     if (!db || !teamId || !eventId || !isAuthResolved) return null;
@@ -831,6 +859,14 @@ export default function TournamentRegistrationAdminPage() {
                 <div className="bg-white/10 p-6 rounded-[2rem] border border-white/5 space-y-4">
                   <p className="text-[10px] font-mono font-bold truncate opacity-80">/register/tournament/{teamId}/{eventId}</p>
                   <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-xs shadow-xl" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/tournament/${teamId}/${eventId}?protocol=${configId}`); toast({ title: "Registration Link Copied" }); }}>Copy Registration Link</Button>
+                </div>
+                <div className="bg-white/10 p-6 rounded-[2rem] border border-white/5 space-y-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/60">Tournament Code / ID</p>
+                  <p className="text-2xl font-mono font-black tracking-widest break-all">{event?.registrationCode || `${teamId}:${eventId}`}</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button variant="secondary" className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => { navigator.clipboard.writeText(event?.registrationCode || `${teamId}:${eventId}`); toast({ title: 'Tournament Code Copied' }); }}>Copy Code</Button>
+                    {!event?.registrationCode && <Button variant="outline" className="h-12 rounded-xl border-white/20 bg-transparent text-white font-black uppercase text-[10px]" onClick={generateRegistrationCode} disabled={isGeneratingRegistrationCode}>{isGeneratingRegistrationCode ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate Code'}</Button>}
+                  </div>
                 </div>
               </CardContent>
             </Card>

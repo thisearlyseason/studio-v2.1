@@ -4,6 +4,8 @@ import { adminDb } from '@/lib/firebase-admin';
 import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
 import { safeJoinPosition } from '@/lib/account-membership-policy';
 import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
+import { hasStaffRole } from '@/lib/staff-position';
+import { findActiveTeamMember } from '@/lib/server-team-access';
 
 const CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
 
@@ -46,15 +48,23 @@ export async function POST(req: NextRequest) {
     const code = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
     if (!CODE_PATTERN.test(code)) return NextResponse.json({ error: 'Enter a valid squad code.' }, { status: 400 });
     const requestedPlayerId = typeof body.playerId === 'string' ? body.playerId : '';
+    const requestedPlayerEnrollment = body.enrollmentIntent === 'player';
     const playerId = requestedPlayerId || `p_${auth.uid}`;
     if (!/^p_[A-Za-z0-9_-]{1,200}$/.test(playerId)) return NextResponse.json({ error: 'Invalid athlete identity.' }, { status: 400 });
     const teamSnapshot = await findTeamByCode(code);
     if (!teamSnapshot) return NextResponse.json({ error: 'Squad code not found.' }, { status: 404 });
     const team = teamSnapshot.data() || {};
     const now = new Date().toISOString();
+    const existingSelfMembership = playerId === `p_${auth.uid}`
+      ? await findActiveTeamMember(teamSnapshot.id, auth.uid)
+      : null;
+    if (requestedPlayerEnrollment && hasStaffRole(existingSelfMembership?.data)) {
+      return NextResponse.json({ error: 'You already have staff access to this squad.' }, { status: 409 });
+    }
     const userRef = adminDb.collection('users').doc(auth.uid);
     const playerRef = adminDb.collection('players').doc(playerId);
-    const memberRef = teamSnapshot.ref.collection('members').doc(playerId === `p_${auth.uid}` ? auth.uid : playerId);
+    const memberRef = existingSelfMembership?.ref
+      || teamSnapshot.ref.collection('members').doc(playerId === `p_${auth.uid}` ? auth.uid : playerId);
     const membershipRef = userRef.collection('teamMemberships').doc(teamSnapshot.id);
 
     await adminDb.runTransaction(async transaction => {
@@ -64,9 +74,11 @@ export async function POST(req: NextRequest) {
       const user = userSnapshot.data() || {};
       const existingPlayer = playerSnapshot.data() || {};
       if (playerId !== `p_${auth.uid}` && existingPlayer.parentId !== auth.uid) throw new Error('CHILD_FORBIDDEN');
+      if (requestedPlayerEnrollment && hasStaffRole(memberSnapshot.data())) throw new Error('STAFF_MEMBERSHIP_EXISTS');
       const position = safeJoinPosition({
         profileRole: user.role,
         joiningLinkedChild: playerId !== `p_${auth.uid}`,
+        requestedPlayerEnrollment,
       });
       const displayName = String(
         existingPlayer.firstName
@@ -98,6 +110,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof Error && error.message === 'CHILD_FORBIDDEN') return NextResponse.json({ error: 'You can only enroll a linked child profile.' }, { status: 403 });
+    if (error instanceof Error && error.message === 'STAFF_MEMBERSHIP_EXISTS') return NextResponse.json({ error: 'You already have staff access to this squad.' }, { status: 409 });
     console.error('[teams/join] Error:', error);
     return NextResponse.json({ error: 'Unable to join the squad.' }, { status: 500 });
   }
