@@ -40,7 +40,7 @@ function RapidJoinForm() {
   const searchParams = useSearchParams();
   const code = searchParams.get('code');
   const auth = useAuth();
-  const { user, firebaseUser, isPlayer, isParent, myChildren } = useTeam();
+  const { user, firebaseUser, isParent, myChildren } = useTeam();
   const [joinData, setJoinData] = useState<RapidJoinData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -145,15 +145,14 @@ function RapidJoinForm() {
 
     setIsSubmitting(true);
     try {
-      const playerId = isPlayer ? `p_${user?.id}` : formData.playerId;
-      const role = isParent ? 'Parent' : 'Player';
+      const playerId = isParent ? formData.playerId : `p_${firebaseUser?.uid}`;
       
       if (!firebaseUser || !joinData?.sessionToken) throw new Error('Sign in before joining this squad.');
       const idToken = await getAuthToken(auth);
       const joinResponse = await fetch('/api/teams/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
-        body: JSON.stringify({ sessionToken: joinData.sessionToken, playerId, position: role }),
+        body: JSON.stringify({ sessionToken: joinData.sessionToken, playerId, enrollmentIntent: 'player' }),
       });
       const joinResult = await joinResponse.json().catch(() => ({}));
       if (!joinResponse.ok) throw new Error(joinResult.error || 'Join failed.');

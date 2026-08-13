@@ -46,6 +46,7 @@ test('squad recruitment links never redirect into league registration', async ()
 
 test('recruitment page resolves the linked squad and requires confirmation', async () => {
   const page = await readSource('../src/app/(dashboard)/teams/join/page.tsx');
+  const rapidJoinPage = await readSource('../src/app/register/squad/[teamId]/page.tsx');
   const route = await readSource('../src/app/api/teams/join/route.ts');
   assert.match(route, /export async function GET/);
   assert.match(route, /enforceUserRateLimit/);
@@ -57,6 +58,12 @@ test('recruitment page resolves the linked squad and requires confirmation', asy
   assert.doesNotMatch(page, /\{isAthlete && \(/);
   assert.match(route, /enrollmentIntent === 'player'/);
   assert.match(route, /STAFF_MEMBERSHIP_EXISTS/);
+  assert.match(route, /Shared rapid-join links must resolve before the recipient signs in/);
+  assert.match(route, /team_join_sessions/);
+  assert.match(route, /sessionToken\.length >= 32/);
+  assert.match(route, /data:\s*\{\s*team:/s);
+  assert.match(rapidJoinPage, /`p_\$\{firebaseUser\?\.uid\}`/);
+  assert.match(rapidJoinPage, /sessionToken: joinData\.sessionToken/);
 });
 
 test('tournament enrollment accepts a code, event ID, or registration link', async () => {
