@@ -226,7 +226,7 @@ export default function PublicLeagueSpectatorHub() {
                                  <div className="flex items-center gap-3 min-w-0">
                                    {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
                                    {logoMap[(game as any).team1Id || game.team1 || ''] ? (
-                                     <div className={cn("shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
+                                     <div className={cn("shrink-0", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
                                        <img src={logoMap[(game as any).team1Id || game.team1 || '']} alt={game.team1} className="w-full h-full object-contain" />
                                      </div>
                                    ) : null}
@@ -238,7 +238,7 @@ export default function PublicLeagueSpectatorHub() {
                                 <div className="flex items-center gap-3 min-w-0">
                                   {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
                                   {logoMap[(game as any).team2Id || game.team2 || ''] ? (
-                                    <div className={cn("shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
+                                    <div className={cn("shrink-0", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
                                       <img src={logoMap[(game as any).team2Id || game.team2 || '']} alt={game.team2} className="w-full h-full object-contain" />
                                     </div>
                                   ) : null}
@@ -288,7 +288,7 @@ export default function PublicLeagueSpectatorHub() {
                         <div className="flex items-center gap-3">
                           <span className="text-[10px] font-black text-muted-foreground/40 w-4">{idx + 1}</span>
                           {logoMap[team.id] || (team as any).teamLogoUrl ? (
-                            <div className="h-10 w-10 rounded-lg overflow-hidden border border-muted/20 shadow-sm bg-white p-0.5 shrink-0">
+                            <div className="h-10 w-10 flex items-center justify-center shrink-0">
                               <img src={logoMap[team.id] || (team as any).teamLogoUrl} alt={team.teamName} className="w-full h-full object-contain" />
                             </div>
                           ) : null}

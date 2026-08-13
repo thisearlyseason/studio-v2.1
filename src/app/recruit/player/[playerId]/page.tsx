@@ -384,8 +384,9 @@ export default function PublicScoutPortalPage() {
     </div>
   );
 
-  // Recruiting profiles are private until a player or authorized coach explicitly activates them.
-  if (!player || player.recruitingProfileEnabled !== true) {
+  // The public API is the access-control boundary. A missing player means the
+  // authoritative recruiting profile status is inactive or the record is absent.
+  if (!player) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10">
         <Card className="max-w-md w-full text-center p-12 rounded-[3rem] border-none shadow-2xl bg-white">

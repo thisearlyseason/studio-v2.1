@@ -687,6 +687,11 @@ export async function deployTournamentSchedule(input: {
             )),
             scheduleUpdatedAt: now,
             scheduleUpdatedBy: input.actor.uid,
+            setupStatus: 'complete',
+            scheduleStatus: 'ready',
+            bracketStatus: 'ready',
+            deploymentStatus: 'deployed',
+            deploymentError: '',
           });
         });
       },
@@ -944,6 +949,10 @@ export async function clearTournamentSchedule(input: {
       mutate: () => commitOperations(bookings.docs.map(document => batch => batch.delete(document.ref))),
       publish: async () => { await eventRef.update({
         tournamentGames: [],
+        scheduleStatus: 'pending',
+        bracketStatus: 'pending',
+        deploymentStatus: 'undeployed',
+        deploymentError: '',
         scheduleClearedAt: new Date().toISOString(),
         scheduleClearedBy: input.actor.uid,
       }); },

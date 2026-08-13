@@ -53,7 +53,6 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Lock as LockIcon } from 'lucide-react';
 import { DatePicker } from "@/components/ui/date-picker";
-import { volunteerPoints } from '@/lib/volunteer-points';
 import {
   Tooltip,
   TooltipContent,
@@ -72,7 +71,6 @@ export default function VolunteerHubPage() {
     signUpForVolunteer, 
     deleteVolunteerOpportunity, 
     confirmVolunteerAttendance,
-    verifyVolunteerPoints,
     claimAssignment,
     isPro, 
     purchasePro 
@@ -83,8 +81,7 @@ export default function VolunteerHubPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingOpp, setEditingOpp] = useState<VolunteerOpportunity | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [verifyingContribution, setVerifyingContribution] = useState<string | null>(null);
-  const [newOpp, setNewOpp] = useState({ title: '', description: '', date: '', location: '', spots: 2, points: 50, startTime: '09:00', isShareable: false });
+  const [newOpp, setNewOpp] = useState({ title: '', description: '', date: '', location: '', spots: 2, startTime: '09:00', isShareable: false });
 
   const oppsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -92,10 +89,7 @@ export default function VolunteerHubPage() {
   }, [activeTeam?.id, db]);
 
   const { data: rawOpps, isLoading: isOppsLoading } = useCollection<VolunteerOpportunity>(oppsQuery);
-  const opportunities = useMemo(
-    () => (rawOpps || []).map(opportunity => ({ ...opportunity, points: volunteerPoints(opportunity) })),
-    [rawOpps]
-  );
+  const opportunities = useMemo(() => rawOpps || [], [rawOpps]);
 
   const eventsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -118,7 +112,6 @@ export default function VolunteerHubPage() {
         date: e.date,
         location: e.location,
         spots: 1,
-        points: a.points || 25,
         startTime: e.startTime || 'TBD',
         signups: a.assigneeId ? { [a.assigneeId]: { userId: a.assigneeId, userName: a.assigneeName, status: 'claimed' } } : {},
         entryType: 'event_assignment' as const,
@@ -128,64 +121,16 @@ export default function VolunteerHubPage() {
     return [...opps, ...eventTasks].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [opportunities, rawEvents]);
 
-  const totalPoints = useMemo(() => {
-    let ledgerTotal = 0;
-    opportunities.forEach(opp => {
-      Object.values(opp.signups || {}).forEach(s => {
-        if (s.userId === user?.id && s.status === 'verified') {
-          ledgerTotal += Number(s.verifiedPoints ?? opp.points) || 0;
-        }
-      });
-    });
-    const memberTotal =
-      members.find(member => member.userId === user?.id || member.id === user?.id)
-        ?.volunteerPoints || 0;
-    return Math.max(memberTotal, ledgerTotal);
-  }, [members, opportunities, user?.id]);
-
-  const contributionTotals = useMemo(() => {
-    const totals = new Map<string, { userId: string; userName: string; email?: string; points: number }>();
-    opportunities.forEach(opportunity => {
-      Object.values(opportunity.signups || {}).forEach(signup => {
-        if (signup.status !== 'verified') return;
-        const current = totals.get(signup.userId) || {
-          userId: signup.userId,
-          userName: signup.userName || 'Contributor',
-          email: signup.email,
-          points: 0,
-        };
-        current.points += Number(signup.verifiedPoints ?? opportunity.points) || 0;
-        totals.set(signup.userId, current);
-      });
-    });
-    members.forEach(member => {
-      const points = Number(member.volunteerPoints) || 0;
-      if (points <= 0) return;
-      const key = member.userId || member.id;
-      const current = totals.get(key);
-      if (!current || points > current.points) {
-        totals.set(key, {
-          userId: key,
-          userName: member.name || current?.userName || 'Contributor',
-          email: member.email || current?.email,
-          points,
-        });
-      }
-    });
-    return [...totals.values()].sort((a, b) => b.points - a.points);
-  }, [members, opportunities]);
-
   const handleAddOpportunity = async () => {
     if (!newOpp.title || !newOpp.date) return;
     setIsProcessing(true);
     await addVolunteerOpportunity({
       ...newOpp,
       spots: parseInt(String(newOpp.spots)),
-      points: parseInt(String(newOpp.points))
     });
     setIsAddOpen(false);
     setIsProcessing(false);
-    setNewOpp({ title: '', description: '', date: '', location: '', spots: 2, points: 50, startTime: '09:00', isShareable: false });
+    setNewOpp({ title: '', description: '', date: '', location: '', spots: 2, startTime: '09:00', isShareable: false });
     toast({ title: "Mission Published", description: "The squad has been notified of the new deployment." });
   };
 
@@ -195,7 +140,6 @@ export default function VolunteerHubPage() {
     await updateVolunteerOpportunity(editingOpp.id, {
       ...editingOpp,
       spots: parseInt(String(editingOpp.spots)),
-      points: parseInt(String(editingOpp.points))
     });
     setIsEditOpen(false);
     setIsProcessing(false);
@@ -207,29 +151,6 @@ export default function VolunteerHubPage() {
     const url = `${window.location.origin}/public/volunteer/${activeTeam?.id}/${oppId}`;
     navigator.clipboard.writeText(url);
     toast({ title: "Portal Link Copied", description: "External signup link ready for dispatch." });
-  };
-
-  const handleVerifyContribution = async (
-    opportunity: VolunteerOpportunity,
-    contributorId: string
-  ) => {
-    const key = `${opportunity.id}:${contributorId}`;
-    setVerifyingContribution(key);
-    try {
-      await verifyVolunteerPoints(opportunity.id, contributorId, opportunity.points);
-      toast({
-        title: 'Contribution Verified',
-        description: `${opportunity.points} points were added to the contributor’s permanent total.`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Verification Failed',
-        description: error.message || 'Unable to award contribution points.',
-        variant: 'destructive',
-      });
-    } finally {
-      setVerifyingContribution(null);
-    }
   };
 
   if (isLoading) {
@@ -296,19 +217,7 @@ export default function VolunteerHubPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <Card className="rounded-[3rem] border-none shadow-2xl bg-primary text-white overflow-hidden group hover:scale-[1.02] transition-transform">
-          <CardContent className="p-10 space-y-4">
-            <div className="flex justify-between items-start">
-              <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-md shadow-inner"><Star className="h-8 w-8 text-white" /></div>
-              <Badge className="bg-white/20 text-white border-none font-black text-[9px] uppercase tracking-widest px-4 h-7 rounded-full">Personal Rank</Badge>
-            </div>
-            <div>
-              <p className="text-6xl font-black leading-none tracking-tighter">{totalPoints}</p>
-              <p className="text-[11px] font-black uppercase tracking-[0.3em] opacity-60 mt-2">Earned Contribution Points</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <Card className="rounded-[3rem] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-black/5 group hover:scale-[1.02] transition-transform">
           <CardContent className="p-10 space-y-4">
             <div className="flex justify-between items-start">
@@ -381,11 +290,7 @@ export default function VolunteerHubPage() {
                   </CardHeader>
 
                   <CardContent className="p-10 pt-0 flex-1 space-y-6 border-b border-black/5 bg-muted/5">
-                    <div className="grid grid-cols-2 gap-4 pt-6">
-                      <div className="space-y-1">
-                        <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Rewards</p>
-                        <p className="text-xl font-black text-primary italic">+{task.points} PTS</p>
-                      </div>
+                    <div className="pt-6">
                       <div className="space-y-1">
                         <p className="text-[8px] font-black uppercase text-muted-foreground tracking-widest">Logistics</p>
                         <p className="text-[10px] font-black uppercase truncate">{format(new Date(task.date), 'MMM d, yyyy')}</p>
@@ -446,19 +351,6 @@ export default function VolunteerHubPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {contributionTotals.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-8 border-b-2 border-black/5 bg-muted/10">
-                  {contributionTotals.map((contributor, index) => (
-                    <div key={contributor.userId} className="rounded-2xl bg-white border border-black/5 p-5 flex items-center justify-between gap-4 shadow-sm">
-                      <div className="min-w-0">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-primary">#{index + 1} Contributor</p>
-                        <p className="font-black uppercase truncate">{contributor.userName}</p>
-                      </div>
-                      <p className="text-2xl font-black text-primary shrink-0">{contributor.points} PTS</p>
-                    </div>
-                  ))}
-                </div>
-              )}
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left min-w-[800px]">
                   <thead className="bg-muted/30 text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground border-b-2 border-black/5">
@@ -466,7 +358,7 @@ export default function VolunteerHubPage() {
                       <th className="px-12 py-8">Active Personnel</th>
                       <th className="px-8 py-8">Strategic Assignment</th>
                       <th className="px-8 py-8 text-center">Deployment</th>
-                      <th className="px-8 py-8 text-center">Intelligence Status</th>
+                      <th className="px-8 py-8 text-center">Attendance Status</th>
                       <th className="px-12 py-8 text-right">Action Protocol</th>
                     </tr>
                   </thead>
@@ -492,31 +384,12 @@ export default function VolunteerHubPage() {
                           </button>
                         </td>
                         <td className="px-8 py-8 text-center">
-                          <Badge className={cn("border-none font-black text-[9px] uppercase h-7 px-4 rounded-full", signup.status === 'verified' ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>
-                            {signup.status === 'verified' ? 'Verified Intel' : 'Pending Verification'}
+                          <Badge className={cn("border-none font-black text-[9px] uppercase h-7 px-4 rounded-full", signup.isConfirmed ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700")}>
+                            {signup.isConfirmed ? 'Confirmed' : 'Pending'}
                           </Badge>
                         </td>
                         <td className="px-12 py-8 text-right">
-                          {signup.status === 'verified' ? (
-                            <div className="flex flex-col items-end">
-                              <span className="font-black text-primary text-base italic">+{signup.verifiedPoints ?? opp.points} PTS</span>
-                              <span className="text-[8px] font-black uppercase text-muted-foreground opacity-40">Intelligence Confirmed</span>
-                            </div>
-                          ) : (
-                            <Button
-                              size="sm"
-                              className="rounded-xl h-12 px-8 font-black uppercase text-[10px] tracking-widest bg-black text-white hover:bg-primary shadow-xl shadow-black/5 group"
-                              onClick={() => handleVerifyContribution(opp, signup.userId)}
-                              disabled={verifyingContribution === `${opp.id}:${signup.userId}`}
-                            >
-                              {verifyingContribution === `${opp.id}:${signup.userId}` ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              ) : (
-                                <ShieldCheck className="h-4 w-4 mr-2 group-hover:scale-110 transition-transform" />
-                              )}
-                              Verify & Award
-                            </Button>
-                          )}
+                          <span className="text-[9px] font-black uppercase text-muted-foreground">Use attendance check to confirm service</span>
                         </td>
                       </tr>
                     )))}
@@ -563,11 +436,7 @@ export default function VolunteerHubPage() {
                   <Input type="number" value={newOpp.spots} onChange={e => setNewOpp({...newOpp, spots: parseInt(e.target.value)})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-6">
-                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Mission Reward (Pts)</Label>
-                  <Input type="number" value={newOpp.points} onChange={e => setNewOpp({...newOpp, points: parseInt(e.target.value)})} className="h-14 rounded-2xl border-2 font-black shadow-sm text-primary" />
-                </div>
+              <div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Intelligence (Start Time)</Label>
                   <Input type="time" value={newOpp.startTime} onChange={e => setNewOpp({...newOpp, startTime: e.target.value})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
@@ -619,11 +488,7 @@ export default function VolunteerHubPage() {
                     <Input type="number" value={editingOpp.spots} onChange={e => setEditingOpp({...editingOpp, spots: parseInt(String(e.target.value))})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-6">
-                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Tactical Points</Label>
-                    <Input type="number" value={editingOpp.points || 50} onChange={e => setEditingOpp({...editingOpp, points: parseInt(e.target.value)})} className="h-14 rounded-2xl border-2 font-black shadow-sm text-primary" />
-                  </div>
+                <div>
                    <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 opacity-50">Start Intelligence</Label>
                     <Input type="time" value={(editingOpp as any).startTime || '09:00'} onChange={e => setEditingOpp({...editingOpp, startTime: e.target.value} as any)} className="h-14 rounded-2xl border-2 font-black shadow-sm" />

@@ -459,9 +459,15 @@ export type TeamEvent = {
   selectedFields?: string[];
   manualVenue?: string;
   waiverIds?: string[];
+  waiverDocuments?: Array<{ id: string; title: string; content: string }>;
   venueSettings?: Record<string, any>;
   creatorId?: string;
   isCompleted?: boolean;
+  setupStatus?: 'draft' | 'complete';
+  bracketStatus?: 'pending' | 'ready' | 'failed';
+  scheduleStatus?: 'pending' | 'ready' | 'failed';
+  deploymentStatus?: 'undeployed' | 'deployed' | 'failed';
+  deploymentError?: string;
   archived_waivers?: any[];
 };
 
@@ -495,6 +501,15 @@ export type TeamIncident = {
   id: string;
   teamId: string;
   teamName: string;
+  participantTeamName?: string;
+  leagueId?: string;
+  tournamentId?: string;
+  division?: string;
+  gameId?: string;
+  participantId?: string;
+  participantName?: string;
+  incidentType?: string;
+  injuryType?: string;
   title: string;
   date: string;
   time?: string;
@@ -508,11 +523,18 @@ export type TeamIncident = {
   severity?: 'minor' | 'moderate' | 'severe' | 'critical';
   treatmentProvided?: string;
   followUpRequired?: boolean;
+  followUpNotes?: string;
+  status?: 'open' | 'monitoring' | 'follow_up_required' | 'resolved';
+  parentGuardianContacted?: boolean;
   actionsTaken?: string;
   reportedBy?: string;
   reportedTo?: string;
   equipmentInvolved?: string;
   weatherConditions?: string;
+  supportingDocumentUrl?: string;
+  auditHistory?: Array<{ action: string; userId: string; at: string }>;
+  updatedAt?: string;
+  updatedBy?: string;
   createdAt: string;
 };
 
@@ -525,7 +547,7 @@ export type VolunteerOpportunity = {
   endDate?: string;
   location: string;
   spots: number;
-  points: number;
+  points?: number; // Dormant historical compatibility field; Reward Points are retired.
   hoursPerSlot?: number;
   isShareable?: boolean;
   signups: Record<string, any>;
@@ -641,6 +663,9 @@ export type League = {
   divisions?: string[]; // List of available divisions (e.g. 'Gold', 'Silver', 'U12')
   divisionTitle?: string;
   schedulerConfig?: any;
+  settingsCopiedFrom?: string;
+  settingsCopiedAt?: string;
+  deploymentStatus?: 'undeployed' | 'deployed' | 'failed';
   isDemo?: boolean;
   demoSessionOwnerId?: string;
   demoSeeded?: boolean;
@@ -926,7 +951,6 @@ interface TeamContextType {
   deleteVolunteerOpportunity: (oppId: string) => Promise<void>;
   publicSignUpForVolunteer: (teamId: string, oppId: string, data: any) => Promise<void>;
   signUpForVolunteer: (oppId: string) => Promise<void>;
-  verifyVolunteerPoints: (oppId: string, userId: string, points: number) => Promise<void>;
   confirmVolunteerAttendance: (oppId: string, userId: string, confirmed: boolean) => Promise<void>;
   addFundraisingOpportunity: (data: any) => Promise<string | undefined>;
   updateFundraisingOpportunity: (fundId: string, updates: any) => Promise<void>;
@@ -2393,23 +2417,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const deleteVolunteerOpportunity = useCallback(async (oppId: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId)); }, [activeTeam, db]);
   const publicSignUpForVolunteer = useCallback(async (teamId: string, oppId: string, data: any) => { if (db) await updateDoc(doc(db, 'teams', teamId, 'volunteers', oppId), { [`signups.${data.name.replace(/\s+/g, '')}_${Date.now()}`]: { userId: `public_${Date.now()}`, userName: data.name, email: data.email, phone: data.phone, isConfirmed: false, status: 'pending', createdAt: new Date().toISOString() } }); }, [db]);
   const signUpForVolunteer = useCallback(async (oppId: string) => { if (activeTeam?.id && firebaseUser && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${firebaseUser.uid}`]: { userId: firebaseUser.uid, userName: userProfile?.name, email: firebaseUser.email, isConfirmed: false, status: 'pending', createdAt: new Date().toISOString() } }); }, [activeTeam, firebaseUser, db, userProfile]);
-  const verifyVolunteerPoints = useCallback(async (oppId: string, userId: string, _points: number) => {
-    void _points; // The server derives the authoritative award from the opportunity.
-    if (!activeTeam?.id || !firebaseAuth) return;
-    const idToken = await getAuthToken(firebaseAuth);
-    if (!idToken) throw new Error('Your session has expired. Please sign in again.');
-    const response = await fetch('/api/teams/volunteers/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
-      body: JSON.stringify({
-        teamId: activeTeam.id,
-        opportunityId: oppId,
-        contributorId: userId,
-      }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Unable to verify contribution points.');
-  }, [activeTeam?.id, firebaseAuth]);
   const confirmVolunteerAttendance = useCallback(async (oppId: string, userId: string, confirmed: boolean) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), { [`signups.${userId}.isConfirmed`]: confirmed }); }, [activeTeam, db]);
 
   const addFundraisingOpportunity = useCallback(async (data: any) => {
@@ -3216,7 +3223,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);
-  const updateIncident = useCallback(async (teamId: string, id: string, data: any) => { if (db) await updateDoc(doc(db, 'teams', teamId, 'incidents', id), clean(data)); }, [db]);
+  const updateIncident = useCallback(async (teamId: string, id: string, data: any) => {
+    if (!db || !firebaseUser) return;
+    const updatedAt = new Date().toISOString();
+    await updateDoc(doc(db, 'teams', teamId, 'incidents', id), {
+      ...clean(data), updatedAt, updatedBy: firebaseUser.uid,
+      auditHistory: arrayUnion({ action: data.status ? `status:${data.status}` : 'updated', userId: firebaseUser.uid, at: updatedAt }),
+    });
+  }, [db, firebaseUser]);
   
 
 
@@ -3603,7 +3617,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite, revokeChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, deleteTeamDocument, addEvent, updateEvent, claimAssignment,
-    deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerPoints,
+    deleteEvent, updateRSVP, addMessage, resetSquadData,
     removeMember, reinstateMember,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
@@ -3645,7 +3659,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite, revokeChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
     signTeamDocument, createTeamDocument, updateTeamDocument, deleteTeamDocument, addEvent, updateEvent,
-    deleteEvent, updateRSVP, addMessage, resetSquadData, verifyVolunteerPoints,
+    deleteEvent, updateRSVP, addMessage, resetSquadData,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising, recordDonation,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,

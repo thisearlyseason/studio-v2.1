@@ -423,8 +423,8 @@ export default function TeamProfilePage() {
         <div className="container px-6 -mt-20 flex flex-col sm:flex-row items-center sm:items-end gap-6 pb-2">
           <div className="relative group">
             <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoChange} />
-            <Avatar className="h-40 w-40 border-[6px] border-background shadow-2xl rounded-3xl">
-              <AvatarImage src={activeTeam.teamLogoUrl} className="object-cover" />
+            <Avatar className="h-40 w-40 border-0 bg-transparent shadow-none rounded-none">
+              <AvatarImage src={activeTeam.teamLogoUrl} className="object-contain" />
               <AvatarFallback className="hero-gradient text-white text-4xl font-black rounded-3xl">{activeTeam.name ? activeTeam.name[0] : 'T'}</AvatarFallback>
             </Avatar>
             {isAdmin && (

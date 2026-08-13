@@ -39,10 +39,10 @@ export function SquadIdentity({
   const hasLogo = logoUrl && logoUrl.trim() !== "" && logoUrl !== 'undefined';
 
   const sizeClasses = {
-    sm: "h-6 w-6 rounded-md",
-    md: "h-10 w-10 rounded-xl",
-    lg: "h-14 w-14 rounded-2xl",
-    xl: "h-20 w-20 rounded-[2rem]"
+    sm: "h-6 w-6",
+    md: "h-10 w-10",
+    lg: "h-14 w-14",
+    xl: "h-20 w-20"
   };
 
   const textSizes = {
@@ -60,7 +60,7 @@ export function SquadIdentity({
 
   // Logo: show image if URL exists, ShieldAlert placeholder if TBD, nothing if no logo
   const logoNode = hasLogo && !isTBD ? (
-    <div className={cn(sizeClasses[size], "shrink-0 bg-muted/5 p-1 flex items-center justify-center overflow-hidden border border-muted/20 shadow-inner", logoClassName)}>
+    <div className={cn(sizeClasses[size], "shrink-0 flex items-center justify-center", logoClassName, "!border-0 !bg-transparent !shadow-none")}>
       <img src={logoUrl} alt={safeName} className="w-full h-full object-contain" />
     </div>
   ) : isTBD ? (

@@ -195,6 +195,10 @@ export default function TournamentRegistrationAdminPage() {
 
   const { data: rawEntries, isLoading: isEntriesLoading } = useCollection<RegistrationEntry>(entriesQuery);
 
+  // Tournament membership is authoritative on the event roster. Registration
+  // responses describe intake only and must never be used as the team total.
+  const tournamentTeamCount = event?.tournamentTeamsData?.length || 0;
+
   const legacyEntriesQuery = useMemoFirebase(() => {
     if (!db || !teamId || !eventId || !isAuthResolved) return null;
     return query(collection(db, 'teams', teamId as string, 'registrationEntries'), where('event_id', '==', eventId as string));
@@ -295,6 +299,14 @@ export default function TournamentRegistrationAdminPage() {
       setIsSaving(true);
       try {
         await setDoc(configRef, updated, { merge: true });
+        if (eventRef) {
+          const waiverDocuments = updated.team_waivers_content || [];
+          await updateDoc(eventRef, {
+            waiverIds: updated.selected_team_waivers || [],
+            waiverDocuments,
+            teamWaiverText: waiverDocuments.map(waiver => `${waiver.title}\n\n${waiver.content}`).join('\n\n'),
+          });
+        }
         // Sync cost to the event doc for top-level reads
         if (updates.registration_cost !== undefined && eventRef) {
           await updateDoc(eventRef, { registration_cost: updates.registration_cost });
@@ -463,7 +475,10 @@ export default function TournamentRegistrationAdminPage() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
             <div className="flex items-center gap-3">
               <div className="bg-orange-100 p-2.5 rounded-xl text-orange-600"><Target className="h-5 w-5" /></div>
-              <div><h3 className="text-xl font-black uppercase tracking-tight">Registered Teams</h3><p className="text-[9px] font-bold text-muted-foreground uppercase">{filteredEntries.length} Responses</p></div>
+              <div>
+                <h3 className="text-xl font-black uppercase tracking-tight">Tournament Teams</h3>
+                <p className="text-[9px] font-bold text-muted-foreground uppercase">{tournamentTeamCount} enrolled teams • {filteredEntries.length} matching form responses</p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border-2 shadow-sm">

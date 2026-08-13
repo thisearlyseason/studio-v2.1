@@ -79,6 +79,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { getFacilityFieldName } from '@/lib/facility-rename';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { EventSafetyPanel } from '@/components/safety/event-safety-panel';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -367,7 +368,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         </div>
 
         {/* Step Content */}
-        <ScrollArea className="flex-1 px-10 pb-8 min-h-[300px] md:min-h-0">
+        <ScrollArea showScrollHint scrollHintLabel="More season settings" className="flex-1 px-6 sm:px-10 pb-8 min-h-[300px] md:min-h-0">
           {step === 1 && (
             <div className="space-y-10 animate-in slide-in-from-right-4 duration-400">
               <section className="space-y-6">
@@ -916,7 +917,7 @@ function LeagueOverview({
                         <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
                           <p className="font-black text-sm uppercase truncate text-primary">{game.team1}</p>
                           {logo1 ? (
-                            <div className="h-14 w-14 shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1">
+                            <div className="h-14 w-14 shrink-0">
                               <img src={logo1} alt={game.team1} className="w-full h-full object-contain" />
                             </div>
                           ) : null}
@@ -936,7 +937,7 @@ function LeagueOverview({
                         {/* Away team */}
                         <div className="flex-1 flex items-center justify-start gap-3 min-w-0">
                           {logo2 ? (
-                            <div className="h-14 w-14 shrink-0 rounded-xl overflow-hidden border border-muted/20 shadow-md bg-white p-1">
+                            <div className="h-14 w-14 shrink-0">
                               <img src={logo2} alt={game.team2} className="w-full h-full object-contain" />
                             </div>
                           ) : null}
@@ -1010,7 +1011,7 @@ function LeagueOverview({
                       {/* Home */}
                       <div className="flex-1 flex flex-col items-center justify-center gap-3 py-6 px-4">
                         {logo1 ? (
-                          <div className="h-20 w-20 rounded-2xl overflow-hidden border border-muted/20 shadow-lg bg-white p-1.5">
+                          <div className="h-20 w-20">
                             <img src={logo1} alt={game.team1} className="w-full h-full object-contain" />
                           </div>
                         ) : null}
@@ -1035,7 +1036,7 @@ function LeagueOverview({
                       {/* Away */}
                       <div className="flex-1 flex flex-col items-center justify-center gap-3 py-6 px-4">
                         {logo2 ? (
-                          <div className="h-20 w-20 rounded-2xl overflow-hidden border border-muted/20 shadow-lg bg-white p-1.5">
+                          <div className="h-20 w-20">
                             <img src={logo2} alt={game.team2} className="w-full h-full object-contain" />
                           </div>
                         ) : null}
@@ -1514,7 +1515,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const [divisionTitle, setDivisionTitle] = useState('');
   const [stagedDivisions, setStagedDivisions] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'portals' | 'teams' | 'players' | 'compliance' | 'schedule'>('teams');
+  const [activeTab, setActiveTab] = useState<'portals' | 'teams' | 'players' | 'compliance' | 'schedule' | 'safety'>('teams');
   const [mounted, setMounted] = useState(false);
   const [loadingGraceExpired, setLoadingGraceExpired] = useState(false);
   const [selectedDivision, setSelectedDivision] = useState<string | null>(null);
@@ -1544,6 +1545,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const [duplicateTitle, setDuplicateTitle] = useState('');
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
   const [duplicatingLeague, setDuplicatingLeague] = useState<League | null>(null);
+  const [copyLeagueTargets, setCopyLeagueTargets] = useState<string[]>([]);
   const [pendingLeagueDeletion, setPendingLeagueDeletion] = useState<{
     ids: string[];
     name: string;
@@ -1669,6 +1671,12 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   }, [db, activeLeague?.id]);
   const { data: waiversData } = useCollection<LeagueArchiveWaiver>(waiversQuery);
   const waivers = useMemo(() => waiversData || [], [waiversData]);
+  const portalConfigsQuery = useMemoFirebase(() => {
+    if (!db || !activeLeague?.id) return null;
+    return collection(db, 'leagues', activeLeague.id, 'registration');
+  }, [db, activeLeague?.id]);
+  const { data: portalConfigs } = useCollection<any>(portalConfigsQuery);
+  const portalEnabled = useCallback((id: string) => portalConfigs?.find(config => config.id === id)?.is_active === true, [portalConfigs]);
 
   const [leaguePin, setLeaguePin] = useState(activeLeague?.scorekeeperPin || '');
 
@@ -2079,6 +2087,30 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     } catch (e: any) {
       console.error("[Leagues] Duplication failed:", e);
       toast({ title: "Replication Failed", description: e.message, variant: 'destructive' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCopyDivisionSettings = async () => {
+    if (!duplicatingLeague || copyLeagueTargets.length === 0 || !firebaseAuth) return;
+    setIsProcessing(true);
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Please sign in again.');
+      const response = await fetch('/api/leagues/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ leagueId: duplicatingLeague.id, targetLeagueIds: copyLeagueTargets }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to copy division settings.');
+      toast({ title: 'Division Settings Copied', description: `${copyLeagueTargets.length} division${copyLeagueTargets.length === 1 ? '' : 's'} updated as undeployed drafts. Teams and schedules were not copied.` });
+      setCopyLeagueTargets([]);
+      setIsDuplicateOpen(false);
+      setDuplicatingLeague(null);
+    } catch (error) {
+      toast({ title: 'Copy Failed', description: error instanceof Error ? error.message : 'Unable to copy settings.', variant: 'destructive' });
     } finally {
       setIsProcessing(false);
     }
@@ -2535,6 +2567,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Button variant={activeTab === 'schedule' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('schedule')}>Schedule</Button>
                   {canManageLeagues && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
                   {canManageLeagues && !isStarter && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
+                  {canManageLeagues && <Button variant={activeTab === 'safety' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('safety')}>Safety</Button>}
                   {canManageLeagues && !isStarter && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
                 </div>
                 
@@ -2828,8 +2861,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </div>
                   <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Team Registration</h4>
                   <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for new squads to join the roster.</p>
+                  {!portalEnabled('team_config') && <div className="rounded-xl border border-white/20 bg-black/20 p-3 text-[10px] font-bold">This feature is disabled. Open Portal Architect and enable Team Registration before sharing it.</div>}
                   <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.inviteCode || activeLeague.id}?protocol=team_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                    <Button disabled={!portalEnabled('team_config')} variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.inviteCode || activeLeague.id}?protocol=team_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
                     <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}?protocol=team_config`)}><Settings className="h-4 w-4" /></Button>
                   </div>
                 </Card>
@@ -2838,8 +2872,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Badge className="bg-white text-blue-600 border-none font-black text-[8px] h-5 px-2">ATHLETE PIPELINE</Badge>
                   <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Athlete Pipeline</h4>
                   <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for athletes seeking squad placement.</p>
+                  {!portalEnabled('player_config') && <div className="rounded-xl border border-white/20 bg-black/20 p-3 text-[10px] font-bold">This feature is disabled. Open Portal Architect and enable Athlete Pipeline before using it.</div>}
                   <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.inviteCode || activeLeague.id}?protocol=player_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                    <Button disabled={!portalEnabled('player_config')} variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.inviteCode || activeLeague.id}?protocol=player_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
                    <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}?protocol=player_config`)}><Settings className="h-4 w-4" /></Button>
                   </div>
                 </Card>
@@ -2863,8 +2898,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Badge className="bg-white text-purple-600 border-none font-black text-[8px] h-5 px-2">COMPLIANCE HUB</Badge>
                   <h4 className="text-2xl font-black uppercase tracking-tight leading-none">Waiver Portal</h4>
                   <p className="text-xs text-white/80 font-medium leading-relaxed italic">Public portal for standalone liability and agreement signing.</p>
+                  {!portalEnabled('waiver_config') && <div className="rounded-xl border border-white/20 bg-black/20 p-3 text-[10px] font-bold">This feature is disabled. Open Portal Architect and enable Waiver Portal before sharing it.</div>}
                   <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.inviteCode || activeLeague.id}?protocol=waiver_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
+                    <Button disabled={!portalEnabled('waiver_config')} variant="outline" className="flex-1 h-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.inviteCode || activeLeague.id}?protocol=waiver_config`); toast({ title: "Portal Link Copied" }); }}>Copy Link <Share2 className="ml-2 h-3 w-3" /></Button>
                     <Button variant="outline" className="h-12 w-12 rounded-xl bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={() => router.push(`/leagues/registration/${activeLeague.id}?protocol=waiver_config`)}><Settings className="h-4 w-4" /></Button>
                   </div>
                 </Card>
@@ -2883,6 +2919,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Button variant="outline" className="w-full h-12 rounded-xl bg-black/5 border-black/10 text-black hover:bg-black/10" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/leagues/scorekeeper/${activeLeague.slug || activeLeague.id}`); toast({ title: "Scorekeeper URL Copied" }); }}>Copy Entry Link <Share2 className="ml-2 h-3 w-3" /></Button>
                 </Card>
               </div>
+            </TabsContent>
+            <TabsContent value="safety" className="mt-0 animate-in fade-in duration-500">
+              <EventSafetyPanel kind="league" eventId={activeLeague.id} eventName={activeLeague.name} divisions={activeLeague.divisions || (activeLeague.divisionTitle ? [activeLeague.divisionTitle] : [])} />
             </TabsContent>
           </Tabs>
         </div>
@@ -3325,14 +3364,31 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 autoFocus
               />
               <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed">
-                This will clone all divisions, age groups, costs, and registration portals. 
-                Rosters and match history will be reset.
+                Create a new empty hub, or copy configuration into existing sibling divisions. Teams, registrations, results, standings, and schedules are never copied.
               </p>
+              {duplicatingLeague && allLeagues.filter(league => league.id !== duplicatingLeague.id && league.name === duplicatingLeague.name).length > 0 && (
+                <div className="rounded-2xl border-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-[10px] font-black uppercase">Copy to Existing Divisions</Label>
+                    <button className="text-[9px] font-black uppercase text-primary" onClick={() => setCopyLeagueTargets(allLeagues.filter(league => league.id !== duplicatingLeague.id && league.name === duplicatingLeague.name).map(league => league.id))}>All Others</button>
+                  </div>
+                  {allLeagues.filter(league => league.id !== duplicatingLeague.id && league.name === duplicatingLeague.name).map(league => (
+                    <label key={league.id} className="flex items-center gap-2 text-xs font-bold uppercase">
+                      <input type="checkbox" checked={copyLeagueTargets.includes(league.id)} onChange={event => setCopyLeagueTargets(current => event.target.checked ? [...current, league.id] : current.filter(id => id !== league.id))} />
+                      {league.divisionTitle || 'Main Division'}
+                      <Badge variant="outline" className="ml-auto text-[7px]">{league.deploymentStatus === 'deployed' || (league.schedule || []).length > 0 ? 'Deployed' : league.settingsCopiedFrom ? 'Copied • Draft' : 'Draft'}</Badge>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleDuplicateLeague} disabled={isProcessing || !duplicateTitle.trim()}>
-                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Deploy Replicated Hub"}
-              </Button>
+              <div className="w-full grid gap-2">
+                {copyLeagueTargets.length > 0 && <Button className="h-14 rounded-2xl font-black" onClick={handleCopyDivisionSettings} disabled={isProcessing}>Copy Division Settings</Button>}
+                <Button variant={copyLeagueTargets.length > 0 ? 'outline' : 'default'} className="h-14 rounded-2xl font-black" onClick={handleDuplicateLeague} disabled={isProcessing || !duplicateTitle.trim()}>
+                  {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Create New Draft Hub"}
+                </Button>
+              </div>
             </DialogFooter>
           </div>
         </DialogContent>

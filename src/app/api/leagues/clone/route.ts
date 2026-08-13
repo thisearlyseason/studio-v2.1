@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
     const sourceLeagueId = typeof body.leagueId === 'string' && ID_PATTERN.test(body.leagueId) ? body.leagueId : '';
-    const name = normalizeCreationText(body.name, { field: 'name', max: 120 })!;
     if (!sourceLeagueId) return NextResponse.json({ error: 'Invalid source league.' }, { status: 400 });
 
     const sourceRef = adminDb.collection('leagues').doc(sourceLeagueId);
@@ -31,6 +30,43 @@ export async function POST(req: NextRequest) {
     if (auth.role !== 'superadmin' && source.data()?.creatorId !== auth.uid) {
       return NextResponse.json({ error: 'Only the league organizer can clone this league.' }, { status: 403 });
     }
+    const targetLeagueIds = Array.isArray(body.targetLeagueIds)
+      ? [...new Set(body.targetLeagueIds.filter((id): id is string => typeof id === 'string' && ID_PATTERN.test(id) && id !== sourceLeagueId))].slice(0, 50)
+      : [];
+    if (targetLeagueIds.length > 0) {
+      const targets = await Promise.all(targetLeagueIds.map(id => adminDb.collection('leagues').doc(id).get()));
+      if (targets.some(target => !target.exists || (auth.role !== 'superadmin' && target.data()?.creatorId !== auth.uid))) {
+        return NextResponse.json({ error: 'Every target division must belong to this organizer.' }, { status: 403 });
+      }
+      const deployedTarget = targets.find(target => {
+        const data = target.data() || {};
+        return (Array.isArray(data.schedule) && data.schedule.length > 0) || data.deploymentStatus === 'deployed';
+      });
+      if (deployedTarget) {
+        return NextResponse.json({
+          error: `${deployedTarget.data()?.name || 'A target division'} already has a deployed schedule. Clear or create a draft division before copying settings.`,
+        }, { status: 409 });
+      }
+      const sourceData = source.data() || {};
+      const allowedSettings = ['sport', 'description', 'startDate', 'endDate', 'ages', 'contactEmail', 'contactPhone', 'registrationCost', 'paymentInstructions', 'socialLinks', 'requiredSquads', 'blackoutDaysOfWeek', 'schedulerConfig'] as const;
+      const settings = Object.fromEntries(allowedSettings.flatMap(key => sourceData[key] === undefined ? [] : [[key, sourceData[key]]]));
+      const batch = adminDb.batch();
+      for (const target of targets) {
+        batch.update(target.ref, {
+          ...settings,
+          is_active: false,
+          settingsCopiedFrom: sourceLeagueId,
+          settingsCopiedAt: new Date().toISOString(),
+          deploymentStatus: 'undeployed',
+        });
+        for (const config of configs.docs) {
+          batch.set(target.ref.collection('registration').doc(config.id), { ...config.data(), is_active: false });
+        }
+      }
+      await batch.commit();
+      return NextResponse.json({ updatedLeagueIds: targetLeagueIds });
+    }
+    const name = normalizeCreationText(body.name, { field: 'name', max: 120 })!;
     if (auth.role !== 'superadmin' && (!profile.exists || ownedLeagues.size >= accountCreationLimit(profile.data()))) {
       return NextResponse.json({ error: 'Your account has reached its league limit.' }, { status: 409 });
     }
@@ -65,12 +101,15 @@ export async function POST(req: NextRequest) {
       teams: {},
       individualRecruits: {},
       schedule: [],
+      settingsCopiedFrom: sourceLeagueId,
+      settingsCopiedAt: now,
+      deploymentStatus: 'undeployed',
       memberTeamIds: [],
       memberUserIds: [auth.uid],
       memberIndivIds: [],
     });
     for (const config of configs.docs) {
-      batch.set(destination.collection('registration').doc(config.id), config.data());
+      batch.set(destination.collection('registration').doc(config.id), { ...config.data(), is_active: false });
     }
     await batch.commit();
     return NextResponse.json({ leagueId }, { status: 201 });

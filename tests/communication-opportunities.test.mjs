@@ -75,19 +75,14 @@ test('institution hub stats resolve authoritative squads and stay team-scoped', 
   assert.match(hub, /isHubDataLoading \? <Loader2/);
 });
 
-test('volunteer contribution awards are server-authorized, atomic, and use configured points', () => {
+test('retired Reward Points cannot be awarded while historical fields remain compatible', () => {
   const page = read('../src/app/(dashboard)/volunteers/page.tsx');
-  const provider = read('../src/components/providers/team-provider.tsx');
   const route = read('../src/app/api/teams/volunteers/verify/route.ts');
 
-  assert.match(provider, /fetch\('\/api\/teams\/volunteers\/verify'/);
-  assert.match(route, /getTeamAuthority/);
-  assert.match(route, /runTransaction/);
-  assert.match(route, /FieldValue\.increment\(points\)/);
-  assert.match(route, /volunteerPoints\(opportunity\)/);
-  assert.match(page, /signup\.verifiedPoints \?\? opportunity\.points/);
-  assert.match(page, /contributionTotals/);
-  assert.doesNotMatch(page, /verifyVolunteerPoints\(opp\.id, signup\.userId, 1\)/);
+  assert.match(route, /Reward Points have been retired/);
+  assert.match(route, /status: 410/);
+  assert.doesNotMatch(route, /FieldValue\.increment|runTransaction/);
+  assert.doesNotMatch(page, /contributionTotals|Earned Contribution Points|Verify & Award|Mission Reward \(Pts\)/);
 });
 
 test('coaches corner navigation and roster profile shortcut remain stable', () => {

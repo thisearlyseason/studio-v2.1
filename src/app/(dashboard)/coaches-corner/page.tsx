@@ -118,6 +118,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FundraisingManager } from '@/components/coaches-corner/FundraisingManager';
 import { StripeConnectSetup } from '@/components/finance/StripeConnectSetup';
+import { isProspectActivated } from '@/lib/prospect-activation';
 import { PaymentItemsManager } from '@/components/finance/PaymentItemsManager';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { useAuth } from '@/firebase';
@@ -174,7 +175,6 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
         title: opp.title,
         date: opp.date,
         endDate: opp.endDate,
-        points: opp.points,
         status: signup.status,
         id: opp.id,
         type: 'volunteer'
@@ -191,22 +191,13 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
       .map((a: any) => ({
         title: `${ev.title}: ${a.title}`,
         date: ev.date,
-        points: a.points || 25, // Default points for event tasks
         status: a.status,
         id: a.id,
         type: 'assignment'
       }))
   );
 
-  const allPointsHistory = [...missionHistory, ...assignmentHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  
-  const totalVerifiedPoints = allPointsHistory
-    .filter(h => (h.status === 'verified' || h.status === 'completed'))
-    .reduce((acc, current) => acc + (current.points || 0), 0);
-
-  const pendingPoints = allPointsHistory
-    .filter(h => h.status === 'pending' || h.status === 'claimed')
-    .reduce((acc, current) => acc + (current.points || 0), 0);
+  const serviceHistory = [...missionHistory, ...assignmentHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -254,26 +245,15 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
               </div>
             </div>
 
-            {/* Points Section */}
+            {/* Volunteer service history (Reward Points retired). */}
             <div className="space-y-6">
               <div className="flex items-center gap-2 px-2">
                 <Trophy className="h-4 w-4 text-primary" />
                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Strategic Mobilization</h3>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Card className="rounded-[2rem] border-none shadow-md bg-black text-white p-6 space-y-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Verified</p>
-                  <p className="text-3xl font-black">{totalVerifiedPoints} <span className="text-[10px]">PTS</span></p>
-                </Card>
-                <Card className="rounded-[2rem] border-none shadow-md bg-white border border-black/5 p-6 space-y-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Pending</p>
-                  <p className="text-3xl font-black text-primary">{pendingPoints} <span className="text-[10px]">PTS</span></p>
-                </Card>
-              </div>
-
               <ScrollArea className="h-[280px] bg-muted/10 rounded-[2.5rem] p-4 shadow-inner border border-black/5">
                 <div className="space-y-2">
-                  {allPointsHistory.map((h, i) => (
+                  {serviceHistory.map((h, i) => (
                     <div key={`${h.id}-${i}`} className="bg-white p-4 rounded-xl shadow-sm flex items-center justify-between">
                       <div className="min-w-0">
                         <p className="text-[10px] font-black uppercase tracking-tight truncate leading-none mb-1">{h.title}</p>
@@ -285,11 +265,11 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
                         "border-none font-black text-[8px] uppercase px-2 h-5 shrink-0",
                         (h.status === 'verified' || h.status === 'completed') ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
                       )}>
-                        {h.points} PTS
+                        {(h.status === 'verified' || h.status === 'completed') ? 'Completed' : 'Pending'}
                       </Badge>
                     </div>
                   ))}
-                  {allPointsHistory.length === 0 && (
+                  {serviceHistory.length === 0 && (
                     <div className="py-20 text-center opacity-20 italic text-[10px] font-black uppercase">No mobilization history found.</div>
                   )}
                 </div>
@@ -543,11 +523,10 @@ function TrackingMatrix({ members, protocols, volunteerOpps, events }: { members
 }
 
 function VolunteerOpportunityManager() {
-  const { db, activeTeam, members, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, verifyVolunteerPoints, confirmVolunteerAttendance, createAlert } = useTeam();
+  const { db, activeTeam, members, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, confirmVolunteerAttendance, createAlert } = useTeam();
   const [isAdding, setIsAdding] = useState(false);
   const [editingOpp, setEditingOpp] = useState<any>(null);
   const [managingOpp, setManagingOpp] = useState<any>(null);
-  const [verifyingSignupKey, setVerifyingSignupKey] = useState<string | null>(null);
   
   const vRef = useMemoFirebase(() => db && activeTeam?.id ? query(collection(db, 'teams', activeTeam.id, 'volunteers'), orderBy('date', 'desc')) : null, [db, activeTeam?.id]);
   const { data: opportunities, isLoading } = useCollection(vRef);
@@ -558,7 +537,6 @@ function VolunteerOpportunityManager() {
     endDate: format(new Date(), 'yyyy-MM-dd'),
     startTime: '09:00',
     location: '',
-    points: 50,
     spots: 2,
     description: ''
   });
@@ -572,7 +550,7 @@ function VolunteerOpportunityManager() {
       setIsAdding(false);
     }
     toast({ title: "Intelligence Updated", description: "Volunteer mission deployed successfully." });
-    setForm({ title: '', date: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), startTime: '09:00', location: '', points: 50, spots: 2, description: '' });
+    setForm({ title: '', date: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), startTime: '09:00', location: '', spots: 2, description: '' });
   };
 
   if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>;
@@ -685,7 +663,7 @@ function VolunteerOpportunityManager() {
                 <div className="bg-primary/10 p-4 rounded-2xl text-primary shadow-lg shadow-primary/5"><LayoutGrid className="h-7 w-7" /></div>
                 <div>
                   <DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingOpp ? 'Refine Mission' : 'Deploy Mission'}</DialogTitle>
-                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Define logistics & strategic reward value</DialogDescription>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Define volunteer logistics and expectations</DialogDescription>
                 </div>
               </div>
             </DialogHeader>
@@ -695,10 +673,6 @@ function VolunteerOpportunityManager() {
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Assignment Title</Label>
                   <Input placeholder="e.g. Scorekeeping" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-base focus:ring-primary shadow-sm" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Reward (Points)</Label>
-                  <Input type="number" value={form.points} onChange={e => setForm({ ...form, points: parseInt(e.target.value) })} className="h-14 rounded-2xl border-2 font-black text-base shadow-sm" />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date</Label>
@@ -748,7 +722,7 @@ function VolunteerOpportunityManager() {
                 <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em]">Mobilization Management</p>
                 <h2 className="text-3xl font-black uppercase tracking-tighter leading-none">{managingOpp?.title}</h2>
               </div>
-              <Badge className="bg-primary/10 text-primary border-none font-black text-[10px] px-4 h-8 rounded-xl">{managingOpp?.points} PTS REWARD</Badge>
+              <Badge className="bg-primary/10 text-primary border-none font-black text-[10px] px-4 h-8 rounded-xl">Volunteer Service</Badge>
             </div>
 
             <div className="space-y-4">
@@ -788,39 +762,29 @@ function VolunteerOpportunityManager() {
                   return (
                   <div key={signupKey} className="bg-white rounded-3xl p-5 border-2 border-black/5 flex items-center justify-between shadow-sm group hover:border-primary/20 transition-all">
                     <div className="flex items-center gap-4">
-                      <div className={cn("h-10 w-10 rounded-2xl flex items-center justify-center shadow-inner", s.status === 'verified' ? "bg-green-500 text-white" : "bg-muted text-muted-foreground/40")}>
-                        {s.status === 'verified' ? <Check className="h-5 w-5" strokeWidth={3} /> : <Users className="h-5 w-5" />}
+                      <div className={cn("h-10 w-10 rounded-2xl flex items-center justify-center shadow-inner", s.isConfirmed ? "bg-green-500 text-white" : "bg-muted text-muted-foreground/40")}>
+                        {s.isConfirmed ? <Check className="h-5 w-5" strokeWidth={3} /> : <Users className="h-5 w-5" />}
                       </div>
                       <div>
                         <p className="font-black text-xs uppercase tracking-tight">{s.userName}</p>
-                        <p className={cn("text-[8px] font-black uppercase tracking-widest mt-0.5", s.status === 'verified' ? "text-green-600" : "text-amber-500")}>
-                          {s.status === 'verified' ? 'Points Awarded' : 'Awaiting Intelligence'}
+                        <p className={cn("text-[8px] font-black uppercase tracking-widest mt-0.5", s.isConfirmed ? "text-green-600" : "text-amber-500")}>
+                          {s.isConfirmed ? 'Attendance Confirmed' : 'Awaiting Attendance'}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {s.status !== 'verified' ? (
+                      {!s.isConfirmed ? (
                         <Button onClick={async () => {
-                          setVerifyingSignupKey(signupKey);
                           try {
-                            await verifyVolunteerPoints(managingOpp.id, s.userId, managingOpp.points);
-                            if (!String(s.userId).startsWith('public_')) {
-                              await createAlert(
-                                "Strategic Points Awarded",
-                                `Your contribution to "${managingOpp.title}" has been verified. ${managingOpp.points} points have been credited to your institutional record.`,
-                                s.userId as any
-                              ).catch(() => undefined);
-                            }
-                            const updated = { ...managingOpp.signups, [signupKey]: { ...s, status: 'verified', verifiedPoints: managingOpp.points } };
+                            await confirmVolunteerAttendance(managingOpp.id, s.userId, true);
+                            const updated = { ...managingOpp.signups, [signupKey]: { ...s, isConfirmed: true } };
                             setManagingOpp({ ...managingOpp, signups: updated });
-                            toast({ title: "Mission Verified", description: `Intelligence confirmed. Points awarded to ${s.userName}.` });
+                            toast({ title: "Attendance Confirmed", description: `${s.userName}'s volunteer service is recorded.` });
                           } catch (error: any) {
                             toast({ title: "Verification Failed", description: error.message, variant: "destructive" });
-                          } finally {
-                            setVerifyingSignupKey(null);
                           }
-                        }} disabled={verifyingSignupKey === signupKey} className="h-10 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest bg-green-600 hover:bg-green-700 shadow-lg shadow-green-600/20">
-                          {verifyingSignupKey === signupKey ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verify & Award'}
+                        }} className="h-10 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest bg-green-600 hover:bg-green-700 shadow-lg shadow-green-600/20">
+                          Confirm Attendance
                         </Button>
                       ) : (
                          <div className="h-10 flex items-center px-4 rounded-xl border-2 border-green-100 text-green-600 font-black text-[10px] uppercase tracking-widest bg-green-50/50">Completed</div>
@@ -894,6 +858,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [activeTeam] = useState(user?.clubName || 'Elite Academy'); // Fallback for prominent display
   const [photos, setPhotos] = useState<string[]>([]);
+  const scoutPortalEnabled = isProspectActivated(profile);
   const loadData = useCallback(async (isSilent = false) => {
     if (!member.playerId) {
       setLoading(false);
@@ -1009,7 +974,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     }, 15000); // 15s hard reset
 
     try {
-      const isEnabled = profile.status === 'active' || profile.status === 'committed';
+      const isEnabled = isProspectActivated(profile);
       
       const updatePromises = [
         updateRecruitingProfile(member.playerId, { 
@@ -1840,16 +1805,25 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         </div>
 
         <div className="xl:col-span-4 flex flex-col sm:flex-row xl:flex-col items-stretch gap-4 w-full relative z-10 xl:pl-8">
-          <Button 
-            variant="outline" 
-            className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-[0.1em] hover:bg-zinc-50 hover:text-black transition-all active:scale-[0.98] shadow-sm px-10 bg-white" 
-            onClick={() => window.open(`/recruit/player/${member.playerId}`, '_blank')}
-          >
-            <div className="flex items-center justify-center relative z-10">
-              <ExternalLink className="h-5 w-5 mr-3 text-zinc-400 group-hover/btn:text-primary transition-colors" /> 
-              Scout Portal
-            </div>
-          </Button>
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              disabled={!scoutPortalEnabled || !member.playerId}
+              aria-describedby={!scoutPortalEnabled ? `scout-portal-lock-${member.id}` : undefined}
+              className="group/btn relative w-full overflow-hidden rounded-[2rem] h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-[0.1em] hover:bg-zinc-50 hover:text-black transition-all active:scale-[0.98] shadow-sm px-10 bg-white disabled:cursor-not-allowed disabled:opacity-55"
+              onClick={() => scoutPortalEnabled && member.playerId && window.open(`/recruit/player/${member.playerId}`, '_blank')}
+            >
+              <div className="flex items-center justify-center relative z-10">
+                {scoutPortalEnabled ? <ExternalLink className="h-5 w-5 mr-3 text-zinc-400 group-hover/btn:text-primary transition-colors" /> : <Lock className="h-5 w-5 mr-3 text-zinc-400" />}
+                {scoutPortalEnabled ? 'Scout Portal' : 'Scout Portal Locked'}
+              </div>
+            </Button>
+            {!scoutPortalEnabled && (
+              <p id={`scout-portal-lock-${member.id}`} className="px-3 text-center text-[9px] font-bold uppercase tracking-wider text-amber-700">
+                Activate this prospect in Pack Architect and save before opening the Scout Portal.
+              </p>
+            )}
+          </div>
           <Button 
             className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 font-black uppercase text-[12px] tracking-[0.1em] shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary hover:bg-primary/95 text-white border-b-4 border-black/10 px-10" 
             onClick={() => setIsEditing(true)}

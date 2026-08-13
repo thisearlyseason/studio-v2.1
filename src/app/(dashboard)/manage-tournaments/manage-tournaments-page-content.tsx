@@ -65,6 +65,7 @@ import { Input } from '@/components/ui/input';
 import { LocationAutocomplete } from '@/components/ui/LocationAutocomplete';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTeam, TeamEvent, TournamentGame, TournamentReferee, Member, Facility, Field, TeamDocument, League, RegistrationEntry } from '@/components/providers/team-provider';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
@@ -84,6 +85,7 @@ import { SquadIdentity } from '@/components/SquadIdentity';
 import { getFacilityFieldName } from '@/lib/facility-rename';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
+import { EventSafetyPanel } from '@/components/safety/event-safety-panel';
 
 interface TournamentTeam extends TeamIdentity {
   coach?: string;
@@ -207,6 +209,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeWizardDivision, setActiveWizardDivision] = useState<string>('');
   const [activeLogisticsDivision, setActiveLogisticsDivision] = useState<string>('');
+  const [copyDivisionTargets, setCopyDivisionTargets] = useState<string[]>([]);
+  const [copiedDivisionNames, setCopiedDivisionNames] = useState<string[]>([]);
 
   const [form, setForm] = useState({
     title: '',
@@ -299,6 +303,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
       });
       setActiveWizardDivision('');
       setActiveLogisticsDivision('');
+      setCopiedDivisionNames([]);
       setStep(1);
     } else if (isOpen && !editEvent) {
       // Reset for new creation
@@ -537,6 +542,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
         tournamentTeamsData: filteredTeams,
         tournamentTeams: filteredTeams.map(t => t.name),
         waiverIds: form.waiverIds,
+        waiverDocuments: (documents || []).filter(document => form.waiverIds.includes(document.id)).map(document => ({
+          id: document.id, title: document.title, content: document.content || '',
+        })),
+        teamWaiverText: (documents || []).filter(document => form.waiverIds.includes(document.id)).map(document => `${document.title}\n\n${document.content || ''}`).join('\n\n'),
         registrationCost: form.registration_cost,
         gameLength,
         breakLength,
@@ -550,7 +559,12 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
         tournamentType: divConfig.tournamentType || 'round_robin',
         adminEmails: form.adminEmails || [],
         sport: form.sport.trim() || activeTeam?.sport || 'General',
-        divisionTitle: divTitle || ''
+        divisionTitle: divTitle || '',
+        setupStatus: 'complete' as const,
+        bracketStatus: 'pending' as const,
+        scheduleStatus: 'pending' as const,
+        deploymentStatus: 'undeployed' as const,
+        deploymentError: ''
       };
 
       if (editEvent) {
@@ -620,7 +634,12 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
       if (success) { 
         onOpenChange(false); 
         onComplete(); 
-        toast({ title: editEvent ? "SYS_UPDATE" : "SYS_DEPLOY", description: editEvent ? "Architectural modifications synchronized." : "Elite series architecture successfully calibrated." }); 
+        toast({
+          title: editEvent ? "Setup Updated" : "Tournament Setup Complete",
+          description: editEvent
+            ? "Configuration saved. Regenerate the schedule if any scheduling inputs changed."
+            : "The tournament is saved as undeployed. Generate its schedule to initialize the bracket and publish fixtures."
+        });
       }
     } catch (e: any) {
       console.error("[Tournaments] Deployment failed:", e);
@@ -688,7 +707,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
           <div className="flex-1 flex flex-col overflow-hidden relative">
             <div className="absolute top-10 right-10 opacity-5 pointer-events-none w-64 h-64"><Trophy className="w-full h-full" /></div>
             
-            <ScrollArea className="flex-1 px-8 lg:px-16 pt-16 pb-32">
+            <ScrollArea showScrollHint scrollHintLabel="More tournament settings" className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0">
               <div className="max-w-3xl mx-auto space-y-12">
                 {step === 1 && (
                   <div className="space-y-12 animate-in slide-in-from-right-4 duration-500">
@@ -844,7 +863,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                     </div>
 
                     {form.stagedDivisions.length > 0 && (
-                      <div className="flex items-center gap-2 border-b border-white/5 pb-4 mb-4 text-left">
+                      <div className="space-y-4 border-b border-white/5 pb-5 mb-4 text-left">
+                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black uppercase tracking-widest text-white/40 mr-2">Target Division:</span>
                         <div className="flex flex-wrap gap-2">
                           {form.stagedDivisions.map(div => (
@@ -860,9 +880,40 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                               )}
                             >
                               {div}
+                              {copiedDivisionNames.includes(div) && <span className="ml-2 text-[7px] opacity-70">Copied • Draft</span>}
                             </button>
                           ))}
                         </div>
+                       </div>
+                       {form.stagedDivisions.length > 1 && (
+                         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                           <div className="flex flex-wrap items-center justify-between gap-3">
+                             <div>
+                               <p className="text-[10px] font-black uppercase tracking-widest text-white">Copy Division Settings</p>
+                               <p className="text-[9px] font-bold text-white/40 uppercase">Copies logistics only. Teams and deployed schedules are never copied.</p>
+                             </div>
+                             <Button type="button" variant="outline" className="h-9 border-white/15 bg-white/5 text-white text-[9px] font-black uppercase" onClick={() => setCopyDivisionTargets(form.stagedDivisions.filter(d => d !== activeLogisticsDivision))}>Select All Others</Button>
+                           </div>
+                           <div className="flex flex-wrap gap-2">
+                             {form.stagedDivisions.filter(d => d !== activeLogisticsDivision).map(div => (
+                               <label key={div} className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[9px] font-black uppercase text-white/70 cursor-pointer">
+                                 <input type="checkbox" checked={copyDivisionTargets.includes(div)} onChange={e => setCopyDivisionTargets(current => e.target.checked ? [...current, div] : current.filter(item => item !== div))} />
+                                 {div}
+                               </label>
+                             ))}
+                           </div>
+                           <Button type="button" disabled={copyDivisionTargets.length === 0} className="h-10 bg-primary text-white text-[9px] font-black uppercase" onClick={() => {
+                             const source = form.divisionConfigs[activeLogisticsDivision] || getDefaultDivisionConfig(form.startDate, form.endDate);
+                             setForm(current => ({
+                               ...current,
+                               divisionConfigs: copyDivisionTargets.reduce((configs, target) => ({ ...configs, [target]: structuredClone(source) }), current.divisionConfigs),
+                             }));
+                             toast({ title: 'Division Settings Copied', description: `${copyDivisionTargets.length} division${copyDivisionTargets.length === 1 ? '' : 's'} updated as undeployed drafts.` });
+                             setCopiedDivisionNames(current => [...new Set([...current, ...copyDivisionTargets])]);
+                             setCopyDivisionTargets([]);
+                           }}><Copy className="h-3.5 w-3.5 mr-2" /> Copy to Selected</Button>
+                         </div>
+                       )}
                       </div>
                     )}
                     
@@ -923,6 +974,22 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
                       <Badge className="bg-primary/20 text-primary border border-primary/30 uppercase font-black tracking-widest text-[8px] mb-4">Phase 3: Logistics Engine</Badge>
                       <h3 className="text-4xl font-black uppercase tracking-tighter mb-2 text-white">Division Logistics Configuration</h3>
                       <p className="text-sm font-bold opacity-40 uppercase tracking-widest">Calibrate format, dates, timeslots, and venue configurations for each division.</p>
+                    </div>
+
+                    <div className="rounded-[2rem] border border-white/10 bg-[#0a0a0a] p-6 text-left space-y-4">
+                      <div>
+                        <h4 className="font-black text-sm uppercase tracking-widest text-primary">Required Waivers</h4>
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-white/40">Active Library &amp; Docs waivers apply to every tournament team, including manually added teams.</p>
+                      </div>
+                      <div className="grid gap-2">
+                        {(documents || []).filter(document => document.type === 'waiver' && document.isActive !== false).map(document => (
+                          <label key={document.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold text-white cursor-pointer">
+                            <Checkbox checked={form.waiverIds.includes(document.id)} onCheckedChange={(checked: boolean | 'indeterminate') => setForm(current => ({ ...current, waiverIds: checked === true ? [...current.waiverIds, document.id] : current.waiverIds.filter(id => id !== document.id) }))} />
+                            {document.title}
+                          </label>
+                        ))}
+                        {(documents || []).filter(document => document.type === 'waiver' && document.isActive !== false).length === 0 && <p className="text-xs text-white/40">Create and activate a waiver in Library &amp; Docs before requiring one here.</p>}
+                      </div>
                     </div>
 
                     {form.stagedDivisions.length > 0 && (
@@ -1405,6 +1472,7 @@ function TournamentDetailView({
   const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [deploymentError, setDeploymentError] = useState('');
 
   const handleDeleteTournament = async () => {
     if (!activeTeam || isProcessing) return;
@@ -1575,6 +1643,7 @@ function TournamentDetailView({
     }
 
     setIsProcessing(true);
+    setDeploymentError('');
     try {
       const uniqueFieldIds = (event.selectedFields || []).filter((fieldId: string, index: number, fields: string[]) =>
         fields.findIndex(candidate => candidate.toLowerCase() === fieldId.toLowerCase()) === index
@@ -1647,14 +1716,23 @@ function TournamentDetailView({
       }
 
       toast({
-        title: "Schedule Generated",
-        description: `Successfully generated ${sanitizedGames.length} matches for this tournament.`
+        title: "Tournament Deployed",
+        description: `Schedule and bracket are ready with ${sanitizedGames.length} matches.`
       });
     } catch (e: any) {
       console.error("[Tournaments] Schedule generation failed:", e);
+      const message = e.message || "An error occurred during schedule generation.";
+      setDeploymentError(message);
+      try {
+        await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
+          bracketStatus: 'failed', scheduleStatus: 'failed', deploymentStatus: 'failed', deploymentError: message,
+        });
+      } catch (statusError) {
+        console.error('[Tournaments] Failed to persist deployment failure state:', statusError);
+      }
       toast({
         title: "Generation Failed",
-        description: e.message || "An error occurred during schedule generation.",
+        description: message,
         variant: "destructive"
       });
     } finally {
@@ -2059,6 +2137,18 @@ function TournamentDetailView({
                </div>
              )}
            </div>
+           <div className="flex flex-wrap gap-2 pt-4 border-t border-white/10">
+             {[
+               ['Setup Complete', event.setupStatus === 'complete' || event.isTournament === true],
+               ['Bracket Ready', event.bracketStatus === 'ready' || (event.tournamentGames || []).length > 0],
+               ['Schedule Ready', event.scheduleStatus === 'ready' || (event.tournamentGames || []).length > 0],
+               ['Deployed', event.deploymentStatus === 'deployed' || (event.tournamentGames || []).length > 0],
+             ].map(([label, ready]) => (
+               <Badge key={String(label)} className={ready ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/20" : "bg-amber-500/15 text-amber-300 border border-amber-400/20"}>
+                 {ready ? <CheckCircle2 className="h-3 w-3 mr-1.5" /> : <Clock className="h-3 w-3 mr-1.5" />}{label}
+               </Badge>
+             ))}
+           </div>
            <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 pt-8 border-t border-white/10">
               <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Squads</p><p className="text-3xl font-black">{(event.tournamentTeamsData || []).length}</p></div>
               <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Matches</p><p className="text-3xl font-black">{(event.tournamentGames || []).length}</p></div>
@@ -2247,6 +2337,7 @@ function TournamentDetailView({
                   </span>
                 )}
               </TabsTrigger>
+              {isStaff && <TabsTrigger value="safety" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-red-600 data-[state=active]:text-white">Safety</TabsTrigger>}
               {!isStarter && <TabsTrigger value="architecture" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white">Architecture</TabsTrigger>}
             </TabsList>
           </div>
@@ -2540,7 +2631,7 @@ function TournamentDetailView({
                     <div className="divide-y divide-black/5">
                       {event.tournamentTeamsData?.map((team: any, idx: number) => {
                         const agreement = (event as any).teamAgreements?.[team.name];
-                        const isSigned = agreement?.status === 'signed';
+                        const isSigned = agreement?.agreed === true || agreement?.status === 'signed';
                         return (
                           <div key={idx} className="p-8 flex items-center justify-between hover:bg-muted/5 transition-all group">
                             <div className="flex items-center gap-8 flex-1 min-w-0">
@@ -2569,6 +2660,7 @@ function TournamentDetailView({
                                     </div>
                                   )}
                                 </div>
+                                {(event.waiverDocuments || []).length > 0 && <p className="mt-2 text-[9px] font-bold uppercase text-muted-foreground">Required: {event.waiverDocuments?.map(document => document.title).join(', ')}{isSigned && agreement?.signedAt ? ` • Signed ${format(new Date(agreement.signedAt), 'MMM d, yyyy')}` : ''}</p>}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 px-4">
@@ -2655,6 +2747,9 @@ function TournamentDetailView({
                  </Dialog>
 
 
+              </TabsContent>
+              <TabsContent value="safety" className="mt-0 space-y-8">
+                <EventSafetyPanel kind="tournament" eventId={event.id} eventName={event.title} divisions={event.divisionTitle ? [event.divisionTitle] : []} />
               </TabsContent>
 
              <TabsContent value="itinerary" className="mt-0 space-y-12">
@@ -2748,6 +2843,11 @@ function TournamentDetailView({
                     <div className="bg-primary/10 p-6 rounded-[2rem] text-primary shadow-inner">
                       <CalendarDays className="h-12 w-12" />
                     </div>
+                    {deploymentError && (
+                      <div className="max-w-md rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700" role="alert">
+                        Deployment failed: {deploymentError} Your setup is preserved; correct the issue and retry.
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <h3 className="text-3xl font-black uppercase tracking-tighter text-black">Schedule Not Deployed</h3>
                       <p className="text-muted-foreground uppercase text-[10px] font-black tracking-widest max-w-sm mx-auto text-center leading-relaxed">

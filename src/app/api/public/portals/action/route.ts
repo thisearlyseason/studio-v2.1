@@ -511,6 +511,10 @@ export async function POST(req: NextRequest) {
         const archiveId = `arch_tournament_${eventId}_${teamName.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
         await adminDb.collection('teams').doc(teamId).collection('archived_waivers').doc(archiveId).set({
           id: archiveId, eventId, tournamentTeamName: teamName, signer, signedAt,
+          title: event.waiverDocuments?.map((document: any) => document.title).join(', ') || `${event.title || 'Tournament'} Waiver`,
+          documentId: event.waiverIds?.join(',') || `tournament_${eventId}`,
+          waiverText: event.teamWaiverText || '',
+          teamId, teamName, tournamentId: eventId,
           type: 'Tournament Waiver', status: 'verified',
         });
         return NextResponse.json({ success: true });

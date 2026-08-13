@@ -371,7 +371,9 @@ service cloud.firestore {
       }
 
       match /incidents/{incidentId} {
-        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        // Injury and safety reports contain private health information. They
+        // are intentionally staff-only, unlike ordinary team activity data.
+        allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
         allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
       }
 

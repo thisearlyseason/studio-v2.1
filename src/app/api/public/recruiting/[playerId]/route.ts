@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase-admin';
 import { buildPublicRecruitingProfile } from '@/lib/public-recruiting-profile';
 import { enforcePublicRateLimit } from '@/lib/server-request-guards';
 import { isValidFirestoreDocumentId } from '@/lib/firestore-document-id';
+import { isProspectActivated } from '@/lib/prospect-activation';
 
 export async function GET(
   request: NextRequest,
@@ -25,14 +26,15 @@ export async function GET(
       playerRef.collection('stats').orderBy('createdAt', 'desc').limit(50).get(),
       playerRef.collection('videos').orderBy('createdAt', 'desc').limit(50).get(),
     ]);
-    const player = playerSnap.data();
-    if (!playerSnap.exists || player?.recruitingProfileEnabled !== true) {
+    const player = playerSnap.data() || {};
+    const profile = profileSnap.data() || {};
+    if (!playerSnap.exists || !isProspectActivated(profile)) {
       return NextResponse.json({ error: 'Profile not found.' }, { status: 404 });
     }
 
     return NextResponse.json(buildPublicRecruitingProfile({
       player,
-      profile: profileSnap.data() || {},
+      profile,
       metrics: metricsSnap.data() || {},
       stats: statsSnap.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })),
       videos: videosSnap.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })),

@@ -6,7 +6,6 @@ import { getPlanTeamLimit } from '../src/lib/plan-catalog.ts';
 import { isValidFirestoreDocumentId } from '../src/lib/firestore-document-id.ts';
 import { calculateHouseholdPayments } from '../src/lib/household-payments.ts';
 import { hasStaffRole } from '../src/lib/staff-position.ts';
-import { volunteerPoints } from '../src/lib/volunteer-points.ts';
 import { sportForDemoVariant } from '../src/lib/demo-plan-config.ts';
 
 const source = path => readFile(new URL(path, import.meta.url), 'utf8');
@@ -58,12 +57,10 @@ test('demo staff channels stay member-filtered and exclude family personas', asy
   assert.match(chats, /where\('memberIds', 'array-contains', user\.id\)/);
 });
 
-test('shared normalization covers staff, volunteer, payment, sport, and document IDs', () => {
+test('shared normalization covers staff, payment, sport, and document IDs', () => {
   assert.equal(hasStaffRole({ position: 'Head Coach' }), true);
   assert.equal(hasStaffRole({ position: 'Director of Athletics' }), true);
   assert.equal(hasStaffRole({ position: 'Player' }), false);
-  assert.equal(volunteerPoints({ pointsPerSlot: 25 }), 25);
-  assert.equal(volunteerPoints({ points: 10, pointsPerSlot: 25 }), 10);
   assert.deepEqual(calculateHouseholdPayments([
     { amount: 365, status: 'pending', dueDate: '2026-09-01' },
     { amount: 220, status: 'overdue' },
