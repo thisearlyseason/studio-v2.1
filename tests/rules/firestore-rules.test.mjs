@@ -65,6 +65,9 @@ beforeEach(async () => {
         isPro: true,
         planId: 'team',
       }),
+      setDoc(doc(db, 'teams', 'attacker-team'), {
+        ownerUserId: 'outsider',
+      }),
       setDoc(doc(db, 'teams', 'demo-team'), {
         ownerUserId: 'fictional-coach',
         demoSessionOwnerId: 'demo-user',
@@ -519,6 +522,49 @@ test('linked youth members retain access while removed members lose it', async (
     'messages',
     'existing',
   )));
+});
+
+test('an unrelated team owner cannot take over another player through mutable team fields', async () => {
+  const attackerDb = authenticatedDb('outsider');
+
+  await assertFails(setDoc(doc(attackerDb, 'players', 'private-player'), {
+    userId: 'outsider',
+    parentId: 'outsider',
+    primaryTeamId: 'attacker-team',
+    updatedByTeamId: 'attacker-team',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(attackerDb, 'players', 'private-player', 'medicalNotes', 'forged'), {
+    note: 'exfiltrate',
+    updatedByTeamId: 'attacker-team',
+  }));
+  await assertFails(deleteDoc(doc(attackerDb, 'players', 'private-player')));
+});
+
+test('a removed staff record cannot retain staff write authority', async () => {
+  const ownerDb = authenticatedDb('owner');
+  await setDoc(doc(ownerDb, 'teams', 'team-a', 'members', 'removed'), {
+    userId: 'staff',
+    role: 'Admin',
+    position: 'Head Coach',
+    status: 'removed',
+  });
+
+  await setDoc(doc(ownerDb, 'teams', 'team-a', 'members', 'staff'), {
+    userId: 'staff',
+    role: 'Admin',
+    position: 'Head Coach',
+    status: 'removed',
+  });
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams', 'team-a', 'drills', 'removed-forged'), {
+    title: 'forged',
+  }));
+});
+
+test('profiles cannot self-assign a linked player authority record', async () => {
+  await assertFails(setDoc(doc(authenticatedDb('outsider'), 'users', 'new-attacker'), {
+    role: 'coach',
+    linkedPlayerId: 'removed',
+  }));
 });
 
 test('unverified, suspended, and deletion-pending accounts cannot retain tenant access', async () => {

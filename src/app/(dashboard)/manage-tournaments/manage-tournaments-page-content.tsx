@@ -48,7 +48,8 @@ import {
   UserMinus,
   Phone,
   Mail,
-  RefreshCw
+  RefreshCw,
+  Archive
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -200,7 +201,7 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
   };
 };
 
-function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, editEvent?: TeamEvent }) {
+function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchive, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, onArchive?: () => void, editEvent?: TeamEvent }) {
   const { activeTeam, user, hasFeature, isStarter, addEvent } = useTeam();
   const db = useFirestore();
   const firebaseAuth = useAuth();
@@ -1375,14 +1376,21 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, editEven
               </div>
             </ScrollArea>
             
-            <div className="p-8 border-t border-white/10 bg-[#070707] flex justify-between items-center shrink-0">
-               {step > 1 ? (
-                 <Button variant="ghost" onClick={() => setStep(step - 1)} className="h-16 px-10 rounded-2xl font-black uppercase text-xs tracking-widest text-white/50 hover:text-white hover:bg-white/5">
-                   <ChevronLeft className="h-4 w-4 mr-2" /> Rollback
-                 </Button>
-               ) : <div />}
-               
-               <Button onClick={step === 4 ? handleDeploy : handleNext} disabled={isProcessing} className="h-16 px-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-sm tracking-widest shadow-[0_0_30px_rgba(255,255,255,0.1)] transition-all flex items-center">
+            <div className="p-4 sm:p-8 border-t border-white/10 bg-[#070707] flex flex-col sm:flex-row justify-between sm:items-center gap-3 shrink-0">
+               <div className="flex flex-wrap items-center gap-2">
+                 {editEvent && onArchive && !editEvent.isArchived && (
+                   <Button variant="destructive" onClick={onArchive} disabled={isProcessing} className="h-12 sm:h-16 px-4 sm:px-6 rounded-2xl font-black uppercase text-xs tracking-widest">
+                     <Archive className="h-4 w-4 mr-2" /> Archive Series
+                   </Button>
+                 )}
+                 {step > 1 && (
+                   <Button variant="ghost" onClick={() => setStep(step - 1)} className="h-12 sm:h-16 px-4 sm:px-10 rounded-2xl font-black uppercase text-xs tracking-widest text-white/50 hover:text-white hover:bg-white/5">
+                     <ChevronLeft className="h-4 w-4 mr-2" /> Rollback
+                   </Button>
+                 )}
+               </div>
+
+               <Button onClick={step === 4 ? handleDeploy : handleNext} disabled={isProcessing} className="h-12 sm:h-16 w-full sm:w-auto px-6 sm:px-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs sm:text-sm tracking-widest shadow-[0_0_30px_rgba(255,255,255,0.1)] transition-all flex items-center">
                  {isProcessing ? (
                    <><Loader2 className="mr-3 h-5 w-5 animate-spin" /> SYNCHRONIZING</>
                  ) : step === 4 ? (
@@ -1432,6 +1440,7 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
       editEvent={event} 
       isOpen={isOpen} 
       onOpenChange={onOpenChange} 
+      onArchive={handleArchive}
       onComplete={() => {
         // Since we are editing an active event, we might need to refresh local state if not auto-synced
         onOpenChange(false);
@@ -1452,12 +1461,14 @@ function TournamentDetailView({
   event, 
   onBack, 
   allEvents = [], 
-  onSelectEvent 
+  onSelectEvent,
+  registrationReturnQuery = ''
 }: { 
   event: TeamEvent, 
   onBack: () => void, 
   allEvents?: TeamEvent[], 
-  onSelectEvent?: (id: string) => void 
+  onSelectEvent?: (id: string) => void,
+  registrationReturnQuery?: string
 }) {
   const { isStaff: isTeamStaff, activeTeam, db, user, isStarter } = useTeam();
   const firebaseAuth = useAuth();
@@ -2329,7 +2340,7 @@ function TournamentDetailView({
                   <span 
                     onClick={(e) => { 
                       e.stopPropagation(); 
-                      router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}`); 
+                      router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}${registrationReturnQuery}`);
                     }} 
                     className="bg-white text-primary text-[8px] font-black uppercase px-2 py-0.5 rounded-full hover:scale-105 transition-all shadow-sm shrink-0"
                   >
@@ -2357,7 +2368,7 @@ function TournamentDetailView({
                         </div>
                       </div>
                       <Button
-                        onClick={() => router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}`)}
+                        onClick={() => router.push(`/manage-tournaments/registration/${activeTeam?.id}/${event.id}${registrationReturnQuery}`)}
                         className="h-14 px-8 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(255,255,255,0.1)] shrink-0"
                       >
                         Launch Builder <ExternalLink className="ml-2 h-4 w-4" />
@@ -2984,6 +2995,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
   const [duplicatingEvent, setDuplicatingEvent] = useState<TeamEvent | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const registrationReturnQuery = embedded ? '?from=competition' : '';
 
   const eventsQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
@@ -3023,8 +3035,18 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
     setIsProcessing(true);
     try {
       const newEventRef = doc(collection(db, 'teams', activeTeam.id, 'events'));
+      const sourceEvent = duplicatingEvent as TeamEvent & Record<string, unknown>;
+      const operationalFields = new Set([
+        'id', 'createdAt', 'updatedAt', 'isArchived', 'isCompleted',
+        'tournamentTeams', 'tournamentTeamsData', 'tournamentGames',
+        'schedule', 'archived_waivers',
+      ]);
+      const blueprint = Object.fromEntries(
+        Object.entries(sourceEvent).filter(([key]) => !operationalFields.has(key))
+      );
       const newEventData = {
-        // Essential framework
+        // Preserve the complete scheduling, venue, registration, and waiver blueprint.
+        ...blueprint,
         title: duplicateTitle.trim(),
         date: duplicatingEvent.date || '',
         endDate: duplicatingEvent.endDate || '',
@@ -3042,6 +3064,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
         createdAt: new Date().toISOString(),
         isArchived: false,
         isCompleted: false,
+        tournamentTeams: [],
         tournamentTeamsData: [],
         tournamentGames: [],
         schedule: [],
@@ -3081,6 +3104,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
           onBack={() => setSelectedEventId(null)} 
           allEvents={rawEvents || []}
           onSelectEvent={(id) => setSelectedEventId(id)}
+          registrationReturnQuery={registrationReturnQuery}
         />
       </div>
     );

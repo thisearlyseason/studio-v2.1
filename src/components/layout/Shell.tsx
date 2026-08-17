@@ -113,6 +113,7 @@ import { useAuth } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 import { clearBrowserSession } from '@/lib/client-auth';
+import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import {
   Tooltip,
   TooltipContent,
@@ -506,6 +507,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (user?.role === 'league_creator' && !activeTeam) {
         return tab.name === 'Competition Hub';
       }
+
+      if (!authorizeDashboardRoute(tab.href, {
+        role: user?.role,
+        plan_type: user?.plan_type,
+        isPrimaryClubAuthority,
+      }).allowed) return false;
 
       // Module Visibility Settings
       if (tab.name === 'Feed' && activeTeam?.features?.feed === false) return false;

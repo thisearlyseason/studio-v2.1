@@ -172,6 +172,13 @@ test('demo bootstrap creates the protected league before client blueprint enrich
   assert.match(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 
+test('demo blueprint merges protected team and league roots created by the server', async () => {
+  const seeder = await readSource('../src/lib/db-seeder.ts');
+
+  assert.match(seeder, /const isProtectedDemoRoot = \/\^\(teams\|leagues\)/);
+  assert.match(seeder, /else if \(isProtectedDemoRoot\) \{\s*this\.batch\.set\(ref, data, \{ merge: true \}\)/);
+});
+
 test('demo chat messages are server-seeded through the protected message boundary', async () => {
   const route = await readSource('../src/app/api/demo/seed/route.ts');
   const seeder = await readSource('../src/lib/db-seeder.ts');
@@ -666,6 +673,8 @@ test('team waiver signing is server-mediated for members and guardians', async (
 
   assert.match(provider, /fetch\('\/api\/teams\/waivers\/sign'/);
   assert.match(route, /isGuardian = memberData\.parentId === auth\.uid \|\| playerData\.parentId === auth\.uid/);
+  assert.match(route, /memberData\.guardianIds/);
+  assert.match(route, /playerData\.guardianIds/);
   assert.match(route, /transaction\.set\(signatureRef/);
   assert.match(route, /transaction\.update\(memberRef/);
   assert.match(route, /transaction\.set\(archiveRef/);

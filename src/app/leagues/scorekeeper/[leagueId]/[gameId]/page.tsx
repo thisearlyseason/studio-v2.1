@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { League, TournamentGame } from '@/components/providers/team-provider';
 import { usePublicPortal } from '@/hooks/use-public-portal';
@@ -35,6 +35,11 @@ export default function PublicLeagueScorekeeperEntryPage() {
   const [pin, setPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  useEffect(() => {
+    setScore1(game?.score1 != null ? String(game.score1) : '');
+    setScore2(game?.score2 != null ? String(game.score2) : '');
+  }, [game?.id, game?.score1, game?.score2]);
   
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
   const [disputeNotes, setDisputeNotes] = useState('');

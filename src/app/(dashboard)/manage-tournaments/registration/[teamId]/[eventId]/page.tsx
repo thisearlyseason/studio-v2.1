@@ -76,6 +76,7 @@ export default function TournamentRegistrationAdminPage() {
 
   // --- STATE ---
   const searchParams = useSearchParams();
+  const returnPath = searchParams.get('from') === 'competition' ? '/competition' : '/manage-tournaments';
   const [activeTab, setActiveTab] = useState<'entries' | 'config'>('entries');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'assigned' | 'accepted'>('all');
   const [editingField, setEditingField] = useState<Partial<RegistrationFormField> | null>(null);
@@ -376,7 +377,7 @@ export default function TournamentRegistrationAdminPage() {
     <div className="space-y-8 pb-32 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => formsListMode ? router.push('/manage-tournaments') : setFormsListMode(true)} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => formsListMode ? router.push(returnPath) : setFormsListMode(true)} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
           <div>
             <Badge className="bg-orange-600 text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg">Tournament Registration</Badge>
             <h1 className="text-3xl font-black uppercase tracking-tight mt-1">

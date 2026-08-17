@@ -404,6 +404,7 @@ async function isAuthorizedTeamStaff(teamId: string, actor: Actor): Promise<bool
     ? await adminDb.collection('teams').doc(teamId).collection('members').doc(linkedPlayerId).get()
     : null;
   const member = directMember.exists ? directMember.data() : linkedMember?.data();
+  if (!member || member.status === 'removed' || member.isDeleted === true) return false;
   return text(member?.role, 80) === 'Admin' || [
     'Coach', 'Head Coach', 'Assistant Coach', 'Team Representative',
     'Athletic Director', 'Director of Athletics', 'Staff', 'Manager', 'Squad Leader',

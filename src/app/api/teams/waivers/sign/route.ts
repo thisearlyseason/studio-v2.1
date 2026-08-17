@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
     const player = await adminDb.collection('players').doc(playerId).get();
     const playerData = player.data() || {};
     const isSelf = memberId === auth.uid || memberData.userId === auth.uid;
-    const isGuardian = memberData.parentId === auth.uid || playerData.parentId === auth.uid;
+    const isGuardian = memberData.parentId === auth.uid || playerData.parentId === auth.uid ||
+      (Array.isArray(memberData.guardianIds) && memberData.guardianIds.includes(auth.uid)) ||
+      (Array.isArray(playerData.guardianIds) && playerData.guardianIds.includes(auth.uid));
     if (!isSelf && !isGuardian) {
       return NextResponse.json({ error: 'You can only sign for yourself or your linked athlete.' }, { status: 403 });
     }

@@ -46,12 +46,12 @@ class BatchHelper {
     if (this.chunkPaths.length < 20) {
       this.chunkPaths.push(ref.path ?? ref._key?.path?.segments?.join('/') ?? String(ref));
     }
-    // Trusted server code creates every demo team shell first. Merge client
-    // blueprint data so the server-owned demoSessionOwnerId is never removed.
-    const isDemoTeamRoot = /^teams\/[^/]+$/.test(ref.path || '') && data?.isDemo === true;
+    // Trusted server code creates demo team and league roots first. Merge client
+    // blueprint data so server-owned session markers are never removed.
+    const isProtectedDemoRoot = /^(teams|leagues)\/[^/]+$/.test(ref.path || '') && data?.isDemo === true;
     if (opts) {
       this.batch.set(ref, data, opts);
-    } else if (isDemoTeamRoot) {
+    } else if (isProtectedDemoRoot) {
       this.batch.set(ref, data, { merge: true });
     } else {
       this.batch.set(ref, data);

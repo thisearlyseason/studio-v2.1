@@ -36,6 +36,7 @@ beforeEach(async () => {
         accountStatus: 'suspended',
       }),
       setDoc(doc(db, 'teams', 'team-a'), { ownerUserId: 'owner' }),
+      setDoc(doc(db, 'teams', 'attacker-team'), { ownerUserId: 'outsider' }),
       setDoc(doc(db, 'players', 'private-player'), {
         userId: 'player',
         parentId: 'parent',
@@ -103,6 +104,14 @@ test('player uploads require family/team authority and safe content types', asyn
   await assertFails(
     parentStorage.ref('players/private-player/avatar/script.svg')
       .putString('<svg onload="alert(1)"/>', 'raw', { contentType: 'image/svg+xml' }),
+  );
+});
+
+test('an unrelated team owner cannot manage another player media after a forged linkage', async () => {
+  const attackerStorage = storageFor('outsider');
+  await assertFails(
+    attackerStorage.ref('players/private-player/avatar/forged.png')
+      .putString('forged image', 'raw', { contentType: 'image/png' }),
   );
 });
 
