@@ -1098,7 +1098,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   useEffect(() => {
-    if (!isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || !firebaseAuth) return;
+    if (!isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
     if (claimedSchoolAdminForUid === firebaseUser.uid) return;
 
     let cancelled = false;
@@ -1147,7 +1147,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!firebaseUser || !db) { setUserProfile(null); return; }
+    if (!firebaseUser || !db || (!firebaseUser.isAnonymous && firebaseUser.emailVerified !== true)) {
+      setUserProfile(null);
+      return;
+    }
     const userRef = doc(db, 'users', firebaseUser.uid);
     return onSnapshot(userRef, (snap) => {
       if (snap.exists()) {
@@ -1210,7 +1213,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [firebaseUser, db, userRole]);
 
-  const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, db]);
+  const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
   // ── Shared deterministic invite-code fallback ─────────────────────────

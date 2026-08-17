@@ -74,6 +74,16 @@ export async function POST(req: NextRequest) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
+    const providerCode = typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : '';
+    if (providerCode === 'auth/invalid-continue-uri' || providerCode === 'auth/unauthorized-continue-uri') {
+      console.error('[Verification Email] Firebase continue URL is not authorized:', error);
+      return NextResponse.json(
+        { error: 'Email verification configuration is invalid.' },
+        { status: 503 }
+      );
+    }
     console.error('[Verification Email] Error:', error);
     return NextResponse.json({ error: 'Unable to send verification email.' }, { status: 500 });
   }
