@@ -21,6 +21,91 @@ env:
     value: https://us-central1-the-squad-v2-staging.cloudfunctions.net/getCalendarFeed
     availability:
       - RUNTIME
+  - variable: NEXT_PUBLIC_FCM_VAPID_KEY
+    secret: NEXT_PUBLIC_FCM_VAPID_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: STRIPE_PRICE_EXTRA_TEAM_MONTHLY
+    secret: STRIPE_PRICE_EXTRA_TEAM_MONTHLY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRICE_EXTRA_TEAM_ANNUAL
+    secret: STRIPE_PRICE_EXTRA_TEAM_ANNUAL
+    availability:
+      - RUNTIME
+  - variable: STRIPE_SECRET_KEY
+    secret: STRIPE_SECRET_KEY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_WEBHOOK_SECRET
+    secret: STRIPE_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
+  - variable: STRIPE_CONNECT_WEBHOOK_SECRET
+    secret: STRIPE_CONNECT_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
+  - variable: RESEND_API_KEY
+    secret: RESEND_API_KEY
+    availability:
+      - RUNTIME
+  - variable: RESEND_WEBHOOK_SECRET
+    secret: RESEND_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
+  - variable: NEWSLETTER_UNSUBSCRIBE_SECRET
+    secret: NEWSLETTER_UNSUBSCRIBE_SECRET
+    availability:
+      - RUNTIME
+  - variable: INTERNAL_API_SECRET
+    secret: INTERNAL_API_SECRET
+    availability:
+      - RUNTIME
+  - variable: OWNER_NOTIFICATION_EMAIL
+    secret: OWNER_NOTIFICATION_EMAIL
+    availability:
+      - RUNTIME
 
 runConfig:
   # Increase this value if you'd like to automatically spin up
