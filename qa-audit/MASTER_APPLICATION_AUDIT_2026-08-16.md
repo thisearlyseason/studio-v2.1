@@ -169,7 +169,7 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 - Core route sweep: Schedule, Roster, Chat, Practice, Scorekeeping, Coaches Corner, Facilities, Equipment, Feed, Volunteers, Fundraising, Files, and Settings loaded without a global error screen.
 - Persistence: this pass verified demo data persisted across route navigation. Prior dated evidence verifies event and league edit persistence after refresh and child waiver state isolation.
 - Coach communications: Parent Feed Comments persisted after refresh and was restored to its original disabled state. Tactical message dispatch succeeded; demo expiry prevented a persistence conclusion. Channel creation is manual review because browser-control actions timed out before dispatch could be confirmed.
-- Parent Demo: empty household regression reproduced and persisted after refresh with no console warnings/errors; local fix requires deployed retest.
+- Parent Demo staging retest passed after deployment: Family Hub displayed 2 players, 2 active teams, $365 outstanding, 6 pending waivers, and populated schedules. Staging `/api/health` returned HTTP 200 with revision `studio-build-2026-08-17-001`.
 - Console: no warnings/errors on login, dashboard, or Coaches Corner checks. Network request bodies were not logged and secrets were not inspected.
 
 ## Automated verification
@@ -207,4 +207,4 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 
 ## Final assessment
 
-The complete application surface is accounted for, but not every feature is fully certified. The tested build is suitable for continued isolated preview/staging use. It remains **not ready for unrestricted public launch** until the blocked provider, Super Admin, durable-role, and multi-user workflow evidence is completed.
+The complete application surface is accounted for, but not every feature is fully certified. The audited commit is deployed and health-verified in isolated staging. It remains **not ready for unrestricted public launch** until the blocked provider, Super Admin, durable-role, and multi-user workflow evidence is completed.
