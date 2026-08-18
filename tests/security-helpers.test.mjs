@@ -3,6 +3,7 @@ import test from 'node:test';
 import * as safeExternalUrl from '../src/lib/safe-external-url.ts';
 import * as boundedJson from '../src/lib/bounded-json.ts';
 import * as checkoutPolicy from '../src/lib/checkout-policy.ts';
+import { getTrialCountdown } from '../src/lib/trial-countdown.ts';
 import * as stripePriceMap from '../src/lib/stripe-price-map.ts';
 import * as htmlEscape from '../src/lib/html-escape.ts';
 
@@ -13,7 +14,6 @@ const {
   calculateSignupTrialDays,
   hasBlockingSubscription,
   SIGNUP_TRIAL_DAYS,
-  getTrialCountdown,
 } = checkoutPolicy;
 const {
   PLAN_PRICE_MAP,

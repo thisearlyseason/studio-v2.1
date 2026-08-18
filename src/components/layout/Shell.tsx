@@ -55,7 +55,7 @@ import {
   Clock3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getTrialCountdown } from '@/lib/checkout-policy';
+import { getTrialCountdown } from '@/lib/trial-countdown';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
