@@ -222,14 +222,14 @@ export function NewsletterManager() {
             Compose campaigns, manage subscribers, and monitor consent
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-2xl bg-gray-100 dark:bg-white/5 p-1.5">
-          <Button variant={section === 'compose' ? 'default' : 'ghost'} onClick={() => setSection('compose')} className="rounded-xl font-black uppercase text-[10px]">
+        <div className="grid w-full grid-cols-1 sm:grid-cols-3 lg:w-auto gap-2 rounded-2xl bg-gray-100 dark:bg-white/5 p-1.5">
+          <Button variant={section === 'compose' ? 'default' : 'ghost'} onClick={() => setSection('compose')} className="w-full sm:w-auto rounded-xl font-black uppercase text-[10px]">
             <Send className="mr-2 h-4 w-4" /> Compose
           </Button>
-          <Button variant={section === 'welcome' ? 'default' : 'ghost'} onClick={() => setSection('welcome')} className="rounded-xl font-black uppercase text-[10px]">
+          <Button variant={section === 'welcome' ? 'default' : 'ghost'} onClick={() => setSection('welcome')} className="w-full sm:w-auto rounded-xl font-black uppercase text-[10px]">
             <UserPlus className="mr-2 h-4 w-4" /> New Subscriber
           </Button>
-          <Button variant={section === 'subscribers' ? 'default' : 'ghost'} onClick={() => setSection('subscribers')} className="rounded-xl font-black uppercase text-[10px]">
+          <Button variant={section === 'subscribers' ? 'default' : 'ghost'} onClick={() => setSection('subscribers')} className="w-full sm:w-auto rounded-xl font-black uppercase text-[10px]">
             <Users className="mr-2 h-4 w-4" /> Subscribers
           </Button>
         </div>

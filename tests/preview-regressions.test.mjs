@@ -781,3 +781,23 @@ test('staff authority uses the shared complete position vocabulary', async () =>
     assert.match(positions, new RegExp(`'${position}'`));
   }
 });
+
+test('mobile Super Admin headers and newsletter sections stay inside the viewport', async () => {
+  const [admin, newsletter] = await Promise.all([
+    readSource('../src/app/admin/page.tsx'),
+    readSource('../src/components/admin/newsletter-manager.tsx'),
+  ]);
+
+  assert.match(
+    admin,
+    /activeTab === 'bugs'[\s\S]*?flex flex-col sm:flex-row sm:items-center justify-between gap-4/,
+  );
+  assert.match(
+    admin,
+    /activeTab === 'bugs'[\s\S]*?flex flex-wrap items-center gap-3/,
+  );
+  assert.match(
+    newsletter,
+    /grid w-full grid-cols-1 sm:grid-cols-3 lg:w-auto/,
+  );
+});
