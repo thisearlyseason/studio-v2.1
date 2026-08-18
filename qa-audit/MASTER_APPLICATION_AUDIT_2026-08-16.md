@@ -2,7 +2,7 @@
 
 ## Executive result
 
-**CONDITIONAL PASS. The 2026-08-18 staging release candidate is code- and deployment-ready; production promotion is held only for action-time provider delivery confirmations.**
+**STAGING CERTIFICATION PASS. The 2026-08-18 release candidate is code-, provider-, deployment-, and operations-ready; production remains unchanged pending explicit promotion approval.**
 
 The repository and the exercised production demo paths are mechanically healthy. The application builds, type-checks, and passes the full unit/integration suite. The production Squad Pro demo loaded without console errors across the dashboard and the core coach modules tested. Continued workflow testing confirmed and fixed the navigation mismatch, an empty Parent Demo bootstrap failure, inconsistent public tournament standings, incomplete tournament replication, unreachable archival, discarded waiver dates, and registration return-path loss.
 
@@ -10,16 +10,19 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 
 ### 2026-08-18 completion addendum
 
-- Candidate commit `d1e4a11d0a242a7dda57c571500c59b110910a9a` passed the complete local gate and GitHub release gate [32179685043](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32179685043).
-- Protected staging deploy [32180024465](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32180024465) deployed that exact SHA successfully, including indexes, Functions, Firestore/Storage rules, App Hosting rollout, and health verification.
-- Staging health returned HTTP 200 for revision `studio-build-2026-08-18-003`. Anonymous `/dashboard` and `/admin` returned HTTP 307 to login with preserved return paths.
+- Candidate commit `6150481e8f3200e782f940cfc67e4c469ace4284` passed the complete local gate and GitHub release gate [32188692876](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32188692876).
+- Protected staging deploy [32189033707](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32189033707) deployed that exact SHA successfully, including indexes, Functions, Firestore/Storage rules, App Hosting rollout, and health verification.
+- Staging health returned HTTP 200 for revision `studio-build-2026-08-18-004`. Anonymous `/dashboard` and `/admin` returned HTTP 307 to login with preserved return paths.
 - A verified, claim-controlled staging Super Admin session persisted through refresh. Accounts, Users Directory, Beta Apps, Bug Reports, Newsletters, Sports Hub, and Links & Embeds all loaded at both 390x844 and 1440x900 with no horizontal document overflow.
 - The two final mobile defects are closed: Bug Reports controls fit inside the 390 px viewport, and Newsletter Compose/New Subscriber/Subscribers controls render as three full-width stacked controls on mobile.
 - Squad Pro demo billing now reports `Pro Team` with `Demo plan`; the incorrect `Free tier` fallback is fixed and regression-covered.
 - Standard Stripe, Stripe Connect, and Resend callback routes reject invalid signatures with HTTP 400. Staging provider configuration is structurally valid: Stripe is test mode, ten configured prices are active CAD recurring prices, the Resend domain is verified, and required secret names exist without exposing values.
 - Signed Stripe delivery passed: test-mode event `evt_1U5uUSGu1UxxOYbPNwVyQjQX` (`customer.created`, `livemode=false`) reached the newer standard staging endpoint and its post-signature Firestore ledger record completed once on attempt 1.
 - Resend delivery passed: authorized staging email `9ca57dfb-7e92-45a2-8dd1-630e04e29526` reached provider state `delivered`; staging recorded `email.delivered` and completed signed delivery `msg_3I6cDXPZ37cC1xxn3rz40EJN7wV` once on attempt 1.
-- Remaining production hold: obtain explicit action-time authorization for one FCM push/permission request and disabling the two older duplicate staging Stripe endpoints now that signed traffic is proven. No production provider endpoint is authorized for change.
+- FCM delivery passed after a live Chrome retest exposed and repaired a first-registration race: the client now waits for an active service worker before calling Firebase `getToken`. Staging persisted one token with notifications enabled, and the single authorized push returned one success and zero failures.
+- Duplicate staging Stripe cleanup passed: the two older test-mode standard/Connect endpoints are disabled, while the two newer staging endpoints remain enabled. The staging key could not mutate live-mode production endpoints.
+- Staging operations now include daily Firestore backups with seven-day retention, a 60-second health check, and enabled availability/runtime-error policies routed to the verified owner email. The probe reported 21/21 passing samples with zero failures.
+- Incident response, rollback, backup/restore, and deployment ownership are documented in `PRODUCTION_OPERATIONS_RUNBOOK.md`. Production resources remain unchanged and require a separate promotion approval.
 
 ## Scope and evidence
 
@@ -62,7 +65,7 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 | League management and portals | PARTIAL | Scheduling, fairness, scoring, public DTO, enrollment, and authorization tests pass; prior league demo CRUD passed. Full UI lifecycle and multi-user portal certification remain open. |
 | Tournament management and portals | PASS WITH GAPS | Public standings now share the canonical 3/1/0 calculator; replication preserves the full blueprint; archive is reachable; waiver dates persist; registration returns to its launching hub. Populated UI runs for every format remain open. |
 | Family Hub | PARTIAL WITH FIX | Fresh production Parent Demo showed 0 players, teams, payments, waivers, and events. The protected demo league overwrite that aborted rich seeding is fixed locally. Direct coach access correctly redirected; deployed production retest remains open. |
-| Billing, subscriptions, Stripe Connect, household payments | PARTIAL / PROVIDER HOLD | Policy, idempotency, entitlement, webhook, seat, offline-payment, test-mode configuration, price catalog, invalid-signature rejection, and demo plan display pass. Signed Stripe delivery and a controlled test transaction still require action-time authorization. |
+| Billing, subscriptions, Stripe Connect, household payments | PARTIAL | Policy, idempotency, entitlement, webhook, seat, offline-payment, test-mode configuration, price catalog, invalid-signature rejection, demo plan display, and signed event delivery pass. The exhaustive checkout/update/add-on/cancel/failure browser matrix remains tracked manual coverage. |
 | Fundraising and public donations | PARTIAL | Coach fundraising page loaded; validation and Stripe-link security are automated. Publish/donate/cancel/refund lifecycle remains blocked or incomplete. |
 | Volunteers and public signup | PARTIAL | Coach volunteer page loaded; server validation is automated. Capacity, completion, public signup, notification, and concurrent claims need UI certification. |
 | Facilities and equipment | PASS WITH GAPS | Both coach pages loaded without errors. Prior facility enroll/add/rename/conflict-delete smoke passed; availability, double booking, assignment, and full equipment CRUD remain open. |
@@ -71,7 +74,7 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 | Marketing, audience, sport, embed, legal, safety, how-to pages | PASS WITH GAPS | Static generation, sitemap, metadata, embed framing, and content tests pass. Full browser/device/accessibility sweep remains open. |
 | Demo environments and cleanup | PASS WITH GAPS | Squad Pro demo seeded and persisted. Parent Demo rich seeding failed because its browser batch overwrote protected server league fields; protected team/league roots now merge. Production Parent Demo retest awaits deployment; expiry cleanup can still produce a recoverable 403. |
 | Platform administration | PASS | Anonymous access is denied; an authenticated Super Admin exercised all seven sections on desktop and 390 px mobile, including the repaired Bug Reports and Newsletter layouts. |
-| Health, email/webhooks, scheduled operations | PARTIAL / PROVIDER HOLD | Staging health and deployment pass; Stripe/Connect/Resend endpoints reject invalid signatures; Resend domain and webhook configuration are valid. One real staging email and one FCM device delivery require action-time authorization. |
+| Health, email/webhooks, scheduled operations | PASS | Staging health/deployment, signed provider deliveries, daily backup, verified notification channel, uptime monitoring, runtime-error alerting, and ownership/runbook evidence pass. Production resources require separate approval. |
 | Security, privacy, reliability, accessibility | PASS WITH GAPS | Auth, tenant, projection, input, SSRF, webhook, upload, and rule tests cover high-risk boundaries. Exhaustive browser ID manipulation and a complete accessibility/device matrix remain open. |
 | Offline schedule companion and Time Out game | PARTIAL | Core storage/game behavior is automated. Full offline install/sync/recovery and device interaction were not manually certified. |
 
@@ -112,12 +115,12 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 - Tournament waiver submission now validates and persists the signer-entered `signedDate` alongside authoritative server `signedAt`, limits signer length, and displays submission errors.
 - Registration opened from Competition Hub now returns to Competition Hub; Manage Tournaments retains its own return path.
 
-### MEDIUM - Provider delivery evidence requires action-time approval - OPEN / NARROWED
+### MEDIUM - Provider cleanup requires action-time approval - CLOSED
 
 - Affected users: all paying accounts, finance staff, registrants, newsletter recipients, and push-enabled users.
 - Expected: test-mode checkout, Connect, refunds, failures, receipts, webhook replay, email delivery, unsubscribe, and push delivery are proven in isolated staging.
-- Observed: staging credentials and endpoints are configured; Stripe test prices, Resend domain/webhook, secret presence, invalid-signature rejection, one signed Stripe delivery, and one delivered email with signed callback are verified. One push and duplicate staging endpoint cleanup remain intentionally unexecuted pending action-time approval.
-- Next action: execute the four explicitly listed confirmations in `RELEASE_CHECKLIST.md`; retain signed delivery evidence before disabling only the older duplicate staging endpoints.
+- Observed: staging credentials and endpoints are configured; Stripe test prices, Resend domain/webhook, secret presence, invalid-signature rejection, one signed Stripe delivery, one delivered email with signed callback, and one successful FCM device send are verified. The separately approved cleanup disabled only the two older test-mode staging endpoints; both newer staging endpoints remain enabled.
+- Production status: no live-mode provider endpoint was changed. Production promotion remains a separate action-time decision.
 
 ### MEDIUM - Lint warning volume masks regressions - OPEN
 
@@ -194,15 +197,15 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 | Gate | Result |
 |---|---|
 | TypeScript | PASS |
-| Unit/integration tests | PASS - 361/361 |
+| Unit/integration tests | PASS - 362/362 |
 | Focused navigation regression | PASS - 8/8 |
 | Firestore/Storage rules | PASS - 38/38 after security regressions; standalone mixed invocation is invalid because emulator host discovery is unavailable outside `firebase emulators:exec` |
 | Production build | PASS |
 | Functions TypeScript build | PASS |
 | ESLint | PASS WITH 1,865 WARNINGS, 0 errors, 0 fixable warnings/errors |
 | Production dependency audits | PASS - root and Functions report 0 vulnerabilities |
-| GitHub release gate | PASS - run 32179685043 on exact candidate SHA |
-| Protected staging deploy | PASS - run 32180024465; revision `studio-build-2026-08-18-003` healthy |
+| GitHub release gate | PASS - run 32188692876 on exact candidate SHA |
+| Protected staging deploy | PASS - run 32189033707; revision `studio-build-2026-08-18-004` healthy |
 | Git diff check | PASS |
 
 ## Fixes and tests added
@@ -217,14 +220,13 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 - Added local fixes for active staff authorization, guardian ID waiver signing, asynchronous league score hydration, and mobile-visible registration actions.
 - Added a centralized billing-plan-status resolver with cancellation, Stripe-linked, demo, and free precedence plus regression coverage.
 - Made Bug Reports controls wrap responsively and Newsletter mode controls stack on mobile; preview regressions enforce both layouts.
+- Made FCM first-run registration wait for `navigator.serviceWorker.ready` before PushManager subscription; the regression test proves an installing worker is not used prematurely.
 
 ## Release blockers and manual review
 
-1. With action-time approval, record a signed Stripe test flow, one Resend staging delivery/unsubscribe result, and one FCM staging delivery.
-2. After signed Stripe evidence, disable only the two older duplicate staging webhook endpoints; preserve the newer standard and Connect endpoints and every production endpoint.
-3. Approve backup/retention, incident response, alerting, rollback ownership, and the production deploy runbook.
-4. Continue post-launch hardening for durable multi-user breadth, full device/accessibility coverage, and lint warning reduction; these are tracked quality work, not newly discovered release-candidate regressions.
+1. Apply and verify production backup/monitoring configuration only as part of an explicitly approved production promotion.
+2. Continue post-launch hardening for durable multi-user breadth, the exhaustive Stripe browser matrix, full device/accessibility coverage, and lint warning reduction; these are tracked quality work, not newly discovered release-candidate regressions.
 
 ## Final assessment
 
-The exact release candidate is deployed and health-verified in isolated staging. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, and unsigned callback rejection pass. The application is **ready for the final controlled provider smoke**, but unrestricted production promotion remains on hold until the explicitly authorized Stripe, email, push, endpoint-cleanup, and operational-runbook evidence is recorded.
+The exact release candidate is deployed and health-verified in isolated staging. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, provider delivery, endpoint cleanup, backups, verified alerting, and the operations runbook pass. Staging certification is complete; production promotion remains a separate explicit decision.
