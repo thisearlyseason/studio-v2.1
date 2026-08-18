@@ -13,6 +13,7 @@ const {
   calculateSignupTrialDays,
   hasBlockingSubscription,
   SIGNUP_TRIAL_DAYS,
+  getTrialCountdown,
 } = checkoutPolicy;
 const {
   PLAN_PRICE_MAP,
@@ -98,6 +99,20 @@ test('signup trial policy is server-derived and limited to new accounts', () => 
     hasStripeSubscriptionId: false,
     priorSubscriptionCount: 0,
   }), 0);
+});
+
+test('trial countdown reports an active trial and expires at its end timestamp', () => {
+  const now = Date.parse('2026-08-18T00:00:00.000Z');
+  assert.deepEqual(getTrialCountdown({
+    subscriptionStatus: 'trialing',
+    trialEnd: '2026-08-20T12:00:00.000Z',
+    now,
+  }), { active: true, days: 2, hours: 12 });
+  assert.deepEqual(getTrialCountdown({
+    subscriptionStatus: 'trialing',
+    trialEnd: '2026-08-17T23:59:59.000Z',
+    now,
+  }), { active: false, days: 0, hours: 0 });
 });
 
 test('signup trial policy denies repeat subscriptions', () => {

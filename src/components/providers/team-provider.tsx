@@ -121,6 +121,7 @@ export type UserProfile = {
   team_limit?: number | null;
   extra_teams?: number | null;
   subscription_status?: string | null;
+  trial_end?: string | null;
   cancel_at_period_end?: boolean;
   billing_cycle?: 'monthly' | 'annual' | null;
   stripe_customer_id?: string | null;

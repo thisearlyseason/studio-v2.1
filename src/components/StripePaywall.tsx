@@ -27,7 +27,7 @@ import { useAuth } from '@/firebase';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 
 export function StripePaywall() {
-  const { isPaywallOpen, setIsPaywallOpen, user, isPro } = useTeam();
+  const { isPaywallOpen, setIsPaywallOpen, user, activeTeam, isPro } = useTeam();
   const auth = useAuth();
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
@@ -59,10 +59,10 @@ export function StripePaywall() {
 
       // Otherwise Checkout
       const token = await getAuthToken(auth);
-      const res = await fetch('/api/checkout', {
+      const res = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ priceId, userId: user.id, billingCycle }),
+        body: JSON.stringify({ priceId, userId: user.id, teamId: activeTeam?.id, billingCycle, extraTeamQty: 0 }),
       });
       const data = await res.json();
       if (data.url) {

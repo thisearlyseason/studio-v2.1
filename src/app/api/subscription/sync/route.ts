@@ -35,9 +35,10 @@ export async function POST(req: NextRequest) {
   let claimed: { ref: FirebaseFirestore.DocumentReference; key: string } | null = null;
 
   try {
-    const { userId, operationId } = await readJsonBodyWithLimit<{
+    const { userId, operationId, teamId } = await readJsonBodyWithLimit<{
       userId?: unknown;
       operationId?: unknown;
+      teamId?: unknown;
     }>(req, 8_000);
 
     if (
@@ -59,6 +60,16 @@ export async function POST(req: NextRequest) {
     if (!userSnap.exists) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
     const userData = userSnap.data()!;
+    const selectedTeamId = typeof teamId === 'string' && teamId ? teamId : null;
+    if (teamId !== undefined && !selectedTeamId) {
+      return NextResponse.json({ error: 'A valid teamId is required.' }, { status: 400 });
+    }
+    if (selectedTeamId) {
+      const teamSnap = await adminDb.collection('teams').doc(selectedTeamId).get();
+      if (!teamSnap.exists || teamSnap.data()?.ownerUserId !== auth.uid) {
+        return NextResponse.json({ error: 'Team not found or not owned by this account.' }, { status: 403 });
+      }
+    }
     const customerId = userData.stripe_customer_id;
 
     if (!customerId) {
@@ -125,9 +136,11 @@ export async function POST(req: NextRequest) {
       planType,
       entitled: hasPaidEntitlement,
       capacity: totalTeamLimit,
+      selectedTeamId,
       userUpdates: {
         stripe_subscription_id: activeSub?.id || null,
         subscription_status: subscriptionStatus,
+        trial_end: activeSub?.trial_end ? new Date(activeSub.trial_end * 1000).toISOString() : null,
         cancel_at_period_end: activeSub?.cancel_at_period_end === true,
         billing_cycle: billingCycle,
         plan_type: hasPaidEntitlement ? planType : 'free',

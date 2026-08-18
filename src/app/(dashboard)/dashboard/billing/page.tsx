@@ -259,6 +259,7 @@ export default function BillingDashboard() {
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           userId: userProfile.id,
+          teamId: activeTeam?.id,
           operationId: crypto.randomUUID(),
         }),
       });
