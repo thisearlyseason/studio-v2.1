@@ -1,5 +1,19 @@
 # Release Checklist
 
+## 2026-08-18 staging release candidate
+
+- Candidate commit: `d1e4a11d0a242a7dda57c571500c59b110910a9a`.
+- GitHub release gate: [run 32179685043](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32179685043) — PASS for app checks, Firebase rules, Functions build, and dependency audit.
+- Protected staging deployment: [run 32180024465](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32180024465) — PASS for verification, configuration ownership, indexes, Functions, Firestore/Storage rules, App Hosting rollout, and health.
+- Deployed health: HTTP 200, service `the-squad-web`, revision `studio-build-2026-08-18-003`.
+- Anonymous `/dashboard` and `/admin`: HTTP 307 to login with the original `returnTo` path preserved.
+- Authenticated Super Admin: PASS across Accounts, Users Directory, Beta Apps, Bug Reports, Newsletters, Sports Hub, and Links & Embeds at 390x844 and 1440x900. Both widths had `innerWidth === clientWidth === scrollWidth`.
+- Mobile regressions: PASS. Bug Reports heading/status/Refresh and all three Newsletter mode controls are fully inside the 390 px viewport.
+- Squad Pro demo billing: PASS. Current plan is Pro Team and the status is `Demo plan`, not `Free tier`.
+- Invalid-signature callbacks: PASS. Standard Stripe, Stripe Connect, and Resend webhook routes each reject the request with HTTP 400.
+- Provider configuration: PASS structurally. Staging Stripe uses test mode; all ten configured prices are active CAD recurring prices; Resend domain is verified; required staging secrets are present without exposing their values.
+- Production decision: **HOLD for the four action-time provider confirmations below and explicit operational sign-off.** No code, CI, deploy, authentication, responsive, health, or unsigned-callback blocker remains.
+
 ## Blocking before production
 
 - [x] Remediate SEC-001 with a server-side field-whitelisted public recruiting payload and revised Firestore rules on the audit branch.
@@ -13,19 +27,27 @@
 ## Required release evidence
 
 - [x] Dependency installation state supports the full build and test gate.
-- [x] Typecheck, lint, 233 app tests, 29 rules tests, Next build, and Functions build pass.
+- [x] Typecheck, lint, 361 app tests, 38 rules tests, Next build, and Functions build pass on the candidate commit.
 - [x] Both production dependency audits report zero vulnerabilities.
 - [ ] Stripe test-mode checkout/update/add-on/cancel/webhook matrix is signed off.
 - [ ] Resend and FCM test delivery and opt-out handling are signed off.
 - [x] All seven supported demo personas and protected/public API negative cases complete in the isolated audit environment.
 - [x] Core role dashboards pass at 390x844 with no horizontal overflow; icon-control accessibility defects found during testing were fixed.
+- [x] Protected staging deploy path, immutable SHA evidence, health verification, and environment ownership checks pass.
 - [ ] Backup/retention, incident response, alerting, ownership, rollback, and deploy runbook are approved.
+
+## Final action-time provider confirmations
+
+- [ ] Authorize one Stripe test-mode checkout/cancellation or provider test-event sequence and retain signed webhook delivery evidence.
+- [ ] Authorize one staging email to the approved audit mailbox and verify Resend delivery plus unsubscribe handling.
+- [ ] Authorize browser notification permission and one staging FCM push to the audit browser/device.
+- [ ] After signed Stripe traffic is proven, authorize disabling only the two older duplicate staging webhook endpoints. Keep the newer standard endpoint created `2026-08-17T16:59:28Z` and newer Connect endpoint created `2026-08-17T17:00:54Z`. Do not change production endpoints.
 
 ## Deploy/rollback
 
 - [x] Run workflow `31265002674`; retired calendar functions are absent and the complete checked-in index contract is enabled.
-- [ ] Snapshot rules/indexes/config before deploy.
-- [ ] Deploy Preview first; run smoke tests with test accounts.
-- [x] Promote immutable reviewed commit `eb06d75957ffae9324de737f36e684262c5f0dcb`.
-- [ ] Monitor Stripe/Resend/webhook/API error logs after release.
+- [x] Validate the complete checked-in rules/index/config contract before deploy.
+- [x] Deploy staging first and run smoke tests with a claim-controlled test account.
+- [x] Deploy immutable reviewed staging candidate `d1e4a11d0a242a7dda57c571500c59b110910a9a`.
+- [ ] Monitor Stripe/Resend/webhook/API error logs during and after the authorized provider smoke.
 - [ ] Keep a documented rollback version and data-migration reversal plan.
