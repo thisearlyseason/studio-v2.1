@@ -18,7 +18,8 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 - Squad Pro demo billing now reports `Pro Team` with `Demo plan`; the incorrect `Free tier` fallback is fixed and regression-covered.
 - Standard Stripe, Stripe Connect, and Resend callback routes reject invalid signatures with HTTP 400. Staging provider configuration is structurally valid: Stripe is test mode, ten configured prices are active CAD recurring prices, the Resend domain is verified, and required secret names exist without exposing values.
 - Signed Stripe delivery passed: test-mode event `evt_1U5uUSGu1UxxOYbPNwVyQjQX` (`customer.created`, `livemode=false`) reached the newer standard staging endpoint and its post-signature Firestore ledger record completed once on attempt 1.
-- Remaining production hold: obtain explicit action-time authorization for one staging email, one FCM push/permission request, and disabling the two older duplicate staging Stripe endpoints now that signed traffic is proven. No production provider endpoint is authorized for change.
+- Resend delivery passed: authorized staging email `9ca57dfb-7e92-45a2-8dd1-630e04e29526` reached provider state `delivered`; staging recorded `email.delivered` and completed signed delivery `msg_3I6cDXPZ37cC1xxn3rz40EJN7wV` once on attempt 1.
+- Remaining production hold: obtain explicit action-time authorization for one FCM push/permission request and disabling the two older duplicate staging Stripe endpoints now that signed traffic is proven. No production provider endpoint is authorized for change.
 
 ## Scope and evidence
 
@@ -115,7 +116,7 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 
 - Affected users: all paying accounts, finance staff, registrants, newsletter recipients, and push-enabled users.
 - Expected: test-mode checkout, Connect, refunds, failures, receipts, webhook replay, email delivery, unsubscribe, and push delivery are proven in isolated staging.
-- Observed: staging credentials and endpoints are configured; Stripe test prices, Resend domain/webhook, secret presence, invalid-signature rejection, and one signed Stripe delivery are verified. One email, one push, and duplicate staging endpoint cleanup remain intentionally unexecuted pending action-time approval.
+- Observed: staging credentials and endpoints are configured; Stripe test prices, Resend domain/webhook, secret presence, invalid-signature rejection, one signed Stripe delivery, and one delivered email with signed callback are verified. One push and duplicate staging endpoint cleanup remain intentionally unexecuted pending action-time approval.
 - Next action: execute the four explicitly listed confirmations in `RELEASE_CHECKLIST.md`; retain signed delivery evidence before disabling only the older duplicate staging endpoints.
 
 ### MEDIUM - Lint warning volume masks regressions - OPEN

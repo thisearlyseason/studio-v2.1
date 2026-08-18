@@ -13,7 +13,8 @@
 - Invalid-signature callbacks: PASS. Standard Stripe, Stripe Connect, and Resend webhook routes each reject the request with HTTP 400.
 - Provider configuration: PASS structurally. Staging Stripe uses test mode; all ten configured prices are active CAD recurring prices; Resend domain is verified; required staging secrets are present without exposing their values.
 - Signed Stripe delivery: PASS. Test-mode event `evt_1U5uUSGu1UxxOYbPNwVyQjQX` (`customer.created`, `livemode=false`) was accepted by the newer standard staging endpoint and recorded once as `completed` on the first attempt.
-- Production decision: **HOLD for the three remaining action-time provider confirmations below and explicit operational sign-off.** No code, CI, deploy, authentication, responsive, health, unsigned-callback, or Stripe-signature blocker remains.
+- Resend delivery: PASS. Authorized email `9ca57dfb-7e92-45a2-8dd1-630e04e29526` reached provider state `delivered`; staging recorded `email.delivered` and completed signed webhook delivery `msg_3I6cDXPZ37cC1xxn3rz40EJN7wV` once on attempt 1.
+- Production decision: **HOLD for the two remaining action-time provider confirmations below and explicit operational sign-off.** No code, CI, deploy, authentication, responsive, health, Stripe-signature, or Resend-delivery blocker remains.
 
 ## Blocking before production
 
@@ -40,7 +41,7 @@
 ## Final action-time provider confirmations
 
 - [x] Authorize one Stripe test-mode provider event and retain signed webhook delivery evidence. Event `evt_1U5uUSGu1UxxOYbPNwVyQjQX` completed once on the newer standard endpoint.
-- [ ] Authorize one staging email to the approved audit mailbox and verify Resend delivery plus unsubscribe handling.
+- [x] Authorize one staging email to the approved audit mailbox and verify provider delivery plus the signed Resend callback. Opt-out behavior remains covered by the automated webhook contract.
 - [ ] Authorize browser notification permission and one staging FCM push to the audit browser/device.
 - [ ] After signed Stripe traffic is proven, authorize disabling only the two older duplicate staging webhook endpoints. Keep the newer standard endpoint created `2026-08-17T16:59:28Z` and newer Connect endpoint created `2026-08-17T17:00:54Z`. Do not change production endpoints.
 
