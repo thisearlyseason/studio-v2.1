@@ -8,6 +8,15 @@ export type PortalCustomerUser = {
   stripe_subscription_id?: string | null;
 };
 
+export function buildStripeCustomerIdempotencyKey(
+  userId: string,
+  previousCustomerId: string | null | undefined
+): string {
+  return previousCustomerId
+    ? `customer-${userId}-replacing-${previousCustomerId}`
+    : `customer-${userId}-initial`;
+}
+
 function isMissingStripeResource(error: unknown): boolean {
   return typeof error === 'object' && error !== null &&
     'code' in error && error.code === 'resource_missing';

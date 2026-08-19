@@ -23,6 +23,10 @@ import {
   finalizeCheckoutLock,
   releaseCheckoutLock,
 } from '@/lib/server-checkout-lock';
+import {
+  buildStripeCustomerIdempotencyKey,
+  resolvePortalCustomerId,
+} from '@/lib/stripe-portal-customer';
 
 export async function POST(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
@@ -124,7 +128,10 @@ export async function POST(req: NextRequest) {
       );
     }
     const stripe = getStripe();
-    let stripeCustomerId: string = userData.stripe_customer_id;
+    const previousCustomerId = typeof userData.stripe_customer_id === 'string'
+      ? userData.stripe_customer_id
+      : null;
+    let stripeCustomerId = await resolvePortalCustomerId(stripe, userId, userData);
 
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
@@ -132,7 +139,7 @@ export async function POST(req: NextRequest) {
         name: userData.fullName || userData.name,
         metadata: { firebase_uid: userId },
       }, {
-        idempotencyKey: `customer-${userId}`,
+        idempotencyKey: buildStripeCustomerIdempotencyKey(userId, previousCustomerId),
       });
       stripeCustomerId = customer.id;
       await userRef.update({ stripe_customer_id: stripeCustomerId });

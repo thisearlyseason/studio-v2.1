@@ -88,6 +88,9 @@ test('both checkout routes apply the guarded signup trial policy', async () => {
   for (const source of [legacy, canonical]) {
     assert.match(source, /calculateSignupTrialDays/);
     assert.match(source, /trial_period_days: serverTrialDays/);
+    assert.match(source, /resolvePortalCustomerId/);
+    assert.match(source, /buildStripeCustomerIdempotencyKey/);
+    assert.doesNotMatch(source, /idempotencyKey: `customer-\$\{userId\}`/);
   }
 });
 
