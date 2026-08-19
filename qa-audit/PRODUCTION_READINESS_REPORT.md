@@ -41,10 +41,10 @@ Scope: repository review, automated gates, isolated-Firebase browser/API testing
 
 ## Operational follow-up
 
-1. Complete provider-controlled Stripe signed-webhook, Resend delivery, and FCM device checks using non-production fixtures. Payment completion remains outside this audit by instruction.
+1. Complete the full Stripe test-mode checkout/update/add-on/cancel/failure/webhook matrix in isolated staging. Signed-event delivery alone is insufficient for production promotion.
 2. Monitor Vercel, Firebase, Stripe, Resend, and Function error telemetry after launch and retain the rollback deployment record.
 3. Keep the protected production environment identity and deployment workflow under review.
 
 ## Release decision
 
-The production deployment is approved for live operation based on the recorded automated, isolated-browser, infrastructure, and live-smoke evidence. Provider delivery and payment-completion checks remain intentionally outside this audit.
+Production promotion is not approved by this audit. The recorded automated, isolated-browser, infrastructure, and provider-delivery evidence supports a conditional staging pass, but the full Stripe test-mode lifecycle matrix must be completed and signed off before a separate explicit production-promotion decision.

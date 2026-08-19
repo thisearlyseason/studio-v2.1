@@ -2,7 +2,7 @@
 
 ## Executive result
 
-**STAGING CERTIFICATION PASS. The 2026-08-18 release candidate is code-, provider-, deployment-, and operations-ready; production remains unchanged pending explicit promotion approval.**
+**CONDITIONAL STAGING PASS. The exercised code, deployment, provider-delivery, and operations gates pass, but production promotion remains blocked until the exhaustive Stripe test-mode lifecycle matrix is completed and signed off. Production remains unchanged.**
 
 The repository and the exercised production demo paths are mechanically healthy. The application builds, type-checks, and passes the full unit/integration suite. The production Squad Pro demo loaded without console errors across the dashboard and the core coach modules tested. Continued workflow testing confirmed and fixed the navigation mismatch, an empty Parent Demo bootstrap failure, inconsistent public tournament standings, incomplete tournament replication, unreachable archival, discarded waiver dates, and registration return-path loss.
 
@@ -224,9 +224,10 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 
 ## Release blockers and manual review
 
-1. Apply and verify production backup/monitoring configuration only as part of an explicitly approved production promotion.
-2. Continue post-launch hardening for durable multi-user breadth, the exhaustive Stripe browser matrix, full device/accessibility coverage, and lint warning reduction; these are tracked quality work, not newly discovered release-candidate regressions.
+1. Complete and sign off the isolated-staging Stripe checkout, update, add-on, cancellation, failure, and webhook lifecycle matrix. This is a production-promotion blocker, not post-launch hardening.
+2. Apply and verify production backup/monitoring configuration only as part of an explicitly approved production promotion.
+3. Continue tracked hardening for durable multi-user breadth, full device/accessibility coverage, and lint warning reduction.
 
 ## Final assessment
 
-The exact release candidate is deployed and health-verified in isolated staging. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, provider delivery, endpoint cleanup, backups, verified alerting, and the operations runbook pass. Staging certification is complete; production promotion remains a separate explicit decision.
+The exact recorded candidate is deployed and health-verified in isolated staging. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, limited provider delivery, endpoint cleanup, backups, verified alerting, and the operations runbook pass. This is a conditional staging pass: production promotion is blocked by the incomplete Stripe lifecycle matrix and, after that closes, still requires a separate explicit approval.

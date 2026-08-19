@@ -11,6 +11,7 @@ import {
 import { hasStaffRole } from '@/lib/staff-position';
 import { withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 import { buildTournamentReplicationEvent } from '@/lib/server-tournament-replication';
+import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const REGISTRATION_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
@@ -197,12 +198,25 @@ export async function POST(req: NextRequest) {
           registrationCode,
           now,
         });
+        const interval = await assertEventAvailability(teamId, newEventRef.id, replicated);
+        const bookingRef = adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, newEventRef.id));
         const sourceConfig = await eventRef.collection('registration').doc('team_config').get();
         const mapping = { teamId, eventId: newEventRef.id, updatedAt: now };
         const batch = adminDb.batch();
         batch.set(newEventRef, replicated);
         batch.set(directory.doc(newEventRef.id), mapping);
         batch.set(directory.doc(registrationCode), mapping);
+        if (interval) {
+          const booking = buildTeamEventBooking({
+            bookingId: bookingRef.id,
+            teamId,
+            eventId: newEventRef.id,
+            event: replicated,
+            interval,
+            now,
+          });
+          batch.set(bookingRef, booking);
+        }
         if (sourceConfig.exists) {
           batch.set(newEventRef.collection('registration').doc('team_config'), sourceConfig.data() || {});
         }
@@ -281,22 +295,15 @@ export async function POST(req: NextRequest) {
           }
         }
         if (interval) {
-          const resourceId = typeof eventData.resourceId === 'string' ? eventData.resourceId.trim() : '';
-          const location = typeof eventData.location === 'string' ? eventData.location.trim() : '';
-          batch.set(bookingRef, {
-            id: bookingRef.id,
-            sourceType: 'team-event',
-            sourceId: `team-event:${teamId}:${eventId}`,
-            sourceGameId: eventId,
-            hostTeamId: teamId,
-            teamIds: [teamId],
-            resourceId,
-            location,
-            date: interval.date,
-            startMinute: interval.startMinute,
-            endMinute: interval.endMinute,
-            updatedAt: now,
+          const booking = buildTeamEventBooking({
+            bookingId: bookingRef.id,
+            teamId,
+            eventId,
+            event: eventData,
+            interval,
+            now,
           });
+          batch.set(bookingRef, booking);
         } else {
           batch.delete(bookingRef);
         }

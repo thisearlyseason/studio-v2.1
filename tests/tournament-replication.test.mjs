@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const replicationModule = await import('../src/lib/server-tournament-replication.ts').catch(() => ({}));
@@ -77,4 +78,16 @@ test('tournament replication allowlists blueprint fields and resets operational 
   assert.equal(replicated.deploymentStatus, 'undeployed');
   assert.equal(replicated.deploymentError, '');
   assert.equal('privateOperationalField' in replicated, false);
+});
+
+test('timed tournament replication validates availability and records its booking', () => {
+  const route = readFileSync('src/app/api/teams/events/action/route.ts', 'utf8');
+  const replicationBranch = route.slice(
+    route.indexOf("if (action === 'replicate')"),
+    route.indexOf("if (action === 'create' || action === 'update' || action === 'delete')")
+  );
+
+  assert.match(replicationBranch, /assertEventAvailability\(teamId, newEventRef\.id, replicated\)/);
+  assert.match(replicationBranch, /buildTeamEventBooking\(/);
+  assert.match(replicationBranch, /batch\.set\(bookingRef, booking\)/);
 });

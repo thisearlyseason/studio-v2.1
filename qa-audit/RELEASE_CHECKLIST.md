@@ -17,10 +17,11 @@
 - FCM delivery: PASS after repairing a first-registration service-worker activation race. The authorized Chrome device registered one token, persisted `notificationsEnabled=true`, and the single staging send returned `successCount=1`, `failureCount=0`.
 - Stripe duplicate cleanup: PASS. Older test-mode standard endpoint `we_1U5OxvGu1UxxOYbP9UIjoxTD` and Connect endpoint `we_1U5Ox6Gu1UxxOYbPXh8krg8q` are disabled. Newer test-mode standard endpoint `we_1U5TsiGu1UxxOYbPa6U9d040` and Connect endpoint `we_1U5Tu6Gu1UxxOYbPKpVmDB47` remain enabled; live-mode production was outside the staging key's scope.
 - Staging operations: PASS. Daily Firestore backups retain seven days; a 60-second `/api/health` check and enabled health/runtime-error policies notify the verified owner email channel. The probe reported 21/21 passing samples with zero failures, and the provider smoke emitted no application or Functions ERROR logs.
-- Production decision: **STAGING CERTIFIED; HOLD for explicit production promotion approval.** Production infrastructure and providers remain untouched.
+- Production decision: **CONDITIONAL STAGING PASS; PRODUCTION PROMOTION BLOCKED.** The exercised staging gates pass, but the exhaustive Stripe test-mode lifecycle matrix below is not signed off. Production infrastructure and providers remain untouched.
 
 ## Blocking before production
 
+- [ ] Complete and sign off the Stripe test-mode checkout/update/add-on/cancel/failure/webhook matrix in isolated staging.
 - [x] Remediate SEC-001 with a server-side field-whitelisted public recruiting payload and revised Firestore rules on the audit branch.
 - [x] Add and pass anonymous/public recruiting privacy regression tests in the Firebase emulator.
 - [x] Use JDK 21+ in the local release environment; `npm run test:rules` passes (Java 26.0.2). Ensure CI uses JDK 21+.
