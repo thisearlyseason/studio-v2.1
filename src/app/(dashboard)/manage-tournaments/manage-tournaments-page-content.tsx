@@ -2988,6 +2988,7 @@ function TournamentDetailView({
 
 export function ManageTournamentsPageContent({ embedded = false }: { embedded?: boolean }) {
   const { activeTeam, db, firebaseUser: user, isStaff, isPrimaryClubAuthority, isStarter } = useTeam();
+  const firebaseAuth = useAuth();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -3028,57 +3029,26 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
   const activeEvent = useMemo(() => rawEvents?.find(e => e.id === selectedEventId), [rawEvents, selectedEventId]);
 
   const handleDuplicateTournament = async () => {
-    if (!duplicatingEvent || !duplicateTitle.trim() || !db || !activeTeam || !user?.uid) {
+    if (!duplicatingEvent || !duplicateTitle.trim() || !activeTeam || !firebaseAuth) {
       toast({ title: "Replication Error", description: "Authorization or source data missing.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
     try {
-      const newEventRef = doc(collection(db, 'teams', activeTeam.id, 'events'));
-      const sourceEvent = duplicatingEvent as TeamEvent & Record<string, unknown>;
-      const operationalFields = new Set([
-        'id', 'createdAt', 'updatedAt', 'isArchived', 'isCompleted',
-        'tournamentTeams', 'tournamentTeamsData', 'tournamentGames',
-        'schedule', 'archived_waivers',
-      ]);
-      const blueprint = Object.fromEntries(
-        Object.entries(sourceEvent).filter(([key]) => !operationalFields.has(key))
-      );
-      const newEventData = {
-        // Preserve the complete scheduling, venue, registration, and waiver blueprint.
-        ...blueprint,
-        title: duplicateTitle.trim(),
-        date: duplicatingEvent.date || '',
-        endDate: duplicatingEvent.endDate || '',
-        location: duplicatingEvent.location || '',
-        registrationCost: duplicatingEvent.registrationCost || '0',
-        adminEmails: duplicatingEvent.adminEmails || [],
-        isTournament: true,
-        tournamentType: duplicatingEvent.tournamentType || '',
-        venueSettings: duplicatingEvent.venueSettings || {},
-        
-        // Reset operational state
-        id: newEventRef.id,
-        teamId: activeTeam.id,
-        creatorId: user.uid,
-        createdAt: new Date().toISOString(),
-        isArchived: false,
-        isCompleted: false,
-        tournamentTeams: [],
-        tournamentTeamsData: [],
-        tournamentGames: [],
-        schedule: [],
-        archived_waivers: []
-      };
-      
-      const { setDoc, getDoc } = await import('firebase/firestore');
-      await setDoc(newEventRef, newEventData);
-
-      // Duplicate Registration Config (team_config)
-      const sourceCfgRef = doc(db, 'teams', activeTeam.id, 'events', duplicatingEvent.id, 'registration', 'team_config');
-      const sourceCfg = await getDoc(sourceCfgRef);
-      if (sourceCfg.exists()) {
-        await setDoc(doc(db, 'teams', activeTeam.id, 'events', newEventRef.id, 'registration', 'team_config'), sourceCfg.data());
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/teams/events/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          action: 'replicate',
+          teamId: activeTeam.id,
+          eventId: duplicatingEvent.id,
+          title: duplicateTitle.trim(),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || typeof payload.eventId !== 'string') {
+        throw new Error(payload.error || 'Unable to replicate this tournament.');
       }
 
       setIsDuplicateOpen(false);
@@ -3087,7 +3057,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
       toast({ title: "Series Replicated", description: "Tournament blueprint cloned. Opening new series hub..." });
       
       // Auto-select the fresh duplicate
-      setSelectedEventId(newEventRef.id);
+      setSelectedEventId(payload.eventId);
     } catch (e: any) {
       console.error("[Tournaments] Replication failed:", e);
       toast({ title: "Replication Failed", description: e.message, variant: 'destructive' });

@@ -20,6 +20,7 @@ import {
 } from '@/lib/server-request-guards';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { getTeamAuthority } from '@/lib/server-team-access';
+import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
 
 function requestFingerprint(req: NextRequest) {
   const address = (req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local').slice(0, 100);
@@ -109,9 +110,12 @@ export async function POST(req: NextRequest) {
       if (!isSafeId(leagueId) || !isSafeId(entryId)) return NextResponse.json({ error: 'Invalid registration identifiers.' }, { status: 400 });
       const leagueRef = adminDb.collection('leagues').doc(leagueId);
       const entryRef = leagueRef.collection('registrationEntries').doc(entryId);
-      const [leagueSnap, profileSnap, entrySnap] = await Promise.all([leagueRef.get(), adminDb.collection('users').doc(auth.uid).get(), entryRef.get()]);
-      const profile = profileSnap.data() || {};
-      if (!leagueSnap.exists || (leagueSnap.data()?.creatorId !== auth.uid && profile.role !== 'superadmin' && auth.role !== 'superadmin')) return NextResponse.json({ error: 'League organizer access required.' }, { status: 403 });
+      const [leagueSnap, entrySnap] = await Promise.all([leagueRef.get(), entryRef.get()]);
+      if (!leagueSnap.exists || !canDeleteLeagueRegistration({
+        creatorId: leagueSnap.data()?.creatorId,
+        actorUid: auth.uid,
+        actorRole: auth.role,
+      })) return NextResponse.json({ error: 'League organizer access required.' }, { status: 403 });
       if (!entrySnap.exists) return NextResponse.json({ success: true });
       const recruitId = `recruit_${entryId}`;
       const batch = adminDb.batch();

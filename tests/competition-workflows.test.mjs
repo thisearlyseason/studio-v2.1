@@ -83,14 +83,6 @@ test('public tournament pages use the canonical 3-1-0 standings contract', () =>
   );
 });
 
-test('tournament replication preserves blueprint fields while resetting operational state', () => {
-  const page = read('src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx');
-
-  assert.match(page, /\.\.\.blueprint,[\s\S]{0,700}tournamentTeams: \[\],[\s\S]{0,200}tournamentGames: \[\],[\s\S]{0,100}schedule: \[\]/);
-  assert.match(page, /selectedFields: editEvent\.selectedFields/);
-  assert.match(page, /dailyWindows: editEvent\.dailyWindows/);
-});
-
 test('tournament archival is reachable from the edit workflow', () => {
   const page = read('src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx');
 

@@ -79,6 +79,7 @@ import { PRICING_CONFIG } from '@/lib/pricing';
 import { deleteFCMToken, initFCM } from '@/lib/fcm-client';
 import { clearBrowserSession } from '@/lib/client-auth';
 import { isStaffPosition } from '@/lib/staff-position';
+import { canManageActiveTeamModules } from '@/lib/team-settings-authority';
 
 export default function SettingsPage() {
   const { 
@@ -188,7 +189,6 @@ export default function SettingsPage() {
   }
 
   const currentMember = activeTeam ? members.find(m => m.userId === user.id) : null;
-  const isAdmin = activeTeam?.role === 'Admin';
   const isDemo = activeTeam?.isDemo || user?.isDemo;
   // Billing is an account-owner/staff workflow. Keep the link visible when a
   // coach role is present on the profile even if team membership is still
@@ -199,6 +199,11 @@ export default function SettingsPage() {
     isStaffPosition(user.role) ||
     String(user.role || '').trim().toLowerCase() === 'coach'
   );
+  const canManageTeamModules = canManageActiveTeamModules({
+    hasActiveTeam: Boolean(activeTeam),
+    isTeamStaff: isStaff,
+    accountRole: user.role,
+  });
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -693,7 +698,7 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {canManageBilling && activeTeam && (
+      {canManageTeamModules && activeTeam && (
         <div className="space-y-4 pt-10 border-t">
           <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">Module Visibility</h3>
           <p className="text-[10px] text-muted-foreground px-2 mb-4 font-bold uppercase tracking-widest leading-relaxed">
