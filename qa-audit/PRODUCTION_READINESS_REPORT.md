@@ -1,12 +1,12 @@
 # The Squad Pro — Production Readiness Audit
 
-Audit date: 2026-08-08
-Audit branch: `agent/fix-login-spinner`
-Scope: repository review, automated gates, isolated-Firebase browser/API testing, and read-only production metadata checks. No production data, charges, emails, push messages, or deployments were initiated.
+Audit date: 2026-08-19
+Audit branch: `agent/complete-audit-fixes`
+Scope: repository review, automated gates, isolated-Firebase browser/API testing, Stripe/Resend/FCM test-provider certification, and read-only production metadata checks. Authorized staging test-mode charges/refunds, email, and push were exercised; no production data mutation, production-mode charge/email/push, or production deployment was initiated.
 
 ## Executive summary
 
-**Overall release status: LIVE AND POST-DEPLOYMENT VERIFIED.** The application code passed the complete release gate, both runtime dependency audits are clear, and the isolated browser/API certification covered all seven demo personas and the supported feature surface without completing payment. Confirmed defects were repaired and regression-tested. Production infrastructure and the Vercel web release are now deployed and smoke-tested.
+**Overall release status: STAGING RELEASE-CANDIDATE PASS; PRODUCTION UNCHANGED.** Candidate code `92444e28d9590177adb4587749a36a0b6aa27bb7` passed the complete release gate, both runtime dependency audits, independent review, isolated browser/API certification, and the offered Stripe test-mode lifecycle matrix. Protected staging deploy `32276696681` produced healthy revision `studio-build-2026-08-19-003`. Production promotion remains a separately authorized operation with action-time configuration, rollback, and smoke checks.
 
 ## Architecture summary
 
@@ -41,10 +41,10 @@ Scope: repository review, automated gates, isolated-Firebase browser/API testing
 
 ## Operational follow-up
 
-1. Complete the full Stripe test-mode checkout/update/add-on/cancel/failure/webhook matrix in isolated staging. Signed-event delivery alone is insufficient for production promotion.
+1. At an explicitly authorized production promotion, verify production provider mode/IDs and environment values, record the rollback target, deploy through the protected workflow, and run the documented smoke/health checks.
 2. Monitor Vercel, Firebase, Stripe, Resend, and Function error telemetry after launch and retain the rollback deployment record.
-3. Keep the protected production environment identity and deployment workflow under review.
+3. Continue non-blocking hardening for lint warnings, broader durable multi-user/device coverage, and accessibility depth.
 
 ## Release decision
 
-Production promotion is not approved by this audit. The recorded automated, isolated-browser, infrastructure, and provider-delivery evidence supports a conditional staging pass, but the full Stripe test-mode lifecycle matrix must be completed and signed off before a separate explicit production-promotion decision.
+The staging candidate satisfies the defined production-readiness gates, including the full currently offered Stripe lifecycle matrix documented in `SUBSCRIPTION_TEST_MATRIX.md`. This is not authorization to deploy production: production remains unchanged until the user separately approves the protected promotion workflow and its action-time checks.

@@ -2,7 +2,7 @@
 
 ## Executive result
 
-**CONDITIONAL STAGING PASS. The exercised code, deployment, provider-delivery, and operations gates pass, but production promotion remains blocked until the exhaustive Stripe test-mode lifecycle matrix is completed and signed off. Production remains unchanged.**
+**STAGING RELEASE-CANDIDATE PASS. The defined code, deployment, provider-delivery, operations, and Stripe test-mode lifecycle gates are signed off. Production remains unchanged and requires separate explicit promotion authorization.**
 
 The repository and the exercised production demo paths are mechanically healthy. The application builds, type-checks, and passes the full unit/integration suite. The production Squad Pro demo loaded without console errors across the dashboard and the core coach modules tested. Continued workflow testing confirmed and fixed the navigation mismatch, an empty Parent Demo bootstrap failure, inconsistent public tournament standings, incomplete tournament replication, unreachable archival, discarded waiver dates, and registration return-path loss.
 
@@ -23,6 +23,16 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 - Duplicate staging Stripe cleanup passed: the two older test-mode standard/Connect endpoints are disabled, while the two newer staging endpoints remain enabled. The staging key could not mutate live-mode production endpoints.
 - Staging operations now include daily Firestore backups with seven-day retention, a 60-second health check, and enabled availability/runtime-error policies routed to the verified owner email. The probe reported 21/21 passing samples with zero failures.
 - Incident response, rollback, backup/restore, and deployment ownership are documented in `PRODUCTION_OPERATIONS_RUNBOOK.md`. Production resources remain unchanged and require a separate promotion approval.
+
+### 2026-08-19 final sign-off addendum
+
+- Final code candidate `92444e28d9590177adb4587749a36a0b6aa27bb7` passed the complete local verification gate, zero-vulnerability root/Functions audits, two exact-head GitHub runs (`32276307348`, `32276310640`), and independent review with no Critical or Important findings.
+- Protected staging deploy `32276696681` completed all verification, infrastructure, rollout, and health steps. Revision `studio-build-2026-08-19-003` is healthy.
+- All Team, Elite, League, and School monthly/annual transitions passed against deployed staging. Add-on add/remove, interval preservation, zero/credit/positive invoices, failed payment with HTTP 202 pending state, payment recovery, cancellation, and reactivation passed.
+- Hosted Customer Portal payment-method change, a one-use promotion code, and an exact five-day new-account trial passed in Stripe test mode. Automatic tax is not enabled or marketed by this checkout and is recorded N/A.
+- A full test-mode refund and dispute fixture passed as provider/operations checks. Signed invalid, duplicate/replayed, delayed/out-of-order, payment-failure, pending-update, subscription-update, and deletion webhook behavior passed or is covered by the automated authoritative-state regressions.
+- Deleting the audit Stripe customer revoked all entitlement and completed `customer.deleted` plus `customer.subscription.deleted` ledger records on attempt 1. The deployed checkout recovered by creating a distinct active customer and returning HTTP 200; the session was expired and the account reconciled to free/inactive, zero seats/extras, and no subscription.
+- The disposable trial customer, subscription, promotion code, coupon, Firebase Auth user, and Firestore document were removed after cancellation reconciliation. Production providers and infrastructure were not modified.
 
 ## Scope and evidence
 
@@ -65,7 +75,8 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 | League management and portals | PARTIAL | Scheduling, fairness, scoring, public DTO, enrollment, and authorization tests pass; prior league demo CRUD passed. Full UI lifecycle and multi-user portal certification remain open. |
 | Tournament management and portals | PASS WITH GAPS | Public standings now share the canonical 3/1/0 calculator; replication preserves the full blueprint; archive is reachable; waiver dates persist; registration returns to its launching hub. Populated UI runs for every format remain open. |
 | Family Hub | PARTIAL WITH FIX | Fresh production Parent Demo showed 0 players, teams, payments, waivers, and events. The protected demo league overwrite that aborted rich seeding is fixed locally. Direct coach access correctly redirected; deployed production retest remains open. |
-| Billing, subscriptions, Stripe Connect, household payments | PARTIAL | Policy, idempotency, entitlement, webhook, seat, offline-payment, test-mode configuration, price catalog, invalid-signature rejection, demo plan display, and signed event delivery pass. The exhaustive checkout/update/add-on/cancel/failure browser matrix remains tracked manual coverage. |
+| Billing and subscriptions | PASS | Policy, idempotency, entitlement, webhook, seat, test-mode configuration, price catalog, all plan/cycle transitions, trial, promotion, failure/recovery, cancellation/reactivation, portal payment method, refund/dispute operations, webhook replay, and deleted-customer recovery pass. Automatic tax is not an offered behavior. |
+| Stripe Connect and household payments | PARTIAL | Connect configuration, signed-route security, invalid-signature rejection, and household offline-payment contracts pass. A signed Connect transfer/payout and complete household payment lifecycle were not manually exercised. |
 | Fundraising and public donations | PARTIAL | Coach fundraising page loaded; validation and Stripe-link security are automated. Publish/donate/cancel/refund lifecycle remains blocked or incomplete. |
 | Volunteers and public signup | PARTIAL | Coach volunteer page loaded; server validation is automated. Capacity, completion, public signup, notification, and concurrent claims need UI certification. |
 | Facilities and equipment | PASS WITH GAPS | Both coach pages loaded without errors. Prior facility enroll/add/rename/conflict-delete smoke passed; availability, double booking, assignment, and full equipment CRUD remain open. |
@@ -204,8 +215,8 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 | Functions TypeScript build | PASS |
 | ESLint | PASS WITH 1,865 WARNINGS, 0 errors, 0 fixable warnings/errors |
 | Production dependency audits | PASS - root and Functions report 0 vulnerabilities |
-| GitHub release gate | PASS - run 32210319748 on exact candidate SHA |
-| Protected staging deploy | PASS - run 32210534954; revision `studio-build-2026-08-19-001` healthy |
+| GitHub release gate | PASS - runs 32276307348 and 32276310640 on exact code candidate SHA |
+| Protected staging deploy | PASS - run 32276696681; revision `studio-build-2026-08-19-003` healthy |
 | Git diff check | PASS |
 
 ## Fixes and tests added
@@ -224,10 +235,9 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 
 ## Release blockers and manual review
 
-1. Complete and sign off the isolated-staging Stripe checkout, update, add-on, cancellation, failure, and webhook lifecycle matrix. This is a production-promotion blocker, not post-launch hardening.
-2. Apply and verify production backup/monitoring configuration only as part of an explicitly approved production promotion.
-3. Continue tracked hardening for durable multi-user breadth, full device/accessibility coverage, and lint warning reduction.
+1. Apply and verify production configuration, provider mode/IDs, backup/monitoring, rollback target, and post-deploy smoke only as part of an explicitly approved production promotion.
+2. Continue tracked hardening for durable multi-user breadth, full device/accessibility coverage, and lint warning reduction; these are not blockers for the defined release candidate.
 
 ## Final assessment
 
-The exact recorded candidate is deployed and health-verified in isolated staging. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, limited provider delivery, endpoint cleanup, backups, verified alerting, and the operations runbook pass. This is a conditional staging pass: production promotion is blocked by the incomplete Stripe lifecycle matrix and, after that closes, still requires a separate explicit approval.
+The exact code candidate is deployed and health-verified in isolated staging. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, provider delivery, endpoint cleanup, backups, alerting, the operations runbook, and the offered Stripe lifecycle matrix pass. The candidate is ready for a separately authorized production-promotion workflow with action-time configuration, rollback, and smoke checks; this audit did not deploy or modify production.
