@@ -2,10 +2,10 @@
 
 ## 2026-08-18 staging release candidate
 
-- Candidate commit: `6150481e8f3200e782f940cfc67e4c469ace4284`.
-- GitHub release gate: [run 32188692876](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32188692876) — PASS for app checks, Firebase rules, Functions build, and dependency audit.
-- Protected staging deployment: [run 32189033707](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32189033707) — PASS for verification, configuration ownership, indexes, Functions, Firestore/Storage rules, App Hosting rollout, and health.
-- Deployed health: HTTP 200, service `the-squad-web`, revision `studio-build-2026-08-18-004`.
+- Candidate commit: `39d316b0b216efe492f345f728ba211917b6d485`.
+- GitHub release gate: [run 32210319748](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32210319748) — PASS for app checks, Firebase rules, Functions build, and dependency audit.
+- Protected staging deployment: [run 32210534954](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32210534954) — PASS for verification, configuration ownership, indexes, Functions, Firestore/Storage rules, App Hosting rollout, and health.
+- Deployed health: HTTP 200, service `the-squad-web`, revision `studio-build-2026-08-19-001`.
 - Anonymous `/dashboard` and `/admin`: HTTP 307 to login with the original `returnTo` path preserved.
 - Authenticated Super Admin: PASS across Accounts, Users Directory, Beta Apps, Bug Reports, Newsletters, Sports Hub, and Links & Embeds at 390x844 and 1440x900. Both widths had `innerWidth === clientWidth === scrollWidth`.
 - Mobile regressions: PASS. Bug Reports heading/status/Refresh and all three Newsletter mode controls are fully inside the 390 px viewport.
@@ -33,7 +33,7 @@
 ## Required release evidence
 
 - [x] Dependency installation state supports the full build and test gate.
-- [x] Typecheck, lint, 362 app tests, 38 rules tests, Next build, and Functions build pass on the candidate commit.
+- [x] Typecheck, lint, 367 app tests, 38 rules tests, Next build, and Functions build pass on the candidate commit.
 - [x] Both production dependency audits report zero vulnerabilities.
 - [ ] Stripe test-mode checkout/update/add-on/cancel/webhook matrix is signed off.
 - [x] Resend and FCM test delivery are signed off; automated contracts cover suppression and notification opt-out handling.
@@ -54,6 +54,6 @@
 - [x] Run workflow `31265002674`; retired calendar functions are absent and the complete checked-in index contract is enabled.
 - [x] Validate the complete checked-in rules/index/config contract before deploy.
 - [x] Deploy staging first and run smoke tests with a claim-controlled test account.
-- [x] Deploy immutable reviewed staging candidate `6150481e8f3200e782f940cfc67e4c469ace4284`.
+- [x] Deploy immutable independently reviewed staging candidate `39d316b0b216efe492f345f728ba211917b6d485`.
 - [x] Monitored staging application and Functions ERROR logs during and after the authorized provider smoke; none were emitted.
 - [x] Documented rollback target, backend/rules alignment, incident response, backup/restore, and the no-migration state in `PRODUCTION_OPERATIONS_RUNBOOK.md`.

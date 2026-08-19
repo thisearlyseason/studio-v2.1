@@ -10,9 +10,9 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 
 ### 2026-08-18 completion addendum
 
-- Candidate commit `6150481e8f3200e782f940cfc67e4c469ace4284` passed the complete local gate and GitHub release gate [32188692876](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32188692876).
-- Protected staging deploy [32189033707](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32189033707) deployed that exact SHA successfully, including indexes, Functions, Firestore/Storage rules, App Hosting rollout, and health verification.
-- Staging health returned HTTP 200 for revision `studio-build-2026-08-18-004`. Anonymous `/dashboard` and `/admin` returned HTTP 307 to login with preserved return paths.
+- Candidate commit `39d316b0b216efe492f345f728ba211917b6d485` passed the complete local gate, independent code review, and GitHub release gate [32210319748](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32210319748).
+- Protected staging deploy [32210534954](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32210534954) deployed that exact SHA successfully, including indexes, Functions, Firestore/Storage rules, App Hosting rollout, and health verification.
+- Staging health returned HTTP 200 for revision `studio-build-2026-08-19-001`. Post-deploy authenticated smoke confirmed Settings and Manage Tournaments render successfully; module controls remain absent when no active team is selected.
 - A verified, claim-controlled staging Super Admin session persisted through refresh. Accounts, Users Directory, Beta Apps, Bug Reports, Newsletters, Sports Hub, and Links & Embeds all loaded at both 390x844 and 1440x900 with no horizontal document overflow.
 - The two final mobile defects are closed: Bug Reports controls fit inside the 390 px viewport, and Newsletter Compose/New Subscriber/Subscribers controls render as three full-width stacked controls on mobile.
 - Squad Pro demo billing now reports `Pro Team` with `Demo plan`; the incorrect `Free tier` fallback is fixed and regression-covered.
@@ -197,15 +197,15 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 | Gate | Result |
 |---|---|
 | TypeScript | PASS |
-| Unit/integration tests | PASS - 362/362 |
+| Unit/integration tests | PASS - 367/367 |
 | Focused navigation regression | PASS - 8/8 |
 | Firestore/Storage rules | PASS - 38/38 after security regressions; standalone mixed invocation is invalid because emulator host discovery is unavailable outside `firebase emulators:exec` |
 | Production build | PASS |
 | Functions TypeScript build | PASS |
 | ESLint | PASS WITH 1,865 WARNINGS, 0 errors, 0 fixable warnings/errors |
 | Production dependency audits | PASS - root and Functions report 0 vulnerabilities |
-| GitHub release gate | PASS - run 32188692876 on exact candidate SHA |
-| Protected staging deploy | PASS - run 32189033707; revision `studio-build-2026-08-18-004` healthy |
+| GitHub release gate | PASS - run 32210319748 on exact candidate SHA |
+| Protected staging deploy | PASS - run 32210534954; revision `studio-build-2026-08-19-001` healthy |
 | Git diff check | PASS |
 
 ## Fixes and tests added
