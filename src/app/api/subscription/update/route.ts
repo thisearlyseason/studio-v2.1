@@ -15,7 +15,11 @@ import {
 } from '@/lib/server-request-guards';
 import { buildCheckoutIdempotencyKey } from '@/lib/checkout-policy';
 import { reconcilePaidTeamSeats } from '@/lib/server-subscription-seats';
-import { hasPendingSubscriptionUpdate } from '@/lib/subscription-seat-policy';
+import {
+  buildPlanChangeStripeUpdate,
+  buildSubscriptionResumeStripeUpdate,
+  hasPendingSubscriptionUpdate,
+} from '@/lib/subscription-seat-policy';
 import {
   claimSubscriptionMutation,
   releaseSubscriptionMutation,
@@ -141,13 +145,13 @@ export async function POST(req: NextRequest) {
     });
 
     // Update the base plan and keep add-on billing on the same interval.
-    const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
-      items,
-      proration_behavior: 'always_invoice',
-      payment_behavior: 'pending_if_incomplete',
-    }, {
-      idempotencyKey,
-    });
+    const updatedSubscription = await stripe.subscriptions.update(
+      subscriptionId,
+      buildPlanChangeStripeUpdate(items),
+      {
+        idempotencyKey,
+      }
+    );
 
     if (updatedSubscription.pending_update) {
       return NextResponse.json(
@@ -159,8 +163,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const isEntitled = isEntitledSubscriptionStatus(updatedSubscription.status);
-    const extraTeams = updatedSubscription.items.data.reduce((total, item) => {
+    // Stripe pending updates accept only invoice-related attributes. Resume a
+    // scheduled cancellation separately, after the paid plan change succeeds.
+    const effectiveSubscription = updatedSubscription.cancel_at_period_end
+      ? await stripe.subscriptions.update(
+          subscriptionId,
+          buildSubscriptionResumeStripeUpdate(),
+          { idempotencyKey: `resume-${idempotencyKey}` }
+        )
+      : updatedSubscription;
+
+    const isEntitled = isEntitledSubscriptionStatus(effectiveSubscription.status);
+    const extraTeams = effectiveSubscription.items.data.reduce((total, item) => {
       if (
         item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
         item.price.id === EXTRA_TEAM_PRICE_IDS.annual
@@ -185,15 +199,15 @@ export async function POST(req: NextRequest) {
         plan_type: isEntitled ? resolvedPlan.id : 'free',
         team_limit: totalTeamLimit,
         extra_teams: isEntitled ? extraTeams : 0,
-        subscription_status: updatedSubscription.status,
-        cancel_at_period_end: updatedSubscription.cancel_at_period_end,
+        subscription_status: effectiveSubscription.status,
+        cancel_at_period_end: effectiveSubscription.cancel_at_period_end,
         billing_cycle: billingCycle,
         last_sync_method: 'direct_upgrade',
         last_webhook_sync: new Date().toISOString(),
       },
     });
 
-    return NextResponse.json({ success: true, subscription: updatedSubscription });
+    return NextResponse.json({ success: true, subscription: effectiveSubscription });
   } catch (err: any) {
     if (err instanceof SubscriptionMutationInProgressError) {
       return NextResponse.json(
