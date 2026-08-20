@@ -61,6 +61,23 @@ test('existing unverified accounts are preserved but locked until verification',
   assert.match(sessionRoute, /decoded\.email_verified !== true/);
 });
 
+test('unverified accounts do not start protected Firestore profile listeners', async () => {
+  const provider = await source('../src/components/providers/team-provider.tsx');
+
+  assert.match(provider, /firebaseUser\.emailVerified/);
+  assert.match(provider, /firebaseUser\.emailVerified !== true/);
+  assert.match(provider, /teamsQuery[\s\S]*firebaseUser\.emailVerified === true/);
+  assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
+});
+
+test('verification-email route reports provider configuration failures without a generic 500', async () => {
+  const route = await source('../src/app/api/email/verify-email/route.ts');
+
+  assert.match(route, /auth\/invalid-continue-uri/);
+  assert.match(route, /Email verification configuration is invalid/);
+  assert.match(route, /status: 503/);
+});
+
 test('email changes require verification before the stored profile email changes', async () => {
   const settings = await source('../src/app/(dashboard)/settings/page.tsx');
 

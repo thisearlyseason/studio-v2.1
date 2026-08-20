@@ -172,6 +172,13 @@ test('demo bootstrap creates the protected league before client blueprint enrich
   assert.match(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 
+test('demo blueprint merges protected team and league roots created by the server', async () => {
+  const seeder = await readSource('../src/lib/db-seeder.ts');
+
+  assert.match(seeder, /const isProtectedDemoRoot = \/\^\(teams\|leagues\)/);
+  assert.match(seeder, /else if \(isProtectedDemoRoot\) \{\s*this\.batch\.set\(ref, data, \{ merge: true \}\)/);
+});
+
 test('demo chat messages are server-seeded through the protected message boundary', async () => {
   const route = await readSource('../src/app/api/demo/seed/route.ts');
   const seeder = await readSource('../src/lib/db-seeder.ts');
@@ -666,6 +673,8 @@ test('team waiver signing is server-mediated for members and guardians', async (
 
   assert.match(provider, /fetch\('\/api\/teams\/waivers\/sign'/);
   assert.match(route, /isGuardian = memberData\.parentId === auth\.uid \|\| playerData\.parentId === auth\.uid/);
+  assert.match(route, /memberData\.guardianIds/);
+  assert.match(route, /playerData\.guardianIds/);
   assert.match(route, /transaction\.set\(signatureRef/);
   assert.match(route, /transaction\.update\(memberRef/);
   assert.match(route, /transaction\.set\(archiveRef/);
@@ -771,4 +780,24 @@ test('staff authority uses the shared complete position vocabulary', async () =>
   for (const position of ['head coach', 'director of athletics', 'team representative', 'coach guest', 'team lead', 'platform admin']) {
     assert.match(positions, new RegExp(`'${position}'`));
   }
+});
+
+test('mobile Super Admin headers and newsletter sections stay inside the viewport', async () => {
+  const [admin, newsletter] = await Promise.all([
+    readSource('../src/app/admin/page.tsx'),
+    readSource('../src/components/admin/newsletter-manager.tsx'),
+  ]);
+
+  assert.match(
+    admin,
+    /activeTab === 'bugs'[\s\S]*?flex flex-col sm:flex-row sm:items-center justify-between gap-4/,
+  );
+  assert.match(
+    admin,
+    /activeTab === 'bugs'[\s\S]*?flex flex-wrap items-center gap-3/,
+  );
+  assert.match(
+    newsletter,
+    /grid w-full grid-cols-1 sm:grid-cols-3 lg:w-auto/,
+  );
 });

@@ -180,6 +180,7 @@ async function syncSubscriptionToFirestore(
         stripe_subscription_id: subscription.id,
         stripe_customer_id: customerId,
         subscription_status: status,
+        trial_end: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
         cancel_at_period_end: subscription.cancel_at_period_end,
         billing_cycle: billingCycle,
         plan_type: hasPaidEntitlement ? planType : 'free',

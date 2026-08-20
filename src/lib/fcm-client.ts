@@ -9,6 +9,7 @@
 import { getApp } from 'firebase/app';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { getAuth } from 'firebase/auth';
+import { waitForActiveServiceWorker } from '@/lib/service-worker-registration';
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_FCM_VAPID_KEY;
 
@@ -67,10 +68,14 @@ export async function initFCM(userId: string): Promise<string | null> {
     const messaging = getMessaging(app);
 
     // Register service worker for FCM
-    const registration = await navigator.serviceWorker.register(serviceWorkerUrl(), {
+    const installingRegistration = await navigator.serviceWorker.register(serviceWorkerUrl(), {
       scope: '/',
       updateViaCache: 'none',
     });
+    const registration = await waitForActiveServiceWorker(
+      installingRegistration,
+      navigator.serviceWorker.ready
+    );
 
     const token = await getToken(messaging, {
       ...(VAPID_KEY ? { vapidKey: VAPID_KEY } : {}),

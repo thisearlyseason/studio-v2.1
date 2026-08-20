@@ -68,9 +68,16 @@ test('subscription clients satisfy mutation idempotency contracts', async () => 
 
 test('scheduled cancellation state is persisted by direct changes and webhooks', async () => {
   const cancel = await readSource('../src/app/api/subscription/cancel/route.ts');
+  const update = await readSource('../src/app/api/subscription/update/route.ts');
   const sync = await readSource('../src/app/api/subscription/sync/route.ts');
   const webhook = await readSource('../src/app/api/webhook/route.ts');
   assert.match(cancel, /cancel_at_period_end: updatedSubscription\.cancel_at_period_end/);
+  assert.match(update, /buildSubscriptionResumeStripeUpdate/);
+  assert.match(update, /idempotencyKey: `resume-\$\{idempotencyKey\}`/);
+  assert.ok(
+    update.indexOf('if (updatedSubscription.pending_update)') <
+      update.indexOf('buildSubscriptionResumeStripeUpdate()')
+  );
   assert.match(sync, /cancel_at_period_end: activeSub\?\.cancel_at_period_end === true/);
   assert.match(webhook, /cancel_at_period_end: subscription\.cancel_at_period_end/);
 });
@@ -81,6 +88,9 @@ test('both checkout routes apply the guarded signup trial policy', async () => {
   for (const source of [legacy, canonical]) {
     assert.match(source, /calculateSignupTrialDays/);
     assert.match(source, /trial_period_days: serverTrialDays/);
+    assert.match(source, /resolvePortalCustomerId/);
+    assert.match(source, /buildStripeCustomerIdempotencyKey/);
+    assert.doesNotMatch(source, /idempotencyKey: `customer-\$\{userId\}`/);
   }
 });
 

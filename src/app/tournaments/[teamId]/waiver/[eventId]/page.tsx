@@ -36,16 +36,20 @@ import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
 import { format } from 'date-fns';
 import { PortalStatus } from '@/components/public/PortalStatus';
+import { useUser } from '@/firebase';
 
 export default function PublicTournamentWaiverPage() {
   const { teamId, eventId } = useParams();
+  const { user } = useUser();
 
   const [selectedTeam, setSelectedTeam] = useState<string>('');
   const [coachName, setCoachName] = useState('');
   const [signDate, setSignDate] = useState('');
+  const [registrationCode, setRegistrationCode] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSigned, setIsSigned] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const hasInitializedDate = useRef(false);
 
   useEffect(() => {
@@ -66,19 +70,22 @@ export default function PublicTournamentWaiverPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTeam || !coachName || !agreed || isSubmitting) return;
+    if (!selectedTeam || !coachName || !signDate || !agreed || isSubmitting) return;
 
     setIsSubmitting(true);
+    setSubmitError('');
     try {
+      const token = await user?.getIdToken();
+      if (!token) throw new Error('Sign in with an authorized squad staff account to continue.');
       const response = await fetch('/api/public/portals/action', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'tournament', action: 'waiver', teamId, eventId, teamName: selectedTeam, signer: coachName }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ kind: 'tournament', action: 'waiver', teamId, eventId, teamName: selectedTeam, signer: coachName, signedDate: signDate, registrationCode }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Verification failed.');
       setIsSigned(true);
     } catch (err) {
-      console.error(err);
+      setSubmitError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -197,6 +204,16 @@ export default function PublicTournamentWaiverPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Tournament Registration Code</Label>
+                  <Input
+                    placeholder="Enter the code provided by the organizer..."
+                    value={registrationCode}
+                    onChange={e => setRegistrationCode(e.target.value.toUpperCase())}
+                    className="h-12 rounded-xl border-2 font-bold bg-muted/30 focus:bg-white text-foreground"
+                    required
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Representative Name</Label>
                   <Input 
@@ -230,13 +247,19 @@ export default function PublicTournamentWaiverPage() {
                   I verify that I have authority to sign for this squad and accept all terms.
                 </Label>
               </div>
+              {submitError && (
+                <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm font-semibold text-destructive">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              )}
             </CardContent>
 
             <CardFooter className="p-8 lg:p-10 pt-0">
               <Button 
                 type="submit" 
                 className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
-                disabled={!selectedTeam || !coachName || !agreed || isSubmitting}
+                disabled={!selectedTeam || !coachName || !signDate || !registrationCode || !agreed || isSubmitting}
               >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Verify & Sign Legally"}
               </Button>

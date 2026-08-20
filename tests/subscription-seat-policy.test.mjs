@@ -6,6 +6,8 @@ import * as teamSeatPolicy from '../src/lib/team-seat-policy.ts';
 const {
   chooseAuthoritativeSubscriptionId,
   choosePaidTeamIds,
+  buildPlanChangeStripeUpdate,
+  buildSubscriptionResumeStripeUpdate,
   hasPendingSubscriptionUpdate,
   isActiveSubscriptionMutationLock,
   isEntitledSubscriptionStatus,
@@ -60,6 +62,20 @@ test('only active and trialing Stripe statuses grant paid seats', () => {
 test('an existing pending Stripe update blocks another mutation', () => {
   assert.equal(hasPendingSubscriptionUpdate({ expires_at: 123 }), true);
   assert.equal(hasPendingSubscriptionUpdate(null), false);
+});
+
+test('plan changes keep pending-update and resume parameters separate', () => {
+  assert.deepEqual(
+    buildPlanChangeStripeUpdate([{ id: 'si_base', price: 'price_team_monthly' }]),
+    {
+      items: [{ id: 'si_base', price: 'price_team_monthly' }],
+      proration_behavior: 'always_invoice',
+      payment_behavior: 'pending_if_incomplete',
+    }
+  );
+  assert.deepEqual(buildSubscriptionResumeStripeUpdate(), {
+    cancel_at_period_end: false,
+  });
 });
 
 test('subscription mutation locks expire deterministically', () => {

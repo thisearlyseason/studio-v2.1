@@ -20,6 +20,7 @@ import {
 } from '@/lib/server-request-guards';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { getTeamAuthority } from '@/lib/server-team-access';
+import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
 
 function requestFingerprint(req: NextRequest) {
   const address = (req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local').slice(0, 100);
@@ -100,6 +101,35 @@ export async function POST(req: NextRequest) {
       60 * 60 * 1000,
     );
     if (limited) return limited;
+
+    if (action === 'delete-registration' && kind === 'league') {
+      const auth = await verifyFirebaseToken(req);
+      if (auth instanceof NextResponse) return auth;
+      const leagueId = String(body.leagueId || '').trim();
+      const entryId = String(body.entryId || '').trim();
+      if (!isSafeId(leagueId) || !isSafeId(entryId)) return NextResponse.json({ error: 'Invalid registration identifiers.' }, { status: 400 });
+      const leagueRef = adminDb.collection('leagues').doc(leagueId);
+      const entryRef = leagueRef.collection('registrationEntries').doc(entryId);
+      const [leagueSnap, entrySnap] = await Promise.all([leagueRef.get(), entryRef.get()]);
+      if (!leagueSnap.exists || !canDeleteLeagueRegistration({
+        creatorId: leagueSnap.data()?.creatorId,
+        actorUid: auth.uid,
+        actorRole: auth.role,
+      })) return NextResponse.json({ error: 'League organizer access required.' }, { status: 403 });
+      if (!entrySnap.exists) return NextResponse.json({ success: true });
+      const recruitId = `recruit_${entryId}`;
+      const batch = adminDb.batch();
+      batch.delete(entryRef);
+      batch.delete(leagueRef.collection('archived_waivers').doc(`arch_waiver_${entryId}`));
+      batch.update(leagueRef, {
+        [`teams.${recruitId}`]: FieldValue.delete(),
+        [`individualRecruits.${recruitId}`]: FieldValue.delete(),
+        memberTeamIds: FieldValue.arrayRemove(recruitId),
+        memberIndivIds: FieldValue.arrayRemove(recruitId),
+      });
+      await batch.commit();
+      return NextResponse.json({ success: true });
+    }
 
     if (action === 'lookup-team') {
       const teamCode = String(body.teamCode || '').trim().toUpperCase();
@@ -503,14 +533,31 @@ export async function POST(req: NextRequest) {
       if (action === 'waiver') {
         const teamName = String(body.teamName || '').trim();
         const signer = String(body.signer || '').trim();
-        if (!teamName || !signer || !(event.tournamentTeams || []).includes(teamName)) {
-          return NextResponse.json({ error: 'A valid tournament team and signer are required.' }, { status: 400 });
+        const registrationCode = String(body.registrationCode || '').trim().toUpperCase();
+        const signedDate = String(body.signedDate || '').trim();
+        const parsedSignedDate = /^\d{4}-\d{2}-\d{2}$/.test(signedDate)
+          ? new Date(`${signedDate}T00:00:00.000Z`)
+          : null;
+        const isValidSignedDate = parsedSignedDate != null &&
+          !Number.isNaN(parsedSignedDate.getTime()) &&
+          parsedSignedDate.toISOString().startsWith(signedDate);
+        if (!teamName || !signer || !isValidSignedDate || !/^[A-Z0-9_-]{4,32}$/.test(registrationCode) || !(event.tournamentTeams || []).includes(teamName)) {
+          return NextResponse.json({ error: 'A valid tournament team, signer, and signature date are required.' }, { status: 400 });
         }
+        const codeMapping = await adminDb.collection('tournamentRegistrationCodes').doc(registrationCode).get();
+        if (!codeMapping.exists || codeMapping.data()?.teamId !== teamId || codeMapping.data()?.eventId !== eventId) return NextResponse.json({ error: 'The tournament registration code is invalid.' }, { status: 403 });
+        const auth = await verifyFirebaseToken(req);
+        if (auth instanceof NextResponse) return auth;
+        const registeredTeam = (event.tournamentTeamsData || []).find((team: any) => String(team.name || team.teamName || '').trim() === teamName);
+        const sourceTeamId = String(registeredTeam?.sourceTeamId || registeredTeam?.teamId || '').trim();
+        if (!isSafeId(sourceTeamId)) return NextResponse.json({ error: 'This tournament team is not linked to a verified squad.' }, { status: 403 });
+        const teamAuthority = await getTeamAuthority(sourceTeamId, auth.uid, auth.role);
+        if (!teamAuthority?.isStaff) return NextResponse.json({ error: 'Verified squad staff access is required to sign this waiver.' }, { status: 403 });
         const signedAt = new Date().toISOString();
-        await ref.update(new FieldPath('teamAgreements', teamName), { agreed: true, captainName: signer.slice(0, 300), signedAt });
+        await ref.update(new FieldPath('teamAgreements', teamName), { agreed: true, captainName: signer.slice(0, 300), signedAt, signedDate });
         const archiveId = `arch_tournament_${eventId}_${teamName.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
         await adminDb.collection('teams').doc(teamId).collection('archived_waivers').doc(archiveId).set({
-          id: archiveId, eventId, tournamentTeamName: teamName, signer, signedAt,
+          id: archiveId, eventId, tournamentTeamName: teamName, signer: signer.slice(0, 300), signedAt, signedDate,
           title: event.waiverDocuments?.map((document: any) => document.title).join(', ') || `${event.title || 'Tournament'} Waiver`,
           documentId: event.waiverIds?.join(',') || `tournament_${eventId}`,
           waiverText: event.teamWaiverText || '',

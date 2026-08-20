@@ -2089,12 +2089,12 @@ export default function AdminPortalPage() {
         )}
         {activeTab === 'bugs' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h1 className="text-4xl font-black text-gray-900 dark:text-white uppercase tracking-tighter">Bug Reports</h1>
                 <p className="text-gray-400 dark:text-gray-900 dark:text-white/30 text-xs font-bold uppercase tracking-widest">Global user feedback and issues</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
                   <span className="text-gray-500 dark:text-white/40">{bugReports.filter(b => b.fixed).length} Fixed</span>

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 export const SIGNUP_TRIAL_DAYS = 5;
 export const NEW_ACCOUNT_TRIAL_WINDOW_MS = 2 * 60 * 60 * 1000;
+
 const BLOCKING_SUBSCRIPTION_STATUSES = new Set([
   'active',
   'trialing',

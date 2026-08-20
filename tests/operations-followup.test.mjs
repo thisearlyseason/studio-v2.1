@@ -122,7 +122,9 @@ test('staging deployment fails closed when App Hosting is linked to another repo
   assert.match(appHosting, /NEXT_PUBLIC_APP_URL/);
   assert.match(appHosting, /CALENDAR_FEED_BASE_URL/);
   assert.match(appHosting, /the-squad-v2-staging\.cloudfunctions\.net\/getCalendarFeed/);
-  assert.doesNotMatch(appHosting, /STRIPE_SECRET_KEY|RESEND_API_KEY|GOOGLE_CLIENT_SECRET/);
+  assert.match(appHosting, /secret: STRIPE_SECRET_KEY/);
+  assert.match(appHosting, /secret: RESEND_API_KEY/);
+  assert.doesNotMatch(appHosting, /value:\s*(?:sk_|re_|whsec_)/);
 });
 
 test('production configuration has no external AI provider dependency', async () => {

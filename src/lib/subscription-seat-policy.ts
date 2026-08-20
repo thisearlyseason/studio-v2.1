@@ -8,6 +8,18 @@ export function hasPendingSubscriptionUpdate(value: unknown): boolean {
   return Boolean(value && typeof value === 'object');
 }
 
+export function buildPlanChangeStripeUpdate<T>(items: T[]) {
+  return {
+    items,
+    proration_behavior: 'always_invoice' as const,
+    payment_behavior: 'pending_if_incomplete' as const,
+  };
+}
+
+export function buildSubscriptionResumeStripeUpdate() {
+  return { cancel_at_period_end: false };
+}
+
 export function isActiveSubscriptionMutationLock(
   value: unknown,
   now: number

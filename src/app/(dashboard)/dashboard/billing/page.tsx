@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
+import { getBillingPlanStatusLabel } from '@/lib/billing-plan-status';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -259,6 +260,7 @@ export default function BillingDashboard() {
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           userId: userProfile.id,
+          teamId: activeTeam?.id,
           operationId: crypto.randomUUID(),
         }),
       });
@@ -386,7 +388,7 @@ export default function BillingDashboard() {
                 <div className="flex items-center gap-2 mt-1">
                   <div className={cn('w-2 h-2 rounded-full', isStripeLinked && !isCancelling ? 'bg-green-500' : isCancelling ? 'bg-amber-500' : 'bg-muted-foreground/40')} />
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">
-                    {isCancelling ? 'Cancellation Pending' : isStripeLinked ? 'Active · Renews automatically' : 'Free tier'}
+                    {getBillingPlanStatusLabel({ isCancelling, isStripeLinked, isDemo })}
                   </p>
                 </div>
               </div>

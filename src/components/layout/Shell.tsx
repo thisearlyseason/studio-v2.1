@@ -51,9 +51,11 @@ import {
   Copy,
   Download,
   Share,
-  X
+  X,
+  Clock3
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getTrialCountdown } from '@/lib/trial-countdown';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -113,6 +115,7 @@ import { useAuth } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 import { clearBrowserSession } from '@/lib/client-auth';
+import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import {
   Tooltip,
   TooltipContent,
@@ -414,6 +417,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       ? !canAccessCoachesCorner
       : tab.pro && !isPro;
   const canManageFacilities = isSuperAdmin || !activeTeam || activeTeam.ownerUserId === auth?.currentUser?.uid;
+  const [trialNow, setTrialNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (user?.subscription_status !== 'trialing' || !user?.trial_end) return;
+    const timer = window.setInterval(() => setTrialNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [user?.subscription_status, user?.trial_end]);
+  const trialCountdown = getTrialCountdown({
+    subscriptionStatus: user?.subscription_status,
+    trialEnd: user?.trial_end,
+    now: trialNow,
+  });
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   // Controlled open state for both squad switcher instances
@@ -506,6 +520,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (user?.role === 'league_creator' && !activeTeam) {
         return tab.name === 'Competition Hub';
       }
+
+      if (!authorizeDashboardRoute(tab.href, {
+        role: user?.role,
+        plan_type: user?.plan_type,
+        isPrimaryClubAuthority,
+      }).allowed) return false;
 
       // Module Visibility Settings
       if (tab.name === 'Feed' && activeTeam?.features?.feed === false) return false;
@@ -838,7 +858,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <SidebarFooter className="p-4 border-t bg-white space-y-3">
 
               {/* ── Pro Upgrade Banner ── show for all non-Pro users */}
-              {!isPro && (
+              {trialCountdown.active && (
+                <Link
+                  href="/dashboard/billing"
+                  className="block w-full text-left rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-all"
+                >
+                  <div className="p-3 flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-primary text-white flex items-center justify-center shrink-0">
+                      <Clock3 className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary leading-none mb-0.5">Pro trial active</p>
+                      <p className="text-[9px] font-semibold text-muted-foreground truncate leading-none">{trialCountdown.days}d {trialCountdown.hours}h remaining</p>
+                    </div>
+                    <ChevronRight className="h-3.5 w-3.5 text-primary shrink-0" />
+                  </div>
+                </Link>
+              )}
+              {!isPro && !trialCountdown.active && (
                 <button
                   onClick={purchasePro}
                   className="w-full text-left group relative overflow-hidden rounded-xl border border-black/10 bg-black hover:bg-black/90 transition-all active:scale-[0.98] shadow-md"

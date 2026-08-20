@@ -98,7 +98,7 @@ service cloud.firestore {
     function isTeamStaff(teamId) {
       let member = teamMemberData(teamId);
       return isTeamOwner(teamId) ||
-        hasStaffAuthority(member);
+        (isActiveMember(member) && hasStaffAuthority(member));
     }
 
     function hasStaffAuthority(member) {
@@ -158,7 +158,7 @@ service cloud.firestore {
       // authority remain server-owned and are never accepted from the browser.
       allow create: if isSuperAdmin() || (isAuthenticated() && isOwner(userId) &&
         request.resource.data.role in ['parent', 'adult_player', 'youth_player', 'coach', 'admin', 'league_creator'] &&
-        !request.resource.data.keys().hasAny(['plan_type', 'team_limit', 'extra_teams', 'subscription_status', 'stripe_customer_id', 'stripe_subscription_id', 'isPrimaryClubAuthority', 'isStaff', 'isBetaTester', 'activePlanId', 'proTeamLimit', 'planSource'])
+        !request.resource.data.keys().hasAny(['plan_type', 'team_limit', 'extra_teams', 'subscription_status', 'stripe_customer_id', 'stripe_subscription_id', 'isPrimaryClubAuthority', 'isStaff', 'isBetaTester', 'activePlanId', 'proTeamLimit', 'planSource', 'linkedPlayerId', 'parentId', 'guardianIds'])
       );
       allow update: if isSuperAdmin() || (isSignedIn() && isOwner(userId) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -588,10 +588,7 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid ||
         resource.data.get('parentId', '') == request.auth.uid ||
         playerId == request.auth.uid ||
-        isTeamCoachOfPlayer(playerId) ||
-        (request.resource.data.get('updatedByTeamId', '') != '' &&
-         exists(/databases/$(database)/documents/teams/$(request.resource.data.updatedByTeamId)) &&
-         isTeamOwner(request.resource.data.updatedByTeamId))
+        isTeamCoachOfPlayer(playerId)
       ));
 
       allow delete: if isSuperAdmin() || (isSignedIn() && (
@@ -613,9 +610,6 @@ service cloud.firestore {
         // request.resource.data is available for create and update.
         // Coaches include updatedByTeamId in written data; rule verifies ownership.
         allow create, update: if isSuperAdmin() || (isSignedIn() && (
-          (request.resource.data.get('updatedByTeamId', '') != '' &&
-           exists(/databases/$(database)/documents/teams/$(request.resource.data.updatedByTeamId)) &&
-           isTeamOwner(request.resource.data.updatedByTeamId)) ||
           get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
           get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
           isTeamCoachOfPlayer(playerId) ||

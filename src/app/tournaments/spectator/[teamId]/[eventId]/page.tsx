@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { AnimatedScore } from '@/components/ui/animated-score';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { calculateTournamentStandings } from '@/lib/tournament-standings';
 
 function formatRoundName(name?: string) {
   if (!name) return '';
@@ -38,43 +39,6 @@ function formatTeamName(name?: string) {
     .replace(/\(WB Winner\)/gi, '(Winners Bracket)')
     .replace(/\(LB Winner\)/gi, '(Losers Bracket)')
     .replace(/Grand Final/gi, 'Championship');
-}
-
-/**
- * Tactical Scoring Logic:
- * Win: +1
- * Loss: -1
- * Tie: 0
- */
-function calculateStandings(teams: string[], games: TournamentGame[]) {
-  const standings = teams.reduce((acc, team) => {
-    acc[team] = { name: team, wins: 0, losses: 0, ties: 0, points: 0 };
-    return acc;
-  }, {} as Record<string, any>);
-  
-  games.forEach(game => {
-    if (!game.isCompleted) return;
-    const t1 = game.team1; const t2 = game.team2;
-    if (!standings[t1] || !standings[t2]) return;
-    
-    if (game.score1 > game.score2) { 
-      standings[t1].wins += 1; 
-      standings[t1].points += 1; 
-      standings[t2].losses += 1; 
-      standings[t2].points -= 1; 
-    }
-    else if (game.score2 > game.score1) { 
-      standings[t2].wins += 1; 
-      standings[t2].points += 1; 
-      standings[t1].losses += 1; 
-      standings[t1].points -= 1; 
-    }
-    else { 
-      standings[t1].ties += 1; 
-      standings[t2].ties += 1; 
-    }
-  });
-  return Object.values(standings).sort((a, b) => b.points - a.points || b.wins - a.wins);
 }
 
 export default function PublicSpectatorHub() {
@@ -138,8 +102,11 @@ export default function PublicSpectatorHub() {
   }, [event?.tournamentGames, teamFilter, dateRange]);
 
   const standings = useMemo(() => {
-    if (!event?.tournamentTeams || !event.tournamentGames) return [];
-    return calculateStandings(event.tournamentTeams, event.tournamentGames);
+    if (!event?.tournamentGames) return [];
+    const standingTeams = event.tournamentTeamsData?.length
+      ? event.tournamentTeamsData.map(team => ({ id: team.id, name: team.name }))
+      : (event.tournamentTeams || []).map(name => ({ id: name, name }));
+    return calculateTournamentStandings(standingTeams, event.tournamentGames);
   }, [event]);
 
   const gamesByDay = useMemo(() => {
@@ -449,11 +416,11 @@ export default function PublicSpectatorHub() {
                     <div className="flex flex-wrap justify-center gap-4">
                       <div className="flex items-center gap-1.5">
                         <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                        <span className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter">Win: +1</span>
+                        <span className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter">Win: +3</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="h-1.5 w-1.5 rounded-full bg-destructive" />
-                        <span className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter">Loss: -1</span>
+                        <span className="text-[8px] font-black uppercase text-muted-foreground tracking-tighter">Tie: +1</span>
                       </div>
                     </div>
                   </div>

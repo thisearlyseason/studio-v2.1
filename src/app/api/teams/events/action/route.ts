@@ -10,6 +10,8 @@ import {
 } from '@/lib/server-request-guards';
 import { hasStaffRole } from '@/lib/staff-position';
 import { withScheduleMutationLock } from '@/lib/server-schedule-deployment';
+import { buildTournamentReplicationEvent } from '@/lib/server-tournament-replication';
+import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const REGISTRATION_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
@@ -161,6 +163,70 @@ export async function POST(req: NextRequest) {
       : access.teamRef.collection('events').doc(requestedEventId);
     const eventId = eventRef.id;
 
+    if (action === 'replicate') {
+      if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      if (!title || title.length > 200) {
+        return NextResponse.json({ error: 'A valid tournament title is required.' }, { status: 400 });
+      }
+      const result = await withScheduleMutationLock(async () => {
+        const source = await eventRef.get();
+        if (!source.exists || source.data()?.isTournament !== true) return { status: 'missing' as const };
+
+        const directory = adminDb.collection('tournamentRegistrationCodes');
+        let registrationCode = '';
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const candidate = randomBytes(5).toString('hex').toUpperCase();
+          if (!(await directory.doc(candidate).get()).exists) {
+            registrationCode = candidate;
+            break;
+          }
+        }
+        if (!registrationCode) {
+          throw new EventMutationError('Unable to allocate a unique tournament code. Try again.', 503);
+        }
+
+        const newEventRef = access.teamRef.collection('events').doc();
+        const now = new Date().toISOString();
+        const replicated = buildTournamentReplicationEvent({
+          source: source.data() || {},
+          title,
+          eventId: newEventRef.id,
+          teamId,
+          actorUid: auth.uid,
+          ownerUserId: String(access.teamData.ownerUserId || auth.uid),
+          registrationCode,
+          now,
+        });
+        const interval = await assertEventAvailability(teamId, newEventRef.id, replicated);
+        const bookingRef = adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, newEventRef.id));
+        const sourceConfig = await eventRef.collection('registration').doc('team_config').get();
+        const mapping = { teamId, eventId: newEventRef.id, updatedAt: now };
+        const batch = adminDb.batch();
+        batch.set(newEventRef, replicated);
+        batch.set(directory.doc(newEventRef.id), mapping);
+        batch.set(directory.doc(registrationCode), mapping);
+        if (interval) {
+          const booking = buildTeamEventBooking({
+            bookingId: bookingRef.id,
+            teamId,
+            eventId: newEventRef.id,
+            event: replicated,
+            interval,
+            now,
+          });
+          batch.set(bookingRef, booking);
+        }
+        if (sourceConfig.exists) {
+          batch.set(newEventRef.collection('registration').doc('team_config'), sourceConfig.data() || {});
+        }
+        await batch.commit();
+        return { status: 'created' as const, eventId: newEventRef.id };
+      });
+      if (result.status === 'missing') return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 });
+      return NextResponse.json({ success: true, eventId: result.eventId });
+    }
+
     if (action === 'create' || action === 'update' || action === 'delete') {
       if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
       const result = await withScheduleMutationLock(async () => {
@@ -229,22 +295,15 @@ export async function POST(req: NextRequest) {
           }
         }
         if (interval) {
-          const resourceId = typeof eventData.resourceId === 'string' ? eventData.resourceId.trim() : '';
-          const location = typeof eventData.location === 'string' ? eventData.location.trim() : '';
-          batch.set(bookingRef, {
-            id: bookingRef.id,
-            sourceType: 'team-event',
-            sourceId: `team-event:${teamId}:${eventId}`,
-            sourceGameId: eventId,
-            hostTeamId: teamId,
-            teamIds: [teamId],
-            resourceId,
-            location,
-            date: interval.date,
-            startMinute: interval.startMinute,
-            endMinute: interval.endMinute,
-            updatedAt: now,
+          const booking = buildTeamEventBooking({
+            bookingId: bookingRef.id,
+            teamId,
+            eventId,
+            event: eventData,
+            interval,
+            now,
           });
+          batch.set(bookingRef, booking);
         } else {
           batch.delete(bookingRef);
         }

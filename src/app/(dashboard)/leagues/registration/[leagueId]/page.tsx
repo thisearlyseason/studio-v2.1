@@ -61,7 +61,6 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { jsPDF } from 'jspdf';
 import { addSquadBranding, generateBrandedPDF } from '@/lib/pdf-utils';
 import { format } from 'date-fns';
@@ -465,9 +464,17 @@ export default function LeagueRegistrationAdminPage() {
                           </td>
                           <td className="px-4 py-6 text-center"><Badge className={cn("border-none font-black text-[8px] uppercase px-3 h-6", entry.status === 'pending' ? "bg-amber-100 text-amber-700" : entry.status === 'assigned' ? "bg-primary text-white" : entry.status === 'accepted' ? "bg-green-100 text-green-700" : "bg-muted")}>{entry.status}</Badge></td>
                           <td className="px-10 py-6 text-right">
-                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                               <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl border-2 bg-white hover:bg-primary hover:text-white" onClick={() => setInspectingEntryId(entry.id)}><Terminal className="h-5 w-5" /></Button>
-                              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteDocumentNonBlocking(doc(db, 'leagues', leagueId as string, 'registrationEntries', entry.id))}><Trash2 className="h-5 w-5" /></Button>
+                              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive hover:bg-destructive/5" onClick={async () => {
+                                const token = await authUser?.getIdToken();
+                                if (!token) return;
+                                const response = await fetch('/api/public/portals/action', {
+                                  method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                  body: JSON.stringify({ kind: 'league', action: 'delete-registration', leagueId, entryId: entry.id }),
+                                });
+                                if (!response.ok) toast({ title: 'Delete failed', description: 'The registration could not be removed.', variant: 'destructive' });
+                              }}><Trash2 className="h-5 w-5" /></Button>
                             </div>
                           </td>
                         </tr>

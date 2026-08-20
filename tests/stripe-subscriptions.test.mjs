@@ -6,7 +6,10 @@ import * as portalCustomerModule from '../src/lib/stripe-portal-customer.ts';
 import * as entitlementModule from '../src/lib/subscription-entitlements.ts';
 const { PRICING_CONFIG } = pricingModule;
 const { PLAN_PRICE_MAP } = priceMapModule;
-const { resolvePortalCustomerId } = portalCustomerModule;
+const {
+  buildStripeCustomerIdempotencyKey,
+  resolvePortalCustomerId,
+} = portalCustomerModule;
 const { resolveSubscriptionEntitlements, selectSubscriptionForSync } = entitlementModule;
 
 const expectedPlans = new Map([
@@ -100,6 +103,17 @@ test('portal does not attach an email match belonging to another user', async ()
     stripe_customer_id: 'cus_stale',
   });
   assert.equal(result, null);
+});
+
+test('replacement Stripe customers use a new deterministic idempotency scope', () => {
+  assert.equal(
+    buildStripeCustomerIdempotencyKey('user-4', null),
+    'customer-user-4-initial'
+  );
+  assert.equal(
+    buildStripeCustomerIdempotencyKey('user-4', 'cus_deleted'),
+    'customer-user-4-replacing-cus_deleted'
+  );
 });
 
 test('portal preserves unexpected Stripe failures for accurate API reporting', async () => {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import * as routePolicyModule from '../src/lib/dashboard-route-policy.ts';
 
@@ -43,6 +44,12 @@ test('institution and competition hubs require matching authority', () => {
   assert.equal(authorizeDashboardRoute('/club', { role: 'coach', plan_type: 'free' }).allowed, false);
   assert.equal(authorizeDashboardRoute('/competition', { role: 'league_creator', plan_type: 'free' }).allowed, true);
   assert.equal(authorizeDashboardRoute('/competition', { role: 'coach', plan_type: 'team' }).allowed, false);
+});
+
+test('shared navigation hides routes rejected by the dashboard policy', () => {
+  const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
+
+  assert.match(shell, /authorizeDashboardRoute\(tab\.href,/);
 });
 
 test('ordinary authenticated routes remain available during profile setup', () => {
