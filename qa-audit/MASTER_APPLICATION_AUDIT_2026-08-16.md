@@ -2,7 +2,7 @@
 
 ## Executive result
 
-**STAGING RELEASE-CANDIDATE PASS. The defined code, deployment, provider-delivery, operations, and Stripe test-mode lifecycle gates are signed off. Production remains unchanged and requires separate explicit promotion authorization.**
+**PRODUCTION RELEASED. The defined code, deployment, provider-delivery, operations, and Stripe test-mode lifecycle gates are signed off. PR #32 was merged as `63487e01803d4b98e572ec6e4dc7ab0dc7883149`; Vercel and the protected production Firebase workflow deployed the reviewed release successfully.**
 
 The repository and the exercised production demo paths are mechanically healthy. The application builds, type-checks, and passes the full unit/integration suite. The production Squad Pro demo loaded without console errors across the dashboard and the core coach modules tested. Continued workflow testing confirmed and fixed the navigation mismatch, an empty Parent Demo bootstrap failure, inconsistent public tournament standings, incomplete tournament replication, unreachable archival, discarded waiver dates, and registration return-path loss.
 
@@ -22,7 +22,16 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 - FCM delivery passed after a live Chrome retest exposed and repaired a first-registration race: the client now waits for an active service worker before calling Firebase `getToken`. Staging persisted one token with notifications enabled, and the single authorized push returned one success and zero failures.
 - Duplicate staging Stripe cleanup passed: the two older test-mode standard/Connect endpoints are disabled, while the two newer staging endpoints remain enabled. The staging key could not mutate live-mode production endpoints.
 - Staging operations now include daily Firestore backups with seven-day retention, a 60-second health check, and enabled availability/runtime-error policies routed to the verified owner email. The probe reported 21/21 passing samples with zero failures.
-- Incident response, rollback, backup/restore, and deployment ownership are documented in `PRODUCTION_OPERATIONS_RUNBOOK.md`. Production resources remain unchanged and require a separate promotion approval.
+- Incident response, rollback, backup/restore, and deployment ownership are documented in `PRODUCTION_OPERATIONS_RUNBOOK.md`. The separately authorized production promotion completed on 2026-08-20.
+
+## 2026-08-20 production promotion
+
+- PR #32 was merged as `63487e01803d4b98e572ec6e4dc7ab0dc7883149` after independent review reported no Critical or Important findings.
+- Exact-commit release gate `32315665365` passed the application checks, Firebase rules, Functions build, and both production dependency audits.
+- Vercel reports a successful production deployment for the exact merge commit, and the public production homepage is live.
+- Protected production Firebase run `32316152259` passed the full verification gate and deployed indexes, Functions, and Firestore/Storage rules. It then verified deployed-rules parity, the required production Function inventory, and the billing-backed calendar endpoint.
+- Production operations now include a daily Firestore backup schedule with seven-day retention, a 60-second HTTPS health check, availability and runtime-error alert policies, and an enabled production owner notification channel. Google returned no `UNVERIFIED` channel state.
+- No production data migration, customer-data mutation, production-mode charge, production email, or production push was part of the release.
 
 ### 2026-08-19 final sign-off addendum
 
@@ -235,9 +244,9 @@ This audit accounts for every feature family in `FEATURES.md`, all 87 applicatio
 
 ## Release blockers and manual review
 
-1. Apply and verify production configuration, provider mode/IDs, backup/monitoring, rollback target, and post-deploy smoke only as part of an explicitly approved production promotion.
+1. Continue post-release monitoring and retain the immutable Vercel/GitHub deployment records. Re-run the anonymous redirect smoke when browser permission is available; the final replay was declined, while prior browser certification and automated route-policy coverage remain green.
 2. Continue tracked hardening for durable multi-user breadth, full device/accessibility coverage, and lint warning reduction; these are not blockers for the defined release candidate.
 
 ## Final assessment
 
-The exact code candidate is deployed and health-verified in isolated staging. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, provider delivery, endpoint cleanup, backups, alerting, the operations runbook, and the offered Stripe lifecycle matrix pass. The candidate is ready for a separately authorized production-promotion workflow with action-time configuration, rollback, and smoke checks; this audit did not deploy or modify production.
+The exact candidate was deployed and health-verified in isolated staging, then promoted to production after separate user authorization. Repository gates, security rules, dependency audits, authenticated Super Admin, responsive layouts, demo billing, route protection, provider delivery, endpoint cleanup, backups, alerting, the operations runbook, and the offered Stripe lifecycle matrix pass. Vercel and the protected Firebase workflow report successful production deployment of merge commit `63487e01803d4b98e572ec6e4dc7ab0dc7883149`.

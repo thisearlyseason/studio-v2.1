@@ -2,11 +2,11 @@
 
 Audit date: 2026-08-19
 Audit branch: `agent/complete-audit-fixes`
-Scope: repository review, automated gates, isolated-Firebase browser/API testing, Stripe/Resend/FCM test-provider certification, and read-only production metadata checks. Authorized staging test-mode charges/refunds, email, and push were exercised; no production data mutation, production-mode charge/email/push, or production deployment was initiated.
+Scope: repository review, automated gates, isolated-Firebase browser/API testing, Stripe/Resend/FCM test-provider certification, production configuration review, and the explicitly authorized 2026-08-20 production deployment. Authorized staging test-mode charges/refunds, email, and push were exercised; no production customer-data mutation or production-mode charge/email/push was initiated.
 
 ## Executive summary
 
-**Overall release status: STAGING RELEASE-CANDIDATE PASS; PRODUCTION UNCHANGED.** Candidate code `92444e28d9590177adb4587749a36a0b6aa27bb7` passed the complete release gate, both runtime dependency audits, independent review, isolated browser/API certification, and the offered Stripe test-mode lifecycle matrix. Protected staging deploy `32276696681` produced healthy revision `studio-build-2026-08-19-003`. Production promotion remains a separately authorized operation with action-time configuration, rollback, and smoke checks.
+**Overall release status: PRODUCTION RELEASED.** Candidate code `92444e28d9590177adb4587749a36a0b6aa27bb7` passed the complete release gate, both runtime dependency audits, independent review, isolated browser/API certification, and the offered Stripe test-mode lifecycle matrix. PR #32 was merged as `63487e01803d4b98e572ec6e4dc7ab0dc7883149`; Vercel deployed that merge successfully, and protected production Firebase run `32316152259` deployed and verified indexes, Functions, Firestore/Storage rules, rules drift, required Functions, and the calendar endpoint.
 
 ## Architecture summary
 
@@ -41,10 +41,10 @@ Scope: repository review, automated gates, isolated-Firebase browser/API testing
 
 ## Operational follow-up
 
-1. At an explicitly authorized production promotion, verify production provider mode/IDs and environment values, record the rollback target, deploy through the protected workflow, and run the documented smoke/health checks.
-2. Monitor Vercel, Firebase, Stripe, Resend, and Function error telemetry after launch and retain the rollback deployment record.
+1. Continue monitoring Vercel, Firebase, Stripe, Resend, and Function error telemetry after launch; retain the Vercel deployment history and immutable GitHub workflow records as rollback evidence.
+2. Re-run the non-mutating anonymous redirect smoke when browser access is available. The final replay was declined by the browser permission gate; the previously certified redirect behavior and automated route-policy tests remain green.
 3. Continue non-blocking hardening for lint warnings, broader durable multi-user/device coverage, and accessibility depth.
 
 ## Release decision
 
-The staging candidate satisfies the defined production-readiness gates, including the full currently offered Stripe lifecycle matrix documented in `SUBSCRIPTION_TEST_MATRIX.md`. This is not authorization to deploy production: production remains unchanged until the user separately approves the protected promotion workflow and its action-time checks.
+The reviewed candidate satisfies the defined production-readiness gates, including the full currently offered Stripe lifecycle matrix documented in `SUBSCRIPTION_TEST_MATRIX.md`. The user separately authorized production promotion, and the production application and Firebase infrastructure were deployed from merge commit `63487e01803d4b98e572ec6e4dc7ab0dc7883149` with successful provider and protected-workflow evidence.
