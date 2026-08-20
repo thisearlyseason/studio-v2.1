@@ -1,5 +1,16 @@
 # Release Checklist
 
+## 2026-08-20 production release
+
+- Production release commit: `63487e01803d4b98e572ec6e4dc7ab0dc7883149`, the reviewed merge of PR #32.
+- Exact-commit release gate: [run 32315665365](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32315665365) — PASS for application typecheck, lint, tests and build; Firebase rules; Functions build; and both production dependency audits.
+- Vercel production deployment: PASS. GitHub/Vercel report a successful production deployment for the release commit, and `https://www.thesquad.pro/` serves the production application.
+- Production Firebase deployment: [run 32316152259](https://github.com/thisearlyseason/studio-v2.1/actions/runs/32316152259) — PASS for the complete verification gate, production-target validation, Firestore indexes, Functions, Firestore/Storage rules, deployed-rules drift verification, required-Function inventory, and the billing-backed calendar endpoint check.
+- Production operations: PASS. The production Firestore database has a daily backup schedule with seven-day retention. A 60-second HTTPS health check, an availability alert, and a runtime-error alert are enabled and attached to the production owner email channel. Google returned no `UNVERIFIED` channel state.
+- Post-deploy evidence: Vercel reports `success` for the exact release commit, the public production homepage is live, and the protected Firebase deployment completed its post-deploy rules, Functions, and endpoint checks.
+- Rollback: Vercel deployment history retains the preceding application deployment; Firebase application policy and Functions can be redeployed from the preceding immutable repository commit through the protected production workflow. No data migration was part of this release.
+- Production decision: **PRODUCTION RELEASED.** The production application and Firebase infrastructure are deployed from the reviewed merge commit. Browser permission for an additional anonymous redirect replay was declined during final verification, so the previously certified redirect contract and automated route-policy coverage remain the evidence for that non-mutating check.
+
 ## 2026-08-19 staging release candidate
 
 - Candidate code commit: `92444e28d9590177adb4587749a36a0b6aa27bb7`.
