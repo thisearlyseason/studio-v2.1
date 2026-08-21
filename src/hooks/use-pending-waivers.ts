@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import { useTeam, TeamDocument, TeamFile, Member } from '@/components/providers/team-provider';
+import { useTeam, TeamDocument, TeamFile } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, collectionGroup, where } from 'firebase/firestore';
+import { collection, query, orderBy, where } from 'firebase/firestore';
 import { differenceInYears } from 'date-fns';
+import { getGlobalWaiverAudience, getSigningMemberIds, getVisibleWaiverDocuments } from '@/lib/global-waiver-policy';
 
 export function usePendingWaivers() {
   const { activeTeam, user, isStaff, isSuperAdmin, isClubManager, members } = useTeam();
@@ -10,12 +11,12 @@ export function usePendingWaivers() {
 
   const signingMembers = useMemo(() => {
     if (!user || !members) return [];
-    
-    // Everyone (coaches, parents, players) only signs for themselves or their dependents
-    return members.filter(m => 
-      m.userId === user.id || 
-      (m.parentEmail && user.email && m.parentEmail.toLowerCase() === user.email.toLowerCase())
-    );
+
+    const signingMemberIds = new Set(getSigningMemberIds({
+      user: { id: user.id, email: user.email },
+      members,
+    }));
+    return members.filter(member => signingMemberIds.has(member.id));
   }, [members, user]);
 
   // We ONLY want protocols/signatures linked specifically to this team.
@@ -40,6 +41,12 @@ export function usePendingWaivers() {
   }, [activeTeam?.id, db]);
 
   const { data: documents } = useCollection<TeamDocument>(docsQuery);
+
+  const visibleWaiverDocuments = useMemo(() => getVisibleWaiverDocuments({
+    documents: documents || [],
+    memberIds: signingMembers.map(member => member.id),
+    isStaff: isStaff || isClubManager || isSuperAdmin,
+  }) as TeamDocument[], [documents, signingMembers, isStaff, isClubManager, isSuperAdmin]);
 
   const visibleSignedFiles = useMemo(() => {
     const raw = allSignedFilesRaw || [];
@@ -71,7 +78,7 @@ export function usePendingWaivers() {
 
   const pendingDocs = useMemo(() => {
     if (!documents || !activeTeam || signingMembers.length === 0) return [];
-    const activeDocs = documents.filter(d => d.isActive !== false);
+    const activeDocs = documents.filter(d => d.isActive !== false && getGlobalWaiverAudience(d) === 'participant');
     return activeDocs.filter(d => {
       const isParentalWaiver = d.id === 'default_parental';
       return signingMembers.some(m => {
@@ -84,5 +91,5 @@ export function usePendingWaivers() {
     });
   }, [documents, realTimeSignedDocIds, signingMembers, activeTeam]);
 
-  return { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, documents };
+  return { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, documents, visibleWaiverDocuments };
 }

@@ -8,6 +8,7 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { isActiveWaiverDocument } from '@/lib/global-waiver-policy';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Squad participant not found.' }, { status: 404 });
     }
     const waiverData = waiver.data() || {};
-    if (!waiver.exists || waiverData.type !== 'waiver' || waiverData.isActive !== true) {
+    if (!waiver.exists || !isActiveWaiverDocument(waiverData)) {
       return NextResponse.json({ error: 'Waiver not found or inactive.' }, { status: 404 });
     }
 

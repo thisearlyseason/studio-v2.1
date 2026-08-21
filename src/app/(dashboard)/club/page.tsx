@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useTeam, Team, Member, TeamDocument, DocumentSignature, TeamIncident } from '@/components/providers/team-provider';
+import { useTeam, Team, Member, TeamDocument, TeamIncident } from '@/components/providers/team-provider';
 import { HubStripeSettings } from '@/components/finance/HubStripeSettings';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -84,55 +84,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/incident-detail-dialog';
 import { format, parseISO } from 'date-fns';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
-
-function TeamComplianceCard({ teams, clubDocs }: { teams: Team[], clubDocs: TeamDocument[] }) {
-  const db = useFirestore();
-  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
-  
-  const masterProtocols = useMemo(() => clubDocs.filter(d => d.isClubMaster), [clubDocs]);
-  
-  const sigsQuery = useMemoFirebase(() => {
-    if (!db || !selectedTeamId) return null;
-    return query(collectionGroup(db, 'signatures'), where('teamId', '==', selectedTeamId));
-  }, [db, selectedTeamId]);
-
-  const { data: teamSigs } = useCollection<DocumentSignature>(sigsQuery);
-
-  return (
-    <Card className="rounded-[2rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
-      <CardHeader className="bg-black text-white p-5 md:p-8">
-        <div className="flex items-center gap-3 md:gap-4">
-          <div className="bg-primary p-2.5 md:p-3 rounded-2xl shadow-lg shrink-0"><ShieldCheck className="h-5 w-5 md:h-6 md:w-6 text-white" /></div>
-          <div className="min-w-0">
-            <CardTitle className="text-lg md:text-2xl font-black uppercase tracking-tight">Mandate Verification</CardTitle>
-            <CardDescription className="text-white/60 font-bold uppercase text-[9px] tracking-widest">Audit squad-level protocol</CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="p-4 md:p-8 space-y-6">
-        <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
-          <SelectTrigger className="h-12 rounded-2xl border-2 font-black text-foreground shadow-inner"><SelectValue placeholder="Pick a team to audit..." /></SelectTrigger>
-          <SelectContent className="rounded-2xl">{teams.map(t => (<SelectItem key={t.id} value={t.id} className="font-bold uppercase">{t.name}</SelectItem>))}</SelectContent>
-        </Select>
-
-        {selectedTeamId && (
-          <div className="space-y-3 animate-in fade-in">
-            {masterProtocols.map(protocol => {
-              const signature = teamSigs?.find(s => s.documentId === protocol.id);
-              const isSigned = !!signature;
-              return (
-                <div key={protocol.id} className={cn("flex items-center gap-3 p-4 rounded-2xl border-2 transition-all", isSigned ? "bg-green-50/50 border-green-100" : "bg-muted/20 border-transparent")}>
-                  <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm transition-colors", isSigned ? "bg-green-500 text-white" : "bg-white text-muted-foreground/30 border")}>{isSigned ? <CheckCircle2 className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</div>
-                  <div className="min-w-0 flex-1"><p className="text-xs font-black uppercase truncate text-foreground">{protocol.title}</p>{isSigned ? (<p className="text-[9px] font-bold text-green-600 uppercase">Signed by {signature.userName || 'Representative'}</p>) : (<p className="text-[9px] font-bold text-muted-foreground uppercase">Pending Signature</p>)}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+import {
+  calculateGlobalWaiverCompletion,
+  groupGlobalWaiverDeployments,
+  type GlobalWaiverCompletion,
+  type GlobalWaiverDeployment,
+} from '@/lib/global-waiver-policy';
 
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
@@ -160,7 +117,7 @@ function AuthorizedClubManagementPage() {
   const [isSubSquadModalOpen, setIsSubSquadModalOpen] = useState(false);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [clubForm, setClubForm] = useState({ name: user?.schoolName || user?.clubName || '', description: user?.clubDescription || '', schoolName: user?.schoolName || user?.clubName || '', institutionTitle: user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : '') });
-  const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any });
+  const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any, waiverAudience: 'participant' as 'participant' | 'team' });
   const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
   const [updatingSquadId, setUpdatingSquadId] = useState<string | null>(null);
@@ -170,6 +127,9 @@ function AuthorizedClubManagementPage() {
   const [isAddingAdmin, setIsAddingAdmin] = useState(false);
   const [adminProfiles, setAdminProfiles] = useState<any[]>([]);
   const [viewingIncident, setViewingIncident] = useState<TeamIncident | null>(null);
+  const [inspectingGlobalWaiver, setInspectingGlobalWaiver] = useState<GlobalWaiverDeployment | null>(null);
+  const [participantWaiverSignatures, setParticipantWaiverSignatures] = useState<any[]>([]);
+  const [coachWaiverSignatures, setCoachWaiverSignatures] = useState<any[]>([]);
 
   // School Hub onboarding note — localStorage-persisted dismiss
   const HUB_NOTE_KEY = 'school_hub_note_dismissed_v1';
@@ -473,6 +433,54 @@ function AuthorizedClubManagementPage() {
     return all.filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; });
   }, [allDocsRaw, globalDocsRaw]);
 
+  const globalWaiverDeployments = useMemo(
+    () => groupGlobalWaiverDeployments(clubDocs),
+    [clubDocs]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadWaiverSignatures = async () => {
+      if (!db || clubTeamIds.length === 0) {
+        if (!cancelled) {
+          setParticipantWaiverSignatures([]);
+          setCoachWaiverSignatures([]);
+        }
+        return;
+      }
+      const results = await Promise.all(clubTeamIds.map(async teamId => {
+        const [participantSnapshot, coachSnapshot] = await Promise.all([
+          getDocs(collection(db, 'teams', teamId, 'protocol_signatures')),
+          getDocs(collection(db, 'teams', teamId, 'coachWaiverSignatures')),
+        ]);
+        return {
+          participants: participantSnapshot.docs.map(snapshot => ({ id: snapshot.id, teamId, ...snapshot.data() })),
+          coaches: coachSnapshot.docs.map(snapshot => ({ id: snapshot.id, teamId, ...snapshot.data() })),
+        };
+      }));
+      if (!cancelled) {
+        setParticipantWaiverSignatures(results.flatMap(result => result.participants));
+        setCoachWaiverSignatures(results.flatMap(result => result.coaches));
+      }
+    };
+    void loadWaiverSignatures();
+    return () => { cancelled = true; };
+  }, [db, clubTeamIds]);
+
+  const globalWaiverCompletion = useMemo(() => {
+    const completion = new Map<string, GlobalWaiverCompletion>();
+    globalWaiverDeployments.forEach(deployment => {
+      completion.set(deployment.deploymentId, calculateGlobalWaiverCompletion({
+        deployment,
+        teamIds: clubTeamIds,
+        members: allRawMembers,
+        participantSignatures: participantWaiverSignatures,
+        coachSignatures: coachWaiverSignatures,
+      }));
+    });
+    return completion;
+  }, [globalWaiverDeployments, clubTeamIds, allRawMembers, participantWaiverSignatures, coachWaiverSignatures]);
+
   // School Logic: Universal Coach & Staff Roster
   const allCoaches = useMemo(() => {
     const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
@@ -709,30 +717,66 @@ function AuthorizedClubManagementPage() {
     setIsCreating(true);
     try {
       if (editingDocId) {
-        await updateDoc(doc(db, 'users', user!.id, 'clubDocuments', editingDocId), {
-          title: protocolForm.title,
-          content: protocolForm.content,
-          type: protocolForm.type,
+        if (!firebaseAuth) throw new Error('Your session is unavailable.');
+        const token = await getAuthToken(firebaseAuth);
+        if (!token) throw new Error('Your session has expired.');
+        const response = await fetch('/api/organizations/waivers', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({
+            documentId: editingDocId,
+            title: protocolForm.title,
+            content: protocolForm.content,
+            waiverAudience: protocolForm.waiverAudience,
+          }),
         });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Unable to update this waiver.');
       } else {
-        await deployClubProtocol({ title: protocolForm.title, content: protocolForm.content, type: protocolForm.type, assignedTo: ['all'] }, clubTeamIds);
+        await deployClubProtocol({ ...protocolForm, assignedTo: ['all'], isActive: true }, clubTeamIds);
       }
+      setIsDeployProtocolOpen(false); setEditingDocId(null); setProtocolForm({ title: '', content: '', type: 'waiver', waiverAudience: 'participant' });
+      toast({ title: editingDocId ? "Protocol Updated" : "Mandate Deployed", description: `Protocol synchronized across ${clubTeamIds.length} squads.` });
+    } catch (error) {
+      toast({ title: 'Waiver Update Failed', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
     } finally {
       setIsCreating(false);
     }
-    setIsDeployProtocolOpen(false); setEditingDocId(null); setProtocolForm({ title: '', content: '', type: 'waiver' });
-    toast({ title: editingDocId ? "Protocol Updated" : "Mandate Deployed", description: `Protocol pushed to ${clubTeamIds.length} squads.` });
   };
 
   const handleToggleWaiver = async (waiverDoc: TeamDocument) => {
-    if (!user?.id || !waiverDoc.id) return;
-    await updateDoc(doc(db, 'users', user.id, 'clubDocuments', waiverDoc.id), { isActive: !waiverDoc.isActive });
+    if (!waiverDoc.id || !firebaseAuth) return;
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired.');
+      const response = await fetch('/api/organizations/waivers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ documentId: waiverDoc.id, isActive: waiverDoc.isActive === false }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to update this waiver.');
+    } catch (error) {
+      toast({ title: 'Waiver Update Failed', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    }
   };
 
   const handleDeleteWaiver = async (waiverDoc: TeamDocument) => {
-    if (!user?.id || !waiverDoc.id || !confirm(`Delete "${waiverDoc.title}"? This cannot be undone.`)) return;
-    const { deleteDoc } = await import('firebase/firestore');
-    await deleteDoc(doc(db, 'users', user.id, 'clubDocuments', waiverDoc.id));
+    if (!waiverDoc.id || !firebaseAuth || !confirm(`Delete "${waiverDoc.title}" from the hub and every sub-squad? This cannot be undone.`)) return;
+    try {
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired.');
+      const response = await fetch('/api/organizations/waivers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ documentId: waiverDoc.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to delete this waiver.');
+      toast({ title: 'Global Waiver Deleted', description: 'Removed from the hub and all sub-squads.' });
+    } catch (error) {
+      toast({ title: 'Waiver Delete Failed', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    }
   };
 
   const handleAddAdmin = async () => {
@@ -1513,13 +1557,16 @@ function AuthorizedClubManagementPage() {
                   <h3 className="text-base md:text-lg font-black uppercase text-foreground">Global Waivers</h3>
                   <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Deployed to all squads</p>
                 </div>
-                <Button onClick={() => { setEditingDocId(null); setProtocolForm({ title: '', content: '', type: 'waiver' }); setIsDeployProtocolOpen(true); }} className="h-9 md:h-10 px-4 md:px-6 font-black uppercase text-[9px] md:text-[10px] shadow-lg shadow-primary/20 border-none">
+                <Button onClick={() => { setEditingDocId(null); setProtocolForm({ title: '', content: '', type: 'waiver', waiverAudience: 'participant' }); setIsDeployProtocolOpen(true); }} className="h-9 md:h-10 px-4 md:px-6 font-black uppercase text-[9px] md:text-[10px] shadow-lg shadow-primary/20 border-none">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> New Waiver
                 </Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {clubDocs.filter(d => d.isClubMaster).map(waiverDoc => (
-                  <Card key={waiverDoc.id} className={cn("rounded-2xl p-5 md:p-6 bg-white shadow-lg border space-y-3 flex flex-col transition-all", waiverDoc.isActive === false ? "opacity-50 border-dashed" : "hover:ring-2 hover:ring-primary/20")}>
+                {globalWaiverDeployments.map(deployment => {
+                  const waiverDoc = deployment.document as TeamDocument;
+                  const completion = globalWaiverCompletion.get(deployment.deploymentId);
+                  return (
+                  <Card key={deployment.deploymentId} onClick={() => setInspectingGlobalWaiver(deployment)} className={cn("rounded-2xl p-5 md:p-6 bg-white shadow-lg border space-y-3 flex flex-col transition-all cursor-pointer", waiverDoc.isActive === false ? "opacity-50 border-dashed" : completion?.isComplete ? "border-emerald-300 ring-1 ring-emerald-200" : "hover:ring-2 hover:ring-primary/20")}>
                     <div className="flex justify-between items-start gap-2">
                       <div className="flex-1 min-w-0">
                         <Badge className={cn("font-black text-[8px] h-5 px-2 uppercase tracking-widest shadow mb-1.5 border-none", waiverDoc.isActive === false ? "bg-muted text-muted-foreground" : "bg-black text-white")}>
@@ -1527,20 +1574,26 @@ function AuthorizedClubManagementPage() {
                         </Badge>
                         <h4 className="text-sm font-black uppercase text-foreground truncate">{waiverDoc.title}</h4>
                       </div>
-                      <ShieldCheck className="h-4 w-4 text-primary opacity-20 shrink-0 mt-1" />
+                      {completion?.isComplete
+                        ? <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-1" />
+                        : <ShieldCheck className="h-4 w-4 text-primary opacity-20 shrink-0 mt-1" />}
                     </div>
                     <p className="text-xs font-medium text-muted-foreground line-clamp-2 italic flex-1 leading-relaxed">"{waiverDoc.content}"</p>
                     <div className="pt-3 border-t flex items-center justify-between gap-2">
-                      <span className="text-[9px] font-black uppercase text-primary tracking-widest">{waiverDoc.signatureCount || 0} Sigs</span>
+                      <div>
+                        <span className={cn("text-[9px] font-black uppercase tracking-widest", completion?.isComplete ? "text-emerald-600" : "text-primary")}>{completion?.signed || 0}/{completion?.required || 0} Signed</span>
+                        <p className="text-[7px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">{completion?.audience === 'team' ? 'One staff per squad' : 'All participants'}</p>
+                      </div>
                       <div className="flex items-center gap-1">
-                        <Button variant="outline" size="sm" className="h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2" onClick={() => { setEditingDocId(waiverDoc.id); setProtocolForm({ title: waiverDoc.title, content: waiverDoc.content || '', type: waiverDoc.type || 'waiver' }); setIsDeployProtocolOpen(true); }}>Edit</Button>
-                        <Button variant="outline" size="sm" className={cn("h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2", waiverDoc.isActive === false ? "border-emerald-200 text-emerald-600 hover:bg-emerald-50" : "border-amber-200 text-amber-600 hover:bg-amber-50")} onClick={() => handleToggleWaiver(waiverDoc)}>{waiverDoc.isActive === false ? 'Enable' : 'Disable'}</Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 rounded-xl text-red-500 hover:bg-red-50" onClick={() => handleDeleteWaiver(waiverDoc)}>×</Button>
+                        <Button variant="outline" size="sm" className="h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2" onClick={(event) => { event.stopPropagation(); setEditingDocId(waiverDoc.id); setProtocolForm({ title: waiverDoc.title, content: waiverDoc.content || '', type: waiverDoc.type || 'waiver', waiverAudience: waiverDoc.waiverAudience === 'team' ? 'team' : 'participant' }); setIsDeployProtocolOpen(true); }}>Edit</Button>
+                        <Button variant="outline" size="sm" className={cn("h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2", waiverDoc.isActive === false ? "border-emerald-200 text-emerald-600 hover:bg-emerald-50" : "border-amber-200 text-amber-600 hover:bg-amber-50")} onClick={(event) => { event.stopPropagation(); void handleToggleWaiver(waiverDoc); }}>{waiverDoc.isActive === false ? 'Enable' : 'Disable'}</Button>
+                        <Button aria-label={`Delete ${waiverDoc.title}`} variant="ghost" size="sm" className="h-7 w-7 rounded-xl text-red-500 hover:bg-red-50" onClick={(event) => { event.stopPropagation(); void handleDeleteWaiver(waiverDoc); }}>×</Button>
                       </div>
                     </div>
                   </Card>
-                ))}
-                {clubDocs.filter(d => d.isClubMaster).length === 0 && (
+                  );
+                })}
+                {globalWaiverDeployments.length === 0 && (
                   <div className="col-span-full py-16 text-center bg-muted/10 rounded-2xl border-2 border-dashed opacity-30 text-foreground space-y-3">
                     <FileText className="h-10 w-10 mx-auto" />
                     <p className="text-xs font-black uppercase tracking-widest">No global waivers deployed</p>
@@ -1550,8 +1603,6 @@ function AuthorizedClubManagementPage() {
               </div>
             </div>
 
-            {/* Mandate Verification Card */}
-            <TeamComplianceCard teams={clubTeams} clubDocs={clubDocs} />
           </div>
         </TabsContent>
 
@@ -1783,6 +1834,28 @@ function AuthorizedClubManagementPage() {
               </div>
             )}
           </div>
+
+          {/* Payments / Stripe Settings belong exclusively to Finance. */}
+          {schoolHub?.id && user?.id && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">
+                  {isSchoolMode ? 'School Hub' : 'Club Hub'}
+                </Badge>
+                <h2 className="text-2xl font-black uppercase tracking-tight">Payment Settings</h2>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                  Configure how Stripe online payments work across your {isSchoolMode ? 'school' : 'club'}
+                </p>
+              </div>
+              <HubStripeSettings
+                userId={user.id}
+                hubTeamId={schoolHub.id}
+                subSquads={schoolSquads.map(s => ({ id: s.id, name: s.name }))}
+                isSchoolMode={isSchoolMode}
+                isDemo={user.isDemo === true && !isSuperAdmin}
+              />
+            </div>
+          )}
         </TabsContent>
 
         {/* ── SAFETY TAB ── */}
@@ -1848,6 +1921,46 @@ function AuthorizedClubManagementPage() {
           onOpenChange={(o) => { if (!o) setViewingIncident(null); }} 
         />
       )}
+
+      <Dialog open={!!inspectingGlobalWaiver} onOpenChange={(open) => !open && setInspectingGlobalWaiver(null)}>
+        <DialogContent className="rounded-[2rem] border-none shadow-2xl p-0 overflow-hidden w-[calc(100vw-2rem)] sm:max-w-xl bg-white">
+          {inspectingGlobalWaiver && (() => {
+            const completion = globalWaiverCompletion.get(inspectingGlobalWaiver.deploymentId);
+            return (
+              <>
+                <div className={cn("px-6 py-5 text-white", completion?.isComplete ? "bg-emerald-600" : "bg-black")}>
+                  <DialogHeader>
+                    <DialogTitle className="text-xl font-black uppercase tracking-tight pr-8">{inspectingGlobalWaiver.document.title}</DialogTitle>
+                    <DialogDescription className="text-white/70 font-bold uppercase text-[9px] tracking-widest">
+                      {completion?.audience === 'team' ? 'Team waiver · One staff signature per squad' : 'Participant waiver · Every active participant'}
+                    </DialogDescription>
+                  </DialogHeader>
+                </div>
+                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                  <div className={cn("rounded-2xl border p-4 flex items-center gap-3", completion?.isComplete ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200")}>
+                    {completion?.isComplete ? <CheckCircle2 className="h-6 w-6 text-emerald-600" /> : <Clock className="h-6 w-6 text-amber-600" />}
+                    <div>
+                      <p className="text-sm font-black uppercase">{completion?.isComplete ? 'All signatures complete' : 'Signatures still required'}</p>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase">{completion?.signed || 0} of {completion?.required || 0} required signatures · {completion?.completedTeams || 0} of {completion?.totalTeams || 0} squads complete</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {completion?.teams.map(team => (
+                      <div key={team.teamId} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-black uppercase truncate">{clubTeams.find(candidate => candidate.id === team.teamId)?.name || 'Sub-squad'}</p>
+                          <p className="text-[9px] font-bold text-muted-foreground uppercase">{team.signed}/{team.required} signed</p>
+                        </div>
+                        {team.isComplete ? <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" /> : <Clock className="h-5 w-5 text-amber-500 shrink-0" />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Club/School Dialog */}
       <Dialog open={isEditClubOpen} onOpenChange={setIsEditOpen}>
@@ -1943,6 +2056,16 @@ function AuthorizedClubManagementPage() {
               </div>
 
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Waiver Title</Label><Input placeholder="e.g. 2024 Seasonal Liability Waiver" value={protocolForm.title} onChange={e => setProtocolForm({...protocolForm, title: e.target.value})} className="h-12 rounded-2xl border-2 font-black text-base" /></div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase text-foreground">Who must sign?</Label>
+                <Select value={protocolForm.waiverAudience} onValueChange={(value: 'participant' | 'team') => setProtocolForm({ ...protocolForm, waiverAudience: value })}>
+                  <SelectTrigger className="h-12 rounded-2xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-2xl">
+                    <SelectItem value="participant" className="font-bold">Every participant in every sub-squad</SelectItem>
+                    <SelectItem value="team" className="font-bold">One coach or staff member per sub-squad</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase text-foreground">Waiver Text (Editable)</Label><Textarea value={protocolForm.content} onChange={e => setProtocolForm({...protocolForm, content: e.target.value})} className="min-h-[180px] rounded-2xl border-2 font-medium p-4 bg-muted/5 focus:bg-white transition-all resize-none text-sm leading-relaxed" placeholder="Enter or edit waiver text here..." /></div>
               <div className="bg-primary/5 p-4 rounded-2xl border-2 border-dashed border-primary/20 flex items-start gap-3">
                 <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
@@ -1953,28 +2076,6 @@ function AuthorizedClubManagementPage() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* ── Payments / Stripe Settings (hub admin only) ── */}
-      {schoolHub?.id && user?.id && (
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <Badge className="bg-primary/5 text-primary border-none font-black uppercase text-[8px] h-5 px-2 tracking-widest">
-              {isSchoolMode ? 'School Hub' : 'Club Hub'}
-            </Badge>
-            <h2 className="text-2xl font-black uppercase tracking-tight">Payment Settings</h2>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-              Configure how Stripe online payments work across your {isSchoolMode ? 'school' : 'club'}
-            </p>
-          </div>
-          <HubStripeSettings
-            userId={user.id}
-            hubTeamId={schoolHub.id}
-            subSquads={schoolSquads.map(s => ({ id: s.id, name: s.name }))}
-            isSchoolMode={isSchoolMode}
-            isDemo={user.isDemo === true && !isSuperAdmin}
-          />
-        </div>
-      )}
 
       {/* Organization seat release */}
       <AlertDialog open={!!teamToDelete} onOpenChange={o => !o && setTeamToDelete(null)}>
