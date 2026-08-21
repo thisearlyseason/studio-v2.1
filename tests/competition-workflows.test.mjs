@@ -5,14 +5,6 @@ import { calculateTournamentStandings } from '../src/lib/tournament-standings.ts
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('division setting copies stay draft and refuse to overwrite deployed schedules', () => {
-  const route = read('src/app/api/leagues/clone/route.ts');
-  assert.match(route, /deploymentStatus === 'deployed'/);
-  assert.match(route, /already has a deployed schedule/);
-  assert.match(route, /is_active: false/);
-  assert.doesNotMatch(route, /batch\.update\(target\.ref,[\s\S]{0,300}schedule: \[\]/);
-});
-
 test('tournament setup, bracket, schedule, and deployment use explicit persisted states', () => {
   const page = read('src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx');
   const deployment = read('src/lib/server-tournament-schedule-deployment.ts');

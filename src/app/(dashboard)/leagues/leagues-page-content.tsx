@@ -81,6 +81,11 @@ import { getFacilityFieldName } from '@/lib/facility-rename';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { EventSafetyPanel } from '@/components/safety/event-safety-panel';
 import {
+  getLeagueCloneSuccessCopy,
+  getLeagueDeploymentLabel,
+  type LeagueCloneResult,
+} from '@/lib/server-league-cloning';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -1543,9 +1548,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     slug: '', requiredSquads: '', blackoutDaysOfWeek: [] as number[], divisions: [] as string[]
   });
   const [duplicateTitle, setDuplicateTitle] = useState('');
+  const [cloneDestination, setCloneDestination] = useState<'division' | 'league'>('division');
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
   const [duplicatingLeague, setDuplicatingLeague] = useState<League | null>(null);
-  const [copyLeagueTargets, setCopyLeagueTargets] = useState<string[]>([]);
+  const [openingCloneName, setOpeningCloneName] = useState('');
   const [pendingLeagueDeletion, setPendingLeagueDeletion] = useState<{
     ids: string[];
     name: string;
@@ -1636,6 +1642,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   }, [leagues]);
 
   const activeLeague = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
+
+  useEffect(() => {
+    if (activeLeague && activeLeague.id === selectedLeagueId) setOpeningCloneName('');
+  }, [activeLeague, selectedLeagueId]);
 
   // Logo resolution map: activeTeam is the authoritative source.
   // teamMembership docs lack teamLogoUrl — only activeTeamDoc (merged into activeTeam) is live.
@@ -2070,47 +2080,36 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       const response = await fetch('/api/leagues/clone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ leagueId: duplicatingLeague.id, name: duplicateTitle.trim() }),
+        body: JSON.stringify({
+          leagueId: duplicatingLeague.id,
+          destination: cloneDestination,
+          name: duplicateTitle.trim(),
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to clone this league.');
+      if (
+        typeof payload.leagueId !== 'string' ||
+        (payload.destination !== 'division' && payload.destination !== 'league') ||
+        typeof payload.name !== 'string' ||
+        typeof payload.divisionTitle !== 'string' ||
+        payload.status !== 'setup'
+      ) {
+        throw new Error('The clone was created, but its destination could not be opened. Refresh the league list to find it.');
+      }
+      const cloneResult = payload as LeagueCloneResult;
+      const successCopy = getLeagueCloneSuccessCopy(cloneResult);
 
       setIsDuplicateOpen(false);
       setDuplicateTitle('');
       setDuplicatingLeague(null);
-      toast({ title: "Hub Replicated", description: "Institutional framework cloned. Redirecting to new environment..." });
-      
-      // Force a query refresh by briefly toggling a state or just letting useCollection handle it
-      // Actually, we could select it right away
-      setSelectedLeagueId(payload.leagueId);
+      setOpeningCloneName(cloneResult.destination === 'division' ? cloneResult.divisionTitle : cloneResult.name);
+      setSelectedLeagueId(cloneResult.leagueId);
+      toast(successCopy);
       
     } catch (e: any) {
       console.error("[Leagues] Duplication failed:", e);
       toast({ title: "Replication Failed", description: e.message, variant: 'destructive' });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleCopyDivisionSettings = async () => {
-    if (!duplicatingLeague || copyLeagueTargets.length === 0 || !firebaseAuth) return;
-    setIsProcessing(true);
-    try {
-      const token = await getAuthToken(firebaseAuth);
-      if (!token) throw new Error('Your session has expired. Please sign in again.');
-      const response = await fetch('/api/leagues/clone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ leagueId: duplicatingLeague.id, targetLeagueIds: copyLeagueTargets }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Unable to copy division settings.');
-      toast({ title: 'Division Settings Copied', description: `${copyLeagueTargets.length} division${copyLeagueTargets.length === 1 ? '' : 's'} updated as undeployed drafts. Teams and schedules were not copied.` });
-      setCopyLeagueTargets([]);
-      setIsDuplicateOpen(false);
-      setDuplicatingLeague(null);
-    } catch (error) {
-      toast({ title: 'Copy Failed', description: error instanceof Error ? error.message : 'Unable to copy settings.', variant: 'destructive' });
     } finally {
       setIsProcessing(false);
     }
@@ -2252,6 +2251,17 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <Trophy className="h-10 w-10" />
                           </div>
                           <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'font-black text-[9px] h-7 px-3 uppercase',
+                                getLeagueDeploymentLabel(league) === 'Schedule live'
+                                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
+                                  : 'border-amber-500/30 bg-amber-500/10 text-amber-700'
+                              )}
+                            >
+                              {getLeagueDeploymentLabel(league)}
+                            </Badge>
                             <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">
                               {league.sport}
                             </Badge>
@@ -2288,7 +2298,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                  onClick={(e) => {
                                    e.stopPropagation();
                                    setDuplicatingLeague(league);
-                                   setDuplicateTitle(`${league.name} (Clone)`);
+                                   setCloneDestination('division');
+                                   setDuplicateTitle('Main Division Copy');
                                    setIsDuplicateOpen(true);
                                  }}
                                >
@@ -2324,7 +2335,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <div>
                               <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-black">{group.name}</h3>
                               <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
-                                {group.items.length} divisions active • {group.items.reduce((acc, curr) => acc + Object.keys(curr.teams || {}).length, 0)} total squads
+                                {group.items.length} divisions • {group.items.filter(item => getLeagueDeploymentLabel(item) === 'Schedule live').length} with schedules • {group.items.reduce((acc, curr) => acc + Object.keys(curr.teams || {}).length, 0)} total squads
                               </p>
                             </div>
                           </div>
@@ -2359,9 +2370,22 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             >
                               <div className="space-y-3">
                                 <div className="flex justify-between items-start gap-2">
-                                  <Badge className={`border font-black text-[9px] h-6 px-3 uppercase tracking-wider ${badgeBg}`}>
-                                    {divisionName}
-                                  </Badge>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Badge className={`border font-black text-[9px] h-6 px-3 uppercase tracking-wider ${badgeBg}`}>
+                                      {divisionName}
+                                    </Badge>
+                                    <Badge
+                                      variant="outline"
+                                      className={cn(
+                                        'font-black text-[8px] h-6 px-2.5 uppercase',
+                                        getLeagueDeploymentLabel(divLeague) === 'Schedule live'
+                                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
+                                          : 'border-amber-500/30 bg-amber-500/10 text-amber-700'
+                                      )}
+                                    >
+                                      {getLeagueDeploymentLabel(divLeague)}
+                                    </Badge>
+                                  </div>
                                   {canManageLeagues && (divLeague.creatorId === authUser?.uid || isSuperAdmin) && (
                                     <Button
                                       aria-label={`Delete ${divLeague.name} ${divisionName}`}
@@ -2396,7 +2420,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setDuplicatingLeague(divLeague);
-                                        setDuplicateTitle(`${divLeague.name} (${divisionName} Clone)`);
+                                        setCloneDestination('division');
+                                        setDuplicateTitle(`${divisionName} Copy`);
                                         setIsDuplicateOpen(true);
                                       }}
                                     >
@@ -2434,7 +2459,15 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         </div>
       )}
 
-      {selectedLeagueId && activeLeague ? (
+      {selectedLeagueId && !activeLeague ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[3rem] border-2 border-dashed bg-muted/10 px-6 text-center">
+          <Loader2 className="mb-5 h-10 w-10 animate-spin text-primary" />
+          <h3 className="text-2xl font-black uppercase">Opening {openingCloneName || leagueLabel}</h3>
+          <p className="mt-2 max-w-md text-sm font-medium text-muted-foreground">
+            The new setup has been saved. It will open here as soon as the league list refreshes.
+          </p>
+        </div>
+      ) : selectedLeagueId && activeLeague ? (
         <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
           <div className="flex items-center gap-3 mb-4 min-w-0">
             <Button aria-label="Back to leagues" variant="ghost" size="icon" onClick={() => setSelectedLeagueId(null)} className="rounded-full h-10 w-10 md:h-12 md:w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-5 w-5 md:h-6 md:w-6" /></Button>
@@ -2444,6 +2477,17 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 <span className="text-muted-foreground/80 shrink-0">• {activeLeague.divisionTitle}</span>
               )}
             </div>
+            <Badge
+              variant="outline"
+              className={cn(
+                'shrink-0 font-black text-[9px] uppercase',
+                getLeagueDeploymentLabel(activeLeague) === 'Schedule live'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
+                  : 'border-amber-500/30 bg-amber-500/10 text-amber-700'
+              )}
+            >
+              {getLeagueDeploymentLabel(activeLeague)}
+            </Badge>
           </div>
           <Card className="rounded-[2rem] md:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white p-5 md:p-10 relative group">
             <div className="absolute top-0 right-0 p-6 md:p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700"><ShieldCheck className="h-32 w-32 md:h-48 md:w-48" /></div>
@@ -3343,50 +3387,115 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isDuplicateOpen} onOpenChange={setIsDuplicateOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground">
+      <Dialog
+        open={isDuplicateOpen}
+        onOpenChange={(open) => {
+          if (!open && isProcessing) return;
+          setIsDuplicateOpen(open);
+          if (!open) {
+            setDuplicatingLeague(null);
+            setDuplicateTitle('');
+            setCloneDestination('division');
+          }
+        }}
+      >
+        <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
-          <div className="p-10 space-y-8">
+          <div className="p-8 sm:p-10 space-y-7">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">
                 <div className="bg-primary/5 p-3 rounded-2xl text-primary"><Copy className="h-6 w-6" /></div>
-                <DialogTitle className="text-3xl font-black uppercase">Replicate Hub</DialogTitle>
+                <DialogTitle className="text-3xl font-black uppercase">Clone Division</DialogTitle>
               </div>
-              <DialogDescription className="font-bold text-[10px] uppercase tracking-widest text-primary">Clone operational framework and pipeline</DialogDescription>
+              <DialogDescription className="font-medium text-sm leading-relaxed text-muted-foreground">
+                Copy <strong className="text-foreground">{duplicatingLeague?.divisionTitle || 'Main Division'}</strong> from{' '}
+                <strong className="text-foreground">{duplicatingLeague?.name || 'this league'}</strong>. Only this selected division will be cloned.
+              </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <Label className="text-[10px] font-black uppercase">New Hub Title</Label>
+
+            <div className="space-y-3">
+              <Label className="text-[10px] font-black uppercase tracking-widest">1. Choose where to create it</Label>
+              <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Clone destination">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={cloneDestination === 'division'}
+                  onClick={() => {
+                    setCloneDestination('division');
+                    setDuplicateTitle(`${duplicatingLeague?.divisionTitle || 'Main Division'} Copy`);
+                  }}
+                  className={cn(
+                    'rounded-2xl border-2 p-4 text-left transition-colors',
+                    cloneDestination === 'division' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/30'
+                  )}
+                >
+                  <span className="block text-sm font-black">Add to this league</span>
+                  <span className="mt-1 block text-[10px] font-medium leading-relaxed text-muted-foreground">
+                    Create a new division inside {duplicatingLeague?.name || 'the current league'}.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={cloneDestination === 'league'}
+                  onClick={() => {
+                    setCloneDestination('league');
+                    setDuplicateTitle(`${duplicatingLeague?.name || 'League'} Copy`);
+                  }}
+                  className={cn(
+                    'rounded-2xl border-2 p-4 text-left transition-colors',
+                    cloneDestination === 'league' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/30'
+                  )}
+                >
+                  <span className="block text-sm font-black">Create a new league</span>
+                  <span className="mt-1 block text-[10px] font-medium leading-relaxed text-muted-foreground">
+                    Start a separate league based on this selected division.
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label htmlFor="clone-destination-name" className="text-[10px] font-black uppercase tracking-widest">
+                2. {cloneDestination === 'division' ? 'Name the new division' : 'Name the new league'}
+              </Label>
               <Input 
-                placeholder="e.g. State Varsity Premier - Season 2" 
+                id="clone-destination-name"
+                placeholder={cloneDestination === 'division' ? 'e.g. U14 Silver' : 'e.g. Regional League 2027'}
                 value={duplicateTitle} 
                 onChange={e => setDuplicateTitle(e.target.value)} 
                 className="h-14 rounded-2xl border-2 font-black" 
                 autoFocus
               />
-              <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed">
-                Create a new empty hub, or copy configuration into existing sibling divisions. Teams, registrations, results, standings, and schedules are never copied.
-              </p>
-              {duplicatingLeague && allLeagues.filter(league => league.id !== duplicatingLeague.id && league.name === duplicatingLeague.name).length > 0 && (
-                <div className="rounded-2xl border-2 p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <Label className="text-[10px] font-black uppercase">Copy to Existing Divisions</Label>
-                    <button className="text-[9px] font-black uppercase text-primary" onClick={() => setCopyLeagueTargets(allLeagues.filter(league => league.id !== duplicatingLeague.id && league.name === duplicatingLeague.name).map(league => league.id))}>All Others</button>
-                  </div>
-                  {allLeagues.filter(league => league.id !== duplicatingLeague.id && league.name === duplicatingLeague.name).map(league => (
-                    <label key={league.id} className="flex items-center gap-2 text-xs font-bold uppercase">
-                      <input type="checkbox" checked={copyLeagueTargets.includes(league.id)} onChange={event => setCopyLeagueTargets(current => event.target.checked ? [...current, league.id] : current.filter(id => id !== league.id))} />
-                      {league.divisionTitle || 'Main Division'}
-                      <Badge variant="outline" className="ml-auto text-[7px]">{league.deploymentStatus === 'deployed' || (league.schedule || []).length > 0 ? 'Deployed' : league.settingsCopiedFrom ? 'Copied • Draft' : 'Draft'}</Badge>
-                    </label>
-                  ))}
-                </div>
-              )}
             </div>
+
+            <div className="rounded-2xl border-2 border-primary/15 bg-primary/5 p-4 text-[11px] leading-relaxed text-muted-foreground">
+              <p className="font-black text-foreground">You are creating</p>
+              <p className="mt-1 text-sm font-bold text-foreground">
+                {cloneDestination === 'division'
+                  ? `A new “${duplicateTitle.trim() || 'unnamed'}” division inside “${duplicatingLeague?.name || 'this league'}”.`
+                  : `A separate “${duplicateTitle.trim() || 'unnamed'}” league based on “${duplicatingLeague?.divisionTitle || 'Main Division'}”.`}
+              </p>
+              <p className="mt-3 font-black text-foreground">Copied into the new setup</p>
+              <p className="mt-1">League details, registration form fields, and scheduling settings.</p>
+              <p className="mt-3 font-black text-foreground">Not copied</p>
+              <p className="mt-1">Teams, registrations already submitted, players, schedules, games, results, and standings.</p>
+              <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 font-bold text-amber-800">
+                The new item appears in your regular league list as “Setup — no schedule.” There is no separate Drafts page.
+              </p>
+            </div>
+
             <DialogFooter>
-              <div className="w-full grid gap-2">
-                {copyLeagueTargets.length > 0 && <Button className="h-14 rounded-2xl font-black" onClick={handleCopyDivisionSettings} disabled={isProcessing}>Copy Division Settings</Button>}
-                <Button variant={copyLeagueTargets.length > 0 ? 'outline' : 'default'} className="h-14 rounded-2xl font-black" onClick={handleDuplicateLeague} disabled={isProcessing || !duplicateTitle.trim()}>
-                  {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Create New Draft Hub"}
+              <div className="grid w-full gap-2 sm:grid-cols-[auto_1fr]">
+                <DialogClose asChild>
+                  <Button type="button" variant="outline" className="h-14 rounded-2xl px-6 font-black" disabled={isProcessing}>
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button className="h-14 rounded-2xl font-black" onClick={handleDuplicateLeague} disabled={isProcessing || !duplicateTitle.trim()}>
+                  {isProcessing
+                    ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creating new setup…</>
+                    : cloneDestination === 'division' ? 'Create & Open Division' : 'Create & Open League'}
                 </Button>
               </div>
             </DialogFooter>
