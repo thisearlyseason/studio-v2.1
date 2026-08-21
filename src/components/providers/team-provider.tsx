@@ -833,6 +833,10 @@ export type TeamDocument = {
   createdAt?: string;
   updatedAt?: string;
   isClubMaster?: boolean;
+  isGlobal?: boolean;
+  deploymentId?: string;
+  sourceGlobalDocumentId?: string;
+  waiverAudience?: 'participant' | 'team';
   teamId?: string;
   signatureCount?: number;
 };
@@ -3252,6 +3256,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       ownerUserId: firebaseUser.uid,
       isClubMaster: true,
       isGlobal: true,
+      deploymentId: baseId,
+      waiverAudience: data.waiverAudience === 'team' ? 'team' : 'participant',
       createdAt: new Date().toISOString()
     }));
     // Also push to each squad so compliance checks can reference it
@@ -3263,6 +3269,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         teamId: tid,
         ownerUserId: firebaseUser.uid,
         isClubMaster: true,
+        deploymentId: baseId,
+        sourceGlobalDocumentId: globalDocId,
+        waiverAudience: data.waiverAudience === 'team' ? 'team' : 'participant',
         createdAt: new Date().toISOString()
       }));
     });

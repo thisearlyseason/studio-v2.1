@@ -2,10 +2,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Download, Upload, Trash2, Plus, ShieldCheck, Search, FileSignature, Clock, Users, FolderClosed, FolderOpen, Image as ImageIcon, Video, Link as LinkIcon, File as FileIcon, ExternalLink, Play, Eye, ChevronRight, Check, Loader2, X } from 'lucide-react';
+import { FileText, Download, Upload, Trash2, Plus, ShieldCheck, Search, FileSignature, Clock, Users, FolderClosed, FolderOpen, Image as ImageIcon, Video, Link as LinkIcon, File as FileIcon, ExternalLink, Play, Eye, ChevronRight, Check, CheckCircle2, Loader2, X } from 'lucide-react';
 import { format, differenceInYears } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { useTeam, TeamFile, Member } from '@/components/providers/team-provider';
+import { useTeam, TeamFile, Member, TeamDocument } from '@/components/providers/team-provider';
 import { usePendingWaivers } from '@/hooks/use-pending-waivers';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
@@ -134,8 +134,9 @@ export default function FilesPage() {
   const [linkTitle, setLinkTitle] = useState('');
   const [linkDesc, setLinkDesc] = useState('');
   const [isSavingLink, setIsSavingLink] = useState(false);
+  const [viewingWaiver, setViewingWaiver] = useState<TeamDocument | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds } = usePendingWaivers();
+  const { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, visibleWaiverDocuments } = usePendingWaivers();
 
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -442,6 +443,34 @@ export default function FilesPage() {
           {['all','docs','waivers','photos','videos','links'].map(tab => (
             <TabsContent key={tab} value={tab} className="mt-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {(tab === 'all' || tab === 'waivers') && visibleWaiverDocuments.map(waiver => {
+                  const assignedMemberIds = signingMembers
+                    .filter(member => waiver.assignedTo?.includes('all') || waiver.assignedTo?.includes(member.id))
+                    .map(member => member.id);
+                  const isSigned = assignedMemberIds.length > 0 && assignedMemberIds.every(memberId => realTimeSignedDocIds[memberId]?.includes(waiver.id));
+                  return (
+                    <Card key={`waiver-${waiver.id}`} className="group border-none shadow-sm hover:shadow-xl transition-all duration-300 rounded-[1.75rem] overflow-hidden ring-1 ring-black/5 flex flex-col bg-white">
+                      <div className={cn("h-28 flex items-center justify-center", isSigned ? "bg-emerald-50" : "bg-red-50")}>
+                        {isSigned ? <CheckCircle2 className="h-10 w-10 text-emerald-600" /> : <ShieldCheck className="h-10 w-10 text-primary" />}
+                      </div>
+                      <CardHeader className="p-4 pb-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-black text-sm uppercase tracking-tight leading-tight flex-1 min-w-0">{waiver.title}</h3>
+                          <Badge className={cn("border-none font-black text-[7px] uppercase h-5", isSigned ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700")}>{isSigned ? 'Signed' : 'Waiver'}</Badge>
+                        </div>
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">{waiver.isClubMaster ? 'Hub deployed' : 'Squad document'}</p>
+                      </CardHeader>
+                      <CardContent className="px-4 py-0 flex-1">
+                        <p className="text-[10px] font-medium text-muted-foreground line-clamp-3 leading-relaxed">{waiver.content}</p>
+                      </CardContent>
+                      <CardFooter className="p-4 pt-3">
+                        <Button className="w-full h-9 rounded-xl font-black text-[9px] uppercase tracking-widest" onClick={() => setViewingWaiver(waiver)}>
+                          <Eye className="h-3 w-3 mr-1" />View Waiver
+                        </Button>
+                      </CardFooter>
+                    </Card>
+                  );
+                })}
                 {tabFiles.map(file => {
                   const isLink = (file.category || '').toLowerCase().includes('link') || (file.category || '').toLowerCase().includes('url');
                   return (
@@ -482,7 +511,7 @@ export default function FilesPage() {
                     </Card>
                   );
                 })}
-                {tabFiles.length === 0 && (
+                {tabFiles.length === 0 && (!(tab === 'all' || tab === 'waivers') || visibleWaiverDocuments.length === 0) && (
                   <div className="col-span-full py-24 text-center bg-muted/10 rounded-[2.5rem] border-2 border-dashed space-y-3 opacity-40">
                     <FolderClosed className="h-12 w-12 mx-auto mb-2" />
                     <p className="text-sm font-black uppercase tracking-[0.2em]">No {tab === 'all' ? 'resources' : tab} found</p>
@@ -494,6 +523,23 @@ export default function FilesPage() {
           ))}
         </Tabs>
       </section>
+
+      <Dialog open={!!viewingWaiver} onOpenChange={(open) => !open && setViewingWaiver(null)}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+          <div className="px-5 sm:px-7 pt-6 pb-4 border-b pr-14">
+            <DialogHeader className="text-left space-y-2">
+              <DialogTitle className="text-xl font-black uppercase tracking-tight leading-tight break-words">{viewingWaiver?.title}</DialogTitle>
+              <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-primary">Official waiver document</DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="px-5 sm:px-7 py-5 max-h-[65vh] overflow-y-auto">
+            <div className="rounded-2xl border bg-muted/20 p-4 sm:p-5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/80">{viewingWaiver?.content || 'No waiver content provided.'}</div>
+          </div>
+          <DialogFooter className="px-5 sm:px-7 py-4 border-t bg-muted/10">
+            <DialogClose asChild><Button variant="outline" className="h-11 rounded-xl font-black uppercase text-[10px]">Close</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!fileToDelete} onOpenChange={o => !o && setFileToDelete(null)}>
         <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">

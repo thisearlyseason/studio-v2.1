@@ -3454,7 +3454,7 @@ function CoachesCornerContent() {
   // These are docs pushed by the hub admin with isClubMaster: true.
   // The coach must sign them separately from members — coaches are not athletes.
   const globalWaivers = useMemo(
-    () => allDocuments?.filter(d => d.isClubMaster === true && d.isActive !== false) ?? [],
+    () => allDocuments?.filter(d => d.isClubMaster === true && d.isActive !== false && d.waiverAudience === 'team') ?? [],
     [allDocuments]
   );
 
@@ -3484,9 +3484,9 @@ function CoachesCornerContent() {
 
   const handleSignGlobalWaiver = async (waiver: TeamDocument) => {
     setIsSigning(true);
-    await signGlobalWaiverAsCoach(waiver.id, waiver.title);
+    const signed = await signGlobalWaiverAsCoach(waiver.id, waiver.title);
     setIsSigning(false);
-    setSigningWaiver(null);
+    if (signed) setSigningWaiver(null);
   };
 
   const teamProtocols = useMemo(() => allDocuments?.filter(d => DEFAULT_PROTOCOLS.some(p => p.id === d.id)) || [], [allDocuments]);
@@ -3593,24 +3593,28 @@ function CoachesCornerContent() {
 
       {/* ── Global Waiver Signing Modal ───────────────────────────────────── */}
       <Dialog open={!!signingWaiver} onOpenChange={(o) => !o && setSigningWaiver(null)}>
-        <DialogContent className="max-w-lg rounded-3xl">
-          <DialogHeader>
-            <DialogTitle className="font-black uppercase tracking-tight text-lg">{signingWaiver?.title}</DialogTitle>
-            <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Global Waiver · Hub Deployed · Requires Staff Acknowledgement
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-64 overflow-y-auto rounded-2xl bg-muted/30 p-4 text-xs leading-relaxed text-muted-foreground border">
-            {signingWaiver?.content || 'No waiver content provided.'}
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+          <div className="px-5 sm:px-7 pt-6 sm:pt-7 pb-4 border-b pr-14">
+            <DialogHeader className="space-y-2 text-left">
+              <DialogTitle className="font-black uppercase tracking-tight text-xl leading-tight break-words">{signingWaiver?.title}</DialogTitle>
+              <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-relaxed">
+                Team Waiver · Hub Deployed · Requires One Staff Acknowledgement
+              </DialogDescription>
+            </DialogHeader>
           </div>
-          <DialogFooter className="gap-2 flex-col sm:flex-row">
-            <Button variant="ghost" onClick={() => setSigningWaiver(null)} className="rounded-xl font-black text-[9px] uppercase">
+          <div data-waiver-signing-body className="px-5 sm:px-7 py-5 max-h-[55vh] overflow-y-auto overscroll-contain">
+            <div className="rounded-2xl bg-muted/30 p-4 sm:p-5 text-sm leading-6 text-foreground/80 border whitespace-pre-wrap break-words">
+              {signingWaiver?.content || 'No waiver content provided.'}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 flex-col-reverse sm:flex-row px-5 sm:px-7 py-4 sm:py-5 border-t bg-muted/10">
+            <Button variant="outline" onClick={() => setSigningWaiver(null)} className="h-11 rounded-xl font-black text-[10px] uppercase sm:min-w-28">
               Cancel
             </Button>
             <Button
               onClick={() => signingWaiver && handleSignGlobalWaiver(signingWaiver)}
               disabled={isSigning}
-              className="rounded-xl font-black text-[9px] uppercase bg-primary text-white shadow-lg shadow-primary/20 border-none"
+              className="h-11 rounded-xl font-black text-[10px] uppercase bg-primary text-white shadow-lg shadow-primary/20 border-none sm:min-w-44"
             >
               {isSigning ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> Signing...</> : <><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> I Agree & Sign</>}
             </Button>
