@@ -2,7 +2,7 @@
 
 **Starting audit commit:** `cc9a3c7c`
 **Phase 3 implementation base:** `2d491d1f`
-**Scope:** independently verified repairs for BUG-001 and BUG-002 only.
+**Scope:** scoped verified repairs for BUG-001 and BUG-002 only.
 
 ## Verified repairs
 
