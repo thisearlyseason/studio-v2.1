@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   X, 
@@ -34,6 +34,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -98,6 +108,7 @@ export function EventDetailDialog({
   const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games, isStaff, claimAssignment, activeTeam } = useTeam();
   const router = useRouter();
   const db = useFirestore();
+  const [isDeleteConfirmationOpen, setIsDeleteConfirmationOpen] = useState(false);
 
   const registrationsQuery = useMemoFirebase(() => {
     const eventTeamId = event.teamId || activeTeam?.id;
@@ -148,7 +159,8 @@ export function EventDetailDialog({
   }, [event.tournamentGames]);
 
   return (
-    <Dialog>
+    <>
+      <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent hideClose className="sm:max-w-4xl w-[95vw] sm:w-[100vw] p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
@@ -303,7 +315,7 @@ export function EventDetailDialog({
                     <Button variant="secondary" className="flex-1 rounded-2xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Activity</Button>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button aria-label={`Delete ${event.title}`} variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => onDelete(event.id)}>
+                        <Button aria-label={`Delete ${event.title}`} variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => setIsDeleteConfirmationOpen(true)}>
                           <Trash2 className="h-5 w-5" />
                         </Button>
                       </TooltipTrigger>
@@ -687,6 +699,26 @@ export function EventDetailDialog({
           </div>
         </div>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      <AlertDialog open={isDeleteConfirmationOpen} onOpenChange={setIsDeleteConfirmationOpen}>
+        <AlertDialogContent className="rounded-2xl border-none shadow-2xl bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-black uppercase">Delete Activity?</AlertDialogTitle>
+            <AlertDialogDescription className="font-medium text-muted-foreground">
+              This will permanently delete {event.title}. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => onDelete(event.id)}
+              className="bg-destructive text-white hover:bg-destructive/90 font-black"
+            >
+              Confirm Deletion
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

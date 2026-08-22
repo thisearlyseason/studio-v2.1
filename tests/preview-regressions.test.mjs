@@ -801,3 +801,15 @@ test('mobile Super Admin headers and newsletter sections stay inside the viewpor
     /grid w-full grid-cols-1 sm:grid-cols-3 lg:w-auto/,
   );
 });
+
+test('event deletion requires an explicit event-named confirmation before mutation', async () => {
+  const source = await readSource('../src/app/(dashboard)/events/EventDetailDialog.tsx');
+
+  assert.match(source, /useState\(false\)/);
+  assert.match(source, /<AlertDialog open=\{isDeleteConfirmationOpen\}/);
+  assert.match(source, /Delete Activity\?/);
+  assert.match(source, /\{event\.title\}/);
+  assert.match(source, /<AlertDialogCancel[^>]*>Cancel<\/AlertDialogCancel>/);
+  assert.match(source, /<AlertDialogAction[\s\S]{0,300}onDelete\(event\.id\)[\s\S]{0,300}Confirm Deletion/);
+  assert.doesNotMatch(source, /aria-label=\{`Delete \$\{event\.title\}`\}[\s\S]{0,240}onClick=\{\(\) => onDelete\(event\.id\)\}/);
+});
