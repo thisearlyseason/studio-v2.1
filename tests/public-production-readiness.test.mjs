@@ -87,8 +87,7 @@ test('Sports Hub keeps compact search through tablet widths', async () => {
   const layout = await source('../src/components/sports-hub/SportsHubClientLayout.tsx');
 
   assert.match(layout, /className="hidden lg:flex flex-1 max-w-sm"><SearchBar className="w-full"/);
-  assert.match(layout, /href="\/sports-hub\/search" className="lg:hidden"/);
-  assert.match(layout, /aria-label="Search Sports Hub"/);
+  assert.match(layout, /<Button asChild variant="ghost" size="icon" className="lg:hidden h-10 w-10 rounded-xl">\s*<Link href="\/sports-hub\/search" aria-label="Search Sports Hub"><Search/);
   assert.doesNotMatch(layout, /hidden md:flex flex-1 max-w-sm/);
-  assert.doesNotMatch(layout, /href="\/sports-hub\/search" className="md:hidden"/);
+  assert.doesNotMatch(layout, /<Link href="\/sports-hub\/search"[^>]*>\s*<Button\b/);
 });
