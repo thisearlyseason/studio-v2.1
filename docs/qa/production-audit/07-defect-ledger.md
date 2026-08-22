@@ -22,7 +22,7 @@
 | Network evidence | Create action returned HTTP 200; delete completed without an intervening confirmation state |
 | Likely code area | `src/app/(dashboard)/events/EventDetailDialog.tsx:306` directly called `onDelete(event.id)` from the button |
 | Related features | Schedule, attendance, RSVP, reminders, calendar views |
-| Artifacts | `output/playwright/2026-08-21T232919Z/root-demo/event-before-delete.yml`, `event-after-delete.yml`, `pro-demo.trace` |
+| Artifacts | `output/playwright/2026-08-21T232919Z/root-demo/event-before-delete.yml`, `event-after-delete.yml` |
 | Phase 3 confirmed root cause | The first-click destructive icon directly invoked the existing authorized `onDelete(event.id)` mutation; the server boundary was functioning, but the UI had no confirmation boundary. |
 | Phase 3 implementation | `92845ab2` (`fix: confirm event deletion`): `src/app/(dashboard)/events/EventDetailDialog.tsx` adds controlled `AlertDialog` confirmation; `tests/preview-regressions.test.mjs` adds the regression. |
 | Focused regression | `event deletion requires an explicit event-named confirmation before mutation`; `node --import tsx --test --test-name-pattern="event deletion requires" tests/preview-regressions.test.mjs` passed 1/1. Task verification also recorded `npm run typecheck` exit 0 and `npm test` 386/386 passing. |
@@ -30,7 +30,7 @@
 | Phase 3 browser retest | In Chromium, opening delete for `Conditioning Lab` showed a named confirmation; opening caused 0 event-action requests; Cancel preserved the event after reload; Confirm Deletion caused exactly 1 event-action request; the event was absent after reload. |
 | Console and network | 0 application errors and 0 warnings; no event-action deletion request before confirmation and exactly one successful request after confirmation. |
 | Related-area retest | Event view/edit behavior remained usable; the existing Schedule, attendance, RSVP, reminders, and calendar areas were not reclassified by this focused repair. |
-| Phase 3 artifacts | `output/playwright/phase3-post-fix/bug-001/bug-001-post-fix.png`, associated screenshot/page/console artifacts, and trace evidence under `output/playwright/phase3-post-fix/bug-001/`. |
+| Phase 3 artifacts | Sanitized verification: `docs/qa/production-audit/runs/2026-08-21T232919Z/phase3-fix-verification.md`; screenshot: `output/playwright/phase3-post-fix/bug-001/bug-001-post-fix.png`. Raw network traces were removed after final review. |
 | Status | FIXED AND VERIFIED |
 
 ## BUG-002 — Sports Hub header search collapses at tablet width
@@ -51,7 +51,7 @@
 | Network evidence | 0 unexpected failures; page and assets loaded successfully |
 | Likely code area | `src/components/sports-hub/SportsHubClientLayout.tsx` search container and `SearchBar.tsx` |
 | Related features | Sports Hub navigation, article/resource discovery, responsive header |
-| Artifacts | `output/playwright/2026-08-21T232919Z/public-content/sports-hub-tablet-768x1024.png` and public-content trace |
+| Artifacts | `output/playwright/2026-08-21T232919Z/public-content/sports-hub-tablet-768x1024.png` |
 | Phase 3 confirmed root cause | At the `md` breakpoint, the 144 px brand, Sports Hub identity, full search, Back to App, and Get Started appeared together; flex shrink reduced the search to 93.27 px at 768×1024. |
 | Phase 3 implementation | `135cd808` (`fix: preserve Sports Hub tablet search`) moves full search to `lg` and compact search below `lg`; `ee601ad3` (`fix: avoid nested Sports Hub search controls`) replaces nested link/button controls with `Button asChild > Link`. Files: `src/components/sports-hub/SportsHubClientLayout.tsx`, `tests/public-production-readiness.test.mjs`. |
 | Focused regression | `Sports Hub keeps compact search through tablet widths`; `node --import tsx --test --test-name-pattern="Sports Hub keeps compact search" tests/public-production-readiness.test.mjs` passed 1/1. Task verification recorded `npm run typecheck` exit 0 and `npm test` 387/387 passing. |
@@ -59,5 +59,5 @@
 | Phase 3 browser retest | Chromium at 390×844 and 768×1024 rendered one labelled compact anchor with the full input hidden; keyboard Enter reached `/sports-hub/search`. At 1024×768 and 1440×900, compact search was hidden and full input measured 349.27 px and 384 px. Full search submitted to `/sports-hub/search?q=practice%20plan`; document overflow was 0 at all four widths. |
 | Console and network | 0 failed HTTP requests and 0 application console errors. One unrelated Next.js development-only LCP warning appeared once at 768×1024. |
 | Related-area retest | Sports Hub search navigation and submission passed; article/resource discovery and authenticated preferences were not reclassified by this focused responsive repair. |
-| Phase 3 artifacts | Screenshots: `output/playwright/phase3-post-fix/bug-002/`; trace and network logs: `.playwright-cli/traces/`. |
+| Phase 3 artifacts | Sanitized verification: `docs/qa/production-audit/runs/2026-08-21T232919Z/phase3-fix-verification.md`; screenshots: `output/playwright/phase3-post-fix/bug-002/390x844.png`, `768x1024.png`, `1024x768.png`, and `1440x900.png`. Raw network traces were removed after final review. |
 | Status | FIXED AND VERIFIED |
