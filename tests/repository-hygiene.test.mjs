@@ -15,14 +15,24 @@ function repositoryFiles() {
 function repositoryScanFiles() {
   return repositoryFiles().map(file => {
     try {
-      if (!lstatSync(file).isFile()) return { file, contents: null };
-      const contents = readFileSync(file);
-      if (!isUtf8(contents) || contents.includes(0)) return { file, contents: null };
-      return { file, contents: contents.toString('utf8') };
+      if (!lstatSync(file).isFile()) return { file, contents: null, rawBytes: null, readError: false };
     } catch {
-      return { file, contents: null };
+      return { file, contents: null, rawBytes: null, readError: false };
+    }
+    try {
+      const rawBytes = readFileSync(file);
+      const contents = isUtf8(rawBytes) && !rawBytes.includes(0) ? rawBytes.toString('utf8') : null;
+      return { file, contents, rawBytes, readError: false };
+    } catch {
+      return { file, contents: null, rawBytes: null, readError: true };
     }
   });
+}
+
+function asciiScanContents(file) {
+  if (typeof file.contents === 'string') return file.contents;
+  if (Buffer.isBuffer(file.rawBytes)) return file.rawBytes.toString('latin1');
+  return null;
 }
 
 function isRecord(value) {
@@ -82,6 +92,64 @@ function containsLiteralSecret(file, contents, secretPatterns) {
   });
 }
 
+function readJsonString(contents, start) {
+  let escaped = false;
+  for (let index = start + 1; index < contents.length; index += 1) {
+    if (escaped) {
+      escaped = false;
+    } else if (contents[index] === '\\') {
+      escaped = true;
+    } else if (contents[index] === '"') {
+      try {
+        return { end: index, value: JSON.parse(contents.slice(start, index + 1)) };
+      } catch {
+        return { end: index, value: null };
+      }
+    }
+  }
+  return { end: contents.length - 1, value: null };
+}
+
+function skipWhitespace(contents, start) {
+  let index = start;
+  while (index < contents.length && /\s/u.test(contents[index])) index += 1;
+  return index;
+}
+
+function containsEmbeddedSessionCookie(contents) {
+  const objectFrames = [];
+  for (let index = 0; index < contents.length; index += 1) {
+    if (contents[index] === '{') {
+      objectFrames.push({ hasSessionName: false, hasValue: false });
+      continue;
+    }
+    if (contents[index] === '}') {
+      objectFrames.pop();
+      continue;
+    }
+    if (contents[index] !== '"' || objectFrames.length === 0) continue;
+
+    const key = readJsonString(contents, index);
+    const colon = skipWhitespace(contents, key.end + 1);
+    if (key.value === null || contents[colon] !== ':') {
+      index = key.end;
+      continue;
+    }
+    const valueStart = skipWhitespace(contents, colon + 1);
+    if (contents[valueStart] !== '"') {
+      index = key.end;
+      continue;
+    }
+    const value = readJsonString(contents, valueStart);
+    const frame = objectFrames.at(-1);
+    if (key.value === 'name' && value.value === ['__', 'session'].join('')) frame.hasSessionName = true;
+    if (key.value === 'value' && typeof value.value === 'string' && value.value.length > 0) frame.hasValue = true;
+    if (frame.hasSessionName && frame.hasValue) return true;
+    index = value.end;
+  }
+  return false;
+}
+
 function fixtureArtifactViolations(files) {
   const credentialArtifact = /(?:^|\/)(?:qa-phase7|qa-fixture)[^/]*(?:credential|manifest|storage[-_]?state)[^/]*\.(?:json|env)$/i;
   const secretPatterns = [
@@ -91,24 +159,18 @@ function fixtureArtifactViolations(files) {
     { name: 'password', pattern: new RegExp(['"password"\\s*:\\s*"', '[^"\\n]+"'].join(''), 'i') },
     { name: 'token', pattern: new RegExp(['"(?:access_|refresh_|id_)?token"\\s*:\\s*"', '[^"\\n]+"'].join(''), 'i') },
     { name: 'cookie-or-session', pattern: new RegExp(['"(?:cookie|session|__', 'session)"\\s*:\\s*"', '[^"\\n]+"'].join(''), 'i') },
-    {
-      name: 'playwright-session-cookie',
-      pattern: new RegExp([
-        '\\{',
-        '(?=[^{}]{0,2048}"name"\\s*:\\s*"__',
-        'session")',
-        '(?=[^{}]{0,2048}"value"\\s*:\\s*"[^"\\n]+")',
-        '[^{}]{0,2048}\\}',
-      ].join(''), 'i'),
-    },
   ];
   const violations = [];
-  for (const { file, contents } of files) {
+  for (const fileEntry of files) {
+    const { file, contents, readError } = fileEntry;
     if (credentialArtifact.test(file)) violations.push(`${file}: tracked fixture credential/manifest artifact`);
-    if (typeof contents !== 'string') continue;
-    const json = parseJson(contents);
+    if (readError) violations.push(`${file}: repository regular file could not be read`);
+    const scanContents = asciiScanContents(fileEntry);
+    if (scanContents === null) continue;
+    const json = typeof contents === 'string' ? parseJson(contents) : null;
     if (containsPhase7Manifest(json)) violations.push(`${file}: tracked Phase 7 manifest payload`);
-    const literalSecret = containsLiteralSecret(file, contents, secretPatterns);
+    const literalSecret = containsLiteralSecret(file, scanContents, secretPatterns)
+      || containsEmbeddedSessionCookie(scanContents);
     if (containsSecretJsonPayload(json) || literalSecret) {
       violations.push(`${file}: fixture secret material pattern`);
     }
@@ -130,8 +192,10 @@ test('tracked repository does not contain retired QA credentials or identifiers'
   ];
 
   const violations = [];
-  for (const { file, contents } of repositoryScanFiles()) {
-    if (typeof contents !== 'string') continue;
+  for (const fileEntry of repositoryScanFiles()) {
+    const { file } = fileEntry;
+    const contents = asciiScanContents(fileEntry);
+    if (contents === null) continue;
     for (const value of retiredValues) {
       if (contents.includes(value)) {
         violations.push(`${file}: contains a retired QA credential or identifier`);
@@ -213,6 +277,22 @@ test('fixture hygiene detects Phase 7 manifests and Playwright session cookies b
   ]);
 });
 
+test('fixture hygiene detects a long embedded Playwright session cookie in reversed property order', () => {
+  const storageState = JSON.stringify({
+    cookies: [{
+      value: `header.${'x'.repeat(3000)}.signature`,
+      name: ['__', 'session'].join(''),
+    }],
+    origins: [],
+  });
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/browser.capture', contents: `window.fixtureState = ${storageState};\n` },
+  ]), [
+    'tmp/browser.capture: fixture secret material pattern',
+  ]);
+});
+
 test('fixture hygiene detects a schema-valid Phase 7 manifest with omitted transitions', () => {
   const runId = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
   const manifest = JSON.stringify({
@@ -234,11 +314,9 @@ test('fixture hygiene detects a schema-valid Phase 7 manifest with omitted trans
 test('repository scan detects extension-independent embedded and multiline secret payloads safely', t => {
   const stem = `hygiene-probe-${process.pid}-${Date.now()}`;
   const paths = {
-    binary: `${stem}.bin`,
     embeddedState: `${stem}.capture`,
     multilineSecret: `${stem}.txt`,
     privateKey: `${stem}.keymaterial`,
-    unreadable: `${stem}.blocked`,
   };
   t.after(() => {
     for (const file of Object.values(paths)) {
@@ -272,9 +350,6 @@ test('repository scan detects extension-independent embedded and multiline secre
   writeFileSync(paths.privateKey, privateKey);
   writeFileSync(paths.embeddedState, `window.fixtureState = ${storageState};\n`);
   writeFileSync(paths.multilineSecret, multilineSecret);
-  writeFileSync(paths.binary, Buffer.concat([Buffer.from([0, 1, 2, 3]), Buffer.from(privateKey)]));
-  writeFileSync(paths.unreadable, 'ordinary non-secret text');
-  chmodSync(paths.unreadable, 0o000);
 
   const violations = fixtureArtifactViolations(repositoryScanFiles())
     .filter(item => item.startsWith(stem))
@@ -283,5 +358,43 @@ test('repository scan detects extension-independent embedded and multiline secre
     `${paths.embeddedState}: fixture secret material pattern`,
     `${paths.multilineSecret}: fixture secret material pattern`,
     `${paths.privateKey}: fixture secret material pattern`,
+  ].sort());
+});
+
+test('repository scan detects ASCII secrets in binary files and fails closed on unreadable regular files', t => {
+  const stem = `hygiene-byte-probe-${process.pid}-${Date.now()}`;
+  const paths = {
+    binary: `${stem}.blob`,
+    unreadable: `${stem}.blocked`,
+  };
+  t.after(() => {
+    for (const file of Object.values(paths)) {
+      try {
+        chmodSync(file, 0o600);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+      try {
+        unlinkSync(file);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+  });
+
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  writeFileSync(paths.binary, Buffer.concat([
+    Buffer.from([0xff, 0x00, 0xfe]),
+    Buffer.from(privateKey, 'ascii'),
+  ]));
+  writeFileSync(paths.unreadable, 'ordinary non-secret text');
+  chmodSync(paths.unreadable, 0o000);
+
+  const violations = fixtureArtifactViolations(repositoryScanFiles())
+    .filter(item => item.startsWith(stem))
+    .sort();
+  assert.deepEqual(violations, [
+    `${paths.binary}: fixture secret material pattern`,
+    `${paths.unreadable}: repository regular file could not be read`,
   ].sort());
 });
