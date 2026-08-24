@@ -39,7 +39,11 @@ function existingNamedApp(adminSdk) {
 
 function initializeNamedApp(adminSdk, env) {
   const existing = existingNamedApp(adminSdk);
-  if (existing) return { app: existing, credentialProjectId: null };
+  if (existing) return {
+    app: existing,
+    credentialProjectId: null,
+    credential: existing.options?.credential,
+  };
 
   const externalServiceAccount = env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (externalServiceAccount) {
@@ -52,21 +56,27 @@ function initializeNamedApp(adminSdk, env) {
     return {
       app: adminSdk.initializeApp(options, APP_NAME),
       credentialProjectId,
+      credential: options.credential,
     };
   }
 
   const declaredProjectId = env.GOOGLE_CLOUD_PROJECT || env.GCLOUD_PROJECT || null;
+  const credential = adminSdk.credential.applicationDefault();
   return {
     app: adminSdk.initializeApp({
-      credential: adminSdk.credential.applicationDefault(),
+      credential,
       ...(declaredProjectId ? { projectId: declaredProjectId } : {}),
     }, APP_NAME),
     credentialProjectId: declaredProjectId,
+    credential,
   };
 }
 
-function resolveProjectId(app, credentialProjectId) {
-  const projectId = app.options?.projectId || credentialProjectId;
+async function resolveProjectId(app, credentialProjectId, credential) {
+  let projectId = app.options?.projectId || credentialProjectId;
+  if (!projectId && typeof credential?.getProjectId === 'function') {
+    projectId = await credential.getProjectId();
+  }
   if (!projectId || typeof projectId !== 'string') {
     throw new Error('Firebase Admin must resolve an explicit project ID before fixture commands can run.');
   }
@@ -78,8 +88,8 @@ function resolveProjectId(app, credentialProjectId) {
  * This function is the only place this feature initializes Firebase Admin.
  */
 export async function createFirebaseAdapter({ env = process.env, adminSdk = firebaseAdmin } = {}) {
-  const { app, credentialProjectId } = initializeNamedApp(adminSdk, env);
-  const projectId = resolveProjectId(app, credentialProjectId);
+  const { app, credentialProjectId, credential } = initializeNamedApp(adminSdk, env);
+  const projectId = await resolveProjectId(app, credentialProjectId, credential);
   const auth = app.auth();
   const firestore = app.firestore();
 
@@ -87,11 +97,7 @@ export async function createFirebaseAdapter({ env = process.env, adminSdk = fire
     projectId,
     auth: {
       getUser: uid => auth.getUser(uid),
-      async createUser({ customClaims, ...input }) {
-        const created = await auth.createUser(input);
-        if (customClaims !== undefined) await auth.setCustomUserClaims(created.uid, customClaims);
-        return created;
-      },
+      createUser: input => auth.createUser(input),
       updateUser: (uid, input) => auth.updateUser(uid, input),
       setCustomUserClaims: (uid, claims) => auth.setCustomUserClaims(uid, claims),
       revokeRefreshTokens: uid => auth.revokeRefreshTokens(uid),
@@ -113,4 +119,3 @@ export async function createFirebaseAdapter({ env = process.env, adminSdk = fire
     },
   };
 }
-

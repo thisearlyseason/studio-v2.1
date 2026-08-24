@@ -25,12 +25,8 @@ function argumentValue(argv, flag) {
   return value;
 }
 
-/**
- * Verify that a command explicitly targets the isolated hosted staging project.
- * This function is intentionally pure: Firebase initialization and all adapter
- * operations must happen only after it returns successfully.
- */
-export function assertHostedStagingIntent({ argv, env, resolvedProjectId } = {}) {
+/** Verify only caller-supplied hosted-staging intent before Admin initialization. */
+export function assertRequestedHostedStagingIntent({ argv, env } = {}) {
   const project = argumentValue(argv, '--project');
   const confirmation = argumentValue(argv, '--confirm-project');
 
@@ -48,9 +44,19 @@ export function assertHostedStagingIntent({ argv, env, resolvedProjectId } = {})
     }
   }
 
+  return { projectId: STAGING_PROJECT_ID };
+}
+
+/**
+ * Verify that a command explicitly targets the isolated hosted staging project.
+ * The requested-intent portion is pure and may run before Firebase initialization.
+ */
+export function assertHostedStagingIntent({ argv, env, resolvedProjectId } = {}) {
+  const intent = assertRequestedHostedStagingIntent({ argv, env });
+
   if (resolvedProjectId !== STAGING_PROJECT_ID) {
     throw new Error('Firebase Admin resolved project does not match staging.');
   }
 
-  return { projectId: STAGING_PROJECT_ID };
+  return intent;
 }

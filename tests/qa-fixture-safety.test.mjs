@@ -84,6 +84,32 @@ function directAdapter(auth, firestore, calls = []) {
   };
 }
 
+function adcAdminSdk(credential, { appProjectId = null } = {}) {
+  const app = {
+    name: 'qa-fixtures-staging',
+    options: appProjectId ? { projectId: appProjectId } : {},
+    auth: () => ({
+      getUser: async uid => ({ uid }),
+      createUser: async input => ({ uid: input.uid }),
+      updateUser: async () => {},
+      setCustomUserClaims: async () => {},
+      revokeRefreshTokens: async () => {},
+      deleteUser: async () => {},
+    }),
+    firestore: () => ({
+      doc: () => ({ get: async () => ({ exists: false }), set: async () => {}, delete: async () => {} }),
+    }),
+  };
+  return {
+    getApps: () => [],
+    initializeApp(options) {
+      app.options = { ...options, ...app.options };
+      return app;
+    },
+    credential: { applicationDefault: () => credential },
+  };
+}
+
 class FakeAuth {
   constructor() {
     this.users = new Map();
@@ -240,6 +266,26 @@ test('cli rejects repository-local credential output before adapter mutation', a
   assert.deepEqual(calls, []);
 });
 
+test('cli resolves the repository boundary independently of a nested working directory', async () => {
+  let factoryCalls = 0;
+  const error = await runCli({
+    argv: hostedArgs(
+      'seed',
+      '--credentials', '../credentials.json',
+      '--manifest', '/tmp/qa-fixture-manifest.json',
+    ),
+    env: hostedEnvironment(),
+    cwd: resolve(repositoryRoot, 'scripts'),
+    repositoryRoot,
+    adapterFactory: async () => {
+      factoryCalls += 1;
+      throw new Error('adapter factory must not run');
+    },
+  }).then(() => null, reason => reason);
+  assert.match(error.message, /outside the repository/i);
+  assert.equal(factoryCalls, 0);
+});
+
 test('cli rejects repository-local manifest input before adapter mutation', async () => {
   const calls = [];
   await assert.rejects(() => runCli({
@@ -265,22 +311,27 @@ test('cli rejects unsupported commands without initializing an adapter', async (
   assert.equal(initialized, false);
 });
 
-test('cli guard failure keeps all mutable commands away from direct adapter methods', async () => {
-  const commands = [
-    hostedArgs('seed', '--manifest', '/tmp/manifest.json', '--credentials', '/tmp/credentials.json'),
-    hostedArgs('inspect', '--manifest', '/tmp/manifest.json'),
-    hostedArgs('cleanup', '--manifest', '/tmp/manifest.json'),
-    hostedArgs('transition', '--manifest', '/tmp/manifest.json', '--alias', 'qa-suspended'),
+test('cli rejects invalid requested intent before constructing an adapter', async () => {
+  const invalidRequests = [
+    { argv: hostedArgs('preflight'), env: {} },
+    { argv: hostedArgs('preflight'), env: { ...hostedEnvironment(), FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080' } },
+    {
+      argv: ['preflight', '--project', 'production-project', '--confirm-project', STAGING],
+      env: hostedEnvironment(),
+    },
   ];
-  for (const argv of commands) {
-    const calls = [];
+  for (const { argv, env } of invalidRequests) {
+    let factoryCalls = 0;
     await assert.rejects(() => runCli({
       argv,
-      env: {},
+      env,
       cwd: repositoryRoot,
-      adapterFactory: async () => directAdapter(new FakeAuth(), new FakeFirestore(), calls),
-    }), /ALLOW_STAGING_QA_FIXTURES/i);
-    assert.deepEqual(calls, [], argv[0]);
+      adapterFactory: async () => {
+        factoryCalls += 1;
+        throw new Error('adapter factory must not run');
+      },
+    }), /ALLOW_STAGING_QA_FIXTURES|emulator|confirmations/i);
+    assert.equal(factoryCalls, 0, argv.join(' '));
   }
 });
 
@@ -362,6 +413,40 @@ test('firebase adapter exposes only exact Auth and document operations', async (
   await adapter.firestore.set(`users/${RUN_ID}-owner-a`, { qaFixture: true });
   await adapter.firestore.delete(`users/${RUN_ID}-owner-a`);
   assert.deepEqual(calls.map(([operation]) => operation), ['set', 'delete']);
+});
+
+test('firebase adapter awaits ADC credential project discovery before exposing clients', async () => {
+  let discoveryCalls = 0;
+  const adapter = await createFirebaseAdapter({
+    adminSdk: adcAdminSdk({
+      async getProjectId() {
+        discoveryCalls += 1;
+        return STAGING;
+      },
+    }),
+    env: {},
+  });
+  assert.equal(adapter.projectId, STAGING);
+  assert.equal(discoveryCalls, 1);
+});
+
+test('cli fails closed when asynchronously discovered ADC project is not staging', async () => {
+  let discoveryCalls = 0;
+  await assert.rejects(() => runCli({
+    argv: hostedArgs('preflight'),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: () => createFirebaseAdapter({
+      adminSdk: adcAdminSdk({
+        async getProjectId() {
+          discoveryCalls += 1;
+          return 'production-project';
+        },
+      }),
+      env: {},
+    }),
+  }), /resolved project/i);
+  assert.equal(discoveryCalls, 1);
 });
 
 test('hosted fixture intent requires both exact staging confirmations', () => {
@@ -592,13 +677,25 @@ test('partial seed retry fails closed instead of emitting credentials with missi
   await assert.rejects(() => readFile(fixture.inputs.credentialPath, 'utf8'), /ENOENT/);
 });
 
-test('seed creates new Auth users with their ownership marker before recording them', async t => {
+test('seed records the ownership marker for newly created Auth users', async t => {
   const fixture = await lifecycleFixture(t);
   const identity = fixture.definition.identities[0];
-  fixture.auth.failSetCustomClaimsFor = identity.uid;
   const manifest = await fixture.lifecycle.seed(fixture.inputs);
   assert.equal(manifest.authUids.includes(identity.uid), true);
   assert.equal((await fixture.auth.getUser(identity.uid)).customClaims.qaFixture, true);
+});
+
+test('claims failure persists the newly created exact Auth UID for cleanup', async t => {
+  const fixture = await lifecycleFixture(t);
+  const identity = fixture.definition.identities[0];
+  fixture.auth.failSetCustomClaimsFor = identity.uid;
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /custom-claim write failure/i);
+  const partial = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.equal(partial.state, 'partial');
+  assert.deepEqual(partial.authUids, [identity.uid]);
+  await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.deepEqual(fixture.auth.deleted, [identity.uid]);
+  await assert.rejects(() => fixture.auth.getUser(identity.uid), /not found/i);
 });
 
 test('seed rejects duplicate resource paths and mismatched resource markers', async t => {

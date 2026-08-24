@@ -268,8 +268,11 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
             emailVerified: identity.emailVerified,
             disabled: false,
             password: passwords.get(identity.uid),
-            customClaims: identity.customClaims,
           });
+          if (!manifest.authUids.includes(identity.uid)) {
+            manifest = await persistPartial(manifestPath, { ...manifest, authUids: [...manifest.authUids, identity.uid] });
+          }
+          await auth.setCustomUserClaims(identity.uid, identity.customClaims);
         } else {
           await auth.updateUser(identity.uid, {
             email: identity.email,
@@ -447,7 +450,10 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       const identity = identityByUid.get(uid);
       const existing = await getAuthUser(uid);
       if (!existing) continue;
-      if (!identity || !markerMatches(existing.customClaims, identity.customClaims)) {
+      const mayRemoveFreshUnclaimedUser = manifest.state === 'partial'
+        && existing.uid === uid
+        && !existing.customClaims?.qaFixture;
+      if (!identity || (!markerMatches(existing.customClaims, identity.customClaims) && !mayRemoveFreshUnclaimedUser)) {
         retained.push('auth');
         continue;
       }

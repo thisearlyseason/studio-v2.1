@@ -1,16 +1,17 @@
 import { randomBytes } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { buildFixtureDefinition } from './definition.mjs';
 import { createFirebaseAdapter } from './firebase-adapter.mjs';
-import { assertHostedStagingIntent, STAGING_PROJECT_ID } from './guard.mjs';
+import { assertHostedStagingIntent, assertRequestedHostedStagingIntent } from './guard.mjs';
 import { createLifecycle } from './lifecycle.mjs';
 import { createRunId, validateManifest } from './manifest.mjs';
 
 const COMMANDS = new Set(['preflight', 'seed', 'inspect', 'cleanup', 'transition']);
 const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
+const MODULE_REPOSITORY_ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 
 function argumentValue(argv, flag) {
   const positions = argv.flatMap((value, index) => value === flag ? [index] : []);
@@ -20,9 +21,9 @@ function argumentValue(argv, flag) {
   return value;
 }
 
-async function resolvedExternalPath(value, cwd, label) {
+async function resolvedExternalPath(value, cwd, repositoryRoot, label) {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} path is required.`);
-  const repositoryRoot = await realpath(resolve(cwd));
+  const resolvedRepositoryRoot = await realpath(resolve(repositoryRoot));
   const target = isAbsolute(value) ? resolve(value) : resolve(cwd, value);
   let physicalTarget;
   try {
@@ -44,7 +45,7 @@ async function resolvedExternalPath(value, cwd, label) {
       }
     }
   }
-  const fromRepository = relative(repositoryRoot, physicalTarget);
+  const fromRepository = relative(resolvedRepositoryRoot, physicalTarget);
   if (fromRepository === '' || (!fromRepository.startsWith('..') && !isAbsolute(fromRepository))) {
     throw new Error(`${label} path must resolve outside the repository.`);
   }
@@ -102,6 +103,7 @@ export async function runCli({
   argv = [],
   env = process.env,
   cwd = process.cwd(),
+  repositoryRoot = MODULE_REPOSITORY_ROOT,
   adapterFactory = createFirebaseAdapter,
   stdout = process.stdout,
   stderr = process.stderr,
@@ -112,13 +114,16 @@ export async function runCli({
   if (!COMMANDS.has(command)) throw new Error(`Unsupported fixture command: ${command || '(missing)'}.`);
 
   const credentialPath = command === 'seed'
-    ? await resolvedExternalPath(argumentValue(argv, '--credentials'), cwd, 'Credential')
+    ? await resolvedExternalPath(argumentValue(argv, '--credentials'), cwd, repositoryRoot, 'Credential')
     : null;
-  const manifestPath = command === 'preflight' ? null : await resolvedExternalPath(argumentValue(argv, '--manifest'), cwd, 'Manifest');
+  const manifestPath = command === 'preflight' ? null : await resolvedExternalPath(argumentValue(argv, '--manifest'), cwd, repositoryRoot, 'Manifest');
   const alias = command === 'transition' ? argumentValue(argv, '--alias') : null;
 
-  // Resolving the Admin project is read-only. The guard blocks all lifecycle
-  // operations until both explicit confirmations and the resolved project agree.
+  // Reject malformed caller intent before creating even a read-only Admin client.
+  assertRequestedHostedStagingIntent({ argv, env });
+
+  // Resolving the Admin project is read-only. The second guard verifies it
+  // agrees with the prechecked caller intent before lifecycle operations.
   const adapter = await adapterFactory({ env });
   const { projectId } = assertHostedStagingIntent({ argv, env, resolvedProjectId: adapter?.projectId });
 
@@ -144,7 +149,7 @@ export async function runCli({
     definition = buildFixtureDefinition({ runId: manifest.runId, expiresAt: manifest.expiresAt });
   }
 
-  const lifecycle = makeLifecycle({ adapter, definition, cwd, manifestPath });
+  const lifecycle = makeLifecycle({ adapter, definition, cwd: repositoryRoot, manifestPath });
   let result;
   if (command === 'seed') result = await lifecycle.seed({ manifestPath, credentialPath });
   if (command === 'inspect') result = await lifecycle.inspect({ manifestPath });
