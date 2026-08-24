@@ -1,9 +1,11 @@
 # Phase 7 Hosted Fixture Environment
 
-- Current status: `BLOCKED AT RESOLVED-PROJECT GUARD`
+- Current status: `HOSTED RUN COMPLETE WITH PRODUCT FINDINGS; MANIFEST RESOURCES AND CREDENTIALS REMOVED`
 - Operator alias: `phase7-task4-hosted`
 - Original attempt window (UTC): `2026-08-24T15:00:30Z`–`2026-08-24T15:02:16Z`
-- Resumed attempt window (UTC): `2026-08-24T15:11:54Z`–`2026-08-24T15:13:20Z`
+- First resumed attempt window (UTC): `2026-08-24T15:11:54Z`–`2026-08-24T15:13:20Z`
+- Authorized hosted attempt start (UTC): `2026-08-24T15:43:10Z`
+- Authorized hosted attempt end (UTC): `2026-08-24T16:50:09Z`
 - Release status: `NOT READY`
 
 ## Immutable scope
@@ -11,29 +13,28 @@
 | Check | Sanitized result |
 | --- | --- |
 | Original Task 4 starting SHA | `d84efc61dec9fd10d954b7c9376bdc2e2d65d55f` |
-| Resumed Task 4 starting SHA | `75be64e49930359b8c29ff988ab614f3c9f6b090` (`fix: normalize fixture admin namespace`) |
-| Historical evidence commit | `7f7335ddb1bff01082772bd86872b72368f8b390` |
+| Adapter repair | `75be64e49930359b8c29ff988ab614f3c9f6b090` (`fix: normalize fixture admin namespace`) |
+| Authorized hosted-attempt starting SHA | `ed8728b76dea28af19b418317c8bf25f17f12ae0` |
+| Historical evidence commits | `7f7335ddb1bff01082772bd86872b72368f8b390`, `ed8728b76dea28af19b418317c8bf25f17f12ae0` |
 | Branch | `agent/phase7-staging-fixture-foundation` |
-| Workspace | Clean linked worktree at `.worktrees/phase3-root-cause-repair` before each attempt |
-| Requested Firebase project | `the-squad-v2-staging` |
-| Resumed Firebase Admin result | **MISMATCH** — sanitized guard output did not disclose the resolved non-staging ID |
+| Workspace | Linked worktree `.worktrees/phase3-root-cause-repair`; clean at authorized-attempt start |
+| Firebase project | `the-squad-v2-staging`, independently resolved by Firebase Admin before any client or write |
 | App Hosting backend | `studio` |
 | Canonical origin | `https://studio--the-squad-v2-staging.us-east4.hosted.app` |
-| Last independently proven deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, carried from the Phase 5 protected deployment record; Task 4 did not freshly establish a deployed SHA |
-| Fresh origin health from original attempt | HTTP `200`, sanitized JSON fields `status=ok`, `service=the-squad-web` |
-| Playwright prerequisite | `npx` available; bundled Playwright CLI `0.1.18`; system-Chrome option available |
+| Last independently proven deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, carried from the Phase 5 protected-deployment record; Task 4 did not infer a newer deployed SHA |
+| Playwright prerequisite | `npx` available; bundled Playwright CLI `0.1.18`; system Chrome used with new named contexts |
 
-No production project, production origin, deployment, provider, real user, or customer record was accessed. No credential or secret environment value was inspected or printed.
+Production, provider sandboxes, real users, deployment state, and customer records remained out of scope and untouched. No credential, token, cookie, private key, or secret environment value was inspected or printed.
 
-## Local prerequisite evidence
+## Historical guard evidence
 
-The original relevant safety and authorization baseline passed with the repository-supported TypeScript loader: `66 passed, 0 failed`. The adapter repair at `75be64e49930359b8c29ff988ab614f3c9f6b090` was independently reviewed before this resumed attempt. Task 4 freshly re-ran the fixture-safety, production-environment, and repository-hygiene set: `52 passed, 0 failed`.
+The first attempt failed before project resolution because the installed CommonJS-shaped `firebase-admin` namespace was not normalized. Repair `75be64e49930359b8c29ff988ab614f3c9f6b090` corrected that QA adapter integration. The historical `BUG-005` draft is therefore retired as a resolved QA-harness defect and is not a product-ledger candidate.
 
-The implementation plan's literal bare `node --test` form initially produced one module-resolution error for the repository alias `@/lib`. `package.json` defines `test:node` with `node --import tsx --test`; rerunning through that supported runner passed. No Task 4 source change was made.
+The first resumed attempt then proved the later safety gate: the available Application Default Credentials resolved a non-staging identity, so the command stopped before clients, writes, credentials, or browser contexts. The non-staging ID was not disclosed or overridden. Both historical external temporary workspaces were removed by their handlers.
 
-## Exact hosted read-only preflight
+## Authorized hosted preflight
 
-Both attempts executed the approved command unchanged:
+The authorized attempt began in another brand-new `mktemp -d` workspace outside the repository. The workspace and raw directory were both mode `0700`; the lifecycle handler was armed before the read-only command. The exact command and confirmations were unchanged:
 
 ```text
 ALLOW_STAGING_QA_FIXTURES=true npm run qa:fixtures:preflight -- \
@@ -42,30 +43,20 @@ ALLOW_STAGING_QA_FIXTURES=true npm run qa:fixtures:preflight -- \
   --origin https://studio--the-squad-v2-staging.us-east4.hosted.app
 ```
 
-Expected: exit `0`, resolved project `the-squad-v2-staging`, `safe=true`, nine aliases, two teams, and no writes.
+Sanitized exit-0 result:
 
-### Original attempt — historical QA-harness failure
-
-At `d84efc61dec9fd10d954b7c9376bdc2e2d65d55f`, the command exited nonzero before project resolution:
-
-```text
-Cannot read properties of undefined (reading 'find')
+```json
+{"command":"preflight","projectId":"the-squad-v2-staging","origin":"https://studio--the-squad-v2-staging.us-east4.hosted.app","plannedAliases":9,"plannedTeams":2,"safe":true}
 ```
 
-The installed `firebase-admin` package exposed its CommonJS API through the default export, while the adapter dereferenced the unnormalized module namespace. Commit `75be64e49930359b8c29ff988ab614f3c9f6b090` normalizes that namespace. The original `BUG-005` draft is retired as a resolved QA-harness defect, not a product defect and not a Task 5 ledger candidate.
+This was an independent exact-project resolution, not an environment override. Only after that result did Task 4 construct hosted Auth/Firestore clients and seed the isolated fixture.
 
-### Resumed attempt — project identity guard
+## Local and browser prerequisites
 
-With the adapter repair present, the command progressed through Admin initialization and reached the exact resolved-project guard. It then exited nonzero with:
+The adapter repair was independently reviewed before resumption and the fixture-safety, production-environment, and repository-hygiene set passed `52/52`. The repository-supported runner is `node --import tsx --test`; a literal bare-Node attempt had previously demonstrated only the known TypeScript-alias loader difference. Task 4 made no product, fixture, dependency, configuration, deployment, or provider patch.
 
-```text
-Firebase Admin resolved project does not match staging.
-```
-
-Only credential-source names and presence were checked. `FIREBASE_SERVICE_ACCOUNT_JSON`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`, and `GCLOUD_PROJECT` were all absent, so the adapter used Application Default Credentials discovery. The discovered identity was not staging. Its value was not printed, stored, or overridden.
-
-The safety invariant therefore did not pass. Task 4 stopped before fixture mutation and authenticated browser work exactly as required. This is an environment/authorization blocker rather than a product mismatch; no new `BUG-###` is assigned.
+The browser run used system Chrome through the bundled CLI, fresh contexts, snapshots before reference-based interaction, event-based waits, and `390×844` plus `1440×900` viewports. Thirty-eight named contexts were opened: 32 produced final scenario evidence, two were prerequisite/workflow probes, and four were discarded while correcting temporary evidence-helper assumptions. Every named context was closed before lifecycle cleanup.
 
 ## Artifact boundary
 
-Each attempt used a new `mktemp -d` workspace outside the repository with mode `0700`, a mode-`0700` raw-state directory, and an EXIT/INT/TERM cleanup handler registered before any seed could run. Both temporary workspaces were removed. No credential value, manifest content, cookie, token, storage state, screenshot, video, trace, private key, service-account JSON, or raw response was retained.
+The external credential file was created mode `0600`. Its values were read only inside redirected browser-fill helpers and never emitted. Raw snapshots, CLI logs, storage state, console/network transcripts, and credential-bearing state stayed in the mode-`0700` external workspace. Only the sanitized counts, paths, booleans, statuses, aliases, and defect reproductions in this run directory are eligible for commit. The validated credential helper returned `removed=true`; exact manifest absence was `authPresent=0`, `firestorePresent=0`. The finally handler completed and the exact private workspace path, including all raw artifacts, is absent.
