@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { isUtf8 } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 
 function repositoryFiles() {
@@ -12,15 +12,15 @@ function repositoryFiles() {
   ).split('\0').filter(Boolean);
 }
 
-function repositoryScanFiles() {
+function repositoryScanFiles({ lstat = lstatSync, readFile = readFileSync } = {}) {
   return repositoryFiles().map(file => {
     try {
-      if (!lstatSync(file).isFile()) return { file, contents: null, rawBytes: null, readError: false };
+      if (!lstat(file).isFile()) return { file, contents: null, rawBytes: null, readError: false };
     } catch {
       return { file, contents: null, rawBytes: null, readError: false };
     }
     try {
-      const rawBytes = readFileSync(file);
+      const rawBytes = readFile(file);
       const contents = isUtf8(rawBytes) && !rawBytes.includes(0) ? rawBytes.toString('utf8') : null;
       return { file, contents, rawBytes, readError: false };
     } catch {
@@ -116,7 +116,17 @@ function skipWhitespace(contents, start) {
   return index;
 }
 
-function containsEmbeddedSessionCookie(contents) {
+// One layer covers a JavaScript string; three permits nested serializers while bounding adversarial decode work.
+const MAX_SERIALIZED_JSON_DEPTH = 3;
+
+function containsDecodedSessionCookie(value, remainingDepth) {
+  return remainingDepth > 0
+    && typeof value === 'string'
+    && value.includes('{')
+    && containsEmbeddedSessionCookie(value, remainingDepth - 1);
+}
+
+function containsEmbeddedSessionCookie(contents, remainingDepth = MAX_SERIALIZED_JSON_DEPTH) {
   const objectFrames = [];
   for (let index = 0; index < contents.length; index += 1) {
     if (contents[index] === '{') {
@@ -127,9 +137,14 @@ function containsEmbeddedSessionCookie(contents) {
       objectFrames.pop();
       continue;
     }
-    if (contents[index] !== '"' || objectFrames.length === 0) continue;
+    if (contents[index] !== '"') continue;
 
     const key = readJsonString(contents, index);
+    if (containsDecodedSessionCookie(key.value, remainingDepth)) return true;
+    if (objectFrames.length === 0) {
+      index = key.end;
+      continue;
+    }
     const colon = skipWhitespace(contents, key.end + 1);
     if (key.value === null || contents[colon] !== ':') {
       index = key.end;
@@ -141,6 +156,7 @@ function containsEmbeddedSessionCookie(contents) {
       continue;
     }
     const value = readJsonString(contents, valueStart);
+    if (containsDecodedSessionCookie(value.value, remainingDepth)) return true;
     const frame = objectFrames.at(-1);
     if (key.value === 'name' && value.value === ['__', 'session'].join('')) frame.hasSessionName = true;
     if (key.value === 'value' && typeof value.value === 'string' && value.value.length > 0) frame.hasValue = true;
@@ -293,6 +309,26 @@ test('fixture hygiene detects a long embedded Playwright session cookie in rever
   ]);
 });
 
+test('fixture hygiene detects short and long Playwright storage state serialized inside JavaScript strings', () => {
+  const sessionName = ['__', 'session'].join('');
+  const shortStorageState = JSON.stringify({
+    cookies: [{ name: sessionName, value: 'short-fixture-token' }],
+    origins: [],
+  });
+  const longStorageState = JSON.stringify({
+    cookies: [{ value: `header.${'x'.repeat(3000)}.signature`, name: sessionName }],
+    origins: [],
+  });
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/serialized-short.js', contents: `const state = ${JSON.stringify(shortStorageState)};\n` },
+    { file: 'tmp/serialized-long.js', contents: `const state = ${JSON.stringify(longStorageState)};\n` },
+  ]), [
+    'tmp/serialized-short.js: fixture secret material pattern',
+    'tmp/serialized-long.js: fixture secret material pattern',
+  ]);
+});
+
 test('fixture hygiene detects a schema-valid Phase 7 manifest with omitted transitions', () => {
   const runId = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
   const manifest = JSON.stringify({
@@ -320,11 +356,6 @@ test('repository scan detects extension-independent embedded and multiline secre
   };
   t.after(() => {
     for (const file of Object.values(paths)) {
-      try {
-        chmodSync(file, 0o600);
-      } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
-      }
       try {
         unlinkSync(file);
       } catch (error) {
@@ -370,11 +401,6 @@ test('repository scan detects ASCII secrets in binary files and fails closed on 
   t.after(() => {
     for (const file of Object.values(paths)) {
       try {
-        chmodSync(file, 0o600);
-      } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
-      }
-      try {
         unlinkSync(file);
       } catch (error) {
         if (error?.code !== 'ENOENT') throw error;
@@ -388,9 +414,13 @@ test('repository scan detects ASCII secrets in binary files and fails closed on 
     Buffer.from(privateKey, 'ascii'),
   ]));
   writeFileSync(paths.unreadable, 'ordinary non-secret text');
-  chmodSync(paths.unreadable, 0o000);
 
-  const violations = fixtureArtifactViolations(repositoryScanFiles())
+  const violations = fixtureArtifactViolations(repositoryScanFiles({
+    readFile(file) {
+      if (file === paths.unreadable) throw new Error('deterministic fixture read failure');
+      return readFileSync(file);
+    },
+  }))
     .filter(item => item.startsWith(stem))
     .sort();
   assert.deepEqual(violations, [
