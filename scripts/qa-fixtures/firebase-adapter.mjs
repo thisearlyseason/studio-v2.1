@@ -90,32 +90,36 @@ async function resolveProjectId(app, credentialProjectId, credential) {
 export async function createFirebaseAdapter({ env = process.env, adminSdk = firebaseAdmin } = {}) {
   const { app, credentialProjectId, credential } = initializeNamedApp(adminSdk, env);
   const projectId = await resolveProjectId(app, credentialProjectId, credential);
-  const auth = app.auth();
-  const firestore = app.firestore();
 
   return {
     projectId,
-    auth: {
-      getUser: uid => auth.getUser(uid),
-      createUser: input => auth.createUser(input),
-      updateUser: (uid, input) => auth.updateUser(uid, input),
-      setCustomUserClaims: (uid, claims) => auth.setCustomUserClaims(uid, claims),
-      revokeRefreshTokens: uid => auth.revokeRefreshTokens(uid),
-      deleteUser: uid => auth.deleteUser(uid),
-    },
-    firestore: {
-      get(path) {
-        assertDocumentPath(path);
-        return firestore.doc(path).get();
-      },
-      set(path, data) {
-        assertDocumentPath(path);
-        return firestore.doc(path).set(data);
-      },
-      delete(path) {
-        assertDocumentPath(path);
-        return firestore.doc(path).delete();
-      },
+    connect() {
+      const auth = app.auth();
+      const firestore = app.firestore();
+      return {
+        auth: {
+          getUser: uid => auth.getUser(uid),
+          createUser: input => auth.createUser(input),
+          updateUser: (uid, input) => auth.updateUser(uid, input),
+          setCustomUserClaims: (uid, claims) => auth.setCustomUserClaims(uid, claims),
+          revokeRefreshTokens: uid => auth.revokeRefreshTokens(uid),
+          deleteUser: uid => auth.deleteUser(uid),
+        },
+        firestore: {
+          get(path) {
+            assertDocumentPath(path);
+            return firestore.doc(path).get();
+          },
+          set(path, data) {
+            assertDocumentPath(path);
+            return firestore.doc(path).set(data);
+          },
+          delete(path) {
+            assertDocumentPath(path);
+            return firestore.doc(path).delete();
+          },
+        },
+      };
     },
   };
 }

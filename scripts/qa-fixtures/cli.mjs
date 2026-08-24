@@ -149,7 +149,8 @@ export async function runCli({
     definition = buildFixtureDefinition({ runId: manifest.runId, expiresAt: manifest.expiresAt });
   }
 
-  const lifecycle = makeLifecycle({ adapter, definition, cwd: repositoryRoot, manifestPath });
+  const connectedAdapter = typeof adapter.connect === 'function' ? adapter.connect() : adapter;
+  const lifecycle = makeLifecycle({ adapter: connectedAdapter, definition, cwd: repositoryRoot, manifestPath });
   let result;
   if (command === 'seed') result = await lifecycle.seed({ manifestPath, credentialPath });
   if (command === 'inspect') result = await lifecycle.inspect({ manifestPath });

@@ -158,6 +158,9 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   const identityByUid = new Map(definition.identities.map(identity => [identity.uid, identity]));
   const identityByAlias = new Map(definition.identities.map(identity => [identity.alias, identity]));
   const documentByPath = new Map(definition.documents.map(document => [document.path, document]));
+  const ownershipProofByUid = new Map(definition.documents
+    .filter(document => document.kind === 'auth-ownership')
+    .map(document => [document.uid, document]));
   let lastSeededManifestPath = null;
 
   function emit(event, manifest) {
@@ -240,6 +243,27 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     return writeManifest(manifestPath, { ...manifest, state: 'partial' });
   }
 
+  async function persistOwnershipProof(identity, manifestPath, manifest) {
+    const proof = ownershipProofByUid.get(identity.uid);
+    if (!proof || proof.uid !== identity.uid) throw new Error('Fixture definition is missing an exact Auth ownership proof.');
+    let nextManifest = manifest;
+    if (!nextManifest.firestorePaths.includes(proof.path)) {
+      nextManifest = await persistPartial(manifestPath, {
+        ...nextManifest,
+        firestorePaths: [...nextManifest.firestorePaths, proof.path],
+      });
+    }
+    await firestore.set(proof.path, proof.data);
+    return nextManifest;
+  }
+
+  async function hasExactOwnershipProof(identity, manifest) {
+    const proof = ownershipProofByUid.get(identity.uid);
+    if (!proof || !manifest.firestorePaths.includes(proof.path)) return false;
+    const data = snapshotData(await firestore.get(proof.path));
+    return Boolean(data && data.uid === identity.uid && markerMatches(data, proof.data));
+  }
+
   async function seed({ manifestPath, credentialPath } = {}) {
     if (typeof manifestPath !== 'string' || typeof credentialPath !== 'string') {
       throw new Error('manifestPath and credentialPath are required.');
@@ -261,6 +285,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       for (const identity of definition.identities) {
         const existing = await getAuthUser(identity.uid);
         if (!existing) {
+          manifest = await persistOwnershipProof(identity, manifestPath, manifest);
           await auth.createUser({
             uid: identity.uid,
             email: identity.email,
@@ -434,7 +459,10 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     const retained = [];
     let firestoreDeleted = 0;
     let authDeleted = 0;
-    const paths = [...manifest.firestorePaths].sort((left, right) => right.split('/').length - left.split('/').length);
+    const ownershipPaths = new Set([...ownershipProofByUid.values()].map(proof => proof.path));
+    const paths = manifest.firestorePaths
+      .filter(path => !ownershipPaths.has(path))
+      .sort((left, right) => right.split('/').length - left.split('/').length);
     for (const path of paths) {
       const document = documentByPath.get(path);
       const existing = snapshotData(await firestore.get(path));
@@ -446,19 +474,41 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       await firestore.delete(path);
       firestoreDeleted += 1;
     }
+    const authRemovedOrAbsent = new Set();
     for (const uid of manifest.authUids) {
       const identity = identityByUid.get(uid);
       const existing = await getAuthUser(uid);
-      if (!existing) continue;
+      if (!existing) {
+        authRemovedOrAbsent.add(uid);
+        continue;
+      }
       const mayRemoveFreshUnclaimedUser = manifest.state === 'partial'
         && existing.uid === uid
-        && !existing.customClaims?.qaFixture;
+        && !existing.customClaims?.qaFixture
+        && identity
+        && await hasExactOwnershipProof(identity, manifest);
       if (!identity || (!markerMatches(existing.customClaims, identity.customClaims) && !mayRemoveFreshUnclaimedUser)) {
         retained.push('auth');
         continue;
       }
       await auth.deleteUser(uid);
       authDeleted += 1;
+      authRemovedOrAbsent.add(uid);
+    }
+    for (const proof of ownershipProofByUid.values()) {
+      if (!manifest.firestorePaths.includes(proof.path)) continue;
+      if (!authRemovedOrAbsent.has(proof.uid)) {
+        retained.push('firestore');
+        continue;
+      }
+      const existing = snapshotData(await firestore.get(proof.path));
+      if (!existing) continue;
+      if (existing.uid !== proof.uid || !markerMatches(existing, proof.data)) {
+        retained.push('firestore');
+        continue;
+      }
+      await firestore.delete(proof.path);
+      firestoreDeleted += 1;
     }
     if (retained.length === 0) await writeManifest(manifestPath, { ...manifest, state: 'cleaned' });
     return { deleted: { auth: authDeleted, firestore: firestoreDeleted }, retained };

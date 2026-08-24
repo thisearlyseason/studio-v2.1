@@ -134,6 +134,16 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       ...marker(runId, identity.alias, expiresAt),
     },
   }));
+  const ownershipDocuments = identities.map(identity => ({
+    alias: identity.alias,
+    kind: 'auth-ownership',
+    uid: identity.uid,
+    path: `qaAuditRuns/${runId}/authOwnership/${identity.uid}`,
+    data: {
+      uid: identity.uid,
+      ...marker(runId, identity.alias, expiresAt),
+    },
+  }));
   const teamDocuments = teams.map(team => ({ alias: team.alias, kind: 'team', path: `teams/${team.id}`, data: team }));
   const memberDocuments = members.map(member => ({ alias: member.alias, kind: 'member', path: member.path, data: member }));
   const membershipDocuments = members.map(member => {
@@ -167,6 +177,6 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
     identities,
     teams,
     members,
-    documents: [...userDocuments, ...teamDocuments, ...memberDocuments, ...membershipDocuments],
+    documents: [...ownershipDocuments, ...userDocuments, ...teamDocuments, ...memberDocuments, ...membershipDocuments],
   });
 }

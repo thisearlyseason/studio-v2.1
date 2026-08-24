@@ -84,21 +84,27 @@ function directAdapter(auth, firestore, calls = []) {
   };
 }
 
-function adcAdminSdk(credential, { appProjectId = null } = {}) {
+function adcAdminSdk(credential, { appProjectId = null, clientCalls = null } = {}) {
   const app = {
     name: 'qa-fixtures-staging',
     options: appProjectId ? { projectId: appProjectId } : {},
-    auth: () => ({
+    auth: () => {
+      clientCalls?.push('auth');
+      return {
       getUser: async uid => ({ uid }),
       createUser: async input => ({ uid: input.uid }),
       updateUser: async () => {},
       setCustomUserClaims: async () => {},
       revokeRefreshTokens: async () => {},
       deleteUser: async () => {},
-    }),
-    firestore: () => ({
-      doc: () => ({ get: async () => ({ exists: false }), set: async () => {}, delete: async () => {} }),
-    }),
+      };
+    },
+    firestore: () => {
+      clientCalls?.push('firestore');
+      return {
+        doc: () => ({ get: async () => ({ exists: false }), set: async () => {}, delete: async () => {} }),
+      };
+    },
   };
   return {
     getApps: () => [],
@@ -406,12 +412,13 @@ test('firebase adapter exposes only exact Auth and document operations', async (
     },
     env: {},
   });
-  assert.deepEqual(Object.keys(adapter.auth).sort(), [
+  const connected = adapter.connect();
+  assert.deepEqual(Object.keys(connected.auth).sort(), [
     'createUser', 'deleteUser', 'getUser', 'revokeRefreshTokens', 'setCustomUserClaims', 'updateUser',
   ]);
-  assert.deepEqual(Object.keys(adapter.firestore).sort(), ['delete', 'get', 'set']);
-  await adapter.firestore.set(`users/${RUN_ID}-owner-a`, { qaFixture: true });
-  await adapter.firestore.delete(`users/${RUN_ID}-owner-a`);
+  assert.deepEqual(Object.keys(connected.firestore).sort(), ['delete', 'get', 'set']);
+  await connected.firestore.set(`users/${RUN_ID}-owner-a`, { qaFixture: true });
+  await connected.firestore.delete(`users/${RUN_ID}-owner-a`);
   assert.deepEqual(calls.map(([operation]) => operation), ['set', 'delete']);
 });
 
@@ -447,6 +454,20 @@ test('cli fails closed when asynchronously discovered ADC project is not staging
     }),
   }), /resolved project/i);
   assert.equal(discoveryCalls, 1);
+});
+
+test('discovered production project rejects before constructing Auth or Firestore clients', async () => {
+  const clientCalls = [];
+  await assert.rejects(() => runCli({
+    argv: hostedArgs('preflight'),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: () => createFirebaseAdapter({
+      adminSdk: adcAdminSdk({ async getProjectId() { return 'production-project'; } }, { clientCalls }),
+      env: {},
+    }),
+  }), /resolved project/i);
+  assert.deepEqual(clientCalls, []);
 });
 
 test('hosted fixture intent requires both exact staging confirmations', () => {
@@ -664,8 +685,8 @@ test('seed leaves a partial manifest after a recorded write fails', async t => {
   await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /simulated/i);
   const partial = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
   assert.equal(partial.state, 'partial');
-  assert.equal(partial.authUids.length, fixture.definition.identities.length);
-  assert.equal(partial.firestorePaths.length, 1);
+  assert.equal(partial.authUids.length, 1);
+  assert.deepEqual(partial.firestorePaths, [fixture.definition.documents[0].path]);
 });
 
 test('partial seed retry fails closed instead of emitting credentials with missing passwords', async t => {
@@ -693,9 +714,41 @@ test('claims failure persists the newly created exact Auth UID for cleanup', asy
   const partial = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
   assert.equal(partial.state, 'partial');
   assert.deepEqual(partial.authUids, [identity.uid]);
+  const proofPath = `qaAuditRuns/${RUN_ID}/authOwnership/${identity.uid}`;
+  assert.deepEqual(partial.firestorePaths, [proofPath]);
+  assert.equal(fixture.firestore.has(proofPath), true);
+  let proofPresentAtAuthDeletion = false;
+  const deleteUser = fixture.auth.deleteUser.bind(fixture.auth);
+  fixture.auth.deleteUser = async uid => {
+    proofPresentAtAuthDeletion = fixture.firestore.has(proofPath);
+    return deleteUser(uid);
+  };
   await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
   assert.deepEqual(fixture.auth.deleted, [identity.uid]);
+  assert.equal(proofPresentAtAuthDeletion, true);
+  assert.equal(fixture.firestore.has(proofPath), false);
   await assert.rejects(() => fixture.auth.getUser(identity.uid), /not found/i);
+});
+
+test('cleanup retains an unmarked exact-namespace user from a forged partial manifest without ownership proof', async t => {
+  const fixture = await lifecycleFixture(t);
+  const identity = fixture.definition.identities[0];
+  await fixture.auth.createUser({ uid: identity.uid, email: identity.email });
+  await writeFile(fixture.inputs.manifestPath, JSON.stringify({
+    version: 1,
+    runId: RUN_ID,
+    projectId: STAGING,
+    authUids: [identity.uid],
+    firestorePaths: [],
+    state: 'partial',
+    createdAt: '2026-08-24T14:00:00.000Z',
+    updatedAt: '2026-08-24T14:00:00.000Z',
+    expiresAt: EXPIRES_AT,
+  }));
+  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.deepEqual(result.deleted, { auth: 0, firestore: 0 });
+  assert.deepEqual(result.retained, ['auth']);
+  assert.equal((await fixture.auth.getUser(identity.uid)).uid, identity.uid);
 });
 
 test('seed rejects duplicate resource paths and mismatched resource markers', async t => {
@@ -852,7 +905,7 @@ test('cleanup deletes only exact manifest resources and is idempotent', async t 
   await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
   assert.deepEqual(fixture.auth.deleted.sort(), [...manifest.authUids].sort());
   assert.equal(fixture.firestore.has('users/unrelated'), true);
-  assert.deepEqual(fixture.firestore.deleted, [...fixture.firestore.deleted].sort((left, right) => right.split('/').length - left.split('/').length));
+  assert.deepEqual(fixture.firestore.deleted.sort(), [...manifest.firestorePaths].sort());
 });
 
 test('credential-file removal refuses repository paths and removes only a caller-selected temporary file', async t => {
