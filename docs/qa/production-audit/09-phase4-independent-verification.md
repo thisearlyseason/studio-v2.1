@@ -5,7 +5,7 @@
 **Phase 4 verdict base:** `1b03d18133fefe321311b09f6dcd6389df149e18`\
 **Latest code-changing revision tested:** `597b6aac`\
 **Branch:** `agent/phase4-independent-verification`\
-**Environment:** linked local worktree, synthetic local Firebase Auth/Firestore/Storage emulators, and a fresh extension-disabled system Chrome profile for the scoped browser replays. No production SaaS or external provider was accessed.
+**Environment:** linked local worktree, synthetic local Firebase Auth/Firestore/Storage emulators, and fresh extension-disabled system Chrome profiles for the scoped browser replays. No production SaaS was accessed. The earlier public-row replay observed an HTTPS public video provider and provider-origin console entries; the later asset-boundary closure replay used only local synthetic/emulator state and accessed no external provider.
 
 ## Verdict
 
@@ -81,8 +81,8 @@ The retained video screenshot is a sanitized layout artifact, not playback evide
 | Task 3 — BUG-002 | Approved after the evidence-precision amendment named exact revisions and tightened responsive and navigation claims. Final open findings: 0 Critical, 0 Important, 0 Minor. |
 | Task 4 — blocker reconciliation | 0 Critical, 0 Important, 0 Minor; no findings. |
 | Prior broad whole-range review | 0 Critical, 2 Important, 2 Minor. This historical result is retained rather than overwritten by later fix work. |
-| First scoped re-review of `777bb0b2` | 0 Critical, 1 Important, 0 Minor. The remaining Important finding was the unsupported Sports Hub asset-boundary `PASS`. |
-| Asset-boundary closure cycle | The remaining evidence gap was addressed by safely passing the forced PDF failure/retry case, demoting the row for the unavailable unsafe/private fixtures, and reconciling every dependent total and mapping. No product defect was reproduced. Independent review of this closure is a separate gate. |
+| First scoped re-review of `777bb0b2` | 0 Critical, 1 Important, 1 Minor. The remaining Important finding was the unsupported Sports Hub asset-boundary `PASS`. The deferred Minor covered the misstated broad-review history and BUG-002 revision wording plus the unsupported playback implication from the retained video screenshot. |
+| Asset-boundary closure cycle | The remaining Important was addressed by safely passing the forced PDF failure/retry case, demoting the row for the unavailable unsafe/private fixtures, and reconciling every dependent total and mapping. The deferred Minor was addressed by correcting the review history and BUG-002 revision wording and by limiting the retained video screenshot to disclosed layout evidence rather than playback proof. No product defect was reproduced. Independent review of this closure is a separate gate. |
 
 The historical broad review, its first scoped re-review, and this closure implementation are separate audit moments. The closure does not retroactively change either prior finding count. Release posture remains constrained by 86 blocked coverage contracts, not by an open confirmed defect.
 
