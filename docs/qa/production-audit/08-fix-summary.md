@@ -27,7 +27,7 @@ Final follow-up verification passed 387/387 Node tests and 2/2 rendered tests.
 - `npm test` passed 387/387 Node tests and 2/2 rendered tests; `npm run test:rules` passed 38/38 tests.
 - `npm run build` passed and generated 564 static pages.
 - `npm --prefix functions run build` passed after `29be933e` pinned the dev-only jsdom harness to `24.1.3`, restoring the Functions-compatible `tough-cookie@4.1.4` resolution. No Functions configuration or production dependency changed.
-- Final review found no Critical code, authentication, or data-integrity findings. Its one Important evidence-handling finding was resolved by demo-session expiry and closure, raw-network-trace removal, and the sanitized verification summary. The Minor source-contract test limitation and inherited audit-document debt remain Phase 4 follow-up.
+- Final review found no Critical code, authentication, or data-integrity findings. Its one Important evidence-handling finding was resolved by demo-session expiry and closure, raw-network-trace removal, and the sanitized verification summary. Rendered component coverage resolves the prior source-contract limitation, and the reported audit-document Markdown debt is resolved. Phase 4 remains responsible for independent verification and the remaining `BLOCKED` coverage.
 
 ## Follow-up commits and complete changed-file manifest
 
@@ -43,7 +43,7 @@ The complete follow-up manifest from `a7ff55d4..29be933e` is:
 - `src/components/events/EventDeleteConfirmation.tsx`
 - `src/components/sports-hub/SportsHubClientLayout.tsx`
 - `tests/components/phase-3-repairs.test.tsx` and `tests/components/setup.ts`
-- `tests/preview-regressions.test.mjs` and `tests/public-production-readiness.test.mjs`
+- `tests/preview-regressions.test.mjs`
 - `docs/qa/production-audit/01-application-inventory.md`, `02-role-permission-matrix.md`, `03-critical-user-journeys.md`, `04-risk-register.md`, `05-coverage-matrix.md`, `06-test-account-requirements.md`, `07-defect-ledger.md`, `08-final-report.md`, and `08-fix-summary.md`
 - `docs/qa/production-audit/runs/2026-08-21T232919Z/00-environment.md`, `01-fixtures.md`, `experience-platform.md`, `identity-accounts.md`, `pro-demo-workflows.md`, and `public-content.md`
 - `docs/superpowers/plans/2026-08-21-production-readiness-audit.md` and `docs/superpowers/specs/2026-08-21-production-readiness-audit-design.md`
