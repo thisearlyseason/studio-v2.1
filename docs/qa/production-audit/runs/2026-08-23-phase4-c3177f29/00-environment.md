@@ -51,6 +51,6 @@ Discovery used `playwright-cli` 0.1.18 with installation disabled, followed by l
 | --- | --- | --- | --- |
 | Chromium | UNAVAILABLE | No executable found in the local Playwright cache paths. | Local toolchain maintainer |
 | Firefox | UNAVAILABLE | No executable found in the local Playwright cache paths. | Local toolchain maintainer |
-| WebKit | AVAILABLE | Local executable `webkit-2336/pw_run.sh` is present in the standard Playwright cache. | Local toolchain maintainer |
+| WebKit | UNAVAILABLE | A cached `webkit-2336/pw_run.sh` executable was discovered, but the bundled CLI requires build `webkit-2342`; the cached build is therefore unusable by this toolchain. No browser was downloaded. | Local toolchain maintainer |
 
 Browser-engine availability is not authorization to use an authenticated fixture or provider account.

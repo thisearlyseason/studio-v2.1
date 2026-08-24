@@ -66,7 +66,7 @@ This is a value-free inventory derived from `06-test-account-requirements.md` an
 | Calendar disposable client or raw HTTP fixture | NOT AUTHORIZED | Calendar configuration is unavailable and no approved opaque fixture reference was supplied. | Authorized calendar fixture owner |
 | Playwright Chromium engine | UNAVAILABLE | No local Chromium executable was found in the standard Playwright cache paths. | Local toolchain maintainer |
 | Playwright Firefox engine | UNAVAILABLE | No local Firefox executable was found in the standard Playwright cache paths. | Local toolchain maintainer |
-| Playwright WebKit engine | AVAILABLE | A local WebKit executable is present; no authenticated fixture use is authorized. | Local toolchain maintainer |
+| Playwright WebKit engine | UNAVAILABLE | Cached build `webkit-2336` was discovered, but the bundled CLI requires `webkit-2342`; no download was permitted or performed. | Local toolchain maintainer |
 
 ## Destructive and historical fixtures
 

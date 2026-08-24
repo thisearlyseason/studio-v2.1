@@ -4,7 +4,7 @@
 
 The current `05-coverage-matrix.md` contains exactly 88 data rows: 3 `PASS`, 0 `FAIL`, 85 `BLOCKED`, 0 `NOT RUN`, and 0 `NOT APPLICABLE`. The historical Phase 2 total in `08-final-report.md` remains 3 `PASS`, 2 `FAIL`, and 83 `BLOCKED`. The difference is intentional: BUG-001 and BUG-002 were repaired and moved from `FAIL` to `BLOCKED`, while their complete row contracts still lack required fixtures.
 
-Task 1 found no authorized durable identity, populated cross-tenant fixture, provider sandbox, FCM device, hosted staging environment, destructive-test authorization, or deployment/rollback artifact. Its local WebKit discovery and the system-Chrome local replays do not provide those dependencies. The development-only CSP correction permits exact local Firebase emulator origins only; it does not establish authenticated, provider, device, hosted, or operational coverage. Accordingly, no row is newly unblocked or promoted.
+Task 1 found no authorized durable identity, populated cross-tenant fixture, provider sandbox, FCM device, hosted staging environment, destructive-test authorization, or deployment/rollback artifact. The cached WebKit build is incompatible with the bundled CLI, and the system-Chrome local replays do not provide those dependencies. The strict development-only CSP correction permits exact local Firebase emulator origins only; it does not establish authenticated, provider, device, hosted, or operational coverage. Accordingly, no blocked row is newly unblocked or promoted. The three existing public `PASS` rows were freshly replayed and remain `PASS`; see `public-pass-refresh.md`.
 
 ## Blocked-row dependency map
 
