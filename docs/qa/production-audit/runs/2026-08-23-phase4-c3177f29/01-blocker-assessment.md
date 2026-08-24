@@ -89,3 +89,11 @@ This is a value-free inventory derived from `06-test-account-requirements.md` an
 ## Consequence for later tasks
 
 Local automated evidence may be collected where it does not depend on these fixtures. All coverage requiring a named role, cross-tenant state, provider callback, hosted browser session, FCM-capable device, or destructive lifecycle remains blocked until the corresponding owner supplies an authorized isolated opaque reference and any required configuration.
+
+## Current Phase 4 reassessment
+
+The availability result is unchanged after the focused BUG-001 and BUG-002 replays. Those replays used safe local anonymous/visitor flows and established that the two scoped repairs independently pass, but they did not supply durable registered-role identities, populated cross-tenant records, provider sandboxes, a hosted staging environment, an FCM-capable device, destructive authorization, or operational evidence.
+
+The current matrix therefore contains 88 rows: 3 `PASS`, 0 `FAIL`, 85 `BLOCKED`, 0 `NOT RUN`, and 0 `NOT APPLICABLE`. No blocked row was promoted. The historical Phase 2 report remains 3 `PASS`, 2 `FAIL`, and 83 `BLOCKED`; BUG-001 and BUG-002 later moved from `FAIL` to `BLOCKED` because their focused repairs pass while their full matrix evidence contracts remain fixture-blocked.
+
+The one-to-one current dependency reason for each of the 85 blocked rows is recorded in `coverage-reconciliation.md`.
