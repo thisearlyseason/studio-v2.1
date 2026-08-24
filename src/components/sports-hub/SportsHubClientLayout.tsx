@@ -21,27 +21,33 @@ const HUB_SECTIONS = [
   ['Featured', '/sports-hub/featured'],
 ] as const;
 
+export function SportsHubHeader() {
+  return (
+    <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-md border-b">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 md:h-20 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 shrink-0">
+          <Link href="/" className="hidden md:block"><BrandLogo variant="light-background" className="h-8 w-36" /></Link>
+          <span className="hidden md:block text-muted-foreground/40 text-lg font-light">/</span>
+          <Link href="/sports-hub" className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-xl hero-gradient flex items-center justify-center shrink-0"><BookOpen className="h-4 w-4 text-white" /></div>
+            <span className="font-black uppercase tracking-tighter text-sm md:text-base">Sports Hub</span>
+          </Link>
+        </div>
+        <div className="hidden lg:flex flex-1 max-w-sm"><SearchBar className="w-full" /></div>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="ghost" size="sm" className="hidden md:inline-flex font-black text-xs uppercase tracking-widest text-muted-foreground hover:text-primary gap-1.5"><Link href="/dashboard"><ChevronLeft className="h-3.5 w-3.5" />Back to App</Link></Button>
+          <Button asChild variant="ghost" size="icon" className="lg:hidden h-10 w-10 rounded-xl"><Link href="/sports-hub/search" aria-label="Search Sports Hub"><Search className="h-4 w-4" /></Link></Button>
+          <Button asChild size="sm" className="font-black text-xs uppercase tracking-widest hidden sm:flex"><Link href="/login">Get Started</Link></Button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 export function SportsHubClientLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-md border-b">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 md:h-20 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 shrink-0">
-            <Link href="/" className="hidden md:block"><BrandLogo variant="light-background" className="h-8 w-36" /></Link>
-            <span className="hidden md:block text-muted-foreground/40 text-lg font-light">/</span>
-            <Link href="/sports-hub" className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-xl hero-gradient flex items-center justify-center shrink-0"><BookOpen className="h-4 w-4 text-white" /></div>
-              <span className="font-black uppercase tracking-tighter text-sm md:text-base">Sports Hub</span>
-            </Link>
-          </div>
-          <div className="hidden lg:flex flex-1 max-w-sm"><SearchBar className="w-full" /></div>
-          <div className="flex items-center gap-2">
-            <Link href="/dashboard" className="hidden md:block"><Button variant="ghost" size="sm" className="font-black text-xs uppercase tracking-widest text-muted-foreground hover:text-primary gap-1.5"><ChevronLeft className="h-3.5 w-3.5" />Back to App</Button></Link>
-            <Button asChild variant="ghost" size="icon" className="lg:hidden h-10 w-10 rounded-xl"><Link href="/sports-hub/search" aria-label="Search Sports Hub"><Search className="h-4 w-4" /></Link></Button>
-            <Link href="/login"><Button size="sm" className="font-black text-xs uppercase tracking-widest hidden sm:flex">Get Started</Button></Link>
-          </div>
-        </div>
-      </header>
+      <SportsHubHeader />
       <SectionNav />
       <main className="flex-1">{children}</main>
       <footer className="bg-foreground text-background mt-20">

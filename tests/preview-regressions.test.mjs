@@ -803,13 +803,16 @@ test('mobile Super Admin headers and newsletter sections stay inside the viewpor
 });
 
 test('event deletion requires an explicit event-named confirmation before mutation', async () => {
-  const source = await readSource('../src/app/(dashboard)/events/EventDetailDialog.tsx');
+  const [source, confirmation] = await Promise.all([
+    readSource('../src/app/(dashboard)/events/EventDetailDialog.tsx'),
+    readSource('../src/components/events/EventDeleteConfirmation.tsx'),
+  ]);
 
-  assert.match(source, /useState\(false\)/);
-  assert.match(source, /<AlertDialog open=\{isDeleteConfirmationOpen\}/);
-  assert.match(source, /Delete Activity\?/);
-  assert.match(source, /\{event\.title\}/);
-  assert.match(source, /<AlertDialogCancel[^>]*>Cancel<\/AlertDialogCancel>/);
-  assert.match(source, /<AlertDialogAction[\s\S]{0,300}onDelete\(event\.id\)[\s\S]{0,300}Confirm Deletion/);
-  assert.doesNotMatch(source, /aria-label=\{`Delete \$\{event\.title\}`\}[\s\S]{0,240}onClick=\{\(\) => onDelete\(event\.id\)\}/);
+  assert.match(source, /<EventDeleteConfirmation event=\{event\} onDelete=\{onDelete\} \/>/);
+  assert.match(confirmation, /useState\(false\)/);
+  assert.match(confirmation, /Delete Activity\?/);
+  assert.match(confirmation, /This will permanently delete \{event\.title\}/);
+  assert.match(confirmation, /<AlertDialogCancel[^>]*>Cancel<\/AlertDialogCancel>/);
+  assert.match(confirmation, /onDelete\(event\.id\)/);
+  assert.doesNotMatch(confirmation, /aria-label=\{`Delete \$\{event\.title\}`\}[\s\S]{0,240}onClick=\{\(\) => onDelete\(event\.id\)\}/);
 });

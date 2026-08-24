@@ -13,7 +13,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.mjs",
+    "test": "npm run test:node && npm run test:components",
+    "test:node": "node --import tsx --test tests/*.test.mjs",
+    "test:components": "vitest run",
     "test:rules": "firebase --project demo-the-squad-rules-test emulators:exec --only firestore,storage \"node --test --test-concurrency=1 tests/rules/*.test.mjs\"",
     "verify:env": "node scripts/check-production-env.mjs",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:rules && npm run build && npm --prefix functions run build"
@@ -75,14 +77,20 @@
     "@eslint/eslintrc": "3.3.3",
     "@eslint/js": "9.39.5",
     "@firebase/rules-unit-testing": "3.0.4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
     "@types/node": "^20",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
+    "@vitejs/plugin-react": "^6.1.0",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.20",
     "firebase-tools": "15.23.0",
+    "jsdom": "^26.1.0",
     "tsx": "4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "fast-uri": "4.1.2",

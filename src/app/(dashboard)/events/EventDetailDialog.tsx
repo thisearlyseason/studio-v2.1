@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   X, 
@@ -10,7 +10,6 @@ import {
   MapPin, 
   Plus, 
   Download, 
-  Trash2, 
   Users,
   Dumbbell,
   Play,
@@ -29,24 +28,10 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from '@/components/ui/dialog';
-import { 
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EventDeleteConfirmation } from '@/components/events/EventDeleteConfirmation';
 import { useTeam, TeamEvent, Member, TournamentGame } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
 import { format, isSameDay, parseISO } from 'date-fns';
@@ -108,7 +93,6 @@ export function EventDetailDialog({
   const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games, isStaff, claimAssignment, activeTeam } = useTeam();
   const router = useRouter();
   const db = useFirestore();
-  const [isDeleteConfirmationOpen, setIsDeleteConfirmationOpen] = useState(false);
 
   const registrationsQuery = useMemoFirebase(() => {
     const eventTeamId = event.teamId || activeTeam?.id;
@@ -313,16 +297,7 @@ export function EventDetailDialog({
                   </Button>
                   <div className="flex gap-2">
                     <Button variant="secondary" className="flex-1 rounded-2xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Activity</Button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button aria-label={`Delete ${event.title}`} variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => setIsDeleteConfirmationOpen(true)}>
-                          <Trash2 className="h-5 w-5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent className="bg-destructive text-white border-none">
-                        Destroy Activity Log
-                      </TooltipContent>
-                    </Tooltip>
+                    <EventDeleteConfirmation event={event} onDelete={onDelete} />
                   </div>
                 </div>
               )}
@@ -700,25 +675,6 @@ export function EventDetailDialog({
         </div>
       </DialogContent>
       </Dialog>
-      <AlertDialog open={isDeleteConfirmationOpen} onOpenChange={setIsDeleteConfirmationOpen}>
-        <AlertDialogContent className="rounded-2xl border-none shadow-2xl bg-white">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-xl font-black uppercase">Delete Activity?</AlertDialogTitle>
-            <AlertDialogDescription className="font-medium text-muted-foreground">
-              This will permanently delete {event.title}. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => onDelete(event.id)}
-              className="bg-destructive text-white hover:bg-destructive/90 font-black"
-            >
-              Confirm Deletion
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
