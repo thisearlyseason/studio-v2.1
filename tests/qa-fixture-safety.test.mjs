@@ -12,9 +12,124 @@ import {
   createRunId,
   validateManifest,
 } from '../scripts/qa-fixtures/manifest.mjs';
+import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
+import { createLifecycle, removeCredentialFile } from '../scripts/qa-fixtures/lifecycle.mjs';
+import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const STAGING = STAGING_PROJECT_ID;
 const RUN_ID = 'qa-phase7-20260824T140000Z-ab12';
+const EXPIRES_AT = '2026-08-31T14:00:00.000Z';
+
+class FakeAuth {
+  constructor() {
+    this.users = new Map();
+    this.deleted = [];
+    this.revoked = [];
+    this.failSetCustomClaimsFor = null;
+  }
+
+  async getUser(uid) {
+    const user = this.users.get(uid);
+    if (!user) {
+      const error = new Error('User not found');
+      error.code = 'auth/user-not-found';
+      throw error;
+    }
+    return structuredClone(user);
+  }
+
+  async createUser(input) {
+    if (this.users.has(input.uid)) throw new Error('duplicate auth user');
+    const user = { ...input, customClaims: structuredClone(input.customClaims || {}) };
+    this.users.set(input.uid, user);
+    return structuredClone(user);
+  }
+
+  async updateUser(uid, input) {
+    const user = this.users.get(uid);
+    if (!user) throw new Error('User not found');
+    this.users.set(uid, { ...user, ...input });
+    return this.getUser(uid);
+  }
+
+  async setCustomUserClaims(uid, customClaims) {
+    if (uid === this.failSetCustomClaimsFor) throw new Error('simulated custom-claim write failure');
+    const user = this.users.get(uid);
+    if (!user) throw new Error('User not found');
+    this.users.set(uid, { ...user, customClaims: structuredClone(customClaims) });
+  }
+
+  async revokeRefreshTokens(uid) {
+    this.revoked.push(uid);
+  }
+
+  async deleteUser(uid) {
+    this.deleted.push(uid);
+    this.users.delete(uid);
+  }
+}
+
+class FakeFirestore {
+  constructor() {
+    this.documents = new Map();
+    this.deleted = [];
+    this.failPath = null;
+  }
+
+  inject(path, data) {
+    this.documents.set(path, structuredClone(data));
+  }
+
+  has(path) {
+    return this.documents.has(path);
+  }
+
+  async get(path) {
+    const data = this.documents.get(path);
+    return data === undefined ? null : structuredClone(data);
+  }
+
+  async set(path, data) {
+    if (path === this.failPath) throw new Error('simulated Firestore write failure');
+    this.documents.set(path, structuredClone(data));
+  }
+
+  async delete(path) {
+    this.deleted.push(path);
+    this.documents.delete(path);
+  }
+}
+
+async function lifecycleFixture(t, runId = RUN_ID) {
+  const directory = await mkdtemp(join(tmpdir(), 'qa-fixture-lifecycle-'));
+  t.after(async () => {
+    await removeCredentialFile(join(directory, 'credentials.json'), process.cwd());
+  });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
+  const auth = new FakeAuth();
+  const firestore = new FakeFirestore();
+  const lifecycle = createLifecycle({
+    auth,
+    firestore,
+    clock: () => new Date('2026-08-24T14:00:00.000Z'),
+    randomBytes: size => Buffer.alloc(size, 7),
+    definition,
+    repositoryRoot: process.cwd(),
+  });
+  return {
+    auth,
+    definition,
+    directory,
+    firestore,
+    lifecycle,
+    inputs: {
+      manifestPath: join(directory, 'manifest.json'),
+      credentialPath: join(directory, 'credentials.json'),
+    },
+  };
+}
 
 test('hosted fixture intent requires both exact staging confirmations', () => {
   assert.throws(() => assertHostedStagingIntent({
@@ -191,4 +306,140 @@ test('manifest validation returns a deeply frozen normalized copy without mutati
   assert.throws(() => {
     result.authUids.push(`${RUN_ID}-owner-b`);
   }, TypeError);
+});
+
+test('definition contains the approved identities and two distinct tenants', () => {
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
+  assert.deepEqual(definition.identities.map(item => item.alias), [
+    'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant',
+    'qa-team-member', 'qa-multi-org', 'qa-fake-superadmin',
+    'qa-unverified', 'qa-suspended', 'qa-removed-member',
+  ]);
+  assert.notEqual(definition.teams[0].sentinel, definition.teams[1].sentinel);
+  assert.equal(definition.identities.find(item => item.alias === 'qa-fake-superadmin').customClaims.role, undefined);
+  assert.equal(definition.identities.find(item => item.alias === 'qa-suspended').accountStatus, 'active');
+  assert.equal(definition.members.find(item => item.alias === 'qa-removed-member').status, 'active');
+  assert.equal(definition.members.filter(item => item.alias === 'qa-multi-org').length, 2);
+});
+
+test('seed is idempotent only for matching marked resources', async t => {
+  const fixture = await lifecycleFixture(t);
+  const first = await fixture.lifecycle.seed(fixture.inputs);
+  const second = await fixture.lifecycle.seed(fixture.inputs);
+  assert.deepEqual(second.authUids, first.authUids);
+
+  const collisionRunId = 'qa-phase7-20260824T140001Z-cd34';
+  const collision = await lifecycleFixture(t, collisionRunId);
+  collision.firestore.inject(`users/${collision.definition.identities[0].uid}`, { qaFixture: false });
+  await assert.rejects(() => collision.lifecycle.seed(collision.inputs), /collision/i);
+});
+
+test('seed leaves a partial manifest after a recorded write fails', async t => {
+  const fixture = await lifecycleFixture(t);
+  fixture.firestore.failPath = fixture.definition.documents[1].path;
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /simulated/i);
+  const partial = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.equal(partial.state, 'partial');
+  assert.equal(partial.authUids.length, fixture.definition.identities.length);
+  assert.equal(partial.firestorePaths.length, 1);
+});
+
+test('seed creates new Auth users with their ownership marker before recording them', async t => {
+  const fixture = await lifecycleFixture(t);
+  const identity = fixture.definition.identities[0];
+  fixture.auth.failSetCustomClaimsFor = identity.uid;
+  const manifest = await fixture.lifecycle.seed(fixture.inputs);
+  assert.equal(manifest.authUids.includes(identity.uid), true);
+  assert.equal((await fixture.auth.getUser(identity.uid)).customClaims.qaFixture, true);
+});
+
+test('seed rejects duplicate resource paths and mismatched resource markers', async t => {
+  const fixture = await lifecycleFixture(t);
+  const duplicate = structuredClone(fixture.definition);
+  duplicate.documents.push(structuredClone(duplicate.documents[0]));
+  assert.throws(() => createLifecycle({
+    auth: fixture.auth,
+    firestore: fixture.firestore,
+    definition: duplicate,
+    randomBytes: size => Buffer.alloc(size, 3),
+    repositoryRoot: process.cwd(),
+  }), /duplicate/i);
+
+  const mismatched = await lifecycleFixture(t, 'qa-phase7-20260824T140002Z-ef56');
+  const target = mismatched.definition.documents[0];
+  mismatched.firestore.inject(target.path, { ...target.data, qaFixtureAlias: 'different-alias' });
+  await assert.rejects(() => mismatched.lifecycle.seed(mismatched.inputs), /collision|marker/i);
+});
+
+test('seed writes private browser credentials and returns redacted inspection output', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const mode = (await stat(fixture.inputs.credentialPath)).mode & 0o777;
+  assert.equal(mode, 0o600);
+  const credentialText = await readFile(fixture.inputs.credentialPath, 'utf8');
+  assert.match(credentialText, /qa-coach-owner-a/);
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, true);
+  assert.equal(JSON.stringify(inspection).includes('BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH'), false);
+  assert.deepEqual(inspection.aliases.sort(), fixture.definition.identities.map(item => item.alias).sort());
+});
+
+test('inspect detects active membership-cache drift on an exact manifest resource', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-multi-org');
+  const userPath = `users/${identity.uid}`;
+  const user = await fixture.firestore.get(userPath);
+  await fixture.firestore.set(userPath, { ...user, teamMemberships: {} });
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, false);
+});
+
+test('negative states require a seeded active baseline and revoke sessions after transition', async t => {
+  const fixture = await lifecycleFixture(t);
+  await assert.rejects(() => fixture.lifecycle.applyNegativeState('qa-suspended'), /baseline/i);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const result = await fixture.lifecycle.applyNegativeState('qa-suspended');
+  assert.equal(result.state, 'suspended');
+  const suspended = fixture.definition.identities.find(item => item.alias === 'qa-suspended');
+  assert.equal((await fixture.firestore.get(`users/${suspended.uid}`)).accountStatus, 'suspended');
+  assert.deepEqual(fixture.auth.revoked, [suspended.uid]);
+  await assert.rejects(() => fixture.lifecycle.applyNegativeState('qa-team-member'), /limited/i);
+
+  const removed = await fixture.lifecycle.applyNegativeState('qa-removed-member');
+  assert.equal(removed.state, 'removed');
+  const member = fixture.definition.members.find(item => item.alias === 'qa-removed-member');
+  assert.equal((await fixture.firestore.get(member.path)).status, 'removed');
+  assert.equal((await fixture.firestore.get(`users/${member.userId}`)).teamMemberships[member.teamId], undefined);
+});
+
+test('negative state transition refuses a drifted baseline marker before revoking sessions', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-suspended');
+  const userPath = `users/${identity.uid}`;
+  const user = await fixture.firestore.get(userPath);
+  await fixture.firestore.set(userPath, { ...user, qaFixtureAlias: 'drifted' });
+  await assert.rejects(() => fixture.lifecycle.applyNegativeState('qa-suspended'), /baseline/i);
+  assert.deepEqual(fixture.auth.revoked, []);
+});
+
+test('cleanup deletes only exact manifest resources and is idempotent', async t => {
+  const fixture = await lifecycleFixture(t);
+  const manifest = await fixture.lifecycle.seed(fixture.inputs);
+  fixture.firestore.inject('users/unrelated', { qaFixture: false });
+  await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.deepEqual(fixture.auth.deleted.sort(), [...manifest.authUids].sort());
+  assert.equal(fixture.firestore.has('users/unrelated'), true);
+  assert.deepEqual(fixture.firestore.deleted, [...fixture.firestore.deleted].sort((left, right) => right.split('/').length - left.split('/').length));
+});
+
+test('credential-file removal refuses repository paths and removes only a caller-selected temporary file', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  assert.equal(await removeCredentialFile(fixture.inputs.credentialPath, process.cwd()), true);
+  assert.equal(await removeCredentialFile(fixture.inputs.credentialPath, process.cwd()), false);
+  const repositoryCredential = join(process.cwd(), 'qa-fixture-credentials.json');
+  await assert.rejects(() => removeCredentialFile(repositoryCredential, process.cwd()), /outside/i);
 });
