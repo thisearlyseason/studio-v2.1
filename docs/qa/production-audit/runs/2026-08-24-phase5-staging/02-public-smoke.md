@@ -40,7 +40,7 @@ Every route below was checked at both required viewports. All positive public ro
 | Safety/legal | `/safety`, `/privacy`, `/terms` | PASS |
 | How-to | `/how-to` | DONE_WITH_CONCERNS — HTTP 200, expected heading, zero overflow, but one same-origin media request ended `net::ERR_ABORTED` |
 | Sports Hub | `/sports-hub`, `/sports-hub/resources`, `/sports-hub/search?q=practice`, `/sports-hub/templates`, `/sports-hub/templates/practice-plan-builder`, `/sports-hub/resources/expanded-season-kickoff-plan`, `/sports-hub/resources/vid-1` | PASS |
-| Expected negatives | invalid audience, sport, generic, article, resource, and template paths | PASS — 404 heading and HTTP 404 |
+| Expected negatives | `/for/phase5-invalid-audience`, `/sports/phase5-invalid-sport`, `/phase5-invalid-route`, `/sports-hub/articles/phase5-invalid-article`, `/sports-hub/resources/phase5-invalid-resource`, `/sports-hub/templates/phase5-invalid-template` | PASS — 404 heading and HTTP 404 |
 | Anonymous protection | `/dashboard`, `/admin` | PASS — final path `/login`, `Sign In`, no protected shell |
 
 The successful-route observations contained zero application console errors and zero page errors. The expected negative routes emitted only their scoped browser-level 404 load entry; no application exception was observed. Request-health status is reported separately because `/how-to` did not satisfy the strict zero-failure criterion.
