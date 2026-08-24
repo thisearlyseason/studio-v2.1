@@ -3,6 +3,7 @@ import { MANAGED_PREFIX, STAGING_PROJECT_ID } from './guard.mjs';
 const RUN_ID_PATTERN = new RegExp(`^${MANAGED_PREFIX}(\\d{8}T\\d{6}Z)-([a-z0-9]{12,32})$`);
 const UID_SUFFIX_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const MANIFEST_STATES = new Set(['planned', 'partial', 'seeded', 'cleaned']);
+const TRANSITION_ALIASES = ['qa-suspended', 'qa-removed-member'];
 const MANIFEST_FIELDS = new Set([
   'version',
   'runId',
@@ -118,11 +119,16 @@ export function createRunId({ now = new Date(), randomSuffix } = {}) {
   return `${MANAGED_PREFIX}${stamp}-${randomSuffix}`;
 }
 
-function normalizeTransitions(value = {}) {
+function normalizeTransitions(value) {
   if (!isRecord(value)) throw new Error('Manifest transitions must be an object.');
-  const allowedAliases = new Set(['qa-suspended', 'qa-removed-member']);
+  const allowedAliases = new Set(TRANSITION_ALIASES);
+  const aliases = Object.keys(value);
+  if (aliases.length !== TRANSITION_ALIASES.length || TRANSITION_ALIASES.some(alias => !aliases.includes(alias))) {
+    throw new Error('Manifest transitions must contain exactly the suspended and removed-member aliases.');
+  }
   const normalized = {};
-  for (const [alias, transition] of Object.entries(value)) {
+  for (const alias of TRANSITION_ALIASES) {
+    const transition = value[alias];
     if (!allowedAliases.has(alias) || !isRecord(transition)) throw new Error('Manifest contains an unsupported transition.');
     const allowedFields = new Set(['version', 'state', 'startedAt', 'firestoreUpdatedAt', 'cacheDeletedAt', 'revokedAt', 'completedAt']);
     const unknown = Object.keys(transition).find(field => !allowedFields.has(field));

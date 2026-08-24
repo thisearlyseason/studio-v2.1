@@ -1,15 +1,31 @@
 import assert from 'node:assert/strict';
 import { isUtf8 } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
-import { lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import test from 'node:test';
+
+const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_AGGREGATE_SOURCE_BYTES = 64 * 1024 * 1024;
+const MAX_GIT_METADATA_BYTES = 8 * 1024 * 1024;
+const TEST_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+const TEST_MAX_AGGREGATE_SOURCE_BYTES = 64 * 1024 * 1024;
 
 function enumerateRepositoryFromGit(repositoryRoot = process.cwd()) {
   const tracked = execFileSync(
     'git',
     ['ls-files', '--cached', '--stage', '-z'],
-    { cwd: repositoryRoot, encoding: 'utf8' },
+    { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: MAX_GIT_METADATA_BYTES },
   ).split('\0').filter(Boolean).map(record => {
     const match = /^(\d{6}) ([0-9a-f]{40,64}) (\d+)\t([\s\S]+)$/u.exec(record);
     if (!match) throw new Error('Git returned an invalid tracked-file record.');
@@ -18,9 +34,14 @@ function enumerateRepositoryFromGit(repositoryRoot = process.cwd()) {
   const untracked = execFileSync(
     'git',
     ['ls-files', '--others', '--exclude-standard', '-z'],
-    { cwd: repositoryRoot, encoding: 'utf8' },
+    { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: MAX_GIT_METADATA_BYTES },
   ).split('\0').filter(Boolean).map(file => ({ file }));
-  return { tracked, untracked };
+  const modifiedTracked = execFileSync(
+    'git',
+    ['ls-files', '--modified', '-z'],
+    { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: MAX_GIT_METADATA_BYTES },
+  ).split('\0').filter(Boolean).map(file => ({ file }));
+  return { tracked, modifiedTracked, untracked };
 }
 
 function repositoryPathIsConfined(file, repositoryRoot) {
@@ -29,17 +50,39 @@ function repositoryPathIsConfined(file, repositoryRoot) {
   return fromRoot !== '' && !fromRoot.startsWith('..') && !isAbsolute(fromRoot);
 }
 
-let cachedGitBlobs = null;
-
-function readGitBlobs(tracked, repositoryRoot) {
+function readGitBlobSizes(tracked, repositoryRoot) {
   const oids = [...new Set(tracked.map(entry => entry.oid))];
-  const cacheKey = `${repositoryRoot}\0${oids.join('\0')}`;
-  if (cachedGitBlobs?.key === cacheKey) return cachedGitBlobs.values;
+  if (oids.length === 0) return new Map();
+  const output = execFileSync('git', ['cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)'], {
+    cwd: repositoryRoot,
+    input: `${oids.join('\n')}\n`,
+    encoding: 'utf8',
+    maxBuffer: MAX_GIT_METADATA_BYTES,
+  });
+  const records = output.split('\n').filter(Boolean);
+  if (records.length !== oids.length) throw new Error('Git blob size batch returned an invalid record count.');
+  const sizes = new Map();
+  for (let index = 0; index < oids.length; index += 1) {
+    const requestedOid = oids[index];
+    const [resolvedOid, type, sizeText] = records[index].split(' ');
+    const size = Number(sizeText);
+    if (resolvedOid !== requestedOid || type !== 'blob' || !Number.isSafeInteger(size) || size < 0) {
+      throw new Error('Git blob size batch returned an invalid record.');
+    }
+    sizes.set(requestedOid, size);
+  }
+  return sizes;
+}
+
+function readBoundedGitBlobs(sources, repositoryRoot) {
+  const expectedByOid = new Map();
+  for (const source of sources) expectedByOid.set(source.tracked.oid, source.size);
+  const oids = [...expectedByOid.keys()];
   if (oids.length === 0) return new Map();
   const output = execFileSync('git', ['cat-file', '--batch'], {
     cwd: repositoryRoot,
     input: `${oids.join('\n')}\n`,
-    maxBuffer: 1024 * 1024 * 1024,
+    maxBuffer: MAX_AGGREGATE_SOURCE_BYTES + MAX_GIT_METADATA_BYTES,
   });
   const values = new Map();
   let offset = 0;
@@ -48,23 +91,59 @@ function readGitBlobs(tracked, repositoryRoot) {
     if (headerEnd === -1) throw new Error('Git blob batch omitted a header.');
     const [resolvedOid, type, sizeText] = output.subarray(offset, headerEnd).toString('ascii').split(' ');
     const size = Number(sizeText);
-    if (resolvedOid !== requestedOid || type !== 'blob' || !Number.isSafeInteger(size) || size < 0) {
+    if (
+      resolvedOid !== requestedOid
+      || type !== 'blob'
+      || size !== expectedByOid.get(requestedOid)
+      || !Number.isSafeInteger(size)
+      || size < 0
+      || size > MAX_SOURCE_BYTES
+    ) {
       throw new Error('Git blob batch returned an invalid header.');
     }
     const bodyStart = headerEnd + 1;
     const bodyEnd = bodyStart + size;
     if (bodyEnd >= output.length || output[bodyEnd] !== 0x0a) throw new Error('Git blob batch returned truncated bytes.');
-    values.set(requestedOid, Buffer.from(output.subarray(bodyStart, bodyEnd)));
+    values.set(requestedOid, output.subarray(bodyStart, bodyEnd));
     offset = bodyEnd + 1;
   }
   if (offset !== output.length) throw new Error('Git blob batch returned unexpected trailing bytes.');
-  cachedGitBlobs = { key: cacheKey, values };
   return values;
+}
+
+function readBoundedWorktreeFile(file, repositoryRoot, expectedSize) {
+  const noFollow = typeof fsConstants.O_NOFOLLOW === 'number' ? fsConstants.O_NOFOLLOW : 0;
+  const descriptor = openSync(resolve(repositoryRoot, file), fsConstants.O_RDONLY | noFollow);
+  try {
+    const before = fstatSync(descriptor);
+    if (!before.isFile() || before.size !== expectedSize || before.size > MAX_SOURCE_BYTES) {
+      throw new Error('Repository regular file changed after size preflight.');
+    }
+    const rawBytes = Buffer.allocUnsafe(expectedSize);
+    let offset = 0;
+    while (offset < expectedSize) {
+      const count = readSync(descriptor, rawBytes, offset, expectedSize - offset, null);
+      if (count === 0) throw new Error('Repository regular file returned truncated bytes.');
+      offset += count;
+    }
+    const after = fstatSync(descriptor);
+    if (!after.isFile() || after.size !== expectedSize) {
+      throw new Error('Repository regular file changed while being read.');
+    }
+    return rawBytes;
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function asBuffer(value) {
+  return Buffer.isBuffer(value) ? value : Buffer.from(value);
 }
 
 function repositoryScanFiles({
   repositoryRoot = process.cwd(),
   enumerateRepository = enumerateRepositoryFromGit,
+  getBlobSize,
   readBlob,
   lstat,
   readFile,
@@ -72,85 +151,145 @@ function repositoryScanFiles({
   let repository;
   try {
     repository = enumerateRepository(repositoryRoot);
-    if (!repository || !Array.isArray(repository.tracked) || !Array.isArray(repository.untracked)) {
+    if (
+      !repository
+      || !Array.isArray(repository.tracked)
+      || !Array.isArray(repository.untracked)
+      || (repository.modifiedTracked !== undefined && !Array.isArray(repository.modifiedTracked))
+    ) {
       throw new Error('Repository enumeration returned an invalid shape.');
     }
   } catch {
     return [{ file: '<repository>', enumerationError: true }];
   }
-
-  const entries = [];
+  const modifiedTracked = repository.modifiedTracked || [];
+  const planned = [];
   const regularTracked = repository.tracked.filter(entry => new Set(['100644', '100755']).has(entry.mode));
-  let gitBlobs = null;
-  if (!readBlob) {
+  let gitBlobSizes = null;
+  if (!getBlobSize) {
     try {
-      gitBlobs = readGitBlobs(regularTracked, repositoryRoot);
+      gitBlobSizes = readGitBlobSizes(regularTracked, repositoryRoot);
     } catch {
       // Each affected regular blob receives a fail-closed entry below.
     }
   }
-  const loadBlob = readBlob || (entry => {
-    if (!gitBlobs?.has(entry.oid)) throw new Error('Git blob is unavailable.');
-    return gitBlobs.get(entry.oid);
-  });
+  const blobSizeCache = new Map();
   for (const tracked of repository.tracked) {
     if (!repositoryPathIsConfined(tracked.file, repositoryRoot)) {
       return [{ file: '<repository>', confinementError: true }];
     }
     if (!new Set(['100644', '100755']).has(tracked.mode)) {
-      entries.push({ file: tracked.file, contents: null, rawBytes: null });
+      planned.push({ entry: { file: tracked.file, contents: null, rawBytes: null } });
       continue;
     }
     try {
-      const rawBytes = Buffer.from(loadBlob(tracked, repositoryRoot));
-      const contents = isUtf8(rawBytes) && !rawBytes.includes(0) ? rawBytes.toString('utf8') : null;
-      entries.push({ file: tracked.file, contents, rawBytes });
+      let size = blobSizeCache.get(tracked.oid);
+      if (size === undefined) {
+        size = getBlobSize ? getBlobSize(tracked, repositoryRoot) : gitBlobSizes?.get(tracked.oid);
+        if (!Number.isSafeInteger(size) || size < 0) throw new Error('Git blob size is unavailable.');
+        blobSizeCache.set(tracked.oid, size);
+      }
+      planned.push(size > MAX_SOURCE_BYTES
+        ? { entry: { file: tracked.file, contents: null, rawBytes: null, sourceSizeError: true }, size }
+        : { source: { kind: 'blob', file: tracked.file, tracked, size } });
     } catch {
-      entries.push({ file: tracked.file, contents: null, rawBytes: null, blobReadError: true });
+      planned.push({ entry: { file: tracked.file, contents: null, rawBytes: null, blobReadError: true } });
     }
   }
 
   const statFile = lstat || (file => lstatSync(resolve(repositoryRoot, file)));
-  const readWorktreeFile = readFile || (file => readFileSync(resolve(repositoryRoot, file)));
-  for (const untracked of repository.untracked) {
-    if (!repositoryPathIsConfined(untracked.file, repositoryRoot)) {
+  const worktreeSources = [...modifiedTracked, ...repository.untracked];
+  for (const worktree of worktreeSources) {
+    if (!repositoryPathIsConfined(worktree.file, repositoryRoot)) {
       return [{ file: '<repository>', confinementError: true }];
     }
     let file;
     try {
-      file = statFile(untracked.file);
+      file = statFile(worktree.file);
     } catch {
-      entries.push({ file: untracked.file, contents: null, rawBytes: null, statError: true });
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
       continue;
     }
     if (!file.isFile() || file.isSymbolicLink?.()) {
-      entries.push({ file: untracked.file, contents: null, rawBytes: null });
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null } });
       continue;
     }
+    if (!Number.isSafeInteger(file.size) || file.size < 0) {
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
+      continue;
+    }
+    planned.push(file.size > MAX_SOURCE_BYTES
+      ? { entry: { file: worktree.file, contents: null, rawBytes: null, sourceSizeError: true }, size: file.size }
+      : { source: { kind: 'worktree', file: worktree.file, size: file.size } });
+  }
+
+  const aggregateBytes = planned.reduce((total, item) => total + (item.size ?? item.source?.size ?? 0), 0);
+  if (aggregateBytes > MAX_AGGREGATE_SOURCE_BYTES) {
+    return [
+      ...planned.filter(item => item.entry).map(item => item.entry),
+      { file: '<repository>', aggregateSizeError: true },
+    ];
+  }
+
+  let boundedGitBlobs = null;
+  if (!readBlob) {
     try {
-      const rawBytes = Buffer.from(readWorktreeFile(untracked.file));
-      const contents = isUtf8(rawBytes) && !rawBytes.includes(0) ? rawBytes.toString('utf8') : null;
-      entries.push({ file: untracked.file, contents, rawBytes });
+      boundedGitBlobs = readBoundedGitBlobs(
+        planned.filter(item => item.source?.kind === 'blob').map(item => item.source),
+        repositoryRoot,
+      );
     } catch {
-      entries.push({ file: untracked.file, contents: null, rawBytes: null, readError: true });
+      // Each affected blob receives a fail-closed read entry below.
     }
   }
-  return entries;
+  const blobCache = new Map();
+  const loadBlob = readBlob || (entry => {
+    if (!boundedGitBlobs?.has(entry.oid)) throw new Error('Git blob is unavailable.');
+    return boundedGitBlobs.get(entry.oid);
+  });
+  const loadWorktree = readFile || ((file, root, size) => readBoundedWorktreeFile(file, root, size));
+  return planned.map(item => {
+    if (item.entry) return item.entry;
+    const source = item.source;
+    try {
+      let rawBytes;
+      if (source.kind === 'blob') {
+        if (!blobCache.has(source.tracked.oid)) {
+          blobCache.set(source.tracked.oid, asBuffer(loadBlob(source.tracked, repositoryRoot, source.size)));
+        }
+        rawBytes = blobCache.get(source.tracked.oid);
+      } else {
+        rawBytes = asBuffer(loadWorktree(source.file, repositoryRoot, source.size));
+      }
+      if (rawBytes.length !== source.size) throw new Error('Repository source length changed after preflight.');
+      return { file: source.file, contents: null, rawBytes, sourceBytes: source.size };
+    } catch {
+      const errorField = source.kind === 'blob' ? 'blobReadError' : 'readError';
+      return { file: source.file, contents: null, rawBytes: null, [errorField]: true };
+    }
+  });
 }
 
 function scanRepresentations(file) {
-  const representations = new Set();
-  if (typeof file.contents === 'string') representations.add(file.contents);
+  const representations = new Map();
+  if (typeof file.contents === 'string') {
+    representations.set(file.contents, Buffer.byteLength(file.contents, 'utf8'));
+  }
   if (Buffer.isBuffer(file.rawBytes)) {
-    representations.add(file.rawBytes.toString('latin1'));
+    const sourceBytes = file.sourceBytes ?? file.rawBytes.length;
+    if (isUtf8(file.rawBytes) && !file.rawBytes.includes(0)) {
+      representations.set(file.rawBytes.toString('utf8'), sourceBytes);
+    } else {
+      representations.set(file.rawBytes.toString('latin1'), sourceBytes);
+    }
     if (file.rawBytes.length % 2 === 0 && file.rawBytes.includes(0)) {
-      representations.add(file.rawBytes.toString('utf16le'));
+      representations.set(file.rawBytes.toString('utf16le'), sourceBytes);
       const bigEndian = Buffer.from(file.rawBytes);
       bigEndian.swap16();
-      representations.add(bigEndian.toString('utf16le'));
+      representations.set(bigEndian.toString('utf16le'), sourceBytes);
     }
   }
-  return [...representations];
+  return [...representations].map(([contents, sourceBytes]) => ({ contents, sourceBytes }));
 }
 
 function isRecord(value) {
@@ -197,7 +336,14 @@ function containsSecretJsonPayload(value) {
       continue;
     }
     if (!isRecord(payload)) continue;
-    if (payload.name === ['__', 'session'].join('') && typeof payload.value === 'string' && payload.value.length > 0) {
+    const payloadName = typeof payload.name === 'string' ? payload.name.toLowerCase() : null;
+    if (
+      payloadName === ['__', 'session'].join('')
+      && credentialShaped(payload.value)
+    ) {
+      return true;
+    }
+    if (payloadName === 'cookie' && containsCredentialSessionCookie(payload.value)) {
       return true;
     }
     for (const [key, candidate] of Object.entries(payload)) {
@@ -210,7 +356,8 @@ function containsSecretJsonPayload(value) {
           /^(?:(?:access|refresh|id)_)?token$/u.test(normalizedKey)
           && credentialShaped(candidate)
         ) return true;
-        if (new Set(['cookie', 'session']).has(normalizedKey) && credentialShaped(candidate)) return true;
+        if (normalizedKey === 'cookie' && containsCredentialSessionCookie(candidate)) return true;
+        if (normalizedKey === 'session' && credentialShaped(candidate)) return true;
       }
       if (candidate && typeof candidate === 'object') pending.push(candidate);
     }
@@ -218,15 +365,29 @@ function containsSecretJsonPayload(value) {
   return false;
 }
 
-function credentialShaped(value) {
-  if (typeof value !== 'string') return false;
-  const tokenShaped = candidate => (
+function tokenShaped(candidate) {
+  return (
     /^(?:ya29\.|1\/\/)[A-Za-z0-9._~-]{8,}$/u.test(candidate)
     || /^[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}$/u.test(candidate)
   );
+}
+
+function containsCredentialSessionCookie(value) {
+  if (typeof value !== 'string') return false;
+  for (const cookie of value.split(';')) {
+    const separator = cookie.indexOf('=');
+    if (separator === -1) continue;
+    const name = cookie.slice(0, separator).trim();
+    const candidate = cookie.slice(separator + 1).trim();
+    if (name === ['__', 'session'].join('') && tokenShaped(candidate)) return true;
+  }
+  return false;
+}
+
+function credentialShaped(value) {
+  if (typeof value !== 'string') return false;
   if (tokenShaped(value)) return true;
-  const cookie = /(?:^|;\s*)[^=;\s]+\s*=\s*([^;\s]+)/u.exec(value);
-  return Boolean(cookie && tokenShaped(cookie[1]));
+  return containsCredentialSessionCookie(value);
 }
 
 function readJsonString(contents, start) {
@@ -257,7 +418,7 @@ function containsEmbeddedSessionCookie(contents) {
   const objectFrames = [];
   for (let index = 0; index < contents.length; index += 1) {
     if (contents[index] === '{') {
-      objectFrames.push({ hasSessionName: false, hasValue: false });
+      objectFrames.push({ name: null, value: null });
       continue;
     }
     if (contents[index] === '}') {
@@ -283,10 +444,21 @@ function containsEmbeddedSessionCookie(contents) {
     }
     const value = readJsonString(contents, valueStart);
     const frame = objectFrames.at(-1);
-    if (key.value === 'name' && value.value === ['__', 'session'].join('')) frame.hasSessionName = true;
-    if (key.value === 'value' && typeof value.value === 'string' && value.value.length > 0) frame.hasValue = true;
-    if (frame.hasSessionName && frame.hasValue) return true;
+    if (key.value === 'name' && typeof value.value === 'string') frame.name = value.value.toLowerCase();
+    if (key.value === 'value' && typeof value.value === 'string') frame.value = value.value;
+    if (
+      (frame.name === ['__', 'session'].join('') && credentialShaped(frame.value))
+      || (frame.name === 'cookie' && containsCredentialSessionCookie(frame.value))
+    ) return true;
     index = value.end;
+  }
+  return false;
+}
+
+function containsRawSessionCookieHeader(contents) {
+  const header = /(?:^|[\r\n])\s*Cookie\s*:\s*([^\r\n]*)/giu;
+  for (const match of contents.matchAll(header)) {
+    if (containsCredentialSessionCookie(match[1])) return true;
   }
   return false;
 }
@@ -367,6 +539,7 @@ function inspectStructuredContents(contents) {
       || containsBase64ServiceAccount(text)
       || values.some(containsSecretJsonPayload)
       || containsEmbeddedSessionCookie(text)
+      || containsRawSessionCookieHeader(text)
     ) secret = true;
   }
   return { manifest, secret, limitExceeded: false };
@@ -382,12 +555,18 @@ function fixtureArtifactViolations(files) {
     if (fileEntry.statError) violations.add(`${file}: repository file could not be stated`);
     if (fileEntry.blobReadError) violations.add(`${file}: repository Git blob could not be read`);
     if (fileEntry.readError) violations.add(`${file}: repository regular file could not be read`);
+    if (fileEntry.sourceSizeError) violations.add(`${file}: repository source exceeds 8 MiB scan limit`);
+    if (fileEntry.aggregateSizeError) violations.add('<repository>: repository scanned source bytes exceed 64 MiB aggregate limit');
     if (credentialArtifact.test(file)) violations.add(`${file}: tracked fixture credential/manifest artifact`);
     let manifest = false;
     let secret = false;
     let limitExceeded = false;
     for (const representation of scanRepresentations(fileEntry)) {
-      const result = inspectStructuredContents(representation);
+      if (representation.sourceBytes > MAX_SOURCE_BYTES) {
+        violations.add(`${file}: repository source exceeds 8 MiB scan limit`);
+        continue;
+      }
+      const result = inspectStructuredContents(representation.contents);
       manifest ||= result.manifest;
       secret ||= result.secret;
       limitExceeded ||= result.limitExceeded;
@@ -415,7 +594,7 @@ test('tracked repository does not contain retired QA credentials or identifiers'
   const violations = [];
   for (const fileEntry of repositoryScanFiles()) {
     const { file } = fileEntry;
-    for (const contents of scanRepresentations(fileEntry)) {
+    for (const { contents } of scanRepresentations(fileEntry)) {
       for (const value of retiredValues) {
         if (!contents.includes(value)) continue;
         violations.push(`${file}: contains a retired QA credential or identifier`);
@@ -496,6 +675,32 @@ test('fixture hygiene detects Phase 7 manifests and Playwright session cookies b
   ]);
 });
 
+test('fixture hygiene detects credential-shaped HAR and raw Cookie session records without flagging harmless cookies', () => {
+  const sessionName = ['__', 'session'].join('');
+  const credentialValue = ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.');
+  const harHeader = JSON.stringify({ name: 'cookie', value: `${sessionName}=${credentialValue}; theme=dark` });
+  const reversedHarHeader = JSON.stringify({ value: `theme=dark; ${sessionName}=${credentialValue}`, name: 'cookie' });
+  const serializedHar = JSON.stringify(JSON.stringify({ headers: [JSON.parse(reversedHarHeader)] }));
+  const rawCookieHeader = `GET /dashboard HTTP/1.1\r\nCookie: theme=dark; ${sessionName}=${credentialValue}\r\n`;
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/request.har', contents: harHeader },
+    { file: 'tmp/reversed.har', contents: reversedHarHeader },
+    { file: 'tmp/serialized-har.js', contents: `const capture = ${serializedHar};\n` },
+    { file: 'tmp/raw-headers.txt', contents: rawCookieHeader },
+    { file: 'docs/placeholder-cookie.json', contents: JSON.stringify({ name: sessionName, value: 'placeholder' }) },
+    { file: 'docs/ordinary-har.json', contents: JSON.stringify({ name: 'cookie', value: `theme=${credentialValue}` }) },
+    { file: 'docs/ordinary-cookie.txt', contents: 'Cookie: theme=dark; locale=en-CA\n' },
+    { file: 'docs/harmless-token.json', contents: JSON.stringify({ token: 'blue' }) },
+    { file: 'docs/harmless-session.json', contents: JSON.stringify({ session: 'strict' }) },
+  ]), [
+    'tmp/request.har: fixture secret material pattern',
+    'tmp/reversed.har: fixture secret material pattern',
+    'tmp/serialized-har.js: fixture secret material pattern',
+    'tmp/raw-headers.txt: fixture secret material pattern',
+  ]);
+});
+
 test('fixture hygiene detects a long embedded Playwright session cookie in reversed property order', () => {
   const storageState = JSON.stringify({
     cookies: [{
@@ -515,7 +720,10 @@ test('fixture hygiene detects a long embedded Playwright session cookie in rever
 test('fixture hygiene detects short and long Playwright storage state serialized inside JavaScript strings', () => {
   const sessionName = ['__', 'session'].join('');
   const shortStorageState = JSON.stringify({
-    cookies: [{ name: sessionName, value: 'short-fixture-token' }],
+    cookies: [{
+      name: sessionName,
+      value: ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.'),
+    }],
     origins: [],
   });
   const longStorageState = JSON.stringify({
@@ -675,6 +883,7 @@ test('tracked regular files are scanned from Git blobs without following the wor
       tracked: [{ file: 'tracked-secret.bin', mode: '100644', oid: 'b'.repeat(40) }],
       untracked: [],
     }),
+    getBlobSize: () => Buffer.byteLength(privateKey, 'ascii'),
     readBlob: () => Buffer.from(privateKey, 'ascii'),
     lstat() {
       throw new Error('tracked worktree state must not be consulted');
@@ -685,6 +894,93 @@ test('tracked regular files are scanned from Git blobs without following the wor
   })), [
     'tracked-secret.bin: fixture secret material pattern',
   ]);
+});
+
+test('modified tracked regular files scan current confined worktree bytes separately from index blobs', () => {
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  let blobReads = 0;
+  let worktreeReads = 0;
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [{ file: 'tracked-current.txt', mode: '100644', oid: 'd'.repeat(40) }],
+      modifiedTracked: [{ file: 'tracked-current.txt' }],
+      untracked: [],
+    }),
+    getBlobSize: () => Buffer.byteLength('safe index bytes'),
+    readBlob: () => {
+      blobReads += 1;
+      return Buffer.from('safe index bytes');
+    },
+    lstat: () => ({
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      size: Buffer.byteLength(privateKey),
+    }),
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from(privateKey, 'ascii');
+    },
+  })), [
+    'tracked-current.txt: fixture secret material pattern',
+  ]);
+  assert.equal(blobReads, 1);
+  assert.equal(worktreeReads, 1);
+});
+
+test('repository scan rejects oversize Git and worktree sources before invoking content readers', () => {
+  let blobReads = 0;
+  let worktreeReads = 0;
+  const violations = fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [{ file: 'tracked-large.bin', mode: '100644', oid: 'e'.repeat(40) }],
+      modifiedTracked: [{ file: 'modified-large.bin' }],
+      untracked: [{ file: 'untracked-large.bin' }],
+    }),
+    getBlobSize: () => TEST_MAX_SOURCE_BYTES + 1,
+    readBlob: () => {
+      blobReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+    lstat: () => ({
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      size: TEST_MAX_SOURCE_BYTES + 1,
+    }),
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+  }));
+
+  assert.deepEqual(violations, [
+    'tracked-large.bin: repository source exceeds 8 MiB scan limit',
+    'modified-large.bin: repository source exceeds 8 MiB scan limit',
+    'untracked-large.bin: repository source exceeds 8 MiB scan limit',
+  ]);
+  assert.equal(blobReads, 0);
+  assert.equal(worktreeReads, 0);
+});
+
+test('repository scan rejects an aggregate source budget overflow before reading content', () => {
+  let worktreeReads = 0;
+  const files = Array.from({ length: (TEST_MAX_AGGREGATE_SOURCE_BYTES / TEST_MAX_SOURCE_BYTES) + 1 }, (_, index) => ({
+    file: `aggregate-${index}.bin`,
+  }));
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({ tracked: [], modifiedTracked: [], untracked: files }),
+    lstat: () => ({
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      size: TEST_MAX_SOURCE_BYTES,
+    }),
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+  })), [
+    '<repository>: repository scanned source bytes exceed 64 MiB aggregate limit',
+  ]);
+  assert.equal(worktreeReads, 0);
 });
 
 test('repository scan never follows tracked or untracked symlinks', () => {
@@ -796,6 +1092,14 @@ test('fixture hygiene handles deeply nested JSON without recursive scanner overf
   ]), [
     'tmp/deeply-nested.json: tracked Phase 7 manifest payload',
   ]);
+});
+
+test('fixture hygiene completes a large safe representation within the bounded iterative scanner', { timeout: 5000 }, () => {
+  const safe = `${'ordinary-safe-content\n'.repeat(300000)}end`;
+  assert.ok(Buffer.byteLength(safe, 'utf8') < TEST_MAX_SOURCE_BYTES);
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/large-safe.capture', contents: safe },
+  ]), []);
 });
 
 test('fixture hygiene distinguishes credential-shaped token and session values from harmless configuration', () => {

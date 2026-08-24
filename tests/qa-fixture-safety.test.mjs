@@ -40,6 +40,13 @@ function hostedEnvironment() {
   return { ALLOW_STAGING_QA_FIXTURES: 'true' };
 }
 
+function approvedActiveTransitions() {
+  return {
+    'qa-suspended': { version: 1, state: 'active' },
+    'qa-removed-member': { version: 1, state: 'active' },
+  };
+}
+
 function directAdapter(auth, firestore, calls = []) {
   return {
     projectId: STAGING,
@@ -802,6 +809,7 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
     authUids: [`${RUN_ID}-owner-a`],
     firestorePaths: [`qaAuditRuns/${RUN_ID}`],
     state: 'planned',
+    transitions: approvedActiveTransitions(),
   });
   assert.equal(manifest.version, 2);
   assert.equal(manifest.projectId, STAGING);
@@ -844,6 +852,33 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
   }), /state|lifecycle/i);
 });
 
+test('manifest v2 requires exactly both approved transition records', () => {
+  const base = {
+    version: 2,
+    runId: RUN_ID,
+    projectId: STAGING,
+    authUids: [`${RUN_ID}-owner-a`],
+    firestorePaths: [`qaAuditRuns/${RUN_ID}`],
+    state: 'planned',
+  };
+  const activeTransitions = {
+    'qa-suspended': { version: 1, state: 'active' },
+    'qa-removed-member': { version: 1, state: 'active' },
+  };
+
+  assert.doesNotThrow(() => validateManifest({ ...base, transitions: activeTransitions }));
+  for (const transitions of [
+    undefined,
+    {},
+    { 'qa-suspended': activeTransitions['qa-suspended'] },
+    { 'qa-removed-member': activeTransitions['qa-removed-member'] },
+  ]) {
+    const candidate = { ...base };
+    if (transitions !== undefined) candidate.transitions = transitions;
+    assert.throws(() => validateManifest(candidate), /transition/i);
+  }
+});
+
 test('manifest validation returns a deeply frozen normalized copy without mutating input', () => {
   const input = {
     version: 2,
@@ -852,6 +887,7 @@ test('manifest validation returns a deeply frozen normalized copy without mutati
     authUids: [`${RUN_ID}-owner-a`, `${RUN_ID}-owner-a`],
     firestorePaths: [`qaAuditRuns/${RUN_ID}`, `qaAuditRuns/${RUN_ID}`],
     state: 'partial',
+    transitions: approvedActiveTransitions(),
     metadata: { note: 'ignored by the safety manifest' },
   };
   assert.throws(() => validateManifest(input), /unknown|manifest field/i);
@@ -877,6 +913,7 @@ test('manifest transition validation enforces alias-specific ordered checkpoint 
     authUids: [`${RUN_ID}-owner-a`],
     firestorePaths: [`qaAuditRuns/${RUN_ID}`],
     state: 'seeded',
+    transitions: approvedActiveTransitions(),
   };
   const cases = [
     {
@@ -1041,7 +1078,7 @@ test('manifest transition validation enforces alias-specific ordered checkpoint 
   ];
 
   for (const item of cases) {
-    const candidate = { ...baseManifest, transitions: { [item.alias]: item.transition } };
+    const candidate = { ...baseManifest, transitions: { ...approvedActiveTransitions(), [item.alias]: item.transition } };
     if (item.accepted) {
       assert.doesNotThrow(() => validateManifest(candidate), item.name);
     } else {
@@ -1225,6 +1262,47 @@ test('re-seed rejects applying, final, and cleaned runs before adapter mutation'
   }
 });
 
+test('re-seed rejects omitted or one-alias transition journals before credential or adapter access', async t => {
+  const cases = [
+    { name: 'omitted transitions', alter(manifest) { delete manifest.transitions; } },
+    {
+      name: 'one transition alias',
+      alter(manifest) {
+        manifest.transitions = { 'qa-suspended': manifest.transitions['qa-suspended'] };
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    await t.test(item.name, async caseTest => {
+      const fixture = await lifecycleFixture(caseTest);
+      await fixture.lifecycle.seed(fixture.inputs);
+      const malformed = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+      item.alter(malformed);
+      await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(malformed, null, 2)}\n`, { mode: 0o600, flag: 'w' });
+
+      const beforeManifest = await readFile(fixture.inputs.manifestPath, 'utf8');
+      const beforeCredentials = await readFile(fixture.inputs.credentialPath, 'utf8');
+      const beforeAuth = structuredClone([...fixture.auth.users]);
+      const beforeFirestore = structuredClone([...fixture.firestore.documents]);
+      const calls = [];
+      const adapter = directAdapter(fixture.auth, fixture.firestore, calls);
+      const lifecycle = createLifecycle({
+        ...fixture.lifecycleOptions,
+        auth: adapter.auth,
+        firestore: adapter.firestore,
+      });
+
+      await assert.rejects(() => lifecycle.seed(fixture.inputs), /transition/i);
+      assert.deepEqual(calls, []);
+      assert.equal(await readFile(fixture.inputs.manifestPath, 'utf8'), beforeManifest);
+      assert.equal(await readFile(fixture.inputs.credentialPath, 'utf8'), beforeCredentials);
+      assert.deepEqual([...fixture.auth.users], beforeAuth);
+      assert.deepEqual([...fixture.firestore.documents], beforeFirestore);
+    });
+  }
+});
+
 test('seed pre-journals every intended resource before an ambiguous Auth create response', async t => {
   const fixture = await lifecycleFixture(t);
   const identity = fixture.definition.identities[0];
@@ -1287,6 +1365,7 @@ test('cleanup retains an unmarked exact-namespace user from a forged partial man
     createdAt: '2026-08-24T14:00:00.000Z',
     updatedAt: '2026-08-24T14:00:00.000Z',
     expiresAt: EXPIRES_AT,
+    transitions: approvedActiveTransitions(),
   }));
   const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
   assert.deepEqual(result.deleted, { auth: 0, firestore: 0 });
@@ -1399,6 +1478,66 @@ test('credential publication preserves a target that appears before exclusive pu
   assert.equal(await readFile(fixture.inputs.credentialPath, 'utf8'), existing);
   const names = await readdir(fixture.directory);
   assert.equal(names.some(name => name.includes('.credentials.json.') && name.endsWith('.tmp')), false);
+});
+
+test('credential publication sanitizes unsupported hard-link capability failures', async t => {
+  for (const [index, code] of ['EPERM', 'ENOTSUP', 'EOPNOTSUPP'].entries()) {
+    await t.test(code, async caseTest => {
+      const fixture = await lifecycleFixture(caseTest, `qa-phase7-20260824T14002${index + 1}Z-${code.toLowerCase()}ab12cd34ef56`);
+      const lifecycle = createLifecycle({
+        ...fixture.lifecycleOptions,
+        async linkFile() {
+          const error = new Error(`${fixture.inputs.credentialPath}: raw hard-link diagnostic`);
+          error.code = code;
+          throw error;
+        },
+      });
+
+      await assert.rejects(() => lifecycle.seed(fixture.inputs), error => {
+        assert.match(error.message, /credential recovery required/i);
+        assert.equal(error.message.includes(fixture.directory), false);
+        assert.equal(error.message.includes('raw hard-link diagnostic'), false);
+        return true;
+      });
+      await assert.rejects(() => stat(fixture.inputs.credentialPath), /ENOENT/);
+      const names = await readdir(fixture.directory);
+      assert.equal(names.some(name => name.includes('.credentials.json.') && name.endsWith('.tmp')), false);
+    });
+  }
+});
+
+test('credential publication sanitizes an exact temporary-file unlink failure', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140020Z-ab12cd34ef56');
+  let retainedTempPath = null;
+  t.after(async () => {
+    if (retainedTempPath) {
+      await unlink(retainedTempPath).catch(error => {
+        if (error?.code !== 'ENOENT') throw error;
+      });
+    }
+  });
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    async unlinkFile(path) {
+      if (path.includes('.credentials.json.') && path.endsWith('.tmp')) {
+        retainedTempPath = path;
+        const error = new Error(`${path}: raw unlink diagnostic`);
+        error.code = 'EACCES';
+        throw error;
+      }
+      return unlink(path);
+    },
+  });
+
+  await assert.rejects(() => lifecycle.seed(fixture.inputs), error => {
+    assert.match(error.message, /credential recovery required/i);
+    assert.equal(error.message.includes(fixture.directory), false);
+    assert.equal(error.message.includes('raw unlink diagnostic'), false);
+    return true;
+  });
+  assert.ok(retainedTempPath);
+  const published = JSON.parse(await readFile(fixture.inputs.credentialPath, 'utf8'));
+  assert.equal(published.runId, fixture.definition.runId);
 });
 
 test('seed rejects an existing credential file unless it is exact-run, regular, and mode 0600', async t => {

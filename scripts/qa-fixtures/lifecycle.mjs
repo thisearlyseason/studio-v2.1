@@ -150,11 +150,12 @@ function credentialPayload(definition, passwords) {
   });
 }
 
-export function createLifecycle({ auth, firestore, clock = () => new Date(), randomBytes, definition, repositoryRoot = process.cwd(), manifestPath: configuredManifestPath, logger = () => {}, faultInjector = () => {} } = {}) {
+export function createLifecycle({ auth, firestore, clock = () => new Date(), randomBytes, definition, repositoryRoot = process.cwd(), manifestPath: configuredManifestPath, logger = () => {}, faultInjector = () => {}, linkFile = link, unlinkFile = unlink } = {}) {
   if (!auth || !firestore) throw new Error('Auth and Firestore adapters are required.');
   if (typeof randomBytes !== 'function') throw new Error('randomBytes must be injected.');
   if (typeof logger !== 'function') throw new Error('logger must be a function.');
   if (typeof faultInjector !== 'function') throw new Error('faultInjector must be a function.');
+  if (typeof linkFile !== 'function' || typeof unlinkFile !== 'function') throw new Error('Credential publication file operations must be functions.');
   assertDefinition(definition);
 
   const identityByUid = new Map(definition.identities.map(identity => [identity.uid, identity]));
@@ -237,14 +238,19 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       await writeFile(tempPath, payload, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
       await injectFault('credentials.beforePublish');
       try {
-        await link(tempPath, target);
+        await linkFile(tempPath, target);
       } catch (error) {
         if (error?.code === 'EEXIST') throw new Error('Credential recovery required: credential target appeared during seed.');
-        throw error;
+        if (new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV']).has(error?.code)) {
+          throw new Error('Credential recovery required: atomic hard-link publication is unavailable on the target filesystem.');
+        }
+        throw new Error('Credential recovery required: atomic credential publication failed.');
       }
     } finally {
-      await unlink(tempPath).catch(error => {
-        if (error?.code !== 'ENOENT') throw error;
+      await unlinkFile(tempPath).catch(error => {
+        if (error?.code !== 'ENOENT') {
+          throw new Error('Credential recovery required: private temporary credential cleanup failed.');
+        }
       });
     }
   }
