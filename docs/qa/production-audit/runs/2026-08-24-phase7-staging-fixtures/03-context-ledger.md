@@ -4,6 +4,8 @@ Canonical arithmetic: `32 rows / 32 unique IDs`; groups `1:2, 2:6, 3:4, 4:6, 5:2
 
 The desktop multi-organization row is the corrected targeted-lifecycle evidence collected after the original desktop switcher-control mismatch was self-detected and the first fixture lifecycle had already been exactly cleaned. Its separately guarded targeted lifecycle was also exactly cleaned.
 
+The `7` console entries in `P7-S04-MEMBER-ROSTER-M/D` are now classified by the targeted diagnostic in [04-roster-console-diagnostic.md](./04-roster-console-diagnostic.md): a single deduplicated browser signature, `Failed to load resource: net::ERR_NAME_NOT_RESOLVED`, correlated one-to-one with seven `GET`/image failures from the fixture avatar origin after the removed-member transition. They are fixture-induced resource failures, not product exceptions or authorization denials.
+
 | ID | Alias | Viewport | Start | Route/action | Expected | Final | Visible outcome | HTTP/probes | Page error | Console | Req failures | Overflow | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |
 | P7-S01-OWNER-M | qa-coach-owner-a | 390x844 | active | login-and-land | dashboard-session-no-errors | /dashboard | Dashboard; DASHBOARD; NEXT ACTIONS / Team A, session | PATCH /api/schools/admins 200; POST /api/auth/session 200 | 0 / NONE | 0 | 3 | 0 | PASS |

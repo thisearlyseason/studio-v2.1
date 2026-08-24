@@ -33,7 +33,7 @@ The exact staging preflight, seed, inspect, and required active-state baselines 
 | Removed member Firestore | Team A GET `403` after transition |
 | Multi-org Firestore | Team A GET `200`; Team B GET `200` |
 | Assignments query | Own team `500`; changed other team `403`, symmetric A↔B |
-| Application-console errors | Corrected roster rendered without the former page crash but emitted `7` error-level console entries per viewport; explicit `403`/`500` probes also emitted error-level entries; the corrected multi-org desktop row emitted `0` |
+| Application-console errors | Corrected roster rendered without the former page crash. A targeted fresh lifecycle classified the roster entries as browser resource-load errors from the fixture-only avatar origin, not application exceptions or handled authorization denials; see [04-roster-console-diagnostic.md](./04-roster-console-diagnostic.md). Explicit `403`/`500` probes also emitted error-level entries; the corrected multi-org desktop row emitted `0` |
 | Page errors | Listener coverage began before first staging navigation for every canonical context. BUG-006 captured `2` mobile and `1` desktop page errors; every other row captured `0`; `NOT CAPTURED=0` |
 | Same-origin request failures | Intermittent `net::ERR_ABORTED` on navigation-prefetch requests such as `/events`, `/chats`, `/dashboard`, `/games`, `/teams/join`, `/leagues`, `/facilities`, and `/equipment`; no corresponding final-state failure except the separately status-proven assignments `500` |
 | Post-action Firestore | Suspended/removed states intact; removed membership cache absent; multi-org memberships `2`; sentinels exact/distinct; fake trusted claim absent |
@@ -70,7 +70,7 @@ The dashboard also issued `PATCH /api/schools/admins` with `200` during several 
 - Disposition: `RETIRED QA-FIXTURE FINDING`
 - Affected row: `Roster — Member add/edit/remove/reinstate`
 - Reproduction: sign in as active `qa-team-member` and navigate directly to `/roster`.
-- Correction evidence: canonical member name, player ID, jersey, and avatar fields produced `/roster` at both viewports with visible Roster headings, no error boundary, and page errors `0`. Seven error-level console entries remained per viewport and are preserved in the ledger as a concern; the former visible/page-error crash did not recur.
+- Correction evidence: canonical member name, player ID, jersey, and avatar fields produced `/roster` at both viewports with visible Roster headings, no error boundary, and page errors `0`. The seven post-transition error-level entries were subsequently classified as fixture-induced avatar resource failures: one `GET` image failure per visible Team A member from `https://example.test`, with `net::ERR_NAME_NOT_RESOLVED`. They are not a product defect or an authorization denial. The former visible/page-error crash did not recur.
 
 ### BUG-010 — Authorized own-team assignments query returns 500
 
