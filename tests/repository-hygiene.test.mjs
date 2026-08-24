@@ -6,13 +6,17 @@ import {
   constants as fsConstants,
   fstatSync,
   lstatSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readSync,
+  rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import test from 'node:test';
 
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
@@ -36,12 +40,7 @@ function enumerateRepositoryFromGit(repositoryRoot = process.cwd()) {
     ['ls-files', '--others', '--exclude-standard', '-z'],
     { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: MAX_GIT_METADATA_BYTES },
   ).split('\0').filter(Boolean).map(file => ({ file }));
-  const modifiedTracked = execFileSync(
-    'git',
-    ['ls-files', '--modified', '-z'],
-    { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: MAX_GIT_METADATA_BYTES },
-  ).split('\0').filter(Boolean).map(file => ({ file }));
-  return { tracked, modifiedTracked, untracked };
+  return { tracked, untracked };
 }
 
 function repositoryPathIsConfined(file, repositoryRoot) {
@@ -111,9 +110,14 @@ function readBoundedGitBlobs(sources, repositoryRoot) {
   return values;
 }
 
-function readBoundedWorktreeFile(file, repositoryRoot, expectedSize) {
-  const noFollow = typeof fsConstants.O_NOFOLLOW === 'number' ? fsConstants.O_NOFOLLOW : 0;
-  const descriptor = openSync(resolve(repositoryRoot, file), fsConstants.O_RDONLY | noFollow);
+function readBoundedWorktreeFile(file, repositoryRoot, expectedSize, {
+  noFollowFlag = fsConstants.O_NOFOLLOW,
+  openFile = openSync,
+} = {}) {
+  if (!Number.isInteger(noFollowFlag) || noFollowFlag <= 0) {
+    throw new Error('Repository worktree scanning requires O_NOFOLLOW support.');
+  }
+  const descriptor = openFile(resolve(repositoryRoot, file), fsConstants.O_RDONLY | noFollowFlag);
   try {
     const before = fstatSync(descriptor);
     if (!before.isFile() || before.size !== expectedSize || before.size > MAX_SOURCE_BYTES) {
@@ -140,6 +144,27 @@ function asBuffer(value) {
   return Buffer.isBuffer(value) ? value : Buffer.from(value);
 }
 
+function inspectWorktreePath(file, statFile) {
+  const segments = file.split('/');
+  let component = '';
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    component = component ? `${component}/${segments[index]}` : segments[index];
+    let metadata;
+    try {
+      metadata = statFile(component);
+    } catch (error) {
+      return { error };
+    }
+    if (metadata.isSymbolicLink?.()) return { confinementError: true };
+    if (typeof metadata.isDirectory !== 'function' || !metadata.isDirectory()) return { statError: true };
+  }
+  try {
+    return { metadata: statFile(file) };
+  } catch (error) {
+    return { error };
+  }
+}
+
 function repositoryScanFiles({
   repositoryRoot = process.cwd(),
   enumerateRepository = enumerateRepositoryFromGit,
@@ -147,6 +172,8 @@ function repositoryScanFiles({
   readBlob,
   lstat,
   readFile,
+  noFollowFlag = fsConstants.O_NOFOLLOW,
+  openFile = openSync,
 } = {}) {
   let repository;
   try {
@@ -155,14 +182,12 @@ function repositoryScanFiles({
       !repository
       || !Array.isArray(repository.tracked)
       || !Array.isArray(repository.untracked)
-      || (repository.modifiedTracked !== undefined && !Array.isArray(repository.modifiedTracked))
     ) {
       throw new Error('Repository enumeration returned an invalid shape.');
     }
   } catch {
     return [{ file: '<repository>', enumerationError: true }];
   }
-  const modifiedTracked = repository.modifiedTracked || [];
   const planned = [];
   const regularTracked = repository.tracked.filter(entry => new Set(['100644', '100755']).has(entry.mode));
   let gitBlobSizes = null;
@@ -198,18 +223,25 @@ function repositoryScanFiles({
   }
 
   const statFile = lstat || (file => lstatSync(resolve(repositoryRoot, file)));
-  const worktreeSources = [...modifiedTracked, ...repository.untracked];
-  for (const worktree of worktreeSources) {
+  const worktreeSources = new Map();
+  for (const tracked of repository.tracked) {
+    if (!worktreeSources.has(tracked.file)) worktreeSources.set(tracked.file, { file: tracked.file, allowMissing: true });
+  }
+  for (const untracked of repository.untracked) {
+    if (!worktreeSources.has(untracked.file)) worktreeSources.set(untracked.file, { file: untracked.file, allowMissing: false });
+  }
+  for (const worktree of worktreeSources.values()) {
     if (!repositoryPathIsConfined(worktree.file, repositoryRoot)) {
       return [{ file: '<repository>', confinementError: true }];
     }
-    let file;
-    try {
-      file = statFile(worktree.file);
-    } catch {
+    const inspection = inspectWorktreePath(worktree.file, statFile);
+    if (inspection.confinementError) return [{ file: '<repository>', confinementError: true }];
+    if (inspection.error?.code === 'ENOENT' && worktree.allowMissing) continue;
+    if (inspection.error || inspection.statError) {
       planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
       continue;
     }
+    const file = inspection.metadata;
     if (!file.isFile() || file.isSymbolicLink?.()) {
       planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null } });
       continue;
@@ -247,7 +279,10 @@ function repositoryScanFiles({
     if (!boundedGitBlobs?.has(entry.oid)) throw new Error('Git blob is unavailable.');
     return boundedGitBlobs.get(entry.oid);
   });
-  const loadWorktree = readFile || ((file, root, size) => readBoundedWorktreeFile(file, root, size));
+  const loadWorktree = readFile || ((file, root, size) => readBoundedWorktreeFile(file, root, size, {
+    noFollowFlag,
+    openFile,
+  }));
   return planned.map(item => {
     if (item.entry) return item.entry;
     const source = item.source;
@@ -876,8 +911,10 @@ test('repository stat, Git-blob read, and escaped-path errors fail closed', () =
   ]);
 });
 
-test('tracked regular files are scanned from Git blobs without following the worktree', () => {
+test('tracked regular index blobs remain scanned when the worktree path is deleted', () => {
   const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  const missing = new Error('tracked worktree path is absent');
+  missing.code = 'ENOENT';
   assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
     enumerateRepository: () => ({
       tracked: [{ file: 'tracked-secret.bin', mode: '100644', oid: 'b'.repeat(40) }],
@@ -886,7 +923,7 @@ test('tracked regular files are scanned from Git blobs without following the wor
     getBlobSize: () => Buffer.byteLength(privateKey, 'ascii'),
     readBlob: () => Buffer.from(privateKey, 'ascii'),
     lstat() {
-      throw new Error('tracked worktree state must not be consulted');
+      throw missing;
     },
     readFile() {
       throw new Error('tracked worktree bytes must not be consulted');
@@ -896,14 +933,16 @@ test('tracked regular files are scanned from Git blobs without following the wor
   ]);
 });
 
-test('modified tracked regular files scan current confined worktree bytes separately from index blobs', () => {
+test('cached tracked regular files scan one current confined worktree copy separately from every index blob', () => {
   const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
   let blobReads = 0;
   let worktreeReads = 0;
   assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
     enumerateRepository: () => ({
-      tracked: [{ file: 'tracked-current.txt', mode: '100644', oid: 'd'.repeat(40) }],
-      modifiedTracked: [{ file: 'tracked-current.txt' }],
+      tracked: [
+        { file: 'tracked-current.txt', mode: '100644', oid: 'd'.repeat(40), stage: 1 },
+        { file: 'tracked-current.txt', mode: '100644', oid: 'f'.repeat(40), stage: 2 },
+      ],
       untracked: [],
     }),
     getBlobSize: () => Buffer.byteLength('safe index bytes'),
@@ -923,8 +962,104 @@ test('modified tracked regular files scan current confined worktree bytes separa
   })), [
     'tracked-current.txt: fixture secret material pattern',
   ]);
-  assert.equal(blobReads, 1);
+  assert.equal(blobReads, 2);
   assert.equal(worktreeReads, 1);
+});
+
+test('repository scan detects current bytes hidden from Git modified enumeration by assume-unchanged', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'qa-hygiene-assume-unchanged-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  execFileSync('git', ['init', '--quiet'], { cwd: directory });
+  writeFileSync(join(directory, 'tracked-current.txt'), 'ordinary index bytes');
+  execFileSync('git', ['add', '--', 'tracked-current.txt'], { cwd: directory });
+  execFileSync('git', ['update-index', '--assume-unchanged', '--', 'tracked-current.txt'], { cwd: directory });
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  writeFileSync(join(directory, 'tracked-current.txt'), privateKey);
+
+  assert.equal(execFileSync('git', ['ls-files', '--modified'], { cwd: directory, encoding: 'utf8' }), '');
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({ repositoryRoot: directory })), [
+    'tracked-current.txt: fixture secret material pattern',
+  ]);
+});
+
+test('repository scan relies on the safe index blob when a cached tracked worktree path is deleted', () => {
+  let blobReads = 0;
+  let worktreeReads = 0;
+  const missing = new Error('tracked worktree entry is absent');
+  missing.code = 'ENOENT';
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [{ file: 'deleted-current.txt', mode: '100644', oid: '1'.repeat(40), stage: 0 }],
+      untracked: [],
+    }),
+    getBlobSize: () => Buffer.byteLength('ordinary index bytes'),
+    readBlob: () => {
+      blobReads += 1;
+      return Buffer.from('ordinary index bytes');
+    },
+    lstat: () => {
+      throw missing;
+    },
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+  })), []);
+  assert.equal(blobReads, 1);
+  assert.equal(worktreeReads, 0);
+});
+
+test('repository scan rejects a symlinked parent component without reading outside bytes', t => {
+  const repositoryRoot = process.cwd();
+  const outsideDirectory = mkdtempSync(join(tmpdir(), 'qa-hygiene-outside-parent-'));
+  const outsideFile = join(outsideDirectory, 'outside-secret.bin');
+  const linkName = `hygiene-parent-probe-${process.pid}-${Date.now()}`;
+  const linkPath = resolve(repositoryRoot, linkName);
+  t.after(() => {
+    try {
+      unlinkSync(linkPath);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  });
+  writeFileSync(outsideFile, ['-----BEGIN ', 'PRIVATE KEY-----'].join(''));
+  symlinkSync(outsideDirectory, linkPath);
+  let outsideReads = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [],
+      untracked: [{ file: `${linkName}/outside-secret.bin` }],
+    }),
+    readFile(file, root) {
+      outsideReads += 1;
+      return readFileSync(resolve(root, file));
+    },
+  })), [
+    '<repository>: repository enumeration escaped the repository',
+  ]);
+  assert.equal(outsideReads, 0);
+});
+
+test('repository scan fails closed before opening worktree content when O_NOFOLLOW is unavailable', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'qa-hygiene-no-no-follow-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(join(directory, 'ordinary.txt'), 'ordinary safe bytes');
+  let openCalls = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    repositoryRoot: directory,
+    enumerateRepository: () => ({ tracked: [], untracked: [{ file: 'ordinary.txt' }] }),
+    noFollowFlag: null,
+    openFile(...args) {
+      openCalls += 1;
+      return openSync(...args);
+    },
+  })), [
+    'ordinary.txt: repository regular file could not be read',
+  ]);
+  assert.equal(openCalls, 0);
 });
 
 test('repository scan rejects oversize Git and worktree sources before invoking content readers', () => {
@@ -932,8 +1067,10 @@ test('repository scan rejects oversize Git and worktree sources before invoking 
   let worktreeReads = 0;
   const violations = fixtureArtifactViolations(repositoryScanFiles({
     enumerateRepository: () => ({
-      tracked: [{ file: 'tracked-large.bin', mode: '100644', oid: 'e'.repeat(40) }],
-      modifiedTracked: [{ file: 'modified-large.bin' }],
+      tracked: [
+        { file: 'tracked-large.bin', mode: '100644', oid: 'e'.repeat(40) },
+        { file: 'modified-large.bin', mode: '100644', oid: '2'.repeat(40) },
+      ],
       untracked: [{ file: 'untracked-large.bin' }],
     }),
     getBlobSize: () => TEST_MAX_SOURCE_BYTES + 1,
@@ -967,7 +1104,7 @@ test('repository scan rejects an aggregate source budget overflow before reading
     file: `aggregate-${index}.bin`,
   }));
   assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
-    enumerateRepository: () => ({ tracked: [], modifiedTracked: [], untracked: files }),
+    enumerateRepository: () => ({ tracked: [], untracked: files }),
     lstat: () => ({
       isFile: () => true,
       isSymbolicLink: () => false,

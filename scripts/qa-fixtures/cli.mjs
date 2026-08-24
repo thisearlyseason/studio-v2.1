@@ -52,11 +52,12 @@ async function resolvedExternalPath(value, cwd, repositoryRoot, label) {
   return target;
 }
 
-async function readExternalManifest(manifestPath) {
+async function readExternalManifest(manifestPath, { allowMissing = false } = {}) {
   let file;
   try {
     file = await lstat(manifestPath);
   } catch (error) {
+    if (error?.code === 'ENOENT' && allowMissing) return null;
     if (error?.code === 'ENOENT') throw new Error('Fixture manifest does not exist.');
     throw error;
   }
@@ -147,6 +148,10 @@ export async function runCli({
 
   // Reject malformed caller intent before creating even a read-only Admin client.
   assertRequestedHostedStagingIntent({ argv, env });
+
+  // An existing seed journal is pure local input and must be schema-valid
+  // before Firebase Admin initialization or client construction is reachable.
+  if (command === 'seed') await readExternalManifest(manifestPath, { allowMissing: true });
 
   // Resolving the Admin project is read-only. The second guard verifies it
   // agrees with the prechecked caller intent before lifecycle operations.

@@ -460,6 +460,60 @@ test('cli rejects invalid requested intent before constructing an adapter', asyn
   }
 });
 
+test('cli seed rejects an existing incomplete transition journal before adapter construction or connection', async t => {
+  for (const item of [
+    { name: 'omitted transitions', transitions: undefined },
+    { name: 'one transition alias', transitions: { 'qa-suspended': { version: 1, state: 'active' } } },
+  ]) {
+    await t.test(item.name, async t => {
+      const fixture = await lifecycleFixture(t);
+      const manifest = {
+        version: 2,
+        runId: RUN_ID,
+        projectId: STAGING,
+        authUids: [],
+        firestorePaths: [],
+        state: 'planned',
+        expiresAt: EXPIRES_AT,
+      };
+      if (item.transitions !== undefined) manifest.transitions = item.transitions;
+      await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+      const beforeManifest = await readFile(fixture.inputs.manifestPath, 'utf8');
+      let factoryCalls = 0;
+      let connectCalls = 0;
+
+      await assert.rejects(() => runCli({
+        argv: hostedArgs(
+          'seed',
+          '--manifest', fixture.inputs.manifestPath,
+          '--credentials', fixture.inputs.credentialPath,
+          '--expires-at', EXPIRES_AT,
+        ),
+        env: hostedEnvironment(),
+        cwd: repositoryRoot,
+        runIdGenerator: () => RUN_ID,
+        adapterFactory: async () => {
+          factoryCalls += 1;
+          return {
+            projectId: STAGING,
+            connect() {
+              connectCalls += 1;
+              return directAdapter(fixture.auth, fixture.firestore);
+            },
+          };
+        },
+      }), /transition/i);
+
+      assert.equal(factoryCalls, 0);
+      assert.equal(connectCalls, 0);
+      assert.equal(await readFile(fixture.inputs.manifestPath, 'utf8'), beforeManifest);
+      await assert.rejects(() => stat(fixture.inputs.credentialPath), /ENOENT/);
+      assert.equal(fixture.auth.users.size, 0);
+      assert.equal(fixture.firestore.documents.size, 0);
+    });
+  }
+});
+
 test('cli rejects caller-supplied run IDs before generator or adapter access', async t => {
   const fixture = await lifecycleFixture(t);
   let generatorCalls = 0;
