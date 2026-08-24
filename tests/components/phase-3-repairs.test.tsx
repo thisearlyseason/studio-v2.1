@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type React from 'react';
 import { describe, expect, test, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { EventDeleteConfirmation } from '@/components/events/EventDeleteConfirmation';
@@ -9,8 +10,19 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+vi.mock('@/components/ui/alert-dialog', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/ui/alert-dialog')>();
+
+  return {
+    ...actual,
+    AlertDialogAction: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>{children}</button>
+    ),
+  };
+});
+
 describe('Phase 3 rendered repairs', () => {
-  test('event deletion waits for an event-named confirmation and invokes deletion once', async () => {
+  test('event deletion waits for an event-named confirmation, prevents duplicate confirmation, and resets after reopening', async () => {
     const user = userEvent.setup();
     const onDelete = vi.fn();
 
@@ -24,9 +36,17 @@ describe('Phase 3 rendered repairs', () => {
     expect(onDelete).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Delete Championship Final' }));
-    await user.click(screen.getByRole('button', { name: 'Confirm Deletion' }));
+    const confirmDeletion = screen.getByRole('button', { name: 'Confirm Deletion' });
+    fireEvent.click(confirmDeletion);
+    fireEvent.click(confirmDeletion);
     expect(onDelete).toHaveBeenCalledTimes(1);
     expect(onDelete).toHaveBeenCalledWith('event-7');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Delete Championship Final' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Deletion' }));
+    expect(onDelete).toHaveBeenCalledTimes(2);
+    expect(onDelete).toHaveBeenLastCalledWith('event-7');
   });
 
   test('Sports Hub header keeps full and compact search contracts with one control per action', () => {
