@@ -63,6 +63,7 @@ This is a value-free inventory derived from `06-test-account-requirements.md` an
 | FCM desktop Chrome profile | NOT AUTHORIZED | FCM configuration is unavailable; no approved device-profile reference was supplied; local Playwright Chromium is unavailable. | Authorized FCM/device owner |
 | FCM mobile-capable browser/device | NOT AUTHORIZED | FCM configuration is unavailable and no approved device reference was supplied. | Authorized FCM/device owner |
 | RSS controlled feed set | NOT AUTHORIZED | No authorized opaque controlled-fixture reference was supplied. | Authorized RSS fixture owner |
+| Sports Hub controlled unsafe/private asset boundary set | NOT AUTHORIZED | No controlled unsafe-URL resource plus distinct public/private cross-tenant asset-and-identity pair was supplied. The static public catalog cannot establish unsafe-URL rejection or private-asset crossover denial. | Authorized QA/tenant-fixture owner |
 | Calendar disposable client or raw HTTP fixture | NOT AUTHORIZED | Calendar configuration is unavailable and no approved opaque fixture reference was supplied. | Authorized calendar fixture owner |
 | Playwright Chromium engine | UNAVAILABLE | No local Chromium executable was found in the standard Playwright cache paths. | Local toolchain maintainer |
 | Playwright Firefox engine | UNAVAILABLE | No local Firefox executable was found in the standard Playwright cache paths. | Local toolchain maintainer |
@@ -94,6 +95,8 @@ Local automated evidence may be collected where it does not depend on these fixt
 
 The availability result is unchanged after the focused BUG-001 and BUG-002 replays. Those replays used safe local anonymous/visitor flows and established that the two scoped repairs independently pass, but they did not supply durable registered-role identities, populated cross-tenant records, provider sandboxes, a hosted staging environment, an FCM-capable device, destructive authorization, or operational evidence.
 
-The current matrix therefore contains 88 rows: 3 `PASS`, 0 `FAIL`, 85 `BLOCKED`, 0 `NOT RUN`, and 0 `NOT APPLICABLE`. No blocked row was promoted. The historical Phase 2 report remains 3 `PASS`, 2 `FAIL`, and 83 `BLOCKED`; BUG-001 and BUG-002 later moved from `FAIL` to `BLOCKED` because their focused repairs pass while their full matrix evidence contracts remain fixture-blocked.
+The asset-boundary closure cycle safely passed a forced PDF-generation failure/retry replay, but it found no controlled unsafe-URL Sports Hub resource and no authorized public/private cross-tenant asset-and-identity pair. The Sports Hub resource/PDF/video/download row is therefore demoted from `PASS` to `BLOCKED`; this is an evidence gap, not a reproduced product defect.
 
-The one-to-one current dependency reason for each of the 85 blocked rows is recorded in `coverage-reconciliation.md`.
+The current matrix therefore contains 88 rows: 2 `PASS`, 0 `FAIL`, 86 `BLOCKED`, 0 `NOT RUN`, and 0 `NOT APPLICABLE`. No blocked row was promoted. The historical Phase 2 report remains 3 `PASS`, 2 `FAIL`, and 83 `BLOCKED`; BUG-001 and BUG-002 later moved from `FAIL` to `BLOCKED` because their focused repairs pass while their full matrix evidence contracts remain fixture-blocked, and the Sports Hub asset row is now blocked for the exact controlled fixture above.
+
+The one-to-one current dependency reason for each of the 86 blocked rows is recorded in `coverage-reconciliation.md`.
