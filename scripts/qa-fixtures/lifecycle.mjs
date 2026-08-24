@@ -161,13 +161,17 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   let lastSeededManifestPath = null;
 
   function emit(event, manifest) {
-    logger({
-      event,
-      runId: definition.runId,
-      aliases: definition.identities.map(identity => identity.alias),
-      counts: { auth: manifest.authUids.length, firestore: manifest.firestorePaths.length },
-      uidSuffixes: manifest.authUids.map(uid => uid.slice(`${definition.runId}-`.length)).sort(),
-    });
+    try {
+      void Promise.resolve(logger({
+        event,
+        runId: definition.runId,
+        aliases: definition.identities.map(identity => identity.alias),
+        counts: { auth: manifest.authUids.length, firestore: manifest.firestorePaths.length },
+        uidSuffixes: manifest.authUids.map(uid => uid.slice(`${definition.runId}-`.length)).sort(),
+      })).catch(() => {});
+    } catch {
+      // Lifecycle logging is diagnostic only and must never change persisted state.
+    }
   }
 
   function freshManifest(state = 'planned') {
@@ -272,6 +276,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
             displayName: identity.displayName,
             emailVerified: identity.emailVerified,
             disabled: false,
+            ...(credentials.passwords ? { password: passwords.get(identity.uid) } : {}),
           });
           await auth.setCustomUserClaims(identity.uid, identity.customClaims);
         }

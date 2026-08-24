@@ -423,6 +423,29 @@ test('seed rejects a 0600 credential file that belongs to a different run', asyn
   await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /credential recovery/i);
 });
 
+test('seed rebinds matching Auth user passwords to a validated exact-run credential file', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const credentials = JSON.parse(await readFile(fixture.inputs.credentialPath, 'utf8'));
+  for (const identity of fixture.definition.identities) {
+    await fixture.auth.updateUser(identity.uid, { password: 'different-password' });
+  }
+  await fixture.lifecycle.seed(fixture.inputs);
+  for (const item of credentials.identities) {
+    const identity = fixture.definition.identities.find(candidate => candidate.alias === item.alias);
+    assert.equal((await fixture.auth.getUser(identity.uid)).password, item.password);
+  }
+});
+
+test('credential reuse rejects an Auth user whose exact marker alias does not match', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const identity = fixture.definition.identities[0];
+  const user = await fixture.auth.getUser(identity.uid);
+  await fixture.auth.setCustomUserClaims(identity.uid, { ...user.customClaims, qaFixtureAlias: 'wrong-alias' });
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /collision/i);
+});
+
 test('seed logger emits only sanitized fields and never credential values', async t => {
   const fixture = await lifecycleFixture(t);
   await fixture.lifecycle.seed(fixture.inputs);
@@ -430,6 +453,17 @@ test('seed logger emits only sanitized fields and never credential values', asyn
   assert.ok(fixture.logs.length > 0);
   const output = JSON.stringify(fixture.logs);
   for (const item of credentials.identities) assert.equal(output.includes(item.password), false);
+});
+
+test('a throwing logger cannot downgrade a completed seed manifest', async t => {
+  const fixture = await lifecycleFixture(t);
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    logger: () => { throw new Error('logger failure'); },
+  });
+  const manifest = await lifecycle.seed(fixture.inputs);
+  assert.equal(manifest.state, 'seeded');
+  assert.equal(JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8')).state, 'seeded');
 });
 
 test('inspect detects active membership-cache drift on an exact manifest resource', async t => {
