@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`\
 **Environment:** local development plus isolated Firebase preview\
-**Status:** Phase 2 diagnosis evidence retained; Phase 3 verification supplement recorded below. This ledger does not declare the application production ready.
+**Status:** Phase 2 diagnosis evidence is retained; Phase 3/4 verification and Phase 5 staging supplements are recorded below. This ledger does not declare the application production ready.
 
 ## BUG-001 — Event deletion has no confirmation
 
@@ -89,3 +89,23 @@
 | Fresh browser proof | After `597b6aac`, the same clean local Chrome path completed the full 390×844 isolated BUG-001 emulator replay; sanitized evidence and screenshot are recorded in `docs/qa/production-audit/runs/2026-08-23-phase4-c3177f29/bug-001.md`. |
 | Scope limitation | The correction improves local QA/testability only. It does not add authenticated fixtures, provider sandboxes, hosted staging, device coverage, or production evidence, and it does not change the 88-row functional coverage matrix. |
 | Status | FIXED AND VERIFIED |
+
+## BUG-004 — How-to video request aborts on hosted staging
+
+| Field | Evidence |
+|---|---|
+| Severity | P3 LOW |
+| Feature | Marketing/legal — Audience/sport/safety/how-to/legal |
+| Role | Visitor |
+| Page or route | Hosted staging `/how-to` |
+| Description | The page's same-origin media request for `/faq/how-to-create-a-game.mp4` reports `net::ERR_ABORTED` in Chrome even though the page and video reach a healthy final rendered state. |
+| Expected behavior | The row's explicit network contract requires no failed assets; the how-to media request must complete without a browser request-failure event. |
+| Actual behavior | The page returned HTTP 200 with heading `Operational Manual.`, zero horizontal overflow, zero application-origin console errors, zero page errors, and zero same-origin HTTP responses of 400 or higher. The video reached `readyState=4`, `networkState=1`, and `errorCode=0`, but Chrome still reported one same-origin media request failure for `/faq/how-to-create-a-game.mp4`, type `media`, reason `net::ERR_ABORTED`. |
+| Reproduction consistency | Observed in the complete two-viewport staging sweep and reproduced in a fresh isolated focused replay. |
+| Browser | System Chrome via the bundled Playwright CLI; focused replay at 1440×900 |
+| Exact deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af` |
+| Deployment evidence | Release gate run `32721982132` and protected staging run `32722312601` both passed for the exact deployed SHA. |
+| Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase5-staging/02-public-smoke.md`; focused replay window `2026-08-24T12:08:35Z`–`2026-08-24T12:08:44Z`. |
+| Impact | The route remains usable in the observed final state, but the deterministic request-failure signal violates the row's strict asset-health contract and prevents a supported `PASS`. |
+| Scope limitation | No response body, header, credential, token, cookie, action link, personal data, raw browser trace, or provider payload was retained. No root cause or fix is claimed by this evidence-only reconciliation. |
+| Status | CONFIRMED UNRESOLVED |
