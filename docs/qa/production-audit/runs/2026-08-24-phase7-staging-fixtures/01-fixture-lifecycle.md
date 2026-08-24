@@ -1,59 +1,58 @@
 # Phase 7 Fixture Lifecycle Evidence
 
 - Lifecycle result: `BLOCKED BEFORE SEED`
-- Guard result: read-only preflight exited nonzero before Firebase Admin project resolution
-- Hosted writes: `0`
+- Current guard result: Firebase Admin resolved a non-staging project identity
+- Hosted writes across both attempts: `0`
 
 ## Lifecycle checkpoint record
 
-| Checkpoint | Result | Evidence boundary |
+| Checkpoint | Original attempt | Resumed attempt |
 | --- | --- | --- |
-| Private workspace | PASS | External `mktemp -d`; directory mode `0700`; raw-state directory mode `0700` |
-| Exact caller confirmations | PASS | Both project flags named `the-squad-v2-staging`; opt-in was exact string `true`; only the approved staging origin was passed |
-| Resolved-project guard | BLOCKED | Adapter threw before it could return a resolved project ID |
-| Preflight planned aliases/teams | NOT PROVEN | Expected nine aliases and two teams, but the preflight emitted no result object |
-| Seed | NOT RUN | Guard did not pass |
-| Initial inspect | NOT RUN | No manifest existed |
-| `qa-suspended` positive baseline | NOT RUN | No Auth user or Firestore baseline was created |
-| `qa-removed-member` positive baseline | NOT RUN | No Auth user or Firestore baseline was created |
-| Guarded negative transitions | NOT RUN | Positive baselines were not available and no transition was invoked |
-| Browser credentials | NOT CREATED | Exact external credential path remained absent |
-| Cleanup command | NOT APPLICABLE | No manifest existed and no resource was listed for cleanup |
-| Final absence proof | PASS | Manifest absent; credential file absent; raw-state file count `0`; adapter failed before Auth/Firestore client construction |
+| Private workspace | PASS — external `0700` workspace and raw directory | PASS — brand-new external `0700` workspace and raw directory |
+| Exact caller confirmations | PASS | PASS |
+| Admin adapter initialization | BLOCKED by unnormalized CommonJS namespace | PASS after `75be64e49930359b8c29ff988ab614f3c9f6b090` |
+| Resolved-project guard | NOT REACHED | BLOCKED — resolved identity did not equal `the-squad-v2-staging` |
+| Preflight planned aliases/teams | NOT PROVEN | NOT PROVEN — no safe result object emitted |
+| Seed | NOT RUN | NOT RUN |
+| Initial inspect | NOT RUN | NOT RUN |
+| `qa-suspended` positive baseline | NOT RUN | NOT RUN |
+| `qa-removed-member` positive baseline | NOT RUN | NOT RUN |
+| Guarded negative transitions | NOT RUN | NOT RUN |
+| Browser credentials | NOT CREATED | NOT CREATED |
+| Hosted cleanup command | NOT APPLICABLE | NOT APPLICABLE |
+| Final absence proof | PASS | PASS |
 
-The lifecycle deliberately did not infer fixture state from the deterministic local definition. A hosted fixture exists only after the guarded command resolves the exact project and records it in the external manifest; neither condition occurred.
+The lifecycle does not infer hosted fixture state from the deterministic local definition. A hosted fixture exists only after the exact project is resolved and a manifest records successful writes. Neither attempt reached that point.
 
 ## Trap/finally strategy
 
-Before the hosted preflight, the private shell registered an EXIT/INT/TERM handler. Had a partial manifest appeared, that handler would have run the exact guarded `inspect`, `cleanup`, `inspect` sequence against the same external manifest, closed every Task 4 Playwright session, invoked the validated `removeCredentialFile` helper for the exact external credential path, removed raw state within the validated temporary directory, and then removed the temporary workspace.
+Before each hosted preflight, the private shell registered an EXIT/INT/TERM handler. Had a partial manifest appeared, the handler would have closed every Task 4 Playwright session, run guarded `inspect`, `cleanup`, and `inspect` against the exact external manifest, invoked the validated `removeCredentialFile` helper for the exact external credential path, and removed raw state only inside the validated temporary directory.
 
-Because the preflight failed before seed and no manifest or credential file was created, the exact cleanup set was empty. This proves zero manifest-listed Auth users and zero manifest-listed Firestore documents were created by this run. No claim is made about unrelated staging resources because Task 4 never received authorization to read or mutate them through the failed guard.
+No manifest or credential file appeared in either attempt. The original workspace and the brand-new resumed workspace were both removed by their handlers. This proves the exact manifest-owned cleanup set was empty: zero Auth UIDs and zero Firestore document paths were created by Task 4.
 
-## Draft BUG-005 — Fixture Admin adapter crashes before staging project resolution
+## Historical BUG-005 draft — resolved QA-harness defect
 
-| Field | Evidence |
+The original evidence reserved `BUG-005` for the Firebase Admin namespace crash. That draft is now retired:
+
+| Field | Reconciliation |
 | --- | --- |
-| Stable ID | `BUG-005` (draft for Task 5 ledger reconciliation) |
-| Severity | `P1 HIGH` — blocks every hosted fixture lifecycle and all selected critical authorization scenarios, while causing no observed production or staging data mutation |
-| Feature | Phase 7 QA fixture foundation — Firebase Admin adapter/preflight |
-| Affected coverage rows | Authentication email/password login; Dashboard/shell role landing and route policy; Dashboard/shell active team switch; Administration access and user directory remain `BLOCKED` |
-| Expected | Read-only preflight resolves `the-squad-v2-staging` and emits `safe=true`, nine planned aliases, and two planned teams without writes |
-| Actual | Nonzero exit with `Cannot read properties of undefined (reading 'find')` before resolved-project confirmation |
-| Reproduction | Run the exact approved preflight command recorded in `00-environment.md` from the Task 4 worktree |
-| Consistency | Reproduced by directly constructing the adapter without printing environment values; the same stack terminates at `existingNamedApp` in `firebase-adapter.mjs:37` |
-| Root-cause evidence | Installed module namespace has neither named `getApps` nor named `apps`; its default export has an `apps` array. The adapter fallback dereferences the absent named `apps` export |
-| Mutation impact | None observed; execution stopped before named-app initialization, Auth/Firestore client construction, seed, inspect, transition, or cleanup |
-| Required next action | Separate root-cause/TDD repair of the Task 3 adapter, then a new Task 4 run from the read-only preflight gate |
+| Classification | Resolved QA-harness defect; not product runtime behavior |
+| Repair | `75be64e49930359b8c29ff988ab614f3c9f6b090` normalizes the imported Admin SDK before application lookup |
+| Fresh proof | The resumed executable preflight passed the prior crash site, initialized the adapter, and reached the later resolved-project safety guard |
+| Ledger disposition | Do not add `BUG-005` to the product defect ledger |
+| Remaining blocker | The available ADC-resolved identity is not `the-squad-v2-staging`; exact staging authorization is unavailable in this environment |
 
-No source patch is included in this evidence task.
+No source patch is included in Task 4.
 
 ## Cleanup and hygiene conclusion
 
 - Auth users created: `0`.
 - Firestore documents created: `0`.
 - Teams created: `0`.
+- Positive baselines recorded: `0`.
 - Transitions invoked: `0`.
-- Manifest files remaining: `0` after the external finally handler.
-- Credential files remaining: `0` after the external finally handler.
+- Browser contexts opened: `0`.
+- Manifest files remaining: `0`.
+- Credential files remaining: `0`.
 - Raw Playwright artifacts remaining: `0`.
-- Unrelated sentinel mutation: none; no fixture write method was reached.
+- Unrelated sentinel mutation: none; no lifecycle write method was reached.

@@ -1,10 +1,10 @@
 # Phase 7 Auth and Tenant Browser Evidence
 
-- Browser result: `NOT RUN — HOSTED PREFLIGHT BLOCKED`
+- Browser result: `NOT RUN — EXACT STAGING PROJECT NOT PROVEN`
 - Browser contexts opened: `0`
 - Raw browser artifacts retained: `0`
 
-The browser stage was contingent on an exit-0 read-only staging preflight followed by an exact seed and inspect. The preflight failed before Firebase Admin project resolution, so opening authenticated contexts or reading the external credential file would have bypassed the approved safety sequence. No browser scenario was started.
+The browser stage was contingent on an exit-0 read-only staging preflight followed by an exact seed and inspect. The repaired adapter reached the resolved-project guard, but Application Default Credentials resolved a non-staging identity. Opening authenticated contexts or attempting to use credentials after that mismatch would have bypassed the approved safety sequence. No browser scenario was started.
 
 ## Approved scenario disposition
 
@@ -22,10 +22,10 @@ The browser stage was contingent on an exit-0 read-only staging preflight follow
 
 ## Required evidence fields
 
-For every scenario, the required final URL, visible outcome, applicable API status, same-origin request failures, application-console errors, page errors, horizontal overflow, and post-action Firestore state are `NOT AVAILABLE` because no context was opened. Reporting zeros for these browser signals would be misleading; only the context count and retained-artifact count are zero.
+For every scenario, final URL, visible outcome, applicable API status, same-origin request failures, application-console errors, page errors, horizontal overflow, and post-action Firestore state are `NOT AVAILABLE` because no context was opened. Reporting zeros for those signals would be misleading; only the context count and retained-artifact count are zero.
 
 The Playwright prerequisite itself was confirmed read-only: `npx` was available, the bundled CLI reported version `0.1.18`, and `open --browser chrome` supports the system Chrome channel. No session, persistent profile, screenshot, trace, video, storage state, cookie, token, or credential value was created or retained.
 
 ## Coverage conclusion
 
-No matrix row is promoted by this run. The four directly targeted rows remain `BLOCKED`, and passing local tests or a healthy anonymous `/api/health` response do not substitute for the missing hosted identity, session, permission, responsive, network, console, and persistence evidence.
+No matrix row is promoted by either attempt. The four directly targeted rows remain `BLOCKED`. Passing local tests, the repaired harness crash, and a healthy anonymous `/api/health` response do not substitute for missing exact-project identity, hosted fixture, session, permission, responsive, network, console, and persistence evidence.
