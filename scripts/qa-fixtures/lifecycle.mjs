@@ -306,7 +306,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     ]));
 
     try {
-      if (manifest.state === 'planned') manifest = await persistPartial(manifestPath, manifest);
+      manifest = await persistPartial(manifestPath, manifest);
       for (const identity of definition.identities) {
         const existing = await getAuthUser(identity.uid);
         if (!existing) {

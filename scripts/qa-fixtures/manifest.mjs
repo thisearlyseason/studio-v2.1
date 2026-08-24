@@ -134,11 +134,42 @@ function normalizeTransitions(value = {}) {
     for (const field of ['startedAt', 'firestoreUpdatedAt', 'cacheDeletedAt', 'revokedAt', 'completedAt']) {
       assertTimestamp(transition[field], `transitions.${alias}.${field}`);
     }
-    if (transition.state === finalState && (!transition.firestoreUpdatedAt || !transition.revokedAt || !transition.completedAt)) {
-      throw new Error(`Completed transition ${alias} requires mutation, revocation, and completion timestamps.`);
+
+    const timestampFields = ['startedAt', 'firestoreUpdatedAt', 'cacheDeletedAt', 'revokedAt', 'completedAt'];
+    const checkpointOrder = alias === 'qa-suspended'
+      ? ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']
+      : timestampFields;
+    if (alias === 'qa-suspended' && transition.cacheDeletedAt !== undefined) {
+      throw new Error('Suspended transition forbids a cache-deletion timestamp.');
     }
-    if (alias === 'qa-removed-member' && transition.state === finalState && !transition.cacheDeletedAt) {
-      throw new Error('Completed removed-member transition requires a cache-deletion timestamp.');
+    if (transition.state === 'active') {
+      if (timestampFields.some(field => transition[field] !== undefined)) {
+        throw new Error(`Active transition ${alias} forbids progress and completion timestamps.`);
+      }
+    } else {
+      if (!transition.startedAt) throw new Error(`Transition ${alias} requires a start timestamp.`);
+      if (transition.state === 'applying' && transition.completedAt !== undefined) {
+        throw new Error(`Applying transition ${alias} forbids a completion timestamp.`);
+      }
+      const permittedOrder = transition.state === 'applying' ? checkpointOrder.slice(0, -1) : checkpointOrder;
+      let missingCheckpoint = false;
+      let previousTimestamp = null;
+      for (const field of permittedOrder) {
+        const timestamp = transition[field];
+        if (timestamp === undefined) {
+          missingCheckpoint = true;
+          continue;
+        }
+        if (missingCheckpoint) throw new Error(`Transition ${alias} checkpoints must follow completed step ordering.`);
+        const parsed = Date.parse(timestamp);
+        if (previousTimestamp !== null && parsed < previousTimestamp) {
+          throw new Error(`Transition ${alias} timestamps must be monotonically nondecreasing.`);
+        }
+        previousTimestamp = parsed;
+      }
+      if (transition.state === finalState && missingCheckpoint) {
+        throw new Error(`Completed transition ${alias} requires every checkpoint timestamp.`);
+      }
     }
     normalized[alias] = { ...transition };
   }

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import {
@@ -16,9 +17,10 @@ import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
 import { createLifecycle, removeCredentialFile } from '../scripts/qa-fixtures/lifecycle.mjs';
 import { runCli } from '../scripts/qa-fixtures/cli.mjs';
 import { createFirebaseAdapter } from '../scripts/qa-fixtures/firebase-adapter.mjs';
-import { chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const STAGING = STAGING_PROJECT_ID;
 const RUN_ID = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
@@ -204,6 +206,9 @@ async function lifecycleFixture(t, runId = RUN_ID) {
   const directory = await mkdtemp(join(tmpdir(), 'qa-fixture-lifecycle-'));
   t.after(async () => {
     await removeCredentialFile(join(directory, 'credentials.json'), process.cwd());
+    await unlink(join(directory, 'remote-state.json')).catch(error => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
   });
   const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
   const auth = new FakeAuth();
@@ -234,6 +239,101 @@ async function lifecycleFixture(t, runId = RUN_ID) {
     inputs,
     logs,
   };
+}
+
+async function hardExitSeedProcess(fixture, alias) {
+  const remoteStatePath = join(fixture.directory, 'remote-state.json');
+  await writeFile(remoteStatePath, JSON.stringify({
+    auth: Object.fromEntries([...fixture.auth.users].map(([uid, user]) => [uid, {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      emailVerified: user.emailVerified,
+      disabled: user.disabled,
+      customClaims: user.customClaims,
+    }])),
+    firestore: Object.fromEntries(fixture.firestore.documents),
+  }));
+  const lifecycleUrl = pathToFileURL(resolve(repositoryRoot, 'scripts/qa-fixtures/lifecycle.mjs')).href;
+  const definitionUrl = pathToFileURL(resolve(repositoryRoot, 'scripts/qa-fixtures/definition.mjs')).href;
+  const script = `
+    import { readFile, writeFile } from 'node:fs/promises';
+    const { createLifecycle } = await import(${JSON.stringify(lifecycleUrl)});
+    const { buildFixtureDefinition } = await import(${JSON.stringify(definitionUrl)});
+    const remoteStatePath = ${JSON.stringify(remoteStatePath)};
+    const remote = JSON.parse(await readFile(remoteStatePath, 'utf8'));
+    const persist = () => writeFile(remoteStatePath, JSON.stringify(remote));
+    const missingUser = () => {
+      const error = new Error('User not found');
+      error.code = 'auth/user-not-found';
+      return error;
+    };
+    const auth = {
+      async getUser(uid) {
+        if (!remote.auth[uid]) throw missingUser();
+        return structuredClone(remote.auth[uid]);
+      },
+      async createUser(input) {
+        if (remote.auth[input.uid]) throw new Error('duplicate auth user');
+        remote.auth[input.uid] = { ...input, customClaims: {} };
+        delete remote.auth[input.uid].password;
+        await persist();
+        return structuredClone(remote.auth[input.uid]);
+      },
+      async updateUser(uid, input) {
+        if (!remote.auth[uid]) throw missingUser();
+        remote.auth[uid] = { ...remote.auth[uid], ...input };
+        delete remote.auth[uid].password;
+        await persist();
+        return structuredClone(remote.auth[uid]);
+      },
+      async setCustomUserClaims(uid, customClaims) {
+        if (!remote.auth[uid]) throw missingUser();
+        remote.auth[uid].customClaims = structuredClone(customClaims);
+        await persist();
+      },
+      async revokeRefreshTokens() {},
+      async deleteUser(uid) {
+        delete remote.auth[uid];
+        await persist();
+      },
+    };
+    const firestore = {
+      async get(path) {
+        return remote.firestore[path] === undefined ? null : structuredClone(remote.firestore[path]);
+      },
+      async set(path, data) {
+        remote.firestore[path] = structuredClone(data);
+        await persist();
+      },
+      async delete(path) {
+        delete remote.firestore[path];
+        await persist();
+      },
+    };
+    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(fixture.definition.runId)}, expiresAt: ${JSON.stringify(EXPIRES_AT)} });
+    const lifecycle = createLifecycle({
+      auth,
+      firestore,
+      clock: () => new Date('2026-08-24T14:00:00.000Z'),
+      randomBytes: size => Buffer.alloc(size, 7),
+      definition,
+      repositoryRoot: ${JSON.stringify(repositoryRoot)},
+      manifestPath: ${JSON.stringify(fixture.inputs.manifestPath)},
+      faultInjector(stage) {
+        if (stage === ${JSON.stringify(`seed.${alias}.afterAuthCreate`)}) process.exit(86);
+      },
+    });
+    await lifecycle.seed({
+      manifestPath: ${JSON.stringify(fixture.inputs.manifestPath)},
+      credentialPath: ${JSON.stringify(fixture.inputs.credentialPath)},
+    });
+  `;
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', script], { encoding: 'utf8' });
+  const remote = JSON.parse(await readFile(remoteStatePath, 'utf8'));
+  fixture.auth.users = new Map(Object.entries(remote.auth));
+  fixture.firestore.documents = new Map(Object.entries(remote.firestore));
+  return child;
 }
 
 test('importing the CLI exposes commands without executing an adapter operation', async () => {
@@ -690,6 +790,187 @@ test('manifest validation returns a deeply frozen normalized copy without mutati
   }, TypeError);
 });
 
+test('manifest transition validation enforces alias-specific ordered checkpoint schemas', () => {
+  const baseManifest = {
+    version: 2,
+    runId: RUN_ID,
+    projectId: STAGING,
+    authUids: [`${RUN_ID}-owner-a`],
+    firestorePaths: [`qaAuditRuns/${RUN_ID}`],
+    state: 'seeded',
+  };
+  const cases = [
+    {
+      name: 'active forbids progress checkpoints',
+      alias: 'qa-suspended',
+      transition: { version: 1, state: 'active', firestoreUpdatedAt: '2026-08-24T14:00:01.000Z' },
+      accepted: false,
+    },
+    {
+      name: 'active forbids completion checkpoints',
+      alias: 'qa-removed-member',
+      transition: { version: 1, state: 'active', completedAt: '2026-08-24T14:00:05.000Z' },
+      accepted: false,
+    },
+    {
+      name: 'applying requires a start checkpoint',
+      alias: 'qa-suspended',
+      transition: { version: 1, state: 'applying' },
+      accepted: false,
+    },
+    {
+      name: 'applying forbids a completion checkpoint',
+      alias: 'qa-suspended',
+      transition: {
+        version: 1,
+        state: 'applying',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        completedAt: '2026-08-24T14:00:05.000Z',
+      },
+      accepted: false,
+    },
+    {
+      name: 'suspended never permits a cache-deletion checkpoint',
+      alias: 'qa-suspended',
+      transition: {
+        version: 1,
+        state: 'applying',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+        cacheDeletedAt: '2026-08-24T14:00:02.000Z',
+      },
+      accepted: false,
+    },
+    {
+      name: 'suspended revocation cannot precede its Firestore checkpoint',
+      alias: 'qa-suspended',
+      transition: {
+        version: 1,
+        state: 'applying',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+      },
+      accepted: false,
+    },
+    {
+      name: 'removed cache deletion cannot precede its Firestore checkpoint',
+      alias: 'qa-removed-member',
+      transition: {
+        version: 1,
+        state: 'applying',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        cacheDeletedAt: '2026-08-24T14:00:02.000Z',
+      },
+      accepted: false,
+    },
+    {
+      name: 'removed revocation cannot precede cache deletion',
+      alias: 'qa-removed-member',
+      transition: {
+        version: 1,
+        state: 'applying',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+      },
+      accepted: false,
+    },
+    {
+      name: 'final suspended requires its start checkpoint',
+      alias: 'qa-suspended',
+      transition: {
+        version: 1,
+        state: 'suspended',
+        firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+        completedAt: '2026-08-24T14:00:04.000Z',
+      },
+      accepted: false,
+    },
+    {
+      name: 'final checkpoints must be monotonically nondecreasing',
+      alias: 'qa-removed-member',
+      transition: {
+        version: 1,
+        state: 'removed',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        firestoreUpdatedAt: '2026-08-24T14:00:02.000Z',
+        cacheDeletedAt: '2026-08-24T14:00:01.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+        completedAt: '2026-08-24T14:00:04.000Z',
+      },
+      accepted: false,
+    },
+    {
+      name: 'active has no checkpoints',
+      alias: 'qa-suspended',
+      transition: { version: 1, state: 'active' },
+      accepted: true,
+    },
+    {
+      name: 'suspended applying checkpoints are sequential',
+      alias: 'qa-suspended',
+      transition: {
+        version: 1,
+        state: 'applying',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+      },
+      accepted: true,
+    },
+    {
+      name: 'removed applying checkpoints are sequential',
+      alias: 'qa-removed-member',
+      transition: {
+        version: 1,
+        state: 'applying',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+        cacheDeletedAt: '2026-08-24T14:00:02.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+      },
+      accepted: true,
+    },
+    {
+      name: 'final suspended contains every ordered required checkpoint',
+      alias: 'qa-suspended',
+      transition: {
+        version: 1,
+        state: 'suspended',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+        completedAt: '2026-08-24T14:00:04.000Z',
+      },
+      accepted: true,
+    },
+    {
+      name: 'final removed contains every ordered required checkpoint',
+      alias: 'qa-removed-member',
+      transition: {
+        version: 1,
+        state: 'removed',
+        startedAt: '2026-08-24T14:00:00.000Z',
+        firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+        cacheDeletedAt: '2026-08-24T14:00:02.000Z',
+        revokedAt: '2026-08-24T14:00:03.000Z',
+        completedAt: '2026-08-24T14:00:04.000Z',
+      },
+      accepted: true,
+    },
+  ];
+
+  for (const item of cases) {
+    const candidate = { ...baseManifest, transitions: { [item.alias]: item.transition } };
+    if (item.accepted) {
+      assert.doesNotThrow(() => validateManifest(candidate), item.name);
+    } else {
+      assert.throws(() => validateManifest(candidate), undefined, item.name);
+    }
+  }
+});
+
 test('definition contains the approved identities and two distinct tenants', () => {
   const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
   assert.deepEqual(definition.identities.map(item => item.alias), [
@@ -797,6 +1078,30 @@ test('claims failure persists the newly created exact Auth UID for cleanup', asy
   assert.equal(proofPresentAtAuthDeletion, true);
   assert.equal(fixture.firestore.has(proofPath), false);
   await assert.rejects(() => fixture.auth.getUser(identity.uid), /not found/i);
+});
+
+test('re-seed journals partial before a hard exit so exact cleanup removes the recreated claimless user', async t => {
+  for (const priorState of ['seeded', 'cleaned']) {
+    const fixture = await lifecycleFixture(t);
+    const identity = fixture.definition.identities[0];
+    await fixture.lifecycle.seed(fixture.inputs);
+    if (priorState === 'cleaned') {
+      await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+    } else {
+      fixture.auth.users.delete(identity.uid);
+    }
+
+    const child = await hardExitSeedProcess(fixture, identity.alias);
+    assert.equal(child.status, 86, child.stderr || child.stdout);
+    assert.deepEqual((await fixture.auth.getUser(identity.uid)).customClaims, {});
+    const persistedAfterExit = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+
+    const cleanup = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+    assert.deepEqual(cleanup.retained, [], `${priorState} re-seed retained managed resources`);
+    assert.equal(persistedAfterExit.state, 'partial');
+    assert.equal(fixture.auth.users.size, 0);
+    assert.equal(fixture.firestore.documents.size, 0);
+  }
 });
 
 test('seed pre-journals every intended resource before an ambiguous Auth create response', async t => {
