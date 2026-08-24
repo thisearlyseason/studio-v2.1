@@ -422,6 +422,24 @@ test('firebase adapter exposes only exact Auth and document operations', async (
   assert.deepEqual(calls.map(([operation]) => operation), ['set', 'delete']);
 });
 
+test('firebase adapter normalizes a CommonJS default Admin namespace before inspecting apps', async () => {
+  const app = {
+    name: 'qa-fixtures-staging',
+    options: { projectId: STAGING },
+    auth: () => ({
+      getUser: async () => {}, createUser: async () => {}, updateUser: async () => {},
+      setCustomUserClaims: async () => {}, revokeRefreshTokens: async () => {}, deleteUser: async () => {},
+    }),
+    firestore: () => ({ doc: () => ({ get: async () => {}, set: async () => {}, delete: async () => {} }) }),
+  };
+  const adapter = await createFirebaseAdapter({
+    adminSdk: { default: { apps: [app] } },
+    env: {},
+  });
+  assert.equal(adapter.projectId, STAGING);
+  assert.equal(typeof adapter.connect, 'function');
+});
+
 test('firebase adapter awaits ADC credential project discovery before exposing clients', async () => {
   let discoveryCalls = 0;
   const adapter = await createFirebaseAdapter({

@@ -88,7 +88,8 @@ async function resolveProjectId(app, credentialProjectId, credential) {
  * This function is the only place this feature initializes Firebase Admin.
  */
 export async function createFirebaseAdapter({ env = process.env, adminSdk = firebaseAdmin } = {}) {
-  const { app, credentialProjectId, credential } = initializeNamedApp(adminSdk, env);
+  const resolvedAdminSdk = adminSdk?.default ?? adminSdk;
+  const { app, credentialProjectId, credential } = initializeNamedApp(resolvedAdminSdk, env);
   const projectId = await resolveProjectId(app, credentialProjectId, credential);
 
   return {
