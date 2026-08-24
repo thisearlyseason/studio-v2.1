@@ -77,3 +77,21 @@ Post-cleanup inspect recorded manifest state `cleaned` and zero surviving aliase
 ```
 
 The validated credential-removal helper returned `removed=true`, and the exact credential path was absent. The finally handler then repeated inspect/cleanup/inspect idempotently, invoked credential removal again, and deleted only the external private workspace. A check after the guardian exited proved the exact workspace path absent, so manifest files remaining, credential files remaining, and raw Playwright artifacts remaining are all `0`.
+
+## Fix round 1 lifecycle addendum
+
+The correction commit `e216cf91d5817c61f1c617e2e75491208877bcf4` was exercised through a complete fresh lifecycle, not a partial replay. Required active browser baselines for `qa-suspended` and `qa-removed-member` passed at `390×844` and `1440×900` before the direct guarded transitions ran. The direct CLI transitions both exited `0`: suspended became `suspended`; removed-member became `removed` and its membership cache was deleted.
+
+| Fix-round lifecycle | Sanitized result |
+| --- | --- |
+| Complete-retry preflight | PASS — independently resolved exact staging, `safe=true`, 9 aliases, 2 teams |
+| Complete-retry seed/inspect | PASS — Auth `9`, Firestore `40`, problems `0`, credential mode `0600` |
+| Positive negative-state baselines | PASS — four contexts, `/dashboard`, sessions present, page/app-console errors `0` |
+| Direct suspended/removed transitions | PASS — both exit `0`, exact negative states |
+| Canonical browser ledger | PASS — 32 rows/32 IDs, exact group arithmetic, `NOT CAPTURED=0` |
+| Complete-retry cleanup | PASS — deleted Auth `9`, Firestore `39`, retained `0`; absence `0/0` |
+| Targeted desktop-switch seed/inspect | PASS — independent new `0700` lifecycle, Auth `9`, Firestore `40` |
+| Targeted desktop-switch cleanup | PASS — deleted Auth `9`, Firestore `40`, retained `0`; absence `0/0` |
+| Credential/raw removal | PASS — both credential helpers returned removed; exact workspaces absent |
+
+The targeted desktop context started visibly on Team A, used the actual fresh-snapshot desktop control, selected Team B by its fresh ref, proved Team B visible immediately and after a real reload, and read both authorized team documents with `200`. Its Firestore profile `activeTeamId` remained Team A, consistent with the client-storage persistence behavior already documented above. The replacement row has page errors `0`, application-console errors `0`, overflow `0`, and an active session.

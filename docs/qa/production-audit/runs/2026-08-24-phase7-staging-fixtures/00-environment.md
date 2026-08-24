@@ -14,6 +14,7 @@
 | --- | --- |
 | Original Task 4 starting SHA | `d84efc61dec9fd10d954b7c9376bdc2e2d65d55f` |
 | Adapter repair | `75be64e49930359b8c29ff988ab614f3c9f6b090` (`fix: normalize fixture admin namespace`) |
+| Fixture correction under review | `e216cf91d5817c61f1c617e2e75491208877bcf4` (`fix: align fixture assistant and roster fields`) |
 | Authorized hosted-attempt starting SHA | `ed8728b76dea28af19b418317c8bf25f17f12ae0` |
 | Historical evidence commits | `7f7335ddb1bff01082772bd86872b72368f8b390`, `ed8728b76dea28af19b418317c8bf25f17f12ae0` |
 | Branch | `agent/phase7-staging-fixture-foundation` |
@@ -60,3 +61,11 @@ The browser run used system Chrome through the bundled CLI, fresh contexts, snap
 ## Artifact boundary
 
 The external credential file was created mode `0600`. Its values were read only inside redirected browser-fill helpers and never emitted. Raw snapshots, CLI logs, storage state, console/network transcripts, and credential-bearing state stayed in the mode-`0700` external workspace. Only the sanitized counts, paths, booleans, statuses, aliases, and defect reproductions in this run directory are eligible for commit. The validated credential helper returned `removed=true`; exact manifest absence was `authPresent=0`, `firestorePresent=0`. The finally handler completed and the exact private workspace path, including all raw artifacts, is absent.
+
+## Fix round 1 environment addendum
+
+The fixture-correction review at `e216cf91d5817c61f1c617e2e75491208877bcf4` triggered a complete fresh hosted lifecycle. Its exact staging preflight independently resolved `the-squad-v2-staging`, seed/inspect proved `9` Auth users and `40` Firestore paths, and the canonical browser ledger contains `32` unique contexts with exact group arithmetic `2,6,4,6,2,2,2,2,6`. Every context armed page-error, application-console, request-failure, and response listeners before its first staging navigation. Page-error state is known for every row; `NOT CAPTURED=0`.
+
+One temporary fix-round attempt stopped after eight passing pre-transition contexts because its external harness invoked a nonexistent npm script for the supported transition command. Staging remained at the active baseline and that attempt was exactly cleaned (`9` Auth, `40` Firestore, retained `0`, independent absence `0/0`, credential removed). The complete retry used the supported direct CLI transition interface. A later self-review caught that the first desktop multi-org row had not actually invoked the desktop switcher; after the complete retry was already clean, an authorized targeted lifecycle calibrated the fresh desktop control and replaced only that row with passing evidence. The targeted lifecycle was independently preflighted, seeded/inspected, browser-verified, and exactly cleaned.
+
+The complete retry cleanup deleted `9` Auth plus the `39` Firestore documents remaining after the removed-member transition; the targeted cleanup deleted `9` Auth plus `40` Firestore documents. Both retained `0`, both independently proved `authPresent=0` and `firestorePresent=0`, and both credential files were removed by the validated helper. All raw/private workspace paths are absent. No product, fixture, dependency, deployment, provider, or production change was made by Task 4.
