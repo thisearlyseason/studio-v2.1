@@ -1,6 +1,6 @@
 # Role and Permission Matrix
 
-**Phase:** Discovery and planning only
+**Phase:** Discovery and planning only\\
 **Rule:** Hidden navigation is not authorization. Every restricted operation requires direct backend testing.
 
 ## Role model

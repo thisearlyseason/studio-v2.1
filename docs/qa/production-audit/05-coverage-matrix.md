@@ -1,7 +1,7 @@
 # Master Coverage Matrix
 
-**Phase:** Phase 2 functional execution
-**Run:** `2026-08-21T232919Z` on local development plus isolated Firebase preview
+**Phase:** Phase 2 functional execution\\
+**Run:** `2026-08-21T232919Z` on local development plus isolated Firebase preview\\
 **Rule:** PASS requires current browser evidence for every applicable check; partial execution remains BLOCKED or FAIL.
 
 `B-FIXTURES` means the row could not be completed because one or more exact fixtures required by `06-test-account-requirements.md` were unavailable: durable role accounts and mailboxes, two populated cross-tenant organizations, a claim-controlled superadmin, Stripe/Connect test objects, Resend safe delivery, an FCM device, calendar-feed configuration, destructive-test authorization, or the named browser/device. The run evidence identifies the applicable dependency per domain.

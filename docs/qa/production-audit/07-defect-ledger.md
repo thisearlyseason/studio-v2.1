@@ -1,7 +1,7 @@
 # Defect Ledger
 
-**Run:** `2026-08-21T232919Z`
-**Environment:** local development plus isolated Firebase preview
+**Run:** `2026-08-21T232919Z`\\
+**Environment:** local development plus isolated Firebase preview\\
 **Status:** Phase 2 diagnosis evidence retained; Phase 3 verification supplement recorded below. This ledger does not declare the application production ready.
 
 ## BUG-001 — Event deletion has no confirmation

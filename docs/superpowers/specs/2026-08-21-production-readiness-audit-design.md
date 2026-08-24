@@ -1,7 +1,7 @@
 # Production-Readiness Audit Design
 
-**Date:** 2026-08-21
-**Status:** Approved for Phase 1 documentation
+**Date:** 2026-08-21\\
+**Status:** Approved for Phase 1 documentation\\
 **Repository:** `studio-v2.1`
 
 ## Purpose

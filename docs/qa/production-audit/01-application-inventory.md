@@ -1,7 +1,7 @@
 # Application Inventory
 
-**Phase:** Discovery and planning only
-**Evidence date:** 2026-08-21
+**Phase:** Discovery and planning only\\
+**Evidence date:** 2026-08-21\\
 **Audit status:** No feature has been certified by this document.
 
 ## Repository baseline
