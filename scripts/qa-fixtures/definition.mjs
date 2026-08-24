@@ -112,7 +112,7 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       role,
       position,
       jersey: String(index + 1),
-      avatar: `https://example.test/avatars/${alias}.png`,
+      avatar: '/icon.png',
       status: 'active',
       ...marker(runId, alias, expiresAt),
     };

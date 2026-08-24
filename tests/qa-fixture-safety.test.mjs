@@ -693,7 +693,21 @@ test('definition contains the approved identities and two distinct tenants', () 
     assert.equal(member.name, identity.name);
     assert.equal(member.playerId, `p_${member.userId}`);
     assert.match(member.jersey, /^\d+$/);
-    assert.equal(member.avatar, `https://example.test/avatars/${member.alias}.png`);
+    assert.equal(typeof member.avatar, 'string');
+  }
+});
+
+test('definition uses the verified same-origin avatar asset for every roster member', async () => {
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
+  const origin = new URL('https://staging.example/');
+  const avatarPath = '/icon.png';
+  const asset = await stat(join(repositoryRoot, 'src/app/icon.png'));
+
+  assert.equal(asset.isFile(), true);
+  for (const member of definition.members) {
+    assert.equal(member.avatar, avatarPath);
+    assert.equal(new URL(member.avatar, origin).origin, origin.origin);
+    assert.doesNotMatch(member.avatar, /example\.test/i);
   }
 });
 
