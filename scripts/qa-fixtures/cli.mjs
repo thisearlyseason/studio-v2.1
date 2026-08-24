@@ -95,6 +95,28 @@ function makeLifecycle({ adapter, definition, cwd, manifestPath }) {
   });
 }
 
+function sanitizedCommandResult(command, result, definition) {
+  if (command === 'seed') {
+    return {
+      command,
+      state: result.state,
+      aliases: definition.identities.map(identity => identity.alias),
+      counts: { auth: result.authUids.length, firestore: result.firestorePaths.length },
+      uidSuffixes: result.authUids.map(uid => uid.slice(`${definition.runId}-`.length)).sort(),
+    };
+  }
+  if (command === 'inspect') return { command, ...result };
+  if (command === 'cleanup') return { command, ...result };
+  const transition = {
+    command,
+    alias: result.alias,
+    state: result.state,
+    uidSuffix: result.uidSuffix,
+  };
+  if (result.resumed) transition.resumed = true;
+  return transition;
+}
+
 /**
  * Execute one guarded hosted-staging fixture command. The injectable surface
  * keeps import and tests inert; no Admin operation is reachable before guard.
@@ -157,7 +179,7 @@ export async function runCli({
   if (command === 'cleanup') result = await lifecycle.cleanup({ manifestPath });
   if (command === 'transition') result = await lifecycle.applyNegativeState(alias);
 
-  output(stdout, { command, ...result });
+  output(stdout, sanitizedCommandResult(command, result, definition));
   return result;
 }
 

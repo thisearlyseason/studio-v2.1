@@ -1,9 +1,9 @@
 # Phase 7 Staging Fixture Foundation Design
 
-**Date:** 2026-08-24  
-**Status:** Approved in chat; awaiting written-spec review  
-**Repository:** `studio-v2.1`  
-**Starting commit:** `3aae3288c459670a4f35993762069d22f81b307f`  
+**Date:** 2026-08-24
+**Status:** Approved and implemented
+**Repository:** `studio-v2.1`
+**Starting commit:** `3aae3288c459670a4f35993762069d22f81b307f`
 **Branch:** `agent/phase7-staging-fixture-foundation`
 
 ## Purpose
@@ -71,7 +71,7 @@ The implementation will add focused modules under `scripts/qa-fixtures/`:
 
 - `guard.mjs` parses the two explicit project confirmations, validates environment state, initializes Firebase Admin, resolves the actual project ID, and exposes no mutation method until the guard passes.
 - `definition.mjs` contains only deterministic synthetic aliases, fixed UID/document prefixes, expected roles, tenant relationships, and non-sensitive seed values.
-- `manifest.mjs` creates and validates a versioned run manifest. It records the run ID, created Auth UIDs, Firestore document paths, creation timestamps, and lifecycle state, but no credentials.
+- `manifest.mjs` creates and validates a versioned run manifest. Before mutation it atomically journals every exact intended Auth UID and Firestore path with a temporary-file/rename boundary. It also records resumable per-alias transition checkpoints and timestamps, but no credentials.
 - `seed.mjs` creates or reconciles the Auth users and Firestore documents idempotently. Existing resources are accepted only when they carry the exact Phase 7 namespace marker and expected alias; collisions fail closed.
 - `inspect.mjs` reads only manifest-listed resources and reports missing, unexpected, or drifted state using aliases and counts.
 - `cleanup.mjs` deletes only manifest-listed Phase 7 resources after prefix, marker, project, and run-ID validation. It is idempotent and reports retained resources when validation fails instead of broadening deletion.
@@ -91,7 +91,7 @@ Each run uses a unique non-secret identifier in the form `qa-phase7-<UTC timesta
 
 The seed follows the application’s existing canonical user, team, membership, role, and active-team fields as established by current server guards and successful tests. It does not invent a parallel authorization model. Team A and Team B use visibly distinct names and sentinel data. The multi-organization identity is authorized in Team A and denied or separately scoped in Team B according to the matrix scenario. The fake-superadmin identity may contain an untrusted profile-role value but never receives a trusted custom claim.
 
-The suspended and removed-member states are created only after their positive baseline is recorded. Their final state and session-revocation timestamp are captured in the non-secret manifest so denial tests have an explicit starting condition.
+The suspended and removed-member states are created only after their positive baseline is recorded. Manifest schema version 2 stores versioned `active` → `applying` → final-state checkpoints, remote-mutation timestamps, cache-deletion proof where applicable, session-revocation timestamps, and completion timestamps. A retry reconciles an `applying` checkpoint against exact marked remote state and safely resumes the remaining idempotent steps.
 
 ## Verification flow
 

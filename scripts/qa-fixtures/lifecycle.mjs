@@ -1,5 +1,6 @@
-import { lstat, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
+import { lstat, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { STAGING_PROJECT_ID } from './guard.mjs';
 import { assertManagedPath, assertManagedUid, validateManifest } from './manifest.mjs';
@@ -149,10 +150,11 @@ function credentialPayload(definition, passwords) {
   });
 }
 
-export function createLifecycle({ auth, firestore, clock = () => new Date(), randomBytes, definition, repositoryRoot = process.cwd(), manifestPath: configuredManifestPath, logger = () => {} } = {}) {
+export function createLifecycle({ auth, firestore, clock = () => new Date(), randomBytes, definition, repositoryRoot = process.cwd(), manifestPath: configuredManifestPath, logger = () => {}, faultInjector = () => {} } = {}) {
   if (!auth || !firestore) throw new Error('Auth and Firestore adapters are required.');
   if (typeof randomBytes !== 'function') throw new Error('randomBytes must be injected.');
   if (typeof logger !== 'function') throw new Error('logger must be a function.');
+  if (typeof faultInjector !== 'function') throw new Error('faultInjector must be a function.');
   assertDefinition(definition);
 
   const identityByUid = new Map(definition.identities.map(identity => [identity.uid, identity]));
@@ -162,6 +164,11 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     .filter(document => document.kind === 'auth-ownership')
     .map(document => [document.uid, document]));
   let lastSeededManifestPath = null;
+  let manifestWriteSequence = 0;
+
+  function injectFault(stage, details = {}) {
+    return faultInjector(stage, { runId: definition.runId, ...details });
+  }
 
   function emit(event, manifest) {
     try {
@@ -180,15 +187,19 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   function freshManifest(state = 'planned') {
     const timestamp = nowIso(clock);
     return {
-      version: 1,
+      version: 2,
       runId: definition.runId,
       projectId: STAGING_PROJECT_ID,
-      authUids: [],
-      firestorePaths: [],
+      authUids: definition.identities.map(identity => identity.uid),
+      firestorePaths: definition.documents.map(document => document.path),
       state,
       createdAt: timestamp,
       updatedAt: timestamp,
       expiresAt: definition.expiresAt,
+      transitions: {
+        'qa-suspended': { version: 1, state: 'active' },
+        'qa-removed-member': { version: 1, state: 'active' },
+      },
     };
   }
 
@@ -206,13 +217,30 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       ...manifest,
       updatedAt: nowIso(clock),
     });
-    await writeFile(manifestPath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+    const tempPath = join(dirname(manifestPath), `.${basename(manifestPath)}.${process.pid}-${++manifestWriteSequence}.tmp`);
+    try {
+      await writeFile(tempPath, `${JSON.stringify(normalized, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      await injectFault('manifest.beforeRename', { manifestPath, state: normalized.state });
+      await rename(tempPath, manifestPath);
+    } finally {
+      await unlink(tempPath).catch(error => {
+        if (error?.code !== 'ENOENT') throw error;
+      });
+    }
     return normalized;
   }
 
   function assertManifestForDefinition(manifest) {
     if (manifest && (manifest.runId !== definition.runId || manifest.expiresAt !== definition.expiresAt)) {
       throw new Error('Manifest does not match the exact fixture definition.');
+    }
+  }
+
+  function assertCompleteJournal(manifest) {
+    const intendedUids = definition.identities.map(identity => identity.uid);
+    const intendedPaths = definition.documents.map(document => document.path);
+    if (!manifest || !isDeepStrictEqual(manifest.authUids, intendedUids) || !isDeepStrictEqual(manifest.firestorePaths, intendedPaths)) {
+      throw new Error('Manifest must pre-journal the exact fixture definition before mutation.');
     }
   }
 
@@ -246,13 +274,8 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   async function persistOwnershipProof(identity, manifestPath, manifest) {
     const proof = ownershipProofByUid.get(identity.uid);
     if (!proof || proof.uid !== identity.uid) throw new Error('Fixture definition is missing an exact Auth ownership proof.');
-    let nextManifest = manifest;
-    if (!nextManifest.firestorePaths.includes(proof.path)) {
-      nextManifest = await persistPartial(manifestPath, {
-        ...nextManifest,
-        firestorePaths: [...nextManifest.firestorePaths, proof.path],
-      });
-    }
+    const nextManifest = manifest;
+    if (!nextManifest.firestorePaths.includes(proof.path)) throw new Error('Manifest is missing its pre-journaled ownership proof.');
     await firestore.set(proof.path, proof.data);
     return nextManifest;
   }
@@ -270,18 +293,20 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     }
     const existingManifest = await readManifest(manifestPath);
     assertManifestForDefinition(existingManifest);
+    if (existingManifest) assertCompleteJournal(existingManifest);
     const credentials = await readExistingCredentials(credentialPath, repositoryRoot, definition);
     const existingAuth = await checkForCollisions();
     if (!credentials.passwords && existingAuth.size > 0) {
       throw new Error('Credential recovery required: marked Auth users already exist without an exact-run credential file.');
     }
-    let manifest = existingManifest ? { ...existingManifest } : freshManifest();
+    let manifest = existingManifest ? { ...existingManifest } : await writeManifest(manifestPath, freshManifest());
     const passwords = credentials.passwords || new Map(definition.identities.map(identity => [
       identity.uid,
       Buffer.from(randomBytes(24)).toString('base64url'),
     ]));
 
     try {
+      if (manifest.state === 'planned') manifest = await persistPartial(manifestPath, manifest);
       for (const identity of definition.identities) {
         const existing = await getAuthUser(identity.uid);
         if (!existing) {
@@ -294,9 +319,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
             disabled: false,
             password: passwords.get(identity.uid),
           });
-          if (!manifest.authUids.includes(identity.uid)) {
-            manifest = await persistPartial(manifestPath, { ...manifest, authUids: [...manifest.authUids, identity.uid] });
-          }
+          await injectFault(`seed.${identity.alias}.afterAuthCreate`, { alias: identity.alias });
           await auth.setCustomUserClaims(identity.uid, identity.customClaims);
         } else {
           await auth.updateUser(identity.uid, {
@@ -308,16 +331,11 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
           });
           await auth.setCustomUserClaims(identity.uid, identity.customClaims);
         }
-        if (!manifest.authUids.includes(identity.uid)) {
-          manifest = await persistPartial(manifestPath, { ...manifest, authUids: [...manifest.authUids, identity.uid] });
-        }
       }
 
       for (const document of definition.documents) {
         await firestore.set(document.path, document.data);
-        if (!manifest.firestorePaths.includes(document.path)) {
-          manifest = await persistPartial(manifestPath, { ...manifest, firestorePaths: [...manifest.firestorePaths, document.path] });
-        }
+        await injectFault(`seed.${document.kind}.afterFirestore`, { alias: document.alias });
       }
 
       if (!credentials.passwords) {
@@ -333,7 +351,11 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       emit('seeded', manifest);
       return manifest;
     } catch (error) {
-      await persistPartial(manifestPath, manifest);
+      try {
+        manifest = await persistPartial(manifestPath, manifest);
+      } catch {
+        // Atomic persistence keeps the previous complete manifest recoverable.
+      }
       throw error;
     }
   }
@@ -342,58 +364,106 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     const manifest = await readManifest(manifestPath);
     if (!manifest) throw new Error('Fixture manifest does not exist.');
     assertManifestForDefinition(manifest);
-    const problems = [];
+    const drift = [];
     const aliases = new Set();
+    let authPresent = 0;
+    let firestorePresent = 0;
+    const cleaned = manifest.state === 'cleaned';
+    const recordDrift = (kind, alias, field, reason) => drift.push({ kind, alias, field, reason });
     for (const uid of manifest.authUids) {
       const identity = identityByUid.get(uid);
       const user = await getAuthUser(uid);
-      if (!identity || !user || !authClaimsMatch(user.customClaims, identity.customClaims)) problems.push('auth');
-      else aliases.add(identity.alias);
+      if (user) authPresent += 1;
+      if (cleaned) {
+        if (user) recordDrift('auth', identity?.alias || 'unknown', 'presence', 'unexpected-after-cleanup');
+        continue;
+      }
+      if (!identity) {
+        recordDrift('auth', 'unknown', 'uid', 'not-in-definition');
+        continue;
+      }
+      if (!user) {
+        if (manifest.state === 'seeded') recordDrift('auth', identity.alias, 'presence', 'missing');
+        continue;
+      }
+      const expectedFields = {
+        uid: identity.uid,
+        email: identity.email,
+        displayName: identity.displayName,
+        emailVerified: identity.emailVerified,
+        disabled: false,
+        customClaims: identity.customClaims,
+      };
+      for (const [field, expected] of Object.entries(expectedFields)) {
+        if (!isDeepStrictEqual(user[field], expected)) recordDrift('auth', identity.alias, field, 'mismatch');
+      }
+      if (!drift.some(item => item.kind === 'auth' && item.alias === identity.alias)) aliases.add(identity.alias);
     }
     for (const path of manifest.firestorePaths) {
       const document = documentByPath.get(path);
       const data = snapshotData(await firestore.get(path));
+      if (data) firestorePresent += 1;
+      if (cleaned) {
+        if (data) recordDrift('firestore', document?.alias || 'unknown', 'presence', 'unexpected-after-cleanup');
+        continue;
+      }
       if (!document) {
-        problems.push('firestore');
+        recordDrift('firestore', 'unknown', 'path', 'not-in-definition');
         continue;
       }
       if (!data) {
-        const member = definition.members.find(item => item.membershipPath === path);
-        const directMember = member ? snapshotData(await firestore.get(member.path)) : null;
-        if (document.kind === 'membership-cache' && member?.alias === 'qa-removed-member' && directMember?.status === 'removed') continue;
-        problems.push('firestore');
+        const transition = manifest.transitions[document.alias];
+        const allowedRemovedCache = document.kind === 'membership-cache'
+          && document.alias === 'qa-removed-member'
+          && ['applying', 'removed'].includes(transition?.state)
+          && Boolean(transition?.startedAt);
+        if (manifest.state === 'seeded' && !allowedRemovedCache) recordDrift('firestore', document.alias, 'presence', 'missing');
         continue;
       }
-      if (!markerMatches(data, document.data)) {
-        problems.push('firestore');
+      if (
+        document.kind === 'membership-cache'
+        && document.alias === 'qa-removed-member'
+        && (manifest.transitions[document.alias]?.state === 'removed' || manifest.transitions[document.alias]?.cacheDeletedAt)
+      ) {
+        recordDrift('firestore', document.alias, 'presence', 'unexpected-after-transition');
         continue;
       }
-      if (document.kind === 'user') {
-        const mayBeSuspended = document.alias === 'qa-suspended';
-        if (data.role !== document.data.role || (data.accountStatus !== 'active' && !(mayBeSuspended && data.accountStatus === 'suspended'))) {
-          problems.push('user-state');
-        }
+      const expected = { ...document.data };
+      const transition = manifest.transitions[document.alias];
+      if (document.kind === 'user' && document.alias === 'qa-suspended' && (transition?.state === 'suspended' || transition?.firestoreUpdatedAt)) {
+        expected.accountStatus = 'suspended';
       }
-      if (document.kind === 'member') {
-        const mayBeRemoved = document.alias === 'qa-removed-member';
-        if (data.id !== data.userId || data.id !== document.data.userId || data.role !== document.data.role || (data.status !== 'active' && !(mayBeRemoved && data.status === 'removed')) || data.teamId !== document.data.teamId) {
-          problems.push('tenant-relation');
-        }
+      if (document.kind === 'member' && document.alias === 'qa-removed-member' && (transition?.state === 'removed' || transition?.firestoreUpdatedAt)) {
+        expected.status = 'removed';
       }
-      if (document.kind === 'membership-cache') {
-        const member = definition.members.find(item => item.membershipPath === path);
-        const directMember = member ? snapshotData(await firestore.get(member.path)) : null;
-        if (!member || !directMember || directMember.status !== 'active' || data.teamId !== member.teamId || data.userId !== member.userId || data.role !== directMember.role || data.status !== directMember.status) {
-          problems.push('tenant-relation');
+      for (const [field, expectedValue] of Object.entries(expected)) {
+        const ambiguousSuspendedState = document.kind === 'user'
+          && document.alias === 'qa-suspended'
+          && field === 'accountStatus'
+          && transition?.state === 'applying'
+          && !transition.firestoreUpdatedAt
+          && ['active', 'suspended'].includes(data[field]);
+        const ambiguousRemovedState = document.kind === 'member'
+          && document.alias === 'qa-removed-member'
+          && field === 'status'
+          && transition?.state === 'applying'
+          && !transition.firestoreUpdatedAt
+          && ['active', 'removed'].includes(data[field]);
+        if (!ambiguousSuspendedState && !ambiguousRemovedState && !isDeepStrictEqual(data[field], expectedValue)) {
+          recordDrift('firestore', document.alias, field, 'mismatch');
         }
       }
       if (identityByAlias.has(document.alias)) aliases.add(document.alias);
     }
     return {
-      ok: problems.length === 0,
+      ok: drift.length === 0,
       aliases: [...aliases].sort(),
-      counts: { auth: manifest.authUids.length, firestore: manifest.firestorePaths.length },
-      states: { manifest: manifest.state, problems: problems.length },
+      counts: {
+        expected: { auth: manifest.authUids.length, firestore: manifest.firestorePaths.length },
+        actualPresent: { auth: authPresent, firestore: firestorePresent },
+      },
+      states: { manifest: manifest.state, problems: drift.length },
+      drift,
       uidSuffixes: manifest.authUids.map(uid => uid.slice(`${definition.runId}-`.length)).sort(),
     };
   }
@@ -402,7 +472,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     if (!NEGATIVE_ALIASES.has(alias)) throw new Error('Negative lifecycle transitions are limited to suspended and removed fixture aliases.');
     const manifestPath = configuredManifestPath || lastSeededManifestPath;
     if (!manifestPath) throw new Error('Negative lifecycle transition requires a persistent seeded baseline manifest.');
-    const manifest = await readManifest(manifestPath);
+    let manifest = await readManifest(manifestPath);
     if (
       !manifest
       || manifest.state !== 'seeded'
@@ -415,6 +485,9 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     }
     assertManifestForDefinition(manifest);
     const identity = identityByAlias.get(alias);
+    const finalState = alias === 'qa-suspended' ? 'suspended' : 'removed';
+    const priorTransition = manifest.transitions[alias];
+    const resumed = priorTransition?.state === 'applying';
     const userPath = `users/${identity.uid}`;
     const userDocument = snapshotData(await firestore.get(userPath));
     const authUser = await getAuthUser(identity.uid);
@@ -423,33 +496,82 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       !userDocument
       || !expectedUser
       || !markerMatches(userDocument, expectedUser.data)
-      || userDocument.accountStatus !== 'active'
       || !authUser
       || !authClaimsMatch(authUser.customClaims, identity.customClaims)
     ) {
       throw new Error('Negative lifecycle transition requires an active baseline.');
     }
 
+    const checkpoint = async transition => {
+      manifest = await writeManifest(manifestPath, {
+        ...manifest,
+        transitions: { ...manifest.transitions, [alias]: transition },
+      });
+      return manifest.transitions[alias];
+    };
+
+    if (priorTransition?.state === finalState) {
+      const finalMember = alias === 'qa-removed-member' ? definition.members.find(item => item.alias === alias) : null;
+      const finalRemoteState = alias === 'qa-suspended'
+        ? userDocument.accountStatus === 'suspended'
+        : snapshotData(await firestore.get(finalMember.path))?.status === 'removed'
+          && !snapshotData(await firestore.get(finalMember.membershipPath));
+      if (!finalRemoteState) throw new Error('Completed negative transition has drifted from its persisted state.');
+      return { alias, state: finalState, resumed: true, uidSuffix: identity.uid.slice(`${definition.runId}-`.length) };
+    }
+
+    if (!priorTransition || !['active', 'applying'].includes(priorTransition.state)) {
+      throw new Error('Negative lifecycle transition manifest state is invalid.');
+    }
+    let transition = priorTransition.state === 'active'
+      ? await checkpoint({ version: 1, state: 'applying', startedAt: nowIso(clock) })
+      : priorTransition;
+
     if (alias === 'qa-suspended') {
-      await firestore.set(userPath, { ...userDocument, accountStatus: 'suspended' });
+      const allowedAccountStates = priorTransition.state === 'active' ? ['active'] : ['active', 'suspended'];
+      if (!allowedAccountStates.includes(userDocument.accountStatus)) throw new Error('Negative lifecycle transition requires an active or resumable suspended state.');
+      if (userDocument.accountStatus === 'active') {
+        await firestore.set(userPath, { ...userDocument, accountStatus: 'suspended' });
+        await injectFault('transition.qa-suspended.afterFirestore', { alias });
+      }
+      if (!transition.firestoreUpdatedAt) transition = await checkpoint({ ...transition, firestoreUpdatedAt: nowIso(clock) });
       await auth.revokeRefreshTokens(identity.uid);
-      return { alias, state: 'suspended', uidSuffix: identity.uid.slice(`${definition.runId}-`.length) };
+      await injectFault('transition.qa-suspended.afterRevoke', { alias });
+      transition = await checkpoint({ ...transition, revokedAt: nowIso(clock) });
+      transition = await checkpoint({ ...transition, state: 'suspended', completedAt: nowIso(clock) });
+      return { alias, state: 'suspended', resumed, uidSuffix: identity.uid.slice(`${definition.runId}-`.length) };
     }
 
     const member = definition.members.find(item => item.alias === alias);
     const memberDocument = snapshotData(await firestore.get(member.path));
     const membershipDocument = snapshotData(await firestore.get(member.membershipPath));
-    if (!memberDocument || !markerMatches(memberDocument, member) || memberDocument.status !== 'active') {
+    const allowedMemberStates = priorTransition.state === 'active' ? ['active'] : ['active', 'removed'];
+    if (!memberDocument || !markerMatches(memberDocument, member) || !allowedMemberStates.includes(memberDocument.status)) {
       throw new Error('Negative lifecycle transition requires an active membership baseline.');
     }
     const expectedMembership = documentByPath.get(member.membershipPath);
-    if (!membershipDocument || !expectedMembership || !markerMatches(membershipDocument, expectedMembership.data) || membershipDocument.status !== 'active') {
+    if (
+      !expectedMembership
+      || (priorTransition.state === 'active' && !membershipDocument)
+      || (membershipDocument && (!markerMatches(membershipDocument, expectedMembership.data) || membershipDocument.status !== 'active'))
+    ) {
       throw new Error('Negative lifecycle transition requires an active membership-cache baseline.');
     }
-    await firestore.set(member.path, { ...memberDocument, status: 'removed' });
-    await firestore.delete(member.membershipPath);
+    if (memberDocument.status === 'active') {
+      await firestore.set(member.path, { ...memberDocument, status: 'removed' });
+      await injectFault('transition.qa-removed-member.afterFirestore', { alias });
+    }
+    if (!transition.firestoreUpdatedAt) transition = await checkpoint({ ...transition, firestoreUpdatedAt: nowIso(clock) });
+    if (membershipDocument) {
+      await firestore.delete(member.membershipPath);
+      await injectFault('transition.qa-removed-member.afterCacheDelete', { alias });
+    }
+    if (!transition.cacheDeletedAt) transition = await checkpoint({ ...transition, cacheDeletedAt: nowIso(clock) });
     await auth.revokeRefreshTokens(identity.uid);
-    return { alias, state: 'removed', uidSuffix: identity.uid.slice(`${definition.runId}-`.length) };
+    await injectFault('transition.qa-removed-member.afterRevoke', { alias });
+    transition = await checkpoint({ ...transition, revokedAt: nowIso(clock) });
+    transition = await checkpoint({ ...transition, state: 'removed', completedAt: nowIso(clock) });
+    return { alias, state: 'removed', resumed, uidSuffix: identity.uid.slice(`${definition.runId}-`.length) };
   }
 
   async function cleanup({ manifestPath } = {}) {

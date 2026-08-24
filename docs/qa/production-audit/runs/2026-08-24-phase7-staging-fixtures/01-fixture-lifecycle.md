@@ -70,13 +70,21 @@ Before preflight, the private shell registered an EXIT/INT/TERM handler. For any
 
 Immediately before cleanup, exact inspect was healthy: nine Auth users, 40 manifest paths, state `seeded`, zero problems. Guarded cleanup exited `0`, deleted all nine Auth users and the 39 Firestore documents still present, and retained no resource. The fortieth manifest path was the membership-cache document already deleted by the approved removed-member transition.
 
-Post-cleanup inspect recorded manifest state `cleaned` and zero surviving aliases; its 49 expected-resource problems are the intentional nine-plus-40 missing-resource observations. A separate adapter-based absence probe independently re-resolved exactly `the-squad-v2-staging`, queried every manifest UID/path, and returned:
+The original hosted run's pre-fix inspector recorded the 49 intentional missing resources as problems. The final safety correction changes cleaned-state inspection to treat exact absence as the healthy contract and to report actual-present counts explicitly. The final revalidation below proves `ok=true`, `problems=0`, and actual-present `0/0`. A separate adapter-based absence probe independently re-resolved exactly `the-squad-v2-staging`, queried every manifest UID/path, and returned:
 
 ```json
 {"projectId":"the-squad-v2-staging","manifestState":"cleaned","authPresent":0,"firestorePresent":0}
 ```
 
 The validated credential-removal helper returned `removed=true`, and the exact credential path was absent. The finally handler then repeated inspect/cleanup/inspect idempotently, invoked credential removal again, and deleted only the external private workspace. A check after the guardian exited proved the exact workspace path absent, so manifest files remaining, credential files remaining, and raw Playwright artifacts remaining are all `0`.
+
+## Final safety-correction hosted revalidation
+
+At `2026-08-24T19:51:55Z`, a new guarded lifecycle used canonical run ID `qa-phase7-20260824T195155Z-c9ac90f1249e`. Exact preflight independently resolved `the-squad-v2-staging`; seed created nine Auth users and 40 exact Firestore documents; initial exhaustive inspect returned `ok=true`, actual-present `9/40`, and drift `0`. Credential mode was `0600`, and seed stdout contained aliases, counts, state, and opaque UID suffixes only.
+
+Both negative transitions completed through manifest schema version 2. The suspended checkpoint contains Firestore-update, token-revocation, and completion timestamps. The removed-member checkpoint additionally contains the exact membership-cache deletion timestamp. Immediate repeat commands returned the same final state with `resumed=true`, demonstrating hosted idempotence; fault-boundary resume is covered locally for ambiguous remote responses and interruption after remote mutation.
+
+Post-transition exhaustive inspect was healthy at actual-present `9/39`, with the one absent removed-member cache explicitly allowed by its persisted transition. Guarded cleanup deleted nine Auth users and the 39 remaining Firestore documents with retained `0`. Cleaned inspect returned `ok=true`, manifest `cleaned`, problems `0`, and actual-present `0/0`. An independent guarded adapter probe then returned project `the-squad-v2-staging`, `authPresent=0`, and `firestorePresent=0`. The validated credential helper had already removed the exact credential file; its idempotent repeat returned `false`. The exact private workspace was removed and proved absent. No browser scenarios were rerun because this correction changes only fixture safety and audit tooling, not product behavior or the already canonical browser evidence.
 
 ## Fix round 1 lifecycle addendum
 

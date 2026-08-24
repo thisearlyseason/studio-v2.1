@@ -1,6 +1,6 @@
 import { MANAGED_PREFIX, STAGING_PROJECT_ID } from './guard.mjs';
 
-const RUN_ID_PATTERN = new RegExp(`^${MANAGED_PREFIX}[A-Za-z0-9][A-Za-z0-9_-]*$`);
+const RUN_ID_PATTERN = new RegExp(`^${MANAGED_PREFIX}(\\d{8}T\\d{6}Z)-([a-z0-9]{12,32})$`);
 const UID_SUFFIX_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const MANIFEST_STATES = new Set(['planned', 'partial', 'seeded', 'cleaned']);
 const MANIFEST_FIELDS = new Set([
@@ -13,6 +13,7 @@ const MANIFEST_FIELDS = new Set([
   'createdAt',
   'updatedAt',
   'expiresAt',
+  'transitions',
 ]);
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
@@ -20,9 +21,14 @@ function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function assertRunId(runId) {
-  if (typeof runId !== 'string' || !RUN_ID_PATTERN.test(runId) || runId.includes('..')) {
-    throw new Error(`run ID must begin with ${MANAGED_PREFIX} and contain only safe namespace characters.`);
+export function assertRunId(runId) {
+  const match = typeof runId === 'string' ? RUN_ID_PATTERN.exec(runId) : null;
+  if (!match) throw new Error(`run ID must use ${MANAGED_PREFIX}<UTC timestamp>-<12-32 lowercase random characters>.`);
+  const stamp = match[1];
+  const iso = `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}T${stamp.slice(9, 11)}:${stamp.slice(11, 13)}:${stamp.slice(13, 15)}Z`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime()) || date.toISOString().replace(/[-:]/g, '').replace(/\.000Z$/, 'Z') !== stamp) {
+    throw new Error('run ID must contain a valid UTC timestamp.');
   }
 }
 
@@ -105,11 +111,38 @@ export function createRunId({ now = new Date(), randomSuffix } = {}) {
   if (Number.isNaN(date.getTime())) {
     throw new Error('now must be a valid date.');
   }
-  if (typeof randomSuffix !== 'string' || !/^[A-Za-z0-9]+$/.test(randomSuffix)) {
-    throw new Error('randomSuffix must contain only letters and digits.');
+  if (typeof randomSuffix !== 'string' || !/^[a-z0-9]{12,32}$/.test(randomSuffix)) {
+    throw new Error('randomSuffix must contain 12-32 lowercase letters and digits.');
   }
   const stamp = date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-  return `${MANAGED_PREFIX}${stamp}-${randomSuffix.toLowerCase()}`;
+  return `${MANAGED_PREFIX}${stamp}-${randomSuffix}`;
+}
+
+function normalizeTransitions(value = {}) {
+  if (!isRecord(value)) throw new Error('Manifest transitions must be an object.');
+  const allowedAliases = new Set(['qa-suspended', 'qa-removed-member']);
+  const normalized = {};
+  for (const [alias, transition] of Object.entries(value)) {
+    if (!allowedAliases.has(alias) || !isRecord(transition)) throw new Error('Manifest contains an unsupported transition.');
+    const allowedFields = new Set(['version', 'state', 'startedAt', 'firestoreUpdatedAt', 'cacheDeletedAt', 'revokedAt', 'completedAt']);
+    const unknown = Object.keys(transition).find(field => !allowedFields.has(field));
+    if (unknown) throw new Error(`Unknown transition field: ${unknown}.`);
+    const finalState = alias === 'qa-suspended' ? 'suspended' : 'removed';
+    if (transition.version !== 1 || !new Set(['active', 'applying', finalState]).has(transition.state)) {
+      throw new Error(`Manifest transition ${alias} has an invalid version or state.`);
+    }
+    for (const field of ['startedAt', 'firestoreUpdatedAt', 'cacheDeletedAt', 'revokedAt', 'completedAt']) {
+      assertTimestamp(transition[field], `transitions.${alias}.${field}`);
+    }
+    if (transition.state === finalState && (!transition.firestoreUpdatedAt || !transition.revokedAt || !transition.completedAt)) {
+      throw new Error(`Completed transition ${alias} requires mutation, revocation, and completion timestamps.`);
+    }
+    if (alias === 'qa-removed-member' && transition.state === finalState && !transition.cacheDeletedAt) {
+      throw new Error('Completed removed-member transition requires a cache-deletion timestamp.');
+    }
+    normalized[alias] = { ...transition };
+  }
+  return normalized;
 }
 
 /** Validate and deeply freeze a repository-safe fixture run manifest. */
@@ -121,8 +154,8 @@ export function validateManifest(manifest) {
   if (unknownFields.length > 0) {
     throw new Error(`Unknown manifest field: ${unknownFields[0]}.`);
   }
-  if (manifest.version !== 1) {
-    throw new Error('Manifest version must equal 1.');
+  if (manifest.version !== 2) {
+    throw new Error('Manifest version must equal 2.');
   }
   if (manifest.projectId !== STAGING_PROJECT_ID) {
     throw new Error('Manifest project must equal the isolated staging project.');
@@ -145,12 +178,13 @@ export function validateManifest(manifest) {
   assertTimestamp(manifest.expiresAt, 'expiresAt');
 
   const normalized = {
-    version: 1,
+    version: 2,
     runId: manifest.runId,
     projectId: STAGING_PROJECT_ID,
     authUids: [...manifest.authUids],
     firestorePaths: [...manifest.firestorePaths],
     state: manifest.state,
+    transitions: normalizeTransitions(manifest.transitions),
   };
   for (const field of ['createdAt', 'updatedAt', 'expiresAt']) {
     if (manifest[field] !== undefined) {

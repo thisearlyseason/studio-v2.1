@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const STAGING = STAGING_PROJECT_ID;
-const RUN_ID = 'qa-phase7-20260824T140000Z-ab12';
+const RUN_ID = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
 const EXPIRES_AT = '2026-08-31T14:00:00.000Z';
 const repositoryRoot = process.cwd();
 
@@ -122,6 +122,7 @@ class FakeAuth {
     this.deleted = [];
     this.revoked = [];
     this.failSetCustomClaimsFor = null;
+    this.failAfterCreateFor = null;
   }
 
   async getUser(uid) {
@@ -138,6 +139,7 @@ class FakeAuth {
     if (this.users.has(input.uid)) throw new Error('duplicate auth user');
     const user = { ...input, customClaims: structuredClone(input.customClaims || {}) };
     this.users.set(input.uid, user);
+    if (input.uid === this.failAfterCreateFor) throw new Error('simulated ambiguous Auth create response');
     return structuredClone(user);
   }
 
@@ -170,6 +172,7 @@ class FakeFirestore {
     this.documents = new Map();
     this.deleted = [];
     this.failPath = null;
+    this.failAfterSetPath = null;
   }
 
   inject(path, data) {
@@ -188,6 +191,7 @@ class FakeFirestore {
   async set(path, data) {
     if (path === this.failPath) throw new Error('simulated Firestore write failure');
     this.documents.set(path, structuredClone(data));
+    if (path === this.failAfterSetPath) throw new Error('simulated ambiguous Firestore write response');
   }
 
   async delete(path) {
@@ -556,18 +560,39 @@ test('hosted fixture intent returns only the isolated staging project after all 
 test('run IDs use the fixed prefix and deterministic UTC timestamp and suffix', () => {
   assert.equal(createRunId({
     now: new Date('2026-08-24T14:00:00.000Z'),
-    randomSuffix: 'ab12',
+    randomSuffix: 'ab12cd34ef56',
   }), RUN_ID);
   assert.match(createRunId({
     now: new Date('2026-08-24T14:00:00.000Z'),
-    randomSuffix: 'ab12',
-  }), new RegExp(`^${MANAGED_PREFIX}\\d{8}T\\d{6}Z-[a-z0-9]+$`));
+    randomSuffix: 'ab12cd34ef56',
+  }), new RegExp(`^${MANAGED_PREFIX}\\d{8}T\\d{6}Z-[a-z0-9]{12,32}$`));
+  for (const invalid of [
+    'qa-phase7-fix1b',
+    'qa-phase7-20260824T140000Z-ab12',
+    'qa-phase7-20261324T140000Z-ab12cd34ef56',
+    'qa-phase7-20260824T250000Z-ab12cd34ef56',
+    'qa-phase7-20260824T140000Z-AB12CD34EF56',
+  ]) {
+    assert.throws(() => validateManifest({
+      version: 2,
+      runId: invalid,
+      projectId: STAGING,
+      authUids: [],
+      firestorePaths: [],
+      state: 'planned',
+      transitions: {},
+    }), /run ID/i);
+  }
+  assert.throws(() => createRunId({
+    now: new Date('2026-08-24T14:00:00.000Z'),
+    randomSuffix: 'short',
+  }), /randomSuffix/i);
 });
 
 test('managed UIDs must belong to the exact run namespace', () => {
   assertManagedUid(`${RUN_ID}-owner-a`, RUN_ID);
   assert.throws(() => assertManagedUid('unrelated-user', RUN_ID), /managed uid/i);
-  assert.throws(() => assertManagedUid(`${RUN_ID}-owner-a`, 'qa-phase7-20260824T140001Z-cd34'), /run/i);
+  assert.throws(() => assertManagedUid(`${RUN_ID}-owner-a`, 'qa-phase7-20260824T140001Z-cd34ef56ab78'), /run/i);
   assert.throws(() => assertManagedUid(`${RUN_ID}/owner-a`, RUN_ID), /managed uid/i);
 });
 
@@ -582,7 +607,7 @@ test('managed Firestore paths must be normalized and belong to the exact run nam
 
 test('manifest validation rejects resources outside its exact run namespace', () => {
   assert.throws(() => validateManifest({
-    version: 1,
+    version: 2,
     runId: RUN_ID,
     projectId: STAGING,
     authUids: ['unrelated-user'],
@@ -592,14 +617,14 @@ test('manifest validation rejects resources outside its exact run namespace', ()
 
 test('manifest validation requires a complete supported lifecycle manifest', () => {
   const manifest = validateManifest({
-    version: 1,
+    version: 2,
     runId: RUN_ID,
     projectId: STAGING,
     authUids: [`${RUN_ID}-owner-a`],
     firestorePaths: [`qaAuditRuns/${RUN_ID}`],
     state: 'planned',
   });
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.projectId, STAGING);
   assert.equal(manifest.runId, RUN_ID);
   assert.equal(manifest.state, 'planned');
@@ -607,7 +632,7 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
   assert(Object.isFrozen(manifest.authUids));
   assert(Object.isFrozen(manifest.firestorePaths));
   assert.throws(() => validateManifest({
-    version: 2,
+    version: 1,
     runId: RUN_ID,
     projectId: STAGING,
     authUids: [],
@@ -615,7 +640,7 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
     state: 'planned',
   }), /version/i);
   assert.throws(() => validateManifest({
-    version: 1,
+    version: 2,
     runId: RUN_ID,
     projectId: 'production-project',
     authUids: [],
@@ -623,7 +648,7 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
     state: 'planned',
   }), /project/i);
   assert.throws(() => validateManifest({
-    version: 1,
+    version: 2,
     runId: 'other-run',
     projectId: STAGING,
     authUids: [],
@@ -631,7 +656,7 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
     state: 'planned',
   }), /run/i);
   assert.throws(() => validateManifest({
-    version: 1,
+    version: 2,
     runId: RUN_ID,
     projectId: STAGING,
     authUids: [],
@@ -642,7 +667,7 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
 
 test('manifest validation returns a deeply frozen normalized copy without mutating input', () => {
   const input = {
-    version: 1,
+    version: 2,
     runId: RUN_ID,
     projectId: STAGING,
     authUids: [`${RUN_ID}-owner-a`, `${RUN_ID}-owner-a`],
@@ -717,7 +742,7 @@ test('seed is idempotent only for matching marked resources', async t => {
   const second = await fixture.lifecycle.seed(fixture.inputs);
   assert.deepEqual(second.authUids, first.authUids);
 
-  const collisionRunId = 'qa-phase7-20260824T140001Z-cd34';
+  const collisionRunId = 'qa-phase7-20260824T140001Z-cd34ef56ab78';
   const collision = await lifecycleFixture(t, collisionRunId);
   collision.firestore.inject(`users/${collision.definition.identities[0].uid}`, { qaFixture: false });
   await assert.rejects(() => collision.lifecycle.seed(collision.inputs), /collision/i);
@@ -729,8 +754,8 @@ test('seed leaves a partial manifest after a recorded write fails', async t => {
   await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /simulated/i);
   const partial = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
   assert.equal(partial.state, 'partial');
-  assert.equal(partial.authUids.length, 1);
-  assert.deepEqual(partial.firestorePaths, [fixture.definition.documents[0].path]);
+  assert.deepEqual(partial.authUids, fixture.definition.identities.map(item => item.uid));
+  assert.deepEqual(partial.firestorePaths, fixture.definition.documents.map(item => item.path));
 });
 
 test('partial seed retry fails closed instead of emitting credentials with missing passwords', async t => {
@@ -757,9 +782,9 @@ test('claims failure persists the newly created exact Auth UID for cleanup', asy
   await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /custom-claim write failure/i);
   const partial = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
   assert.equal(partial.state, 'partial');
-  assert.deepEqual(partial.authUids, [identity.uid]);
+  assert.deepEqual(partial.authUids, fixture.definition.identities.map(item => item.uid));
   const proofPath = `qaAuditRuns/${RUN_ID}/authOwnership/${identity.uid}`;
-  assert.deepEqual(partial.firestorePaths, [proofPath]);
+  assert.deepEqual(partial.firestorePaths, fixture.definition.documents.map(item => item.path));
   assert.equal(fixture.firestore.has(proofPath), true);
   let proofPresentAtAuthDeletion = false;
   const deleteUser = fixture.auth.deleteUser.bind(fixture.auth);
@@ -774,12 +799,60 @@ test('claims failure persists the newly created exact Auth UID for cleanup', asy
   await assert.rejects(() => fixture.auth.getUser(identity.uid), /not found/i);
 });
 
+test('seed pre-journals every intended resource before an ambiguous Auth create response', async t => {
+  const fixture = await lifecycleFixture(t);
+  const identity = fixture.definition.identities[0];
+  fixture.auth.failAfterCreateFor = identity.uid;
+
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /ambiguous Auth create/i);
+  const partial = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.equal(partial.state, 'partial');
+  assert.deepEqual(partial.authUids, fixture.definition.identities.map(item => item.uid));
+  assert.deepEqual(partial.firestorePaths, fixture.definition.documents.map(item => item.path));
+
+  fixture.auth.failAfterCreateFor = null;
+  const cleanup = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(cleanup.retained.length, 0);
+  await assert.rejects(() => fixture.auth.getUser(identity.uid), /not found/i);
+});
+
+test('seed cleanup recovers an exact marked document after an ambiguous Firestore response', async t => {
+  const fixture = await lifecycleFixture(t);
+  const target = fixture.definition.documents[0];
+  fixture.firestore.failAfterSetPath = target.path;
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /ambiguous Firestore/i);
+  assert.equal(fixture.firestore.has(target.path), true);
+  fixture.firestore.failAfterSetPath = null;
+  const cleanup = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.deepEqual(cleanup.retained, []);
+  assert.equal(fixture.firestore.has(target.path), false);
+});
+
+test('atomic manifest failure preserves the last complete JSON document and removes its temp file', async t => {
+  const fixture = await lifecycleFixture(t);
+  let beforeRenameCalls = 0;
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    faultInjector(stage) {
+      if (stage === 'manifest.beforeRename' && ++beforeRenameCalls === 2) {
+        throw new Error('simulated interruption before manifest rename');
+      }
+    },
+  });
+  await assert.rejects(() => lifecycle.seed(fixture.inputs), /interruption/i);
+  const persisted = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.equal(persisted.version, 2);
+  assert.equal(persisted.state, 'partial');
+  const names = await import('node:fs/promises').then(fs => fs.readdir(fixture.directory));
+  assert.equal(names.some(name => name.includes('.manifest.json.') && name.endsWith('.tmp')), false);
+});
+
 test('cleanup retains an unmarked exact-namespace user from a forged partial manifest without ownership proof', async t => {
   const fixture = await lifecycleFixture(t);
   const identity = fixture.definition.identities[0];
   await fixture.auth.createUser({ uid: identity.uid, email: identity.email });
   await writeFile(fixture.inputs.manifestPath, JSON.stringify({
-    version: 1,
+    version: 2,
     runId: RUN_ID,
     projectId: STAGING,
     authUids: [identity.uid],
@@ -807,7 +880,7 @@ test('seed rejects duplicate resource paths and mismatched resource markers', as
     repositoryRoot: process.cwd(),
   }), /duplicate/i);
 
-  const mismatched = await lifecycleFixture(t, 'qa-phase7-20260824T140002Z-ef56');
+  const mismatched = await lifecycleFixture(t, 'qa-phase7-20260824T140002Z-ef56ab78cd90');
   const target = mismatched.definition.documents[0];
   mismatched.firestore.inject(target.path, { ...target.data, qaFixtureAlias: 'different-alias' });
   await assert.rejects(() => mismatched.lifecycle.seed(mismatched.inputs), /collision|marker/i);
@@ -837,7 +910,7 @@ test('seed rejects a 0600 credential file that belongs to a different run', asyn
   const fixture = await lifecycleFixture(t);
   await fixture.lifecycle.seed(fixture.inputs);
   const credentials = JSON.parse(await readFile(fixture.inputs.credentialPath, 'utf8'));
-  credentials.runId = 'qa-phase7-20260824T140099Z-zz99';
+  credentials.runId = 'qa-phase7-20260824T140099Z-aa99bb88cc77';
   await chmod(fixture.inputs.credentialPath, 0o600);
   await writeFile(fixture.inputs.credentialPath, JSON.stringify(credentials), { mode: 0o600, flag: 'w' });
   await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /credential recovery/i);
@@ -896,6 +969,25 @@ test('inspect detects active membership-cache drift on an exact manifest resourc
   assert.equal(inspection.ok, false);
 });
 
+test('inspect compares every deterministic fixture field and identifies exact drift categories', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const driftTargets = [
+    [fixture.definition.documents.find(item => item.kind === 'team'), 'sentinel', 'wrong-sentinel'],
+    [fixture.definition.documents.find(item => item.kind === 'member'), 'avatar', '/wrong.png'],
+    [fixture.definition.documents.find(item => item.kind === 'membership-cache'), 'position', 'Wrong'],
+    [fixture.definition.documents.find(item => item.kind === 'user'), 'activePlanId', 'pro'],
+  ];
+  for (const [document, field, value] of driftTargets) {
+    const original = await fixture.firestore.get(document.path);
+    await fixture.firestore.set(document.path, { ...original, [field]: value });
+    const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+    assert.equal(inspection.ok, false, `${document.kind}.${field}`);
+    assert.equal(inspection.drift.some(item => item.alias === document.alias && item.field === field), true);
+    await fixture.firestore.set(document.path, original);
+  }
+});
+
 test('inspect detects a forged fake-superadmin Auth role claim', async t => {
   const fixture = await lifecycleFixture(t);
   await fixture.lifecycle.seed(fixture.inputs);
@@ -921,6 +1013,67 @@ test('negative states require a seeded active baseline and revoke sessions after
   const member = fixture.definition.members.find(item => item.alias === 'qa-removed-member');
   assert.equal((await fixture.firestore.get(member.path)).status, 'removed');
   assert.equal(await fixture.firestore.get(member.membershipPath), null);
+  const manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.equal(manifest.transitions['qa-suspended'].state, 'suspended');
+  assert.match(manifest.transitions['qa-suspended'].revokedAt, /Z$/);
+  assert.equal(manifest.transitions['qa-removed-member'].state, 'removed');
+  assert.match(manifest.transitions['qa-removed-member'].revokedAt, /Z$/);
+  const cacheDefinition = fixture.definition.documents.find(item => item.path === member.membershipPath);
+  await fixture.firestore.set(member.membershipPath, cacheDefinition.data);
+  const drifted = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(drifted.ok, false);
+  assert.equal(drifted.drift.some(item => item.field === 'presence' && item.reason === 'unexpected-after-transition'), true);
+});
+
+test('negative transition resumes after interruption between remote mutation and checkpoint persistence', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  let interrupted = false;
+  const interruptedLifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    faultInjector(stage) {
+      if (!interrupted && stage === 'transition.qa-suspended.afterFirestore') {
+        interrupted = true;
+        throw new Error('simulated transition interruption');
+      }
+    },
+  });
+  await assert.rejects(() => interruptedLifecycle.applyNegativeState('qa-suspended'), /interruption/i);
+  let manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.equal(manifest.transitions['qa-suspended'].state, 'applying');
+  assert.equal((await fixture.firestore.get(`users/${fixture.definition.identities.find(item => item.alias === 'qa-suspended').uid}`)).accountStatus, 'suspended');
+
+  const result = await createLifecycle(fixture.lifecycleOptions).applyNegativeState('qa-suspended');
+  assert.equal(result.state, 'suspended');
+  assert.equal(result.resumed, true);
+  manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.equal(manifest.transitions['qa-suspended'].state, 'suspended');
+  assert.match(manifest.transitions['qa-suspended'].firestoreUpdatedAt, /Z$/);
+  assert.match(manifest.transitions['qa-suspended'].revokedAt, /Z$/);
+});
+
+test('removed-member transition resumes after an ambiguous cache deletion boundary', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  let interrupted = false;
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    faultInjector(stage) {
+      if (!interrupted && stage === 'transition.qa-removed-member.afterCacheDelete') {
+        interrupted = true;
+        throw new Error('simulated cache deletion interruption');
+      }
+    },
+  });
+  await assert.rejects(() => lifecycle.applyNegativeState('qa-removed-member'), /interruption/i);
+  const member = fixture.definition.members.find(item => item.alias === 'qa-removed-member');
+  assert.equal(await fixture.firestore.get(member.membershipPath), null);
+  const resumed = await createLifecycle(fixture.lifecycleOptions).applyNegativeState('qa-removed-member');
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.state, 'removed');
+  const manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  assert.match(manifest.transitions['qa-removed-member'].cacheDeletedAt, /Z$/);
+  assert.match(manifest.transitions['qa-removed-member'].revokedAt, /Z$/);
 });
 
 test('a fresh lifecycle instance transitions only after persistent seeded baseline verification', async t => {
@@ -950,6 +1103,27 @@ test('cleanup deletes only exact manifest resources and is idempotent', async t 
   assert.deepEqual(fixture.auth.deleted.sort(), [...manifest.authUids].sort());
   assert.equal(fixture.firestore.has('users/unrelated'), true);
   assert.deepEqual(fixture.firestore.deleted.sort(), [...manifest.firestorePaths].sort());
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, true);
+  assert.equal(inspection.states.manifest, 'cleaned');
+  assert.deepEqual(inspection.counts.actualPresent, { auth: 0, firestore: 0 });
+  assert.equal(inspection.states.problems, 0);
+});
+
+test('seed CLI stdout contains only aliases, counts, state, and opaque UID suffixes', async t => {
+  const fixture = await lifecycleFixture(t);
+  const lines = [];
+  await runCli({
+    argv: hostedArgs('seed', '--manifest', fixture.inputs.manifestPath, '--credentials', fixture.inputs.credentialPath, '--run-id', RUN_ID, '--expires-at', EXPIRES_AT),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: async () => directAdapter(fixture.auth, fixture.firestore),
+    stdout: line => lines.push(line),
+  });
+  const output = JSON.parse(lines.join(''));
+  assert.deepEqual(Object.keys(output).sort(), ['aliases', 'command', 'counts', 'state', 'uidSuffixes']);
+  assert.equal(JSON.stringify(output).includes(RUN_ID), false);
+  assert.equal(JSON.stringify(output).includes('users/'), false);
 });
 
 test('credential-file removal refuses repository paths and removes only a caller-selected temporary file', async t => {
