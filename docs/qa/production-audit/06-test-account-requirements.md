@@ -1,6 +1,6 @@
 # Test Account Requirements
 
-**Phase:** Discovery and planning only  
+**Phase:** Discovery and planning only
 **Security rule:** Never place passwords, tokens, cookies, API keys, webhook secrets, service-account JSON, action links, or real personal information in this repository.
 
 ## Environment requirements

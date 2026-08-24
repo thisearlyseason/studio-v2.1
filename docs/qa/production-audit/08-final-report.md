@@ -1,8 +1,8 @@
 # Phase 2 Functional Audit Report
 
-**Run:** `2026-08-21T232919Z`  
-**Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
-**Environment:** local development with isolated Firebase preview  
+**Run:** `2026-08-21T232919Z`
+**Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`
+**Environment:** local development with isolated Firebase preview
 **Purpose:** defect discovery and coverage diagnosis; this report does not declare the application production ready.
 
 ## Coverage totals
@@ -46,4 +46,3 @@ Required next evidence is named in `06-test-account-requirements.md` and summari
 - Defects: `docs/qa/production-audit/07-defect-ledger.md`
 - Run records: `docs/qa/production-audit/runs/2026-08-21T232919Z/`
 - Browser artifacts: `output/playwright/2026-08-21T232919Z/`
-

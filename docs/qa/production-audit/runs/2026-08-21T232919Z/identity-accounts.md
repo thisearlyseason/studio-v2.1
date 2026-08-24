@@ -19,4 +19,3 @@ BLOCKED evidence:
 Console errors: 0. Unexpected network failures: 0. Expected network included Firebase Identity/Firestore requests against the preview project plus `/api/demo/seed` and `/api/auth/session`.
 
 Artifacts: `output/playwright/2026-08-21T232919Z/identity-demo/`.
-

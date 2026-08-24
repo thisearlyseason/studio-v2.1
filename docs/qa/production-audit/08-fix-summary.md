@@ -43,3 +43,7 @@ Both task reports record successful typecheck and full test suites: BUG-001 at 3
 There are zero confirmed bugs left open from this Phase 3 scope. The BUG-001 Events and BUG-002 Sports Hub matrix rows remain `BLOCKED`, not `PASS`, because their unexecuted role, negative, timezone/conflict, permission, and authenticated-preference scenarios still require the named fixtures in `06-test-account-requirements.md`.
 
 Phase 4 must independently verify these repairs and assess the remaining blocked coverage. This summary does not claim the SaaS, the coverage matrix, or any release is production ready.
+
+## Follow-up verification
+
+Rendered regressions now cover the deletion-confirmation interaction and Sports Hub controls; the remaining Sports Hub header link/button semantic compositions were repaired. Full-range Markdown hygiene also passes `git diff --check cc9a3c7c..HEAD`; this is not a production-readiness determination.

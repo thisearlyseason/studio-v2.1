@@ -18,4 +18,3 @@ The Events workflow received deeper testing:
 Console errors: 0. One expected browser warning came from deliberately entering an invalid HTML time value and is excluded from the application error count. Unexpected network failures: 0.
 
 Artifacts: `output/playwright/2026-08-21T232919Z/root-demo/`.
-

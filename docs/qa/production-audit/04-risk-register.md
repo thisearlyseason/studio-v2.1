@@ -1,6 +1,6 @@
 # Risk Register
 
-**Phase:** Discovery and planning only  
+**Phase:** Discovery and planning only
 **Status:** Risk classifications guide testing priority; they are not defect findings.
 
 ## Classification

@@ -13,4 +13,3 @@ BLOCKED: valid public registration, donation, volunteer, and recruiting submissi
 Console errors: 0. Unexpected network failures: 0. Expected third-party video range responses were HTTP 206.
 
 Artifacts: `output/playwright/2026-08-21T232919Z/public-content/`.
-

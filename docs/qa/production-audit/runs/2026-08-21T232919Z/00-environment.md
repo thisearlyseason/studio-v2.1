@@ -33,4 +33,3 @@ The first build attempt overlapped `next dev` and caused transient `.next` manif
 ## Missing safe dependencies
 
 Missing configuration includes the canonical Stripe prices and secrets, Stripe Connect webhook secret, Resend and unsubscribe secrets, FCM VAPID key, calendar feed base URL, Internal API secret, owner notification address, and Firebase Admin credential. The required durable role accounts, QA mailboxes, two populated tenants, claim-controlled superadmin, provider test objects, real FCM device, and destructive-test authorization were not supplied. Affected rows are BLOCKED rather than inferred.
-

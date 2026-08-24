@@ -10,4 +10,3 @@ Available safe fixtures:
 Only opaque role/team descriptions are retained here; credentials, tokens, cookies, full UIDs, and action links are excluded.
 
 Unavailable fixtures are the durable identity, tenant, provider, device, and lifecycle set listed in `06-test-account-requirements.md`. The preview environment supports anonymous demo writes, but it does not contain enough authorized account relationships for exhaustive owner/staff/parent/player/superadmin or cross-tenant browser proof.
-

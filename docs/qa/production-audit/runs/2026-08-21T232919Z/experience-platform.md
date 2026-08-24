@@ -17,4 +17,3 @@ BLOCKED:
 Console errors: 0. Unexpected network failures: 0.
 
 Artifacts: `output/playwright/2026-08-21T232919Z/experience-platform/`.
-

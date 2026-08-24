@@ -35,7 +35,7 @@ Phase 2 creates or updates these focused artifacts:
 - `docs/qa/production-audit/runs/<run-id>/00-environment.md` — commit, environment, tools, provider modes, baseline command results.
 - `docs/qa/production-audit/runs/<run-id>/01-fixtures.md` — aliases, roles, tenant relationships, opaque account references, and cleanup ownership; no secrets.
 - `docs/qa/production-audit/runs/<run-id>/<domain>.md` — expected versus actual results and artifact links for one domain.
-- `docs/qa/production-audit/07-bug-ledger.md` — stable bug IDs, severity, reproduction, evidence, owner, and state.
+- `docs/qa/production-audit/07-defect-ledger.md` — stable bug IDs, severity, reproduction, evidence, owner, and state.
 - `docs/qa/production-audit/08-final-report.md` — final coverage totals, unresolved failures/blockers, and release recommendation.
 - `output/playwright/<run-id>/<domain>/` — snapshots, screenshots, and traces.
 
@@ -165,7 +165,7 @@ git commit -m "qa: document isolated audit fixtures"
 **Files:**
 - Create: `docs/qa/production-audit/runs/<run-id>/identity-accounts.md`
 - Modify: `docs/qa/production-audit/05-coverage-matrix.md`
-- Modify: `docs/qa/production-audit/07-bug-ledger.md` when a mismatch is observed
+- Modify: `docs/qa/production-audit/07-defect-ledger.md` when a mismatch is observed
 
 **Interfaces:**
 - Consumes: verified/unverified/youth/suspended/removed/pending-delete/demo aliases.
@@ -218,7 +218,7 @@ Save artifacts under `output/playwright/<run-id>/identity-accounts/`; update onl
 - [ ] **Step 7: Commit domain evidence**
 
 ```bash
-git add docs/qa/production-audit/runs/<run-id>/identity-accounts.md docs/qa/production-audit/05-coverage-matrix.md docs/qa/production-audit/07-bug-ledger.md
+git add docs/qa/production-audit/runs/<run-id>/identity-accounts.md docs/qa/production-audit/05-coverage-matrix.md docs/qa/production-audit/07-defect-ledger.md
 git commit -m "qa: audit identity and account journeys"
 ```
 
@@ -622,7 +622,7 @@ Commit as `qa: audit infrastructure and operations`.
 ### Task 13: Triage failures and verify authorized fixes
 
 **Files:**
-- Modify: `docs/qa/production-audit/07-bug-ledger.md`
+- Modify: `docs/qa/production-audit/07-defect-ledger.md`
 - Modify: affected domain evidence and coverage rows
 - Modify application/test files only after separate user authorization
 
@@ -658,7 +658,7 @@ Use one application commit per approved fix and a subsequent QA evidence commit 
 
 **Files:**
 - Modify: `docs/qa/production-audit/05-coverage-matrix.md`
-- Modify: `docs/qa/production-audit/07-bug-ledger.md`
+- Modify: `docs/qa/production-audit/07-defect-ledger.md`
 - Create: `docs/qa/production-audit/08-final-report.md`
 
 **Interfaces:**
