@@ -210,11 +210,13 @@ test('local Firebase client and Admin SDK honor the isolated preview project', a
 test('Google sign-in keeps its provider and popup resolver in the same module boundary', async () => {
   const login = await readSource('../src/app/login/page.tsx');
   const nextConfig = await readSource('../next.config.ts');
+  const cspBuilder = await readSource('../src/lib/content-security-policy.ts');
 
   assert.match(login, /browserPopupRedirectResolver/);
   assert.match(login, /signInWithPopup\(auth, provider, browserPopupRedirectResolver\)/);
-  assert.match(nextConfig, /script-src[^\n]*https:\/\/apis\.google\.com/);
-  assert.match(nextConfig, /frame-src[^\n]*https:\/\/\*\.firebaseapp\.com/);
+  assert.match(nextConfig, /buildContentSecurityPolicy/);
+  assert.match(cspBuilder, /script-src[^\n]*https:\/\/apis\.google\.com/);
+  assert.match(cspBuilder, /frame-src[^\n]*https:\/\/\*\.firebaseapp\.com/);
 });
 
 test('school hub onboarding waits for profile hydration and permits the guarded hub route', async () => {
