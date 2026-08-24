@@ -14,13 +14,75 @@ import {
 } from '../scripts/qa-fixtures/manifest.mjs';
 import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
 import { createLifecycle, removeCredentialFile } from '../scripts/qa-fixtures/lifecycle.mjs';
+import { runCli } from '../scripts/qa-fixtures/cli.mjs';
+import { createFirebaseAdapter } from '../scripts/qa-fixtures/firebase-adapter.mjs';
 import { chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const STAGING = STAGING_PROJECT_ID;
 const RUN_ID = 'qa-phase7-20260824T140000Z-ab12';
 const EXPIRES_AT = '2026-08-31T14:00:00.000Z';
+const repositoryRoot = process.cwd();
+
+function hostedArgs(command, ...args) {
+  return [
+    command,
+    '--project', STAGING,
+    '--confirm-project', STAGING,
+    ...args,
+  ];
+}
+
+function hostedEnvironment() {
+  return { ALLOW_STAGING_QA_FIXTURES: 'true' };
+}
+
+function directAdapter(auth, firestore, calls = []) {
+  return {
+    projectId: STAGING,
+    auth: {
+      getUser: async (...args) => {
+        calls.push('auth.getUser');
+        return auth.getUser(...args);
+      },
+      createUser: async (...args) => {
+        calls.push('auth.createUser');
+        return auth.createUser(...args);
+      },
+      updateUser: async (...args) => {
+        calls.push('auth.updateUser');
+        return auth.updateUser(...args);
+      },
+      setCustomUserClaims: async (...args) => {
+        calls.push('auth.setCustomUserClaims');
+        return auth.setCustomUserClaims(...args);
+      },
+      revokeRefreshTokens: async (...args) => {
+        calls.push('auth.revokeRefreshTokens');
+        return auth.revokeRefreshTokens(...args);
+      },
+      deleteUser: async (...args) => {
+        calls.push('auth.deleteUser');
+        return auth.deleteUser(...args);
+      },
+    },
+    firestore: {
+      get: async (...args) => {
+        calls.push('firestore.get');
+        return firestore.get(...args);
+      },
+      set: async (...args) => {
+        calls.push('firestore.set');
+        return firestore.set(...args);
+      },
+      delete: async (...args) => {
+        calls.push('firestore.delete');
+        return firestore.delete(...args);
+      },
+    },
+  };
+}
 
 class FakeAuth {
   constructor() {
@@ -137,6 +199,170 @@ async function lifecycleFixture(t, runId = RUN_ID) {
     logs,
   };
 }
+
+test('importing the CLI exposes commands without executing an adapter operation', async () => {
+  const cli = await import(`../scripts/qa-fixtures/cli.mjs?inert=${Date.now()}`);
+  assert.equal(typeof cli.runCli, 'function');
+  const source = await readFile(resolve(repositoryRoot, 'scripts/qa-fixtures/cli.mjs'), 'utf8');
+  assert.match(source, /import\.meta\.url/);
+  assert.match(source, /process\.argv/);
+});
+
+test('cli preflight resolves staging intent without Auth or Firestore mutation', async () => {
+  const calls = [];
+  const lines = [];
+  await runCli({
+    argv: hostedArgs('preflight'),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: async () => directAdapter(new FakeAuth(), new FakeFirestore(), calls),
+    stdout: line => lines.push(line),
+  });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(JSON.parse(lines.join('')), {
+    command: 'preflight',
+    projectId: STAGING,
+    origin: 'https://studio--the-squad-v2-staging.us-east4.hosted.app',
+    plannedAliases: 9,
+    plannedTeams: 2,
+    safe: true,
+  });
+});
+
+test('cli rejects repository-local credential output before adapter mutation', async () => {
+  const calls = [];
+  await assert.rejects(() => runCli({
+    argv: hostedArgs('seed', '--credentials', 'tmp/creds.json'),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: async () => directAdapter(new FakeAuth(), new FakeFirestore(), calls),
+  }), /outside the repository/i);
+  assert.deepEqual(calls, []);
+});
+
+test('cli rejects repository-local manifest input before adapter mutation', async () => {
+  const calls = [];
+  await assert.rejects(() => runCli({
+    argv: hostedArgs('inspect', '--manifest', 'tmp/manifest.json'),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: async () => directAdapter(new FakeAuth(), new FakeFirestore(), calls),
+  }), /outside the repository/i);
+  assert.deepEqual(calls, []);
+});
+
+test('cli rejects unsupported commands without initializing an adapter', async () => {
+  let initialized = false;
+  await assert.rejects(() => runCli({
+    argv: hostedArgs('destroy-everything'),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: async () => {
+      initialized = true;
+      return directAdapter(new FakeAuth(), new FakeFirestore());
+    },
+  }), /unsupported fixture command/i);
+  assert.equal(initialized, false);
+});
+
+test('cli guard failure keeps all mutable commands away from direct adapter methods', async () => {
+  const commands = [
+    hostedArgs('seed', '--manifest', '/tmp/manifest.json', '--credentials', '/tmp/credentials.json'),
+    hostedArgs('inspect', '--manifest', '/tmp/manifest.json'),
+    hostedArgs('cleanup', '--manifest', '/tmp/manifest.json'),
+    hostedArgs('transition', '--manifest', '/tmp/manifest.json', '--alias', 'qa-suspended'),
+  ];
+  for (const argv of commands) {
+    const calls = [];
+    await assert.rejects(() => runCli({
+      argv,
+      env: {},
+      cwd: repositoryRoot,
+      adapterFactory: async () => directAdapter(new FakeAuth(), new FakeFirestore(), calls),
+    }), /ALLOW_STAGING_QA_FIXTURES/i);
+    assert.deepEqual(calls, [], argv[0]);
+  }
+});
+
+test('cli transition uses a fresh lifecycle with the persistent seeded manifest after guard resolution', async t => {
+  const fixture = await lifecycleFixture(t);
+  const seededCalls = [];
+  const seededOutput = [];
+  await runCli({
+    argv: hostedArgs(
+      'seed',
+      '--manifest', fixture.inputs.manifestPath,
+      '--credentials', fixture.inputs.credentialPath,
+      '--run-id', RUN_ID,
+      '--expires-at', EXPIRES_AT,
+    ),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: async () => directAdapter(fixture.auth, fixture.firestore, seededCalls),
+    stdout: line => seededOutput.push(line),
+  });
+  assert.ok(seededCalls.length > 0);
+  assert.equal(seededOutput.length, 1);
+
+  const transitionCalls = [];
+  const lines = [];
+  await runCli({
+    argv: hostedArgs(
+      'transition',
+      '--manifest', fixture.inputs.manifestPath,
+      '--alias', 'qa-suspended',
+    ),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory: async () => directAdapter(fixture.auth, fixture.firestore, transitionCalls),
+    stdout: line => lines.push(line),
+  });
+  assert.equal(transitionCalls.includes('firestore.set'), true);
+  assert.equal(transitionCalls.includes('auth.revokeRefreshTokens'), true);
+  assert.deepEqual(JSON.parse(lines.join('')), {
+    command: 'transition',
+    alias: 'qa-suspended',
+    state: 'suspended',
+    uidSuffix: 'suspended',
+  });
+});
+
+test('firebase adapter exposes only exact Auth and document operations', async () => {
+  const calls = [];
+  const app = {
+    name: 'qa-fixtures-staging',
+    options: { projectId: STAGING },
+    auth: () => ({
+      getUser: async uid => ({ uid }),
+      createUser: async input => ({ uid: input.uid }),
+      updateUser: async () => {},
+      setCustomUserClaims: async () => {},
+      revokeRefreshTokens: async () => {},
+      deleteUser: async () => {},
+    }),
+    firestore: () => ({
+      doc: path => ({
+        get: async () => ({ exists: false }),
+        set: async data => calls.push(['set', path, data]),
+        delete: async () => calls.push(['delete', path]),
+      }),
+    }),
+  };
+  const adapter = await createFirebaseAdapter({
+    adminSdk: {
+      getApps: () => [app],
+      getApp: () => app,
+    },
+    env: {},
+  });
+  assert.deepEqual(Object.keys(adapter.auth).sort(), [
+    'createUser', 'deleteUser', 'getUser', 'revokeRefreshTokens', 'setCustomUserClaims', 'updateUser',
+  ]);
+  assert.deepEqual(Object.keys(adapter.firestore).sort(), ['delete', 'get', 'set']);
+  await adapter.firestore.set(`users/${RUN_ID}-owner-a`, { qaFixture: true });
+  await adapter.firestore.delete(`users/${RUN_ID}-owner-a`);
+  assert.deepEqual(calls.map(([operation]) => operation), ['set', 'delete']);
+});
 
 test('hosted fixture intent requires both exact staging confirmations', () => {
   assert.throws(() => assertHostedStagingIntent({
