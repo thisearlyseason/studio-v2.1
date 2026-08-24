@@ -163,7 +163,7 @@
 |---|---|
 | Severity | P2 MEDIUM |
 | Feature | Leagues — Registration/assignment |
-| Role | Authorized Team A or Team B owner |
+| Role | Authorized Team A or Team B coach-owner — the tested owner subtype of matrix role `ST` (team owner/authorized staff) |
 | Page or route | `GET /api/leagues/assignments?teamId=<authorized-own-team>` |
 | Description | The assignments API returns an internal-server error for an authorized owner's own team while correctly denying the same owner when the team identifier is changed to the other fixture tenant. |
 | Expected behavior | An authorized own-team assignments query returns a successful empty/result response, and a changed-team query remains denied. |

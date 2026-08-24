@@ -59,7 +59,7 @@ Every manifest-bearing lifecycle completed exact inspect-cleanup-inspect, indepe
 | 4. Permitted role routes | `PASS` for the executed slice | Owner and corrected Assistant Coach reached `/coaches-corner`; corrected ordinary member reached `/roster` cleanly. `BUG-008` and `BUG-009` are retired fixture observations, not product defects. |
 | 5. Direct disallowed routes/APIs | `PASS` | Ordinary-member staff/club/billing/admin attempts stayed on the permitted dashboard boundary; admin API returned `403`. |
 | 6. Fake superadmin | `PASS` for the executed slice | Profile-only fake authority rendered `Access Denied`; admin API returned `403`; trusted claim absent. Trusted-superadmin happy/revoked-claim coverage remains blocked. |
-| 7. Changed tenant identifiers | `FAIL — BUG-010` | Own team reads returned `200`; other-team GET/PATCH/query returned `403`; UI stayed on the authorized tenant; authorized own-team assignments returned `500` symmetrically. |
+| 7. Changed tenant identifiers | `FAIL — BUG-010` | Team A and Team B coach-owners—the tested owner subtype of matrix role `ST`—received own-team reads `200`; other-team GET/PATCH/query returned `403`; UI stayed on the authorized tenant; authorized own-team assignments returned `500` symmetrically. |
 | 8. Multi-organization switching | `PASS` for the executed slice | Team A→B switch and real reload persistence passed at both viewports; both authorized reads returned `200`; prior team was absent. Back/rapid-switch listener churn remains blocked. |
 | 9. Removed-member denial | `FAIL — BUG-007` | Saved session revocation and direct Team A read `403` passed; fresh sign-in still returned session `200` and reached `/dashboard` at both viewports. |
 
@@ -83,7 +83,7 @@ The seven rows directly exercised by Task 4 reconcile as follows:
 | 12 — Dashboard / Role landing and route policy | `FAIL` | `BUG-007`; additional role/plan/state combinations remain unexecuted. |
 | 13 — Dashboard / Active team switch | `BLOCKED` | Back navigation, rapid switching/listener churn, and authorization change during switching. |
 | 23 — Roster / Member lifecycle | `BLOCKED` | Add/edit/remove/reinstate persistence and the named negative/permission matrix; clean roster rendering alone is partial evidence. |
-| 53 — Leagues / Registration-assignment | `FAIL` | `BUG-010`; broader public registration and assignment protocol cases remain unexecuted. |
+| 53 — Leagues / Registration-assignment (`V, LC, ST`) | `FAIL` | `BUG-010`; the reproduced actors are coach-owners, an authorized `ST` subtype for the squad-staff assignments API. Broader visitor/league-creator registration and assignment protocol cases remain unexecuted. |
 | 78 — Administration / Access and user directory | `BLOCKED` | Trusted-claim happy path, revoked claim, full non-SA role/rules matrix, persistence, and user-directory behavior. |
 
 The other 81 rows retain their prior status and evidence. Each of the 83 blocked rows has a current dependency in its matrix Notes. The remaining categories are complete role/account-state identity sets, provider sandboxes and safe recipients, controlled cross-tenant/provider data, physical-device/browser coverage, destructive-test authorization, and operational rules-drift, backup/restore, rollback, scheduler/log, and least-privilege proof.
@@ -102,7 +102,7 @@ The other 81 rows retain their prior status and evidence. Each of the 83 blocked
 
 Historical `BUG-005` is a resolved QA-harness integration issue and was never product runtime behavior. `BUG-008` and `BUG-009` were caused by corrected QA fixture shapes/resources and are retired. None of those three IDs appears as a product-ledger entry.
 
-The failed-row linkage is exact: row 4 links `BUG-006` and `BUG-007`; row 12 links `BUG-007`; row 53 links `BUG-010`. Every current failed row has at least one confirmed unresolved ledger entry, and every confirmed unresolved ledger ID appears in an affected failed row.
+The failed-row linkage is exact: row 4 links `BUG-006` and `BUG-007`; row 12 links `BUG-007`; row 53 (`V, LC, ST`) links `BUG-010`, whose canonical coach-owner actors are the tested `ST` subtype. Every current failed row has at least one confirmed unresolved ledger entry, and every confirmed unresolved ledger ID appears in an affected failed row.
 
 ## Completion gates
 
