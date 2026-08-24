@@ -127,6 +127,7 @@ export async function runCli({
   cwd = process.cwd(),
   repositoryRoot = MODULE_REPOSITORY_ROOT,
   adapterFactory = createFirebaseAdapter,
+  runIdGenerator = defaultRunId,
   stdout = process.stdout,
   stderr = process.stderr,
 } = {}) {
@@ -134,6 +135,9 @@ export async function runCli({
   if (!Array.isArray(argv) || argv.some(value => typeof value !== 'string')) throw new Error('argv must be an array of strings.');
   const command = argv[0];
   if (!COMMANDS.has(command)) throw new Error(`Unsupported fixture command: ${command || '(missing)'}.`);
+  if (argv.some(value => value === '--run-id' || value.startsWith('--run-id='))) {
+    throw new Error('Hosted fixture run IDs are generated internally and cannot be overridden.');
+  }
 
   const credentialPath = command === 'seed'
     ? await resolvedExternalPath(argumentValue(argv, '--credentials'), cwd, repositoryRoot, 'Credential')
@@ -163,7 +167,8 @@ export async function runCli({
 
   let definition;
   if (command === 'seed') {
-    const runId = argv.includes('--run-id') ? argumentValue(argv, '--run-id') : defaultRunId();
+    if (typeof runIdGenerator !== 'function') throw new Error('runIdGenerator must be a function.');
+    const runId = runIdGenerator();
     const expiresAt = argv.includes('--expires-at') ? argumentValue(argv, '--expires-at') : defaultExpiry();
     definition = buildFixtureDefinition({ runId, expiresAt });
   } else {

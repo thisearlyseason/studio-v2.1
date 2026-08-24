@@ -2,6 +2,7 @@
 
 **Phase 7 base:** `3aae3288c459670a4f35993762069d22f81b307f`\
 **Task 5 reconciliation input HEAD:** `72e8ebab1a26e2a73f43d6478129d31a293cccf2`\
+**Final-review-2 input HEAD:** `1b298acc333f5d41160e23ae4b974935bbec0b51`\
 **Last independently proven deployed SHA:** `658d3ca89f3cabf6c55800400aa17bc72229c1af`\
 **Environment:** isolated Firebase project `the-squad-v2-staging`, App Hosting backend `studio`, canonical hosted staging origin\
 **Release decision:** `NOT READY`
@@ -19,8 +20,9 @@ Phase 7 does not claim a repair root cause for the three product findings. Its e
 | Item | Revision or evidence |
 |---|---|
 | Approved phase starting revision | `3aae3288c459670a4f35993762069d22f81b307f` |
-| Fixture implementation and repair chain | `063fb33` through `1ac09e272425adde9ce4e72863c4d6244d196620` |
+| Fixture implementation and safety-repair chain | `063fb33` through the final committed revision; this report intentionally does not self-embed its own hash |
 | Final sanitized hosted evidence commit / Task 5 input HEAD | `72e8ebab1a26e2a73f43d6478129d31a293cccf2` |
+| Final-review-2 input HEAD | `1b298acc333f5d41160e23ae4b974935bbec0b51` |
 | Last independently proven deployed application revision | `658d3ca89f3cabf6c55800400aa17bc72229c1af` |
 | Authoritative hosted evidence | `runs/2026-08-24-phase7-staging-fixtures/00-environment.md` through `04-roster-console-diagnostic.md` |
 
@@ -33,6 +35,10 @@ Every hosted command required two exact caller confirmations, `ALLOW_STAGING_QA_
 Credentials and raw browser state stayed in external private workspaces: directory/raw modes were `0700`, credential files were `0600`, and no password, token, cookie, private key, action link, service-account JSON, or secret environment value was printed or retained. Cleanup revalidated every manifest-listed UID/path before deletion and exposed no broad or recursive delete primitive.
 
 Final review strengthened this boundary further. Canonical run IDs now require a valid compact UTC timestamp plus a 12–32 character lowercase random suffix. Manifest schema version 2 pre-journals the complete intended resource set before the first mutation, persists through atomic temporary-file rename, and stores versioned resumable negative-transition checkpoints with mutation, cache-deletion, revocation, and completion timestamps. Fault-injection tests cover ambiguous Auth creation, ambiguous Firestore writes, interrupted manifest replacement, suspended-state interruption, and removed-member cache-deletion interruption. Exhaustive inspection compares every deterministic Auth and Firestore field, permits only manifest-proven transition state, and treats exact cleaned absence as healthy with explicit actual-present counts.
+
+Final review 2 closed the remaining lifecycle and repository-hygiene gaps without another hosted mutation. Seed run IDs are generated internally and cannot be supplied by CLI callers. Re-seeding is rejected before credentials or adapters can mutate whenever a negative transition has started or cleanup has completed. Inspection treats missing expected resources in planned, partial, or transition states as sanitized drift and rejects unexpected top-level Firestore fields. Credential publication now writes a complete same-directory private temporary file and atomically creates the final path without replacement; interruption cannot expose an empty final credential, and an existing destination is preserved. Cleanup continues across individual adapter failures while reporting only counts and deterministic fixture aliases for retained resources and failures.
+
+Repository hygiene reads tracked regular-file bytes from the Git index object database and unignored regular-file bytes from the confined worktree, failing closed on enumeration, metadata, blob, or read errors. It recognizes complete, wrapped, serialized, encoded, and NUL-containing fixture manifests and credential payloads with bounded iterative decoding. Credential-shaped token, session, and cookie values are rejected while harmless ordinary fields are accepted. Symlinks are never followed, and no source-file allowlist is used.
 
 The suspended and removed-member identities were seeded active. Both reached `/dashboard` with a session at mobile and desktop before the guarded transitions changed their state and revoked tokens. This sequencing prevents a malformed negative fixture from being mistaken for a product denial.
 
@@ -109,7 +115,7 @@ The failed-row linkage is exact: row 4 links `BUG-006` and `BUG-007`; row 12 lin
 
 ## Completion gates
 
-| Gate | Fresh Task 5 result |
+| Gate | Fresh final-head result |
 |---|---|
 | Matrix structure | PASS — 88 rows, 88 unique feature/sub-feature keys, 13 columns per row, and only valid statuses. |
 | Matrix arithmetic | PASS — 2 `PASS`, 3 `FAIL`, 83 `BLOCKED`, 0 `NOT RUN`, and 0 `NOT APPLICABLE`; total 88. |
@@ -117,24 +123,26 @@ The failed-row linkage is exact: row 4 links `BUG-006` and `BUG-007`; row 12 lin
 | Defect linkage | PASS — seven unique ledger entries; unresolved set exactly `BUG-006`, `BUG-007`, `BUG-010`; failed rows exactly 4, 12, and 53 with the linkage recorded above. |
 | Credential-value scan | PASS — eight Phase 7 reconciliation/evidence Markdown files scanned; credential-like retained values `0`. |
 | Artifact/output absence | PASS — no Phase 7 raw trace, network, stack, HAR, log, JSON, image, video, or archive artifact; no repository-local fixture credential, storage-state, or run-manifest output. |
-| Fixture artifact/secret regression | PASS — rejects fixture credential/manifest artifacts and private-key, service-account, literal password, and literal session material outside narrow lifecycle/test source allowlists. |
-| Focused safety/hygiene tests | PASS — final correction set 59 passed, 0 failed. |
+| Fixture artifact/secret regression | PASS — scans tracked Git blobs and unignored confined worktree files without a source-file allowlist; rejects complete, wrapped, serialized, encoded, and binary fixture or credential material. |
+| Focused safety/hygiene tests | PASS — final correction set 89 passed, 0 failed. |
 | Diff hygiene | PASS — `git diff --check` exited `0`. |
 | TypeScript typecheck | PASS — `tsc --noEmit` exited `0`. |
 | ESLint | PASS — zero errors; existing warnings remain. |
-| Node tests | PASS — final exact-head run 448 passed, 0 failed/cancelled/skipped/todo. |
+| Node tests | PASS — final exact-head run 478 passed, 0 failed/cancelled/skipped/todo. |
 | Rendered component tests | PASS — 2 passed in 1 test file. |
 | Firestore/Storage rules tests | PASS — 38 passed, 0 failed/cancelled/skipped/todo. |
 | Next.js production build | PASS — optimized production build completed. |
 | Functions build | PASS — Functions TypeScript build exited `0`. |
 | Complete command | PASS — `npm run verify` exited `0`. |
 
-The final safety revalidation used a strict canonical run ID. Initial exhaustive inspect was healthy at actual-present `9/40` with drift `0`; post-transition inspect was healthy at `9/39`; cleaned inspect was healthy with problems `0` and actual-present `0/0`; and an independent guarded adapter probe also returned `0/0`. Credential and exact private-workspace paths are absent. The exact-head verification recorded in the final fix report supersedes the earlier test counts in this historical Task 5 table.
+The final safety revalidation used a strict canonical run ID. Initial exhaustive inspect was healthy at actual-present `9/40` with drift `0`; post-transition inspect was healthy at `9/39`; cleaned inspect was healthy with problems `0` and actual-present `0/0`; and an independent guarded adapter probe also returned `0/0`. Credential and exact private-workspace paths are absent. Final-review-2 tests add crash-safe credential publication, pre-mutation terminal re-seed rejection, non-seeded absence drift, exact Firestore shapes, bounded repository decoding, and sanitized best-effort cleanup coverage.
 
 ## Review, cleanup, and release posture
 
 Task 4's first independent evidence review found zero Critical and four Important issues involving two fixture shapes, the per-context ledger, and listener timing. The fixture corrections and fresh complete reruns resolved those findings. Subsequent roster-resource diagnosis and corrected-avatar rerun retired the remaining fixture-only observation. The authoritative Task 4 evidence is review-clean, with no unresolved Critical or Important finding.
 
 Independent final review of this Task 5 reconciliation is controller-owned and is not claimed here. No product source, rules, Functions, provider, deployment, production resource, real user, or real customer data was changed by this reconciliation.
+
+The second final-review repair wave changed only the local fixture CLI/lifecycle, repository-hygiene and safety tests, and this audit report. It did not rerun or mutate hosted staging; the sanitized hosted evidence and exact-cleaned lifecycle records above remain authoritative.
 
 Release remains **`NOT READY`**. The next authorized phase should root-cause and repair `BUG-006`, `BUG-007`, and `BUG-010` under TDD, then rerun their affected journeys. The remaining 83 blocked contracts still require their named fixtures, provider/device authorization, destructive boundaries, or operational proof before production readiness can be reconsidered.

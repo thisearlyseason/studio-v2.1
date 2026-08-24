@@ -1,4 +1,4 @@
-import { lstat, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
+import { link, lstat, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -165,6 +165,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     .map(document => [document.uid, document]));
   let lastSeededManifestPath = null;
   let manifestWriteSequence = 0;
+  let credentialWriteSequence = 0;
 
   function injectFault(stage, details = {}) {
     return faultInjector(stage, { runId: definition.runId, ...details });
@@ -230,6 +231,24 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     return normalized;
   }
 
+  async function publishCredentials(target, payload) {
+    const tempPath = join(dirname(target), `.${basename(target)}.${process.pid}-${++credentialWriteSequence}.tmp`);
+    try {
+      await writeFile(tempPath, payload, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      await injectFault('credentials.beforePublish');
+      try {
+        await link(tempPath, target);
+      } catch (error) {
+        if (error?.code === 'EEXIST') throw new Error('Credential recovery required: credential target appeared during seed.');
+        throw error;
+      }
+    } finally {
+      await unlink(tempPath).catch(error => {
+        if (error?.code !== 'ENOENT') throw error;
+      });
+    }
+  }
+
   function assertManifestForDefinition(manifest) {
     if (manifest && (manifest.runId !== definition.runId || manifest.expiresAt !== definition.expiresAt)) {
       throw new Error('Manifest does not match the exact fixture definition.');
@@ -241,6 +260,14 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     const intendedPaths = definition.documents.map(document => document.path);
     if (!manifest || !isDeepStrictEqual(manifest.authUids, intendedUids) || !isDeepStrictEqual(manifest.firestorePaths, intendedPaths)) {
       throw new Error('Manifest must pre-journal the exact fixture definition before mutation.');
+    }
+  }
+
+  function assertReseedableManifest(manifest) {
+    if (!manifest) return;
+    const transitionStarted = Object.values(manifest.transitions).some(transition => transition.state !== 'active');
+    if (manifest.state === 'cleaned' || transitionStarted) {
+      throw new Error('Re-seed requires cleanup and a new run after a negative transition or completed cleanup.');
     }
   }
 
@@ -293,7 +320,10 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     }
     const existingManifest = await readManifest(manifestPath);
     assertManifestForDefinition(existingManifest);
-    if (existingManifest) assertCompleteJournal(existingManifest);
+    if (existingManifest) {
+      assertCompleteJournal(existingManifest);
+      assertReseedableManifest(existingManifest);
+    }
     const credentials = await readExistingCredentials(credentialPath, repositoryRoot, definition);
     const existingAuth = await checkForCollisions();
     if (!credentials.passwords && existingAuth.size > 0) {
@@ -339,12 +369,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       }
 
       if (!credentials.passwords) {
-        try {
-          await writeFile(credentials.target, credentialPayload(definition, passwords), { mode: 0o600, flag: 'wx' });
-        } catch (error) {
-          if (error?.code === 'EEXIST') throw new Error('Credential recovery required: credential target appeared during seed.');
-          throw error;
-        }
+        await publishCredentials(credentials.target, credentialPayload(definition, passwords));
       }
       manifest = await writeManifest(manifestPath, { ...manifest, state: 'seeded' });
       lastSeededManifestPath = manifestPath;
@@ -383,7 +408,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
         continue;
       }
       if (!user) {
-        if (manifest.state === 'seeded') recordDrift('auth', identity.alias, 'presence', 'missing');
+        recordDrift('auth', identity.alias, 'presence', 'missing');
         continue;
       }
       const expectedFields = {
@@ -417,7 +442,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
           && document.alias === 'qa-removed-member'
           && ['applying', 'removed'].includes(transition?.state)
           && Boolean(transition?.startedAt);
-        if (manifest.state === 'seeded' && !allowedRemovedCache) recordDrift('firestore', document.alias, 'presence', 'missing');
+        if (!allowedRemovedCache) recordDrift('firestore', document.alias, 'presence', 'missing');
         continue;
       }
       if (
@@ -436,6 +461,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       if (document.kind === 'member' && document.alias === 'qa-removed-member' && (transition?.state === 'removed' || transition?.firestoreUpdatedAt)) {
         expected.status = 'removed';
       }
+      const expectedFields = new Set(Object.keys(expected));
       for (const [field, expectedValue] of Object.entries(expected)) {
         const ambiguousSuspendedState = document.kind === 'user'
           && document.alias === 'qa-suspended'
@@ -452,6 +478,9 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
         if (!ambiguousSuspendedState && !ambiguousRemovedState && !isDeepStrictEqual(data[field], expectedValue)) {
           recordDrift('firestore', document.alias, field, 'mismatch');
         }
+      }
+      if (Object.keys(data).some(field => !expectedFields.has(field))) {
+        recordDrift('firestore', document.alias, 'shape', 'unexpected-fields');
       }
       if (identityByAlias.has(document.alias)) aliases.add(document.alias);
     }
@@ -575,10 +604,33 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   }
 
   async function cleanup({ manifestPath } = {}) {
+    const retainedAliases = { auth: new Set(), firestore: new Set() };
+    const failureAliases = { auth: new Set(), firestore: new Set() };
+    const aliasSummary = aliases => ({ count: aliases.size, aliases: [...aliases].sort() });
+    const result = (deleted = { auth: 0, firestore: 0 }) => {
+      const retained = Object.entries(retainedAliases)
+        .filter(([, aliases]) => aliases.size > 0)
+        .map(([kind]) => kind);
+      const failures = Object.values(failureAliases).reduce((count, aliases) => count + aliases.size, 0);
+      return {
+        ok: retained.length === 0 && failures === 0,
+        deleted,
+        retained,
+        followUp: {
+          retained: {
+            auth: aliasSummary(retainedAliases.auth),
+            firestore: aliasSummary(retainedAliases.firestore),
+          },
+          failures: {
+            auth: aliasSummary(failureAliases.auth),
+            firestore: aliasSummary(failureAliases.firestore),
+          },
+        },
+      };
+    };
     const manifest = await readManifest(manifestPath);
-    if (!manifest) return { deleted: { auth: 0, firestore: 0 }, retained: [] };
+    if (!manifest) return result();
     assertManifestForDefinition(manifest);
-    const retained = [];
     let firestoreDeleted = 0;
     let authDeleted = 0;
     const ownershipPaths = new Set([...ownershipProofByUid.values()].map(proof => proof.path));
@@ -587,53 +639,91 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       .sort((left, right) => right.split('/').length - left.split('/').length);
     for (const path of paths) {
       const document = documentByPath.get(path);
-      const existing = snapshotData(await firestore.get(path));
-      if (!existing) continue;
-      if (!document || !markerMatches(existing, document.data)) {
-        retained.push('firestore');
+      const alias = document?.alias || 'unknown';
+      let existing;
+      try {
+        existing = snapshotData(await firestore.get(path));
+      } catch {
+        failureAliases.firestore.add(alias);
         continue;
       }
-      await firestore.delete(path);
-      firestoreDeleted += 1;
+      if (!existing) continue;
+      if (!document || !markerMatches(existing, document.data)) {
+        retainedAliases.firestore.add(alias);
+        continue;
+      }
+      try {
+        await firestore.delete(path);
+        firestoreDeleted += 1;
+      } catch {
+        failureAliases.firestore.add(alias);
+      }
     }
     const authRemovedOrAbsent = new Set();
     for (const uid of manifest.authUids) {
       const identity = identityByUid.get(uid);
-      const existing = await getAuthUser(uid);
+      const alias = identity?.alias || 'unknown';
+      let existing;
+      try {
+        existing = await getAuthUser(uid);
+      } catch {
+        failureAliases.auth.add(alias);
+        continue;
+      }
       if (!existing) {
         authRemovedOrAbsent.add(uid);
         continue;
       }
-      const mayRemoveFreshUnclaimedUser = manifest.state === 'partial'
-        && existing.uid === uid
-        && !existing.customClaims?.qaFixture
-        && identity
-        && await hasExactOwnershipProof(identity, manifest);
+      let mayRemoveFreshUnclaimedUser = false;
+      if (manifest.state === 'partial' && existing.uid === uid && !existing.customClaims?.qaFixture && identity) {
+        try {
+          mayRemoveFreshUnclaimedUser = await hasExactOwnershipProof(identity, manifest);
+        } catch {
+          failureAliases.firestore.add(alias);
+          retainedAliases.auth.add(alias);
+          continue;
+        }
+      }
       if (!identity || (!markerMatches(existing.customClaims, identity.customClaims) && !mayRemoveFreshUnclaimedUser)) {
-        retained.push('auth');
+        retainedAliases.auth.add(alias);
         continue;
       }
-      await auth.deleteUser(uid);
-      authDeleted += 1;
-      authRemovedOrAbsent.add(uid);
+      try {
+        await auth.deleteUser(uid);
+        authDeleted += 1;
+        authRemovedOrAbsent.add(uid);
+      } catch {
+        failureAliases.auth.add(alias);
+      }
     }
     for (const proof of ownershipProofByUid.values()) {
       if (!manifest.firestorePaths.includes(proof.path)) continue;
       if (!authRemovedOrAbsent.has(proof.uid)) {
-        retained.push('firestore');
+        retainedAliases.firestore.add(proof.alias);
         continue;
       }
-      const existing = snapshotData(await firestore.get(proof.path));
+      let existing;
+      try {
+        existing = snapshotData(await firestore.get(proof.path));
+      } catch {
+        failureAliases.firestore.add(proof.alias);
+        continue;
+      }
       if (!existing) continue;
       if (existing.uid !== proof.uid || !markerMatches(existing, proof.data)) {
-        retained.push('firestore');
+        retainedAliases.firestore.add(proof.alias);
         continue;
       }
-      await firestore.delete(proof.path);
-      firestoreDeleted += 1;
+      try {
+        await firestore.delete(proof.path);
+        firestoreDeleted += 1;
+      } catch {
+        failureAliases.firestore.add(proof.alias);
+      }
     }
-    if (retained.length === 0) await writeManifest(manifestPath, { ...manifest, state: 'cleaned' });
-    return { deleted: { auth: authDeleted, firestore: firestoreDeleted }, retained };
+    const cleanupResult = result({ auth: authDeleted, firestore: firestoreDeleted });
+    if (cleanupResult.ok) await writeManifest(manifestPath, { ...manifest, state: 'cleaned' });
+    return cleanupResult;
   }
 
   return { seed, inspect, cleanup, applyNegativeState };
