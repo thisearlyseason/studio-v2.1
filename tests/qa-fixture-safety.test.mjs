@@ -14,7 +14,7 @@ import {
 } from '../scripts/qa-fixtures/manifest.mjs';
 import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
 import { createLifecycle, removeCredentialFile } from '../scripts/qa-fixtures/lifecycle.mjs';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -110,24 +110,31 @@ async function lifecycleFixture(t, runId = RUN_ID) {
   const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
   const auth = new FakeAuth();
   const firestore = new FakeFirestore();
-  const lifecycle = createLifecycle({
+  const inputs = {
+    manifestPath: join(directory, 'manifest.json'),
+    credentialPath: join(directory, 'credentials.json'),
+  };
+  const logs = [];
+  const lifecycleOptions = {
     auth,
     firestore,
     clock: () => new Date('2026-08-24T14:00:00.000Z'),
     randomBytes: size => Buffer.alloc(size, 7),
     definition,
     repositoryRoot: process.cwd(),
-  });
+    manifestPath: inputs.manifestPath,
+    logger: entry => logs.push(entry),
+  };
+  const lifecycle = createLifecycle(lifecycleOptions);
   return {
     auth,
     definition,
     directory,
     firestore,
+    lifecycleOptions,
     lifecycle,
-    inputs: {
-      manifestPath: join(directory, 'manifest.json'),
-      credentialPath: join(directory, 'credentials.json'),
-    },
+    inputs,
+    logs,
   };
 }
 
@@ -320,6 +327,12 @@ test('definition contains the approved identities and two distinct tenants', () 
   assert.equal(definition.identities.find(item => item.alias === 'qa-suspended').accountStatus, 'active');
   assert.equal(definition.members.find(item => item.alias === 'qa-removed-member').status, 'active');
   assert.equal(definition.members.filter(item => item.alias === 'qa-multi-org').length, 2);
+  for (const member of definition.members) {
+    assert.equal(member.id, member.userId);
+    assert.equal(member.path, `teams/${member.teamId}/members/${member.userId}`);
+    assert.equal(member.membershipPath, `users/${member.userId}/teamMemberships/${member.teamId}`);
+    assert.equal(definition.documents.some(document => document.path === member.membershipPath), true);
+  }
 });
 
 test('seed is idempotent only for matching marked resources', async t => {
@@ -342,6 +355,15 @@ test('seed leaves a partial manifest after a recorded write fails', async t => {
   assert.equal(partial.state, 'partial');
   assert.equal(partial.authUids.length, fixture.definition.identities.length);
   assert.equal(partial.firestorePaths.length, 1);
+});
+
+test('partial seed retry fails closed instead of emitting credentials with missing passwords', async t => {
+  const fixture = await lifecycleFixture(t);
+  fixture.firestore.failPath = fixture.definition.documents[1].path;
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /simulated/i);
+  fixture.firestore.failPath = null;
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /credential recovery/i);
+  await assert.rejects(() => readFile(fixture.inputs.credentialPath, 'utf8'), /ENOENT/);
 });
 
 test('seed creates new Auth users with their ownership marker before recording them', async t => {
@@ -384,15 +406,49 @@ test('seed writes private browser credentials and returns redacted inspection ou
   assert.deepEqual(inspection.aliases.sort(), fixture.definition.identities.map(item => item.alias).sort());
 });
 
+test('seed rejects an existing credential file unless it is exact-run, regular, and mode 0600', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  await chmod(fixture.inputs.credentialPath, 0o644);
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /credential/i);
+});
+
+test('seed rejects a 0600 credential file that belongs to a different run', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const credentials = JSON.parse(await readFile(fixture.inputs.credentialPath, 'utf8'));
+  credentials.runId = 'qa-phase7-20260824T140099Z-zz99';
+  await chmod(fixture.inputs.credentialPath, 0o600);
+  await writeFile(fixture.inputs.credentialPath, JSON.stringify(credentials), { mode: 0o600, flag: 'w' });
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /credential recovery/i);
+});
+
+test('seed logger emits only sanitized fields and never credential values', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const credentials = JSON.parse(await readFile(fixture.inputs.credentialPath, 'utf8'));
+  assert.ok(fixture.logs.length > 0);
+  const output = JSON.stringify(fixture.logs);
+  for (const item of credentials.identities) assert.equal(output.includes(item.password), false);
+});
+
 test('inspect detects active membership-cache drift on an exact manifest resource', async t => {
   const fixture = await lifecycleFixture(t);
   await fixture.lifecycle.seed(fixture.inputs);
-  const identity = fixture.definition.identities.find(item => item.alias === 'qa-multi-org');
-  const userPath = `users/${identity.uid}`;
-  const user = await fixture.firestore.get(userPath);
-  await fixture.firestore.set(userPath, { ...user, teamMemberships: {} });
+  const membership = fixture.definition.members.find(item => item.alias === 'qa-multi-org');
+  const cache = await fixture.firestore.get(membership.membershipPath);
+  await fixture.firestore.set(membership.membershipPath, { ...cache, role: 'Admin' });
   const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
   assert.equal(inspection.ok, false);
+});
+
+test('inspect detects a forged fake-superadmin Auth role claim', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-fake-superadmin');
+  const user = await fixture.auth.getUser(identity.uid);
+  await fixture.auth.setCustomUserClaims(identity.uid, { ...user.customClaims, role: 'superadmin' });
+  assert.equal((await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath })).ok, false);
 });
 
 test('negative states require a seeded active baseline and revoke sessions after transition', async t => {
@@ -410,7 +466,14 @@ test('negative states require a seeded active baseline and revoke sessions after
   assert.equal(removed.state, 'removed');
   const member = fixture.definition.members.find(item => item.alias === 'qa-removed-member');
   assert.equal((await fixture.firestore.get(member.path)).status, 'removed');
-  assert.equal((await fixture.firestore.get(`users/${member.userId}`)).teamMemberships[member.teamId], undefined);
+  assert.equal(await fixture.firestore.get(member.membershipPath), null);
+});
+
+test('a fresh lifecycle instance transitions only after persistent seeded baseline verification', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const freshLifecycle = createLifecycle(fixture.lifecycleOptions);
+  assert.equal((await freshLifecycle.applyNegativeState('qa-suspended')).state, 'suspended');
 });
 
 test('negative state transition refuses a drifted baseline marker before revoking sessions', async t => {
@@ -442,4 +505,25 @@ test('credential-file removal refuses repository paths and removes only a caller
   assert.equal(await removeCredentialFile(fixture.inputs.credentialPath, process.cwd()), false);
   const repositoryCredential = join(process.cwd(), 'qa-fixture-credentials.json');
   await assert.rejects(() => removeCredentialFile(repositoryCredential, process.cwd()), /outside/i);
+});
+
+test('credential paths through a symlinked parent into the repository are rejected', async t => {
+  const fixture = await lifecycleFixture(t);
+  const externalParent = join(fixture.directory, 'external');
+  const linkedParent = join(externalParent, 'repo-link');
+  await mkdir(externalParent);
+  await symlink(process.cwd(), linkedParent);
+  await assert.rejects(() => fixture.lifecycle.seed({
+    ...fixture.inputs,
+    credentialPath: join(linkedParent, '.git'),
+  }), /outside/i);
+});
+
+test('credential removal rejects a symlinked parent that physically targets the repository', async t => {
+  const fixture = await lifecycleFixture(t);
+  const externalParent = join(fixture.directory, 'removal-external');
+  const linkedParent = join(externalParent, 'repo-link');
+  await mkdir(externalParent);
+  await symlink(process.cwd(), linkedParent);
+  await assert.rejects(() => removeCredentialFile(join(linkedParent, '.git'), process.cwd()), /outside/i);
 });

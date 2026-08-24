@@ -28,10 +28,6 @@ function freezeDeep(value) {
   return Object.freeze(value);
 }
 
-function membershipId(runId, alias, teamKey) {
-  return `${runId}-membership-${alias.replace(/^qa-/, '')}-${teamKey}`;
-}
-
 /**
  * Build the non-secret, deterministic fixture graph for one isolated run.
  * Negative accounts deliberately start in their positive baseline state and
@@ -103,11 +99,11 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
   ];
   const members = membershipSpecs.map(([alias, team, role, position]) => {
     const identity = byAlias.get(alias);
-    const id = membershipId(runId, alias, team.alias);
     return {
       alias,
-      id,
-      path: `teams/${team.id}/members/${id}`,
+      id: identity.uid,
+      path: `teams/${team.id}/members/${identity.uid}`,
+      membershipPath: `users/${identity.uid}/teamMemberships/${team.id}`,
       userId: identity.uid,
       ownerUserId: team.ownerUserId,
       teamId: team.id,
@@ -117,17 +113,6 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       ...marker(runId, alias, expiresAt),
     };
   });
-
-  const activeMemberships = new Map(identities.map(identity => [identity.alias, {}]));
-  for (const member of members) {
-    activeMemberships.get(member.alias)[member.teamId] = {
-      id: member.teamId,
-      teamId: member.teamId,
-      role: member.role,
-      status: member.status,
-      ownerUserId: member.ownerUserId,
-    };
-  }
 
   const userDocuments = identities.map(identity => ({
     alias: identity.alias,
@@ -143,13 +128,38 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       accountStatus: identity.accountStatus,
       activePlanId: 'free',
       proTeamLimit: 1,
-      activeTeamId: identity.alias === 'qa-multi-org' ? teamA.id : Object.keys(activeMemberships.get(identity.alias))[0],
-      teamMemberships: activeMemberships.get(identity.alias),
+      activeTeamId: identity.alias === 'qa-multi-org'
+        ? teamA.id
+        : members.find(member => member.alias === identity.alias)?.teamId,
       ...marker(runId, identity.alias, expiresAt),
     },
   }));
   const teamDocuments = teams.map(team => ({ alias: team.alias, kind: 'team', path: `teams/${team.id}`, data: team }));
   const memberDocuments = members.map(member => ({ alias: member.alias, kind: 'member', path: member.path, data: member }));
+  const membershipDocuments = members.map(member => {
+    const team = teams.find(item => item.id === member.teamId);
+    const identity = byAlias.get(member.alias);
+    return {
+      alias: member.alias,
+      kind: 'membership-cache',
+      path: member.membershipPath,
+      data: {
+        id: member.teamId,
+        teamId: member.teamId,
+        name: team.name,
+        teamName: team.teamName,
+        role: member.role,
+        position: member.position,
+        status: member.status,
+        ownerUserId: member.ownerUserId,
+        planId: 'free',
+        planType: 'free',
+        isPro: false,
+        userId: identity.uid,
+        ...marker(runId, member.alias, expiresAt),
+      },
+    };
+  });
 
   return freezeDeep({
     runId,
@@ -157,6 +167,6 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
     identities,
     teams,
     members,
-    documents: [...userDocuments, ...teamDocuments, ...memberDocuments],
+    documents: [...userDocuments, ...teamDocuments, ...memberDocuments, ...membershipDocuments],
   });
 }
