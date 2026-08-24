@@ -1,7 +1,7 @@
 # Critical User Journeys
 
-**Phase:** Discovery and planning only\\
-**Count:** 24 critical journeys\\
+**Phase:** Discovery and planning only\
+**Count:** 24 critical journeys\
 **Status:** All journeys are `NOT RUN` for this audit.
 
 A journey is critical when failure prevents account access, core team/competition operations, household participation, payment entitlement, compliance, public registration, or platform recovery.
