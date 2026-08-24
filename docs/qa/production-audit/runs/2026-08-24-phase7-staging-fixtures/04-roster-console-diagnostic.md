@@ -1,6 +1,6 @@
 # Phase 7 Roster Console Diagnostic
 
-Status: `COMPLETE — FIXTURE-INDUCED RESOURCE FAILURES; NO NEW PRODUCT DEFECT`
+Status: `COMPLETE — PRIOR FIXTURE NOISE CORRECTED; CLEAN CANONICAL ROSTER ROWS`
 
 This targeted fresh hosted lifecycle investigated the seven error-level console entries previously recorded for `P7-S04-MEMBER-ROSTER-M/D`. It did not patch product or fixture source and did not inspect or retain credential values.
 
@@ -34,10 +34,33 @@ Navigation also cancelled a small number of `fetch` requests with `net::ERR_ABOR
 
 ## Root-cause classification
 
-The fixture definition assigns canonical member avatars beneath `https://example.test/avatars/...`. Browser evidence shows the only error signature is DNS resolution failure from exactly that origin, every correlated failed request is an image `GET`, and the count follows the number of visible fixture members. The roster remains usable because the avatar component displays its fallback after the image fails; the failed image element is no longer present in the settled DOM, and no page error or error boundary occurs.
+The fixture definition at the time of this diagnostic assigned canonical member avatars beneath `https://example.test/avatars/...`. Browser evidence showed the only error signature was DNS resolution failure from exactly that origin, every correlated failed request was an image `GET`, and the count followed the number of visible fixture members. The roster remained usable because the avatar component displayed its fallback after the image failed; the failed image element was no longer present in the settled DOM, and no page error or error boundary occurred.
 
 Classification: `QA fixture-induced browser resource failure`. It is not an application exception, not an expected handled authorization denial, and not a product defect. `BUG-009` remains retired; no new `BUG-###` is warranted.
 
 ## Controlled-comparison decision
 
 No hosted avatar rewrite was attempted. The guarded lifecycle CLI supports only `preflight`, `seed`, `inspect`, `cleanup`, and the two approved negative transitions; it exposes no reversible exact document-update command. Using the lower-level adapter directly would bypass the lifecycle's supported guard and manifest workflow, so the optional same-origin-avatar comparison was not safe within this task. The count correlation, origin-specific console signature, image request type, DNS failure reason, and intact UI provide a specific diagnosis without unsupported mutation.
+
+## Final corrected-fixture rerun
+
+Fixture correction `1ac09e272425adde9ce4e72863c4d6244d196620` replaced the diagnostic-only avatar origin with same-origin `/icon.png`. A new exact-staging lifecycle reran the two canonical roster rows.
+
+| Gate | Sanitized result |
+| --- | --- |
+| Window | `2026-08-24T18:44:20Z`–`2026-08-24T18:51:52Z` |
+| Preflight | Exact staging project and origin; `safe=true`; 9 aliases; 2 teams |
+| Seed/inspect | Auth `9`; Firestore `40`; problems `0` |
+| Browser | 2 canonical fresh system-Chrome contexts plus 1 self-rejected mobile harness probe; listeners armed on `about:blank`; all contexts closed |
+| Cleanup | Pre-clean healthy `9/40`; deleted `9/40`; retained `0`; post-inspect expected cleaned absence |
+| Independent absence | Exact staging re-resolution; `authPresent=0`; `firestorePresent=0` across `9/40` checks |
+| Temporary artifacts | Validated credential removal; external workspace and raw artifacts absent |
+
+| Canonical ID | Viewport | Final UI | Image/network evidence | Errors/failures | Overflow | Result |
+| --- | --- | --- | --- | --- | ---: | --- |
+| P7-S04-MEMBER-ROSTER-M | 390x844 | `/roster`; Roster visible; eight intact icon elements; no boundary | same-origin `GET /icon.png` image response `200`; `example.test` requests `0` | console `0`; page `0`; HTTP >=400 `0`; same-origin request failures `0` | 0 | PASS |
+| P7-S04-MEMBER-ROSTER-D | 1440x900 | `/roster`; Roster visible; eight intact icon elements; no boundary | same-origin `GET /icon.png` image response `200`; `example.test` requests `0` | console `0`; page `0`; HTTP >=400 `0`; same-origin request failures `0` | 0 | PASS |
+
+Each context observed one Firebase-provider subscription fetch cancelled with `net::ERR_ABORTED`; neither produced a console/page error, HTTP error, same-origin failure, broken image, or visible-state mismatch. The canonical roster rows are therefore clean. The prior errors remain classified as corrected fixture noise, `BUG-009` remains retired, and no new product finding is warranted.
+
+One initial mobile probe used a direct full navigation from the dashboard and was self-rejected when that harness action cancelled two already-prefetched same-origin routes. It was closed and did not replace the canonical row. The fresh canonical mobile context used the current snapshot's actual `Profile` → `/roster` link and recorded same-origin request failures `0`; desktop likewise used the snapshot's `Roster` link.
