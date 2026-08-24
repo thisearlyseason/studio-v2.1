@@ -1,4 +1,10 @@
 import type {NextConfig} from 'next';
+import {buildContentSecurityPolicy} from './src/lib/content-security-policy';
+
+const contentSecurityPolicy = buildContentSecurityPolicy({
+  environment: process.env.NODE_ENV,
+  firebaseEmulatorsEnabled: process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true',
+});
 
 /** Security headers applied to every response. */
 const securityHeaders = [
@@ -25,21 +31,7 @@ const securityHeaders = [
   // - data: required for canvas/FFmpeg blobs
   {
     key: 'Content-Security-Policy',
-    value: [
-      "default-src 'self'",
-      // Stripe Connect requires connect-js.stripe.com in script-src
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com elfsightcdn.com *.elfsightcdn.com",
-      "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
-      "font-src 'self' fonts.gstatic.com",
-      "img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host",
-      "media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app",
-      // Stripe Connect needs several stripe.com subdomains for its onboarding iframe/XHR
-      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org",
-      // Stripe Connect onboarding is iframe-based
-      "frame-src 'self' https://*.firebaseapp.com js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com",
-      "worker-src 'self' blob:",
-      "child-src 'self' blob:",
-    ].join('; '),
+    value: contentSecurityPolicy,
   },
 ];
 
