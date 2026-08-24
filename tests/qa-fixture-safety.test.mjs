@@ -677,11 +677,23 @@ test('definition contains the approved identities and two distinct tenants', () 
   assert.equal(definition.identities.find(item => item.alias === 'qa-suspended').accountStatus, 'active');
   assert.equal(definition.members.find(item => item.alias === 'qa-removed-member').status, 'active');
   assert.equal(definition.members.filter(item => item.alias === 'qa-multi-org').length, 2);
+  const assistant = definition.identities.find(item => item.alias === 'qa-team-assistant');
+  const assistantMembership = definition.members.find(item => item.alias === 'qa-team-assistant');
+  assert.equal(assistant.role, 'coach');
+  assert.equal(assistant.customClaims.role, 'coach');
+  assert.equal(assistantMembership.role, 'Admin');
+  assert.equal(assistantMembership.position, 'Assistant Coach');
+  assert.notEqual(assistantMembership.userId, definition.teams[0].ownerUserId);
   for (const member of definition.members) {
+    const identity = definition.identities.find(item => item.alias === member.alias);
     assert.equal(member.id, member.userId);
     assert.equal(member.path, `teams/${member.teamId}/members/${member.userId}`);
     assert.equal(member.membershipPath, `users/${member.userId}/teamMemberships/${member.teamId}`);
     assert.equal(definition.documents.some(document => document.path === member.membershipPath), true);
+    assert.equal(member.name, identity.name);
+    assert.equal(member.playerId, `p_${member.userId}`);
+    assert.match(member.jersey, /^\d+$/);
+    assert.equal(member.avatar, `https://example.test/avatars/${member.alias}.png`);
   }
 });
 

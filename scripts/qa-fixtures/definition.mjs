@@ -3,7 +3,7 @@ import { assertManagedUid } from './manifest.mjs';
 const IDENTITY_SPECS = [
   ['qa-coach-owner-a', 'Coach Owner A', 'Admin', 'active', true],
   ['qa-coach-owner-b', 'Coach Owner B', 'Admin', 'active', true],
-  ['qa-team-assistant', 'Team Assistant', 'Assistant', 'active', true],
+  ['qa-team-assistant', 'Team Assistant', 'coach', 'active', true],
   ['qa-team-member', 'Team Member', 'Member', 'active', true],
   ['qa-multi-org', 'Multi Organization Member', 'Member', 'active', true],
   ['qa-fake-superadmin', 'Fake Superadmin', 'superadmin', 'active', true],
@@ -88,7 +88,7 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
   const membershipSpecs = [
     ['qa-coach-owner-a', teamA, 'Admin', 'Coach'],
     ['qa-coach-owner-b', teamB, 'Admin', 'Coach'],
-    ['qa-team-assistant', teamA, 'Assistant', 'Assistant Coach'],
+    ['qa-team-assistant', teamA, 'Admin', 'Assistant Coach'],
     ['qa-team-member', teamA, 'Member', 'Player'],
     ['qa-multi-org', teamA, 'Member', 'Player'],
     ['qa-multi-org', teamB, 'Member', 'Player'],
@@ -97,7 +97,7 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
     ['qa-suspended', teamA, 'Member', 'Player'],
     ['qa-removed-member', teamA, 'Member', 'Player'],
   ];
-  const members = membershipSpecs.map(([alias, team, role, position]) => {
+  const members = membershipSpecs.map(([alias, team, role, position], index) => {
     const identity = byAlias.get(alias);
     return {
       alias,
@@ -107,8 +107,12 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       userId: identity.uid,
       ownerUserId: team.ownerUserId,
       teamId: team.id,
+      name: identity.name,
+      playerId: `p_${identity.uid}`,
       role,
       position,
+      jersey: String(index + 1),
+      avatar: `https://example.test/avatars/${alias}.png`,
       status: 'active',
       ...marker(runId, alias, expiresAt),
     };
