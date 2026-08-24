@@ -1,28 +1,8 @@
 import assert from 'node:assert/strict';
+import { isUtf8 } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { extname } from 'node:path';
+import { chmodSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
-
-const TEXT_EXTENSIONS = new Set([
-  '',
-  '.cjs',
-  '.css',
-  '.html',
-  '.js',
-  '.json',
-  '.jsx',
-  '.md',
-  '.mjs',
-  '.py',
-  '.rules',
-  '.sh',
-  '.ts',
-  '.tsx',
-  '.txt',
-  '.yaml',
-  '.yml',
-]);
 
 function repositoryFiles() {
   return execFileSync(
@@ -30,6 +10,19 @@ function repositoryFiles() {
     ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
     { encoding: 'utf8' },
   ).split('\0').filter(Boolean);
+}
+
+function repositoryScanFiles() {
+  return repositoryFiles().map(file => {
+    try {
+      if (!lstatSync(file).isFile()) return { file, contents: null };
+      const contents = readFileSync(file);
+      if (!isUtf8(contents) || contents.includes(0)) return { file, contents: null };
+      return { file, contents: contents.toString('utf8') };
+    } catch {
+      return { file, contents: null };
+    }
+  });
 }
 
 function isRecord(value) {
@@ -55,7 +48,6 @@ function containsPhase7Manifest(value) {
     && Array.isArray(value.authUids)
     && Array.isArray(value.firestorePaths)
     && ['planned', 'partial', 'seeded', 'cleaned'].includes(value.state)
-    && isRecord(value.transitions)
   ) {
     return true;
   }
@@ -78,6 +70,18 @@ function isNarrowSecretException(file, patternName, line) {
   return new RegExp(['^\\s*"cookie"\\s*:\\s*"[~^]\\d+\\.\\d+\\.\\d+"', ',?\\s*$'].join('')).test(line);
 }
 
+function containsLiteralSecret(file, contents, secretPatterns) {
+  return secretPatterns.some(({ name, pattern }) => {
+    const matcher = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
+    return [...contents.matchAll(matcher)].some(match => {
+      const lineStart = contents.lastIndexOf('\n', match.index) + 1;
+      const nextLineBreak = contents.indexOf('\n', match.index + match[0].length);
+      const lineEnd = nextLineBreak === -1 ? contents.length : nextLineBreak;
+      return !isNarrowSecretException(file, name, contents.slice(lineStart, lineEnd));
+    });
+  });
+}
+
 function fixtureArtifactViolations(files) {
   const credentialArtifact = /(?:^|\/)(?:qa-phase7|qa-fixture)[^/]*(?:credential|manifest|storage[-_]?state)[^/]*\.(?:json|env)$/i;
   const secretPatterns = [
@@ -87,15 +91,24 @@ function fixtureArtifactViolations(files) {
     { name: 'password', pattern: new RegExp(['"password"\\s*:\\s*"', '[^"\\n]+"'].join(''), 'i') },
     { name: 'token', pattern: new RegExp(['"(?:access_|refresh_|id_)?token"\\s*:\\s*"', '[^"\\n]+"'].join(''), 'i') },
     { name: 'cookie-or-session', pattern: new RegExp(['"(?:cookie|session|__', 'session)"\\s*:\\s*"', '[^"\\n]+"'].join(''), 'i') },
+    {
+      name: 'playwright-session-cookie',
+      pattern: new RegExp([
+        '\\{',
+        '(?=[^{}]{0,2048}"name"\\s*:\\s*"__',
+        'session")',
+        '(?=[^{}]{0,2048}"value"\\s*:\\s*"[^"\\n]+")',
+        '[^{}]{0,2048}\\}',
+      ].join(''), 'i'),
+    },
   ];
   const violations = [];
   for (const { file, contents } of files) {
     if (credentialArtifact.test(file)) violations.push(`${file}: tracked fixture credential/manifest artifact`);
+    if (typeof contents !== 'string') continue;
     const json = parseJson(contents);
     if (containsPhase7Manifest(json)) violations.push(`${file}: tracked Phase 7 manifest payload`);
-    const literalSecret = contents.split('\n').some(line => secretPatterns.some(({ name, pattern }) => (
-      pattern.test(line) && !isNarrowSecretException(file, name, line)
-    )));
+    const literalSecret = containsLiteralSecret(file, contents, secretPatterns);
     if (containsSecretJsonPayload(json) || literalSecret) {
       violations.push(`${file}: fixture secret material pattern`);
     }
@@ -117,11 +130,8 @@ test('tracked repository does not contain retired QA credentials or identifiers'
   ];
 
   const violations = [];
-  for (const file of repositoryFiles()) {
-    if (!existsSync(file)) continue;
-    if (!TEXT_EXTENSIONS.has(extname(file))) continue;
-
-    const contents = readFileSync(file, 'utf8');
+  for (const { file, contents } of repositoryScanFiles()) {
+    if (typeof contents !== 'string') continue;
     for (const value of retiredValues) {
       if (contents.includes(value)) {
         violations.push(`${file}: contains a retired QA credential or identifier`);
@@ -133,10 +143,7 @@ test('tracked repository does not contain retired QA credentials or identifiers'
 });
 
 test('tracked repository rejects fixture credential artifacts and secret material patterns', () => {
-  const files = repositoryFiles()
-    .filter(file => existsSync(file) && TEXT_EXTENSIONS.has(extname(file)))
-    .map(file => ({ file, contents: readFileSync(file, 'utf8') }));
-  assert.deepEqual(fixtureArtifactViolations(files), []);
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles()), []);
 });
 
 test('fixture hygiene regression recognizes unsafe artifact names and secret material', () => {
@@ -204,4 +211,77 @@ test('fixture hygiene detects Phase 7 manifests and Playwright session cookies b
     'tests/repository-hygiene.test.mjs: fixture secret material pattern',
     'tests/repository-hygiene.test.mjs: fixture secret material pattern',
   ]);
+});
+
+test('fixture hygiene detects a schema-valid Phase 7 manifest with omitted transitions', () => {
+  const runId = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
+  const manifest = JSON.stringify({
+    version: 2,
+    runId,
+    projectId: 'the-squad-v2-staging',
+    authUids: [`${runId}-owner-a`],
+    firestorePaths: [`qaAuditRuns/${runId}`],
+    state: 'partial',
+  });
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/manifest.json', contents: manifest },
+  ]), [
+    'tmp/manifest.json: tracked Phase 7 manifest payload',
+  ]);
+});
+
+test('repository scan detects extension-independent embedded and multiline secret payloads safely', t => {
+  const stem = `hygiene-probe-${process.pid}-${Date.now()}`;
+  const paths = {
+    binary: `${stem}.bin`,
+    embeddedState: `${stem}.capture`,
+    multilineSecret: `${stem}.txt`,
+    privateKey: `${stem}.keymaterial`,
+    unreadable: `${stem}.blocked`,
+  };
+  t.after(() => {
+    for (const file of Object.values(paths)) {
+      try {
+        chmodSync(file, 0o600);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+      try {
+        unlinkSync(file);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+  });
+
+  const privateKey = [
+    ['-----BEGIN ', 'PRIVATE KEY-----'].join(''),
+    'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC',
+    ['-----END ', 'PRIVATE KEY-----'].join(''),
+  ].join('\n');
+  const storageState = JSON.stringify({
+    cookies: [{
+      name: ['__', 'session'].join(''),
+      value: ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.'),
+    }],
+    origins: [],
+  }, null, 2);
+  const passwordField = ['pass', 'word'].join('');
+  const multilineSecret = ['{', `  "${passwordField}"`, '  :', '  "FixtureOnly-Password-Value"', '}'].join('\n');
+  writeFileSync(paths.privateKey, privateKey);
+  writeFileSync(paths.embeddedState, `window.fixtureState = ${storageState};\n`);
+  writeFileSync(paths.multilineSecret, multilineSecret);
+  writeFileSync(paths.binary, Buffer.concat([Buffer.from([0, 1, 2, 3]), Buffer.from(privateKey)]));
+  writeFileSync(paths.unreadable, 'ordinary non-secret text');
+  chmodSync(paths.unreadable, 0o000);
+
+  const violations = fixtureArtifactViolations(repositoryScanFiles())
+    .filter(item => item.startsWith(stem))
+    .sort();
+  assert.deepEqual(violations, [
+    `${paths.embeddedState}: fixture secret material pattern`,
+    `${paths.multilineSecret}: fixture secret material pattern`,
+    `${paths.privateKey}: fixture secret material pattern`,
+  ].sort());
 });
