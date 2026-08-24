@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`\
 **Environment:** local development plus isolated Firebase preview\
-**Status:** Phase 2 diagnosis evidence is retained; Phase 3/4 verification and Phase 5 staging supplements are recorded below. This ledger does not declare the application production ready.
+**Status:** Phase 2 diagnosis evidence is retained; Phase 3/4 verification, Phase 5 staging, and Phase 6 root-cause supplements are recorded below. This ledger does not declare the application production ready.
 
 ## BUG-001 — Event deletion has no confirmation
 
@@ -108,4 +108,7 @@
 | Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase5-staging/02-public-smoke.md`; focused replay window `2026-08-24T12:08:35Z`–`2026-08-24T12:08:44Z`. |
 | Impact | The route remains usable in the observed final state, but the deterministic request-failure signal violates the row's strict asset-health contract and prevents a supported `PASS`. |
 | Scope limitation | No response body, header, credential, token, cookie, action link, personal data, raw browser trace, or provider payload was retained. No root cause or fix is claimed by this evidence-only reconciliation. |
-| Status | CONFIRMED UNRESOLVED |
+| Phase 6 root cause | Chrome was honoring the page's `preload="metadata"`. The MP4 is fast-start capable (`ftyp` at byte 4, `moov` at byte 36, `mdat` at byte 40,924), and staging supports byte ranges. A controlled same-page experiment isolated preload behavior: `metadata` received HTTP 206, buffered a playable prefix, reached `readyState=4` / `networkState=1` with no `MediaError`, and then reported `net::ERR_ABORTED`; `auto` received HTTP 206, buffered the full 133.84-second asset, and reported no failure; `none` issued no request. The abort was the browser ending a successful range stream once its metadata/preload goal was met. |
+| Phase 6 fresh verification | At 390×844 and 1440×900, staging `/how-to` returned HTTP 200 with the expected heading, zero overflow, zero application console errors, zero page errors, successful HTTP 206 media delivery, `readyState=4`, `networkState=1`, no media error, finite duration 133.84 seconds, and playback advancing beyond one second. Evidence: `docs/qa/production-audit/runs/2026-08-24-phase6-bug004/root-cause.md`. |
+| Resolution | The Phase 5 listener treated any `requestfailed` event as a failed asset. Phase 6 narrows that methodology: this exact media abort is benign only when the successful response, healthy final media state, finite duration, and playback checks all pass. No SaaS runtime change is required, avoiding a forced 1.4 MB `preload="auto"` download on every visit. |
+| Status | CLOSED — FALSE POSITIVE |
