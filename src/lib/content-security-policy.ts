@@ -19,7 +19,7 @@ export function buildContentSecurityPolicy({
   firebaseEmulatorsEnabled,
 }: ContentSecurityPolicyInput): string {
   const useFirebaseEmulatorSources =
-    environment !== 'production' && firebaseEmulatorsEnabled === true;
+    environment === 'development' && firebaseEmulatorsEnabled === true;
   const connectSources = [
     "'self'",
     ...(useFirebaseEmulatorSources ? firebaseEmulatorConnectSources : []),

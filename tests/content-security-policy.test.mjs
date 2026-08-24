@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
 import test from 'node:test';
 
 import {buildContentSecurityPolicy} from '../src/lib/content-security-policy.ts';
@@ -11,6 +14,43 @@ const developmentPolicy = productionPolicy.replace(
   `connect-src 'self' ${emulatorConnectSources} `,
 );
 
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const localEmulatorSourcePattern = /(?:localhost|127\.0\.0\.1|ws:\/\/|:(?:8080|9099|9199))/;
+
+function readNextConfigPolicies(environment, firebaseEmulatorsEnabled) {
+  const childEnvironment = {
+    ...process.env,
+    NEXT_PUBLIC_USE_FIREBASE_EMULATORS: firebaseEmulatorsEnabled ? 'true' : 'false',
+  };
+
+  if (environment === undefined) {
+    delete childEnvironment.NODE_ENV;
+  } else {
+    childEnvironment.NODE_ENV = environment;
+  }
+
+  const script = `
+    import nextConfig from './next.config.ts';
+    const rules = await nextConfig.headers();
+    const policies = rules.map(rule =>
+      rule.headers.find(header => header.key === 'Content-Security-Policy')?.value,
+    );
+    process.stdout.write(JSON.stringify(policies));
+  `;
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', '--input-type=module', '--eval', script],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      env: childEnvironment,
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
 test('CSP permits only exact local Firebase emulator transports during development', () => {
   assert.equal(
     buildContentSecurityPolicy({environment: 'development', firebaseEmulatorsEnabled: true}),
@@ -22,12 +62,40 @@ test('CSP permits only exact local Firebase emulator transports during developme
   );
 });
 
-test('CSP production isolation rejects the mutation that leaks local emulator sources', () => {
-  const productionWithEmulatorFlag = buildContentSecurityPolicy({
-    environment: 'production',
-    firebaseEmulatorsEnabled: true,
-  });
+test('CSP excludes local emulator transports outside explicit development', () => {
+  for (const environment of ['production', 'test', 'staging', undefined]) {
+    const policy = buildContentSecurityPolicy({
+      environment,
+      firebaseEmulatorsEnabled: true,
+    });
 
-  assert.equal(productionWithEmulatorFlag, productionPolicy);
-  assert.doesNotMatch(productionWithEmulatorFlag, /(?:localhost|127\.0\.0\.1|ws:\/\/|:(?:8080|9099|9199))/);
+    assert.equal(policy, productionPolicy, `unexpected policy for ${String(environment)}`);
+    assert.doesNotMatch(policy, localEmulatorSourcePattern);
+  }
+});
+
+test('Next.js headers expose emulator transports only for explicit development with the flag', () => {
+  for (const environment of ['production', 'test', 'staging', undefined]) {
+    const policies = readNextConfigPolicies(environment, true);
+
+    assert.deepEqual(
+      policies,
+      [
+        `${productionPolicy}; frame-ancestors *`,
+        productionPolicy,
+      ],
+      `unexpected Next.js policies for ${String(environment)}`,
+    );
+    for (const policy of policies) {
+      assert.doesNotMatch(policy, localEmulatorSourcePattern);
+    }
+  }
+
+  assert.deepEqual(
+    readNextConfigPolicies('development', true),
+    [
+      `${developmentPolicy}; frame-ancestors *`,
+      developmentPolicy,
+    ],
+  );
 });
