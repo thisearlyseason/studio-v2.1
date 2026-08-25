@@ -26,7 +26,7 @@ const STAFF_PREFIXES = [
   '/manage-tournaments', '/teams/new',
 ];
 
-const MANAGEMENT_ROLES = new Set(['coach', 'admin', 'league_creator', 'superadmin']);
+const MANAGEMENT_ROLES = new Set(['coach', 'admin', 'league_creator']);
 const INSTITUTION_PLANS = new Set(['elite', 'elite_teams', 'league', 'elite_league', 'school']);
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
@@ -36,6 +36,10 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
 function normalizedRole(profile: DashboardAccessProfile | null, claimsRole?: unknown): string {
   const claim = typeof claimsRole === 'string' ? claimsRole : '';
   return String(claim || profile?.role || '').trim().toLowerCase();
+}
+
+function normalizedClaimRole(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
 function normalizedPlan(profile: DashboardAccessProfile | null): string {
@@ -64,15 +68,16 @@ export function authorizeDashboardRoute(
   claimsRole?: unknown,
 ): RouteDecision {
   const role = normalizedRole(profile, claimsRole);
-  const isSuperAdmin = role === 'superadmin';
-  const isManagement = MANAGEMENT_ROLES.has(role) || profile?.isPrimaryClubAuthority === true;
+  const isTrustedSuperAdmin = normalizedClaimRole(claimsRole) === 'superadmin';
+  const isManagement = isTrustedSuperAdmin || MANAGEMENT_ROLES.has(role) ||
+    profile?.isPrimaryClubAuthority === true;
 
   if (matchesPrefix(pathname, '/admin')) {
-    return isSuperAdmin ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
+    return isTrustedSuperAdmin ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
   }
 
   if (matchesPrefix(pathname, '/family')) {
-    return role === 'parent' || isSuperAdmin
+    return role === 'parent' || isTrustedSuperAdmin
       ? { allowed: true }
       : { allowed: false, redirectTo: '/dashboard' };
   }
@@ -82,13 +87,13 @@ export function authorizeDashboardRoute(
   }
 
   if (matchesPrefix(pathname, '/club')) {
-    const hasInstitutionAccess = isSuperAdmin || profile?.isPrimaryClubAuthority === true ||
+    const hasInstitutionAccess = isTrustedSuperAdmin || profile?.isPrimaryClubAuthority === true ||
       (isManagement && INSTITUTION_PLANS.has(normalizedPlan(profile)));
     return hasInstitutionAccess ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
   }
 
   if (matchesPrefix(pathname, '/competition')) {
-    const hasCompetitionAccess = isSuperAdmin || role === 'league_creator' ||
+    const hasCompetitionAccess = isTrustedSuperAdmin || role === 'league_creator' ||
       (isManagement && ['league', 'elite_league', 'school'].includes(normalizedPlan(profile)));
     return hasCompetitionAccess ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
   }

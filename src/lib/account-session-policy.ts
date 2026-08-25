@@ -48,7 +48,6 @@ function hasIndependentAuthority(
   const claimRole = normalized(identity.role);
   const profileRole = normalized(profile.role);
   return claimRole === 'superadmin' ||
-    profileRole === 'superadmin' ||
     profileRole === 'league_creator' ||
     profile.isPrimaryClubAuthority === true;
 }
