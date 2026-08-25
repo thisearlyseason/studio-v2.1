@@ -21,3 +21,5 @@
 Production, real users, provider state, merge operations, and a second deployment were not accessed or performed. The first exact post-seed inspection failed before any browser context was opened, so canonical browser progression stopped at the required safe boundary.
 
 Only sanitized Markdown is retained. No credential, password, token, cookie, storage state, trace, request body, raw browser output, or private workspace remains.
+
+Subsequent review established that the original 81-path manifest omitted the trusted trigger's `publicLeagueViews/{leagueId}` projection. The original cleanup and independent adapter proof therefore covered every journaled resource but did not query that exact derived path. Its deletion by the deployed `onLeagueDeleted` trigger was not independently retained, so overall fixture-graph cleanup closure remains unproven and blocked rather than inferred.

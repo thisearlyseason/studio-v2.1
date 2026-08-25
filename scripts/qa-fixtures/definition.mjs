@@ -317,6 +317,22 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
       ...marker(runId, 'qa-league', expiresAt),
     },
   }] : [];
+  const derivedLeagueDocuments = manifestVersion === 3 ? [{
+    alias: 'qa-public-league',
+    kind: 'derived-public-league-view',
+    path: `publicLeagueViews/${runId}-league`,
+    ownershipProofPath: `qaAuditRuns/${runId}/authOwnership/${byAlias.get('qa-league-creator').uid}`,
+    sourcePath: `leagues/${runId}-league`,
+    dynamicFields: ['updatedAt'],
+    data: {
+      id: `${runId}-league`,
+      name: 'QA Fixture League',
+      sport: '',
+      divisionTitle: '',
+      teams: {},
+      schedule: [],
+    },
+  }] : [];
   const expectedAbsentDocuments = manifestVersion === 3 ? [{
     alias: 'qa-missing-profile',
     kind: 'user',
@@ -338,6 +354,7 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
       ...membershipDocuments,
       ...playerDocuments,
       ...leagueDocuments,
+      ...derivedLeagueDocuments,
     ],
     expectedAbsentDocuments,
   });
@@ -349,7 +366,7 @@ export function fixturePlanSummary({ manifestVersion = 3 } = {}) {
   const teamAliases = manifestVersion === 3
     ? ['qa-team-a', 'qa-team-b', 'qa-school']
     : ['qa-team-a', 'qa-team-b'];
-  const firestoreDocuments = manifestVersion === 3 ? 81 : 40;
+  const firestoreDocuments = manifestVersion === 3 ? 82 : 40;
   return freezeDeep({
     manifestVersion,
     aliases,

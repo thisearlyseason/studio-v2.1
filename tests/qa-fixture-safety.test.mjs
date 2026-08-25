@@ -214,6 +214,7 @@ class FakeFirestore {
   constructor() {
     this.documents = new Map();
     this.deleted = [];
+    this.sets = [];
     this.failPath = null;
     this.failAfterSetPath = null;
     this.failGetPath = null;
@@ -236,7 +237,20 @@ class FakeFirestore {
 
   async set(path, data) {
     if (path === this.failPath) throw new Error('simulated Firestore write failure');
+    this.sets.push(path);
     this.documents.set(path, structuredClone(data));
+    if (/^leagues\/[^/]+$/.test(path)) {
+      const leagueId = path.slice('leagues/'.length);
+      this.inject(`publicLeagueViews/${leagueId}`, {
+        id: leagueId,
+        name: data.name || '',
+        sport: data.sport || '',
+        divisionTitle: data.divisionTitle || '',
+        teams: {},
+        schedule: [],
+        updatedAt: { _seconds: 1787580000, _nanoseconds: 0 },
+      });
+    }
     if (path === this.failAfterSetPath) throw new Error('simulated ambiguous Firestore write response');
   }
 
@@ -244,6 +258,9 @@ class FakeFirestore {
     if (path === this.failDeletePath) throw new Error('simulated Firestore delete failure with unsafe details omitted');
     this.deleted.push(path);
     this.documents.delete(path);
+    if (/^leagues\/[^/]+$/.test(path)) {
+      this.documents.delete(`publicLeagueViews/${path.slice('leagues/'.length)}`);
+    }
   }
 }
 
@@ -1882,7 +1899,7 @@ test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 
     teamCount: 3,
     resourceCounts: {
       authUids: 20,
-      firestoreDocuments: 81,
+      firestoreDocuments: 82,
       expectedAbsentDocuments: 1,
     },
   });
@@ -1894,6 +1911,68 @@ test('phase 9 league fixture includes the trusted creator membership cache', () 
   const league = phase9.documents.find(document => document.kind === 'league' && document.alias === 'qa-league');
 
   assert.deepEqual(league.data.memberUserIds, [creator.uid]);
+});
+
+test('phase 9 journals the complete league-create trigger footprint without changing v2 recovery', () => {
+  const legacy = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const publicView = phase9.documents.find(document => document.kind === 'derived-public-league-view');
+
+  assert.equal(legacy.documents.some(document => document.kind === 'derived-public-league-view'), false);
+  assert.equal(fixturePlanSummary({ manifestVersion: 2 }).resourceCounts.firestoreDocuments, 40);
+  assert.deepEqual(publicView, {
+    alias: 'qa-public-league',
+    kind: 'derived-public-league-view',
+    path: `publicLeagueViews/${RUN_ID}-league`,
+    ownershipProofPath: `qaAuditRuns/${RUN_ID}/authOwnership/${RUN_ID}-league-creator`,
+    sourcePath: `leagues/${RUN_ID}-league`,
+    dynamicFields: ['updatedAt'],
+    data: {
+      id: `${RUN_ID}-league`,
+      name: 'QA Fixture League',
+      sport: '',
+      divisionTitle: '',
+      teams: {},
+      schedule: [],
+    },
+  });
+  assert.equal(fixturePlanSummary({ manifestVersion: 3 }).resourceCounts.firestoreDocuments, 82);
+});
+
+test('trigger-derived league view is inspected and exactly cleaned without client seeding', async t => {
+  const fixture = await lifecycleFixture(t);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  assert.ok(publicView);
+
+  await fixture.lifecycle.seed(fixture.inputs);
+  assert.equal(fixture.firestore.sets.includes(publicView.path), false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, true);
+  assert.deepEqual(inspection.counts, {
+    expected: { auth: 20, firestore: 82 },
+    actualPresent: { auth: 20, firestore: 82 },
+  });
+
+  const cleanup = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(cleanup.ok, true);
+  assert.deepEqual(cleanup.deleted, { auth: 20, firestore: 82 });
+  assert.equal(fixture.firestore.has(publicView.path), false);
+  const cleaned = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(cleaned.ok, true);
+  assert.deepEqual(cleaned.counts.actualPresent, { auth: 0, firestore: 0 });
+});
+
+test('seed rejects an orphan trigger-derived league view without exact source ownership', async t => {
+  const fixture = await lifecycleFixture(t);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  fixture.firestore.inject(publicView.path, {
+    ...publicView.data,
+    updatedAt: { _seconds: 1787580000, _nanoseconds: 0 },
+  });
+
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /collision/i);
+  assert.equal(fixture.auth.users.size, 0);
 });
 
 test('definition uses the verified same-origin avatar asset for every roster member', async () => {
@@ -2519,7 +2598,9 @@ test('credential publication sanitizes an exact temporary-file unlink failure', 
 test('credential publication rejects a parent swap into the repository before temporary creation', async t => {
   const fixture = await credentialConfinementFixture(t, 'qa-phase7-20260824T140030Z-ab12cd34ef56');
   const originalSet = fixture.firestore.set.bind(fixture.firestore);
-  const lastPath = fixture.definition.documents.at(-1).path;
+  const lastPath = fixture.definition.documents
+    .filter(document => document.kind !== 'derived-public-league-view')
+    .at(-1).path;
   let swapped = false;
   fixture.firestore.set = async (path, data) => {
     await originalSet(path, data);
@@ -3101,6 +3182,54 @@ test('cleanup returns sanitized alias counts and continues after adapter read an
   assert.equal(serialized.includes('simulated'), false);
   assert.equal(fixture.auth.users.size, 2);
   assert.equal(fixture.firestore.documents.size, 4);
+});
+
+test('cleanup preserves the league ownership chain when its derived view cannot be proven', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  const league = fixture.definition.documents.find(document => document.path === publicView.sourcePath);
+  const proof = fixture.definition.documents.find(document => document.path === publicView.ownershipProofPath);
+  const creator = fixture.definition.identities.find(identity => identity.uid === proof.uid);
+  fixture.firestore.inject(publicView.path, {
+    ...publicView.data,
+    name: 'Unproven projection',
+    updatedAt: { _seconds: 1787580000, _nanoseconds: 0 },
+  });
+
+  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+
+  assert.equal(result.ok, false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  assert.equal(fixture.firestore.has(league.path), true);
+  assert.equal(fixture.firestore.has(proof.path), true);
+  assert.equal(fixture.auth.users.has(creator.uid), true);
+  assert.equal(fixture.firestore.deleted.includes(publicView.path), false);
+  assert.equal(fixture.firestore.deleted.includes(league.path), false);
+  assert.deepEqual(result.followUp.retained.firestore.aliases, ['qa-league', 'qa-league-creator', 'qa-public-league']);
+  assert.deepEqual(result.followUp.retained.auth.aliases, ['qa-league-creator']);
+});
+
+test('cleanup sanitizes derived ownership read failures and preserves the ownership chain', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  const league = fixture.definition.documents.find(document => document.path === publicView.sourcePath);
+  const proof = fixture.definition.documents.find(document => document.path === publicView.ownershipProofPath);
+  const creator = fixture.definition.identities.find(identity => identity.uid === proof.uid);
+  fixture.firestore.failGetPath = proof.path;
+
+  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+
+  assert.equal(result.ok, false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  assert.equal(fixture.firestore.has(league.path), true);
+  assert.equal(fixture.firestore.has(proof.path), true);
+  assert.equal(fixture.auth.users.has(creator.uid), true);
+  assert.equal(fixture.firestore.deleted.includes(publicView.path), false);
+  assert.equal(fixture.firestore.deleted.includes(league.path), false);
+  assert.equal(result.followUp.failures.firestore.aliases.includes('qa-public-league'), true);
+  assert.equal(JSON.stringify(result).includes(RUN_ID), false);
 });
 
 test('seed CLI stdout contains only aliases, counts, state, and opaque UID suffixes', async t => {
