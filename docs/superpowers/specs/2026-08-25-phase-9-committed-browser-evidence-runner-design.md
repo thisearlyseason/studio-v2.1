@@ -93,7 +93,7 @@ A Node parent process owns the exact private workspace, fixture manifest, creden
 
 - It validates the exact deployed SHA/run, open-unmerged PR, staging project, canonical origin, and empty browser-session list before mutation.
 - It creates one mode-0700 `/tmp/phase9-core-identities.*` workspace and registers `SIGINT`, `SIGTERM`, uncaught-exception, and unhandled-rejection handlers before seeding.
-- Every fixture command must return exit zero and parse to the expected `ok:true` contract. Exit status alone is never sufficient.
+- Every fixture command must return exit zero and parse to its complete typed producer contract. Commands that emit `ok` must require `ok:true`; preflight and seed instead require every canonical field their current CLI producer emits. Exit status alone is never sufficient.
 - It keeps the exact manifest until pre-clean inspect, cleanup, cleaned inspect, a separately initialized exact probe of all 20 UIDs, all 82 expected-present paths, and every expected-absence path, and a verified empty browser-session list all pass.
 - Browser closure failure or a nonempty browser list blocks safe-stop certification.
 - On certified closure, it removes the credential through `removeCredentialFile()`, removes the exact workspace, proves both absent, and disarms.

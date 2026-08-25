@@ -68,7 +68,7 @@ Expected: FAIL because `scenario-contracts.mjs` or its exports do not exist.
 
 Use immutable data definitions. `validateActionWindow()` must require explicit booleans/counts and reject missing fields. `validateRouteResult()` must use both pathname and route sentinel. `validateIsolationResult()` must require own same-origin API 200, opposite API 403, own direct Firestore 200, opposite direct Firestore 403, and zero opposite listener/render. `validateLogoutStages()` must validate every ordered stage independently.
 
-`validateLifecycleResult(kind, value, expected)` must parse command JSON, require `ok:true` where applicable, exact state/counts, zero drift/problems, zero retained/failures, full UID/path/expected-absence probe counts, and zero sessions.
+`validateLifecycleResult(kind, value, stage)` must parse command JSON against internally defined canonical stage contracts rather than caller-supplied counts. Preflight and seed require every typed field their current CLI producer emits; inspect and cleanup require `ok:true`; all stages require exact state/counts, zero drift/problems, zero retained/failures, full UID/path/expected-absence probe counts, and zero sessions.
 
 - [ ] **Step 4: Run Task 1 GREEN and fixture regressions**
 
