@@ -153,17 +153,67 @@ test('phase 9 playwright client classifies only protected data resources', () =>
     signal(`${origin}/_next/static/chunks/app.js`, 'script'),
     signal(`${origin}/api/auth/session`, 'fetch', 'POST'),
     signal(`${origin}/api/auth/session`, 'fetch', 'DELETE'),
+    signal(`${origin}/api/contact`, 'fetch', 'POST'),
+    signal(`${origin}/api/health`),
+    signal(`${origin}/api/newsletter/subscribe`, 'fetch', 'POST'),
+    signal(`${origin}/api/newsletter/unsubscribe`, 'fetch', 'POST'),
+    signal(`${origin}/api/email/reset-password`, 'fetch', 'POST'),
     signal('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword', 'fetch'),
   ]) assert.equal(isProtectedResource(value), false);
   for (const value of [
     signal(`${origin}/api/teams/chat`),
     signal(`${origin}/api/admin/users/example`),
     signal(`${origin}/api/checkout`, 'fetch', 'POST'),
+    signal(`${origin}/api/email/send`, 'fetch', 'POST'),
+    signal(`${origin}/api/demo/seed`, 'fetch', 'POST'),
+    signal(`${origin}/api/sports-hub/rss-refresh`, 'fetch', 'POST'),
+    signal(`${origin}/api/public/not-allowlisted`),
     signal('https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents/teams/example'),
     signal('https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents:runQuery', 'fetch', 'POST'),
     signal('https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel'),
     signal('https://firestore.googleapis.com/google.firestore.v1.Firestore/RunQuery/channel'),
   ]) assert.equal(isProtectedResource(value), true);
+});
+
+test('phase 9 action window treats login terminal sentinels as nonprotected renders', async () => {
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+    if (code.includes('phase9:sample')) return cliResult({
+      pageId: 'page-a',
+      terminalReached: true,
+      loadingVisible: false,
+      finalUrl: 'https://example.invalid/login',
+      finalPath: '/login',
+      visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+      sessionPresent: false,
+      protectedRender: true,
+      protectedRequests: [],
+      protectedListenerStarts: [],
+      relevantHttpResults: [],
+      pageErrors: [],
+      appConsoleErrors: [],
+      unexpectedRequestFailures: [],
+      overflow: 0,
+      renderPath: '/login',
+      renderSentinel: 'Sign In',
+      renderSignals: [
+        { path: '/login', sentinel: 'Sign In' },
+        { path: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.' },
+      ],
+    });
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'terminal-render');
+  const result = await observeAction({
+    client,
+    session: 'terminal-render',
+    stage: 'login-terminal',
+    terminal: async () => {},
+    action: async () => {},
+  });
+  assert.equal(result.protectedRender, false);
 });
 
 test('phase 9 action window marks the same page before action and returns sanitized complete signals', async () => {
@@ -205,6 +255,16 @@ test('phase 9 action window marks the same page before action and returns saniti
           resourceType: 'fetch',
           initiatingFrameUrl: 'https://example.invalid/dashboard?token=must-not-return',
           body: 'must-not-return',
+        }, {
+          url: 'https://arbitrary.invalid/google.firestore.v1.Firestore/Listen/channel?token=must-not-return',
+          method: 'POST',
+          resourceType: 'fetch',
+          initiatingFrameUrl: 'https://example.invalid/dashboard?token=must-not-return',
+        }, {
+          url: 'https://example.invalid/api/teams/chat?teamId=example',
+          method: 'GET',
+          resourceType: 'fetch',
+          initiatingFrameUrl: 'https://example.invalid/dashboard',
         }],
         relevantHttpResults: [{ url: 'https://example.invalid/api/protected', status: 401 }],
         pageErrors: [],
@@ -249,7 +309,13 @@ test('phase 9 action window marks the same page before action and returns saniti
     method: 'POST',
     resourceType: 'fetch',
     initiatingFrameUrl: 'https://example.invalid/dashboard',
+  }, {
+    url: 'https://example.invalid/api/teams/chat',
+    method: 'GET',
+    resourceType: 'fetch',
+    initiatingFrameUrl: 'https://example.invalid/dashboard',
   }]);
+  assert.equal(result.protectedListenerStarts, 2);
   assert.deepEqual(result.renderSignals, [{ path: '/dashboard', sentinel: 'Family Overview' }]);
   assert.equal(JSON.stringify(result).includes('must-not-return'), false);
   assert.equal(result.finalPath, '/login');
@@ -336,54 +402,74 @@ test('phase 9 playwright client accepts real wrapper top-level and nested JSON r
   assert.deepEqual(await client.runCode('page-a', 'async (page) => ({ pageId: "page-a" })'), { pageId: 'page-a' });
 });
 
-test('phase 9 action window real Chrome captures only actually visible transient protected sentinels', { timeout: 30_000 }, async () => {
+test('phase 9 action window real Chrome captures each independent transient visibility mechanism', { timeout: 90_000 }, async t => {
   const client = createPlaywrightCliClient({});
   try {
-    await installSignalRecorder(client, 'phase9-visibility-regression');
-    const hidden = await observeAction({
-      client,
-      session: 'phase9-visibility-regression',
-      stage: 'hidden-only',
-      terminal: async () => {},
-      action: async () => client.runCode('phase9-visibility-regression', `async (page) => {
-        await page.evaluate(() => {
-          document.head.innerHTML = '<style>.concealed{display:none}</style>';
-          document.body.innerHTML = '<h1 class="concealed" hidden aria-hidden="true">Family Overview</h1>';
-        });
-        await page.waitForTimeout(50);
-        return { ok: true };
-      }`),
-    });
-    assert.equal(hidden.protectedRender, false);
+    for (const mechanism of ['style', 'class', 'hidden', 'aria-hidden']) await t.test(mechanism, async () => {
+      const session = `phase9-visibility-${mechanism}`;
+      await installSignalRecorder(client, session);
+      const hidden = await observeAction({
+        client,
+        session,
+        stage: `${mechanism}-hidden-only`,
+        terminal: async () => {},
+        action: async () => client.runCode(session, `async (page) => {
+          await page.evaluate(mechanism => {
+            document.head.innerHTML = '';
+            document.body.innerHTML = '<h1>Family Overview</h1>';
+            const element = document.querySelector('h1');
+            if (mechanism === 'style') element.style.display = 'none';
+            if (mechanism === 'class') {
+              document.head.innerHTML = '<style>.concealed{display:none}</style>';
+              element.classList.add('concealed');
+            }
+            if (mechanism === 'hidden') element.hidden = true;
+            if (mechanism === 'aria-hidden') element.setAttribute('aria-hidden', 'true');
+          }, ${JSON.stringify(mechanism)});
+          await page.waitForTimeout(50);
+          return { ok: true };
+        }`),
+      });
+      assert.equal(hidden.protectedRender, false);
 
-    const transient = await observeAction({
-      client,
-      session: 'phase9-visibility-regression',
-      stage: 'transient-visible',
-      terminal: async () => {},
-      action: async () => client.runCode('phase9-visibility-regression', `async (page) => {
-        const heading = page.locator('h1');
-        await heading.evaluate(element => {
-          element.hidden = false;
-          element.setAttribute('aria-hidden', 'false');
-          element.classList.remove('concealed');
-          element.style.display = 'block';
-        });
-        await page.waitForTimeout(250);
-        await heading.evaluate(element => {
-          element.hidden = true;
-          element.setAttribute('aria-hidden', 'true');
-          element.classList.add('concealed');
-          element.style.display = 'none';
-        });
-        return { ok: true };
-      }`),
+      const transient = await observeAction({
+        client,
+        session,
+        stage: `${mechanism}-transient-visible`,
+        terminal: async () => {},
+        action: async () => client.runCode(session, `async (page) => {
+          const heading = page.locator('h1');
+          await heading.evaluate((element, mechanism) => {
+            if (mechanism === 'style') element.style.display = 'block';
+            if (mechanism === 'class') element.classList.remove('concealed');
+            if (mechanism === 'hidden') element.hidden = false;
+            if (mechanism === 'aria-hidden') element.setAttribute('aria-hidden', 'false');
+          }, ${JSON.stringify(mechanism)});
+          await page.waitForTimeout(250);
+          await heading.evaluate((element, mechanism) => {
+            if (mechanism === 'style') element.style.display = 'none';
+            if (mechanism === 'class') element.classList.add('concealed');
+            if (mechanism === 'hidden') element.hidden = true;
+            if (mechanism === 'aria-hidden') element.setAttribute('aria-hidden', 'true');
+          }, ${JSON.stringify(mechanism)});
+          return { ok: true };
+        }`),
+      });
+      assert.equal(transient.protectedRender, true, JSON.stringify(transient));
+      assert.equal(transient.renderSignals.some(signal => signal.sentinel === 'Family Overview'), true);
     });
-    assert.equal(transient.protectedRender, true, JSON.stringify(transient));
-    assert.equal(transient.renderSignals.some(signal => signal.sentinel === 'Family Overview'), true);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+});
 
-    await client.goto('phase9-visibility-regression', 'data:text/html,nonblank');
-    await assert.rejects(installSignalRecorder(client, 'phase9-visibility-regression'), /exact current tab.*about:blank/i);
+test('phase 9 action window real Chrome refuses recorder installation on a nonblank tab', { timeout: 30_000 }, async () => {
+  const client = createPlaywrightCliClient({});
+  try {
+    await installSignalRecorder(client, 'phase9-nonblank-regression');
+    await client.goto('phase9-nonblank-regression', 'data:text/html,nonblank');
+    await assert.rejects(installSignalRecorder(client, 'phase9-nonblank-regression'), /exact current tab.*about:blank/i);
   } finally {
     await closeAndVerifyBrowsers(client);
   }

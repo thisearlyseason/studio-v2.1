@@ -1,10 +1,18 @@
 import { execFile } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
+import { ROUTE_SCENARIOS } from './scenario-contracts.mjs';
+
 const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
 const CLIENT_INTERNALS = new WeakMap();
+const PROTECTED_RENDER_SENTINELS = Object.freeze(Object.values(ROUTE_SCENARIOS).map(value => value.visibleSentinel));
+const TERMINAL_SENTINELS = Object.freeze([
+  'Sign In',
+  'The email or password is incorrect, or this account is unavailable.',
+]);
+const OBSERVED_RENDER_SENTINELS = Object.freeze([...PROTECTED_RENDER_SENTINELS, ...TERMINAL_SENTINELS]);
 
 const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
   // phase9:install
@@ -79,7 +87,7 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
         if (globalThis.__phase9RenderObserverInstalled) return;
         globalThis.__phase9RenderObserverInstalled = true;
         globalThis.__phase9VisibleSentinels = () => {
-          const known = ['Admin', 'Club/School Hub', 'Competition Hub', 'Billing', 'Coaches Corner', 'Family Overview', 'Sign In', 'The email or password is incorrect, or this account is unavailable.'];
+          const known = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
           const visible = element => {
             if (!element) return false;
             for (let current = element; current; current = current.parentElement) {
@@ -117,7 +125,7 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       if (globalThis.__phase9RenderObserverInstalled) return;
       globalThis.__phase9RenderObserverInstalled = true;
       globalThis.__phase9VisibleSentinels = () => {
-        const known = ['Admin', 'Club/School Hub', 'Competition Hub', 'Billing', 'Coaches Corner', 'Family Overview', 'Sign In', 'The email or password is incorrect, or this account is unavailable.'];
+        const known = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
         const visible = element => {
           if (!element) return false;
           for (let current = element; current; current = current.parentElement) {
@@ -187,6 +195,7 @@ const sampleSource = mark => String.raw`async (page) => {
     };
   });
   const renderHistory = state.renders.slice(mark.renders);
+  const protectedSentinels = ${JSON.stringify(PROTECTED_RENDER_SENTINELS)};
   const cookies = await page.context().cookies();
   return {
     pageId: state.pageId,
@@ -196,7 +205,7 @@ const sampleSource = mark => String.raw`async (page) => {
     finalPath: render.path,
     visibleSentinels: render.sentinels,
     sessionPresent: cookies.some(cookie => /session|auth/i.test(cookie.name)),
-    protectedRender: renderHistory.some(item => item.sentinel && item.sentinel !== 'Sign In'),
+    protectedRender: renderHistory.some(item => protectedSentinels.includes(item.sentinel)),
     renderSignals: renderHistory,
     protectedRequests: state.requests.slice(mark.requests),
     protectedListenerStarts: state.listeners.slice(mark.listeners),
@@ -222,10 +231,14 @@ const cleanUrl = value => {
   }
 };
 
-const NON_PROTECTED_API_PREFIXES = [
-  '/api/auth/', '/api/contact', '/api/demo/', '/api/email/', '/api/health', '/api/newsletter/',
-  '/api/public/', '/api/referrals/', '/api/sports-hub/', '/api/webhook',
-];
+const NON_PROTECTED_API_PATHS = new Set([
+  '/api/auth/session',
+  '/api/contact',
+  '/api/email/reset-password',
+  '/api/health',
+  '/api/newsletter/subscribe',
+  '/api/newsletter/unsubscribe',
+]);
 
 export function isProtectedResource(signal) {
   if (!signal || typeof signal !== 'object' || signal.resourceType === 'document') return false;
@@ -243,7 +256,7 @@ export function isProtectedResource(signal) {
   }
   if (target.origin !== frame.origin) return false;
   if (!target.pathname.startsWith('/api/')) return false;
-  return !NON_PROTECTED_API_PREFIXES.some(prefix => target.pathname === prefix.replace(/\/$/, '') || target.pathname.startsWith(prefix));
+  return !NON_PROTECTED_API_PATHS.has(target.pathname);
 }
 
 const count = value => Array.isArray(value) ? value.length : Number.isInteger(value) && value >= 0 ? value : 0;
@@ -283,6 +296,7 @@ const sanitizeWindow = value => {
     path: typeof item?.path === 'string' ? item.path : '',
     sentinel: typeof item?.sentinel === 'string' ? item.sentinel : '',
   })) : [];
+  const protectedListeners = listeners.filter(isProtectedResource);
   return {
     pageId: typeof value.pageId === 'string' ? value.pageId : '',
     terminalReached: value.terminalReached === true,
@@ -291,12 +305,12 @@ const sanitizeWindow = value => {
     finalPath: typeof value.finalPath === 'string' ? value.finalPath : '',
     visibleSentinels: Array.isArray(value.visibleSentinels) ? value.visibleSentinels.filter(item => typeof item === 'string') : [],
     sessionPresent: value.sessionPresent === true,
-    protectedRender: value.protectedRender === true,
+    protectedRender: renderSignals.some(signal => PROTECTED_RENDER_SENTINELS.includes(signal.sentinel)),
     renderSignals,
     protectedRequests: requests.filter(isProtectedResource).length,
     requestSignals: requests,
-    protectedListenerStarts: Array.isArray(value.protectedListenerStarts) ? listeners.length : count(value.protectedListenerStarts),
-    listenerSignals: listeners,
+    protectedListenerStarts: protectedListeners.length,
+    listenerSignals: protectedListeners,
     relevantHttpResults: http,
     pageErrors: count(value.pageErrors),
     appConsoleErrors: count(value.appConsoleErrors),
