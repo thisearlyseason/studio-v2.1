@@ -11,6 +11,9 @@ export type AccountSessionProfile = {
   activeTeamId?: string | null;
   isSchoolAdmin?: boolean;
   isPrimaryClubAuthority?: boolean;
+  plan_type?: string | null;
+  planId?: string | null;
+  activePlanId?: string | null;
 };
 
 export type AccountAccessReader = {

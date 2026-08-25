@@ -43,12 +43,14 @@ test('login preserves password whitespace and returns a non-enumerating error', 
 });
 
 test('existing unverified accounts are preserved but locked until verification', async () => {
-  const [login, verification, middleware, sessionRoute] = await Promise.all([
+  const [login, verification, middleware, sessionRouteEntry, sessionHandlers] = await Promise.all([
     source('../src/app/login/page.tsx'),
     source('../src/app/verify-email/page.tsx'),
     source('../src/middleware.ts'),
     source('../src/app/api/auth/session/route.ts'),
+    source('../src/lib/session-route-handlers.ts'),
   ]);
+  const sessionRoute = `${sessionRouteEntry}\n${sessionHandlers}`;
 
   assert.match(login, /!user\.isAnonymous && !user\.emailVerified/);
   assert.match(login, /clearBrowserSession\(\)[\s\S]*router\.replace\('\/verify-email'\)/);
@@ -87,11 +89,13 @@ test('email changes require verification before the stored profile email changes
 });
 
 test('protected pages require a revocation-checked HTTP-only server session', async () => {
-  const [middleware, sessionRoute, clientAuth] = await Promise.all([
+  const [middleware, sessionRouteEntry, sessionHandlers, clientAuth] = await Promise.all([
     source('../src/middleware.ts'),
     source('../src/app/api/auth/session/route.ts'),
+    source('../src/lib/session-route-handlers.ts'),
     source('../src/lib/client-auth.ts'),
   ]);
+  const sessionRoute = `${sessionRouteEntry}\n${sessionHandlers}`;
 
   assert.match(middleware, /request\.cookies\.get\('__session'\)/);
   assert.match(middleware, /verifySessionCookie\(sessionCookie, true\)/);

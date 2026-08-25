@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { NextRequest } from 'next/server';
 
 import { createAccountSessionResolver } from '../src/lib/account-session-policy.ts';
 import { createServerAccountAccessReader } from '../src/lib/server-account-session.ts';
+import { createSessionHandlers } from '../src/lib/session-route-handlers.ts';
+import { accountSessionRedirect } from '../src/lib/dashboard-account-session.ts';
+import {
+  establishBrowserSession,
+  establishBrowserSessionOrSignOut,
+} from '../src/lib/client-auth.ts';
 
 function firestoreDouble({ profile = null, memberRows = [], ownedTeams = [] } = {}) {
   const operations = [];
@@ -253,4 +260,221 @@ test('server account reader does not preserve authority through a deleted owned 
   });
 
   assert.equal(await reader.hasActiveSquadAuthority('user-1', null), false);
+});
+
+function sessionRequest(method, { bearer = true, cookie } = {}) {
+  const headers = bearer ? { authorization: 'Bearer verified-id-token' } : undefined;
+  if (cookie) headers.cookie = `__session=${cookie}`;
+  return new NextRequest('https://staging.thesquad.pro/api/auth/session', { method, headers });
+}
+
+function sessionDependencies(overrides = {}) {
+  const calls = { create: 0, resolve: 0, verify: 0 };
+  return {
+    calls,
+    dependencies: {
+      verifyFirebaseToken: async () => ({
+        uid: 'user-1',
+        emailVerified: true,
+        role: 'member',
+        signInProvider: 'password',
+      }),
+      ensureAdminInit: () => {},
+      createSessionCookie: async () => {
+        calls.create += 1;
+        return 'opaque-session-cookie';
+      },
+      verifySessionCookie: async () => {
+        calls.verify += 1;
+        return {
+          uid: 'user-1',
+          email_verified: true,
+          role: 'member',
+          firebase: { sign_in_provider: 'password' },
+        };
+      },
+      resolveServerAccountSession: async () => {
+        calls.resolve += 1;
+        return { allowed: true, redirectTo: null, profile: { role: 'member' } };
+      },
+      ...overrides,
+    },
+  };
+}
+
+test('session POST rejects unavailable accounts without creating or setting a cookie', async () => {
+  const fixture = sessionDependencies({
+    resolveServerAccountSession: async () => ({
+      allowed: false,
+      code: 'auth/account-unavailable',
+    }),
+  });
+  const { POST } = createSessionHandlers(fixture.dependencies);
+
+  const response = await POST(sessionRequest('POST'));
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: 'This account is unavailable.',
+    code: 'auth/account-unavailable',
+  });
+  assert.equal(fixture.calls.create, 0);
+  assert.equal(response.headers.get('set-cookie'), null);
+});
+
+test('session POST returns the trusted destination only after cookie creation succeeds', async () => {
+  const fixture = sessionDependencies({
+    resolveServerAccountSession: async () => ({
+      allowed: true,
+      redirectTo: '/teams/join',
+      profile: { role: 'member' },
+    }),
+  });
+  const { POST } = createSessionHandlers(fixture.dependencies);
+
+  const response = await POST(sessionRequest('POST'));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, redirectTo: '/teams/join' });
+  assert.equal(fixture.calls.create, 1);
+  assert.match(response.headers.get('set-cookie') || '', /__session=opaque-session-cookie/);
+});
+
+test('session POST fails closed when trusted account resolution is unavailable', async () => {
+  const fixture = sessionDependencies({
+    resolveServerAccountSession: async () => {
+      throw new Error('provider details must not escape');
+    },
+  });
+  const { POST } = createSessionHandlers(fixture.dependencies);
+
+  const response = await POST(sessionRequest('POST'));
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'Authentication service is temporarily unavailable.' });
+  assert.equal(fixture.calls.create, 0);
+  assert.equal(response.headers.get('set-cookie'), null);
+});
+
+test('session GET clears a cookie rejected by trusted account state', async () => {
+  const fixture = sessionDependencies({
+    resolveServerAccountSession: async () => ({
+      allowed: false,
+      code: 'auth/account-unavailable',
+    }),
+  });
+  const { GET } = createSessionHandlers(fixture.dependencies);
+
+  const response = await GET(sessionRequest('GET', { cookie: 'existing-session' }));
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    authenticated: false,
+    code: 'auth/account-unavailable',
+  });
+  assert.match(response.headers.get('set-cookie') || '', /__session=/);
+  assert.match(response.headers.get('set-cookie') || '', /Max-Age=0/i);
+});
+
+test('session GET exposes only the trusted neutral destination for allowed accounts', async () => {
+  const fixture = sessionDependencies({
+    resolveServerAccountSession: async () => ({
+      allowed: true,
+      redirectTo: '/onboarding',
+      profile: null,
+    }),
+  });
+  const { GET } = createSessionHandlers(fixture.dependencies);
+
+  const response = await GET(sessionRequest('GET', { cookie: 'existing-session' }));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    authenticated: true,
+    uid: 'user-1',
+    role: 'member',
+    redirectTo: '/onboarding',
+  });
+});
+
+test('session GET keeps invalid or revoked cookies classified as unauthenticated', async () => {
+  const fixture = sessionDependencies({
+    verifySessionCookie: async () => {
+      throw Object.assign(new Error('revoked'), { code: 'auth/session-cookie-revoked' });
+    },
+  });
+  const { GET } = createSessionHandlers(fixture.dependencies);
+
+  const response = await GET(sessionRequest('GET', { cookie: 'revoked-session' }));
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { authenticated: false });
+});
+
+test('dashboard account admission redirects unavailable and incomplete accounts', () => {
+  assert.equal(accountSessionRedirect('/dashboard', {
+    allowed: false,
+    code: 'auth/account-unavailable',
+  }), '/login?reason=unavailable');
+  assert.equal(accountSessionRedirect('/dashboard', {
+    allowed: true,
+    redirectTo: '/onboarding',
+    profile: null,
+  }), '/onboarding');
+  assert.equal(accountSessionRedirect('/dashboard', {
+    allowed: true,
+    redirectTo: '/teams/join',
+    profile: { role: 'member' },
+  }), '/teams/join');
+});
+
+test('dashboard account admission avoids a neutral-destination redirect loop', () => {
+  assert.equal(accountSessionRedirect('/teams/join', {
+    allowed: true,
+    redirectTo: '/teams/join',
+    profile: { role: 'member' },
+  }), null);
+  assert.equal(accountSessionRedirect('/dashboard', {
+    allowed: true,
+    redirectTo: null,
+    profile: { role: 'member' },
+  }), null);
+});
+
+test('browser session returns only a validated trusted destination', async () => {
+  const originalFetch = globalThis.fetch;
+  const user = { getIdToken: async () => 'id-token' };
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      redirectTo: '/teams/join',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    assert.deepEqual(await establishBrowserSession(user), { redirectTo: '/teams/join' });
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      redirectTo: 'https://outside.example',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    await assert.rejects(() => establishBrowserSession(user), /secure browser session/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('browser admission clears both HTTP and Firebase client state after denial', async () => {
+  const calls = [];
+  const error = new Error('denied');
+  Object.defineProperty(error, 'code', { value: 'auth/account-unavailable' });
+
+  await assert.rejects(() => establishBrowserSessionOrSignOut(
+    { getIdToken: async () => 'id-token' },
+    { currentUser: {} },
+    {
+      establishBrowserSession: async () => { throw error; },
+      clearBrowserSession: async () => { calls.push('clear'); },
+      signOut: async () => { calls.push('sign-out'); },
+    },
+  ), /denied/);
+  assert.deepEqual(calls, ['clear', 'sign-out']);
+  assert.deepEqual(Object.keys(error), []);
 });

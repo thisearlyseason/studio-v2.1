@@ -7,7 +7,7 @@
  *     headers: { 'Content-Type': 'application/json', ...authHeader(token) }
  *   })
  */
-import { sendEmailVerification, type Auth, type User } from 'firebase/auth';
+import { sendEmailVerification, signOut, type Auth, type User } from 'firebase/auth';
 
 export const DEMO_EXIT_PENDING_KEY = 'squad_demo_exit_pending';
 export const DEMO_START_KEY = 'squad_demo_start_time';
@@ -54,7 +54,19 @@ export async function sendBrandedVerificationEmail(user: User): Promise<void> {
   throw new Error('Unable to send verification email.');
 }
 
-export async function establishBrowserSession(user: User): Promise<void> {
+export type BrowserSessionResult = {
+  redirectTo: '/onboarding' | '/teams/join' | null;
+};
+
+function sessionSetupError(code?: unknown): Error {
+  const error = new Error('Unable to establish a secure browser session.');
+  if (typeof code === 'string') {
+    Object.defineProperty(error, 'code', { value: code, enumerable: false });
+  }
+  return error;
+}
+
+export async function establishBrowserSession(user: User): Promise<BrowserSessionResult> {
   const token = await user.getIdToken(true);
   const response = await fetch('/api/auth/session', {
     method: 'POST',
@@ -63,7 +75,48 @@ export async function establishBrowserSession(user: User): Promise<void> {
       Authorization: `Bearer ${token}`,
     },
   });
-  if (!response.ok) throw new Error('Unable to establish a secure browser session.');
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw sessionSetupError(payload.code);
+  if (
+    payload.redirectTo !== null &&
+    payload.redirectTo !== '/onboarding' &&
+    payload.redirectTo !== '/teams/join'
+  ) {
+    throw sessionSetupError('auth/invalid-session-response');
+  }
+  return { redirectTo: payload.redirectTo };
+}
+
+type BrowserAdmissionDependencies = {
+  establishBrowserSession(user: User): Promise<BrowserSessionResult>;
+  clearBrowserSession(): Promise<void>;
+  signOut(auth: Auth): Promise<void>;
+};
+
+export async function establishBrowserSessionOrSignOut(
+  user: User,
+  auth: Auth,
+  dependencies: BrowserAdmissionDependencies = {
+    establishBrowserSession,
+    clearBrowserSession,
+    signOut,
+  },
+): Promise<BrowserSessionResult> {
+  try {
+    return await dependencies.establishBrowserSession(user);
+  } catch (error) {
+    try {
+      await dependencies.clearBrowserSession();
+    } catch {
+      // Continue to clear local Firebase state even if the HTTP cleanup fails.
+    }
+    try {
+      await dependencies.signOut(auth);
+    } catch {
+      // Preserve the original non-enumerating admission error.
+    }
+    throw error;
+  }
 }
 
 export async function bootstrapDemoWorkspace(user: User, planId: string): Promise<void> {
