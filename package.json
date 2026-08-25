@@ -18,6 +18,10 @@
     "test:components": "vitest run",
     "test:rules": "firebase --project demo-the-squad-rules-test emulators:exec --only firestore,storage \"node --test --test-concurrency=1 tests/rules/*.test.mjs\"",
     "verify:env": "node scripts/check-production-env.mjs",
+    "qa:fixtures:preflight": "node scripts/qa-fixtures/cli.mjs preflight",
+    "qa:fixtures:seed": "node scripts/qa-fixtures/cli.mjs seed",
+    "qa:fixtures:inspect": "node scripts/qa-fixtures/cli.mjs inspect",
+    "qa:fixtures:cleanup": "node scripts/qa-fixtures/cli.mjs cleanup",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:rules && npm run build && npm --prefix functions run build"
   },
   "dependencies": {

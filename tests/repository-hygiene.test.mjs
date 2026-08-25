@@ -1,35 +1,707 @@
 import assert from 'node:assert/strict';
+import { isUtf8 } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { extname } from 'node:path';
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  mkdtempSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import test from 'node:test';
 
-const TEXT_EXTENSIONS = new Set([
-  '',
-  '.cjs',
-  '.css',
-  '.html',
-  '.js',
-  '.json',
-  '.jsx',
-  '.md',
-  '.mjs',
-  '.py',
-  '.rules',
-  '.sh',
-  '.ts',
-  '.tsx',
-  '.txt',
-  '.yaml',
-  '.yml',
-]);
+const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_AGGREGATE_SOURCE_BYTES = 64 * 1024 * 1024;
+const MAX_GIT_METADATA_BYTES = 8 * 1024 * 1024;
+const TEST_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+const TEST_MAX_AGGREGATE_SOURCE_BYTES = 64 * 1024 * 1024;
+const WORKTREE_CONFINEMENT_CODE = 'ERR_REPOSITORY_WORKTREE_CONFINEMENT';
 
-function repositoryFiles() {
-  return execFileSync(
+function enumerateRepositoryFromGit(repositoryRoot = process.cwd()) {
+  const tracked = execFileSync(
     'git',
-    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-    { encoding: 'utf8' },
-  ).split('\0').filter(Boolean);
+    ['ls-files', '--cached', '--stage', '-z'],
+    { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: MAX_GIT_METADATA_BYTES },
+  ).split('\0').filter(Boolean).map(record => {
+    const match = /^(\d{6}) ([0-9a-f]{40,64}) (\d+)\t([\s\S]+)$/u.exec(record);
+    if (!match) throw new Error('Git returned an invalid tracked-file record.');
+    return { mode: match[1], oid: match[2], stage: Number(match[3]), file: match[4] };
+  });
+  const untracked = execFileSync(
+    'git',
+    ['ls-files', '--others', '--exclude-standard', '-z'],
+    { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: MAX_GIT_METADATA_BYTES },
+  ).split('\0').filter(Boolean).map(file => ({ file }));
+  return { tracked, untracked };
+}
+
+function repositoryPathIsConfined(file, repositoryRoot) {
+  if (typeof file !== 'string' || file.length === 0 || isAbsolute(file)) return false;
+  const fromRoot = relative(repositoryRoot, resolve(repositoryRoot, file));
+  return fromRoot !== '' && !fromRoot.startsWith('..') && !isAbsolute(fromRoot);
+}
+
+function readGitBlobSizes(tracked, repositoryRoot) {
+  const oids = [...new Set(tracked.map(entry => entry.oid))];
+  if (oids.length === 0) return new Map();
+  const output = execFileSync('git', ['cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)'], {
+    cwd: repositoryRoot,
+    input: `${oids.join('\n')}\n`,
+    encoding: 'utf8',
+    maxBuffer: MAX_GIT_METADATA_BYTES,
+  });
+  const records = output.split('\n').filter(Boolean);
+  if (records.length !== oids.length) throw new Error('Git blob size batch returned an invalid record count.');
+  const sizes = new Map();
+  for (let index = 0; index < oids.length; index += 1) {
+    const requestedOid = oids[index];
+    const [resolvedOid, type, sizeText] = records[index].split(' ');
+    const size = Number(sizeText);
+    if (resolvedOid !== requestedOid || type !== 'blob' || !Number.isSafeInteger(size) || size < 0) {
+      throw new Error('Git blob size batch returned an invalid record.');
+    }
+    sizes.set(requestedOid, size);
+  }
+  return sizes;
+}
+
+function readBoundedGitBlobs(sources, repositoryRoot) {
+  const expectedByOid = new Map();
+  for (const source of sources) expectedByOid.set(source.tracked.oid, source.size);
+  const oids = [...expectedByOid.keys()];
+  if (oids.length === 0) return new Map();
+  const output = execFileSync('git', ['cat-file', '--batch'], {
+    cwd: repositoryRoot,
+    input: `${oids.join('\n')}\n`,
+    maxBuffer: MAX_AGGREGATE_SOURCE_BYTES + MAX_GIT_METADATA_BYTES,
+  });
+  const values = new Map();
+  let offset = 0;
+  for (const requestedOid of oids) {
+    const headerEnd = output.indexOf(0x0a, offset);
+    if (headerEnd === -1) throw new Error('Git blob batch omitted a header.');
+    const [resolvedOid, type, sizeText] = output.subarray(offset, headerEnd).toString('ascii').split(' ');
+    const size = Number(sizeText);
+    if (
+      resolvedOid !== requestedOid
+      || type !== 'blob'
+      || size !== expectedByOid.get(requestedOid)
+      || !Number.isSafeInteger(size)
+      || size < 0
+      || size > MAX_SOURCE_BYTES
+    ) {
+      throw new Error('Git blob batch returned an invalid header.');
+    }
+    const bodyStart = headerEnd + 1;
+    const bodyEnd = bodyStart + size;
+    if (bodyEnd >= output.length || output[bodyEnd] !== 0x0a) throw new Error('Git blob batch returned truncated bytes.');
+    values.set(requestedOid, output.subarray(bodyStart, bodyEnd));
+    offset = bodyEnd + 1;
+  }
+  if (offset !== output.length) throw new Error('Git blob batch returned unexpected trailing bytes.');
+  return values;
+}
+
+function readBoundedWorktreeFile(file, repositoryRoot, expectedSize, {
+  expectedIdentities,
+  statFile = path => lstatSync(resolve(repositoryRoot, path)),
+  noFollowFlag = fsConstants.O_NOFOLLOW,
+  openFile = openSync,
+  readDescriptor = readSync,
+} = {}) {
+  if (!Number.isInteger(noFollowFlag) || noFollowFlag <= 0) {
+    throw new Error('Repository worktree scanning requires O_NOFOLLOW support.');
+  }
+  let descriptor;
+  try {
+    descriptor = openFile(resolve(repositoryRoot, file), fsConstants.O_RDONLY | noFollowFlag);
+  } catch (error) {
+    revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize);
+    throw error;
+  }
+  try {
+    revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize);
+    const before = fstatSync(descriptor);
+    assertDescriptorIdentity(before, expectedIdentities, expectedSize);
+    const rawBytes = Buffer.allocUnsafe(expectedSize);
+    let offset = 0;
+    while (offset < expectedSize) {
+      const count = readDescriptor(descriptor, rawBytes, offset, expectedSize - offset, null);
+      if (count === 0) throw new Error('Repository regular file returned truncated bytes.');
+      offset += count;
+    }
+    const after = fstatSync(descriptor);
+    assertDescriptorIdentity(after, expectedIdentities, expectedSize);
+    revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize);
+    return rawBytes;
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function asBuffer(value) {
+  return Buffer.isBuffer(value) ? value : Buffer.from(value);
+}
+
+function worktreeMetadataType(metadata) {
+  if (metadata?.isSymbolicLink?.()) return 'symlink';
+  if (metadata?.isDirectory?.()) return 'directory';
+  if (metadata?.isFile?.()) return 'file';
+  return 'other';
+}
+
+function worktreeIdentity(file, metadata) {
+  const validIdentityPart = value => (
+    (typeof value === 'number' && Number.isFinite(value))
+    || typeof value === 'bigint'
+  );
+  if (!validIdentityPart(metadata?.dev) || !validIdentityPart(metadata?.ino)) {
+    throw new Error('Repository metadata omitted a stable file identity.');
+  }
+  return { file, dev: metadata.dev, ino: metadata.ino, type: worktreeMetadataType(metadata) };
+}
+
+function sameWorktreeIdentity(actual, expected) {
+  return actual.dev === expected.dev && actual.ino === expected.ino && actual.type === expected.type;
+}
+
+function worktreeConfinementError() {
+  const error = new Error('Repository worktree path identity changed during acquisition.');
+  error.code = WORKTREE_CONFINEMENT_CODE;
+  return error;
+}
+
+function revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize) {
+  try {
+    if (!Array.isArray(expectedIdentities) || expectedIdentities.length === 0) throw worktreeConfinementError();
+    for (const expected of expectedIdentities) {
+      const metadata = statFile(expected.file);
+      const actual = worktreeIdentity(expected.file, metadata);
+      if (!sameWorktreeIdentity(actual, expected)) throw worktreeConfinementError();
+      if (expected.type === 'file' && metadata.size !== expectedSize) throw worktreeConfinementError();
+    }
+  } catch (error) {
+    if (error?.code === WORKTREE_CONFINEMENT_CODE) throw error;
+    throw worktreeConfinementError();
+  }
+}
+
+function assertDescriptorIdentity(metadata, expectedIdentities, expectedSize) {
+  const expected = expectedIdentities?.at(-1);
+  try {
+    const actual = worktreeIdentity(expected?.file, metadata);
+    if (
+      !expected
+      || expected.type !== 'file'
+      || !sameWorktreeIdentity(actual, expected)
+      || metadata.size !== expectedSize
+      || metadata.size > MAX_SOURCE_BYTES
+    ) throw worktreeConfinementError();
+  } catch (error) {
+    if (error?.code === WORKTREE_CONFINEMENT_CODE) throw error;
+    throw worktreeConfinementError();
+  }
+}
+
+function inspectWorktreePath(file, statFile) {
+  const segments = file.split('/');
+  let component = '';
+  const identities = [];
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    component = component ? `${component}/${segments[index]}` : segments[index];
+    let metadata;
+    try {
+      metadata = statFile(component);
+    } catch (error) {
+      return { error };
+    }
+    if (metadata.isSymbolicLink?.()) return { confinementError: true };
+    if (typeof metadata.isDirectory !== 'function' || !metadata.isDirectory()) return { statError: true };
+    try {
+      identities.push(worktreeIdentity(component, metadata));
+    } catch {
+      return { statError: true };
+    }
+  }
+  try {
+    return { metadata: statFile(file), identities };
+  } catch (error) {
+    return { error };
+  }
+}
+
+function repositoryScanFiles({
+  repositoryRoot = process.cwd(),
+  enumerateRepository = enumerateRepositoryFromGit,
+  getBlobSize,
+  readBlob,
+  lstat,
+  readFile,
+  noFollowFlag = fsConstants.O_NOFOLLOW,
+  openFile = openSync,
+  readDescriptor = readSync,
+} = {}) {
+  let repository;
+  try {
+    repository = enumerateRepository(repositoryRoot);
+    if (
+      !repository
+      || !Array.isArray(repository.tracked)
+      || !Array.isArray(repository.untracked)
+    ) {
+      throw new Error('Repository enumeration returned an invalid shape.');
+    }
+  } catch {
+    return [{ file: '<repository>', enumerationError: true }];
+  }
+  const planned = [];
+  const regularTracked = repository.tracked.filter(entry => new Set(['100644', '100755']).has(entry.mode));
+  let gitBlobSizes = null;
+  if (!getBlobSize) {
+    try {
+      gitBlobSizes = readGitBlobSizes(regularTracked, repositoryRoot);
+    } catch {
+      // Each affected regular blob receives a fail-closed entry below.
+    }
+  }
+  const blobSizeCache = new Map();
+  for (const tracked of repository.tracked) {
+    if (!repositoryPathIsConfined(tracked.file, repositoryRoot)) {
+      return [{ file: '<repository>', confinementError: true }];
+    }
+    if (!new Set(['100644', '100755']).has(tracked.mode)) {
+      planned.push({ entry: { file: tracked.file, contents: null, rawBytes: null } });
+      continue;
+    }
+    try {
+      let size = blobSizeCache.get(tracked.oid);
+      if (size === undefined) {
+        size = getBlobSize ? getBlobSize(tracked, repositoryRoot) : gitBlobSizes?.get(tracked.oid);
+        if (!Number.isSafeInteger(size) || size < 0) throw new Error('Git blob size is unavailable.');
+        blobSizeCache.set(tracked.oid, size);
+      }
+      planned.push(size > MAX_SOURCE_BYTES
+        ? { entry: { file: tracked.file, contents: null, rawBytes: null, sourceSizeError: true }, size }
+        : { source: { kind: 'blob', file: tracked.file, tracked, size } });
+    } catch {
+      planned.push({ entry: { file: tracked.file, contents: null, rawBytes: null, blobReadError: true } });
+    }
+  }
+
+  const statFile = lstat || (file => lstatSync(resolve(repositoryRoot, file)));
+  const worktreeSources = new Map();
+  for (const tracked of repository.tracked) {
+    if (!worktreeSources.has(tracked.file)) worktreeSources.set(tracked.file, { file: tracked.file, allowMissing: true });
+  }
+  for (const untracked of repository.untracked) {
+    if (!worktreeSources.has(untracked.file)) worktreeSources.set(untracked.file, { file: untracked.file, allowMissing: false });
+  }
+  for (const worktree of worktreeSources.values()) {
+    if (!repositoryPathIsConfined(worktree.file, repositoryRoot)) {
+      return [{ file: '<repository>', confinementError: true }];
+    }
+    const inspection = inspectWorktreePath(worktree.file, statFile);
+    if (inspection.confinementError) return [{ file: '<repository>', confinementError: true }];
+    if (inspection.error?.code === 'ENOENT' && worktree.allowMissing) continue;
+    if (inspection.error || inspection.statError) {
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
+      continue;
+    }
+    const file = inspection.metadata;
+    if (!file.isFile() || file.isSymbolicLink?.()) {
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null } });
+      continue;
+    }
+    if (!Number.isSafeInteger(file.size) || file.size < 0) {
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
+      continue;
+    }
+    let finalIdentity;
+    try {
+      finalIdentity = worktreeIdentity(worktree.file, file);
+    } catch {
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
+      continue;
+    }
+    const expectedIdentities = [...inspection.identities, finalIdentity];
+    planned.push(file.size > MAX_SOURCE_BYTES
+      ? { entry: { file: worktree.file, contents: null, rawBytes: null, sourceSizeError: true }, size: file.size }
+      : { source: { kind: 'worktree', file: worktree.file, size: file.size, expectedIdentities } });
+  }
+
+  const aggregateBytes = planned.reduce((total, item) => total + (item.size ?? item.source?.size ?? 0), 0);
+  if (aggregateBytes > MAX_AGGREGATE_SOURCE_BYTES) {
+    return [
+      ...planned.filter(item => item.entry).map(item => item.entry),
+      { file: '<repository>', aggregateSizeError: true },
+    ];
+  }
+
+  let boundedGitBlobs = null;
+  if (!readBlob) {
+    try {
+      boundedGitBlobs = readBoundedGitBlobs(
+        planned.filter(item => item.source?.kind === 'blob').map(item => item.source),
+        repositoryRoot,
+      );
+    } catch {
+      // Each affected blob receives a fail-closed read entry below.
+    }
+  }
+  const blobCache = new Map();
+  const loadBlob = readBlob || (entry => {
+    if (!boundedGitBlobs?.has(entry.oid)) throw new Error('Git blob is unavailable.');
+    return boundedGitBlobs.get(entry.oid);
+  });
+  const loadWorktree = readFile || ((file, root, size, expectedIdentities) => readBoundedWorktreeFile(file, root, size, {
+    expectedIdentities,
+    statFile,
+    noFollowFlag,
+    openFile,
+    readDescriptor,
+  }));
+  return planned.map(item => {
+    if (item.entry) return item.entry;
+    const source = item.source;
+    try {
+      let rawBytes;
+      if (source.kind === 'blob') {
+        if (!blobCache.has(source.tracked.oid)) {
+          blobCache.set(source.tracked.oid, asBuffer(loadBlob(source.tracked, repositoryRoot, source.size)));
+        }
+        rawBytes = blobCache.get(source.tracked.oid);
+      } else {
+        rawBytes = asBuffer(loadWorktree(source.file, repositoryRoot, source.size, source.expectedIdentities));
+      }
+      if (rawBytes.length !== source.size) throw new Error('Repository source length changed after preflight.');
+      return { file: source.file, contents: null, rawBytes, sourceBytes: source.size };
+    } catch (error) {
+      if (source.kind === 'worktree' && error?.code === WORKTREE_CONFINEMENT_CODE) {
+        return { file: '<repository>', contents: null, rawBytes: null, confinementError: true };
+      }
+      const errorField = source.kind === 'blob' ? 'blobReadError' : 'readError';
+      return { file: source.file, contents: null, rawBytes: null, [errorField]: true };
+    }
+  });
+}
+
+function scanRepresentations(file) {
+  const representations = new Map();
+  if (typeof file.contents === 'string') {
+    representations.set(file.contents, Buffer.byteLength(file.contents, 'utf8'));
+  }
+  if (Buffer.isBuffer(file.rawBytes)) {
+    const sourceBytes = file.sourceBytes ?? file.rawBytes.length;
+    if (isUtf8(file.rawBytes) && !file.rawBytes.includes(0)) {
+      representations.set(file.rawBytes.toString('utf8'), sourceBytes);
+    } else {
+      representations.set(file.rawBytes.toString('latin1'), sourceBytes);
+    }
+    if (file.rawBytes.length % 2 === 0 && file.rawBytes.includes(0)) {
+      representations.set(file.rawBytes.toString('utf16le'), sourceBytes);
+      const bigEndian = Buffer.from(file.rawBytes);
+      bigEndian.swap16();
+      representations.set(bigEndian.toString('utf16le'), sourceBytes);
+    }
+  }
+  return [...representations].map(([contents, sourceBytes]) => ({ contents, sourceBytes }));
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseJson(contents) {
+  try {
+    return JSON.parse(contents);
+  } catch {
+    return null;
+  }
+}
+
+function containsPhase7Manifest(value) {
+  const pending = [value];
+  while (pending.length > 0) {
+    const candidate = pending.pop();
+    if (Array.isArray(candidate)) {
+      for (const child of candidate) pending.push(child);
+      continue;
+    }
+    if (!isRecord(candidate)) continue;
+    if (
+      candidate.version === 2
+      && typeof candidate.runId === 'string'
+      && candidate.runId.startsWith('qa-phase7-')
+      && candidate.projectId === 'the-squad-v2-staging'
+      && Array.isArray(candidate.authUids)
+      && Array.isArray(candidate.firestorePaths)
+      && ['planned', 'partial', 'seeded', 'cleaned'].includes(candidate.state)
+    ) return true;
+    for (const child of Object.values(candidate)) pending.push(child);
+  }
+  return false;
+}
+
+function containsSecretJsonPayload(value) {
+  const pending = [value];
+  while (pending.length > 0) {
+    const payload = pending.pop();
+    if (Array.isArray(payload)) {
+      for (const child of payload) pending.push(child);
+      continue;
+    }
+    if (!isRecord(payload)) continue;
+    const payloadName = typeof payload.name === 'string' ? payload.name.toLowerCase() : null;
+    if (
+      payloadName === ['__', 'session'].join('')
+      && credentialShaped(payload.value)
+    ) {
+      return true;
+    }
+    if (payloadName === 'cookie' && containsCredentialSessionCookie(payload.value)) {
+      return true;
+    }
+    for (const [key, candidate] of Object.entries(payload)) {
+      const normalizedKey = key.toLowerCase();
+      if (typeof candidate === 'string' && candidate.length > 0) {
+        if (normalizedKey === ['private_', 'key'].join('')) return true;
+        if (normalizedKey === ['pass', 'word'].join('')) return true;
+        if (normalizedKey === 'type' && candidate === ['service_', 'account'].join('')) return true;
+        if (
+          /^(?:(?:access|refresh|id)_)?token$/u.test(normalizedKey)
+          && credentialShaped(candidate)
+        ) return true;
+        if (normalizedKey === 'cookie' && containsCredentialSessionCookie(candidate)) return true;
+        if (normalizedKey === 'session' && credentialShaped(candidate)) return true;
+      }
+      if (candidate && typeof candidate === 'object') pending.push(candidate);
+    }
+  }
+  return false;
+}
+
+function tokenShaped(candidate) {
+  return (
+    /^(?:ya29\.|1\/\/)[A-Za-z0-9._~-]{8,}$/u.test(candidate)
+    || /^[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}$/u.test(candidate)
+  );
+}
+
+function containsCredentialSessionCookie(value) {
+  if (typeof value !== 'string') return false;
+  for (const cookie of value.split(';')) {
+    const separator = cookie.indexOf('=');
+    if (separator === -1) continue;
+    const name = cookie.slice(0, separator).trim();
+    const candidate = cookie.slice(separator + 1).trim();
+    if (name === ['__', 'session'].join('') && tokenShaped(candidate)) return true;
+  }
+  return false;
+}
+
+function credentialShaped(value) {
+  if (typeof value !== 'string') return false;
+  if (tokenShaped(value)) return true;
+  return containsCredentialSessionCookie(value);
+}
+
+function readJsonString(contents, start) {
+  let escaped = false;
+  for (let index = start + 1; index < contents.length; index += 1) {
+    if (escaped) {
+      escaped = false;
+    } else if (contents[index] === '\\') {
+      escaped = true;
+    } else if (contents[index] === '"') {
+      try {
+        return { end: index, value: JSON.parse(contents.slice(start, index + 1)) };
+      } catch {
+        return { end: index, value: null };
+      }
+    }
+  }
+  return { end: contents.length - 1, value: null };
+}
+
+function skipWhitespace(contents, start) {
+  let index = start;
+  while (index < contents.length && /\s/u.test(contents[index])) index += 1;
+  return index;
+}
+
+function containsEmbeddedSessionCookie(contents) {
+  const objectFrames = [];
+  for (let index = 0; index < contents.length; index += 1) {
+    if (contents[index] === '{') {
+      objectFrames.push({ name: null, value: null });
+      continue;
+    }
+    if (contents[index] === '}') {
+      objectFrames.pop();
+      continue;
+    }
+    if (contents[index] !== '"') continue;
+
+    const key = readJsonString(contents, index);
+    if (objectFrames.length === 0) {
+      index = key.end;
+      continue;
+    }
+    const colon = skipWhitespace(contents, key.end + 1);
+    if (key.value === null || contents[colon] !== ':') {
+      index = key.end;
+      continue;
+    }
+    const valueStart = skipWhitespace(contents, colon + 1);
+    if (contents[valueStart] !== '"') {
+      index = key.end;
+      continue;
+    }
+    const value = readJsonString(contents, valueStart);
+    const frame = objectFrames.at(-1);
+    if (key.value === 'name' && typeof value.value === 'string') frame.name = value.value.toLowerCase();
+    if (key.value === 'value' && typeof value.value === 'string') frame.value = value.value;
+    if (
+      (frame.name === ['__', 'session'].join('') && credentialShaped(frame.value))
+      || (frame.name === 'cookie' && containsCredentialSessionCookie(frame.value))
+    ) return true;
+    index = value.end;
+  }
+  return false;
+}
+
+function containsRawSessionCookieHeader(contents) {
+  const header = /(?:^|[\r\n])\s*Cookie\s*:\s*([^\r\n]*)/giu;
+  for (const match of contents.matchAll(header)) {
+    if (containsCredentialSessionCookie(match[1])) return true;
+  }
+  return false;
+}
+
+function decodedTextVariants(contents) {
+  const texts = [];
+  const queued = [contents];
+  const seen = new Set();
+  const byteBudget = (Buffer.byteLength(contents, 'utf8') * 4) + 65536;
+  let consumed = 0;
+  for (let queueIndex = 0; queueIndex < queued.length; queueIndex += 1) {
+    const text = queued[queueIndex];
+    if (seen.has(text)) continue;
+    seen.add(text);
+    consumed += Buffer.byteLength(text, 'utf8');
+    if (consumed > byteBudget) return { texts, limitExceeded: true };
+    texts.push(text);
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] !== '"') continue;
+      const parsed = readJsonString(text, index);
+      if (typeof parsed.value === 'string' && parsed.value.includes('{') && !seen.has(parsed.value)) {
+        queued.push(parsed.value);
+      }
+      index = parsed.end;
+    }
+  }
+  return { texts, limitExceeded: false };
+}
+
+function jsonValuesInText(contents) {
+  const values = [];
+  const whole = parseJson(contents);
+  if (whole !== null) return [whole];
+  const objectStarts = [];
+  for (let index = 0; index < contents.length; index += 1) {
+    if (contents[index] === '"') {
+      index = readJsonString(contents, index).end;
+      continue;
+    }
+    if (contents[index] === '{') {
+      objectStarts.push(index);
+      continue;
+    }
+    if (contents[index] !== '}' || objectStarts.length === 0) continue;
+    const start = objectStarts.pop();
+    if (objectStarts.length > 0) continue;
+    const parsed = parseJson(contents.slice(start, index + 1));
+    if (parsed !== null) values.push(parsed);
+  }
+  return values;
+}
+
+function containsBase64ServiceAccount(contents) {
+  const assignment = /FIREBASE_SERVICE_ACCOUNT_JSON["']?\s*(?::|=)\s*["']?([A-Za-z0-9+/_-]{40,}={0,2})/gu;
+  for (const match of contents.matchAll(assignment)) {
+    try {
+      const decoded = Buffer.from(match[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+      const payload = JSON.parse(decoded);
+      if (containsSecretJsonPayload(payload)) return true;
+    } catch {
+      // Only valid encoded service-account payloads are credential artifacts.
+    }
+  }
+  return false;
+}
+
+function inspectStructuredContents(contents) {
+  const variants = decodedTextVariants(contents);
+  if (variants.limitExceeded) return { manifest: false, secret: false, limitExceeded: true };
+  let manifest = false;
+  let secret = false;
+  const privateKeyMarker = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  for (const text of variants.texts) {
+    const values = jsonValuesInText(text);
+    if (values.some(containsPhase7Manifest)) manifest = true;
+    if (
+      text.includes(privateKeyMarker)
+      || containsBase64ServiceAccount(text)
+      || values.some(containsSecretJsonPayload)
+      || containsEmbeddedSessionCookie(text)
+      || containsRawSessionCookieHeader(text)
+    ) secret = true;
+  }
+  return { manifest, secret, limitExceeded: false };
+}
+
+function fixtureArtifactViolations(files) {
+  const credentialArtifact = /(?:^|\/)(?:qa-phase7|qa-fixture)[^/]*(?:credential|manifest|storage[-_]?state)[^/]*\.(?:json|env)$/i;
+  const violations = new Set();
+  for (const fileEntry of files) {
+    const { file } = fileEntry;
+    if (fileEntry.enumerationError) violations.add('<repository>: repository enumeration failed');
+    if (fileEntry.confinementError) violations.add('<repository>: repository enumeration escaped the repository');
+    if (fileEntry.statError) violations.add(`${file}: repository file could not be stated`);
+    if (fileEntry.blobReadError) violations.add(`${file}: repository Git blob could not be read`);
+    if (fileEntry.readError) violations.add(`${file}: repository regular file could not be read`);
+    if (fileEntry.sourceSizeError) violations.add(`${file}: repository source exceeds 8 MiB scan limit`);
+    if (fileEntry.aggregateSizeError) violations.add('<repository>: repository scanned source bytes exceed 64 MiB aggregate limit');
+    if (credentialArtifact.test(file)) violations.add(`${file}: tracked fixture credential/manifest artifact`);
+    let manifest = false;
+    let secret = false;
+    let limitExceeded = false;
+    for (const representation of scanRepresentations(fileEntry)) {
+      if (representation.sourceBytes > MAX_SOURCE_BYTES) {
+        violations.add(`${file}: repository source exceeds 8 MiB scan limit`);
+        continue;
+      }
+      const result = inspectStructuredContents(representation.contents);
+      manifest ||= result.manifest;
+      secret ||= result.secret;
+      limitExceeded ||= result.limitExceeded;
+    }
+    if (limitExceeded) violations.add(`${file}: repository structured-content scan limit exceeded`);
+    if (manifest) violations.add(`${file}: tracked Phase 7 manifest payload`);
+    if (secret) violations.add(`${file}: fixture secret material pattern`);
+  }
+  return [...violations];
 }
 
 test('tracked repository does not contain retired QA credentials or identifiers', () => {
@@ -46,17 +718,710 @@ test('tracked repository does not contain retired QA credentials or identifiers'
   ];
 
   const violations = [];
-  for (const file of repositoryFiles()) {
-    if (!existsSync(file)) continue;
-    if (!TEXT_EXTENSIONS.has(extname(file))) continue;
-
-    const contents = readFileSync(file, 'utf8');
-    for (const value of retiredValues) {
-      if (contents.includes(value)) {
+  for (const fileEntry of repositoryScanFiles()) {
+    const { file } = fileEntry;
+    for (const { contents } of scanRepresentations(fileEntry)) {
+      for (const value of retiredValues) {
+        if (!contents.includes(value)) continue;
         violations.push(`${file}: contains a retired QA credential or identifier`);
+        break;
       }
     }
   }
 
-  assert.deepEqual(violations, []);
+  assert.deepEqual([...new Set(violations)], []);
+});
+
+test('tracked repository rejects fixture credential artifacts and secret material patterns', () => {
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles()), []);
+});
+
+test('fixture hygiene regression recognizes unsafe artifact names and secret material', () => {
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/qa-phase7-run-credential.json', contents: '{}' },
+    { file: 'docs/leaked.txt', contents: privateKey },
+  ]), [
+    'tmp/qa-phase7-run-credential.json: tracked fixture credential/manifest artifact',
+    'docs/leaked.txt: fixture secret material pattern',
+  ]);
+});
+
+test('fixture hygiene detects Phase 7 manifests and Playwright session cookies by payload shape', () => {
+  const runId = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
+  const manifest = JSON.stringify({
+    version: 2,
+    runId,
+    projectId: 'the-squad-v2-staging',
+    authUids: [`${runId}-owner-a`],
+    firestorePaths: [`qaAuditRuns/${runId}`],
+    state: 'seeded',
+    transitions: {},
+  });
+  const storageState = JSON.stringify({
+    cookies: [{
+      name: ['__', 'session'].join(''),
+      value: ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.'),
+      domain: 'staging.example.test',
+      path: '/',
+      expires: -1,
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+    }],
+    origins: [],
+  });
+  const privateKey = [
+    ['-----BEGIN ', 'PRIVATE KEY-----'].join(''),
+    'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC',
+    ['-----END ', 'PRIVATE KEY-----'].join(''),
+  ].join('\n');
+  const serviceAccount = JSON.stringify({ type: ['service_', 'account'].join('') });
+  const password = JSON.stringify({ [['pass', 'word'].join('')]: 'FixtureOnly-Password-Value' });
+  const token = JSON.stringify({ [['access_', 'token'].join('')]: 'ya29.fixture-token-value' });
+  const credentialValue = ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.');
+  const cookie = JSON.stringify({ cookie: `__session=${credentialValue}` });
+  const session = JSON.stringify({ session: credentialValue });
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/manifest.json', contents: manifest },
+    { file: 'tmp/session.json', contents: storageState },
+    { file: 'scripts/qa-fixtures/lifecycle.mjs', contents: privateKey },
+    { file: 'scripts/qa-fixtures/lifecycle.mjs', contents: serviceAccount },
+    { file: 'tests/qa-fixture-safety.test.mjs', contents: password },
+    { file: 'tests/qa-fixture-safety.test.mjs', contents: token },
+    { file: 'tests/repository-hygiene.test.mjs', contents: cookie },
+    { file: 'tests/repository-hygiene.test.mjs', contents: session },
+  ]), [
+    'tmp/manifest.json: tracked Phase 7 manifest payload',
+    'tmp/session.json: fixture secret material pattern',
+    'scripts/qa-fixtures/lifecycle.mjs: fixture secret material pattern',
+    'tests/qa-fixture-safety.test.mjs: fixture secret material pattern',
+    'tests/repository-hygiene.test.mjs: fixture secret material pattern',
+  ]);
+});
+
+test('fixture hygiene detects credential-shaped HAR and raw Cookie session records without flagging harmless cookies', () => {
+  const sessionName = ['__', 'session'].join('');
+  const credentialValue = ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.');
+  const harHeader = JSON.stringify({ name: 'cookie', value: `${sessionName}=${credentialValue}; theme=dark` });
+  const reversedHarHeader = JSON.stringify({ value: `theme=dark; ${sessionName}=${credentialValue}`, name: 'cookie' });
+  const serializedHar = JSON.stringify(JSON.stringify({ headers: [JSON.parse(reversedHarHeader)] }));
+  const rawCookieHeader = `GET /dashboard HTTP/1.1\r\nCookie: theme=dark; ${sessionName}=${credentialValue}\r\n`;
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/request.har', contents: harHeader },
+    { file: 'tmp/reversed.har', contents: reversedHarHeader },
+    { file: 'tmp/serialized-har.js', contents: `const capture = ${serializedHar};\n` },
+    { file: 'tmp/raw-headers.txt', contents: rawCookieHeader },
+    { file: 'docs/placeholder-cookie.json', contents: JSON.stringify({ name: sessionName, value: 'placeholder' }) },
+    { file: 'docs/ordinary-har.json', contents: JSON.stringify({ name: 'cookie', value: `theme=${credentialValue}` }) },
+    { file: 'docs/ordinary-cookie.txt', contents: 'Cookie: theme=dark; locale=en-CA\n' },
+    { file: 'docs/harmless-token.json', contents: JSON.stringify({ token: 'blue' }) },
+    { file: 'docs/harmless-session.json', contents: JSON.stringify({ session: 'strict' }) },
+  ]), [
+    'tmp/request.har: fixture secret material pattern',
+    'tmp/reversed.har: fixture secret material pattern',
+    'tmp/serialized-har.js: fixture secret material pattern',
+    'tmp/raw-headers.txt: fixture secret material pattern',
+  ]);
+});
+
+test('fixture hygiene detects a long embedded Playwright session cookie in reversed property order', () => {
+  const storageState = JSON.stringify({
+    cookies: [{
+      value: `header.${'x'.repeat(3000)}.signature`,
+      name: ['__', 'session'].join(''),
+    }],
+    origins: [],
+  });
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/browser.capture', contents: `window.fixtureState = ${storageState};\n` },
+  ]), [
+    'tmp/browser.capture: fixture secret material pattern',
+  ]);
+});
+
+test('fixture hygiene detects short and long Playwright storage state serialized inside JavaScript strings', () => {
+  const sessionName = ['__', 'session'].join('');
+  const shortStorageState = JSON.stringify({
+    cookies: [{
+      name: sessionName,
+      value: ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.'),
+    }],
+    origins: [],
+  });
+  const longStorageState = JSON.stringify({
+    cookies: [{ value: `header.${'x'.repeat(3000)}.signature`, name: sessionName }],
+    origins: [],
+  });
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/serialized-short.js', contents: `const state = ${JSON.stringify(shortStorageState)};\n` },
+    { file: 'tmp/serialized-long.js', contents: `const state = ${JSON.stringify(longStorageState)};\n` },
+  ]), [
+    'tmp/serialized-short.js: fixture secret material pattern',
+    'tmp/serialized-long.js: fixture secret material pattern',
+  ]);
+});
+
+test('fixture hygiene detects a schema-valid Phase 7 manifest with omitted transitions', () => {
+  const runId = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
+  const manifest = JSON.stringify({
+    version: 2,
+    runId,
+    projectId: 'the-squad-v2-staging',
+    authUids: [`${runId}-owner-a`],
+    firestorePaths: [`qaAuditRuns/${runId}`],
+    state: 'partial',
+  });
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/manifest.json', contents: manifest },
+  ]), [
+    'tmp/manifest.json: tracked Phase 7 manifest payload',
+  ]);
+});
+
+test('repository scan detects extension-independent embedded and multiline secret payloads safely', t => {
+  const stem = `hygiene-probe-${process.pid}-${Date.now()}`;
+  const paths = {
+    embeddedState: `${stem}.capture`,
+    multilineSecret: `${stem}.txt`,
+    privateKey: `${stem}.keymaterial`,
+  };
+  t.after(() => {
+    for (const file of Object.values(paths)) {
+      try {
+        unlinkSync(file);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+  });
+
+  const privateKey = [
+    ['-----BEGIN ', 'PRIVATE KEY-----'].join(''),
+    'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC',
+    ['-----END ', 'PRIVATE KEY-----'].join(''),
+  ].join('\n');
+  const storageState = JSON.stringify({
+    cookies: [{
+      name: ['__', 'session'].join(''),
+      value: ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.'),
+    }],
+    origins: [],
+  }, null, 2);
+  const passwordField = ['pass', 'word'].join('');
+  const multilineSecret = ['{', `  "${passwordField}"`, '  :', '  "FixtureOnly-Password-Value"', '}'].join('\n');
+  writeFileSync(paths.privateKey, privateKey);
+  writeFileSync(paths.embeddedState, `window.fixtureState = ${storageState};\n`);
+  writeFileSync(paths.multilineSecret, multilineSecret);
+
+  const violations = fixtureArtifactViolations(repositoryScanFiles())
+    .filter(item => item.startsWith(stem))
+    .sort();
+  assert.deepEqual(violations, [
+    `${paths.embeddedState}: fixture secret material pattern`,
+    `${paths.multilineSecret}: fixture secret material pattern`,
+    `${paths.privateKey}: fixture secret material pattern`,
+  ].sort());
+});
+
+test('repository scan detects ASCII secrets in binary files and fails closed on unreadable regular files', t => {
+  const stem = `hygiene-byte-probe-${process.pid}-${Date.now()}`;
+  const paths = {
+    binary: `${stem}.blob`,
+    unreadable: `${stem}.blocked`,
+  };
+  t.after(() => {
+    for (const file of Object.values(paths)) {
+      try {
+        unlinkSync(file);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+  });
+
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  writeFileSync(paths.binary, Buffer.concat([
+    Buffer.from([0xff, 0x00, 0xfe]),
+    Buffer.from(privateKey, 'ascii'),
+  ]));
+  writeFileSync(paths.unreadable, 'ordinary non-secret text');
+
+  const violations = fixtureArtifactViolations(repositoryScanFiles({
+    readFile(file) {
+      if (file === paths.unreadable) throw new Error('deterministic fixture read failure');
+      return readFileSync(file);
+    },
+  }))
+    .filter(item => item.startsWith(stem))
+    .sort();
+  assert.deepEqual(violations, [
+    `${paths.binary}: fixture secret material pattern`,
+    `${paths.unreadable}: repository regular file could not be read`,
+  ].sort());
+});
+
+test('repository enumeration errors fail closed with no path or command disclosure', () => {
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository() {
+      throw new Error('sensitive git diagnostic');
+    },
+  })), [
+    '<repository>: repository enumeration failed',
+  ]);
+});
+
+test('repository stat, Git-blob read, and escaped-path errors fail closed', () => {
+  const tracked = { file: 'tracked-unreadable.bin', mode: '100644', oid: 'a'.repeat(40) };
+  const untracked = { file: 'untracked-unreadable.bin' };
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({ tracked: [tracked], untracked: [] }),
+    readBlob() {
+      throw new Error('sensitive object-store diagnostic');
+    },
+  })), [
+    'tracked-unreadable.bin: repository Git blob could not be read',
+  ]);
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({ tracked: [], untracked: [untracked] }),
+    lstat() {
+      throw new Error('sensitive stat diagnostic');
+    },
+  })), [
+    'untracked-unreadable.bin: repository file could not be stated',
+  ]);
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({ tracked: [], untracked: [{ file: '../outside.bin' }] }),
+  })), [
+    '<repository>: repository enumeration escaped the repository',
+  ]);
+});
+
+test('tracked regular index blobs remain scanned when the worktree path is deleted', () => {
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  const missing = new Error('tracked worktree path is absent');
+  missing.code = 'ENOENT';
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [{ file: 'tracked-secret.bin', mode: '100644', oid: 'b'.repeat(40) }],
+      untracked: [],
+    }),
+    getBlobSize: () => Buffer.byteLength(privateKey, 'ascii'),
+    readBlob: () => Buffer.from(privateKey, 'ascii'),
+    lstat() {
+      throw missing;
+    },
+    readFile() {
+      throw new Error('tracked worktree bytes must not be consulted');
+    },
+  })), [
+    'tracked-secret.bin: fixture secret material pattern',
+  ]);
+});
+
+test('cached tracked regular files scan one current confined worktree copy separately from every index blob', () => {
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  let blobReads = 0;
+  let worktreeReads = 0;
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [
+        { file: 'tracked-current.txt', mode: '100644', oid: 'd'.repeat(40), stage: 1 },
+        { file: 'tracked-current.txt', mode: '100644', oid: 'f'.repeat(40), stage: 2 },
+      ],
+      untracked: [],
+    }),
+    getBlobSize: () => Buffer.byteLength('safe index bytes'),
+    readBlob: () => {
+      blobReads += 1;
+      return Buffer.from('safe index bytes');
+    },
+    lstat: () => ({
+      dev: 1,
+      ino: 2,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      size: Buffer.byteLength(privateKey),
+    }),
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from(privateKey, 'ascii');
+    },
+  })), [
+    'tracked-current.txt: fixture secret material pattern',
+  ]);
+  assert.equal(blobReads, 2);
+  assert.equal(worktreeReads, 1);
+});
+
+test('repository scan detects current bytes hidden from Git modified enumeration by assume-unchanged', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'qa-hygiene-assume-unchanged-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  execFileSync('git', ['init', '--quiet'], { cwd: directory });
+  writeFileSync(join(directory, 'tracked-current.txt'), 'ordinary index bytes');
+  execFileSync('git', ['add', '--', 'tracked-current.txt'], { cwd: directory });
+  execFileSync('git', ['update-index', '--assume-unchanged', '--', 'tracked-current.txt'], { cwd: directory });
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  writeFileSync(join(directory, 'tracked-current.txt'), privateKey);
+
+  assert.equal(execFileSync('git', ['ls-files', '--modified'], { cwd: directory, encoding: 'utf8' }), '');
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({ repositoryRoot: directory })), [
+    'tracked-current.txt: fixture secret material pattern',
+  ]);
+});
+
+test('repository scan relies on the safe index blob when a cached tracked worktree path is deleted', () => {
+  let blobReads = 0;
+  let worktreeReads = 0;
+  const missing = new Error('tracked worktree entry is absent');
+  missing.code = 'ENOENT';
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [{ file: 'deleted-current.txt', mode: '100644', oid: '1'.repeat(40), stage: 0 }],
+      untracked: [],
+    }),
+    getBlobSize: () => Buffer.byteLength('ordinary index bytes'),
+    readBlob: () => {
+      blobReads += 1;
+      return Buffer.from('ordinary index bytes');
+    },
+    lstat: () => {
+      throw missing;
+    },
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+  })), []);
+  assert.equal(blobReads, 1);
+  assert.equal(worktreeReads, 0);
+});
+
+test('repository scan rejects a symlinked parent component without reading outside bytes', t => {
+  const repositoryRoot = process.cwd();
+  const outsideDirectory = mkdtempSync(join(tmpdir(), 'qa-hygiene-outside-parent-'));
+  const outsideFile = join(outsideDirectory, 'outside-secret.bin');
+  const linkName = `hygiene-parent-probe-${process.pid}-${Date.now()}`;
+  const linkPath = resolve(repositoryRoot, linkName);
+  t.after(() => {
+    try {
+      unlinkSync(linkPath);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  });
+  writeFileSync(outsideFile, ['-----BEGIN ', 'PRIVATE KEY-----'].join(''));
+  symlinkSync(outsideDirectory, linkPath);
+  let outsideReads = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [],
+      untracked: [{ file: `${linkName}/outside-secret.bin` }],
+    }),
+    readFile(file, root) {
+      outsideReads += 1;
+      return readFileSync(resolve(root, file));
+    },
+  })), [
+    '<repository>: repository enumeration escaped the repository',
+  ]);
+  assert.equal(outsideReads, 0);
+});
+
+test('repository scan rejects a parent swapped to an external symlink between preflight and open without reading bytes', t => {
+  const repositoryRoot = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-race-root-'));
+  const outsideDirectory = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-race-outside-'));
+  const parentPath = join(repositoryRoot, 'nested');
+  const originalParentPath = join(repositoryRoot, 'nested-original');
+  const relativeFile = 'nested/leaf.bin';
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  mkdirSync(parentPath);
+  writeFileSync(join(repositoryRoot, relativeFile), '.'.repeat(Buffer.byteLength(privateKey)));
+  writeFileSync(join(outsideDirectory, 'leaf.bin'), privateKey);
+  t.after(() => {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  });
+  let swapped = false;
+  let descriptorReads = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    repositoryRoot,
+    enumerateRepository: () => ({ tracked: [], untracked: [{ file: relativeFile }] }),
+    openFile(path, flags) {
+      assert.equal(swapped, false);
+      renameSync(parentPath, originalParentPath);
+      symlinkSync(outsideDirectory, parentPath);
+      swapped = true;
+      return openSync(path, flags);
+    },
+    readDescriptor(...args) {
+      descriptorReads += 1;
+      return readSync(...args);
+    },
+  })), [
+    '<repository>: repository enumeration escaped the repository',
+  ]);
+  assert.equal(swapped, true);
+  assert.equal(descriptorReads, 0);
+});
+
+test('repository scan discards bytes when a parent changes identity during the descriptor read', t => {
+  const repositoryRoot = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-postread-root-'));
+  const outsideDirectory = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-postread-outside-'));
+  const parentPath = join(repositoryRoot, 'nested');
+  const originalParentPath = join(repositoryRoot, 'nested-original');
+  const relativeFile = 'nested/leaf.bin';
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  mkdirSync(parentPath);
+  writeFileSync(join(repositoryRoot, relativeFile), privateKey);
+  writeFileSync(join(outsideDirectory, 'leaf.bin'), '.'.repeat(Buffer.byteLength(privateKey)));
+  t.after(() => {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  });
+  let swapped = false;
+  let descriptorReads = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    repositoryRoot,
+    enumerateRepository: () => ({ tracked: [], untracked: [{ file: relativeFile }] }),
+    readDescriptor(...args) {
+      descriptorReads += 1;
+      const count = readSync(...args);
+      if (!swapped) {
+        renameSync(parentPath, originalParentPath);
+        symlinkSync(outsideDirectory, parentPath);
+        swapped = true;
+      }
+      return count;
+    },
+  })), [
+    '<repository>: repository enumeration escaped the repository',
+  ]);
+  assert.equal(swapped, true);
+  assert.ok(descriptorReads > 0);
+});
+
+test('repository scan fails closed before opening worktree content when O_NOFOLLOW is unavailable', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'qa-hygiene-no-no-follow-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(join(directory, 'ordinary.txt'), 'ordinary safe bytes');
+  let openCalls = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    repositoryRoot: directory,
+    enumerateRepository: () => ({ tracked: [], untracked: [{ file: 'ordinary.txt' }] }),
+    noFollowFlag: null,
+    openFile(...args) {
+      openCalls += 1;
+      return openSync(...args);
+    },
+  })), [
+    'ordinary.txt: repository regular file could not be read',
+  ]);
+  assert.equal(openCalls, 0);
+});
+
+test('repository scan rejects oversize Git and worktree sources before invoking content readers', () => {
+  let blobReads = 0;
+  let worktreeReads = 0;
+  const violations = fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [
+        { file: 'tracked-large.bin', mode: '100644', oid: 'e'.repeat(40) },
+        { file: 'modified-large.bin', mode: '100644', oid: '2'.repeat(40) },
+      ],
+      untracked: [{ file: 'untracked-large.bin' }],
+    }),
+    getBlobSize: () => TEST_MAX_SOURCE_BYTES + 1,
+    readBlob: () => {
+      blobReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+    lstat: () => ({
+      dev: 1,
+      ino: 3,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      size: TEST_MAX_SOURCE_BYTES + 1,
+    }),
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+  }));
+
+  assert.deepEqual(violations, [
+    'tracked-large.bin: repository source exceeds 8 MiB scan limit',
+    'modified-large.bin: repository source exceeds 8 MiB scan limit',
+    'untracked-large.bin: repository source exceeds 8 MiB scan limit',
+  ]);
+  assert.equal(blobReads, 0);
+  assert.equal(worktreeReads, 0);
+});
+
+test('repository scan rejects an aggregate source budget overflow before reading content', () => {
+  let worktreeReads = 0;
+  const files = Array.from({ length: (TEST_MAX_AGGREGATE_SOURCE_BYTES / TEST_MAX_SOURCE_BYTES) + 1 }, (_, index) => ({
+    file: `aggregate-${index}.bin`,
+  }));
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({ tracked: [], untracked: files }),
+    lstat: () => ({
+      dev: 1,
+      ino: 4,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      size: TEST_MAX_SOURCE_BYTES,
+    }),
+    readFile: () => {
+      worktreeReads += 1;
+      return Buffer.from('reader must remain unreachable');
+    },
+  })), [
+    '<repository>: repository scanned source bytes exceed 64 MiB aggregate limit',
+  ]);
+  assert.equal(worktreeReads, 0);
+});
+
+test('repository scan never follows tracked or untracked symlinks', () => {
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    enumerateRepository: () => ({
+      tracked: [{ file: 'tracked-link', mode: '120000', oid: 'c'.repeat(40) }],
+      untracked: [{ file: 'untracked-link' }],
+    }),
+    readBlob() {
+      throw new Error('tracked symlink blob must not be inspected');
+    },
+    lstat: () => ({ isFile: () => false, isSymbolicLink: () => true }),
+    readFile() {
+      throw new Error('untracked symlink target must not be inspected');
+    },
+  })), []);
+});
+
+test('fixture hygiene detects manifest objects in wrapped serialized and binary content', () => {
+  const runId = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
+  const manifest = JSON.stringify({
+    version: 2,
+    runId,
+    projectId: 'the-squad-v2-staging',
+    authUids: [`${runId}-owner-a`],
+    firestorePaths: [`qaAuditRuns/${runId}`],
+    state: 'partial',
+  });
+  let serialized = manifest;
+  for (let layer = 0; layer < 5; layer += 1) serialized = JSON.stringify(serialized);
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/whole.capture', contents: manifest },
+    { file: 'tmp/wrapped.capture', contents: `window.fixtureManifest = ${manifest};\n` },
+    { file: 'tmp/serialized.capture', contents: `const fixtureManifest = ${serialized};\n` },
+    {
+      file: 'tmp/binary.capture',
+      contents: null,
+      rawBytes: Buffer.concat([Buffer.from([0x00, 0xff, 0x00]), Buffer.from(manifest, 'ascii')]),
+    },
+  ]), [
+    'tmp/whole.capture: tracked Phase 7 manifest payload',
+    'tmp/wrapped.capture: tracked Phase 7 manifest payload',
+    'tmp/serialized.capture: tracked Phase 7 manifest payload',
+    'tmp/binary.capture: tracked Phase 7 manifest payload',
+  ]);
+});
+
+test('fixture hygiene detects supported encoded and escaped credential forms', () => {
+  const privateKey = [
+    ['-----BEGIN ', 'PRIVATE KEY-----'].join(''),
+    'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC',
+    ['-----END ', 'PRIVATE KEY-----'].join(''),
+  ].join('\n');
+  const serviceAccount = JSON.stringify({
+    type: ['service_', 'account'].join(''),
+    private_key: privateKey,
+  });
+  const envName = ['FIREBASE_SERVICE_', 'ACCOUNT_JSON'].join('');
+  const encodedServiceAccount = Buffer.from(serviceAccount, 'utf8').toString('base64');
+  const passwordKey = ['pass', 'word'].join('');
+  const escapedPassword = JSON.stringify(JSON.stringify({ [passwordKey]: 'FixtureOnly-Password-Value' }));
+  const utf16Le = Buffer.from(privateKey, 'utf16le');
+  const utf16Be = Buffer.from(utf16Le);
+  utf16Be.swap16();
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/service-account.env', contents: `${envName}=${encodedServiceAccount}\n` },
+    { file: 'tmp/private-key-le.bin', contents: null, rawBytes: utf16Le },
+    { file: 'tmp/private-key-be.bin', contents: null, rawBytes: utf16Be },
+    { file: 'tmp/escaped-password.js', contents: `const payload = ${escapedPassword};\n` },
+  ]), [
+    'tmp/service-account.env: fixture secret material pattern',
+    'tmp/private-key-le.bin: fixture secret material pattern',
+    'tmp/private-key-be.bin: fixture secret material pattern',
+    'tmp/escaped-password.js: fixture secret material pattern',
+  ]);
+});
+
+test('fixture hygiene scans session state beyond three serialization layers with bounded work', () => {
+  const sessionName = ['__', 'session'].join('');
+  let encoded = JSON.stringify({
+    cookies: [{ name: sessionName, value: ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.') }],
+    origins: [],
+  });
+  for (let layer = 0; layer < 7; layer += 1) encoded = JSON.stringify(encoded);
+
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/deep-session.js', contents: `const state = ${encoded};\n` },
+  ]), [
+    'tmp/deep-session.js: fixture secret material pattern',
+  ]);
+});
+
+test('fixture hygiene handles deeply nested JSON without recursive scanner overflow', () => {
+  const runId = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
+  const manifest = JSON.stringify({
+    version: 2,
+    runId,
+    projectId: 'the-squad-v2-staging',
+    authUids: [`${runId}-owner-a`],
+    firestorePaths: [`qaAuditRuns/${runId}`],
+    state: 'partial',
+  });
+  const depth = 12000;
+  const nested = `${'{"wrapper":'.repeat(depth)}${manifest}${'}'.repeat(depth)}`;
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/deeply-nested.json', contents: nested },
+  ]), [
+    'tmp/deeply-nested.json: tracked Phase 7 manifest payload',
+  ]);
+});
+
+test('fixture hygiene completes a large safe representation within the bounded iterative scanner', { timeout: 5000 }, () => {
+  const safe = `${'ordinary-safe-content\n'.repeat(300000)}end`;
+  assert.ok(Buffer.byteLength(safe, 'utf8') < TEST_MAX_SOURCE_BYTES);
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/large-safe.capture', contents: safe },
+  ]), []);
+});
+
+test('fixture hygiene distinguishes credential-shaped token and session values from harmless configuration', () => {
+  const tokenKey = ['to', 'ken'].join('');
+  const sessionKey = ['ses', 'sion'].join('');
+  const credentialToken = ['eyJhbGciOiJSUzI1NiJ9', 'eyJzdWIiOiJxYS11c2VyIn0', 'signature'].join('.');
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'docs/harmless-token.json', contents: JSON.stringify({ [tokenKey]: 'blue' }) },
+    { file: 'docs/harmless-session.json', contents: JSON.stringify({ [sessionKey]: 'strict' }) },
+    { file: 'tmp/credential-token.json', contents: JSON.stringify({ [tokenKey]: credentialToken }) },
+    { file: 'tmp/credential-session.json', contents: JSON.stringify({ [sessionKey]: credentialToken }) },
+  ]), [
+    'tmp/credential-token.json: fixture secret material pattern',
+    'tmp/credential-session.json: fixture secret material pattern',
+  ]);
 });

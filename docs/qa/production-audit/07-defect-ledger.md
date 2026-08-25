@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`\
 **Environment:** local development plus isolated Firebase preview\
-**Status:** Phase 2 diagnosis evidence is retained; Phase 3/4 verification, Phase 5 staging, and Phase 6 root-cause supplements are recorded below. This ledger does not declare the application production ready.
+**Status:** Phase 2 diagnosis evidence is retained; Phase 3/4 verification, Phase 5 staging, Phase 6 root-cause, and Phase 7 hosted-fixture findings are recorded below. This ledger does not declare the application production ready.
 
 ## BUG-001 — Event deletion has no confirmation
 
@@ -112,3 +112,69 @@
 | Phase 6 fresh verification | At 390×844 and 1440×900, staging `/how-to` returned HTTP 200 with the expected heading, zero overflow, zero application console errors, zero page errors, successful HTTP 206 media delivery, `readyState=4`, `networkState=1`, no media error, finite duration 133.84 seconds, and playback advancing beyond one second. Evidence: `docs/qa/production-audit/runs/2026-08-24-phase6-bug004/root-cause.md`. |
 | Resolution | The Phase 5 listener treated any `requestfailed` event as a failed asset. Phase 6 narrows that methodology: this exact media abort is benign only when the successful response, healthy final media state, finite duration, and playback checks all pass. No SaaS runtime change is required, avoiding a forced 1.4 MB `preload="auto"` download on every visit. |
 | Status | CLOSED — FALSE POSITIVE |
+
+## BUG-006 — Suspended credentials establish a fresh protected session
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Authentication — Email/password login |
+| Role | Suspended registered user |
+| Page or route | `/login`, followed by `/onboarding` on mobile or an erroring `/login` state on desktop |
+| Description | Fresh credentials for a profile already transitioned to `suspended` can still create a session and enter an erroring protected flow. |
+| Expected behavior | A suspended identity fails closed before a protected session is created or protected UI/data flow is entered. |
+| Actual behavior | After an active positive baseline, the guarded transition recorded the profile as suspended and revoked the saved session. A fresh sign-in then returned session POST `200` at both viewports and left `__session` present. Mobile reached `/onboarding` with two captured page errors; desktop ended at `/login` with one captured page error; both rendered the application error boundary. |
+| Exact reproduction steps | 1. Seed the exact Phase 7 staging fixture and record the active suspended-alias baseline. 2. Run the guarded `qa-suspended` transition and verify `suspended` state plus saved-session revocation. 3. Open a new Chrome context. 4. Sign in with the external temporary credential. 5. Observe the successful session response, final route, session presence, and captured page errors. |
+| Reproduction consistency | 2/2 canonical fresh contexts: 390×844 and 1440×900 |
+| Browser | System Chrome via the bundled Playwright CLI; new named context per viewport |
+| Console/page evidence | Application-console count `0` in both canonical rows; page errors were captured before first staging navigation and totaled `2` mobile and `1` desktop. |
+| Network/data-flow evidence | `POST /api/auth/session` returned `200` in both fresh contexts after the fixture probe had confirmed the suspended profile and revoked prior tokens. This establishes the symptom and boundary sequence; it does not establish the repair root cause. |
+| Exact deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, the last independently proven deployed revision; Phase 7 did not infer a newer deployment. |
+| Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase7-staging-fixtures/02-auth-tenant-browser.md`, canonical rows `P7-S02-SUSPENDED-FRESH-M/D` in `03-context-ledger.md`, and lifecycle state proof in `01-fixture-lifecycle.md`. |
+| Impact | A suspended account can obtain fresh session state and enter protected application flow instead of being rejected at the authentication/session boundary. |
+| Root-cause status | Not established by Phase 7. The confirmed symptom and data-flow evidence are retained; code-level root-cause analysis and a TDD repair are deferred to the next authorized repair phase. |
+| Status | CONFIRMED UNRESOLVED |
+
+## BUG-007 — Removed member establishes a fresh dashboard session
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Authentication — Email/password login; Dashboard/shell — Role landing and route policy |
+| Role | Removed team member |
+| Page or route | `/login` → `/dashboard` |
+| Description | A user whose direct membership is `removed` and whose membership-cache document is absent can still create a fresh session and reach the dashboard. |
+| Expected behavior | A removed member fails closed at both session/UI and protected-data boundaries after membership removal and token revocation. |
+| Actual behavior | The saved pre-transition session was revoked and denied, and a direct Team A Firestore read returned `403`. A fresh sign-in nevertheless returned session POST `200`, left `__session` present, and reached `/dashboard` at both viewports. |
+| Exact reproduction steps | 1. Seed the exact Phase 7 staging fixture and record the active removed-member baseline. 2. Run the guarded `qa-removed-member` transition. 3. Verify direct membership `removed`, membership cache missing, and saved-session revocation. 4. Open a new Chrome context and sign in. 5. Observe `/dashboard` plus session presence, then probe the Team A read and observe `403`. |
+| Reproduction consistency | 2/2 canonical fresh contexts: 390×844 and 1440×900 |
+| Browser | System Chrome via the bundled Playwright CLI; new named context per viewport |
+| Console/page evidence | One sanitized error-level application-console entry per canonical context accompanied the explicit denied data probe; page errors were `0` at both viewports. |
+| Network/data-flow evidence | Fresh `POST /api/auth/session` returned `200` while the post-removal Team A Firestore read returned `403`. This confirms inconsistent session/UI and data authorization outcomes without claiming the code-level cause. |
+| Exact deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, the last independently proven deployed revision; Phase 7 did not infer a newer deployment. |
+| Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase7-staging-fixtures/02-auth-tenant-browser.md`, canonical rows `P7-S09-REMOVED-STALE-M/D` and `P7-S09-REMOVED-FRESH-M/D` in `03-context-ledger.md`, and lifecycle state proof in `01-fixture-lifecycle.md`. |
+| Impact | A removed member receives authenticated dashboard state after removal, even though direct protected team data is denied. |
+| Root-cause status | Not established by Phase 7. The confirmed symptom and cross-boundary data flow are retained; code-level root-cause analysis and a TDD repair are deferred to the next authorized repair phase. |
+| Status | CONFIRMED UNRESOLVED |
+
+## BUG-010 — Authorized own-team assignments query returns 500
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Leagues — Registration/assignment |
+| Role | Authorized Team A or Team B coach-owner — the tested owner subtype of matrix role `ST` (team owner/authorized staff) |
+| Page or route | `GET /api/leagues/assignments?teamId=<authorized-own-team>` |
+| Description | The assignments API returns an internal-server error for an authorized owner's own team while correctly denying the same owner when the team identifier is changed to the other fixture tenant. |
+| Expected behavior | An authorized own-team assignments query returns a successful empty/result response, and a changed-team query remains denied. |
+| Actual behavior | Team A and Team B owners each received `500` for their own-team assignments query. The symmetric changed-team query returned `403`; direct other-team Firestore GET/PATCH also returned `403`, and the visible UI remained on the authorized tenant. |
+| Exact reproduction steps | 1. Seed the exact two-team Phase 7 staging fixture. 2. Sign in as the Team A owner and query assignments with Team A, then Team B. 3. Repeat symmetrically as the Team B owner. 4. Record the own-team `500`, changed-team `403`, direct team-read/mutation denials, and visible tenant. |
+| Reproduction consistency | 2/2 symmetric canonical owner contexts: Team A at 390×844 and Team B at 1440×900 |
+| Browser | System Chrome via the bundled Playwright CLI; separate owner context per direction |
+| Console/page evidence | Canonical contexts recorded four error-level application-console entries each from the explicit status probes and zero page errors. |
+| Network/data-flow evidence | Own team read returned `200`; other-team Firestore GET/PATCH and assignments query returned `403`; authorized own-team assignments query returned `500` in both directions. These statuses establish the failing branch and preserved cross-tenant denial, not the code-level cause. |
+| Exact deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, the last independently proven deployed revision; Phase 7 did not infer a newer deployment. |
+| Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase7-staging-fixtures/02-auth-tenant-browser.md` and canonical rows `P7-S07-OWNER-A-M` and `P7-S07-OWNER-B-D` in `03-context-ledger.md`. |
+| Impact | Authorized league-assignment reads fail for both isolated tenant owners, blocking the assignment contract while cross-tenant denial remains intact. |
+| Root-cause status | Not established by Phase 7. The confirmed symptom and authorization/data-flow statuses are retained; code-level root-cause analysis and a TDD repair are deferred to the next authorized repair phase. |
+| Status | CONFIRMED UNRESOLVED |
