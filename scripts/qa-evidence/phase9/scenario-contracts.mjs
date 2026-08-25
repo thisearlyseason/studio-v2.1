@@ -48,13 +48,24 @@ export const VIEWPORTS = deepFreeze({
 });
 
 export const ROUTE_SCENARIOS = deepFreeze({
-  '/admin': { visibleSentinel: 'Admin' },
-  '/club': { visibleSentinel: 'Club/School Hub' },
-  '/competition': { visibleSentinel: 'Competition Hub' },
-  '/dashboard/billing': { visibleSentinel: 'Billing' },
-  '/coaches-corner': { visibleSentinel: 'Coaches Corner' },
-  '/family': { visibleSentinel: 'Family Overview' },
+  '/admin': { visibleSentinels: ['Account Lookup'] },
+  '/club': { visibleSentinels: ['School Hub', 'Club Hub'] },
+  '/competition': { visibleSentinels: ['Program League Hub', 'Competition Hub'] },
+  '/dashboard/billing': { visibleSentinels: ['Manage Your Plan'] },
+  '/coaches-corner': { visibleSentinels: ['Coaches Corner'] },
+  '/family': { visibleSentinels: ['Family Overview'] },
 });
+
+export const LANDING_SCENARIOS = deepFreeze({
+  '/dashboard': ['Dashboard'],
+  '/onboarding': ['Complete your profile'],
+  '/teams/join': ['Join & Invite'],
+  '/login': ['Sign In'],
+});
+export const LANDING_SENTINELS = deepFreeze([...new Set([
+  ...Object.values(LANDING_SCENARIOS).flat(),
+  ...Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels),
+])]);
 
 export const ISOLATION_SCENARIOS = deepFreeze({
   team: {
@@ -274,14 +285,28 @@ export function validateRouteResult(value) {
   requireBoolean(result.allowed, 'allowed');
   const expectedPath = requireString(result.expectedPath, 'expectedPath');
   const expectedSentinel = requireString(result.expectedSentinel, 'expectedSentinel');
-  if (result.allowed && ROUTE_SCENARIOS[expectedPath]?.visibleSentinel !== expectedSentinel) {
+  if (result.allowed && !ROUTE_SCENARIOS[expectedPath]?.visibleSentinels.includes(expectedSentinel)) {
     throw new Error('Allowed route must use its configured route sentinel.');
+  }
+  if (!result.allowed && !LANDING_SCENARIOS[expectedPath]?.includes(expectedSentinel)) {
+    throw new Error('Denied route must use an exact landing sentinel.');
   }
   const window = validateActionWindow(result.window, { requireNoProtected: !result.allowed });
 
   if (window.finalPath !== expectedPath) throw new Error('Route result pathname does not match the expected pathname.');
   if (!window.visibleSentinels.includes(expectedSentinel)) {
     throw new Error('Route result did not reach its configured visible sentinel.');
+  }
+  if (result.allowed && window.protectedRender) {
+    if (!Array.isArray(window.renderSignals) || window.renderSignals.length === 0) {
+      throw new Error('Allowed route protected-render history is incomplete.');
+    }
+    const unexpected = window.renderSignals.some(signal => (
+      !isRecord(signal)
+      || signal.path !== expectedPath
+      || signal.sentinel !== expectedSentinel
+    ));
+    if (unexpected) throw new Error('Allowed route contains an unexpected protected render.');
   }
 
   return { pass: true, allowed: result.allowed, window };

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -602,13 +603,13 @@ test('phase 9 evidence contracts expose exact immutable scenario definitions', (
     mobile: { width: 390, height: 844 },
     desktop: { width: 1440, height: 900 },
   });
-  assert.deepEqual(Object.fromEntries(Object.entries(ROUTE_SCENARIOS).map(([path, value]) => [path, value.visibleSentinel])), {
-    '/admin': 'Admin',
-    '/club': 'Club/School Hub',
-    '/competition': 'Competition Hub',
-    '/dashboard/billing': 'Billing',
-    '/coaches-corner': 'Coaches Corner',
-    '/family': 'Family Overview',
+  assert.deepEqual(ROUTE_SCENARIOS, {
+    '/admin': { visibleSentinels: ['Account Lookup'] },
+    '/club': { visibleSentinels: ['School Hub', 'Club Hub'] },
+    '/competition': { visibleSentinels: ['Program League Hub', 'Competition Hub'] },
+    '/dashboard/billing': { visibleSentinels: ['Manage Your Plan'] },
+    '/coaches-corner': { visibleSentinels: ['Coaches Corner'] },
+    '/family': { visibleSentinels: ['Family Overview'] },
   });
   assert.equal(ISOLATION_SCENARIOS.team.endpoint, '/api/teams/chat');
   assert.equal(ISOLATION_SCENARIOS.team.parameter, 'teamId');
@@ -1027,7 +1028,7 @@ test('phase 9 browser scenarios require visible readiness and complete denied-ro
     [{ loadingVisible: true }, /loading/i],
   ]) {
     const client = createScriptedScenarioClient([scenarioWindow(overrides)]);
-    await assert.rejects(runAdmissionScenario({
+    await assert.rejects(runRouteScenario({
       client, session: 'admission', context, path: '/family', allowed: true, actions,
     }), message);
   }
@@ -1061,7 +1062,7 @@ test('phase 9 browser scenarios require visible readiness and complete denied-ro
   }
 
   const passingClient = createScriptedScenarioClient([scenarioWindow()]);
-  const row = await runAdmissionScenario({
+  const row = await runRouteScenario({
     client: passingClient, session: 'allowed', context, path: '/family', allowed: true, actions,
   });
   assert.equal(row.result, 'PASS');
@@ -1143,16 +1144,25 @@ test('phase 9 browser scenarios mark before every logout stage and reject transi
   const actionOrder = [];
   const actions = Object.fromEntries(REQUIRED_LOGOUT_STAGES.map(name => [name, async () => actionOrder.push(`action:${name}`)]));
   actions.waitForLogin = async stage => actionOrder.push(`wait:${stage}`);
-  const client = createScriptedScenarioClient(REQUIRED_LOGOUT_STAGES.map(() => clean));
+  const client = createScriptedScenarioClient([...REQUIRED_LOGOUT_STAGES.map(() => clean), clean]);
+  actions.freshUnauthenticated = async () => actionOrder.push('action:fresh-isolated-unauthenticated');
+  actions.waitForFreshLogin = async () => actionOrder.push('wait:fresh-isolated-unauthenticated');
   const row = await runLogoutScenario({
     client,
     session: 'logout',
+    freshSession: 'logout-fresh',
     context: scenarioContext({ contextId: 'logout-qa-parent-a-mobile' }),
     actions,
   });
   assert.equal(row.result, 'PASS');
-  assert.deepEqual(client.calls.filter(call => call.startsWith('mark:')), REQUIRED_LOGOUT_STAGES.map(name => `mark:${name}`));
-  assert.deepEqual(actionOrder, REQUIRED_LOGOUT_STAGES.flatMap(name => [`action:${name}`, `wait:${name}`]));
+  assert.deepEqual(client.calls.filter(call => call.startsWith('mark:')), [
+    ...REQUIRED_LOGOUT_STAGES.map(name => `mark:${name}`),
+    'mark:fresh-isolated-unauthenticated',
+  ]);
+  assert.deepEqual(actionOrder, [
+    ...REQUIRED_LOGOUT_STAGES.flatMap(name => [`action:${name}`, `wait:${name}`]),
+    'action:fresh-isolated-unauthenticated', 'wait:fresh-isolated-unauthenticated',
+  ]);
 
   for (const stageIndex of [0, 1, 2, 3]) {
     for (const [field, value, message] of [
@@ -1161,10 +1171,11 @@ test('phase 9 browser scenarios mark before every logout stage and reject transi
       ['protectedListenerStarts', 1, /protected listener/i],
       ['sessionPresent', true, /session/i],
     ]) {
-      const windows = REQUIRED_LOGOUT_STAGES.map((_, index) => index === stageIndex ? { ...clean, [field]: value } : clean);
+      const windows = [...REQUIRED_LOGOUT_STAGES.map((_, index) => index === stageIndex ? { ...clean, [field]: value } : clean), clean];
       await assert.rejects(runLogoutScenario({
         client: createScriptedScenarioClient(windows),
         session: 'logout-fail',
+        freshSession: 'logout-fresh-fail',
         context: scenarioContext({ contextId: `logout-fail-${stageIndex}-${field}` }),
         actions,
       }), message);
@@ -1177,7 +1188,7 @@ test('phase 9 browser scenarios reject transient protected activity for fresh an
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
   });
   const pending = { ...fresh, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'] };
-  const actions = { navigate: async () => {}, waitForLogin: async () => {} };
+  const actions = { navigate: async () => {}, waitForLogin: async () => {}, freshLogin: async () => {} };
   for (const runner of [runFreshUnauthenticatedScenario, runPendingDeletionScenario]) {
     for (const [field, value, message] of [
       ['protectedRender', true, /protected render/i],
@@ -1260,6 +1271,24 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
   assert.deepEqual([...new Set(plan.filter(item => item.group === 'pending-deletion').map(item => item.alias))], ['qa-pending-delete']);
   assert.equal(new Set(plan.map(item => item.contextId)).size, 44);
   assert.deepEqual([...new Set(plan.map(item => item.viewport))], ['390x844', '1440x900']);
+  const expectedLandings = {
+    'qa-parent-a': ['/dashboard', 'Dashboard'],
+    'qa-adult-player-a': ['/dashboard', 'Dashboard'],
+    'qa-youth-active': ['/dashboard', 'Dashboard'],
+    'qa-league-creator': ['/dashboard', 'Dashboard'],
+    'qa-school-admin': ['/club', 'School Hub'],
+    'qa-superadmin': ['/admin', 'Account Lookup'],
+    'qa-fake-superadmin': ['/dashboard', 'Dashboard'],
+    'qa-missing-profile': ['/onboarding', 'Complete your profile'],
+    'qa-no-team': ['/teams/join', 'Join & Invite'],
+  };
+  for (const entry of plan.filter(item => item.group === 'admission-route')) {
+    assert.deepEqual([entry.landing.path, entry.landing.sentinel], expectedLandings[entry.alias]);
+    assert.deepEqual(entry.routeExpectations.map(route => route.requestedPath), [
+      '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
+    ]);
+    assert.equal(entry.routeExpectations.length, 6);
+  }
 
   const client = createScriptedScenarioClient([scenarioWindow()]);
   await assert.rejects(runAdmissionScenario({
@@ -1271,4 +1300,207 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
     actions: { navigate: async () => {}, waitForSentinel: async () => {} },
   }), /startUrl/i);
   assert.throws(() => buildCanonicalScenarioPlan({ contextIds: ['duplicate', 'duplicate'] }), /duplicate context ID/i);
+});
+
+test('phase 9 browser scenarios admission row owns login landing and all six direct routes', async () => {
+  const windows = [
+    scenarioWindow({ finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'], protectedRequests: 1 }),
+    ...['/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner'].map(() => scenarioWindow({
+      finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'], protectedRender: false,
+    })),
+    scenarioWindow({ finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'], protectedRequests: 2 }),
+  ];
+  const actionCalls = [];
+  const client = createScriptedScenarioClient(windows);
+  const row = await runAdmissionScenario({
+    client,
+    session: 'admission-complete',
+    context: scenarioContext(),
+    actions: {
+      loginAndLand: async alias => actionCalls.push(`login:${alias}`),
+      navigate: async path => actionCalls.push(`navigate:${path}`),
+      waitForSentinel: async sentinel => actionCalls.push(`wait:${sentinel}`),
+    },
+  });
+  assert.deepEqual(actionCalls.filter(item => item.startsWith('login:') || item.startsWith('navigate:')), [
+    'login:qa-parent-a',
+    'navigate:/admin',
+    'navigate:/club',
+    'navigate:/competition',
+    'navigate:/dashboard/billing',
+    'navigate:/coaches-corner',
+    'navigate:/family',
+  ]);
+  assert.equal(client.calls.filter(item => item.startsWith('mark:')).length, 7);
+  assert.equal(row.actionSummaries.length, 7);
+  assert.equal(row.protectedRequests, 3);
+  assert.match(row.action, /login.*6 direct routes/i);
+});
+
+test('phase 9 browser scenarios expose exact route-specific accessible heading contracts', () => {
+  assert.deepEqual(ROUTE_SCENARIOS, {
+    '/admin': { visibleSentinels: ['Account Lookup'] },
+    '/club': { visibleSentinels: ['School Hub', 'Club Hub'] },
+    '/competition': { visibleSentinels: ['Program League Hub', 'Competition Hub'] },
+    '/dashboard/billing': { visibleSentinels: ['Manage Your Plan'] },
+    '/coaches-corner': { visibleSentinels: ['Coaches Corner'] },
+    '/family': { visibleSentinels: ['Family Overview'] },
+  });
+  assert.equal(Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels).includes('Admin'), false);
+});
+
+test('phase 9 browser scenarios route validation distinguishes expected current heading from transient wrong-route renders', () => {
+  assert.equal(validateRouteResult({
+    allowed: true,
+    expectedPath: '/family',
+    expectedSentinel: 'Family Overview',
+    window: safeWindow({
+      protectedRender: true,
+      renderSignals: [{ path: '/family', sentinel: 'Family Overview' }],
+    }),
+  }).pass, true);
+  assert.throws(() => validateRouteResult({
+    allowed: true,
+    expectedPath: '/family',
+    expectedSentinel: 'Family Overview',
+    window: safeWindow({
+      protectedRender: true,
+      renderSignals: [
+        { path: '/admin', sentinel: 'Account Lookup' },
+        { path: '/family', sentinel: 'Family Overview' },
+      ],
+    }),
+  }), /unexpected protected render/i);
+  assert.throws(() => validateRouteResult({
+    allowed: false,
+    expectedPath: '/dashboard',
+    expectedSentinel: 'Access Denied',
+    window: safeWindow({ finalPath: '/dashboard', visibleSentinels: ['Access Denied'] }),
+  }), /landing sentinel/i);
+  assert.throws(() => validateRouteResult({
+    allowed: false,
+    expectedPath: '/dashboard',
+    expectedSentinel: 'Family Overview',
+    window: safeWindow({ finalPath: '/dashboard', visibleSentinels: ['Family Overview'] }),
+  }), /landing sentinel/i);
+});
+
+test('phase 9 browser scenarios heading contracts are backed by the real page h1 sources', () => {
+  const source = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+  assert.match(source('../src/app/admin/page.tsx'), /<h1[^>]*>Account Lookup<\/h1>/);
+  assert.match(source('../src/app/(dashboard)/club/page.tsx'), /<h1[^>]*>[\s\S]*isSchoolMode \? 'School Hub' : 'Club Hub'[\s\S]*<\/h1>/);
+  assert.match(source('../src/app/(dashboard)/competition/page.tsx'), /const pageTitle = isSchoolMode \? 'Program League Hub' : 'Competition Hub'/);
+  assert.match(source('../src/app/(dashboard)/dashboard/billing/page.tsx'), /<h1[^>]*>[\s\S]*Manage[\s\S]*Your Plan[\s\S]*<\/h1>/);
+  assert.match(source('../src/app/(dashboard)/coaches-corner/page.tsx'), /<h1[^>]*>Coaches Corner<\/h1>/);
+  assert.match(source('../src/app/(dashboard)/family/page.tsx'), /<h1[^>]*>Family Overview<\/h1>/);
+  assert.match(source('../src/app/(dashboard)/dashboard/page.tsx'), /<h1[^>]*>Dashboard<\/h1>/);
+  assert.match(source('../src/app/onboarding/page.tsx'), /<h1[^>]*>Complete your profile<\/h1>/);
+  assert.match(source('../src/app/(dashboard)/teams/join/page.tsx'), /<h1[^>]*>Join & Invite<\/h1>/);
+  const login = source('../src/app/login/page.tsx');
+  assert.match(login, /tokenResult\.claims\.role === 'superadmin'[\s\S]*router\.push\('\/admin'\)/);
+  assert.match(login, /data\.role === 'admin' \|\| data\.isSchoolAdmin[\s\S]*router\.push\('\/club'\)/);
+  assert.match(login, /else \{[\s\S]*router\.push\('\/dashboard'\)/);
+});
+
+test('phase 9 browser scenarios recorder requires an exact visible h1 instead of substring body text', { timeout: 30_000 }, async () => {
+  const client = createPlaywrightCliClient({});
+  try {
+    await installSignalRecorder(client, 'phase9-exact-heading');
+    const nonHeading = await observeAction({
+      client,
+      session: 'phase9-exact-heading',
+      stage: 'non-heading-substring',
+      terminal: async () => {},
+      action: () => client.runCode('phase9-exact-heading', `async (page) => page.evaluate(() => {
+        document.body.innerHTML = '<h1>Admin</h1><div>Account Lookup and Admin</div>';
+      })`),
+    });
+    assert.deepEqual(nonHeading.visibleSentinels, []);
+    const exactHeading = await observeAction({
+      client,
+      session: 'phase9-exact-heading',
+      stage: 'exact-heading',
+      terminal: async () => {},
+      action: () => client.runCode('phase9-exact-heading', `async (page) => page.evaluate(() => {
+        document.body.innerHTML = '<h1>Account Lookup</h1>';
+      })`),
+    });
+    assert.deepEqual(exactHeading.visibleSentinels, ['Account Lookup']);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
+test('phase 9 browser scenarios logout row includes a fifth fresh isolated unauthenticated action', async () => {
+  const login = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const actions = Object.fromEntries(REQUIRED_LOGOUT_STAGES.map(name => [name, async () => {}]));
+  actions.waitForLogin = async () => {};
+  actions.freshUnauthenticated = async () => {};
+  actions.waitForFreshLogin = async () => {};
+  const client = createScriptedScenarioClient([...REQUIRED_LOGOUT_STAGES.map(() => login), login]);
+  const row = await runLogoutScenario({
+    client,
+    session: 'logout-shared',
+    freshSession: 'logout-fresh',
+    context: scenarioContext({ contextId: 'logout-complete' }),
+    actions,
+  });
+  assert.equal(client.calls.filter(item => item.startsWith('mark:')).length, 5);
+  assert.equal(row.actionSummaries.length, 5);
+  assert.match(row.action, /fresh isolated/i);
+});
+
+test('phase 9 browser scenarios aggregate every isolation action window from actual observations', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const expectation = buildIsolationExpectation({ runId, alias: 'qa-parent-a' });
+  const statuses = [200, 403, 200, 403, 200, 403];
+  const windows = statuses.map((status, index) => scenarioWindow({
+    protectedRequests: index + 1,
+    relevantHttpResults: [{ url: `${STAGING_ORIGIN}/probe-${index}`, status }],
+  }));
+  let apiIndex = 0;
+  let firestoreIndex = 0;
+  const row = await runIsolationScenario({
+    client: createScriptedScenarioClient(windows),
+    session: 'isolation-aggregate',
+    context: scenarioContext({ contextId: 'isolation-aggregate' }),
+    runId,
+    actions: {
+      sameOriginGet: async () => statuses[apiIndex++],
+      firestoreGet: async () => statuses[2 + firestoreIndex++],
+      waitForSettled: async () => {},
+    },
+  });
+  assert.equal(row.protectedRequests, 21);
+  assert.equal(row.actionSummaries.length, 6);
+  assert.deepEqual(row.actionSummaries.map(item => item.status), statuses);
+  assert.equal(row.relevantHttpDataResult, statuses.join(','));
+  assert.equal(expectation.directFirestore.length, 4);
+});
+
+test('phase 9 browser scenarios pending rows use distinct baseline reload and fresh-login actions', async () => {
+  const denied = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`,
+    visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+    sessionPresent: false,
+  });
+  const calls = [];
+  const shared = {
+    waitForLogin: async () => {},
+    reloadRevokedSession: async () => calls.push('reload'),
+    freshLogin: async () => calls.push('fresh-login'),
+  };
+  await runPendingDeletionScenario({
+    client: createScriptedScenarioClient([denied]), session: 'pending-stale',
+    context: scenarioContext({ contextId: 'pending-stale', alias: 'qa-pending-delete' }),
+    scenario: 'stale-session', actions: shared,
+  });
+  await runPendingDeletionScenario({
+    client: createScriptedScenarioClient([denied]), session: 'pending-fresh',
+    context: scenarioContext({ contextId: 'pending-fresh', alias: 'qa-pending-delete' }),
+    scenario: 'fresh-login', actions: shared,
+  });
+  assert.deepEqual(calls, ['reload', 'fresh-login']);
 });

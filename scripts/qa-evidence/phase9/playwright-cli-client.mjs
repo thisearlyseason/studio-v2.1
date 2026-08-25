@@ -1,19 +1,18 @@
 import { execFile } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-import { ROUTE_SCENARIOS } from './scenario-contracts.mjs';
+import { LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, ROUTE_SCENARIOS } from './scenario-contracts.mjs';
 
 const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
 const MAX_SIGNAL_COUNT = 1000;
 const CLIENT_INTERNALS = new WeakMap();
-const PROTECTED_RENDER_SENTINELS = Object.freeze(Object.values(ROUTE_SCENARIOS).map(value => value.visibleSentinel));
-const TERMINAL_SENTINELS = Object.freeze([
-  'Sign In',
-  'The email or password is incorrect, or this account is unavailable.',
+const PROTECTED_RENDER_SENTINELS = Object.freeze([
+  ...new Set(Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels)),
 ]);
-const OBSERVED_RENDER_SENTINELS = Object.freeze([...PROTECTED_RENDER_SENTINELS, ...TERMINAL_SENTINELS]);
+const TERMINAL_SENTINELS = Object.freeze([...LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL]);
+const OBSERVED_RENDER_SENTINELS = Object.freeze([...new Set([...PROTECTED_RENDER_SENTINELS, ...TERMINAL_SENTINELS])]);
 
 const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
   // phase9:install
@@ -45,6 +44,7 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
     const observedSentinels = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
     const protectedSentinels = ${JSON.stringify(PROTECTED_RENDER_SENTINELS)};
     const candidates = new Map(observedSentinels.map(sentinel => [sentinel, new Set()]));
+    const normalizedHeading = element => (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
     const visibleEdges = new Set();
     const visible = element => {
       if (!element?.isConnected) return false;
@@ -60,12 +60,9 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       for (const elements of candidates.values()) elements.clear();
       const root = document.body || document.documentElement;
       if (!root) return;
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const text = node.nodeValue || '';
-        for (const sentinel of observedSentinels) {
-          if (text.includes(sentinel) && node.parentElement) candidates.get(sentinel).add(node.parentElement);
-        }
+      for (const heading of root.querySelectorAll('h1')) {
+        const exactText = normalizedHeading(heading);
+        if (candidates.has(exactText)) candidates.get(exactText).add(heading);
       }
     };
     const visibleSentinels = sentinels => sentinels.filter(sentinel =>
@@ -481,7 +478,7 @@ async function smoke() {
       terminal: async () => order.push('terminal'),
       action: async () => {
         order.push('action');
-        await client.runCode('phase9-offline-smoke', 'async (page) => page.evaluate(() => { document.body.textContent = "Family Overview"; })');
+        await client.runCode('phase9-offline-smoke', 'async (page) => page.evaluate(() => { document.body.innerHTML = "<h1>Family Overview</h1>"; })');
       },
     });
     if (order.join(',') !== 'action,terminal' || !first.protectedRender || first.renderSignals[0]?.sentinel !== 'Family Overview') {
@@ -495,7 +492,7 @@ async function smoke() {
       stage: 'second-tab',
       terminal: async () => {},
       action: async () => {
-        await client.runCode('phase9-offline-smoke', 'async (page) => page.evaluate(() => { document.body.textContent = "Family Overview"; })');
+        await client.runCode('phase9-offline-smoke', 'async (page) => page.evaluate(() => { document.body.innerHTML = "<h1>Family Overview</h1>"; })');
       },
     });
     if (!first.pageId || !second.pageId || first.pageId === second.pageId || !second.protectedRender) {
