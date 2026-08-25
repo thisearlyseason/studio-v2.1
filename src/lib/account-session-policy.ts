@@ -18,6 +18,7 @@ export type AccountSessionProfile = {
 
 export type AccountAccessReader = {
   getProfile(uid: string): Promise<AccountSessionProfile | null>;
+  hasTrustedInstitutionAuthority?(uid: string): Promise<boolean>;
   hasActiveSquadAuthority(uid: string, activeTeamId?: string | null): Promise<boolean>;
 };
 
@@ -66,6 +67,12 @@ export function createAccountSessionResolver(reader: AccountAccessReader) {
       return { allowed: false, code: 'auth/account-unavailable' };
     }
     if (hasIndependentAuthority(identity, profile)) {
+      return { allowed: true, redirectTo: null, profile };
+    }
+    if (
+      profile.isSchoolAdmin === true &&
+      await reader.hasTrustedInstitutionAuthority?.(identity.uid) === true
+    ) {
       return { allowed: true, redirectTo: null, profile };
     }
 

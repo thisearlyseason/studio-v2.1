@@ -32,6 +32,19 @@ export function createServerAccountAccessReader(
       return snapshot.exists ? snapshot.data() as AccountSessionProfile : null;
     },
 
+    async hasTrustedInstitutionAuthority(uid) {
+      const schools = await dependencies.db
+        .collection('teams')
+        .where('schoolAdminIds', 'array-contains', uid)
+        .limit(20)
+        .get();
+      return schools.docs.some(team => {
+        const data = team.data();
+        return isActiveOwnedTeam(data) &&
+          (data.type === 'school' || data.isInstitution === true);
+      });
+    },
+
     async hasActiveSquadAuthority(uid, activeTeamId) {
       if (activeTeamId) {
         const selectedAuthority = await dependencies.getTeamAuthority(activeTeamId, uid);
