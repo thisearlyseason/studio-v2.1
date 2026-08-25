@@ -224,12 +224,10 @@ export function validateManifest(manifest) {
   if (!isRecord(manifest)) {
     throw new Error('Manifest must be an object.');
   }
-  const schema = Object.hasOwn(VERSION_SCHEMAS, manifest.version)
-    ? VERSION_SCHEMAS[manifest.version]
-    : null;
-  if (!schema) {
+  if (manifest.version !== 2 && manifest.version !== 3) {
     throw new Error('Manifest version must equal 2 or 3.');
   }
+  const schema = VERSION_SCHEMAS[manifest.version];
   const manifestFields = VERSION_MANIFEST_FIELDS[manifest.version];
   const unknownFields = Object.keys(manifest).filter(field => !manifestFields.has(field));
   if (unknownFields.length > 0) {

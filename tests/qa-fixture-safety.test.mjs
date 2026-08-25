@@ -1299,6 +1299,29 @@ test('manifest v2 requires exactly both approved transition records', () => {
   }
 });
 
+test('manifest versions reject numeric strings before selecting version schemas', () => {
+  const legacyDefinition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const candidates = [
+    completeManifest(legacyDefinition, { version: '2' }),
+    completeManifest(phase9Definition, {
+      version: '3',
+      expectedAbsentFirestorePaths: phase9Definition.expectedAbsentDocuments.map(item => item.path),
+      transitions: activeTransitions(3),
+    }),
+  ];
+  const outcomes = candidates.map(candidate => {
+    try {
+      return `accepted as ${JSON.stringify(validateManifest(candidate).version)}`;
+    } catch (error) {
+      assert.match(error.message, /version/i);
+      return 'rejected';
+    }
+  });
+
+  assert.deepEqual(outcomes, ['rejected', 'rejected']);
+});
+
 test('manifest v3 validates the exact present and expected absence journal sets', () => {
   const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
   const expectedAbsentFirestorePaths = phase9Definition.expectedAbsentDocuments.map(item => item.path);
