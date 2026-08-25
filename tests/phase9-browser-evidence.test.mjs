@@ -18,6 +18,7 @@ import {
   closeAndVerifyBrowsers,
   createPlaywrightCliClient,
   installSignalRecorder,
+  isProtectedResource,
 } from '../scripts/qa-evidence/phase9/playwright-cli-client.mjs';
 import { observeAction } from '../scripts/qa-evidence/phase9/signal-window.mjs';
 
@@ -77,8 +78,13 @@ const createCliTransport = handler => {
   return { calls, execute };
 };
 
-test('phase 9 playwright client arms about:blank before navigation and compiles run-code locally', async () => {
-  const transport = createCliTransport(() => cliResult({ ok: true }));
+const blankAwareCliResult = (argv, fallback = { ok: true }) => {
+  const code = argv[argv.indexOf('run-code') + 1] ?? '';
+  return cliResult(code.includes('phase9:verify-about-blank') ? { url: 'about:blank' } : fallback);
+};
+
+test('phase 9 playwright client arms about:blank before navigation and compiles run-code without evaluation', async () => {
+  const transport = createCliTransport(argv => blankAwareCliResult(argv));
   const client = createPlaywrightCliClient({
     execute: transport.execute,
     wrapperPath: '/safe/playwright_cli.sh',
@@ -86,6 +92,8 @@ test('phase 9 playwright client arms about:blank before navigation and compiles 
     env: { SAFE_FLAG: '1' },
   });
   assert.equal('sampleSignalWindow' in client, false, 'callers must not be able to supply their own mark');
+  assert.equal('installRecorder' in client, false, 'raw recorder installation must remain private');
+  assert.equal('openBlank' in client, false, 'raw browser opening must remain private');
 
   await installSignalRecorder(client, 'page-a');
   await client.goto('page-a', 'about:blank');
@@ -93,13 +101,23 @@ test('phase 9 playwright client arms about:blank before navigation and compiles 
   assert.deepEqual(transport.calls[0].slice(0, 6), [
     '/safe/playwright_cli.sh', '-s=page-a', 'open', 'about:blank', '--browser', 'chrome',
   ]);
-  assert.equal(transport.calls[1].includes('run-code'), true);
-  assert.equal(transport.calls[2].includes('goto'), true);
+  assert.equal((transport.calls[1][transport.calls[1].indexOf('run-code') + 1] ?? '').includes('phase9:verify-about-blank'), true);
+  assert.equal((transport.calls[2][transport.calls[2].indexOf('run-code') + 1] ?? '').includes('phase9:install'), true);
+  assert.equal(transport.calls[3].includes('goto'), true);
   await assert.rejects(
     client.runCode('page-a', 'async (page) => {'),
     /compile/i,
   );
-  assert.equal(transport.calls.length, 3, 'invalid code must fail before transport');
+  const callsAfterInvalidCode = transport.calls.length;
+
+  globalThis.__phase9CompileSideEffect = false;
+  await assert.rejects(
+    client.runCode('page-a', '(globalThis.__phase9CompileSideEffect = true, async (page) => page.url())'),
+    /async.*page function/i,
+  );
+  assert.equal(globalThis.__phase9CompileSideEffect, false);
+  delete globalThis.__phase9CompileSideEffect;
+  assert.equal(transport.calls.length, callsAfterInvalidCode, 'invalid code must fail before transport or evaluation');
 
   const unarmed = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
   await assert.rejects(unarmed.goto('page-b', 'about:blank'), /recorder.*armed/i);
@@ -110,6 +128,42 @@ test('phase 9 playwright client arms about:blank before navigation and compiles 
   await installSignalRecorder(client, 'page-a');
   await client.goto('page-a', 'about:blank');
   await assert.rejects(client.tabNew('page-a', 'https://example.invalid'), /about:blank/i);
+});
+
+test('phase 9 playwright client refuses to arm an existing nonblank tab', async () => {
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    return cliResult(code.includes('phase9:verify-about-blank') ? { url: 'https://example.invalid/login' } : { ok: true });
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await assert.rejects(installSignalRecorder(client, 'nonblank'), /exact current tab.*about:blank/i);
+  assert.equal(transport.calls.filter(argv => (argv[argv.indexOf('run-code') + 1] ?? '').includes('phase9:install')).length, 0);
+});
+
+test('phase 9 playwright client classifies only protected data resources', () => {
+  const origin = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
+  const signal = (url, resourceType = 'fetch', method = 'GET') => ({
+    url,
+    method,
+    resourceType,
+    initiatingFrameUrl: `${origin}/dashboard`,
+  });
+  for (const value of [
+    signal(`${origin}/family`, 'document'),
+    signal(`${origin}/_next/static/chunks/app.js`, 'script'),
+    signal(`${origin}/api/auth/session`, 'fetch', 'POST'),
+    signal(`${origin}/api/auth/session`, 'fetch', 'DELETE'),
+    signal('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword', 'fetch'),
+  ]) assert.equal(isProtectedResource(value), false);
+  for (const value of [
+    signal(`${origin}/api/teams/chat`),
+    signal(`${origin}/api/admin/users/example`),
+    signal(`${origin}/api/checkout`, 'fetch', 'POST'),
+    signal('https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents/teams/example'),
+    signal('https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents:runQuery', 'fetch', 'POST'),
+    signal('https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel'),
+    signal('https://firestore.googleapis.com/google.firestore.v1.Firestore/RunQuery/channel'),
+  ]) assert.equal(isProtectedResource(value), true);
 });
 
 test('phase 9 action window marks the same page before action and returns sanitized complete signals', async () => {
@@ -132,14 +186,19 @@ test('phase 9 action window marks the same page before action and returns saniti
         sessionPresent: false,
         protectedRender: true,
         protectedRequests: [{
-          url: 'https://example.invalid/api/protected?allowed=1',
+          url: 'https://example.invalid/api/teams/chat?allowed=1',
           method: 'POST',
           resourceType: 'fetch',
           initiatingFrameUrl: 'https://example.invalid/dashboard',
           status: 401,
           body: 'password=must-not-return',
           headers: { authorization: 'Bearer must-not-return' },
-        }],
+        }, ...[
+          'data:text/plain,token=must-not-return',
+          'blob:https://example.invalid/token-must-not-return',
+          'javascript:alert("token-must-not-return")',
+          'file:///tmp/token-must-not-return',
+        ].map(url => ({ url, method: 'GET', resourceType: 'fetch', initiatingFrameUrl: url }))],
         protectedListenerStarts: [{
           url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?token=must-not-return',
           method: 'POST',
@@ -157,7 +216,7 @@ test('phase 9 action window marks the same page before action and returns saniti
         renderSignals: [{ path: '/dashboard', sentinel: 'Family Overview', text: 'must-not-return' }],
       });
     }
-    return cliResult({ ok: true });
+    return blankAwareCliResult(argv);
   });
   const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
   await installSignalRecorder(client, 'logout');
@@ -175,12 +234,16 @@ test('phase 9 action window marks the same page before action and returns saniti
   assert.equal(result.protectedRequests, 1);
   assert.equal(result.protectedRender, true);
   assert.deepEqual(result.requestSignals, [{
-    url: 'https://example.invalid/api/protected',
+    url: 'https://example.invalid/api/teams/chat',
     method: 'POST',
     resourceType: 'fetch',
     initiatingFrameUrl: 'https://example.invalid/dashboard',
     status: 401,
-  }]);
+  },
+  { url: 'data:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'data:' },
+  { url: 'blob:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'blob:' },
+  { url: 'javascript:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'javascript:' },
+  { url: 'file:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'file:' }]);
   assert.deepEqual(result.listenerSignals, [{
     url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
     method: 'POST',
@@ -202,7 +265,7 @@ test('phase 9 action window rejects cross-page samples and terminal failures wit
       sampled = true;
       return cliResult({ pageId: 'page-b' });
     }
-    return cliResult({ ok: true });
+    return blankAwareCliResult(argv);
   });
   const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
   await installSignalRecorder(client, 'one');
@@ -231,7 +294,7 @@ test('phase 9 action window rejects incomplete recorder samples instead of defau
     const code = argv[argv.indexOf('run-code') + 1] ?? '';
     if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
     if (code.includes('phase9:sample')) return cliResult({ pageId: 'page-a', terminalReached: true });
-    return cliResult({ ok: true });
+    return blankAwareCliResult(argv);
   });
   const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
   await installSignalRecorder(client, 'one');
@@ -264,12 +327,67 @@ test('phase 9 playwright client accepts real wrapper top-level and nested JSON r
   assert.deepEqual(await listClient.listBrowsers(), { browsers: [] });
   const responses = [
     { stdout: JSON.stringify({ session: 'page-a', result: { snapshot: {} } }), stderr: '', exitCode: 0, timedOut: false },
+    { stdout: JSON.stringify({ result: JSON.stringify({ url: 'about:blank' }) }), stderr: '', exitCode: 0, timedOut: false },
     { stdout: JSON.stringify({ result: JSON.stringify({ pageId: 'page-a' }) }), stderr: '', exitCode: 0, timedOut: false },
     { stdout: JSON.stringify({ result: JSON.stringify({ pageId: 'page-a' }) }), stderr: '', exitCode: 0, timedOut: false },
   ];
   const client = createPlaywrightCliClient({ execute: async () => responses.shift(), wrapperPath: '/safe/playwright_cli.sh' });
   await installSignalRecorder(client, 'page-a');
   assert.deepEqual(await client.runCode('page-a', 'async (page) => ({ pageId: "page-a" })'), { pageId: 'page-a' });
+});
+
+test('phase 9 action window real Chrome captures only actually visible transient protected sentinels', { timeout: 30_000 }, async () => {
+  const client = createPlaywrightCliClient({});
+  try {
+    await installSignalRecorder(client, 'phase9-visibility-regression');
+    const hidden = await observeAction({
+      client,
+      session: 'phase9-visibility-regression',
+      stage: 'hidden-only',
+      terminal: async () => {},
+      action: async () => client.runCode('phase9-visibility-regression', `async (page) => {
+        await page.evaluate(() => {
+          document.head.innerHTML = '<style>.concealed{display:none}</style>';
+          document.body.innerHTML = '<h1 class="concealed" hidden aria-hidden="true">Family Overview</h1>';
+        });
+        await page.waitForTimeout(50);
+        return { ok: true };
+      }`),
+    });
+    assert.equal(hidden.protectedRender, false);
+
+    const transient = await observeAction({
+      client,
+      session: 'phase9-visibility-regression',
+      stage: 'transient-visible',
+      terminal: async () => {},
+      action: async () => client.runCode('phase9-visibility-regression', `async (page) => {
+        const heading = page.locator('h1');
+        await heading.evaluate(element => {
+          element.hidden = false;
+          element.setAttribute('aria-hidden', 'false');
+          element.classList.remove('concealed');
+          element.style.display = 'block';
+        });
+        await page.waitForTimeout(250);
+        await heading.evaluate(element => {
+          element.hidden = true;
+          element.setAttribute('aria-hidden', 'true');
+          element.classList.add('concealed');
+          element.style.display = 'none';
+        });
+        return { ok: true };
+      }`),
+    });
+    assert.equal(transient.protectedRender, true, JSON.stringify(transient));
+    assert.equal(transient.renderSignals.some(signal => signal.sentinel === 'Family Overview'), true);
+
+    await client.goto('phase9-visibility-regression', 'data:text/html,nonblank');
+    await assert.rejects(installSignalRecorder(client, 'phase9-visibility-regression'), /exact current tab.*about:blank/i);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
 test('phase 9 playwright client fails closed unless close-all yields an empty browser list', async () => {

@@ -4,15 +4,19 @@ import { pathToFileURL } from 'node:url';
 const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
+const CLIENT_INTERNALS = new WeakMap();
 
 const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
   // phase9:install
   const cleanUrl = value => {
+    if (value === 'about:blank') return value;
     try {
       const parsed = new URL(value);
-      return parsed.origin === 'null' ? parsed.href : parsed.origin + parsed.pathname;
+      if (['data:', 'blob:', 'javascript:', 'file:'].includes(parsed.protocol)) return parsed.protocol;
+      if (!['http:', 'https:'].includes(parsed.protocol)) return 'opaque:';
+      return parsed.origin + parsed.pathname;
     } catch {
-      return 'invalid-url';
+      return 'invalid:';
     }
   };
   const boundedPush = (state, key, value) => {
@@ -37,11 +41,17 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
     };
     page.__phase9EvidenceRecorder = state;
     page.on('request', request => {
+      let initiatingFrameUrl = 'unattributed:';
+      try {
+        initiatingFrameUrl = cleanUrl(request.frame()?.url() ?? 'about:blank');
+      } catch {
+        state.overflow += 1;
+      }
       const signal = {
         url: cleanUrl(request.url()),
         method: request.method(),
         resourceType: request.resourceType(),
-        initiatingFrameUrl: cleanUrl(request.frame()?.url() ?? 'about:blank'),
+        initiatingFrameUrl,
       };
       boundedPush(state, 'requests', signal);
       if (/google\.firestore\.v1\.Firestore\/Listen|\/Listen\/channel/i.test(request.url())) {
@@ -68,29 +78,75 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       const initialize = () => {
         if (globalThis.__phase9RenderObserverInstalled) return;
         globalThis.__phase9RenderObserverInstalled = true;
+        globalThis.__phase9VisibleSentinels = () => {
+          const known = ['Admin', 'Club/School Hub', 'Competition Hub', 'Billing', 'Coaches Corner', 'Family Overview', 'Sign In', 'The email or password is incorrect, or this account is unavailable.'];
+          const visible = element => {
+            if (!element) return false;
+            for (let current = element; current; current = current.parentElement) {
+              if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+              const style = getComputedStyle(current);
+              if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0) return false;
+            }
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          };
+          const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+          const found = new Set();
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!visible(node.parentElement)) continue;
+            for (const sentinel of known) if ((node.nodeValue || '').includes(sentinel)) found.add(sentinel);
+          }
+          return known.filter(sentinel => found.has(sentinel));
+        };
         const sample = () => {
           if (!document.body) return;
-          const text = document.body.innerText || '';
-          const known = ['Admin', 'Club/School Hub', 'Competition Hub', 'Billing', 'Coaches Corner', 'Family Overview', 'Sign In', 'The email or password is incorrect, or this account is unavailable.'];
-          void globalThis.__phase9RecordRender({ path: location.pathname, sentinel: known.find(value => text.includes(value)) || '' });
+          for (const sentinel of globalThis.__phase9VisibleSentinels()) {
+            void globalThis.__phase9RecordRender({ path: location.pathname, sentinel });
+          }
         };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sample, { once: true });
         else sample();
-        new MutationObserver(sample).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+        new MutationObserver(sample).observe(document.documentElement, {
+          childList: true, subtree: true, characterData: true, attributes: true,
+          attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'],
+        });
       };
       initialize();
     });
     await page.evaluate(() => {
       if (globalThis.__phase9RenderObserverInstalled) return;
       globalThis.__phase9RenderObserverInstalled = true;
+      globalThis.__phase9VisibleSentinels = () => {
+        const known = ['Admin', 'Club/School Hub', 'Competition Hub', 'Billing', 'Coaches Corner', 'Family Overview', 'Sign In', 'The email or password is incorrect, or this account is unavailable.'];
+        const visible = element => {
+          if (!element) return false;
+          for (let current = element; current; current = current.parentElement) {
+            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+            const style = getComputedStyle(current);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0) return false;
+          }
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+        const found = new Set();
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!visible(node.parentElement)) continue;
+          for (const sentinel of known) if ((node.nodeValue || '').includes(sentinel)) found.add(sentinel);
+        }
+        return known.filter(sentinel => found.has(sentinel));
+      };
       const sample = () => {
         if (!document.body) return;
-        const text = document.body.innerText || '';
-        const known = ['Admin', 'Club/School Hub', 'Competition Hub', 'Billing', 'Coaches Corner', 'Family Overview', 'Sign In', 'The email or password is incorrect, or this account is unavailable.'];
-        void globalThis.__phase9RecordRender({ path: location.pathname, sentinel: known.find(value => text.includes(value)) || '' });
+        for (const sentinel of globalThis.__phase9VisibleSentinels()) {
+          void globalThis.__phase9RecordRender({ path: location.pathname, sentinel });
+        }
       };
       sample();
-      new MutationObserver(sample).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      new MutationObserver(sample).observe(document.documentElement, {
+        childList: true, subtree: true, characterData: true, attributes: true,
+        attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'],
+      });
     });
   }
   return { pageId: page.__phase9EvidenceRecorder.pageId };
@@ -124,11 +180,10 @@ const sampleSource = mark => String.raw`async (page) => {
   }
   const render = await page.evaluate(() => {
     const text = document.body?.innerText || '';
-    const known = ['Admin', 'Club/School Hub', 'Competition Hub', 'Billing', 'Coaches Corner', 'Family Overview', 'Sign In', 'The email or password is incorrect, or this account is unavailable.'];
     return {
       loadingVisible: /(^|\\s)loading(\\s|$)/i.test(text),
       path: location.pathname,
-      sentinels: known.filter(value => text.includes(value)),
+      sentinels: globalThis.__phase9VisibleSentinels?.() || [],
     };
   });
   const renderHistory = state.renders.slice(mark.renders);
@@ -156,13 +211,40 @@ const sampleSource = mark => String.raw`async (page) => {
 }`;
 
 const cleanUrl = value => {
+  if (value === 'about:blank') return value;
   try {
     const parsed = new URL(value);
-    return parsed.origin === 'null' ? parsed.href : `${parsed.origin}${parsed.pathname}`;
+    if (['data:', 'blob:', 'javascript:', 'file:'].includes(parsed.protocol)) return parsed.protocol;
+    if (!['http:', 'https:'].includes(parsed.protocol)) return 'opaque:';
+    return `${parsed.origin}${parsed.pathname}`;
   } catch {
-    return 'invalid-url';
+    return 'invalid:';
   }
 };
+
+const NON_PROTECTED_API_PREFIXES = [
+  '/api/auth/', '/api/contact', '/api/demo/', '/api/email/', '/api/health', '/api/newsletter/',
+  '/api/public/', '/api/referrals/', '/api/sports-hub/', '/api/webhook',
+];
+
+export function isProtectedResource(signal) {
+  if (!signal || typeof signal !== 'object' || signal.resourceType === 'document') return false;
+  let target;
+  let frame;
+  try {
+    target = new URL(signal.url);
+    frame = new URL(signal.initiatingFrameUrl);
+  } catch {
+    return false;
+  }
+  if (!['http:', 'https:'].includes(target.protocol)) return false;
+  if (target.hostname === 'firestore.googleapis.com') {
+    return /\/documents(?::(?:runQuery|batchGet)|\/|$)|google\.firestore\.v1\.Firestore\/(?:Listen|RunQuery|BatchGetDocuments|Commit)/i.test(target.pathname);
+  }
+  if (target.origin !== frame.origin) return false;
+  if (!target.pathname.startsWith('/api/')) return false;
+  return !NON_PROTECTED_API_PREFIXES.some(prefix => target.pathname === prefix.replace(/\/$/, '') || target.pathname.startsWith(prefix));
+}
 
 const count = value => Array.isArray(value) ? value.length : Number.isInteger(value) && value >= 0 ? value : 0;
 
@@ -211,7 +293,7 @@ const sanitizeWindow = value => {
     sessionPresent: value.sessionPresent === true,
     protectedRender: value.protectedRender === true,
     renderSignals,
-    protectedRequests: Array.isArray(value.protectedRequests) ? requests.length : count(value.protectedRequests),
+    protectedRequests: requests.filter(isProtectedResource).length,
     requestSignals: requests,
     protectedListenerStarts: Array.isArray(value.protectedListenerStarts) ? listeners.length : count(value.protectedListenerStarts),
     listenerSignals: listeners,
@@ -293,28 +375,30 @@ export function createPlaywrightCliClient({
   };
 
   const executeRunCode = async (session, source) => {
+    if (typeof source !== 'string' || !/^\s*async\s*\(\s*page\s*\)\s*=>/.test(source)) {
+      throw new Error('Playwright run-code requires a direct async page function source.');
+    }
     try {
-      const compiled = Function(`"use strict"; return (${source});`)();
-      if (typeof compiled !== 'function') throw new Error('not a function');
+      new Function(`"use strict"; return (${source});`);
     } catch {
       throw new Error('Playwright run-code payload failed to compile locally.');
     }
     return command(['run-code', source], session, { parseNestedJson: true });
   };
 
-  return {
-    async openBlank(session) {
-      if (!opened.has(session)) {
-        await command(['open', 'about:blank', '--browser', 'chrome'], session);
-        opened.add(session);
-        currentTabs.set(session, 0);
-        tabCounts.set(session, 1);
-      }
-    },
-    async installRecorder(session) {
-      await executeRunCode(session, INSTALL_RECORDER_SOURCE);
-      armedTabs.add(tabKey(session));
-    },
+  const openBlank = async session => {
+    if (!opened.has(session)) {
+      await command(['open', 'about:blank', '--browser', 'chrome'], session);
+      opened.add(session);
+      currentTabs.set(session, 0);
+      tabCounts.set(session, 1);
+    }
+  };
+  const installRecorder = async session => {
+    await executeRunCode(session, INSTALL_RECORDER_SOURCE);
+    armedTabs.add(tabKey(session));
+  };
+  const client = {
     async goto(session, url) {
       if (!armedTabs.has(tabKey(session))) throw new Error('Signal recorder must be armed before navigation.');
       return command(['goto', url], session);
@@ -352,11 +436,20 @@ export function createPlaywrightCliClient({
     listBrowsers: async () => command(['list']),
     closeAllBrowsers: async () => command(['close-all']),
   };
+  CLIENT_INTERNALS.set(client, { executeRunCode, installRecorder, openBlank });
+  return client;
 }
 
 export async function installSignalRecorder(client, session) {
-  await client.openBlank(session);
-  return client.installRecorder(session);
+  const internals = CLIENT_INTERNALS.get(client);
+  if (!internals) throw new Error('Signal recorder requires a Playwright CLI client.');
+  await internals.openBlank(session);
+  const current = await internals.executeRunCode(session, `async (page) => {
+    // phase9:verify-about-blank
+    return { url: page.url() };
+  }`);
+  if (current?.url !== 'about:blank') throw new Error('Signal recorder requires the exact current tab to be about:blank.');
+  return internals.installRecorder(session);
 }
 
 export async function closeAndVerifyBrowsers(client) {
@@ -398,7 +491,7 @@ async function smoke() {
     if (!first.pageId || !second.pageId || first.pageId === second.pageId) throw new Error('Offline smoke did not isolate tab marks.');
     let cliErrorRejected = false;
     try {
-      await client.runCode('phase9-offline-smoke', 'async () => { throw new Error("EXPECTED_OFFLINE_SMOKE_FAILURE"); }');
+      await client.runCode('phase9-offline-smoke', 'async (page) => { throw new Error("EXPECTED_OFFLINE_SMOKE_FAILURE"); }');
     } catch {
       cliErrorRejected = true;
     }
