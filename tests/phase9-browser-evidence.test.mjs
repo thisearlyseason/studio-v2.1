@@ -30,6 +30,8 @@ const safeWindow = overrides => ({
   ...overrides,
 });
 
+const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
+
 const ledgerRow = (contextId, group, viewport = '390x844') => ({
   contextId,
   group,
@@ -39,7 +41,7 @@ const ledgerRow = (contextId, group, viewport = '390x844') => ({
   startUrl: 'about:blank',
   action: 'navigate',
   expectedResult: 'allowed',
-  finalUrl: '/family',
+  finalUrl: `${STAGING_ORIGIN}/family`,
   visibleState: 'Family Overview',
   sessionPresent: true,
   protectedRequests: 0,
@@ -192,8 +194,16 @@ test('phase 9 evidence contracts validate all ordered logout stages independentl
 
 test('phase 9 evidence contracts reject transient signals for fresh and pending revocation windows', () => {
   for (const kind of ['fresh-unauthenticated', 'pending-deletion']) {
-    const base = safeWindow({ finalPath: '/login', visibleSentinels: ['Sign In'], sessionPresent: false });
+    const visibleSentinels = kind === 'pending-deletion'
+      ? ['Sign In', 'The email or password is incorrect, or this account is unavailable.']
+      : ['Sign In'];
+    const base = safeWindow({ finalPath: '/login', visibleSentinels, sessionPresent: false });
     assert.equal(validateActionWindow(base, { kind }).pass, true);
+    assert.throws(() => validateActionWindow({ ...base, finalPath: '/dashboard' }, { kind }), /\/login/i);
+    assert.throws(() => validateActionWindow({ ...base, visibleSentinels: [] }, { kind }), /Sign In/i);
+    if (kind === 'pending-deletion') {
+      assert.throws(() => validateActionWindow({ ...base, visibleSentinels: ['Sign In'] }, { kind }), /account is unavailable/i);
+    }
     assert.throws(() => validateActionWindow({ ...base, protectedRender: true }, { kind }), /protected render/i);
     assert.throws(() => validateActionWindow({ ...base, protectedRequests: 1 }, { kind }), /protected request/i);
     assert.throws(() => validateActionWindow({ ...base, protectedListenerStarts: 1 }, { kind }), /protected listener/i);
@@ -205,20 +215,47 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
   assert.equal(validateLifecycleResult('preflight', JSON.stringify({
     safe: true,
     projectId: 'the-squad-v2-staging',
-    origin: 'https://studio--the-squad-v2-staging.us-east4.hosted.app',
+    origin: STAGING_ORIGIN,
+    manifestVersion: 3,
     plannedAliases: 20,
-    plannedTeams: 2,
+    plannedTeams: 3,
   }), {
     projectId: 'the-squad-v2-staging',
-    origin: 'https://studio--the-squad-v2-staging.us-east4.hosted.app',
+    origin: STAGING_ORIGIN,
+    manifestVersion: 3,
     plannedAliases: 20,
-    plannedTeams: 2,
+    plannedTeams: 3,
   }).pass, true);
+  assert.throws(() => validateLifecycleResult('preflight', {
+    safe: true, projectId: undefined, origin: undefined, manifestVersion: undefined, plannedAliases: undefined, plannedTeams: undefined,
+  }, {}), /expected.*projectId/i);
+  assert.throws(() => validateLifecycleResult('preflight', {
+    safe: true, projectId: 'wrong', origin: 'https://wrong.invalid', manifestVersion: 2, plannedAliases: 1, plannedTeams: 1,
+  }, {
+    projectId: 'wrong', origin: 'https://wrong.invalid', manifestVersion: 2, plannedAliases: 1, plannedTeams: 1,
+  }), /canonical preflight/i);
+  assert.throws(() => validateLifecycleResult('preflight', {
+    safe: true, projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN, plannedAliases: 20, plannedTeams: 3,
+  }, {
+    projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN, manifestVersion: 3, plannedAliases: 20, plannedTeams: 3,
+  }), /manifestVersion/i);
   assert.throws(() => validateLifecycleResult('seed', '{'), /valid JSON/i);
   assert.throws(() => validateLifecycleResult('inspect', { ok: false }), /ok=true/i);
   assert.equal(validateLifecycleResult('seed', {
     state: 'seeded', counts: { auth: 20, firestore: 82 },
   }, { state: 'seeded', auth: 20, firestore: 82 }).pass, true);
+  assert.throws(() => validateLifecycleResult('seed', {
+    state: 'seeded', counts: { auth: 20 },
+  }, { state: 'seeded', auth: 20, firestore: 82 }), /Firestore count/i);
+  assert.throws(() => validateLifecycleResult('transition', {
+    state: 'pending_deletion',
+  }, { alias: 'qa-pending-delete', state: 'pending_deletion' }), /alias/i);
+  assert.throws(() => validateLifecycleResult('transition', {
+    alias: 'qa-pending-delete', state: 'pending_deletion',
+  }, {}), /expected.*alias/i);
+  assert.throws(() => validateLifecycleResult('transition', {
+    alias: 'qa-suspended', state: 'suspended',
+  }, { alias: 'qa-suspended', state: 'suspended' }), /canonical pending-deletion transition/i);
 
   const inspect = {
     ok: true,
@@ -267,6 +304,13 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
   assert.throws(() => validateLifecycleResult('probe', { ...probe, checkedExpectedAbsent: 0 }, {
     auth: 20, firestore: 82, expectedAbsent: 1,
   }), /expected-absence/i);
+  assert.throws(() => validateLifecycleResult('probe', { ...probe, checkedAuth: undefined }, {
+    auth: 20, firestore: 82, expectedAbsent: 1,
+  }), /checked Auth/i);
+  assert.throws(() => validateLifecycleResult('probe', probe, {}), /expected.*Auth/i);
+  assert.throws(() => validateLifecycleResult('probe', {
+    ...probe, checkedAuth: 1, checkedFirestore: 1, checkedExpectedAbsent: 0,
+  }, { auth: 1, firestore: 1, expectedAbsent: 0 }), /canonical fixture graph/i);
   assert.equal(validateLifecycleResult('browser-sessions', { sessions: [] }, {}).pass, true);
   assert.throws(() => validateLifecycleResult('browser-sessions', { sessions: ['open'] }, {}), /zero browser sessions/i);
 });
@@ -288,6 +332,29 @@ test('phase 9 evidence contracts reject missing duplicate and arithmetically fal
   assert.throws(() => validateLedger([missing, ...rows.slice(1)], expected), /visibleState/i);
   assert.throws(() => validateLedger(rows.slice(1), expected), /group count|total/i);
   assert.throws(() => validateLedger(rows, { ...expected, totals: { ...expected.totals, pass: 43 } }), /arithmetic/i);
+  for (const [field, value, message] of [
+    ['contextId', 7, /contextId/i],
+    ['alias', 7, /alias/i],
+    ['viewport', '800x600', /viewport/i],
+    ['startState', false, /startState/i],
+    ['startUrl', 7, /startUrl/i],
+    ['action', [], /action/i],
+    ['expectedResult', null, /expectedResult/i],
+    ['finalUrl', '/family', /absolute canonical finalUrl/i],
+    ['finalUrl', 'https://example.com/family', /canonical staging origin/i],
+    ['visibleState', {}, /visibleState/i],
+    ['sessionPresent', 'present', /sessionPresent/i],
+    ['protectedRequests', -1, /protectedRequests/i],
+    ['protectedListenerStarts', 0.5, /protectedListenerStarts/i],
+    ['relevantHttpDataResult', false, /relevantHttpDataResult/i],
+    ['pageErrors', '0', /pageErrors/i],
+    ['appConsoleErrors', -1, /appConsoleErrors/i],
+    ['unexpectedRequestFailures', null, /unexpectedRequestFailures/i],
+    ['overflow', -1, /overflow/i],
+    ['result', 'BLOCKED', /result/i],
+  ]) {
+    assert.throws(() => validateLedger(rows.map((row, index) => index === 0 ? { ...row, [field]: value } : row), expected), message);
+  }
   assert.throws(() => validateLedger(rows.slice(0, 18), {
     groupCounts: { 'admission-route': 18 },
     totals: { total: 18, pass: 18, fail: 0, inconclusive: 0 },

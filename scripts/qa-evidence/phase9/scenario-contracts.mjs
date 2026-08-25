@@ -6,6 +6,12 @@ const deepFreeze = value => {
   return value;
 };
 
+export const STAGING_PROJECT_ID = 'the-squad-v2-staging';
+export const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
+export const FIXTURE_MANIFEST_VERSION = 3;
+export const FIXTURE_RESOURCE_COUNTS = deepFreeze({ aliases: 20, teams: 3, auth: 20, firestore: 82, expectedAbsent: 1 });
+export const PENDING_UNAVAILABLE_SENTINEL = 'The email or password is incorrect, or this account is unavailable.';
+
 export const VIEWPORTS = deepFreeze({
   mobile: { width: 390, height: 844 },
   desktop: { width: 1440, height: 900 },
@@ -91,13 +97,16 @@ const requireCount = (value, name) => {
 };
 
 const requireString = (value, name) => {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`${name} must be a non-empty string.`);
+  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${name} must be a non-empty string.`);
   return value;
 };
 
 const requireExact = (actual, expected, name) => {
   if (actual !== expected) throw new Error(`${name} must equal the exact expected value.`);
 };
+
+const requireExpectedString = (expected, key, name) => requireString(expected[key], `Expected ${name}`);
+const requireExpectedCount = (expected, key, name) => requireCount(expected[key], `Expected ${name}`);
 
 const parseResult = value => {
   if (typeof value !== 'string') return requireRecord(value, 'Lifecycle result');
@@ -149,6 +158,11 @@ export function validateActionWindow(value, options = {}) {
   const revoked = options.kind === 'fresh-unauthenticated' || options.kind === 'pending-deletion';
   const requireNoProtected = revoked || options.requireNoProtected === true;
   if (revoked && window.sessionPresent) throw new Error('Revoked action window retained a session.');
+  if (revoked && window.finalPath !== '/login') throw new Error('Revoked action window must end at /login.');
+  if (revoked && !window.visibleSentinels.includes('Sign In')) throw new Error('Revoked action window must reach the Sign In sentinel.');
+  if (options.kind === 'pending-deletion' && !window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL)) {
+    throw new Error(`Pending-deletion action window must show: ${PENDING_UNAVAILABLE_SENTINEL}`);
+  }
   if (requireNoProtected) {
     if (window.protectedRender) throw new Error('Revoked action window contains a protected render.');
     if (window.protectedRequests !== 0) throw new Error('Revoked action window contains a protected request.');
@@ -233,6 +247,10 @@ const validateInspect = (value, expected) => {
   const counts = requireRecord(value.counts, 'Inspect counts');
   const expectedCounts = requireRecord(counts.expected, 'Inspect expected counts');
   const actual = requireRecord(counts.actualPresent, 'Inspect actual-present counts');
+  requireCount(expectedCounts.auth, 'Inspect expected Auth count');
+  requireCount(expectedCounts.firestore, 'Inspect expected Firestore count');
+  requireCount(actual.auth, 'Inspect present Auth count');
+  requireCount(actual.firestore, 'Inspect present Firestore count');
   requireExact(expectedCounts.auth, expected.auth, 'Inspect expected Auth count');
   requireExact(expectedCounts.firestore, expected.firestore, 'Inspect expected Firestore count');
   requireExact(actual.auth, expected.actualAuth, 'Inspect present Auth count');
@@ -242,6 +260,8 @@ const validateInspect = (value, expected) => {
 const validateCleanup = (value, expected) => {
   if (!Array.isArray(value.retained) || value.retained.length !== 0) throw new Error('Cleanup retained list must be empty.');
   const deleted = requireRecord(value.deleted, 'Cleanup deleted counts');
+  requireCount(deleted.auth, 'Cleanup deleted Auth count');
+  requireCount(deleted.firestore, 'Cleanup deleted Firestore count');
   requireExact(deleted.auth, expected.auth, 'Cleanup deleted Auth count');
   requireExact(deleted.firestore, expected.firestore, 'Cleanup deleted Firestore count');
   const followUp = requireRecord(value.followUp, 'Cleanup follow-up');
@@ -253,6 +273,12 @@ const validateCleanup = (value, expected) => {
 };
 
 const validateProbe = (value, expected) => {
+  requireCount(value.checkedAuth, 'Probe checked Auth count');
+  requireCount(value.checkedFirestore, 'Probe checked Firestore count');
+  requireCount(value.checkedExpectedAbsent, 'Probe checked expected-absence count');
+  requireCount(value.authPresent, 'Probe present Auth count');
+  requireCount(value.firestorePresent, 'Probe present Firestore count');
+  requireCount(value.expectedAbsentPresent, 'Probe present expected-absence count');
   requireExact(value.checkedAuth, expected.auth, 'Probe checked Auth count');
   requireExact(value.checkedFirestore, expected.firestore, 'Probe checked Firestore count');
   if (value.checkedExpectedAbsent !== expected.expectedAbsent) {
@@ -263,34 +289,93 @@ const validateProbe = (value, expected) => {
   requireExact(value.expectedAbsentPresent, 0, 'Probe present expected-absence count');
 };
 
-export function validateLifecycleResult(kind, input, expected = {}) {
+export function validateLifecycleResult(kind, input, expected) {
   const value = parseResult(input);
   if ('ok' in value && value.ok !== true) requireOk(value);
   switch (kind) {
-    case 'preflight':
-      if (value.safe !== true) throw new Error('Preflight must report safe=true.');
-      for (const key of ['projectId', 'origin', 'plannedAliases', 'plannedTeams']) requireExact(value[key], expected[key], `Preflight ${key}`);
+    case 'preflight': {
+      const contract = requireRecord(expected, 'Preflight expected contract');
+      requireExpectedString(contract, 'projectId', 'projectId');
+      requireExpectedString(contract, 'origin', 'origin');
+      requireExpectedCount(contract, 'manifestVersion', 'manifestVersion');
+      requireExpectedCount(contract, 'plannedAliases', 'plannedAliases');
+      requireExpectedCount(contract, 'plannedTeams', 'plannedTeams');
+      if (
+        contract.projectId !== STAGING_PROJECT_ID
+        || contract.origin !== STAGING_ORIGIN
+        || contract.manifestVersion !== FIXTURE_MANIFEST_VERSION
+        || contract.plannedAliases !== FIXTURE_RESOURCE_COUNTS.aliases
+        || contract.plannedTeams !== FIXTURE_RESOURCE_COUNTS.teams
+      ) throw new Error('Expected contract does not match the canonical preflight.');
+      requireBoolean(value.safe, 'Preflight safe');
+      requireString(value.projectId, 'Preflight projectId');
+      requireString(value.origin, 'Preflight origin');
+      requireCount(value.manifestVersion, 'Preflight manifestVersion');
+      requireCount(value.plannedAliases, 'Preflight plannedAliases');
+      requireCount(value.plannedTeams, 'Preflight plannedTeams');
+      if (!value.safe) throw new Error('Preflight must report safe=true.');
+      for (const key of ['projectId', 'origin', 'manifestVersion', 'plannedAliases', 'plannedTeams']) requireExact(value[key], contract[key], `Preflight ${key}`);
       break;
-    case 'seed':
-      requireExact(value.state, expected.state, 'Seed state');
-      if (expected.auth !== undefined) requireExact(value.counts?.auth, expected.auth, 'Seed Auth count');
-      if (expected.firestore !== undefined) requireExact(value.counts?.firestore, expected.firestore, 'Seed Firestore count');
+    }
+    case 'seed': {
+      const contract = requireRecord(expected, 'Seed expected contract');
+      requireExpectedString(contract, 'state', 'seed state');
+      requireExpectedCount(contract, 'auth', 'seed Auth count');
+      requireExpectedCount(contract, 'firestore', 'seed Firestore count');
+      requireString(value.state, 'Seed state');
+      const counts = requireRecord(value.counts, 'Seed counts');
+      requireCount(counts.auth, 'Seed Auth count');
+      requireCount(counts.firestore, 'Seed Firestore count');
+      requireExact(value.state, contract.state, 'Seed state');
+      requireExact(counts.auth, contract.auth, 'Seed Auth count');
+      requireExact(counts.firestore, contract.firestore, 'Seed Firestore count');
       break;
-    case 'inspect':
+    }
+    case 'inspect': {
+      const contract = requireRecord(expected, 'Inspect expected contract');
+      requireExpectedString(contract, 'state', 'inspect state');
+      requireExpectedCount(contract, 'auth', 'inspect Auth count');
+      requireExpectedCount(contract, 'firestore', 'inspect Firestore count');
+      requireExpectedCount(contract, 'actualAuth', 'inspect present Auth count');
+      requireExpectedCount(contract, 'actualFirestore', 'inspect present Firestore count');
       requireOk(value);
-      validateInspect(value, expected);
+      validateInspect(value, contract);
       break;
-    case 'transition':
-      requireExact(value.alias, expected.alias, 'Transition alias');
-      requireExact(value.state, expected.state, 'Transition state');
+    }
+    case 'transition': {
+      const contract = requireRecord(expected, 'Transition expected contract');
+      requireExpectedString(contract, 'alias', 'transition alias');
+      requireExpectedString(contract, 'state', 'transition state');
+      if (contract.alias !== 'qa-pending-delete' || contract.state !== 'pending_deletion') {
+        throw new Error('Expected contract must name the canonical pending-deletion transition.');
+      }
+      requireString(value.alias, 'Transition alias');
+      requireString(value.state, 'Transition state');
+      requireExact(value.alias, contract.alias, 'Transition alias');
+      requireExact(value.state, contract.state, 'Transition state');
       break;
-    case 'cleanup':
+    }
+    case 'cleanup': {
+      const contract = requireRecord(expected, 'Cleanup expected contract');
+      requireExpectedCount(contract, 'auth', 'cleanup Auth count');
+      requireExpectedCount(contract, 'firestore', 'cleanup Firestore count');
       requireOk(value);
-      validateCleanup(value, expected);
+      validateCleanup(value, contract);
       break;
-    case 'probe':
-      validateProbe(value, expected);
+    }
+    case 'probe': {
+      const contract = requireRecord(expected, 'Probe expected contract');
+      requireExpectedCount(contract, 'auth', 'probe Auth count');
+      requireExpectedCount(contract, 'firestore', 'probe Firestore count');
+      requireExpectedCount(contract, 'expectedAbsent', 'probe expected-absence count');
+      if (
+        contract.auth !== FIXTURE_RESOURCE_COUNTS.auth
+        || contract.firestore !== FIXTURE_RESOURCE_COUNTS.firestore
+        || contract.expectedAbsent !== FIXTURE_RESOURCE_COUNTS.expectedAbsent
+      ) throw new Error('Expected probe contract must cover the canonical fixture graph.');
+      validateProbe(value, contract);
       break;
+    }
     case 'browser-sessions':
       if (!Array.isArray(value.sessions) || value.sessions.length !== 0) throw new Error('Lifecycle closure requires zero browser sessions.');
       break;
@@ -329,6 +414,28 @@ export function validateLedger(rows, expected) {
         throw new Error(`Ledger row ${index} is missing ${column}.`);
       }
     }
+    for (const column of ['contextId', 'alias', 'startState', 'startUrl', 'action', 'expectedResult', 'visibleState', 'relevantHttpDataResult']) {
+      requireString(row[column], `Ledger row ${index} ${column}`);
+    }
+    if (!Object.hasOwn(SCENARIO_GROUP_COUNTS, row.group)) throw new Error(`Ledger row ${index} group is unsupported.`);
+    if (!new Set(['390x844', '1440x900']).has(row.viewport)) throw new Error(`Ledger row ${index} viewport is not canonical.`);
+    requireBoolean(row.sessionPresent, `Ledger row ${index} sessionPresent`);
+    for (const column of ['protectedRequests', 'protectedListenerStarts', 'pageErrors', 'appConsoleErrors', 'unexpectedRequestFailures', 'overflow']) {
+      requireCount(row[column], `Ledger row ${index} ${column}`);
+    }
+    requireString(row.finalUrl, `Ledger row ${index} finalUrl`);
+    let finalUrl;
+    try {
+      finalUrl = new URL(row.finalUrl);
+    } catch {
+      throw new Error(`Ledger row ${index} must contain an absolute canonical finalUrl.`);
+    }
+    if (finalUrl.origin !== STAGING_ORIGIN || finalUrl.username || finalUrl.password || finalUrl.hash) {
+      throw new Error(`Ledger row ${index} finalUrl must use the canonical staging origin.`);
+    }
+    if (!new Set(['PASS', 'FAIL', 'INCONCLUSIVE-HARNESS']).has(row.result)) {
+      throw new Error(`Ledger row ${index} result is unsupported.`);
+    }
     if (ids.has(row.contextId)) throw new Error(`Ledger contains duplicate context ID ${row.contextId}.`);
     ids.add(row.contextId);
     viewports.add(row.viewport);
@@ -336,7 +443,6 @@ export function validateLedger(rows, expected) {
     if (row.result === 'PASS') actualTotals.pass += 1;
     else if (row.result === 'FAIL') actualTotals.fail += 1;
     else if (row.result === 'INCONCLUSIVE-HARNESS') actualTotals.inconclusive += 1;
-    else throw new Error(`Ledger row ${index} has an unsupported result.`);
   }
 
   for (const [group, count] of Object.entries(groupCounts)) {
