@@ -182,7 +182,7 @@ test('session policy preserves independently authorized accounts without squad l
 test('session policy does not trust a self-authored school-admin profile flag', async () => {
   let authorityReads = 0;
   let institutionReads = 0;
-  const profile = { role: 'member', accountStatus: 'active', isSchoolAdmin: true };
+  const profile = { role: 'admin', accountStatus: 'active', isSchoolAdmin: true, plan_type: 'school' };
   const resolve = createAccountSessionResolver({
     getProfile: async () => profile,
     hasTrustedInstitutionAuthority: async () => {
@@ -206,7 +206,7 @@ test('session policy does not trust a self-authored school-admin profile flag', 
 
 test('session policy preserves a school administrator corroborated by canonical school data', async () => {
   let squadReads = 0;
-  const profile = { role: 'member', accountStatus: 'active', isSchoolAdmin: true };
+  const profile = { role: 'admin', accountStatus: 'active', isSchoolAdmin: true, plan_type: 'school' };
   const resolve = createAccountSessionResolver({
     getProfile: async () => profile,
     hasTrustedInstitutionAuthority: async uid => uid === 'school-admin',
@@ -220,12 +220,19 @@ test('session policy preserves a school administrator corroborated by canonical 
     allowed: true,
     redirectTo: null,
     profile,
+    institutionAuthority: true,
   });
   assert.equal(squadReads, 0);
 });
 
 test('server account reader corroborates school administrators only against a live institution', async () => {
-  const live = firestoreDouble({ ownedTeams: [{ type: 'school', isInstitution: true }] });
+  const live = firestoreDouble({ ownedTeams: [{
+    type: 'school',
+    isInstitution: true,
+    planId: 'school',
+    planType: 'school',
+    schoolAdminIds: ['school-admin'],
+  }] });
   const liveReader = createServerAccountAccessReader({
     db: live.db,
     getTeamAuthority: async () => null,
@@ -238,13 +245,34 @@ test('server account reader corroborates school administrators only against a li
   ]);
 
   const deleted = firestoreDouble({
-    ownedTeams: [{ type: 'school', isInstitution: true, status: 'deleted' }],
+    ownedTeams: [{
+      type: 'school',
+      isInstitution: true,
+      planId: 'school',
+      planType: 'school',
+      schoolAdminIds: ['school-admin'],
+      status: 'deleted',
+    }],
   });
   const deletedReader = createServerAccountAccessReader({
     db: deleted.db,
     getTeamAuthority: async () => null,
   });
   assert.equal(await deletedReader.hasTrustedInstitutionAuthority('school-admin'), false);
+
+  for (const [name, school] of [
+    ['missing school type', { isInstitution: true, planId: 'school', planType: 'school', schoolAdminIds: ['school-admin'] }],
+    ['missing institution marker', { type: 'school', planId: 'school', planType: 'school', schoolAdminIds: ['school-admin'] }],
+    ['missing school plan', { type: 'school', isInstitution: true, planId: 'free', planType: 'free', schoolAdminIds: ['school-admin'] }],
+    ['missing school admin membership', { type: 'school', isInstitution: true, planId: 'school', planType: 'school', schoolAdminIds: [] }],
+  ]) {
+    const fixture = firestoreDouble({ ownedTeams: [school] });
+    const reader = createServerAccountAccessReader({
+      db: fixture.db,
+      getTeamAuthority: async () => null,
+    });
+    assert.equal(await reader.hasTrustedInstitutionAuthority('school-admin'), false, name);
+  }
 });
 
 test('anonymous demo sessions do not read account state', async () => {

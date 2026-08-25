@@ -45,6 +45,11 @@ export async function requireDashboardSession(pathname: string): Promise<void> {
   const admissionRedirect = accountSessionRedirect(pathname, access);
   if (admissionRedirect) redirect(admissionRedirect);
   const profile = access.allowed ? access.profile : null;
-  const decision = authorizeDashboardRoute(pathname, profile, decoded.role);
+  const decision = authorizeDashboardRoute(
+    pathname,
+    profile,
+    decoded.role,
+    access.allowed && access.institutionAuthority === true,
+  );
   if (!decision.allowed) redirect(decision.redirectTo);
 }

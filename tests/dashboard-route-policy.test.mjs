@@ -43,7 +43,8 @@ test('staff operations reject member-only personas', () => {
 });
 
 test('institution and competition hubs require matching authority', () => {
-  assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }).allowed, true);
+  assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }).allowed, false);
+  assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }, undefined, true).allowed, true);
   assert.equal(authorizeDashboardRoute('/club', { role: 'coach', plan_type: 'free' }).allowed, false);
   assert.equal(authorizeDashboardRoute('/competition', { role: 'league_creator', plan_type: 'free' }).allowed, true);
   assert.equal(authorizeDashboardRoute('/competition', { role: 'coach', plan_type: 'team' }).allowed, false);

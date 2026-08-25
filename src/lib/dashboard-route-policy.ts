@@ -66,6 +66,7 @@ export function authorizeDashboardRoute(
   pathname: string,
   profile: DashboardAccessProfile | null,
   claimsRole?: unknown,
+  institutionAuthority = false,
 ): RouteDecision {
   const role = normalizedRole(profile, claimsRole);
   const isTrustedSuperAdmin = normalizedClaimRole(claimsRole) === 'superadmin';
@@ -88,7 +89,7 @@ export function authorizeDashboardRoute(
 
   if (matchesPrefix(pathname, '/club')) {
     const hasInstitutionAccess = isTrustedSuperAdmin || profile?.isPrimaryClubAuthority === true ||
-      (isManagement && INSTITUTION_PLANS.has(normalizedPlan(profile)));
+      institutionAuthority === true;
     return hasInstitutionAccess ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
   }
 

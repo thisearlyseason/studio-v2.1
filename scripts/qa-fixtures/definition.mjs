@@ -160,6 +160,7 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
         guardianIds: [byAlias.get('qa-parent-a').uid],
       }],
       ['qa-pending-delete', teamA, 'Member', 'Player'],
+      ['qa-school-admin', teams.find(team => team.alias === 'qa-school'), 'Admin', 'Athletic Director'],
     ] : []),
   ];
   const members = membershipSpecs.map(([alias, team, role, position, relationships = {}], index) => {
@@ -200,9 +201,11 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
       accountStatus: identity.accountStatus,
       activePlanId: identity.alias === 'qa-school-admin' ? 'school' : 'free',
       proTeamLimit: 1,
-      activeTeamId: identity.alias === 'qa-multi-org'
-        ? teamA.id
-        : members.find(member => member.alias === identity.alias)?.teamId,
+      ...(identity.alias === 'qa-multi-org'
+        ? { activeTeamId: teamA.id }
+        : members.find(member => member.alias === identity.alias)
+          ? { activeTeamId: members.find(member => member.alias === identity.alias).teamId }
+          : {}),
       ...marker(runId, identity.alias, expiresAt),
       ...(identity.alias === 'qa-school-admin' ? {
         role: 'admin',
@@ -241,10 +244,12 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
         position: member.position,
         status: member.status,
         ownerUserId: member.ownerUserId,
-        planId: 'free',
-        planType: 'free',
-        isPro: false,
+        planId: team.planId,
+        planType: team.planType,
+        isPro: team.isPro,
         userId: identity.uid,
+        ...(team.type ? { type: team.type } : {}),
+        ...(team.isInstitution === true ? { isInstitution: true } : {}),
         ...(member.parentId ? { parentId: member.parentId } : {}),
         ...(member.guardianIds ? { guardianIds: member.guardianIds } : {}),
         ...marker(runId, member.alias, expiresAt),
@@ -343,7 +348,7 @@ export function fixturePlanSummary({ manifestVersion = 3 } = {}) {
   const teamAliases = manifestVersion === 3
     ? ['qa-team-a', 'qa-team-b', 'qa-school']
     : ['qa-team-a', 'qa-team-b'];
-  const firestoreDocuments = manifestVersion === 3 ? 79 : 40;
+  const firestoreDocuments = manifestVersion === 3 ? 81 : 40;
   return freezeDeep({
     manifestVersion,
     aliases,

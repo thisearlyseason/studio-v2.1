@@ -28,6 +28,7 @@ export type AccountSessionDecision =
       allowed: true;
       redirectTo: '/onboarding' | '/teams/join' | null;
       profile: AccountSessionProfile | null;
+      institutionAuthority?: true;
     };
 
 function normalized(value: unknown): string {
@@ -52,6 +53,18 @@ function hasIndependentAuthority(
     profile.isPrimaryClubAuthority === true;
 }
 
+function hasCanonicalSchoolPlan(profile: AccountSessionProfile): boolean {
+  const planValues = [profile.plan_type, profile.planId, profile.activePlanId]
+    .filter(value => value !== undefined && value !== null);
+  return planValues.length > 0 && planValues.every(value => normalized(value) === 'school');
+}
+
+function hasSchoolAuthorityProfile(profile: AccountSessionProfile): boolean {
+  return normalized(profile.role) === 'admin' &&
+    profile.isSchoolAdmin === true &&
+    hasCanonicalSchoolPlan(profile);
+}
+
 export function createAccountSessionResolver(reader: AccountAccessReader) {
   return async (identity: SessionIdentity): Promise<AccountSessionDecision> => {
     if (normalized(identity.signInProvider) === 'anonymous') {
@@ -68,11 +81,10 @@ export function createAccountSessionResolver(reader: AccountAccessReader) {
     if (hasIndependentAuthority(identity, profile)) {
       return { allowed: true, redirectTo: null, profile };
     }
-    if (
-      profile.isSchoolAdmin === true &&
-      await reader.hasTrustedInstitutionAuthority?.(identity.uid) === true
-    ) {
-      return { allowed: true, redirectTo: null, profile };
+    const institutionAuthority = hasSchoolAuthorityProfile(profile) &&
+      await reader.hasTrustedInstitutionAuthority?.(identity.uid) === true;
+    if (institutionAuthority) {
+      return { allowed: true, redirectTo: null, profile, institutionAuthority: true };
     }
 
     const hasSquadAuthority = await reader.hasActiveSquadAuthority(

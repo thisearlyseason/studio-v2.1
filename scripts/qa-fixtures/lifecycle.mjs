@@ -487,6 +487,9 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   }
 
   async function seed({ manifestPath, credentialPath } = {}) {
+    if (definition.manifestVersion !== 3) {
+      throw new Error('Fixture lifecycle seed requires a new manifest version 3 run.');
+    }
     if (typeof manifestPath !== 'string' || typeof credentialPath !== 'string') {
       throw new Error('manifestPath and credentialPath are required.');
     }
@@ -689,6 +692,9 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   }
 
   async function applyNegativeState(alias) {
+    if (definition.manifestVersion !== 3) {
+      throw new Error('Fixture lifecycle transitions require a new manifest version 3 run.');
+    }
     if (!NEGATIVE_ALIASES.has(alias) || (alias === 'qa-pending-delete' && definition.manifestVersion !== 3)) {
       throw new Error('Negative lifecycle transitions are limited to approved fixture aliases.');
     }

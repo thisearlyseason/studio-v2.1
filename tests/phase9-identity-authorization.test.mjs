@@ -27,19 +27,13 @@ test('account session resolver enforces the local identity and authority matrix'
       profile: { role: 'Member', accountStatus: 'pending_deletion' },
       expected: { allowed: false, code: 'auth/account-unavailable' },
     },
-    {
-      name: 'school flag alone',
-      profile: { role: 'admin', isSchoolAdmin: true, plan_type: 'school' },
-      institution: false,
-      squad: false,
-      expected: { allowed: true, redirectTo: '/teams/join' },
-    },
-    {
-      name: 'corroborated school',
-      profile: { role: 'admin', isSchoolAdmin: true, plan_type: 'school' },
-      institution: true,
-      expected: { allowed: true, redirectTo: null },
-    },
+    ...[
+      ['missing admin role', { isSchoolAdmin: true, plan_type: 'school' }, true, { allowed: true, redirectTo: '/teams/join' }],
+      ['missing school flag', { role: 'admin', plan_type: 'school' }, true, { allowed: true, redirectTo: '/teams/join' }],
+      ['missing school plan', { role: 'admin', isSchoolAdmin: true, plan_type: 'free' }, true, { allowed: true, redirectTo: '/teams/join' }],
+      ['missing live institution', { role: 'admin', isSchoolAdmin: true, plan_type: 'school' }, false, { allowed: true, redirectTo: '/teams/join' }],
+      ['corroborated school', { role: 'admin', isSchoolAdmin: true, plan_type: 'school' }, true, { allowed: true, redirectTo: null }],
+    ].map(([name, profile, institution, expected]) => ({ name, profile, institution, squad: false, expected })),
     {
       name: 'league creator',
       profile: { role: 'league_creator' },
@@ -117,7 +111,13 @@ test('dashboard route authority preserves family, staff, league, and school beha
   assert.equal(authorizeDashboardRoute('/coaches-corner', { role: 'youth_player' }).allowed, false);
   assert.equal(authorizeDashboardRoute('/competition', { role: 'league_creator' }).allowed, true);
   assert.equal(
-    authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }).allowed,
+    authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }, undefined, true).allowed,
     true,
   );
+});
+
+test('school hub route requires the resolved corroborated institution authority', () => {
+  const profile = { role: 'admin', isSchoolAdmin: true, plan_type: 'school' };
+  assert.equal(authorizeDashboardRoute('/club', profile).allowed, false);
+  assert.equal(authorizeDashboardRoute('/club', profile, undefined, true).allowed, true);
 });

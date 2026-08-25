@@ -56,6 +56,19 @@ function approvedActiveTransitions() {
   return activeTransitions(2);
 }
 
+function assertFirestoreSerializable(value, path = '$') {
+  assert.notEqual(value, undefined, `Firestore value at ${path} must not be undefined`);
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertFirestoreSerializable(item, `${path}[${index}]`));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      assertFirestoreSerializable(child, `${path}.${key}`);
+    }
+  }
+}
+
 function assertOrderedTimestamps(transition, fields) {
   const timestamps = fields.map(field => Date.parse(transition[field]));
   assert.equal(timestamps.every(Number.isFinite), true);
@@ -234,7 +247,7 @@ class FakeFirestore {
   }
 }
 
-async function lifecycleFixture(t, runId = RUN_ID, manifestVersion = 2) {
+async function lifecycleFixture(t, runId = RUN_ID, manifestVersion = 3) {
   const directory = await mkdtemp(join(tmpdir(), 'qa-fixture-lifecycle-'));
   t.after(async () => {
     await removeCredentialFile(join(directory, 'credentials.json'), process.cwd());
@@ -275,7 +288,7 @@ async function lifecycleFixture(t, runId = RUN_ID, manifestVersion = 2) {
 
 function completeManifest(definition, overrides = {}) {
   return {
-    version: 2,
+    version: definition.manifestVersion,
     runId: definition.runId,
     projectId: STAGING,
     authUids: definition.identities.map(identity => identity.uid),
@@ -284,7 +297,10 @@ function completeManifest(definition, overrides = {}) {
     createdAt: '2026-08-24T14:00:00.000Z',
     updatedAt: '2026-08-24T14:00:00.000Z',
     expiresAt: definition.expiresAt,
-    transitions: approvedActiveTransitions(),
+    transitions: activeTransitions(definition.manifestVersion),
+    ...(definition.manifestVersion === 3 ? {
+      expectedAbsentFirestorePaths: definition.expectedAbsentDocuments.map(document => document.path),
+    } : {}),
     ...overrides,
   };
 }
@@ -341,7 +357,7 @@ async function credentialConfinementFixture(t, runId) {
     await removeFlatDirectory(repository);
     await rmdir(base);
   });
-  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion: 3 });
   const auth = new FakeAuth();
   const firestore = new FakeFirestore();
   const inputs = {
@@ -669,7 +685,7 @@ test('cli seed rejects an existing incomplete transition journal before adapter 
 });
 
 test('CLI version 2 recovery rejects seed and transition before adapter construction', async t => {
-  const fixture = await lifecycleFixture(t);
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
   const legacyManifest = completeManifest(fixture.definition);
   await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`, { mode: 0o600 });
   let factoryCalls = 0;
@@ -703,7 +719,7 @@ test('CLI version 2 recovery rejects seed and transition before adapter construc
 });
 
 test('CLI version 2 recovery accepts inspect and cleanup after pure local validation', async t => {
-  const fixture = await lifecycleFixture(t);
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
   const legacyManifest = completeManifest(fixture.definition);
   let factoryCalls = 0;
   const adapterFactory = async () => {
@@ -848,6 +864,31 @@ test('cli seed obtains its run ID from the injected internal generator seam', as
   });
   assert.equal(generatorCalls, 1);
   assert.equal(JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8')).runId, RUN_ID);
+});
+
+test('cli persists an exact planned v3 journal before adapter construction', async t => {
+  const fixture = await lifecycleFixture(t);
+  await runCli({
+    argv: hostedArgs(
+      'seed',
+      '--manifest', fixture.inputs.manifestPath,
+      '--credentials', fixture.inputs.credentialPath,
+      '--expires-at', EXPIRES_AT,
+    ),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    runIdGenerator: () => RUN_ID,
+    adapterFactory: async () => {
+      const persisted = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+      assert.equal(persisted.state, 'planned');
+      assert.doesNotThrow(() => assertExactFixtureJournal(
+        persisted,
+        buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 }),
+      ));
+      return directAdapter(fixture.auth, fixture.firestore);
+    },
+    stdout: () => {},
+  });
 });
 
 test('two real CLI seed invocations recover the same exact v3 run without regenerating its definition', async t => {
@@ -1784,7 +1825,7 @@ test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 
   }
 
   assert.equal(membersByAlias('qa-missing-profile').length, 0);
-  for (const alias of ['qa-no-team', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin']) {
+  for (const alias of ['qa-no-team', 'qa-league-creator', 'qa-superadmin']) {
     assert.equal(membersByAlias(alias).length, 0, alias);
   }
   assert.equal(membersByAlias('qa-pending-delete').length, 1);
@@ -1800,7 +1841,38 @@ test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 
   ]);
   for (const document of phase9.documents) {
     assert.deepEqual(Object.keys(document.data).filter(key => forbiddenFields.has(key)), []);
+    assertFirestoreSerializable(document.data, document.path);
   }
+
+  const schoolMembership = membersByAlias('qa-school-admin').at(0);
+  const schoolMemberDocument = phase9.documents.find(document => document.path === schoolMembership.path);
+  const schoolMembershipDocument = phase9.documents.find(document => document.path === schoolMembership.membershipPath);
+  assert.deepEqual({
+    role: schoolMemberDocument.data.role,
+    position: schoolMemberDocument.data.position,
+    status: schoolMemberDocument.data.status,
+    teamId: schoolMemberDocument.data.teamId,
+  }, {
+    role: 'Admin',
+    position: 'Athletic Director',
+    status: 'active',
+    teamId: school.id,
+  });
+  assert.deepEqual({
+    teamId: schoolMembershipDocument.data.teamId,
+    type: schoolMembershipDocument.data.type,
+    isInstitution: schoolMembershipDocument.data.isInstitution,
+    isPro: schoolMembershipDocument.data.isPro,
+    planId: schoolMembershipDocument.data.planId,
+    ownerUserId: schoolMembershipDocument.data.ownerUserId,
+  }, {
+    teamId: school.id,
+    type: 'school',
+    isInstitution: true,
+    isPro: true,
+    planId: 'school',
+    ownerUserId: school.ownerUserId,
+  });
 
   assert.deepEqual(fixturePlanSummary({ manifestVersion: 3 }), {
     manifestVersion: 3,
@@ -1810,7 +1882,7 @@ test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 
     teamCount: 3,
     resourceCounts: {
       authUids: 20,
-      firestoreDocuments: 79,
+      firestoreDocuments: 81,
       expectedAbsentDocuments: 1,
     },
   });
@@ -2072,7 +2144,7 @@ test('atomic manifest failure preserves the last complete JSON document and remo
   });
   await assert.rejects(() => lifecycle.seed(fixture.inputs), /interruption/i);
   const persisted = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
-  assert.equal(persisted.version, 2);
+  assert.equal(persisted.version, fixture.definition.manifestVersion);
   assert.equal(persisted.state, 'partial');
   const names = await import('node:fs/promises').then(fs => fs.readdir(fixture.directory));
   assert.equal(names.some(name => name.includes('.manifest.json.') && name.endsWith('.tmp')), false);
@@ -2271,7 +2343,7 @@ test('credential publication hard exit leaves no partial target and only a priva
       async set(path, data) { documents.set(path, structuredClone(data)); },
       async delete(path) { documents.delete(path); },
     };
-    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(RUN_ID)}, expiresAt: ${JSON.stringify(EXPIRES_AT)}, manifestVersion: 2 });
+    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(RUN_ID)}, expiresAt: ${JSON.stringify(EXPIRES_AT)}, manifestVersion: 3 });
     const lifecycle = createLifecycle({
       auth,
       firestore,
@@ -2293,7 +2365,7 @@ test('credential publication hard exit leaves no partial target and only a priva
   const payload = JSON.parse(await readFile(tempPath, 'utf8'));
   assert.equal(payload.version, 1);
   assert.equal(payload.runId, RUN_ID);
-  assert.equal(payload.identities.length, 9);
+  assert.equal(payload.identities.length, 20);
 });
 
 test('credential publication writes no bytes when the parent is swapped inside exclusive open', async t => {
@@ -2637,7 +2709,7 @@ test('inspect reports full sanitized absence drift for planned and partial manif
       : 'qa-phase7-20260824T140011Z-cd34ef56ab78');
     const timestamp = '2026-08-24T14:00:00.000Z';
     await writeFile(fixture.inputs.manifestPath, `${JSON.stringify({
-      version: 2,
+      version: fixture.definition.manifestVersion,
       runId: fixture.definition.runId,
       projectId: STAGING,
       authUids: fixture.definition.identities.map(identity => identity.uid),
@@ -2646,18 +2718,18 @@ test('inspect reports full sanitized absence drift for planned and partial manif
       createdAt: timestamp,
       updatedAt: timestamp,
       expiresAt: EXPIRES_AT,
-      transitions: {
-        'qa-suspended': { version: 1, state: 'active' },
-        'qa-removed-member': { version: 1, state: 'active' },
-      },
+      transitions: activeTransitions(fixture.definition.manifestVersion),
+      ...(fixture.definition.manifestVersion === 3 ? {
+        expectedAbsentFirestorePaths: fixture.definition.expectedAbsentDocuments.map(document => document.path),
+      } : {}),
     }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
 
     const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
     assert.equal(inspection.ok, false, state);
     assert.deepEqual(inspection.counts.actualPresent, { auth: 0, firestore: 0 });
-    assert.equal(inspection.drift.length, 49);
-    assert.equal(inspection.drift.filter(item => item.kind === 'auth').length, 9);
-    assert.equal(inspection.drift.filter(item => item.kind === 'firestore').length, 40);
+    assert.equal(inspection.drift.length, fixture.definition.identities.length + fixture.definition.documents.length);
+    assert.equal(inspection.drift.filter(item => item.kind === 'auth').length, fixture.definition.identities.length);
+    assert.equal(inspection.drift.filter(item => item.kind === 'firestore').length, fixture.definition.documents.length);
     assert.equal(inspection.drift.every(item => item.field === 'presence' && item.reason === 'missing'), true);
     const serialized = JSON.stringify(inspection.drift);
     assert.equal(serialized.includes(fixture.definition.runId), false);
@@ -2753,6 +2825,20 @@ test('negative states require a seeded active baseline and revoke sessions after
   const drifted = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
   assert.equal(drifted.ok, false);
   assert.equal(drifted.drift.some(item => item.field === 'presence' && item.reason === 'unexpected-after-transition'), true);
+});
+
+test('lifecycle seed rejects a v2 definition before remote mutation', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /version 3/i);
+  assert.equal(fixture.auth.users.size, 0);
+  assert.equal(fixture.firestore.documents.size, 0);
+});
+
+test('lifecycle transition rejects a v2 definition before baseline access', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
+  await assert.rejects(() => fixture.lifecycle.applyNegativeState('qa-suspended'), /version 3/i);
+  assert.equal(fixture.auth.users.size, 0);
+  assert.equal(fixture.firestore.documents.size, 0);
 });
 
 test('pending-delete persists the exact pending deletion state and revokes sessions', async t => {
@@ -2987,7 +3073,10 @@ test('cleanup returns sanitized alias counts and continues after adapter read an
 
   const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
   assert.equal(result.ok, false);
-  assert.deepEqual(result.deleted, { auth: 7, firestore: 36 });
+  assert.deepEqual(result.deleted, {
+    auth: fixture.definition.identities.length - 2,
+    firestore: fixture.definition.documents.length - 4,
+  });
   assert.deepEqual(result.followUp, {
     retained: {
       auth: { count: 0, aliases: [] },
