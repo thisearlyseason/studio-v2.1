@@ -1,0 +1,367 @@
+# Phase 9 Committed Browser Evidence Runner Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Replace the failed ignored Task 7 harness with a committed, testable Playwright CLI evidence subsystem, independently review it, and use it to complete one exact staging lifecycle with certified cleanup.
+
+**Architecture:** Pure scenario/lifecycle contracts define every PASS condition. A thin dependency-injected Playwright CLI client and action-window layer execute browser work, declarative scenarios consume those interfaces, and a Node guardian owns exact hosted lifecycle cleanup. Sanitized evidence is written only from validated results after complete closure.
+
+**Tech Stack:** Node.js 24 ESM, built-in `node:test`, bundled `playwright-cli` wrapper with system Chrome, existing Firebase fixture CLI, GitHub CLI, Markdown evidence.
+
+**Spec:** `docs/superpowers/specs/2026-08-25-phase-9-committed-browser-evidence-runner-design.md`
+
+## Global Constraints
+
+- No new browser dependency or installed browser; use `/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh` and system Chrome.
+- No SaaS runtime change. This plan may modify only the committed evidence subsystem, its tests/package entrypoint, approved Phase 9 evidence, and planning/report files.
+- No production access, no merge, and no broad Firebase deletion.
+- No hosted mutation until Tasks 1-5 pass independent review and the exact tracked SHA passes full verification, PR CI, and one staging deployment.
+- Every implementation change uses RED/GREEN TDD. Tests must invoke real exported entrypoints; source-regex-only assertions are insufficient.
+- Credentials, cookies, bearer values, request bodies, storage state, raw traces, UIDs, and private workspace paths must never enter committed evidence or test output.
+- The exact manifest remains available until cleanup, cleaned inspection, complete independent absence proof, and zero-browser proof all pass.
+- Historical aborted attempts remain `INCONCLUSIVE-HARNESS`; retry-4 cleanup remains exact 20/82 → 0/0 closure, not browser evidence.
+
+---
+
+### Task 1: Pure scenario and lifecycle contracts
+
+**Files:**
+- Create: `scripts/qa-evidence/phase9/scenario-contracts.mjs`
+- Create: `tests/phase9-browser-evidence.test.mjs`
+
+**Interfaces:**
+- Produces: `VIEWPORTS`, `ROUTE_SCENARIOS`, `ISOLATION_SCENARIOS`, `REQUIRED_LOGOUT_STAGES`, `validateActionWindow()`, `validateRouteResult()`, `validateIsolationResult()`, `validateLogoutStages()`, `validateLifecycleResult()`, `validateLedger()`.
+- Consumes later: Tasks 2-5 import only these public contracts; no duplicate PASS logic is permitted elsewhere.
+
+- [ ] **Step 1: Write failing tests for exact definitions and anti-vacuity rules**
+
+Add tests which import the planned exports and require:
+
+```js
+assert.deepEqual(VIEWPORTS, {
+  mobile: { width: 390, height: 844 },
+  desktop: { width: 1440, height: 900 },
+});
+assert.equal(ROUTE_SCENARIOS['/family'].visibleSentinel, 'Family Overview');
+assert.equal(ISOLATION_SCENARIOS.team.endpoint, '/api/teams/chat');
+assert.throws(() => validateRouteResult({
+  allowed: true,
+  expectedPath: '/family',
+  expectedSentinel: 'Family Overview',
+  window: safeWindow({ finalPath: '/family', visibleSentinels: [] }),
+}), /visible sentinel/i);
+```
+
+Cover all six route sentinels, final-URL-only rejection, swallowed-loading rejection, denied transient render/request/listener rejection, own/opposite isolation symmetry, all four logout stages, fresh/pending revocation signals, lifecycle `ok:false`, retention/failures, incomplete expected-absence proof, duplicate/missing ledger rows, and wrong arithmetic.
+
+- [ ] **Step 2: Run Task 1 RED**
+
+Run:
+
+```bash
+node --test --test-name-pattern='phase 9 evidence contracts' tests/phase9-browser-evidence.test.mjs
+```
+
+Expected: FAIL because `scenario-contracts.mjs` or its exports do not exist.
+
+- [ ] **Step 3: Implement the pure contracts**
+
+Use immutable data definitions. `validateActionWindow()` must require explicit booleans/counts and reject missing fields. `validateRouteResult()` must use both pathname and route sentinel. `validateIsolationResult()` must require own same-origin API 200, opposite API 403, own direct Firestore 200, opposite direct Firestore 403, and zero opposite listener/render. `validateLogoutStages()` must validate every ordered stage independently.
+
+`validateLifecycleResult(kind, value, expected)` must parse command JSON, require `ok:true` where applicable, exact state/counts, zero drift/problems, zero retained/failures, full UID/path/expected-absence probe counts, and zero sessions.
+
+- [ ] **Step 4: Run Task 1 GREEN and fixture regressions**
+
+```bash
+node --test --test-name-pattern='phase 9 evidence contracts' tests/phase9-browser-evidence.test.mjs
+node --test tests/qa-fixture-safety.test.mjs tests/repository-hygiene.test.mjs
+```
+
+Expected: all pass.
+
+- [ ] **Step 5: Commit Task 1**
+
+```bash
+git add scripts/qa-evidence/phase9/scenario-contracts.mjs tests/phase9-browser-evidence.test.mjs
+git commit -m "test: define phase 9 evidence contracts"
+```
+
+---
+
+### Task 2: Playwright CLI client and action windows
+
+**Files:**
+- Create: `scripts/qa-evidence/phase9/playwright-cli-client.mjs`
+- Create: `scripts/qa-evidence/phase9/signal-window.mjs`
+- Modify: `tests/phase9-browser-evidence.test.mjs`
+
+**Interfaces:**
+- Produces: `createPlaywrightCliClient({ execute, wrapperPath, cwd, env })`, `installSignalRecorder(client, session)`, `observeAction({ client, session, stage, terminal, action })`, `closeAndVerifyBrowsers(client)`.
+- Consumes: Task 1 window validators.
+
+- [ ] **Step 1: Write failing real-entrypoint tests**
+
+Use an injected fake `execute(argv)` transport that records order. Require:
+
+```js
+const promise = observeAction({
+  client,
+  session: 'logout',
+  stage: 'logout-tab',
+  terminal: loginTerminal,
+  action: async () => fakePage.emitProtectedRequestThenLogout(),
+});
+assert.deepEqual(fakeTransport.calls.slice(0, 2), ['mark:logout', 'action:logout']);
+assert.equal((await promise).protectedRequests, 1);
+```
+
+Also require listeners installed on `about:blank` before the first `goto`, marks isolated by page/tab, local `run-code` compilation, malformed JSON/nonzero/`isError` rejection, no sensitive request bodies in returned data, close-all failure rejection, and nonempty list rejection.
+
+- [ ] **Step 2: Run Task 2 RED**
+
+```bash
+node --test --test-name-pattern='phase 9 playwright client|phase 9 action window' tests/phase9-browser-evidence.test.mjs
+```
+
+Expected: FAIL because the client/window modules do not exist.
+
+- [ ] **Step 3: Implement client and action-window layer**
+
+The client is the only module that invokes the wrapper. It must use `execFile`, an argument array, bounded output, timeout, exact JSON parsing, and dependency injection. The signal recorder stores sanitized request metadata only: URL origin/path, method, resource type, initiating frame URL, response status, fixed error signature, and render path/sentinel. It must not retain headers, request bodies, cookies, tokens, or storage state.
+
+`observeAction()` takes the page-specific mark before calling `action`, awaits the required terminal without swallowing timeout, then samples the same page. There is no public API accepting a caller-created mark.
+
+- [ ] **Step 4: Run Task 2 GREEN and offline Chrome smoke**
+
+```bash
+node --test --test-name-pattern='phase 9 playwright client|phase 9 action window' tests/phase9-browser-evidence.test.mjs
+node scripts/qa-evidence/phase9/playwright-cli-client.mjs smoke --origin about:blank
+/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh list --json
+```
+
+Expected: tests pass; smoke proves `about:blank` arming and tab-specific action order; final browser list is empty. No network navigation other than `about:blank`.
+
+- [ ] **Step 5: Commit Task 2**
+
+```bash
+git add scripts/qa-evidence/phase9/playwright-cli-client.mjs scripts/qa-evidence/phase9/signal-window.mjs tests/phase9-browser-evidence.test.mjs
+git commit -m "feat: add testable browser observation windows"
+```
+
+---
+
+### Task 3: Declarative browser scenarios
+
+**Files:**
+- Create: `scripts/qa-evidence/phase9/scenarios.mjs`
+- Modify: `tests/phase9-browser-evidence.test.mjs`
+
+**Interfaces:**
+- Produces: `runAdmissionScenario()`, `runRouteScenario()`, `runIsolationScenario()`, `runLogoutScenario()`, `runFreshUnauthenticatedScenario()`, `runPendingDeletionScenario()`, `buildCanonicalScenarioPlan()`.
+- Consumes: Tasks 1-2 contracts and `observeAction()` only.
+
+- [ ] **Step 1: Write failing scenario tests against a scripted fake client**
+
+Require the real scenario functions to fail when:
+
+- an allowed route ends at the right path but remains blank/loading or lacks its sentinel;
+- a denied route ends correctly after any protected flash/request/listener;
+- own/opposite `/api/teams/chat?teamId=` results are not exactly 200/403;
+- a scenario attempts `/team?teamId=` as isolation evidence;
+- direct Firestore team/player results are incomplete or not exactly 200/403;
+- logout activity occurs during the click, reload, back, or second reload;
+- a fresh or pending-deletion route transiently restores protected UI/data;
+- a context omits required ledger fields or uses a duplicate ID.
+
+Also require the canonical plan to include both viewports and exact aliases/groups from Task 7.
+
+- [ ] **Step 2: Run Task 3 RED**
+
+```bash
+node --test --test-name-pattern='phase 9 browser scenarios' tests/phase9-browser-evidence.test.mjs
+```
+
+Expected: FAIL because `scenarios.mjs` does not exist.
+
+- [ ] **Step 3: Implement minimal declarative scenarios**
+
+Every browser action must be wrapped by `observeAction()`. The same-origin isolation request must call the existing parameter-consuming `GET /api/teams/chat?teamId=<encoded-id>` with the authenticated session and record status only. Direct Firestore checks receive exact `{label,path,expectedStatus}` entries from the fixture-derived ID map. Allowed routes wait for configured accessible sentinel and reject loading/error boundaries. Denied/revoked routes validate the entire action window.
+
+Return a row only after the Task 1 validator passes. Never catch a readiness timeout and continue as PASS.
+
+- [ ] **Step 4: Run Task 3 GREEN**
+
+```bash
+node --test --test-name-pattern='phase 9 browser scenarios|phase 9 evidence contracts|phase 9 action window' tests/phase9-browser-evidence.test.mjs
+node --test tests/phase9-identity-authorization.test.mjs tests/phase8-account-session.test.mjs
+```
+
+Expected: all pass.
+
+- [ ] **Step 5: Commit Task 3**
+
+```bash
+git add scripts/qa-evidence/phase9/scenarios.mjs tests/phase9-browser-evidence.test.mjs
+git commit -m "feat: add phase 9 browser evidence scenarios"
+```
+
+---
+
+### Task 4: Exact lifecycle guardian
+
+**Files:**
+- Create: `scripts/qa-evidence/phase9/lifecycle-guardian.mjs`
+- Modify: `tests/phase9-browser-evidence.test.mjs`
+
+**Interfaces:**
+- Produces: `createLifecycleGuardian({ fixtureCommand, browserClient, adapterFactory, filesystem, processHooks })`, `runGuardedLifecycle(options)`.
+- Consumes: Task 1 lifecycle contracts, Task 2 browser closure, existing fixture CLI/lifecycle helpers.
+
+- [ ] **Step 1: Write failing guardian state-machine tests**
+
+Use real exported guardian entrypoints with injected fixture/browser/filesystem seams. Require exact ordered states:
+
+```text
+uninitialized → guarded → preflighted → seeded → inspected → browsers-closed →
+preclean-inspected → cleaned → clean-inspected → independently-absent →
+credential-removed → workspace-removed → disarmed
+```
+
+Test success and failure injection at every boundary. In particular, reject malformed JSON, command nonzero, `ok:false`, drift, retention/failure, incomplete expected-absence proof, browser close failure, nonempty browser list, and credential/workspace removal uncertainty. Require the manifest/workspace to remain available whenever closure is uncertain.
+
+- [ ] **Step 2: Run Task 4 RED**
+
+```bash
+node --test --test-name-pattern='phase 9 lifecycle guardian' tests/phase9-browser-evidence.test.mjs
+```
+
+Expected: FAIL because the guardian does not exist.
+
+- [ ] **Step 3: Implement the guardian state machine**
+
+Register process handlers before mutation. Execute fixture commands through an argument-array adapter and parse their JSON with Task 1 validators. Keep cleanup idempotent and exact-manifest-only. Close browsers and prove the returned session list is empty before cleanup certification. Initialize a separate Firebase adapter for the complete 20 UID/82 path/expected-absence probe. Only certified closure may call credential and workspace removal, prove absence, and disarm.
+
+Errors must be fixed, sanitized categories. Do not include paths, IDs, provider error strings, or credentials.
+
+- [ ] **Step 4: Run Task 4 GREEN and lifecycle safety gates**
+
+```bash
+node --test --test-name-pattern='phase 9 lifecycle guardian' tests/phase9-browser-evidence.test.mjs
+node --test tests/qa-fixture-safety.test.mjs tests/repository-hygiene.test.mjs
+```
+
+Expected: all pass.
+
+- [ ] **Step 5: Commit Task 4**
+
+```bash
+git add scripts/qa-evidence/phase9/lifecycle-guardian.mjs tests/phase9-browser-evidence.test.mjs
+git commit -m "feat: add fail-closed phase 9 lifecycle guardian"
+```
+
+---
+
+### Task 5: Evidence writer and executable assembly
+
+**Files:**
+- Create: `scripts/qa-evidence/phase9/evidence-writer.mjs`
+- Create: `scripts/qa-evidence/phase9/cli.mjs`
+- Modify: `package.json`
+- Modify: `tests/phase9-browser-evidence.test.mjs`
+- Modify: `.superpowers/sdd/2026-08-25-phase-9-core-identity-authorization-verification/task-7-report.md`
+
+**Interfaces:**
+- Produces: `writePhase9Evidence({ lifecycle, rows, deployment, outputDirectory })`; command `npm run qa:evidence:phase9 -- ...`.
+- Consumes: Tasks 1-4 only; CLI contains wiring, not duplicate policy.
+
+- [ ] **Step 1: Write failing evidence and CLI tests**
+
+Require atomic writes of exactly the four approved Markdown files from validated sanitized input. Reject duplicate IDs, incomplete fields/groups/viewports, inconsistent PASS arithmetic, raw cookie/token/password/credential/path material, unsupported origin/project/SHA, and output outside the exact Phase 9 directory.
+
+Require CLI `dry-run` to build and validate the complete scenario plan and guardian configuration without network or mutation. Require hosted mode to demand the explicit staging flag, exact project/confirm-project/origin/deployed SHA/run, external manifest/credential paths, and system-Chrome wrapper.
+
+- [ ] **Step 2: Run Task 5 RED**
+
+```bash
+node --test --test-name-pattern='phase 9 evidence writer|phase 9 evidence CLI' tests/phase9-browser-evidence.test.mjs
+```
+
+Expected: FAIL because writer/CLI do not exist.
+
+- [ ] **Step 3: Implement writer and CLI wiring**
+
+Writer uses same-directory temporary files, mode 0600 while private, atomic rename, then approved repository file modes. It consumes sanitized validated values only. The CLI wires dependencies and exposes `dry-run`, `offline-smoke`, and `hosted` commands. `dry-run` and `offline-smoke` must never construct the Firebase adapter or navigate to staging.
+
+Update the ignored Task 7 report to name the committed replacement and preserve historical attempt semantics.
+
+- [ ] **Step 4: Run Task 5 GREEN and full local verification**
+
+```bash
+node --test tests/phase9-browser-evidence.test.mjs
+npm run qa:evidence:phase9 -- dry-run
+npm run qa:evidence:phase9 -- offline-smoke
+/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh list --json
+npm run verify
+git diff --check
+```
+
+Expected: all tests/builds pass and browser list is empty.
+
+- [ ] **Step 5: Run hygiene and scope scans**
+
+Run repository hygiene tests plus added-line scans for cookies, bearer values, passwords, credential artifacts, storage state, broad Firebase deletion, production identifiers, and unexpected files. Require zero matches outside explicit harmless source/test literals.
+
+- [ ] **Step 6: Commit Task 5**
+
+```bash
+git add package.json scripts/qa-evidence/phase9 tests/phase9-browser-evidence.test.mjs
+git commit -m "feat: add committed phase 9 evidence runner"
+```
+
+---
+
+### Task 6: Independent review, exact staging execution, and Task 7 evidence closure
+
+**Files:**
+- Modify: `docs/qa/production-audit/runs/2026-08-25-phase9-core-identities/00-environment.md`
+- Modify: `docs/qa/production-audit/runs/2026-08-25-phase9-core-identities/01-fixture-lifecycle.md`
+- Modify: `docs/qa/production-audit/runs/2026-08-25-phase9-core-identities/03-browser-ledger.md`
+- Modify: `docs/qa/production-audit/runs/2026-08-25-phase9-core-identities/04-cleanup.md`
+- Modify: `.superpowers/sdd/2026-08-25-phase-9-core-identity-authorization-verification/task-7-report.md`
+
+**Interfaces:**
+- Consumes: independently reviewed exact Tasks 1-5 head and committed hosted CLI.
+- Produces: complete sanitized Task 7 browser ledger and exact cleanup proof; returns control to the original Phase 9 plan at Task 8.
+
+- [ ] **Step 1: Run final pre-hosted review package and independent review**
+
+Create a review package from `57d9e128` through the exact Task 5 head. Reviewer must inspect contracts, real action ordering, route sentinels, actual isolation consumer, guardian state machine, cleanup/absence/browser closure, secret handling, evidence writer, offline smoke, and full verification. Any Critical/Important/Minor finding blocks hosted execution and follows the SDD fix-round process.
+
+- [ ] **Step 2: Push the exact reviewed head and wait for PR CI**
+
+Update existing PR #41 only. Require exact base `agent/phase8-confirmed-defect-repair`, exact Phase 9 head, OPEN/unmerged state, and all checks green. Do not merge.
+
+- [ ] **Step 3: Deploy exactly once to staging**
+
+Dispatch one staging workflow for the exact reviewed application SHA. Require workflow success, exact SHA, and every staging deploy/health step green. Stop for protected-environment approval if required. Do not dispatch production.
+
+- [ ] **Step 4: Execute one guarded hosted lifecycle**
+
+Run the committed CLI in hosted mode with the exact staging project, confirmation, canonical origin, deployed SHA/run, and one fresh external mode-0700 workspace. Require preflight, v3 seed/inspect 20/82 zero drift, every canonical browser row at both viewports, pending-delete transition/denial, zero unexplained errors, verified zero browser sessions, exact inspect-cleanup-inspect, complete independent 0/0 including expected absence, credential removal, workspace removal, and guardian disarm.
+
+On a stable product mismatch, stop at the safe boundary and follow the original defect gate. On a harness failure, do not patch privately; the committed runner and test must receive RED/GREEN review before another hosted attempt.
+
+- [ ] **Step 5: Sanitize, verify, and commit evidence only**
+
+Run the committed writer and repository hygiene scans. Retain only approved Markdown. Commit:
+
+```bash
+git add docs/qa/production-audit/runs/2026-08-25-phase9-core-identities
+git commit -m "docs: complete phase 9 identity evidence"
+```
+
+Do not deploy this evidence-only commit.
+
+- [ ] **Step 6: Independent Task 7 evidence review**
+
+Require exact deployment linkage, complete row schema/arithmetic, all closure-critical observations, cleanup 20/82 → 0/0, separate complete absence proof, zero credentials/workspaces/sessions, no secret artifacts, no production, and no merge. Only a clean review marks original Phase 9 Task 7 complete and advances to Task 8.
