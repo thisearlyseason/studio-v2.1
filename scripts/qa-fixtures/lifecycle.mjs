@@ -974,7 +974,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
         continue;
       }
       if (!existing) continue;
-      let ownedDocument = Boolean(document && markerMatches(existing, document.data));
+      let ownedDocument = Boolean(document && !isDerivedDocument(document) && markerMatches(existing, document.data));
       if (isDerivedDocument(document) && derivedDocumentMatches(existing, document)) {
         try {
           ownedDocument = manifest.firestorePaths.includes(document.ownershipProofPath)

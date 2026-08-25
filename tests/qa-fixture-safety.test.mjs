@@ -3210,6 +3210,31 @@ test('cleanup preserves the league ownership chain when its derived view cannot 
   assert.deepEqual(result.followUp.retained.auth.aliases, ['qa-league-creator']);
 });
 
+test('cleanup retains a marker-shaped malformed derived view and its ownership chain', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  const league = fixture.definition.documents.find(document => document.path === publicView.sourcePath);
+  const proof = fixture.definition.documents.find(document => document.path === publicView.ownershipProofPath);
+  const creator = fixture.definition.identities.find(identity => identity.uid === proof.uid);
+  fixture.firestore.inject(publicView.path, {
+    qaFixture: true,
+    qaFixtureVersion: 1,
+  });
+
+  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+
+  assert.equal(result.ok, false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  assert.equal(fixture.firestore.has(league.path), true);
+  assert.equal(fixture.firestore.has(proof.path), true);
+  assert.equal(fixture.auth.users.has(creator.uid), true);
+  assert.equal(fixture.firestore.deleted.includes(publicView.path), false);
+  assert.equal(fixture.firestore.deleted.includes(league.path), false);
+  assert.deepEqual(result.followUp.retained.firestore.aliases, ['qa-league', 'qa-league-creator', 'qa-public-league']);
+  assert.deepEqual(result.followUp.retained.auth.aliases, ['qa-league-creator']);
+});
+
 test('cleanup sanitizes derived ownership read failures and preserves the ownership chain', async t => {
   const fixture = await lifecycleFixture(t);
   await fixture.lifecycle.seed(fixture.inputs);
