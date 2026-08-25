@@ -1846,6 +1846,68 @@ test('credential publication hard exit leaves no partial target and only a priva
   assert.equal(payload.identities.length, 9);
 });
 
+test('credential publication writes no bytes when the parent is swapped inside exclusive open', async t => {
+  const fixture = await credentialConfinementFixture(t, 'qa-phase7-20260824T140036Z-5678ab90cd12');
+  const lifecycleUrl = pathToFileURL(resolve(repositoryRoot, 'scripts/qa-fixtures/lifecycle.mjs')).href;
+  const definitionUrl = pathToFileURL(resolve(repositoryRoot, 'scripts/qa-fixtures/definition.mjs')).href;
+  const script = `
+    import { open, rename, symlink } from 'node:fs/promises';
+    import { createLifecycle } from ${JSON.stringify(lifecycleUrl)};
+    import { buildFixtureDefinition } from ${JSON.stringify(definitionUrl)};
+    const users = new Map();
+    const documents = new Map();
+    const auth = {
+      async getUser(uid) {
+        if (!users.has(uid)) { const error = new Error('missing'); error.code = 'auth/user-not-found'; throw error; }
+        return structuredClone(users.get(uid));
+      },
+      async createUser(input) { users.set(input.uid, { ...input, customClaims: {} }); },
+      async updateUser(uid, input) { users.set(uid, { ...users.get(uid), ...input }); },
+      async setCustomUserClaims(uid, claims) { users.set(uid, { ...users.get(uid), customClaims: structuredClone(claims) }); },
+      async revokeRefreshTokens() {},
+      async deleteUser(uid) { users.delete(uid); },
+    };
+    const firestore = {
+      async get(path) { return documents.has(path) ? structuredClone(documents.get(path)) : null; },
+      async set(path, data) { documents.set(path, structuredClone(data)); },
+      async delete(path) { documents.delete(path); },
+    };
+    const definition = buildFixtureDefinition({
+      runId: ${JSON.stringify(fixture.definition.runId)},
+      expiresAt: ${JSON.stringify(EXPIRES_AT)},
+    });
+    let swapped = false;
+    const lifecycle = createLifecycle({
+      auth,
+      firestore,
+      definition,
+      randomBytes: size => Buffer.alloc(size, 7),
+      repositoryRoot: ${JSON.stringify(fixture.repository)},
+      manifestPath: ${JSON.stringify(fixture.inputs.manifestPath)},
+      async openCredentialFile(path, flags, mode) {
+        if (!swapped) {
+          swapped = true;
+          await rename(${JSON.stringify(fixture.credentialParent)}, ${JSON.stringify(fixture.movedCredentialParent)});
+          await symlink(${JSON.stringify(fixture.repository)}, ${JSON.stringify(fixture.credentialParent)});
+        }
+        return open(path, flags, mode);
+      },
+      faultInjector(stage) { if (stage === 'credentials.beforePublish') process.exit(88); },
+    });
+    await lifecycle.seed({
+      manifestPath: ${JSON.stringify(fixture.inputs.manifestPath)},
+      credentialPath: ${JSON.stringify(fixture.inputs.credentialPath)},
+    });
+  `;
+
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', script], { encoding: 'utf8' });
+  assert.equal(child.status, 1, child.stderr || child.stdout);
+  assert.match(child.stderr, /credential path confinement changed/i);
+  assert.equal(child.stderr.includes(fixture.base), false);
+  assert.deepEqual(await readdir(fixture.repository), []);
+  assert.deepEqual(await readdir(fixture.movedCredentialParent), []);
+});
+
 test('credential publication preserves a target that appears before exclusive publish', async t => {
   const fixture = await lifecycleFixture(t);
   const existing = 'operator-owned recovery marker';

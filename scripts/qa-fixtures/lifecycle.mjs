@@ -335,6 +335,9 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       const initialStats = await handle.stat().catch(() => { throw confinementError(); });
       if (!initialStats.isFile() || initialStats.size !== 0) throw confinementError();
       ownedIdentity = statIdentity(initialStats);
+      await revalidateCredentialConfinement(confinement);
+      assertOwnedCredentialFile(await handle.stat().catch(() => { throw confinementError(); }), ownedIdentity, 0);
+      assertOwnedCredentialFile(await lstat(tempPath).catch(() => { throw confinementError(); }), ownedIdentity, 0);
       try {
         await handle.writeFile(payload, { encoding: 'utf8' });
         await handle.sync();
