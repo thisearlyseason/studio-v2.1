@@ -24,7 +24,10 @@ test('sensitive account routes require revocation-aware session verification', (
 
 test('only superadmins can access global administration', () => {
   assert.equal(authorizeDashboardRoute('/admin/plans', { role: 'admin' }).allowed, false);
-  assert.equal(authorizeDashboardRoute('/admin/plans', { role: 'superadmin' }).allowed, true);
+  assert.equal(
+    authorizeDashboardRoute('/admin/plans', { role: 'superadmin' }, 'superadmin').allowed,
+    true,
+  );
   assert.equal(authorizeDashboardRoute('/admin', { role: 'adult_player' }, 'superadmin').allowed, true);
 });
 
