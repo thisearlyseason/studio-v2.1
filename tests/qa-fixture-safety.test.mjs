@@ -56,6 +56,14 @@ function approvedActiveTransitions() {
   return activeTransitions(2);
 }
 
+function assertOrderedTimestamps(transition, fields) {
+  const timestamps = fields.map(field => Date.parse(transition[field]));
+  assert.equal(timestamps.every(Number.isFinite), true);
+  for (let index = 1; index < timestamps.length; index += 1) {
+    assert.equal(timestamps[index] >= timestamps[index - 1], true, `${fields[index]} must not precede ${fields[index - 1]}`);
+  }
+}
+
 function directAdapter(auth, firestore, calls = []) {
   return {
     projectId: STAGING,
@@ -226,7 +234,7 @@ class FakeFirestore {
   }
 }
 
-async function lifecycleFixture(t, runId = RUN_ID) {
+async function lifecycleFixture(t, runId = RUN_ID, manifestVersion = 2) {
   const directory = await mkdtemp(join(tmpdir(), 'qa-fixture-lifecycle-'));
   t.after(async () => {
     await removeCredentialFile(join(directory, 'credentials.json'), process.cwd());
@@ -234,7 +242,7 @@ async function lifecycleFixture(t, runId = RUN_ID) {
       if (error?.code !== 'ENOENT') throw error;
     });
   });
-  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion });
   const auth = new FakeAuth();
   const firestore = new FakeFirestore();
   const inputs = {
@@ -2114,6 +2122,108 @@ test('seed rejects duplicate resource paths and mismatched resource markers', as
   await assert.rejects(() => mismatched.lifecycle.seed(mismatched.inputs), /collision|marker/i);
 });
 
+test('expected absence definition paths are unique, disjoint, and run-owned', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 3);
+  const expected = fixture.definition.expectedAbsentDocuments[0];
+  const candidates = [
+    {
+      name: 'duplicate expected absence path',
+      definition: {
+        ...structuredClone(fixture.definition),
+        expectedAbsentDocuments: [structuredClone(expected), structuredClone(expected)],
+      },
+    },
+    {
+      name: 'expected absence overlaps a created document',
+      definition: {
+        ...structuredClone(fixture.definition),
+        expectedAbsentDocuments: [{ ...structuredClone(expected), path: fixture.definition.documents[0].path }],
+      },
+    },
+    {
+      name: 'expected absence escapes the run namespace',
+      definition: {
+        ...structuredClone(fixture.definition),
+        expectedAbsentDocuments: [{ ...structuredClone(expected), path: 'users/unrelated-user' }],
+      },
+    },
+  ];
+
+  for (const candidate of candidates) {
+    assert.throws(() => createLifecycle({
+      ...fixture.lifecycleOptions,
+      definition: candidate.definition,
+    }), /expected.absen|duplicate|overlap|managed/i, candidate.name);
+  }
+});
+
+test('seed preserves expected absence and inspect reports alias-only unexpected presence', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 3);
+  const missing = fixture.definition.expectedAbsentDocuments[0];
+  const manifest = await fixture.lifecycle.seed(fixture.inputs);
+
+  assert.equal(manifest.version, 3);
+  assert.deepEqual(manifest.expectedAbsentFirestorePaths, [missing.path]);
+  assert.equal(await fixture.firestore.get(missing.path), null);
+
+  await fixture.firestore.set(missing.path, { foreign: true });
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, false);
+  assert.equal(inspection.drift.some(item => (
+    item.alias === 'qa-missing-profile'
+    && item.reason === 'unexpected-presence'
+  )), true);
+  const serialized = JSON.stringify(inspection.drift);
+  assert.equal(serialized.includes(missing.path), false);
+  assert.equal(serialized.includes(fixture.definition.runId), false);
+});
+
+test('expected absence collision aborts seed before the first remote mutation', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140012Z-ef56ab78cd90', 3);
+  const missing = fixture.definition.expectedAbsentDocuments[0];
+  fixture.firestore.inject(missing.path, { foreign: true });
+  const calls = [];
+  const adapter = directAdapter(fixture.auth, fixture.firestore, calls);
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    auth: adapter.auth,
+    firestore: adapter.firestore,
+  });
+
+  const error = await lifecycle.seed(fixture.inputs).then(
+    () => null,
+    caught => caught,
+  );
+  assert.ok(error instanceof Error);
+  assert.match(error.message, /qa-missing-profile|expected.absen/i);
+  assert.equal(error.message.includes(missing.path), false);
+  assert.equal(error.message.includes(fixture.definition.runId), false);
+  const mutations = calls.filter(call => /createUser|updateUser|setCustomUserClaims|revokeRefreshTokens|deleteUser|firestore\.set|firestore\.delete/.test(call));
+  assert.deepEqual(mutations, []);
+  assert.equal(fixture.auth.users.size, 0);
+  assert.deepEqual(await fixture.firestore.get(missing.path), { foreign: true });
+});
+
+test('expected absence cleanup retains an unmarked unexpected document and leaves follow-up unclean', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140013Z-1234ab56cd78', 3);
+  const missing = fixture.definition.expectedAbsentDocuments[0];
+  await fixture.lifecycle.seed(fixture.inputs);
+  await fixture.firestore.set(missing.path, { foreign: true });
+
+  const cleanup = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(cleanup.ok, false);
+  assert.deepEqual(cleanup.deleted, {
+    auth: fixture.definition.identities.length,
+    firestore: fixture.definition.documents.length,
+  });
+  assert.deepEqual(cleanup.followUp.retained.firestore, {
+    count: 1,
+    aliases: ['qa-missing-profile'],
+  });
+  assert.deepEqual(await fixture.firestore.get(missing.path), { foreign: true });
+  assert.equal(JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8')).state, 'seeded');
+});
+
 test('seed writes private browser credentials and returns redacted inspection output', async t => {
   const fixture = await lifecycleFixture(t);
   await fixture.lifecycle.seed(fixture.inputs);
@@ -2643,6 +2753,141 @@ test('negative states require a seeded active baseline and revoke sessions after
   const drifted = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
   assert.equal(drifted.ok, false);
   assert.equal(drifted.drift.some(item => item.field === 'presence' && item.reason === 'unexpected-after-transition'), true);
+});
+
+test('pending-delete persists the exact pending deletion state and revokes sessions', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140014Z-3456ab78cd90', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+
+  const result = await fixture.lifecycle.applyNegativeState('qa-pending-delete');
+  assert.equal(result.state, 'pending_deletion');
+  assert.equal(result.resumed, false);
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-pending-delete');
+  const userPath = `users/${identity.uid}`;
+  const persisted = await fixture.firestore.get(userPath);
+  assert.deepEqual({
+    accountStatus: persisted.accountStatus,
+    deletionStatus: persisted.deletionStatus,
+  }, { accountStatus: 'pending_deletion', deletionStatus: 'pending' });
+  assert.equal(fixture.auth.revoked.includes(identity.uid), true);
+
+  const manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  const transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'pending_deletion');
+  assertOrderedTimestamps(transition, ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']);
+  assert.equal((await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath })).ok, true);
+
+  await fixture.firestore.set(userPath, { ...persisted, unexpected: true });
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, false);
+  assert.equal(inspection.drift.some(item => (
+    item.alias === 'qa-pending-delete'
+    && item.field === 'shape'
+    && item.reason === 'unexpected-fields'
+  )), true);
+});
+
+test('pending deletion resumes after interruption at the Firestore fault boundary', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140015Z-5678ab90cd12', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-pending-delete');
+  const userPath = `users/${identity.uid}`;
+  const adapter = directAdapter(fixture.auth, fixture.firestore);
+  const set = adapter.firestore.set;
+  let applyingObservedBeforeWrite = false;
+  adapter.firestore.set = async (path, data) => {
+    if (path === userPath && data.accountStatus === 'pending_deletion') {
+      const beforeWrite = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+      applyingObservedBeforeWrite = beforeWrite.transitions['qa-pending-delete'].state === 'applying';
+    }
+    return set(path, data);
+  };
+  let interrupted = false;
+  const interruptedLifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    auth: adapter.auth,
+    firestore: adapter.firestore,
+    faultInjector(stage) {
+      if (!interrupted && stage === 'transition.qa-pending-delete.afterFirestore') {
+        interrupted = true;
+        throw new Error('simulated pending deletion Firestore interruption');
+      }
+    },
+  });
+
+  await assert.rejects(() => interruptedLifecycle.applyNegativeState('qa-pending-delete'), /interruption/i);
+  let manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  let transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'applying');
+  assert.match(transition.startedAt, /Z$/);
+  assert.equal(transition.firestoreUpdatedAt, undefined);
+  assert.equal(transition.revokedAt, undefined);
+  assert.equal(applyingObservedBeforeWrite, true);
+  const persisted = await fixture.firestore.get(userPath);
+  assert.deepEqual({
+    accountStatus: persisted.accountStatus,
+    deletionStatus: persisted.deletionStatus,
+  }, { accountStatus: 'pending_deletion', deletionStatus: 'pending' });
+  assert.deepEqual(fixture.auth.revoked, []);
+  assert.equal((await interruptedLifecycle.inspect({ manifestPath: fixture.inputs.manifestPath })).ok, true);
+
+  const resumed = await createLifecycle(fixture.lifecycleOptions).applyNegativeState('qa-pending-delete');
+  assert.equal(resumed.state, 'pending_deletion');
+  assert.equal(resumed.resumed, true);
+  manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'pending_deletion');
+  assertOrderedTimestamps(transition, ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']);
+});
+
+test('pending deletion resumes after interruption at the revocation fault boundary', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140016Z-7890cd12ef34', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+  let interrupted = false;
+  const interruptedLifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    faultInjector(stage) {
+      if (!interrupted && stage === 'transition.qa-pending-delete.afterRevoke') {
+        interrupted = true;
+        throw new Error('simulated pending deletion revocation interruption');
+      }
+    },
+  });
+
+  await assert.rejects(() => interruptedLifecycle.applyNegativeState('qa-pending-delete'), /interruption/i);
+  let manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  let transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'applying');
+  assert.match(transition.firestoreUpdatedAt, /Z$/);
+  assert.equal(transition.revokedAt, undefined);
+  assert.equal(fixture.auth.revoked.length, 1);
+  assert.equal((await interruptedLifecycle.inspect({ manifestPath: fixture.inputs.manifestPath })).ok, true);
+
+  const resumed = await createLifecycle(fixture.lifecycleOptions).applyNegativeState('qa-pending-delete');
+  assert.equal(resumed.state, 'pending_deletion');
+  assert.equal(resumed.resumed, true);
+  assert.equal(fixture.auth.revoked.length, 2);
+  manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'pending_deletion');
+  assertOrderedTimestamps(transition, ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']);
+});
+
+test('completed pending deletion refuses exact remote-state drift', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140017Z-90abcdef1234', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+  await fixture.lifecycle.applyNegativeState('qa-pending-delete');
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-pending-delete');
+  const userPath = `users/${identity.uid}`;
+  const persisted = await fixture.firestore.get(userPath);
+  await fixture.firestore.set(userPath, { ...persisted, deletionStatus: 'cancelled' });
+  const revocationCount = fixture.auth.revoked.length;
+
+  await assert.rejects(
+    () => fixture.lifecycle.applyNegativeState('qa-pending-delete'),
+    /completed.*drifted|drifted.*persisted/i,
+  );
+  assert.equal(fixture.auth.revoked.length, revocationCount);
 });
 
 test('negative transition resumes after interruption between remote mutation and checkpoint persistence', async t => {
