@@ -1,7 +1,7 @@
 import {
   NO_TEAM_RESOURCE_POLICY, PENDING_UNAVAILABLE_SENTINEL, REQUIRED_LEDGER_COLUMNS, REQUIRED_LOGOUT_STAGES,
   PROTECTED_PAGE_HEADINGS, ROUTE_SCENARIOS, SCENARIO_GROUP_COUNTS, VIEWPORTS, buildIsolationExpectation,
-  validateActionWindow, validateIsolationResult, validateLogoutStages, validateRouteResult,
+  assertNoFixtureIdentifierLeak, validateActionWindow, validateIsolationResult, validateLogoutStages, validateRouteResult,
 } from './scenario-contracts.mjs';
 import { observeAction } from './signal-window.mjs';
 
@@ -107,6 +107,7 @@ const rowFromWindow = ({ context, group, action, expectedResult, window, visible
       throw new Error(`Scenario row is missing ${column}.`);
     }
   }
+  assertNoFixtureIdentifierLeak(row, 'Scenario row');
   return Object.freeze(row);
 };
 
@@ -236,7 +237,7 @@ export async function runIsolationScenario({ client, session, context: inputCont
       }, terminal: () => waitForSettled(probe.label),
     });
     validateActionWindow(window);
-    api.push({ ...probe, status }); windows.push(window); summaries.push({ stage: probe.label, target: probe.target, status });
+    api.push({ ...probe, status }); windows.push(window); summaries.push({ stage: probe.label, status });
   }
   for (const probe of expected.directFirestore) {
     let status;
@@ -250,7 +251,7 @@ export async function runIsolationScenario({ client, session, context: inputCont
     });
     validateActionWindow(window);
     firestore.push({ label: probe.label, path: probe.path, status }); windows.push(window);
-    summaries.push({ stage: probe.label, path: probe.path, status });
+    summaries.push({ stage: probe.label, status });
   }
   const oppositeWindows = [windows[1], windows[3], windows[5]];
   validateIsolationResult({

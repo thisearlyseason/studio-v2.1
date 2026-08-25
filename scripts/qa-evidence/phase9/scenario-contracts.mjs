@@ -20,10 +20,41 @@ export const RESOURCE_SCOPES = deepFreeze([
   'join-admin-lookup',
   'tenant-team-a',
   'tenant-team-b',
+  'tenant-league',
   'tenant-other',
+  'foreign-account',
   'non-tenant',
   'transport-control',
   'unscoped',
+]);
+
+export const RESOURCE_SCOPE_EVIDENCE = deepFreeze({
+  'self-user-document': 'self-account',
+  'self-memberships-document': 'self-account',
+  'self-memberships-query': 'self-account',
+  'self-parent-players-query': 'self-account',
+  'join-admin-patch': 'join-admin-lookup',
+  'fixture-team-a-document': 'tenant-team-a',
+  'fixture-team-a-query': 'tenant-team-a',
+  'fixture-team-b-document': 'tenant-team-b',
+  'fixture-team-b-query': 'tenant-team-b',
+  'fixture-league-document': 'tenant-league',
+  'fixture-league-query': 'tenant-league',
+  'other-tenant-resource': 'tenant-other',
+  'foreign-user-resource': 'foreign-account',
+  'foreign-player-resource': 'foreign-account',
+  'plans-reference-data': 'non-tenant',
+  'firestore-transport-control': 'transport-control',
+  'unscoped-resource': 'unscoped',
+});
+
+export const RESOURCE_TARGET_KINDS = deepFreeze([
+  'firestore-document',
+  'firestore-run-query',
+  'firestore-listen',
+  'firestore-protected',
+  'staging-join-admin-api',
+  'staging-protected-api',
 ]);
 
 const FIXTURE_ALIASES = deepFreeze([
@@ -295,6 +326,84 @@ const requireCanonicalStagingAttribution = (value, name) => {
 };
 
 const isExactPathOrSubtree = (pathname, root) => pathname === root || pathname.startsWith(`${root}/`);
+const FIXTURE_IDENTIFIER_PATTERN = /qa-phase7-\d{8}T\d{6}Z-[a-z0-9]{12,32}(?:-[A-Za-z0-9][A-Za-z0-9_-]*)?/;
+
+export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
+  let serialized;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    throw new Error(`${name} must be serializable before fixture identifier validation.`);
+  }
+  if (FIXTURE_IDENTIFIER_PATTERN.test(serialized)) {
+    throw new Error(`${name} contains a raw fixture identifier.`);
+  }
+  return value;
+}
+
+const deriveResourceScopes = evidence => RESOURCE_SCOPES.filter(scope => (
+  evidence.some(item => RESOURCE_SCOPE_EVIDENCE[item] === scope)
+));
+
+const requireClosedResourceSignal = (value, name) => {
+  const signal = requireRecord(value, name);
+  const requiredKeys = [
+    'targetKind', 'method', 'resourceType', 'initiatingFrameUrl', 'scopeEvidence', 'resourceScopes',
+  ];
+  const optionalKeys = ['status'];
+  const actualKeys = Object.keys(signal);
+  if (
+    requiredKeys.some(key => !actualKeys.includes(key))
+    || actualKeys.some(key => !requiredKeys.includes(key) && !optionalKeys.includes(key))
+  ) throw new Error(`${name} must use the closed resource evidence schema.`);
+  if (!RESOURCE_TARGET_KINDS.includes(signal.targetKind)) {
+    throw new Error(`${name} target kind is unsupported.`);
+  }
+  requireString(signal.method, `${name} method`);
+  requireString(signal.resourceType, `${name} resourceType`);
+  requireString(signal.initiatingFrameUrl, `${name} initiatingFrameUrl`);
+  if (Object.hasOwn(signal, 'status')) requireCount(signal.status, `${name} status`);
+  if (
+    !Array.isArray(signal.scopeEvidence)
+    || signal.scopeEvidence.length === 0
+    || signal.scopeEvidence.some(item => !Object.hasOwn(RESOURCE_SCOPE_EVIDENCE, item))
+    || new Set(signal.scopeEvidence).size !== signal.scopeEvidence.length
+  ) throw new Error(`${name} must contain complete closed resource evidence.`);
+  const evidenceOrder = Object.keys(RESOURCE_SCOPE_EVIDENCE);
+  const canonicalEvidence = evidenceOrder.filter(item => signal.scopeEvidence.includes(item));
+  if (
+    canonicalEvidence.length !== signal.scopeEvidence.length
+    || canonicalEvidence.some((item, index) => item !== signal.scopeEvidence[index])
+  ) throw new Error(`${name} scope evidence must use canonical order.`);
+  const derivedScopes = deriveResourceScopes(signal.scopeEvidence);
+  if (
+    !Array.isArray(signal.resourceScopes)
+    || signal.resourceScopes.length !== derivedScopes.length
+    || signal.resourceScopes.some((scope, index) => scope !== derivedScopes[index])
+  ) throw new Error(`${name} resource scopes must be derived from its closed resource evidence.`);
+
+  const evidence = new Set(signal.scopeEvidence);
+  if (evidence.has('join-admin-patch') && (
+    signal.targetKind !== 'staging-join-admin-api' || signal.method !== 'PATCH'
+  )) throw new Error(`${name} join-admin evidence is disconnected from its exact target.`);
+  if (signal.targetKind === 'staging-join-admin-api' && !evidence.has('join-admin-patch')) {
+    throw new Error(`${name} join-admin target is missing its exact evidence.`);
+  }
+  if (evidence.has('firestore-transport-control') && signal.targetKind !== 'firestore-listen') {
+    throw new Error(`${name} transport-control evidence requires a Firestore listener target.`);
+  }
+  const firestoreEvidence = signal.scopeEvidence.some(item => (
+    item !== 'join-admin-patch' && item !== 'unscoped-resource'
+  ));
+  if (firestoreEvidence && !signal.targetKind.startsWith('firestore-')) {
+    throw new Error(`${name} Firestore evidence is disconnected from its target.`);
+  }
+  return signal;
+};
+
+export function validateResourceSignal(value, name = 'Resource signal') {
+  return requireClosedResourceSignal(value, name);
+}
 
 export function validateNoTeamResourceIsolation(value) {
   const window = requireRecord(value, 'No Team action window');
@@ -307,40 +416,28 @@ export function validateNoTeamResourceIsolation(value) {
   if (window.teamSelectionSignals.includes('tenant-other')) throw new Error('No Team selected another tenant.');
   const validateSignals = (signals, count, name) => {
     requireCount(count, `No Team ${name} count`);
-    if (!Array.isArray(signals) || signals.length !== count || signals.some(signal => (
-      !isRecord(signal)
-      || typeof signal.url !== 'string'
-      || typeof signal.method !== 'string'
-      || typeof signal.resourceType !== 'string'
-      || typeof signal.initiatingFrameUrl !== 'string'
-    ))) throw new Error(`No Team evidence requires complete ${name} signals.`);
-    for (const signal of signals) {
-      if (!RESOURCE_SCOPES.includes(signal.resourceScope) || signal.resourceScope === 'unscoped') {
-        throw new Error('No Team evidence requires a typed resource scope.');
-      }
-      if (signal.resourceScope === 'tenant-team-a') {
+    if (!Array.isArray(signals) || signals.length !== count) {
+      throw new Error(`No Team evidence requires complete ${name} signals.`);
+    }
+    for (const [index, value] of signals.entries()) {
+      const signal = requireClosedResourceSignal(value, `No Team ${name} ${index}`);
+      if (signal.resourceScopes.includes('tenant-team-a')) {
         throw new Error('No Team evidence contains Team A tenant resource activity.');
       }
-      if (signal.resourceScope === 'tenant-team-b') {
+      if (signal.resourceScopes.includes('tenant-team-b')) {
         throw new Error('No Team evidence contains Team B tenant resource activity.');
       }
-      if (signal.resourceScope === 'tenant-other') {
+      if (signal.resourceScopes.includes('tenant-league')) {
+        throw new Error('No Team evidence contains league tenant resource activity.');
+      }
+      if (signal.resourceScopes.includes('tenant-other')) {
         throw new Error('No Team evidence contains other tenant resource activity.');
       }
-      if (signal.resourceScope === 'join-admin-lookup') {
-        let target;
-        try {
-          target = new URL(signal.url);
-        } catch {
-          throw new Error('No Team join-page admin lookup must use its exact canonical target.');
-        }
-        if (
-          target.origin !== STAGING_ORIGIN
-          || target.pathname !== '/api/schools/admins'
-          || signal.method !== 'PATCH'
-        ) {
-          throw new Error('No Team join-page admin lookup must use its exact canonical target.');
-        }
+      if (signal.resourceScopes.includes('foreign-account')) {
+        throw new Error('No Team evidence contains foreign account resource activity.');
+      }
+      if (signal.resourceScopes.includes('unscoped')) {
+        throw new Error('No Team evidence requires a typed resource scope.');
       }
     }
   };
@@ -351,6 +448,7 @@ export function validateNoTeamResourceIsolation(value) {
 
 export function validateActionWindow(value, options = {}) {
   const window = requireRecord(value, 'Action window');
+  assertNoFixtureIdentifierLeak(window, 'Action window');
   requireBoolean(window.terminalReached, 'terminalReached');
   requireBoolean(window.loadingVisible, 'loadingVisible');
   requireString(window.finalPath, 'finalPath');
@@ -484,14 +582,24 @@ export function validateRouteResult(value) {
 
   if (!result.allowed && result.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
     const requireAttributedSignals = (signals, count, name) => {
-      if (!Array.isArray(signals) || signals.length !== count || signals.some(signal => (
-        !isRecord(signal)
-        || typeof signal.url !== 'string'
-        || typeof signal.method !== 'string'
-        || typeof signal.resourceType !== 'string'
-        || typeof signal.initiatingFrameUrl !== 'string'
-      ))) throw new Error(`Denied route requires complete attributed ${name} evidence.`);
-      return signals;
+      if (!Array.isArray(signals) || signals.length !== count) {
+        throw new Error(`Denied route requires complete attributed ${name} evidence.`);
+      }
+      return signals.map((signal, index) => {
+        if (Object.hasOwn(signal ?? {}, 'targetKind')) {
+          return requireClosedResourceSignal(signal, `Denied route ${name} ${index}`);
+        }
+        if (
+          !isRecord(signal)
+          || typeof signal.url !== 'string'
+          || typeof signal.method !== 'string'
+          || typeof signal.resourceType !== 'string'
+          || typeof signal.initiatingFrameUrl !== 'string'
+          || Object.hasOwn(signal, 'resourceScope')
+          || Object.hasOwn(signal, 'resourceScopes')
+        ) throw new Error(`Denied route requires complete attributed ${name} evidence.`);
+        return signal;
+      });
     };
     const requestSignals = requireAttributedSignals(
       window.protectedRequestSignals, window.protectedRequests, 'protected request',
@@ -747,6 +855,7 @@ export function validateLedger(rows, expected) {
 
   for (const [index, row] of rows.entries()) {
     requireRecord(row, `Ledger row ${index}`);
+    assertNoFixtureIdentifierLeak(row, `Ledger row ${index}`);
     for (const column of REQUIRED_LEDGER_COLUMNS) {
       if (!(column in row) || row[column] === undefined || row[column] === null || row[column] === '') {
         throw new Error(`Ledger row ${index} is missing ${column}.`);

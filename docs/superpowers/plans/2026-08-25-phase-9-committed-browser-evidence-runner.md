@@ -17,7 +17,7 @@
 - No production access, no merge, and no broad Firebase deletion.
 - No hosted mutation until Tasks 1-5 pass independent review and the exact tracked SHA passes full verification, PR CI, and one staging deployment.
 - Every implementation change uses RED/GREEN TDD. Tests must invoke real exported entrypoints; source-regex-only assertions are insufficient.
-- Credentials, cookies, bearer values, request bodies, storage state, raw traces, UIDs, and private workspace paths must never enter committed evidence or test output.
+- Credentials, cookies, bearer values, request bodies, storage state, raw traces, raw target URLs/paths, run IDs, UIDs, team IDs, player IDs, and private workspace paths must never enter client results, action summaries, ledger rows, committed evidence, or test output.
 - The exact manifest remains available until cleanup, cleaned inspection, complete independent absence proof, and zero-browser proof all pass.
 - Historical aborted attempts remain `INCONCLUSIVE-HARNESS`; retry-4 cleanup remains exact 20/82 → 0/0 closure, not browser evidence.
 
@@ -127,7 +127,7 @@ Expected: FAIL because the client/window modules do not exist.
 
 - [ ] **Step 3: Implement client and action-window layer**
 
-The client is the only module that invokes the wrapper. It must use `execFile`, an argument array, bounded output, timeout, exact JSON parsing, and dependency injection. The signal recorder stores sanitized request metadata only: URL origin/path, method, resource type, initiating frame URL, response status, fixed error signature, and render path/sentinel. It must not retain headers, request bodies, cookies, tokens, or storage state.
+The client is the only module that invokes the wrapper. It must use `execFile`, an argument array, bounded output, timeout, exact JSON parsing, and dependency injection. The signal recorder keeps only fixed target kinds, method, resource type, canonical initiating-frame route, response status, fixed error signature, render path/sentinel, and exhaustive closed parsed-evidence labels with their canonically derived scope set. Raw resource URLs/paths and fixture identifiers are discarded before the public client result. It must not retain headers, request bodies, cookies, tokens, or storage state.
 
 `observeAction()` takes the page-specific mark before calling `action`, awaits the required terminal without swallowing timeout, then samples the same page. There is no public API accepting a caller-created mark.
 
@@ -179,8 +179,9 @@ Require the real scenario functions to fail when:
 - a Parent A, League Creator, or School Admin admission stops at transient or final `Dashboard` instead of its exact settled role landing;
 - an exact heading appears on the wrong pathname and a heading-only terminal would complete early;
 - Missing Profile observes any protected request or protected listener during login/admission or any denied-route action.
-- No Team selects or accesses Team A/Team B, or starts a tenant-scoped request/listener for either fixture tenant, during login/admission or any denied-route action; exact self-account/membership and join-page admin lookup activity must pass.
-- No Team aggregation omits an earlier typed resource scope or accepts an unscoped protected signal.
+- No Team selects or accesses Team A/Team B/league/foreign resources, or starts a tenant-scoped request/listener for them, during login/admission or any denied-route action; exact self-account/membership, exact same-identity `players where parentId == uid`, and join-page admin lookup activity must pass.
+- No Team aggregation omits an earlier typed resource scope, collapses a multiplexed signal to one scalar, accepts an unscoped protected signal, or accepts a caller-supplied scope disconnected from closed parsed evidence.
+- nested client results, action summaries, serialized scenario rows, and ledger rows contain none of the literal run ID, UID, team IDs, or player IDs used by the fixture expectation.
 - a dashboard first evaluates with an unresolved profile and then hydrates `league_creator`, with every other redirect dependency stable, without redirecting to `/competition`.
 
 Also require the canonical plan to include both viewports and exact aliases/groups from Task 7.
@@ -213,7 +214,7 @@ Admission and denial waits must use the complete settled `{path, accessible head
 
 For `qa-missing-profile`, validate every login/admission and denied-route window with `requireNoProtected`: protected request count and protected listener-start count must both remain zero regardless of attribution.
 
-For `qa-no-team`, configure the Playwright client with the exact fixture run ID and reduce protected targets to fixed sanitized scopes without retaining request bodies or raw identifiers. Permit only self-account/profile/membership activity, the exact `PATCH /api/schools/admins` join-page lookup, non-tenant reference data, and transport-control messages. Reject Team A, Team B, other-tenant, and unscoped protected request/listener activity in login and all six denied-route windows. Flatten the typed request/listener scopes into aggregate validation so later clean windows cannot hide an earlier tenant signal.
+For `qa-no-team`, configure the Playwright client with the exact fixture run ID and parse every target in multiplexed Firestore Listen/runQuery bodies into closed fixed evidence labels and a canonical set of all derived scopes. Unknown, malformed, and ambiguous content adds `unscoped`; it cannot erase another detected scope. Permit only the exact self profile/membership documents, the structurally exact same-identity `players where parentId == uid` query, the exact `PATCH /api/schools/admins` join-page lookup, non-tenant reference data, and transport-control messages. Reject a different/multiple parent binding, an expanding additional filter, Team A, Team B, league, other-tenant, foreign-account, or unscoped activity in login and all six denied-route windows. Reject scalar or mismatched caller-supplied scopes. Flatten every scope into aggregate validation so an allowed sibling or later clean window cannot hide tenant activity. Exact probe targets remain private in-memory expectations; public client results, action summaries, and rows use fixed labels/booleans/statuses only and must pass literal fixture-identifier leak tests.
 
 Add the exact missing `userProfile?.role` dependency to the existing dashboard settled-role effect. The rendered regression must begin with `userProfile === null`, hydrate `league_creator` while router/path/team/parent/school inputs remain referentially stable, and prove `/competition` is requested. Re-run Parent and School redirect cases to show their existing destinations are unchanged.
 

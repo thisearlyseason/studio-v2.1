@@ -3,7 +3,8 @@ import { pathToFileURL } from 'node:url';
 
 import {
   LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, PROTECTED_PAGE_HEADINGS,
-  SESSION_COOKIE_NAME, STAGING_ORIGIN,
+  RESOURCE_TARGET_KINDS,
+  SESSION_COOKIE_NAME, STAGING_ORIGIN, STAGING_PROJECT_ID, validateResourceSignal,
 } from './scenario-contracts.mjs';
 import { assertRunId } from '../../qa-fixtures/manifest.mjs';
 
@@ -15,92 +16,354 @@ const CLIENT_INTERNALS = new WeakMap();
 const HEADING_SENTINELS = Object.freeze([...new Set(LANDING_SENTINELS)]);
 const STATUS_SENTINELS = Object.freeze([PENDING_UNAVAILABLE_SENTINEL]);
 
-const RESOURCE_SCOPE_VALUES = new Set([
-  'self-account',
-  'join-admin-lookup',
-  'tenant-team-a',
-  'tenant-team-b',
-  'tenant-other',
-  'non-tenant',
-  'transport-control',
-  'unscoped',
-]);
+const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin, stagingProjectId) => {
+  const evidenceToScope = {
+    'self-user-document': 'self-account',
+    'self-memberships-document': 'self-account',
+    'self-memberships-query': 'self-account',
+    'self-parent-players-query': 'self-account',
+    'join-admin-patch': 'join-admin-lookup',
+    'fixture-team-a-document': 'tenant-team-a',
+    'fixture-team-a-query': 'tenant-team-a',
+    'fixture-team-b-document': 'tenant-team-b',
+    'fixture-team-b-query': 'tenant-team-b',
+    'fixture-league-document': 'tenant-league',
+    'fixture-league-query': 'tenant-league',
+    'other-tenant-resource': 'tenant-other',
+    'foreign-user-resource': 'foreign-account',
+    'foreign-player-resource': 'foreign-account',
+    'plans-reference-data': 'non-tenant',
+    'firestore-transport-control': 'transport-control',
+    'unscoped-resource': 'unscoped',
+  };
+  const evidenceOrder = Object.keys(evidenceToScope);
+  const scopeOrder = [
+    'self-account', 'join-admin-lookup', 'tenant-team-a', 'tenant-team-b', 'tenant-league',
+    'tenant-other', 'foreign-account', 'non-tenant', 'transport-control', 'unscoped',
+  ];
+  const evidence = new Set();
+  const add = value => evidence.add(value);
+  const unknown = () => add('unscoped-resource');
+  const result = () => {
+    const scopeEvidence = evidenceOrder.filter(value => evidence.has(value));
+    if (scopeEvidence.length === 0) scopeEvidence.push('unscoped-resource');
+    const resourceScopes = scopeOrder.filter(scope => scopeEvidence.some(item => evidenceToScope[item] === scope));
+    return { scopeEvidence, resourceScopes };
+  };
 
-const classifyFixtureResourceScopeValue = (signal, runId, alias, stagingOrigin) => {
-  if (!signal || typeof signal !== 'object' || typeof signal.url !== 'string') return 'unscoped';
+  if (!signal || typeof signal !== 'object' || typeof signal.url !== 'string') {
+    unknown();
+    return result();
+  }
   let target;
   try {
     target = new URL(signal.url);
   } catch {
-    return 'unscoped';
+    unknown();
+    return result();
   }
   if (
     target.origin === stagingOrigin
     && target.pathname === '/api/schools/admins'
     && signal.method === 'PATCH'
-  ) return 'join-admin-lookup';
-  if (target.hostname !== 'firestore.googleapis.com') return 'unscoped';
-  if (typeof runId !== 'string' || alias !== 'qa-no-team') return 'unscoped';
+  ) {
+    add('join-admin-patch');
+    return result();
+  }
+  if (target.hostname !== 'firestore.googleapis.com' || typeof runId !== 'string' || alias !== 'qa-no-team') {
+    unknown();
+    return result();
+  }
 
-  let corpus = `${signal.url}\n${typeof signal.body === 'string' ? signal.body : ''}`;
-  for (let index = 0; index < 3; index += 1) {
-    try {
-      const decoded = decodeURIComponent(corpus.replace(/\+/g, ' '));
-      if (decoded === corpus) break;
-      corpus = decoded;
-    } catch {
-      break;
+  const selfUid = `${runId}-no-team`;
+  const teamA = `${runId}-team-a`;
+  const teamB = `${runId}-team-b`;
+  const fixtureLeague = `${runId}-league`;
+  const databaseRoot = `projects/${stagingProjectId}/databases/(default)/documents`;
+  const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const exactKeys = (value, required, optional = []) => {
+    if (!isRecord(value)) return false;
+    const keys = Object.keys(value);
+    return required.every(key => keys.includes(key))
+      && keys.every(key => required.includes(key) || optional.includes(key));
+  };
+  const decode = value => {
+    let decoded = value;
+    for (let index = 0; index < 3; index += 1) {
+      try {
+        const next = decodeURIComponent(decoded.replace(/\+/g, ' '));
+        if (next === decoded) break;
+        decoded = next;
+      } catch {
+        break;
+      }
     }
-  }
+    return decoded;
+  };
+  const classifyDocumentName = (input, source = 'document') => {
+    if (typeof input !== 'string') {
+      unknown();
+      return;
+    }
+    const name = decode(input).replace(/^\/+/, '');
+    const marker = '/documents/';
+    const markerIndex = name.indexOf(marker);
+    const resourceRoot = markerIndex >= 0 ? name.slice(0, markerIndex + '/documents'.length) : databaseRoot;
+    const resourcePath = markerIndex >= 0 ? name.slice(markerIndex + marker.length) : name;
+    if (resourceRoot !== databaseRoot) {
+      unknown();
+      return;
+    }
+    const segments = resourcePath.split('/').filter(Boolean);
+    if (segments.length === 0) {
+      unknown();
+      return;
+    }
+    const [collection, id, childCollection] = segments;
+    if (collection === 'users') {
+      if (id === selfUid) {
+        if (segments.length === 2) add('self-user-document');
+        else if (childCollection === 'teamMemberships' && (segments.length === 3 || segments.length === 4)) {
+          add('self-memberships-document');
+        } else unknown();
+      } else add('foreign-user-resource');
+      return;
+    }
+    if (collection === 'teams') {
+      if (id === teamA) add(source === 'query' ? 'fixture-team-a-query' : 'fixture-team-a-document');
+      else if (id === teamB) add(source === 'query' ? 'fixture-team-b-query' : 'fixture-team-b-document');
+      else add('other-tenant-resource');
+      return;
+    }
+    if (collection === 'leagues') {
+      if (id === fixtureLeague) add(source === 'query' ? 'fixture-league-query' : 'fixture-league-document');
+      else add('other-tenant-resource');
+      return;
+    }
+    if (collection === 'players') {
+      add('foreign-player-resource');
+      return;
+    }
+    if (collection === 'plans') {
+      add('plans-reference-data');
+      return;
+    }
+    unknown();
+  };
+  const collectStringValues = value => {
+    const found = [];
+    const visit = node => {
+      if (typeof node === 'string') found.push(node);
+      else if (Array.isArray(node)) node.forEach(visit);
+      else if (isRecord(node)) Object.values(node).forEach(visit);
+    };
+    visit(value);
+    return found;
+  };
+  const exactSelfParentFilter = where => {
+    if (!exactKeys(where, ['fieldFilter'])) return false;
+    const filter = where.fieldFilter;
+    if (!exactKeys(filter, ['field', 'op', 'value'])) return false;
+    if (!exactKeys(filter.field, ['fieldPath']) || filter.field.fieldPath !== 'parentId') return false;
+    if (filter.op !== 'EQUAL') return false;
+    return exactKeys(filter.value, ['stringValue']) && filter.value.stringValue === selfUid;
+  };
+  const classifyQuery = query => {
+    if (!exactKeys(query, ['parent', 'structuredQuery'])) {
+      unknown();
+      return;
+    }
+    const structured = query.structuredQuery;
+    if (!exactKeys(structured, ['from'], ['where', 'orderBy', 'select', 'limit', 'startAt', 'endAt', 'offset'])) {
+      unknown();
+      return;
+    }
+    if (!Array.isArray(structured.from) || structured.from.length !== 1) {
+      unknown();
+      return;
+    }
+    const from = structured.from[0];
+    if (!exactKeys(from, ['collectionId'], ['allDescendants']) || from.allDescendants === true) {
+      unknown();
+      return;
+    }
+    const collection = from.collectionId;
+    const structuredStrings = collectStringValues(structured);
+    if (structuredStrings.includes(teamA)) add('fixture-team-a-query');
+    if (structuredStrings.includes(teamB)) add('fixture-team-b-query');
+    if (structuredStrings.includes(fixtureLeague)) add('fixture-league-query');
+    for (const value of structuredStrings) {
+      if (value.startsWith(`${databaseRoot}/`)) classifyDocumentName(value, 'query');
+    }
+    if (collection === 'players') {
+      if (query.parent === databaseRoot && exactSelfParentFilter(structured.where)) add('self-parent-players-query');
+      else add('foreign-player-resource');
+      return;
+    }
+    if (collection === 'teamMemberships') {
+      if (query.parent === `${databaseRoot}/users/${selfUid}` && !Object.hasOwn(structured, 'where')) {
+        add('self-memberships-query');
+      } else unknown();
+      return;
+    }
+    if (collection === 'plans' && query.parent === databaseRoot) {
+      add('plans-reference-data');
+      return;
+    }
+    if (collection === 'teams') {
+      add('other-tenant-resource');
+      return;
+    }
+    if (collection === 'leagues') {
+      if (structuredStrings.includes(fixtureLeague)) add('fixture-league-query');
+      else add('other-tenant-resource');
+      return;
+    }
+    if (collection === 'users') {
+      add('foreign-user-resource');
+      return;
+    }
+    unknown();
+  };
+  const classifyTarget = addTarget => {
+    if (!exactKeys(addTarget, [], ['documents', 'query', 'targetId', 'resumeToken', 'readTime', 'expectedCount', 'once'])) {
+      unknown();
+    }
+    const hasDocuments = isRecord(addTarget?.documents);
+    const hasQuery = isRecord(addTarget?.query);
+    if (hasDocuments === hasQuery) {
+      unknown();
+      if (!hasDocuments) return;
+    }
+    if (hasDocuments) {
+      const documents = addTarget.documents;
+      if (!exactKeys(documents, ['documents']) || !Array.isArray(documents.documents) || documents.documents.length === 0) {
+        unknown();
+      } else documents.documents.forEach(name => classifyDocumentName(name));
+    }
+    if (hasQuery) classifyQuery(addTarget.query);
+  };
+  const parseMessages = body => {
+    if (typeof body !== 'string' || body.length === 0) return { messages: [], controlOnly: true, malformed: false };
+    const decoded = decode(body);
+    const messages = [];
+    let malformed = false;
+    const parse = value => {
+      try {
+        messages.push(JSON.parse(value));
+      } catch {
+        malformed = true;
+      }
+    };
+    const params = new URLSearchParams(body);
+    const dataValues = [...params.entries()]
+      .filter(([key]) => /req\d+___data__$/.test(key))
+      .map(([, value]) => value);
+    if (dataValues.length > 0) dataValues.forEach(value => parse(decode(value)));
+    else parse(decoded);
+    return { messages, controlOnly: false, malformed };
+  };
+  const visitMessages = value => {
+    if (Array.isArray(value)) {
+      value.forEach(visitMessages);
+      return;
+    }
+    if (!isRecord(value)) {
+      unknown();
+      return;
+    }
+    const hasAddTarget = Object.hasOwn(value, 'addTarget');
+    const hasRemoveTarget = Object.hasOwn(value, 'removeTarget');
+    if (hasAddTarget || hasRemoveTarget) {
+      const allowedKeys = new Set(['database', 'addTarget', 'removeTarget', 'labels']);
+      if (hasAddTarget && hasRemoveTarget) unknown();
+      if (
+        Object.hasOwn(value, 'database')
+        && value.database !== `projects/${stagingProjectId}/databases/(default)`
+      ) unknown();
+      for (const [key, child] of Object.entries(value)) {
+        if (allowedKeys.has(key)) continue;
+        unknown();
+        if (Array.isArray(child) || isRecord(child)) visitMessages(child);
+      }
+      if (hasAddTarget) classifyTarget(value.addTarget);
+      if (hasRemoveTarget) add('firestore-transport-control');
+      return;
+    }
+    if (Object.hasOwn(value, 'structuredQuery') || Object.hasOwn(value, 'parent')) {
+      classifyQuery(value);
+      return;
+    }
+    const children = Object.values(value).filter(child => Array.isArray(child) || isRecord(child));
+    if (children.length === 0) unknown();
+    else children.forEach(visitMessages);
+  };
 
-  if (corpus.includes(`${runId}-team-a`)) return 'tenant-team-a';
-  if (corpus.includes(`${runId}-team-b`)) return 'tenant-team-b';
-  if (/\/documents\/teams(?:\/|\b)|["']collectionId["']\s*:\s*["']teams["']/i.test(corpus)) return 'tenant-other';
-  const selfPath = `/documents/users/${runId}-no-team`;
-  const targetSelfIndex = target.pathname.indexOf(selfPath);
-  const targetSelfSuffix = targetSelfIndex < 0 ? null : target.pathname.slice(targetSelfIndex + selfPath.length);
-  const exactSelfTarget = targetSelfSuffix === ''
-    || targetSelfSuffix === '/teamMemberships'
-    || targetSelfSuffix?.startsWith('/teamMemberships/') === true;
-  if (exactSelfTarget) return 'self-account';
-  if (corpus.includes(selfPath)) {
-    const collectionIds = [...corpus.matchAll(/["']collectionId["']\s*:\s*["']([^"']+)["']/gi)]
-      .map(match => match[1]);
-    const selfPathPattern = selfPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const exactSelfReference = new RegExp(`${selfPathPattern}(?=$|[?#"'\\s,}\\]])`).test(corpus);
-    const membershipReference = new RegExp(
-      `${selfPathPattern}/teamMemberships(?:/[^?#"'\\s,}\\]]+)?(?=$|[?#"'\\s,}\\]])`,
-    ).test(corpus);
-    if (membershipReference || (
-      exactSelfReference
-      && (collectionIds.length === 0 || collectionIds.every(id => id === 'teamMemberships'))
-    )) return 'self-account';
+  const path = decode(target.pathname);
+  const documentMarker = `/v1/projects/${stagingProjectId}/databases/(default)/documents/`;
+  if (path.startsWith(documentMarker)) {
+    classifyDocumentName(`${databaseRoot}/${path.slice(documentMarker.length)}`);
+    return result();
   }
-  if (/\/documents\/users(?:\/|\b)|["']collectionId["']\s*:\s*["']users["']/i.test(corpus)) return 'unscoped';
-  if (/\/documents\/plans(?:\/|\b)|["']collectionId["']\s*:\s*["']plans["']/i.test(corpus)) return 'non-tenant';
-  if (target.hostname === 'firestore.googleapis.com' && /Firestore\/Listen|\/Listen\/channel/i.test(target.pathname)) {
-    return typeof signal.body === 'string' && signal.body.length > 0 ? 'unscoped' : 'transport-control';
+  const isListen = /google\.firestore\.v1\.Firestore\/Listen|\/Listen\/channel/i.test(path);
+  const isRunQuery = /documents:runQuery|Firestore\/RunQuery|\/RunQuery\/channel/i.test(path);
+  if (!isListen && !isRunQuery) {
+    unknown();
+    return result();
   }
-  return 'unscoped';
+  const parsed = parseMessages(signal.body);
+  if (parsed.malformed) unknown();
+  if (parsed.controlOnly) add('firestore-transport-control');
+  parsed.messages.forEach(visitMessages);
+  return result();
 };
 
-export function classifyFixtureResourceScope(signal, { runId, alias } = {}) {
+export function classifyFixtureResourceScopes(signal, { runId, alias } = {}) {
   assertRunId(runId);
   if (alias !== 'qa-no-team') throw new Error('Fixture resource scoping currently requires qa-no-team.');
-  return classifyFixtureResourceScopeValue(signal, runId, alias, STAGING_ORIGIN);
+  return classifyFixtureResourceScopesValue(signal, runId, alias, STAGING_ORIGIN, STAGING_PROJECT_ID);
 }
 
 const installRecorderSource = fixtureRunId => String.raw`async (page) => {
   // phase9:install
   const fixtureRunId = ${JSON.stringify(fixtureRunId ?? null)};
-  const classifyFixtureResourceScopeValue = ${classifyFixtureResourceScopeValue.toString()};
+  const classifyFixtureResourceScopesValue = ${classifyFixtureResourceScopesValue.toString()};
+  const nonProtectedApiPaths = new Set(${JSON.stringify([
+    '/api/auth/session', '/api/contact', '/api/email/reset-password', '/api/health',
+    '/api/newsletter/subscribe', '/api/newsletter/unsubscribe',
+  ])});
+  const classifyTargetKind = (value, resourceType = 'fetch') => {
+    if (resourceType === 'document') return 'non-protected';
+    try {
+      const target = new URL(value);
+      if (!['http:', 'https:'].includes(target.protocol)) return 'non-protected';
+      if (target.hostname === 'firestore.googleapis.com') {
+        if (/google\.firestore\.v1\.Firestore\/Listen|\/Listen\/channel/i.test(target.pathname)) return 'firestore-listen';
+        if (/documents:runQuery|Firestore\/RunQuery|\/RunQuery\/channel/i.test(target.pathname)) return 'firestore-run-query';
+        if (/\/documents\//i.test(target.pathname)) return 'firestore-document';
+        if (/\/documents(?::batchGet|$)|Firestore\/(?:BatchGetDocuments|Commit)/i.test(target.pathname)) return 'firestore-protected';
+        return 'non-protected';
+      }
+      if (target.origin !== ${JSON.stringify(STAGING_ORIGIN)} || !target.pathname.startsWith('/api/')) return 'non-protected';
+      if (nonProtectedApiPaths.has(target.pathname)) return 'non-protected';
+      if (target.pathname === '/api/schools/admins') return 'staging-join-admin-api';
+      return 'staging-protected-api';
+    } catch {
+      return 'non-protected';
+    }
+  };
+  const cleanPath = value => {
+    if (typeof value !== 'string') return 'invalid:';
+    if (!fixtureRunId) return value;
+    return value.split('/').map(segment => segment.startsWith(fixtureRunId) ? ':fixture-resource' : segment).join('/');
+  };
   const cleanUrl = value => {
     if (value === 'about:blank') return value;
     try {
       const parsed = new URL(value);
       if (['data:', 'blob:', 'javascript:', 'file:'].includes(parsed.protocol)) return parsed.protocol;
       if (!['http:', 'https:'].includes(parsed.protocol)) return 'opaque:';
-      return parsed.origin + parsed.pathname;
+      return parsed.origin + cleanPath(parsed.pathname);
     } catch {
       return 'invalid:';
     }
@@ -237,15 +500,15 @@ const installRecorderSource = fixtureRunId => String.raw`async (page) => {
         state.overflow += 1;
       }
       const signal = {
-        url: cleanUrl(request.url()),
+        targetKind: classifyTargetKind(request.url(), request.resourceType()),
         method: request.method(),
         resourceType: request.resourceType(),
         initiatingFrameUrl,
-        resourceScope: classifyFixtureResourceScopeValue({
+        ...classifyFixtureResourceScopesValue({
           url: request.url(),
           method: request.method(),
           body: request.postData() || '',
-        }, fixtureRunId, 'qa-no-team', ${JSON.stringify(STAGING_ORIGIN)}),
+        }, fixtureRunId, 'qa-no-team', ${JSON.stringify(STAGING_ORIGIN)}, ${JSON.stringify(STAGING_PROJECT_ID)}),
       };
       boundedPush(state, 'requests', signal);
       if (/google\.firestore\.v1\.Firestore\/Listen|\/Listen\/channel/i.test(request.url())) {
@@ -253,7 +516,7 @@ const installRecorderSource = fixtureRunId => String.raw`async (page) => {
       }
     });
     page.on('response', response => boundedPush(state, 'responses', {
-      url: cleanUrl(response.url()),
+      targetKind: classifyTargetKind(response.url()),
       status: response.status(),
     }));
     page.on('pageerror', () => boundedPush(state, 'pageErrors', 'PAGE_ERROR'));
@@ -261,7 +524,7 @@ const installRecorderSource = fixtureRunId => String.raw`async (page) => {
       if (message.type() === 'error') boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR');
     });
     page.on('requestfailed', request => boundedPush(state, 'requestFailures', {
-      url: cleanUrl(request.url()),
+      targetKind: classifyTargetKind(request.url(), request.resourceType()),
       signature: 'REQUEST_FAILED',
     }));
     await page.exposeFunction('__phase9RecordRender', signal => {
@@ -349,13 +612,21 @@ const sampleSource = mark => String.raw`async (page) => {
   };
 }`;
 
-const cleanUrl = value => {
+const sanitizeFixturePath = (value, fixtureRunId) => {
+  if (typeof value !== 'string') return '';
+  if (!fixtureRunId) return value;
+  return value.split('/').map(segment => (
+    segment.startsWith(fixtureRunId) ? ':fixture-resource' : segment
+  )).join('/');
+};
+
+const cleanUrl = (value, fixtureRunId) => {
   if (value === 'about:blank') return value;
   try {
     const parsed = new URL(value);
     if (['data:', 'blob:', 'javascript:', 'file:'].includes(parsed.protocol)) return parsed.protocol;
     if (!['http:', 'https:'].includes(parsed.protocol)) return 'opaque:';
-    return `${parsed.origin}${parsed.pathname}`;
+    return `${parsed.origin}${sanitizeFixturePath(parsed.pathname, fixtureRunId)}`;
   } catch {
     return 'invalid:';
   }
@@ -372,6 +643,7 @@ const NON_PROTECTED_API_PATHS = new Set([
 
 export function isProtectedResource(signal) {
   if (!signal || typeof signal !== 'object' || signal.resourceType === 'document') return false;
+  if (typeof signal.targetKind === 'string') return RESOURCE_TARGET_KINDS.includes(signal.targetKind);
   let target;
   try {
     target = new URL(signal.url);
@@ -389,7 +661,72 @@ export function isProtectedResource(signal) {
 
 const count = value => Array.isArray(value) ? value.length : Number.isInteger(value) && value >= 0 ? value : 0;
 
-const sanitizeWindow = value => {
+const classifyTargetKindValue = (value, resourceType = 'fetch') => {
+  if (resourceType === 'document') return 'non-protected';
+  let target;
+  try {
+    target = new URL(value);
+  } catch {
+    return 'non-protected';
+  }
+  if (!['http:', 'https:'].includes(target.protocol)) return 'non-protected';
+  if (target.hostname === 'firestore.googleapis.com') {
+    if (/google\.firestore\.v1\.Firestore\/Listen|\/Listen\/channel/i.test(target.pathname)) return 'firestore-listen';
+    if (/documents:runQuery|Firestore\/RunQuery|\/RunQuery\/channel/i.test(target.pathname)) return 'firestore-run-query';
+    if (/\/documents\//i.test(target.pathname)) return 'firestore-document';
+    if (/\/documents(?::batchGet|$)|Firestore\/(?:BatchGetDocuments|Commit)/i.test(target.pathname)) return 'firestore-protected';
+    return 'non-protected';
+  }
+  if (target.origin !== STAGING_ORIGIN || !target.pathname.startsWith('/api/')) return 'non-protected';
+  if (NON_PROTECTED_API_PATHS.has(target.pathname)) return 'non-protected';
+  if (target.pathname === '/api/schools/admins') return 'staging-join-admin-api';
+  return 'staging-protected-api';
+};
+
+const sameArray = (left, right) => (
+  Array.isArray(left) && Array.isArray(right)
+  && left.length === right.length && left.every((item, index) => item === right[index])
+);
+
+const sanitizeResourceSignal = (item, fixtureRunId) => {
+  const method = typeof item?.method === 'string' ? item.method : 'UNKNOWN';
+  const resourceType = typeof item?.resourceType === 'string' ? item.resourceType : 'unknown';
+  const targetKind = RESOURCE_TARGET_KINDS.includes(item?.targetKind)
+    ? item.targetKind
+    : classifyTargetKindValue(item?.url, resourceType);
+  let classification;
+  if (typeof item?.url === 'string' && fixtureRunId) {
+    classification = classifyFixtureResourceScopesValue(
+      { url: item.url, method, body: typeof item.body === 'string' ? item.body : '' },
+      fixtureRunId,
+      'qa-no-team',
+      STAGING_ORIGIN,
+      STAGING_PROJECT_ID,
+    );
+    if (
+      (item.scopeEvidence !== undefined && !sameArray(item.scopeEvidence, classification.scopeEvidence))
+      || (item.resourceScopes !== undefined && !sameArray(item.resourceScopes, classification.resourceScopes))
+    ) throw new Error('Recorder resource evidence does not match parsed request evidence.');
+  } else {
+    classification = {
+      scopeEvidence: Array.isArray(item?.scopeEvidence) ? [...item.scopeEvidence] : ['unscoped-resource'],
+      resourceScopes: Array.isArray(item?.resourceScopes) ? [...item.resourceScopes] : ['unscoped'],
+    };
+  }
+  const signal = {
+    targetKind,
+    method,
+    resourceType,
+    initiatingFrameUrl: cleanUrl(item?.initiatingFrameUrl, fixtureRunId),
+    scopeEvidence: classification.scopeEvidence,
+    resourceScopes: classification.resourceScopes,
+    ...(Number.isInteger(item?.status) ? { status: item.status } : {}),
+  };
+  if (isProtectedResource(signal)) validateResourceSignal(signal, 'Recorder resource signal');
+  return signal;
+};
+
+const sanitizeWindow = (value, { fixtureRunId } = {}) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Signal sample must be an object.');
   const booleanFields = ['terminalReached', 'loadingVisible', 'sessionPresent', 'protectedRender'];
   const stringFields = ['pageId', 'finalUrl', 'finalPath', 'renderPath', 'renderSentinel'];
@@ -408,32 +745,22 @@ const sanitizeWindow = value => {
   if (!Array.isArray(teamSelectionSignals) || teamSelectionSignals.some(scope => (
     !['tenant-team-a', 'tenant-team-b', 'tenant-other'].includes(scope)
   ))) throw new Error('Recorder must return fixed team-selection scopes.');
-  const requests = Array.isArray(value.protectedRequests) ? value.protectedRequests.map(item => ({
-    url: cleanUrl(item?.url),
-    method: typeof item?.method === 'string' ? item.method : 'UNKNOWN',
-    resourceType: typeof item?.resourceType === 'string' ? item.resourceType : 'unknown',
-    initiatingFrameUrl: cleanUrl(item?.initiatingFrameUrl),
-    ...(RESOURCE_SCOPE_VALUES.has(item?.resourceScope) ? { resourceScope: item.resourceScope } : {}),
-    ...(Number.isInteger(item?.status) ? { status: item.status } : {}),
-  })) : [];
+  const requests = Array.isArray(value.protectedRequests)
+    ? value.protectedRequests.map(item => sanitizeResourceSignal(item, fixtureRunId)) : [];
   const http = Array.isArray(value.relevantHttpResults) ? value.relevantHttpResults.map(item => ({
-    url: cleanUrl(item?.url),
+    targetKind: RESOURCE_TARGET_KINDS.includes(item?.targetKind)
+      ? item.targetKind : classifyTargetKindValue(item?.url),
     status: Number.isInteger(item?.status) ? item.status : 0,
   })) : [];
-  const listeners = Array.isArray(value.protectedListenerStarts) ? value.protectedListenerStarts.map(item => ({
-    url: cleanUrl(item?.url),
-    method: typeof item?.method === 'string' ? item.method : 'UNKNOWN',
-    resourceType: typeof item?.resourceType === 'string' ? item.resourceType : 'unknown',
-    initiatingFrameUrl: cleanUrl(item?.initiatingFrameUrl),
-    ...(RESOURCE_SCOPE_VALUES.has(item?.resourceScope) ? { resourceScope: item.resourceScope } : {}),
-  })) : [];
+  const listeners = Array.isArray(value.protectedListenerStarts)
+    ? value.protectedListenerStarts.map(item => sanitizeResourceSignal(item, fixtureRunId)) : [];
   if (value.renderSignals.some(item => (
     !item || typeof item !== 'object' || Array.isArray(item)
     || !['heading', 'status'].includes(item.kind)
     || typeof item.pathname !== 'string' || typeof item.sentinel !== 'string'
   ))) throw new Error('Recorder must return typed render signals.');
   const renderSignals = value.renderSignals.slice(0, MAX_SIGNAL_COUNT).map(item => ({
-    kind: item.kind, pathname: item.pathname, sentinel: item.sentinel,
+    kind: item.kind, pathname: sanitizeFixturePath(item.pathname, fixtureRunId), sentinel: item.sentinel,
   }));
   const protectedListeners = listeners.filter(isProtectedResource);
   const protectedRequests = requests.filter(isProtectedResource);
@@ -441,8 +768,8 @@ const sanitizeWindow = value => {
     pageId: typeof value.pageId === 'string' ? value.pageId : '',
     terminalReached: value.terminalReached === true,
     loadingVisible: value.loadingVisible === true,
-    finalUrl: cleanUrl(value.finalUrl),
-    finalPath: typeof value.finalPath === 'string' ? value.finalPath : '',
+    finalUrl: cleanUrl(value.finalUrl, fixtureRunId),
+    finalPath: sanitizeFixturePath(value.finalPath, fixtureRunId),
     visibleSentinels: Array.isArray(value.visibleSentinels) ? value.visibleSentinels.filter(item => typeof item === 'string') : [],
     sessionPresent: value.sessionPresent === true,
     protectedRender: renderSignals.some(signal => signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)),
@@ -459,7 +786,7 @@ const sanitizeWindow = value => {
     appConsoleErrors: count(value.appConsoleErrors),
     unexpectedRequestFailures: count(value.unexpectedRequestFailures),
     overflow: count(value.overflow),
-    renderPath: typeof value.renderPath === 'string' ? value.renderPath : '',
+    renderPath: sanitizeFixturePath(value.renderPath, fixtureRunId),
     renderSentinel: typeof value.renderSentinel === 'string' ? value.renderSentinel : '',
   };
 };
@@ -573,7 +900,7 @@ export function createPlaywrightCliClient({
       await terminal();
       const result = await executeRunCode(session, sampleSource(mark));
       if (!result || result.pageId !== mark.pageId) throw new Error('Action window must sample the same page as its pre-action mark.');
-      const sample = sanitizeWindow(result);
+      const sample = sanitizeWindow(result, { fixtureRunId });
       return sample;
     },
     async tabNew(session, url = 'about:blank') {

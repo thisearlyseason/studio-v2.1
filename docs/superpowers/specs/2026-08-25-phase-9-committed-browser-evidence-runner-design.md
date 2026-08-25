@@ -59,8 +59,10 @@ A thin dependency-injected adapter around the bundled `playwright_cli.sh`:
 - provides typed operations for snapshot, navigation, interaction, tab selection, browser listing, and closure;
 - compiles `run-code` payloads locally before transport;
 - parses JSON and rejects CLI `isError`, malformed output, timeout, and nonzero exit;
-- receives the exact fixture run ID and reduces protected request/listener targets in memory to fixed resource scopes (`self-account`, join-admin lookup, Team A, Team B, other tenant, non-tenant, transport control, or unscoped);
-- never returns or logs credentials, cookies, bearer values, request bodies, storage state, or raw target identifiers; request bodies are inspected only in process to derive the fixed scope and are immediately discarded.
+- receives the exact fixture run ID and parses every target in multiplexed Firestore Listen/runQuery traffic into an exhaustive, canonically ordered set of closed evidence labels and derived resource scopes (`self-account`, join-admin lookup, Team A, Team B, league tenant, other tenant, foreign account, non-tenant, transport control, or unscoped); unknown, malformed, and ambiguous content adds the fail-closed `unscoped` scope rather than replacing any other detected scope;
+- recognizes the join-page `players where parentId == current uid` listener as `self-account` only when the structured query has the exact root parent, `players` collection, single `parentId EQUAL` filter, and the same fixture identity; a different or multiple parent binding, an additional expanding filter, or a missing binding is foreign/unscoped;
+- emits a closed signal schema whose scope array must be derived from its fixed parsed-evidence labels. Caller-supplied scalar or disconnected scope labels are invalid;
+- never returns or logs credentials, cookies, bearer values, request bodies, storage state, raw target URLs, raw run IDs, UIDs, team IDs, player IDs, or other raw fixture identifiers. Request bodies and exact probe targets are inspected only in private process memory, reduced to fixed labels/booleans/statuses, and immediately discarded.
 
 Tests use an injected fake transport. A separate offline smoke uses the real bundled CLI against `about:blank` only.
 
@@ -100,7 +102,7 @@ Executes only declarative scenarios from `scenario-contracts.mjs`.
 - Allowed routes require exact pathname plus route-specific visible content: Admin, Club/School Hub, Competition Hub, Billing, Coaches Corner, or Family Overview.
 - Denied routes require the exact settled role landing and no denied-route protected render. Ordinary active roles also reject denied-target request/listener attribution during the complete window.
 - `qa-missing-profile` retains the strict setup-isolation rule: zero protected requests and zero protected listener starts across login/admission and every denied-route window.
-- `qa-no-team` instead enforces the original tenant-isolation intent. Its own `users/{uid}` profile and `users/{uid}/teamMemberships` activity, the exact `PATCH /api/schools/admins` join-page lookup, non-tenant reference data, and transport-control messages may proceed. Any Team A, Team B, other-tenant, or unscoped protected request/listener fails in the login window and after each of the six denied-route attempts. Aggregation retains every typed scope so later clean windows cannot hide earlier tenant activity.
+- `qa-no-team` instead enforces the original tenant-isolation intent. Its own `users/{uid}` profile and `users/{uid}/teamMemberships` activity, the exact self-bound `players where parentId == current uid` query, the exact `PATCH /api/schools/admins` join-page lookup, non-tenant reference data, and transport-control messages may proceed. Any Team A, Team B, league, other-tenant, foreign-account, or unscoped protected request/listener fails in the login window and after each of the six denied-route attempts. Every scope from a multiplexed signal survives aggregation so an allowed target cannot hide a forbidden sibling and later clean windows cannot hide earlier tenant activity.
 - Horizontal isolation uses the real same-origin `GET /api/teams/chat?teamId=<id>` consumer: own team must return 200 and the opposite team must return 403. Direct Firestore REST GETs used by the client must return 200 for permitted team/player documents and 403 for opposite team/player documents. No `/team?teamId=` assertion is permitted because the page ignores that parameter.
 - Fresh unauthenticated and pending-deletion checks use complete action windows and fail on any transient protected UI, request, listener, session, error, or overflow.
 - Each scenario returns one complete sanitized ledger row. A failed or incomplete assertion aborts canonical progression and cannot be serialized as PASS.
@@ -127,7 +129,7 @@ Accepts only validated scenario results and lifecycle summaries. It writes the f
 
 1. The guardian validates local/GitHub/staging read-only prerequisites and an empty browser list.
 2. The guardian creates the private workspace, seeds v3 fixtures, and validates a zero-drift 20/82 inspection.
-3. The scenario runner opens isolated system-Chrome sessions. The client receives the exact fixture run ID and arms listeners plus fixed resource-scope reduction on `about:blank` before login navigation.
+3. The scenario runner opens isolated system-Chrome sessions. The client receives the exact fixture run ID and arms listeners plus exhaustive set-valued resource parsing on `about:blank` before login navigation.
 4. Each action is executed only through `observeAction()`. Pure validators decide PASS/FAIL from the complete action window and scenario contract.
 5. The pending-delete transition runs only after all pre-transition scenarios pass.
 6. All sessions close and the guardian verifies the browser list is empty.
@@ -147,7 +149,9 @@ The committed Node test must exercise real exported entrypoints and cover at lea
 - admission waits do not complete on an intermediate `Dashboard` and reject `Dashboard` as the final Parent A, League Creator, or School Admin landing;
 - denied routes fail on any protected flash or denied-target tenant request/listener even if the final landing is correct;
 - Missing Profile fails on every protected request/listener in every admission window;
-- No Team permits exact self-account/membership and join-page admin lookup activity, but fails Team A, Team B, other-tenant, or unscoped requests/listeners in login and all six denied-route windows; aggregate validation must preserve earlier scopes;
+- No Team permits exact self-account/membership, the exact same-identity parent-bound players query, and join-page admin lookup activity, but fails Team A, Team B, league, other-tenant, foreign-account, or unscoped requests/listeners in login and all six denied-route windows; aggregate validation must preserve every scope;
+- multiplexed Firestore bodies retain every parsed scope, malformed/unknown siblings fail closed, and forged scalar/disconnected labels are rejected;
+- nested client results, action summaries, serialized scenario rows, and validated ledger rows contain no raw run ID, UID, team ID, player ID, target URL, or fixture path;
 - a rendered product regression starts with an unresolved profile, hydrates `league_creator` without changing other redirect dependencies, and requires `/competition`; Parent and School redirects remain unchanged;
 - isolation calls the real configured same-origin endpoint and fails if it is not parameter-consuming, if own is not 200, or opposite is not 403;
 - direct Firestore probes require the full label/path set and exact 200/403 symmetry;

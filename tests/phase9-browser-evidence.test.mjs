@@ -381,28 +381,32 @@ test('phase 9 action window marks the same page before action and returns saniti
   assert.equal(result.protectedRequests, 1);
   assert.equal(result.protectedRender, true);
   assert.deepEqual(result.requestSignals, [{
-    url: `${STAGING_ORIGIN}/api/teams/chat`,
+    targetKind: 'staging-protected-api',
     method: 'POST',
     resourceType: 'fetch',
     initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
-    resourceScope: 'tenant-team-a',
+    scopeEvidence: ['unscoped-resource'],
+    resourceScopes: ['unscoped'],
     status: 401,
   },
-  { url: 'data:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'data:' },
-  { url: 'blob:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'blob:' },
-  { url: 'javascript:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'javascript:' },
-  { url: 'file:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'file:' }]);
+  { targetKind: 'non-protected', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'data:', scopeEvidence: ['unscoped-resource'], resourceScopes: ['unscoped'] },
+  { targetKind: 'non-protected', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'blob:', scopeEvidence: ['unscoped-resource'], resourceScopes: ['unscoped'] },
+  { targetKind: 'non-protected', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'javascript:', scopeEvidence: ['unscoped-resource'], resourceScopes: ['unscoped'] },
+  { targetKind: 'non-protected', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'file:', scopeEvidence: ['unscoped-resource'], resourceScopes: ['unscoped'] }]);
   assert.deepEqual(result.listenerSignals, [{
-    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    targetKind: 'firestore-listen',
     method: 'POST',
     resourceType: 'fetch',
     initiatingFrameUrl: 'https://example.invalid/dashboard',
-    resourceScope: 'tenant-team-b',
+    scopeEvidence: ['unscoped-resource'],
+    resourceScopes: ['unscoped'],
   }, {
-    url: `${STAGING_ORIGIN}/api/teams/chat`,
+    targetKind: 'staging-protected-api',
     method: 'GET',
     resourceType: 'fetch',
     initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
+    scopeEvidence: ['unscoped-resource'],
+    resourceScopes: ['unscoped'],
   }]);
   assert.equal(result.protectedListenerStarts, 2);
   assert.deepEqual(result.renderSignals, [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Family Overview' }]);
@@ -1286,9 +1290,9 @@ test('phase 9 browser scenarios use exact symmetric API and Firestore isolation 
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const expectation = buildIsolationExpectation({ runId, alias: 'qa-parent-a' });
   const windows = [
-    scenarioWindow({ relevantHttpResults: [{ url: `${STAGING_ORIGIN}${expectation.sameOriginApi[0].target}`, status: 200 }] }),
-    scenarioWindow({ relevantHttpResults: [{ url: `${STAGING_ORIGIN}${expectation.sameOriginApi[1].target}`, status: 403 }] }),
-    ...expectation.directFirestore.map(probe => scenarioWindow({ relevantHttpResults: [{ url: `https://firestore.googleapis.com/v1/${probe.path}`, status: probe.status }] })),
+    scenarioWindow({ relevantHttpResults: [{ targetKind: 'staging-protected-api', status: 200 }] }),
+    scenarioWindow({ relevantHttpResults: [{ targetKind: 'staging-protected-api', status: 403 }] }),
+    ...expectation.directFirestore.map(probe => scenarioWindow({ relevantHttpResults: [{ targetKind: 'firestore-document', status: probe.status }] })),
   ];
   const client = createScriptedScenarioClient(windows);
   const apiCalls = [];
@@ -1700,7 +1704,6 @@ test('phase 9 browser scenarios retain strict zero protected data for Missing Pr
 });
 
 test('phase 9 browser scenarios allow No Team self-account setup while rejecting every fixture-tenant signal', async () => {
-  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const landingPath = '/teams/join';
   const landing = () => scenarioWindow({
     finalPath: landingPath,
@@ -1711,27 +1714,30 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
     protectedRequests: 2,
     protectedRequestSignals: [
       {
-        url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+        targetKind: 'firestore-listen',
         method: 'POST',
         resourceType: 'fetch',
         initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
-        resourceScope: 'self-account',
+        scopeEvidence: ['self-parent-players-query'],
+        resourceScopes: ['self-account'],
       },
       {
-        url: `${STAGING_ORIGIN}/api/schools/admins`,
+        targetKind: 'staging-join-admin-api',
         method: 'PATCH',
         resourceType: 'fetch',
         initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
-        resourceScope: 'join-admin-lookup',
+        scopeEvidence: ['join-admin-patch'],
+        resourceScopes: ['join-admin-lookup'],
       },
     ],
     protectedListenerStarts: 1,
     listenerSignals: [{
-      url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+      targetKind: 'firestore-listen',
       method: 'POST',
       resourceType: 'fetch',
       initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
-      resourceScope: 'self-account',
+      scopeEvidence: ['self-parent-players-query'],
+      resourceScopes: ['self-account'],
     }],
   });
   const run = windows => runAdmissionScenario({
@@ -1766,11 +1772,12 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
       ...landing(),
       protectedRequests: 1,
       protectedRequestSignals: [{
-        url: `https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents/teams/${runId}-team-a`,
+        targetKind: 'firestore-document',
         method: 'GET',
         resourceType: 'fetch',
         initiatingFrameUrl: `${STAGING_ORIGIN}${requestedPath === '/login' ? landingPath : requestedPath}`,
-        resourceScope: 'tenant-team-a',
+        scopeEvidence: ['fixture-team-a-document'],
+        resourceScopes: ['tenant-team-a'],
       }],
       protectedListenerStarts: 0,
       listenerSignals: [],
@@ -1784,11 +1791,12 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
       protectedRequestSignals: [],
       protectedListenerStarts: 1,
       listenerSignals: [{
-        url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+        targetKind: 'firestore-listen',
         method: 'POST',
         resourceType: 'fetch',
         initiatingFrameUrl: `${STAGING_ORIGIN}${requestedPath === '/login' ? landingPath : requestedPath}`,
-        resourceScope: 'tenant-team-b',
+        scopeEvidence: ['fixture-team-b-document'],
+        resourceScopes: ['tenant-team-b'],
       }],
     };
     await assert.rejects(run(listenerWindows), /No Team.*Team B tenant/i, `Team B listener in ${requestedPath}`);
@@ -1801,11 +1809,12 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
     protectedRequestSignals: [],
     protectedListenerStarts: 1,
     listenerSignals: [{
-      url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+      targetKind: 'firestore-listen',
       method: 'POST',
       resourceType: 'fetch',
       initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
-      resourceScope: 'tenant-team-b',
+      scopeEvidence: ['fixture-team-b-document'],
+      resourceScopes: ['tenant-team-b'],
     }],
   };
   await assert.rejects(run(aggregatedEarlyTenant), /No Team.*Team B tenant/i);
@@ -1815,10 +1824,12 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
     ...landing(),
     protectedRequests: 1,
     protectedRequestSignals: [{
-      url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+      targetKind: 'firestore-listen',
       method: 'POST',
       resourceType: 'fetch',
       initiatingFrameUrl: `${STAGING_ORIGIN}/family`,
+      scopeEvidence: ['unscoped-resource'],
+      resourceScopes: ['unscoped'],
     }],
     protectedListenerStarts: 0,
     listenerSignals: [],
@@ -1827,26 +1838,27 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
 });
 
 test('phase 9 playwright client reduces fixture resource targets to fixed aliases without retaining identifiers', async () => {
-  const { classifyFixtureResourceScope } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
-  const classify = signal => classifyFixtureResourceScope(signal, { runId, alias: 'qa-no-team' });
-  const firestore = value => `https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents/${value}`;
+  const classify = signal => classifyFixtureResourceScopes(signal, { runId, alias: 'qa-no-team' });
+  const firestore = value => `https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents/${value}`;
+  const scopes = signal => classify(signal).resourceScopes;
 
-  assert.equal(classify({ url: firestore(`users/${runId}-no-team`) }), 'self-account');
-  assert.equal(classify({ url: firestore(`users/${runId}-no-team/teamMemberships`) }), 'self-account');
-  assert.equal(classify({ url: firestore(`users/${runId}-no-team/teamMemberships/member-a`) }), 'self-account');
-  assert.equal(classify({ url: firestore(`users/${runId}-no-team/payments/payment-a`) }), 'unscoped');
-  assert.equal(classify({ url: firestore(`users/${runId}-no-team/teamMembershipsOther/member-a`) }), 'unscoped');
-  assert.equal(classify({ url: `${STAGING_ORIGIN}/api/schools/admins`, method: 'PATCH' }), 'join-admin-lookup');
-  assert.equal(classify({ url: `${STAGING_ORIGIN}/api/schools/admins`, method: 'GET' }), 'unscoped');
-  assert.equal(classify({ url: `${STAGING_ORIGIN}/api/other/documents/users/${runId}-no-team` }), 'unscoped');
-  assert.equal(classify({ url: firestore(`teams/${runId}-team-a`) }), 'tenant-team-a');
-  assert.equal(classify({
+  assert.deepEqual(scopes({ url: firestore(`users/${runId}-no-team`) }), ['self-account']);
+  assert.deepEqual(scopes({ url: firestore(`users/${runId}-no-team/teamMemberships`) }), ['self-account']);
+  assert.deepEqual(scopes({ url: firestore(`users/${runId}-no-team/teamMemberships/member-a`) }), ['self-account']);
+  assert.deepEqual(scopes({ url: firestore(`users/${runId}-no-team/payments/payment-a`) }), ['unscoped']);
+  assert.deepEqual(scopes({ url: firestore(`users/${runId}-no-team/teamMembershipsOther/member-a`) }), ['unscoped']);
+  assert.deepEqual(scopes({ url: `${STAGING_ORIGIN}/api/schools/admins`, method: 'PATCH' }), ['join-admin-lookup']);
+  assert.deepEqual(scopes({ url: `${STAGING_ORIGIN}/api/schools/admins`, method: 'GET' }), ['unscoped']);
+  assert.deepEqual(scopes({ url: `${STAGING_ORIGIN}/api/other/documents/users/${runId}-no-team` }), ['unscoped']);
+  assert.deepEqual(scopes({ url: firestore(`teams/${runId}-team-a`) }), ['tenant-team-a']);
+  assert.deepEqual(scopes({
     url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
     body: encodeURIComponent(`projects/staging/databases/(default)/documents/teams/${runId}-team-b/members`),
-  }), 'tenant-team-b');
-  assert.equal(classify({ url: firestore('teams/unrelated-team') }), 'tenant-other');
-  assert.equal(classify({
+  }), ['unscoped']);
+  assert.deepEqual(scopes({ url: firestore('teams/unrelated-team') }), ['tenant-other']);
+  assert.deepEqual(scopes({
     url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
     body: JSON.stringify({
       addTarget: {
@@ -1856,18 +1868,306 @@ test('phase 9 playwright client reduces fixture resource targets to fixed aliase
         },
       },
     }),
-  }), 'unscoped');
-  assert.equal(classify({
+  }), ['unscoped']);
+  assert.deepEqual(scopes({
     url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
-    body: JSON.stringify({ addTarget: { query: { structuredQuery: { from: [{ collectionId: 'plans' }] } } } }),
-  }), 'non-tenant');
+    body: JSON.stringify({ addTarget: { query: {
+      parent: 'projects/the-squad-v2-staging/databases/(default)/documents',
+      structuredQuery: { from: [{ collectionId: 'plans' }] },
+    } } }),
+  }), ['non-tenant']);
 
   const result = classify({
     url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
     body: `secret=${runId}-team-a`,
   });
-  assert.equal(result, 'tenant-team-a');
+  assert.deepEqual(result.resourceScopes, ['unscoped']);
   assert.equal(JSON.stringify(result).includes(runId), false);
+});
+
+test('phase 9 playwright client retains every scope from multiplexed Firestore targets and rejects disconnected labels', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const selfUid = `${runId}-no-team`;
+  const messages = [
+    {
+      database: 'projects/the-squad-v2-staging/databases/(default)',
+      addTarget: {
+        documents: {
+          documents: [`projects/the-squad-v2-staging/databases/(default)/documents/users/${selfUid}`],
+        },
+        targetId: 1,
+      },
+      unexpectedSibling: {
+        addTarget: {
+          documents: {
+            documents: [`projects/the-squad-v2-staging/databases/(default)/documents/players/${runId}-foreign-player`],
+          },
+          targetId: 9,
+        },
+      },
+    },
+    {
+      database: 'projects/the-squad-v2-staging/databases/(default)',
+      addTarget: {
+        documents: {
+          documents: [
+            `projects/the-squad-v2-staging/databases/(default)/documents/teams/${runId}-team-a`,
+            `projects/the-squad-v2-staging/databases/(default)/documents/teams/${runId}-team-b`,
+            `projects/the-squad-v2-staging/databases/(default)/documents/leagues/${runId}-league`,
+          ],
+        },
+        targetId: 2,
+      },
+    },
+  ];
+  const body = new URLSearchParams({
+    count: '2',
+    ofs: '0',
+    req0___data__: JSON.stringify(messages[0]),
+    req1___data__: JSON.stringify(messages[1]),
+  }).toString();
+
+  const result = classifyFixtureResourceScopes({
+    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    method: 'POST',
+    body,
+  }, { runId, alias: 'qa-no-team' });
+  assert.deepEqual(result.resourceScopes, [
+    'self-account',
+    'tenant-team-a',
+    'tenant-team-b',
+    'tenant-league',
+    'foreign-account',
+    'unscoped',
+  ]);
+  assert.deepEqual(result.scopeEvidence, [
+    'self-user-document',
+    'fixture-team-a-document',
+    'fixture-team-b-document',
+    'fixture-league-document',
+    'foreign-player-resource',
+    'unscoped-resource',
+  ]);
+
+  const mixedWindow = safeWindow({
+    finalPath: '/teams/join',
+    finalUrl: `${STAGING_ORIGIN}/teams/join`,
+    visibleSentinels: ['Join & Invite'],
+    protectedRequests: 1,
+    protectedRequestSignals: [{
+      targetKind: 'firestore-listen',
+      method: 'POST',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}/teams/join`,
+      ...result,
+    }],
+  });
+  assert.throws(
+    () => validateActionWindow(mixedWindow, { resourcePolicy: 'no-team-tenant-isolation' }),
+    /Team A tenant resource/i,
+  );
+
+  const forgedScalar = safeWindow({
+    finalPath: '/teams/join',
+    finalUrl: `${STAGING_ORIGIN}/teams/join`,
+    visibleSentinels: ['Join & Invite'],
+    protectedRequests: 1,
+    protectedRequestSignals: [{
+      targetKind: 'firestore-listen',
+      method: 'POST',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}/teams/join`,
+      resourceScope: 'self-account',
+    }],
+  });
+  assert.throws(
+    () => validateActionWindow(forgedScalar, { resourcePolicy: 'no-team-tenant-isolation' }),
+    /closed resource evidence|resource scopes/i,
+  );
+  assert.throws(
+    () => validateActionWindow(safeWindow({
+      finalPath: '/teams/join',
+      finalUrl: `${STAGING_ORIGIN}/teams/join`,
+      visibleSentinels: ['Join & Invite'],
+      protectedRequests: 1,
+      protectedRequestSignals: [{
+        targetKind: 'firestore-listen',
+        method: 'POST',
+        resourceType: 'fetch',
+        initiatingFrameUrl: `${STAGING_ORIGIN}/teams/join`,
+        scopeEvidence: ['fixture-team-a-document'],
+        resourceScopes: ['self-account'],
+      }],
+    }), { resourcePolicy: 'no-team-tenant-isolation' }),
+    /derived from.*closed resource evidence/i,
+  );
+});
+
+test('phase 9 playwright client permits only the exact self-bound parent players query', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const selfUid = `${runId}-no-team`;
+  const url = 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel';
+  const query = where => ({
+    database: 'projects/the-squad-v2-staging/databases/(default)',
+    addTarget: {
+      query: {
+        parent: 'projects/the-squad-v2-staging/databases/(default)/documents',
+        structuredQuery: {
+          from: [{ collectionId: 'players' }],
+          ...(where === undefined ? {} : { where }),
+        },
+      },
+      targetId: 3,
+    },
+  });
+  const parentFilter = value => ({
+    fieldFilter: {
+      field: { fieldPath: 'parentId' },
+      op: 'EQUAL',
+      value: { stringValue: value },
+    },
+  });
+  const classify = message => classifyFixtureResourceScopes({
+    url,
+    method: 'POST',
+    body: new URLSearchParams({ count: '1', ofs: '0', req0___data__: JSON.stringify(message) }).toString(),
+  }, { runId, alias: 'qa-no-team' });
+
+  assert.deepEqual(classify(query(parentFilter(selfUid))), {
+    scopeEvidence: ['self-parent-players-query'],
+    resourceScopes: ['self-account'],
+  });
+  for (const message of [
+    query(undefined),
+    query(parentFilter(`${runId}-parent-a`)),
+    query({
+      compositeFilter: {
+        op: 'OR',
+        filters: [parentFilter(selfUid), parentFilter(`${runId}-parent-a`)],
+      },
+    }),
+    query({
+      compositeFilter: {
+        op: 'AND',
+        filters: [
+          parentFilter(selfUid),
+          { fieldFilter: { field: { fieldPath: 'teamId' }, op: 'EQUAL', value: { stringValue: `${runId}-team-a` } } },
+        ],
+      },
+    }),
+  ]) {
+    const result = classify(message);
+    assert.equal(result.resourceScopes.includes('self-account'), false, JSON.stringify(result));
+    assert.equal(
+      result.resourceScopes.includes('foreign-account') || result.resourceScopes.includes('unscoped'),
+      true,
+      JSON.stringify(result),
+    );
+  }
+  const expanded = classify(query({
+    compositeFilter: {
+      op: 'AND',
+      filters: [
+        parentFilter(selfUid),
+        { fieldFilter: { field: { fieldPath: 'teamId' }, op: 'EQUAL', value: { stringValue: `${runId}-team-a` } } },
+      ],
+    },
+  }));
+  assert.deepEqual(expanded.resourceScopes, ['tenant-team-a', 'foreign-account']);
+});
+
+test('phase 9 client results action summaries and ledger rows never expose fixture identifiers', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const fixtureLiterals = [
+    runId,
+    `${runId}-team-a`,
+    `${runId}-team-b`,
+    `${runId}-player-youth-active`,
+    `${runId}-no-team`,
+  ];
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+    if (code.includes('phase9:sample')) return cliResult({
+      pageId: 'page-a',
+      terminalReached: true,
+      loadingVisible: false,
+      finalUrl: `${STAGING_ORIGIN}/teams/${runId}-team-a?playerId=${runId}-player-youth-active`,
+      finalPath: `/teams/${runId}-team-a`,
+      visibleSentinels: ['Join & Invite'],
+      sessionPresent: true,
+      protectedRender: false,
+      protectedRequests: [{
+        url: `https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents/teams/${runId}-team-a`,
+        targetKind: 'firestore-document',
+        method: 'GET',
+        resourceType: 'fetch',
+        initiatingFrameUrl: `${STAGING_ORIGIN}/teams/join?uid=${runId}-no-team`,
+        scopeEvidence: ['fixture-team-a-document'],
+        resourceScopes: ['tenant-team-a'],
+      }],
+      protectedListenerStarts: [],
+      teamSelectionSignals: [],
+      relevantHttpResults: [{
+        url: `https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents/players/${runId}-player-youth-active`,
+        targetKind: 'firestore-document',
+        status: 200,
+      }],
+      pageErrors: [],
+      appConsoleErrors: [],
+      unexpectedRequestFailures: [],
+      overflow: 0,
+      renderPath: `/teams/${runId}-team-a`,
+      renderSentinel: 'Join & Invite',
+      redirectReason: 'none',
+      renderSignals: [],
+    });
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({
+    execute: transport.execute,
+    wrapperPath: '/safe/playwright_cli.sh',
+    fixtureRunId: runId,
+  });
+  await installSignalRecorder(client, 'fixture-leak-client');
+  const clientResult = await observeAction({
+    client,
+    session: 'fixture-leak-client',
+    stage: 'fixture-leak-client',
+    terminal: async () => {},
+    action: async () => {},
+  });
+
+  const statuses = [200, 403, 200, 403, 200, 403];
+  let apiIndex = 0;
+  let firestoreIndex = 0;
+  const row = await runIsolationScenario({
+    client: createScriptedScenarioClient(statuses.map(status => scenarioWindow({
+      relevantHttpResults: [{ targetKind: 'firestore-document', status }],
+    }))),
+    session: 'fixture-leak-isolation',
+    context: scenarioContext({ contextId: 'fixture-leak-isolation', alias: 'qa-parent-a' }),
+    runId,
+    actions: {
+      sameOriginGet: async () => statuses[apiIndex++],
+      firestoreGet: async () => statuses[2 + firestoreIndex++],
+      waitForSettled: async () => {},
+    },
+  });
+  const serialized = JSON.stringify({ clientResult, row });
+  for (const literal of fixtureLiterals) assert.equal(serialized.includes(literal), false, literal);
+
+  const groupCounts = { 'admission-route': 18, isolation: 10, logout: 10, 'pending-deletion': 6 };
+  const rows = Object.entries(groupCounts).flatMap(([group, count], groupIndex) => Array.from({ length: count }, (_, index) => ({
+    ...ledgerRow(`${group}-leak-${index}`, group, (groupIndex + index) % 2 === 0 ? '390x844' : '1440x900'),
+    ...(group === 'isolation' && index === 0 ? { actionSummaries: [{ target: `/api/teams/chat?teamId=${runId}-team-a` }] } : {}),
+  })));
+  assert.throws(() => validateLedger(rows, {
+    groupCounts,
+    totals: { total: 44, pass: 44, fail: 0, inconclusive: 0 },
+  }), /fixture identifier/i);
 });
 
 test('phase 9 browser scenarios expose exact route-specific accessible heading contracts', () => {
