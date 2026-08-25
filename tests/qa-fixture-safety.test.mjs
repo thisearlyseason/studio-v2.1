@@ -1888,6 +1888,14 @@ test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 
   });
 });
 
+test('phase 9 league fixture includes the trusted creator membership cache', () => {
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const creator = phase9.identities.find(identity => identity.alias === 'qa-league-creator');
+  const league = phase9.documents.find(document => document.kind === 'league' && document.alias === 'qa-league');
+
+  assert.deepEqual(league.data.memberUserIds, [creator.uid]);
+});
+
 test('definition uses the verified same-origin avatar asset for every roster member', async () => {
   const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
   const origin = new URL('https://staging.example/');

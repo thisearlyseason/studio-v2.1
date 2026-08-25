@@ -311,6 +311,7 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
       sentinel: 'qa-fixture-league-only',
       creatorId: byAlias.get('qa-league-creator').uid,
       ownerUserId: byAlias.get('qa-league-creator').uid,
+      memberUserIds: [byAlias.get('qa-league-creator').uid],
       memberTeamIds: [],
       isActive: true,
       ...marker(runId, 'qa-league', expiresAt),
