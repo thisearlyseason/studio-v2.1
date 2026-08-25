@@ -13,7 +13,7 @@ import {
   createRunId,
   validateManifest,
 } from '../scripts/qa-fixtures/manifest.mjs';
-import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
+import { buildFixtureDefinition, fixturePlanSummary } from '../scripts/qa-fixtures/definition.mjs';
 import { createLifecycle, removeCredentialFile } from '../scripts/qa-fixtures/lifecycle.mjs';
 import { runCli } from '../scripts/qa-fixtures/cli.mjs';
 import { createFirebaseAdapter } from '../scripts/qa-fixtures/firebase-adapter.mjs';
@@ -227,7 +227,7 @@ async function lifecycleFixture(t, runId = RUN_ID) {
       if (error?.code !== 'ENOENT') throw error;
     });
   });
-  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion: 2 });
   const auth = new FakeAuth();
   const firestore = new FakeFirestore();
   const inputs = {
@@ -326,7 +326,7 @@ async function credentialConfinementFixture(t, runId) {
     await removeFlatDirectory(repository);
     await rmdir(base);
   });
-  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion: 2 });
   const auth = new FakeAuth();
   const firestore = new FakeFirestore();
   const inputs = {
@@ -425,7 +425,7 @@ async function hardExitSeedProcess(fixture, alias) {
         await persist();
       },
     };
-    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(fixture.definition.runId)}, expiresAt: ${JSON.stringify(EXPIRES_AT)} });
+    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(fixture.definition.runId)}, expiresAt: ${JSON.stringify(EXPIRES_AT)}, manifestVersion: ${fixture.definition.manifestVersion} });
     const lifecycle = createLifecycle({
       auth,
       firestore,
@@ -1437,7 +1437,7 @@ test('manifest transition validation enforces alias-specific ordered checkpoint 
 });
 
 test('definition contains the approved identities and two distinct tenants', () => {
-  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
   assert.deepEqual(definition.identities.map(item => item.alias), [
     'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant',
     'qa-team-member', 'qa-multi-org', 'qa-fake-superadmin',
@@ -1466,6 +1466,120 @@ test('definition contains the approved identities and two distinct tenants', () 
     assert.match(member.jersey, /^\d+$/);
     assert.equal(typeof member.avatar, 'string');
   }
+});
+
+test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 identity graph', () => {
+  const legacy = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  assert.deepEqual(legacy.identities.map(item => item.alias), [
+    'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member',
+    'qa-multi-org', 'qa-fake-superadmin', 'qa-unverified', 'qa-suspended', 'qa-removed-member',
+  ]);
+  assert.equal(legacy.manifestVersion, 2);
+  assert.deepEqual(legacy.expectedAbsentDocuments, []);
+
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  assert.deepEqual(phase9.identities.map(item => item.alias), [
+    'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member',
+    'qa-multi-org', 'qa-fake-superadmin', 'qa-unverified', 'qa-suspended', 'qa-removed-member',
+    'qa-parent-a', 'qa-parent-b', 'qa-adult-player-a', 'qa-adult-player-b',
+    'qa-youth-active', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin',
+    'qa-pending-delete', 'qa-missing-profile', 'qa-no-team',
+  ]);
+  assert.equal(phase9.manifestVersion, 3);
+  assert.equal(phase9.expectedAbsentDocuments.length, 1);
+  assert.equal(phase9.expectedAbsentDocuments[0].alias, 'qa-missing-profile');
+  assert.equal(phase9.documents.some(item => item.path === phase9.expectedAbsentDocuments[0].path), false);
+
+  const byAlias = (items, alias) => items.find(item => item.alias === alias);
+  const trusted = byAlias(phase9.identities, 'qa-superadmin');
+  const fake = byAlias(phase9.identities, 'qa-fake-superadmin');
+  assert.equal(trusted.customClaims.role, 'superadmin');
+  assert.equal(fake.customClaims.role, undefined);
+  assert.equal(byAlias(phase9.identities, 'qa-school-admin').customClaims.role, 'admin');
+
+  const school = phase9.teams.find(team => team.alias === 'qa-school');
+  assert.equal(school.type, 'school');
+  assert.deepEqual(school.schoolAdminIds, [byAlias(phase9.identities, 'qa-school-admin').uid]);
+  assert.equal(school.planType, 'school');
+  const schoolAdminProfile = phase9.documents.find(document => document.kind === 'user' && document.alias === 'qa-school-admin');
+  assert.deepEqual({
+    role: schoolAdminProfile.data.role,
+    isSchoolAdmin: schoolAdminProfile.data.isSchoolAdmin,
+    planId: schoolAdminProfile.data.planId,
+    plan_type: schoolAdminProfile.data.plan_type,
+    activePlanId: schoolAdminProfile.data.activePlanId,
+  }, {
+    role: 'admin',
+    isSchoolAdmin: true,
+    planId: 'school',
+    plan_type: 'school',
+    activePlanId: 'school',
+  });
+
+  const membersByAlias = alias => phase9.members.filter(member => member.alias === alias);
+  const parentA = byAlias(phase9.identities, 'qa-parent-a');
+  const parentB = byAlias(phase9.identities, 'qa-parent-b');
+  const parentAMembership = membersByAlias('qa-parent-a').at(0);
+  const parentBMembership = membersByAlias('qa-parent-b').at(0);
+  const youthMembership = membersByAlias('qa-youth-active').at(0);
+  assert.equal(parentAMembership.teamId, youthMembership.teamId);
+  assert.equal(parentAMembership.playerId, youthMembership.playerId);
+  assert.deepEqual(parentAMembership.guardianIds, [parentA.uid]);
+  assert.deepEqual(youthMembership.guardianIds, [parentA.uid]);
+  assert.equal(parentAMembership.parentId, parentA.uid);
+  assert.equal(youthMembership.parentId, parentA.uid);
+  assert.notEqual(parentAMembership.playerId, parentBMembership.playerId);
+  assert.equal(parentBMembership.parentId, parentB.uid);
+  assert.deepEqual(parentBMembership.guardianIds, [parentB.uid]);
+  for (const [membership, parent] of [[parentAMembership, parentA], [parentBMembership, parentB]]) {
+    const player = phase9.documents.find(document => document.kind === 'player' && document.data.id === membership.playerId);
+    assert.equal(player.data.teamId, membership.teamId);
+    assert.equal(player.data.parentId, parent.uid);
+    assert.deepEqual(player.data.guardianIds, [parent.uid]);
+  }
+
+  for (const alias of ['qa-adult-player-a', 'qa-adult-player-b']) {
+    const identity = byAlias(phase9.identities, alias);
+    const membership = membersByAlias(alias).at(0);
+    const player = phase9.documents.find(document => document.kind === 'player' && document.data.userId === identity.uid);
+    assert.equal(membership.playerId, player.data.id);
+    assert.equal(membership.parentId, identity.uid);
+    assert.deepEqual(membership.guardianIds, [identity.uid]);
+    assert.equal(player.data.parentId, identity.uid);
+    assert.deepEqual(player.data.guardianIds, [identity.uid]);
+  }
+
+  assert.equal(membersByAlias('qa-missing-profile').length, 0);
+  for (const alias of ['qa-no-team', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin']) {
+    assert.equal(membersByAlias(alias).length, 0, alias);
+  }
+  assert.equal(membersByAlias('qa-pending-delete').length, 1);
+  assert.equal(new Set(phase9.teams.map(team => team.sentinel)).size, phase9.teams.length);
+  assert.equal(new Set(phase9.identities.map(identity => identity.uid)).size, phase9.identities.length);
+  assert.equal(new Set(phase9.documents.map(document => document.path)).size, phase9.documents.length);
+  for (const identity of phase9.identities) assertManagedUid(identity.uid, RUN_ID);
+  for (const document of phase9.documents) assertManagedPath(document.path, RUN_ID);
+
+  const forbiddenFields = new Set([
+    'medical', 'medicalInfo', 'stripeCustomerId', 'stripe_customer_id',
+    'paymentMethod', 'accessToken', 'refreshToken', 'providerAccountId',
+  ]);
+  for (const document of phase9.documents) {
+    assert.deepEqual(Object.keys(document.data).filter(key => forbiddenFields.has(key)), []);
+  }
+
+  assert.deepEqual(fixturePlanSummary({ manifestVersion: 3 }), {
+    manifestVersion: 3,
+    aliases: phase9.identities.map(identity => identity.alias),
+    teamAliases: phase9.teams.map(team => team.alias),
+    identityCount: 20,
+    teamCount: 3,
+    resourceCounts: {
+      authUids: 20,
+      firestoreDocuments: 79,
+      expectedAbsentDocuments: 1,
+    },
+  });
 });
 
 test('definition uses the verified same-origin avatar asset for every roster member', async () => {
@@ -1821,7 +1935,7 @@ test('credential publication hard exit leaves no partial target and only a priva
       async set(path, data) { documents.set(path, structuredClone(data)); },
       async delete(path) { documents.delete(path); },
     };
-    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(RUN_ID)}, expiresAt: ${JSON.stringify(EXPIRES_AT)} });
+    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(RUN_ID)}, expiresAt: ${JSON.stringify(EXPIRES_AT)}, manifestVersion: 2 });
     const lifecycle = createLifecycle({
       auth,
       firestore,
@@ -1875,6 +1989,7 @@ test('credential publication writes no bytes when the parent is swapped inside e
     const definition = buildFixtureDefinition({
       runId: ${JSON.stringify(fixture.definition.runId)},
       expiresAt: ${JSON.stringify(EXPIRES_AT)},
+      manifestVersion: ${fixture.definition.manifestVersion},
     });
     let swapped = false;
     const lifecycle = createLifecycle({
