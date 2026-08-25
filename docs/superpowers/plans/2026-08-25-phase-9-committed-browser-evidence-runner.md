@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - No new browser dependency or installed browser; use `/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh` and system Chrome.
-- No SaaS runtime change. This plan may modify only the committed evidence subsystem, its tests/package entrypoint, approved Phase 9 evidence, and planning/report files.
+- No SaaS runtime change except the independently reviewed Task 3 hydration defect: add the missing `userProfile.role` dependency to the existing dashboard settled-role effect. The bounded product regression, evidence subsystem, tests/package entrypoint, approved Phase 9 evidence, and planning/report files are the only permitted scope.
 - No production access, no merge, and no broad Firebase deletion.
 - No hosted mutation until Tasks 1-5 pass independent review and the exact tracked SHA passes full verification, PR CI, and one staging deployment.
 - Every implementation change uses RED/GREEN TDD. Tests must invoke real exported entrypoints; source-regex-only assertions are insufficient.
@@ -155,7 +155,10 @@ git commit -m "feat: add testable browser observation windows"
 **Files:**
 - Create: `scripts/qa-evidence/phase9/scenarios.mjs`
 - Modify: `scripts/qa-evidence/phase9/scenario-contracts.mjs`
+- Modify: `scripts/qa-evidence/phase9/playwright-cli-client.mjs`
 - Modify: `tests/phase9-browser-evidence.test.mjs`
+- Modify: `src/app/(dashboard)/layout.tsx`
+- Create: `tests/components/dashboard-layout-routing.test.tsx`
 
 **Interfaces:**
 - Produces: `runAdmissionScenario()`, `runRouteScenario()`, `runIsolationScenario()`, `runLogoutScenario()`, `runFreshUnauthenticatedScenario()`, `runPendingDeletionScenario()`, `buildCanonicalScenarioPlan()`.
@@ -175,7 +178,10 @@ Require the real scenario functions to fail when:
 - a context omits required ledger fields or uses a duplicate ID.
 - a Parent A, League Creator, or School Admin admission stops at transient or final `Dashboard` instead of its exact settled role landing;
 - an exact heading appears on the wrong pathname and a heading-only terminal would complete early;
-- Missing Profile or No Team observes any protected request or protected listener during login/admission or any denied-route action, including activity attributed to the onboarding/join landing itself.
+- Missing Profile observes any protected request or protected listener during login/admission or any denied-route action.
+- No Team selects or accesses Team A/Team B, or starts a tenant-scoped request/listener for either fixture tenant, during login/admission or any denied-route action; exact self-account/membership and join-page admin lookup activity must pass.
+- No Team aggregation omits an earlier typed resource scope or accepts an unscoped protected signal.
+- a dashboard first evaluates with an unresolved profile and then hydrates `league_creator`, with every other redirect dependency stable, without redirecting to `/competition`.
 
 Also require the canonical plan to include both viewports and exact aliases/groups from Task 7.
 
@@ -205,7 +211,11 @@ Admission and denial waits must use the complete settled `{path, accessible head
 | `qa-missing-profile` | `/onboarding` | `Complete your profile` |
 | `qa-no-team` | `/teams/join` | `Join & Invite` |
 
-For `qa-missing-profile` and `qa-no-team`, validate every login/admission and denied-route window with `requireNoProtected`: protected request count and protected listener-start count must both remain zero regardless of whether attribution points to the incomplete-account landing or the denied target. Validate the aggregate row under the same invariant so earlier activity cannot be hidden by a clean final window.
+For `qa-missing-profile`, validate every login/admission and denied-route window with `requireNoProtected`: protected request count and protected listener-start count must both remain zero regardless of attribution.
+
+For `qa-no-team`, configure the Playwright client with the exact fixture run ID and reduce protected targets to fixed sanitized scopes without retaining request bodies or raw identifiers. Permit only self-account/profile/membership activity, the exact `PATCH /api/schools/admins` join-page lookup, non-tenant reference data, and transport-control messages. Reject Team A, Team B, other-tenant, and unscoped protected request/listener activity in login and all six denied-route windows. Flatten the typed request/listener scopes into aggregate validation so later clean windows cannot hide an earlier tenant signal.
+
+Add the exact missing `userProfile?.role` dependency to the existing dashboard settled-role effect. The rendered regression must begin with `userProfile === null`, hydrate `league_creator` while router/path/team/parent/school inputs remain referentially stable, and prove `/competition` is requested. Re-run Parent and School redirect cases to show their existing destinations are unchanged.
 
 Return a row only after the Task 1 validator passes. Never catch a readiness timeout and continue as PASS.
 

@@ -5,6 +5,7 @@ import {
   LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, PROTECTED_PAGE_HEADINGS,
   SESSION_COOKIE_NAME, STAGING_ORIGIN,
 } from './scenario-contracts.mjs';
+import { assertRunId } from '../../qa-fixtures/manifest.mjs';
 
 const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -14,8 +15,85 @@ const CLIENT_INTERNALS = new WeakMap();
 const HEADING_SENTINELS = Object.freeze([...new Set(LANDING_SENTINELS)]);
 const STATUS_SENTINELS = Object.freeze([PENDING_UNAVAILABLE_SENTINEL]);
 
-const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
+const RESOURCE_SCOPE_VALUES = new Set([
+  'self-account',
+  'join-admin-lookup',
+  'tenant-team-a',
+  'tenant-team-b',
+  'tenant-other',
+  'non-tenant',
+  'transport-control',
+  'unscoped',
+]);
+
+const classifyFixtureResourceScopeValue = (signal, runId, alias, stagingOrigin) => {
+  if (!signal || typeof signal !== 'object' || typeof signal.url !== 'string') return 'unscoped';
+  let target;
+  try {
+    target = new URL(signal.url);
+  } catch {
+    return 'unscoped';
+  }
+  if (
+    target.origin === stagingOrigin
+    && target.pathname === '/api/schools/admins'
+    && signal.method === 'PATCH'
+  ) return 'join-admin-lookup';
+  if (target.hostname !== 'firestore.googleapis.com') return 'unscoped';
+  if (typeof runId !== 'string' || alias !== 'qa-no-team') return 'unscoped';
+
+  let corpus = `${signal.url}\n${typeof signal.body === 'string' ? signal.body : ''}`;
+  for (let index = 0; index < 3; index += 1) {
+    try {
+      const decoded = decodeURIComponent(corpus.replace(/\+/g, ' '));
+      if (decoded === corpus) break;
+      corpus = decoded;
+    } catch {
+      break;
+    }
+  }
+
+  if (corpus.includes(`${runId}-team-a`)) return 'tenant-team-a';
+  if (corpus.includes(`${runId}-team-b`)) return 'tenant-team-b';
+  if (/\/documents\/teams(?:\/|\b)|["']collectionId["']\s*:\s*["']teams["']/i.test(corpus)) return 'tenant-other';
+  const selfPath = `/documents/users/${runId}-no-team`;
+  const targetSelfIndex = target.pathname.indexOf(selfPath);
+  const targetSelfSuffix = targetSelfIndex < 0 ? null : target.pathname.slice(targetSelfIndex + selfPath.length);
+  const exactSelfTarget = targetSelfSuffix === ''
+    || targetSelfSuffix === '/teamMemberships'
+    || targetSelfSuffix?.startsWith('/teamMemberships/') === true;
+  if (exactSelfTarget) return 'self-account';
+  if (corpus.includes(selfPath)) {
+    const collectionIds = [...corpus.matchAll(/["']collectionId["']\s*:\s*["']([^"']+)["']/gi)]
+      .map(match => match[1]);
+    const selfPathPattern = selfPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const exactSelfReference = new RegExp(`${selfPathPattern}(?=$|[?#"'\\s,}\\]])`).test(corpus);
+    const membershipReference = new RegExp(
+      `${selfPathPattern}/teamMemberships(?:/[^?#"'\\s,}\\]]+)?(?=$|[?#"'\\s,}\\]])`,
+    ).test(corpus);
+    if (membershipReference || (
+      exactSelfReference
+      && (collectionIds.length === 0 || collectionIds.every(id => id === 'teamMemberships'))
+    )) return 'self-account';
+  }
+  if (/\/documents\/users(?:\/|\b)|["']collectionId["']\s*:\s*["']users["']/i.test(corpus)) return 'unscoped';
+  if (/\/documents\/plans(?:\/|\b)|["']collectionId["']\s*:\s*["']plans["']/i.test(corpus)) return 'non-tenant';
+  if (target.hostname === 'firestore.googleapis.com' && /Firestore\/Listen|\/Listen\/channel/i.test(target.pathname)) {
+    return typeof signal.body === 'string' && signal.body.length > 0 ? 'unscoped' : 'transport-control';
+  }
+  return 'unscoped';
+};
+
+export function classifyFixtureResourceScope(signal, { runId, alias } = {}) {
+  assertRunId(runId);
+  if (alias !== 'qa-no-team') throw new Error('Fixture resource scoping currently requires qa-no-team.');
+  return classifyFixtureResourceScopeValue(signal, runId, alias, STAGING_ORIGIN);
+}
+
+const installRecorderSource = fixtureRunId => String.raw`async (page) => {
   // phase9:install
+  const fixtureRunId = ${JSON.stringify(fixtureRunId ?? null)};
+  const classifyFixtureResourceScopeValue = ${classifyFixtureResourceScopeValue.toString()};
   const cleanUrl = value => {
     if (value === 'about:blank') return value;
     try {
@@ -44,6 +122,30 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
     const headingSentinels = ${JSON.stringify(HEADING_SENTINELS)};
     const statusSentinels = ${JSON.stringify(STATUS_SENTINELS)};
     const protectedHeadings = ${JSON.stringify(PROTECTED_PAGE_HEADINGS)};
+    const selectionScope = value => {
+      if (!value || !fixtureRunId) return null;
+      if (value === fixtureRunId + '-team-a') return 'tenant-team-a';
+      if (value === fixtureRunId + '-team-b') return 'tenant-team-b';
+      return 'tenant-other';
+    };
+    if (!globalThis.__phase9TeamSelectionObserverInstalled) {
+      globalThis.__phase9TeamSelectionObserverInstalled = true;
+      try {
+        const initialScope = selectionScope(localStorage.getItem('sf_session_team_id'));
+        if (initialScope) void globalThis.__phase9RecordTeamSelection(initialScope);
+        const originalSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function phase9ObservedStorageSetItem(key, value) {
+          const result = originalSetItem.call(this, key, value);
+          if (this === localStorage && key === 'sf_session_team_id') {
+            const scope = selectionScope(String(value));
+            if (scope) void globalThis.__phase9RecordTeamSelection(scope);
+          }
+          return result;
+        };
+      } catch {
+        // about:blank has an opaque origin; hosted pages are observed after navigation.
+      }
+    }
     const definitions = [
       ...headingSentinels.map(sentinel => ({ kind: 'heading', sentinel })),
       ...statusSentinels.map(sentinel => ({ kind: 'status', sentinel })),
@@ -118,6 +220,7 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       sequence: 0,
       requests: [],
       listeners: [],
+      selections: [],
       renders: [],
       responses: [],
       pageErrors: [],
@@ -138,6 +241,11 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
         method: request.method(),
         resourceType: request.resourceType(),
         initiatingFrameUrl,
+        resourceScope: classifyFixtureResourceScopeValue({
+          url: request.url(),
+          method: request.method(),
+          body: request.postData() || '',
+        }, fixtureRunId, 'qa-no-team', ${JSON.stringify(STAGING_ORIGIN)}),
       };
       boundedPush(state, 'requests', signal);
       if (/google\.firestore\.v1\.Firestore\/Listen|\/Listen\/channel/i.test(request.url())) {
@@ -161,6 +269,10 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
         || typeof signal.pathname !== 'string' || typeof signal.sentinel !== 'string') return;
       boundedPush(state, 'renders', { kind: signal.kind, pathname: signal.pathname, sentinel: signal.sentinel });
     });
+    await page.exposeFunction('__phase9RecordTeamSelection', scope => {
+      if (!['tenant-team-a', 'tenant-team-b', 'tenant-other'].includes(scope)) return;
+      boundedPush(state, 'selections', scope);
+    });
     await page.addInitScript(initializeRenderObserver);
     await page.evaluate(initializeRenderObserver);
   }
@@ -177,6 +289,7 @@ const MARK_SOURCE = String.raw`async (page) => {
     sequence: state.sequence,
     requests: state.requests.length,
     listeners: state.listeners.length,
+    selections: state.selections.length,
     responses: state.responses.length,
     pageErrors: state.pageErrors.length,
     appConsoleErrors: state.appConsoleErrors.length,
@@ -225,6 +338,7 @@ const sampleSource = mark => String.raw`async (page) => {
     redirectReason: render.redirectReason,
     protectedRequests: state.requests.slice(mark.requests),
     protectedListenerStarts: state.listeners.slice(mark.listeners),
+    teamSelectionSignals: state.selections.slice(mark.selections),
     relevantHttpResults: state.responses.slice(mark.responses),
     pageErrors: state.pageErrors.slice(mark.pageErrors),
     appConsoleErrors: state.appConsoleErrors.slice(mark.appConsoleErrors),
@@ -281,7 +395,7 @@ const sanitizeWindow = value => {
   const stringFields = ['pageId', 'finalUrl', 'finalPath', 'renderPath', 'renderSentinel'];
   const arrayFields = [
     'visibleSentinels', 'renderSignals', 'protectedRequests', 'protectedListenerStarts',
-    'relevantHttpResults', 'pageErrors', 'appConsoleErrors', 'unexpectedRequestFailures',
+    'teamSelectionSignals', 'relevantHttpResults', 'pageErrors', 'appConsoleErrors', 'unexpectedRequestFailures',
   ];
   const complete = booleanFields.every(field => typeof value[field] === 'boolean')
     && stringFields.every(field => typeof value[field] === 'string')
@@ -290,11 +404,16 @@ const sanitizeWindow = value => {
     && Number.isInteger(value.overflow) && value.overflow >= 0;
   if (!complete) throw new Error('Recorder must return a complete signal sample.');
   if (value.visibleSentinels.some(item => typeof item !== 'string')) throw new Error('Recorder must return a complete signal sample.');
+  const teamSelectionSignals = value.teamSelectionSignals;
+  if (!Array.isArray(teamSelectionSignals) || teamSelectionSignals.some(scope => (
+    !['tenant-team-a', 'tenant-team-b', 'tenant-other'].includes(scope)
+  ))) throw new Error('Recorder must return fixed team-selection scopes.');
   const requests = Array.isArray(value.protectedRequests) ? value.protectedRequests.map(item => ({
     url: cleanUrl(item?.url),
     method: typeof item?.method === 'string' ? item.method : 'UNKNOWN',
     resourceType: typeof item?.resourceType === 'string' ? item.resourceType : 'unknown',
     initiatingFrameUrl: cleanUrl(item?.initiatingFrameUrl),
+    ...(RESOURCE_SCOPE_VALUES.has(item?.resourceScope) ? { resourceScope: item.resourceScope } : {}),
     ...(Number.isInteger(item?.status) ? { status: item.status } : {}),
   })) : [];
   const http = Array.isArray(value.relevantHttpResults) ? value.relevantHttpResults.map(item => ({
@@ -306,6 +425,7 @@ const sanitizeWindow = value => {
     method: typeof item?.method === 'string' ? item.method : 'UNKNOWN',
     resourceType: typeof item?.resourceType === 'string' ? item.resourceType : 'unknown',
     initiatingFrameUrl: cleanUrl(item?.initiatingFrameUrl),
+    ...(RESOURCE_SCOPE_VALUES.has(item?.resourceScope) ? { resourceScope: item.resourceScope } : {}),
   })) : [];
   if (value.renderSignals.some(item => (
     !item || typeof item !== 'object' || Array.isArray(item)
@@ -333,6 +453,7 @@ const sanitizeWindow = value => {
     requestSignals: requests,
     protectedListenerStarts: protectedListeners.length,
     listenerSignals: protectedListeners,
+    teamSelectionSignals: teamSelectionSignals.slice(0, MAX_SIGNAL_COUNT),
     relevantHttpResults: http,
     pageErrors: count(value.pageErrors),
     appConsoleErrors: count(value.appConsoleErrors),
@@ -367,10 +488,12 @@ export function createPlaywrightCliClient({
   cwd = process.cwd(),
   env = process.env,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  fixtureRunId,
 } = {}) {
   if (typeof execute !== 'function') throw new Error('Playwright CLI execute transport must be a function.');
   if (typeof wrapperPath !== 'string' || wrapperPath.length === 0) throw new Error('Playwright CLI wrapper path is required.');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('Playwright CLI timeout must be a positive integer.');
+  if (fixtureRunId !== undefined) assertRunId(fixtureRunId);
   const opened = new Set();
   const currentTabs = new Map();
   const tabCounts = new Map();
@@ -431,7 +554,7 @@ export function createPlaywrightCliClient({
     }
   };
   const installRecorder = async session => {
-    await executeRunCode(session, INSTALL_RECORDER_SOURCE);
+    await executeRunCode(session, installRecorderSource(fixtureRunId));
     armedTabs.add(tabKey(session));
   };
   const client = {

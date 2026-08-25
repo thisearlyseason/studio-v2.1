@@ -1,5 +1,5 @@
 import {
-  PENDING_UNAVAILABLE_SENTINEL, REQUIRED_LEDGER_COLUMNS, REQUIRED_LOGOUT_STAGES,
+  NO_TEAM_RESOURCE_POLICY, PENDING_UNAVAILABLE_SENTINEL, REQUIRED_LEDGER_COLUMNS, REQUIRED_LOGOUT_STAGES,
   PROTECTED_PAGE_HEADINGS, ROUTE_SCENARIOS, SCENARIO_GROUP_COUNTS, VIEWPORTS, buildIsolationExpectation,
   validateActionWindow, validateIsolationResult, validateLogoutStages, validateRouteResult,
 } from './scenario-contracts.mjs';
@@ -48,7 +48,7 @@ const ALIAS_CONTRACTS = Object.freeze({
 const ISOLATION_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-parent-b', 'qa-adult-player-b']);
 const LOGOUT_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin']);
 const PENDING_CASES = Object.freeze(['active-baseline', 'stale-session', 'fresh-login']);
-const PROTECTED_FREE_ADMISSION_ALIASES = new Set(['qa-missing-profile', 'qa-no-team']);
+const PROTECTED_FREE_ADMISSION_ALIASES = new Set(['qa-missing-profile']);
 
 const requireText = (value, name) => {
   if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${name} is required.`);
@@ -79,7 +79,11 @@ const aggregateWindows = windows => {
     ...last,
     protectedRender: windows.some(window => window.protectedRender),
     protectedRequests: windows.reduce((sum, window) => sum + window.protectedRequests, 0),
+    protectedRequestSignals: windows.flatMap(window => window.protectedRequestSignals ?? []),
+    requestSignals: windows.flatMap(window => window.requestSignals ?? []),
     protectedListenerStarts: windows.reduce((sum, window) => sum + window.protectedListenerStarts, 0),
+    listenerSignals: windows.flatMap(window => window.listenerSignals ?? []),
+    teamSelectionSignals: windows.flatMap(window => window.teamSelectionSignals ?? []),
     relevantHttpResults: windows.flatMap(window => window.relevantHttpResults ?? []),
     pageErrors: windows.reduce((sum, window) => sum + window.pageErrors, 0),
     appConsoleErrors: windows.reduce((sum, window) => sum + window.appConsoleErrors, 0),
@@ -106,8 +110,8 @@ const rowFromWindow = ({ context, group, action, expectedResult, window, visible
   return Object.freeze(row);
 };
 
-const validateLandingWindow = (window, landing, { requireNoProtected = false } = {}) => {
-  validateActionWindow(window, { requireNoProtected });
+const validateLandingWindow = (window, landing, { requireNoProtected = false, resourcePolicy } = {}) => {
+  validateActionWindow(window, { requireNoProtected, resourcePolicy });
   if (window.finalPath !== landing.path || !window.visibleSentinels.includes(landing.sentinel)) {
     throw new Error('Admission did not reach its exact landing path and heading.');
   }
@@ -128,7 +132,9 @@ const validateLandingWindow = (window, landing, { requireNoProtected = false } =
   }
 };
 
-const executeRoute = async ({ client, session, path, isAllowed, landing, sentinel, actions, stage, requireNoProtected = false }) => {
+const executeRoute = async ({
+  client, session, path, isAllowed, landing, sentinel, actions, stage, requireNoProtected = false, resourcePolicy,
+}) => {
   const expected = isAllowed ? exact(path, sentinel) : landing;
   const window = await observe({
     client, session, stage,
@@ -138,6 +144,7 @@ const executeRoute = async ({ client, session, path, isAllowed, landing, sentine
   validateRouteResult({
     allowed: isAllowed, requestedPath: path,
     expectedPath: expected.path, expectedSentinel: expected.sentinel, requireNoProtected, window,
+    ...(resourcePolicy ? { resourcePolicy } : {}),
   });
   return {
     window,
@@ -175,6 +182,7 @@ export async function runAdmissionScenario({ client, session, context: inputCont
   if (!contract) throw new Error('Admission alias is not in the canonical Task 7 matrix.');
   const authenticatedSession = requireText(session, 'session');
   const requireNoProtected = PROTECTED_FREE_ADMISSION_ALIASES.has(context.alias);
+  const resourcePolicy = context.alias === 'qa-no-team' ? NO_TEAM_RESOURCE_POLICY : undefined;
   const loginWindow = await observe({
     client, session: authenticatedSession, stage: 'admission-login',
     action: () => requireFunction(actions?.loginAndLand, 'loginAndLand')(context.alias),
@@ -183,7 +191,7 @@ export async function runAdmissionScenario({ client, session, context: inputCont
       contract.landing.sentinel,
     ),
   });
-  validateLandingWindow(loginWindow, contract.landing, { requireNoProtected });
+  validateLandingWindow(loginWindow, contract.landing, { requireNoProtected, resourcePolicy });
   const windows = [loginWindow];
   const summaries = [{
     stage: 'admission-login', requestedPath: '/login', allowed: true, finalPath: loginWindow.finalPath,
@@ -195,13 +203,14 @@ export async function runAdmissionScenario({ client, session, context: inputCont
     const result = await executeRoute({
       client, session: authenticatedSession, path, isAllowed: route?.allowed === true,
       landing: contract.deniedLanding ?? contract.landing, sentinel: route?.sentinel,
-      actions, stage: `admission-route:${path}`, requireNoProtected,
+      actions, stage: `admission-route:${path}`, requireNoProtected, resourcePolicy,
     });
     windows.push(result.window);
     summaries.push(result.summary);
   }
   const aggregate = aggregateWindows(windows);
   if (requireNoProtected) validateActionWindow(aggregate, { requireNoProtected: true });
+  if (resourcePolicy) validateActionWindow(aggregate, { resourcePolicy });
   return rowFromWindow({
     context, group: 'admission-route', action: 'login and land, then validate 6 direct routes',
     expectedResult: 'exact admission landing and complete six-route policy', window: aggregate,

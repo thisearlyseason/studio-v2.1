@@ -350,7 +350,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
+  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam, userProfile?.role]);
 
   useEffect(() => {
     // Wait for both the profile and team hydration before deciding that the

@@ -50,6 +50,7 @@ const safeWindow = (overrides = {}) => {
     protectedRequestSignals: [],
     protectedListenerStarts: 0,
     listenerSignals: [],
+    teamSelectionSignals: [],
     pageErrors: 0,
     appConsoleErrors: 0,
     unexpectedRequestFailures: 0,
@@ -229,6 +230,7 @@ test('phase 9 action window treats login terminal sentinels as nonprotected rend
       protectedRender: true,
       protectedRequests: [],
       protectedListenerStarts: [],
+      teamSelectionSignals: [],
       relevantHttpResults: [],
       pageErrors: [],
       appConsoleErrors: [],
@@ -271,6 +273,7 @@ test('phase 9 action window caps sanitized render history', async () => {
       protectedRender: true,
       protectedRequests: [],
       protectedListenerStarts: [],
+      teamSelectionSignals: [],
       relevantHttpResults: [],
       pageErrors: [],
       appConsoleErrors: [],
@@ -320,6 +323,7 @@ test('phase 9 action window marks the same page before action and returns saniti
           method: 'POST',
           resourceType: 'fetch',
           initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
+          resourceScope: 'tenant-team-a',
           status: 401,
           body: 'password=must-not-return',
           headers: { authorization: 'Bearer must-not-return' },
@@ -334,6 +338,7 @@ test('phase 9 action window marks the same page before action and returns saniti
           method: 'POST',
           resourceType: 'fetch',
           initiatingFrameUrl: 'https://example.invalid/dashboard?token=must-not-return',
+          resourceScope: 'tenant-team-b',
           body: 'must-not-return',
         }, {
           url: 'https://arbitrary.invalid/google.firestore.v1.Firestore/Listen/channel?token=must-not-return',
@@ -346,6 +351,7 @@ test('phase 9 action window marks the same page before action and returns saniti
           resourceType: 'fetch',
           initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
         }],
+        teamSelectionSignals: [],
         relevantHttpResults: [{ url: 'https://example.invalid/api/protected', status: 401 }],
         pageErrors: [],
         appConsoleErrors: [],
@@ -379,6 +385,7 @@ test('phase 9 action window marks the same page before action and returns saniti
     method: 'POST',
     resourceType: 'fetch',
     initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
+    resourceScope: 'tenant-team-a',
     status: 401,
   },
   { url: 'data:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'data:' },
@@ -390,6 +397,7 @@ test('phase 9 action window marks the same page before action and returns saniti
     method: 'POST',
     resourceType: 'fetch',
     initiatingFrameUrl: 'https://example.invalid/dashboard',
+    resourceScope: 'tenant-team-b',
   }, {
     url: `${STAGING_ORIGIN}/api/teams/chat`,
     method: 'GET',
@@ -1634,17 +1642,14 @@ test('phase 9 browser scenarios reject Dashboard as the final role landing for r
   }
 });
 
-test('phase 9 browser scenarios require zero protected data for incomplete accounts in every admission window', async () => {
+test('phase 9 browser scenarios retain strict zero protected data for Missing Profile in every admission window', async () => {
   const signal = initiatingFrameUrl => ({
     url: `${STAGING_ORIGIN}/api/teams/chat`,
     method: 'GET',
     resourceType: 'fetch',
     initiatingFrameUrl,
   });
-  const cases = [
-    ['qa-missing-profile', '/onboarding', 'Complete your profile'],
-    ['qa-no-team', '/teams/join', 'Join & Invite'],
-  ];
+  const cases = [['qa-missing-profile', '/onboarding', 'Complete your profile']];
   for (const [alias, path, sentinel] of cases) {
     const clean = scenarioWindow({
       finalPath: path,
@@ -1692,6 +1697,177 @@ test('phase 9 browser scenarios require zero protected data for incomplete accou
     assert.equal(row.protectedRequests, 0);
     assert.equal(row.protectedListenerStarts, 0);
   }
+});
+
+test('phase 9 browser scenarios allow No Team self-account setup while rejecting every fixture-tenant signal', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const landingPath = '/teams/join';
+  const landing = () => scenarioWindow({
+    finalPath: landingPath,
+    finalUrl: `${STAGING_ORIGIN}${landingPath}`,
+    visibleSentinels: ['Join & Invite'],
+    protectedRender: false,
+    renderSignals: [],
+    protectedRequests: 2,
+    protectedRequestSignals: [
+      {
+        url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+        method: 'POST',
+        resourceType: 'fetch',
+        initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
+        resourceScope: 'self-account',
+      },
+      {
+        url: `${STAGING_ORIGIN}/api/schools/admins`,
+        method: 'PATCH',
+        resourceType: 'fetch',
+        initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
+        resourceScope: 'join-admin-lookup',
+      },
+    ],
+    protectedListenerStarts: 1,
+    listenerSignals: [{
+      url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+      method: 'POST',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
+      resourceScope: 'self-account',
+    }],
+  });
+  const run = windows => runAdmissionScenario({
+    client: createScriptedScenarioClient(windows),
+    session: 'no-team-account-scope',
+    context: scenarioContext({ contextId: 'no-team-account-scope', alias: 'qa-no-team' }),
+    actions: {
+      loginAndLand: async () => {},
+      navigate: async () => {},
+      waitForExactLocation: async () => {},
+    },
+  });
+
+  const permitted = await run(Array.from({ length: 7 }, landing));
+  assert.equal(permitted.protectedRequests, 14);
+  assert.equal(permitted.protectedListenerStarts, 7);
+
+  const deniedRoutes = ['/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family'];
+  for (const [index, stagePath] of ['/login', ...deniedRoutes].entries()) {
+    for (const [scope, message] of [
+      ['tenant-team-a', /No Team.*selected Team A/i],
+      ['tenant-team-b', /No Team.*selected Team B/i],
+    ]) {
+      const windows = Array.from({ length: 7 }, landing);
+      windows[index] = { ...landing(), teamSelectionSignals: [scope] };
+      await assert.rejects(run(windows), message, `${scope} selection in ${stagePath}`);
+    }
+  }
+  for (const [index, requestedPath] of ['/login', ...deniedRoutes].entries()) {
+    const windows = Array.from({ length: 7 }, landing);
+    windows[index] = {
+      ...landing(),
+      protectedRequests: 1,
+      protectedRequestSignals: [{
+        url: `https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents/teams/${runId}-team-a`,
+        method: 'GET',
+        resourceType: 'fetch',
+        initiatingFrameUrl: `${STAGING_ORIGIN}${requestedPath === '/login' ? landingPath : requestedPath}`,
+        resourceScope: 'tenant-team-a',
+      }],
+      protectedListenerStarts: 0,
+      listenerSignals: [],
+    };
+    await assert.rejects(run(windows), /No Team.*Team A tenant/i, `Team A request in ${requestedPath}`);
+
+    const listenerWindows = Array.from({ length: 7 }, landing);
+    listenerWindows[index] = {
+      ...landing(),
+      protectedRequests: 0,
+      protectedRequestSignals: [],
+      protectedListenerStarts: 1,
+      listenerSignals: [{
+        url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+        method: 'POST',
+        resourceType: 'fetch',
+        initiatingFrameUrl: `${STAGING_ORIGIN}${requestedPath === '/login' ? landingPath : requestedPath}`,
+        resourceScope: 'tenant-team-b',
+      }],
+    };
+    await assert.rejects(run(listenerWindows), /No Team.*Team B tenant/i, `Team B listener in ${requestedPath}`);
+  }
+
+  const aggregatedEarlyTenant = Array.from({ length: 7 }, landing);
+  aggregatedEarlyTenant[0] = {
+    ...landing(),
+    protectedRequests: 0,
+    protectedRequestSignals: [],
+    protectedListenerStarts: 1,
+    listenerSignals: [{
+      url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+      method: 'POST',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}${landingPath}`,
+      resourceScope: 'tenant-team-b',
+    }],
+  };
+  await assert.rejects(run(aggregatedEarlyTenant), /No Team.*Team B tenant/i);
+
+  const unscoped = Array.from({ length: 7 }, landing);
+  unscoped[6] = {
+    ...landing(),
+    protectedRequests: 1,
+    protectedRequestSignals: [{
+      url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+      method: 'POST',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}/family`,
+    }],
+    protectedListenerStarts: 0,
+    listenerSignals: [],
+  };
+  await assert.rejects(run(unscoped), /No Team.*typed resource scope/i);
+});
+
+test('phase 9 playwright client reduces fixture resource targets to fixed aliases without retaining identifiers', async () => {
+  const { classifyFixtureResourceScope } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const classify = signal => classifyFixtureResourceScope(signal, { runId, alias: 'qa-no-team' });
+  const firestore = value => `https://firestore.googleapis.com/v1/projects/staging/databases/(default)/documents/${value}`;
+
+  assert.equal(classify({ url: firestore(`users/${runId}-no-team`) }), 'self-account');
+  assert.equal(classify({ url: firestore(`users/${runId}-no-team/teamMemberships`) }), 'self-account');
+  assert.equal(classify({ url: firestore(`users/${runId}-no-team/teamMemberships/member-a`) }), 'self-account');
+  assert.equal(classify({ url: firestore(`users/${runId}-no-team/payments/payment-a`) }), 'unscoped');
+  assert.equal(classify({ url: firestore(`users/${runId}-no-team/teamMembershipsOther/member-a`) }), 'unscoped');
+  assert.equal(classify({ url: `${STAGING_ORIGIN}/api/schools/admins`, method: 'PATCH' }), 'join-admin-lookup');
+  assert.equal(classify({ url: `${STAGING_ORIGIN}/api/schools/admins`, method: 'GET' }), 'unscoped');
+  assert.equal(classify({ url: `${STAGING_ORIGIN}/api/other/documents/users/${runId}-no-team` }), 'unscoped');
+  assert.equal(classify({ url: firestore(`teams/${runId}-team-a`) }), 'tenant-team-a');
+  assert.equal(classify({
+    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    body: encodeURIComponent(`projects/staging/databases/(default)/documents/teams/${runId}-team-b/members`),
+  }), 'tenant-team-b');
+  assert.equal(classify({ url: firestore('teams/unrelated-team') }), 'tenant-other');
+  assert.equal(classify({
+    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    body: JSON.stringify({
+      addTarget: {
+        query: {
+          parent: `projects/staging/databases/(default)/documents/users/${runId}-no-team`,
+          structuredQuery: { from: [{ collectionId: 'payments' }] },
+        },
+      },
+    }),
+  }), 'unscoped');
+  assert.equal(classify({
+    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    body: JSON.stringify({ addTarget: { query: { structuredQuery: { from: [{ collectionId: 'plans' }] } } } }),
+  }), 'non-tenant');
+
+  const result = classify({
+    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    body: `secret=${runId}-team-a`,
+  });
+  assert.equal(result, 'tenant-team-a');
+  assert.equal(JSON.stringify(result).includes(runId), false);
 });
 
 test('phase 9 browser scenarios expose exact route-specific accessible heading contracts', () => {
@@ -2097,7 +2273,7 @@ test('phase 9 action window exposes only the fixed redirect reason enum', async 
         pageId: 'page-a', terminalReached: true, loadingVisible: false,
         finalUrl: 'https://example.invalid/login?reason=unavailable&token=must-not-return', finalPath: '/login',
         visibleSentinels: ['Sign In'], sessionPresent: false, protectedRender: false,
-        protectedRequests: [], protectedListenerStarts: [], relevantHttpResults: [], pageErrors: [],
+        protectedRequests: [], protectedListenerStarts: [], teamSelectionSignals: [], relevantHttpResults: [], pageErrors: [],
         appConsoleErrors: [], unexpectedRequestFailures: [], overflow: 0, renderPath: '/login', renderSentinel: 'Sign In',
         redirectReason: rawReason,
         renderSignals: [{ kind: 'heading', pathname: '/login', sentinel: 'Sign In' }],

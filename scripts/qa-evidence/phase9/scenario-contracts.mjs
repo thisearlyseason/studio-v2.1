@@ -14,6 +14,17 @@ export const SESSION_COOKIE_NAME = '__session';
 export const FIXTURE_MANIFEST_VERSION = 3;
 export const FIXTURE_RESOURCE_COUNTS = deepFreeze({ aliases: 20, teams: 3, auth: 20, firestore: 82, expectedAbsent: 1 });
 export const PENDING_UNAVAILABLE_SENTINEL = 'The email or password is incorrect, or this account is unavailable.';
+export const NO_TEAM_RESOURCE_POLICY = 'no-team-tenant-isolation';
+export const RESOURCE_SCOPES = deepFreeze([
+  'self-account',
+  'join-admin-lookup',
+  'tenant-team-a',
+  'tenant-team-b',
+  'tenant-other',
+  'non-tenant',
+  'transport-control',
+  'unscoped',
+]);
 
 const FIXTURE_ALIASES = deepFreeze([
   'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member', 'qa-multi-org',
@@ -285,6 +296,59 @@ const requireCanonicalStagingAttribution = (value, name) => {
 
 const isExactPathOrSubtree = (pathname, root) => pathname === root || pathname.startsWith(`${root}/`);
 
+export function validateNoTeamResourceIsolation(value) {
+  const window = requireRecord(value, 'No Team action window');
+  if (window.protectedRender === true) throw new Error('No Team action window contains a protected render.');
+  if (!Array.isArray(window.teamSelectionSignals) || window.teamSelectionSignals.some(scope => (
+    !['tenant-team-a', 'tenant-team-b', 'tenant-other'].includes(scope)
+  ))) throw new Error('No Team evidence requires complete typed team-selection scopes.');
+  if (window.teamSelectionSignals.includes('tenant-team-a')) throw new Error('No Team selected Team A.');
+  if (window.teamSelectionSignals.includes('tenant-team-b')) throw new Error('No Team selected Team B.');
+  if (window.teamSelectionSignals.includes('tenant-other')) throw new Error('No Team selected another tenant.');
+  const validateSignals = (signals, count, name) => {
+    requireCount(count, `No Team ${name} count`);
+    if (!Array.isArray(signals) || signals.length !== count || signals.some(signal => (
+      !isRecord(signal)
+      || typeof signal.url !== 'string'
+      || typeof signal.method !== 'string'
+      || typeof signal.resourceType !== 'string'
+      || typeof signal.initiatingFrameUrl !== 'string'
+    ))) throw new Error(`No Team evidence requires complete ${name} signals.`);
+    for (const signal of signals) {
+      if (!RESOURCE_SCOPES.includes(signal.resourceScope) || signal.resourceScope === 'unscoped') {
+        throw new Error('No Team evidence requires a typed resource scope.');
+      }
+      if (signal.resourceScope === 'tenant-team-a') {
+        throw new Error('No Team evidence contains Team A tenant resource activity.');
+      }
+      if (signal.resourceScope === 'tenant-team-b') {
+        throw new Error('No Team evidence contains Team B tenant resource activity.');
+      }
+      if (signal.resourceScope === 'tenant-other') {
+        throw new Error('No Team evidence contains other tenant resource activity.');
+      }
+      if (signal.resourceScope === 'join-admin-lookup') {
+        let target;
+        try {
+          target = new URL(signal.url);
+        } catch {
+          throw new Error('No Team join-page admin lookup must use its exact canonical target.');
+        }
+        if (
+          target.origin !== STAGING_ORIGIN
+          || target.pathname !== '/api/schools/admins'
+          || signal.method !== 'PATCH'
+        ) {
+          throw new Error('No Team join-page admin lookup must use its exact canonical target.');
+        }
+      }
+    }
+  };
+  validateSignals(window.protectedRequestSignals, window.protectedRequests, 'protected request');
+  validateSignals(window.listenerSignals, window.protectedListenerStarts, 'protected listener');
+  return { pass: true };
+}
+
 export function validateActionWindow(value, options = {}) {
   const window = requireRecord(value, 'Action window');
   requireBoolean(window.terminalReached, 'terminalReached');
@@ -330,6 +394,9 @@ export function validateActionWindow(value, options = {}) {
   const pendingFresh = options.kind === 'pending-deletion-fresh';
   const revoked = options.kind === 'fresh-unauthenticated' || pendingStale || pendingFresh;
   const requireNoProtected = revoked || options.requireNoProtected === true;
+  if (options.resourcePolicy !== undefined && options.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
+    throw new Error('Action window resource policy is unsupported.');
+  }
   if (revoked && window.sessionPresent) throw new Error('Revoked action window retained a session.');
   if (revoked && window.finalPath !== '/login') throw new Error('Revoked action window must end at /login.');
   if (revoked && !window.visibleSentinels.includes('Sign In')) throw new Error('Revoked action window must reach the Sign In sentinel.');
@@ -353,6 +420,7 @@ export function validateActionWindow(value, options = {}) {
     if (window.protectedRequests !== 0) throw new Error('Revoked action window contains a protected request.');
     if (window.protectedListenerStarts !== 0) throw new Error('Revoked action window contains a protected listener start.');
   }
+  if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) validateNoTeamResourceIsolation(window);
 
   return { ...window, pass: true };
 }
@@ -362,6 +430,9 @@ export function validateRouteResult(value) {
   requireBoolean(result.allowed, 'allowed');
   if (Object.hasOwn(result, 'requireNoProtected')) {
     requireBoolean(result.requireNoProtected, 'requireNoProtected');
+  }
+  if (Object.hasOwn(result, 'resourcePolicy') && result.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
+    throw new Error('Route result resource policy is unsupported.');
   }
   const requestedPath = result.allowed
     ? result.requestedPath ?? result.expectedPath
@@ -382,6 +453,7 @@ export function validateRouteResult(value) {
   }
   const window = validateActionWindow(result.window, {
     requireNoProtected: result.requireNoProtected === true,
+    resourcePolicy: result.resourcePolicy,
   });
 
   if (!window.sessionPresent) throw new Error('Active-user route result must retain an authenticated session.');
@@ -410,7 +482,7 @@ export function validateRouteResult(value) {
     if (unexpected) throw new Error('Allowed route contains an unexpected protected render.');
   }
 
-  if (!result.allowed) {
+  if (!result.allowed && result.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
     const requireAttributedSignals = (signals, count, name) => {
       if (!Array.isArray(signals) || signals.length !== count || signals.some(signal => (
         !isRecord(signal)

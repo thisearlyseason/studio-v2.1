@@ -4,7 +4,7 @@
 
 This design amends Phase 9 Task 7 after five incremental private-harness fix rounds failed independent review. The user authorized an architectural harness replacement on 2026-08-25. It does not authorize production access, a merge, or hosted execution before implementation and independent review pass.
 
-The replacement is a committed, testable evidence subsystem. It replaces the ignored Task 7 browser runner and guarded shell; it does not change SaaS runtime behavior.
+The replacement is a committed, testable evidence subsystem. It replaces the ignored Task 7 browser runner and guarded shell. A later Task 3 amendment also authorizes one bounded SaaS correction: the dashboard settled-role effect must re-evaluate when `userProfile.role` hydrates, so a fresh League Creator deterministically reaches `/competition`. No other product-runtime change is authorized by this design.
 
 ## Problem
 
@@ -48,7 +48,7 @@ Pure definitions and validators:
 - action-stage audit rules for admission, denied routes, isolation, logout/back/reload, fresh unauthenticated access, and pending deletion;
 - lifecycle result validation for preflight, seed, inspect, transition, cleanup, independent probe, credential removal, workspace removal, and zero browser sessions.
 
-No validator may infer PASS from a final URL alone. Every allowed route requires its configured visible sentinel. Every denied or revoked route requires zero protected render, zero protected requests, and zero protected listener starts over the complete action window.
+No validator may infer PASS from a final URL alone. Every allowed route requires its configured visible sentinel. Every revoked route requires zero protected render, zero protected requests, and zero protected listener starts over the complete action window. Denied active-account routes require zero denied-target protected activity; the No Team specialization additionally rejects every fixture-tenant or unscoped protected signal while permitting its exact account-scoped setup activity.
 
 ### `playwright-cli-client.mjs`
 
@@ -59,7 +59,8 @@ A thin dependency-injected adapter around the bundled `playwright_cli.sh`:
 - provides typed operations for snapshot, navigation, interaction, tab selection, browser listing, and closure;
 - compiles `run-code` payloads locally before transport;
 - parses JSON and rejects CLI `isError`, malformed output, timeout, and nonzero exit;
-- never logs credentials, cookies, bearer values, request bodies, or storage state.
+- receives the exact fixture run ID and reduces protected request/listener targets in memory to fixed resource scopes (`self-account`, join-admin lookup, Team A, Team B, other tenant, non-tenant, transport control, or unscoped);
+- never returns or logs credentials, cookies, bearer values, request bodies, storage state, or raw target identifiers; request bodies are inspected only in process to derive the fixed scope and are immediately discarded.
 
 Tests use an injected fake transport. A separate offline smoke uses the real bundled CLI against `about:blank` only.
 
@@ -73,7 +74,7 @@ await observeAction(pageHandle, stageName, async () => action())
 
 It records per-page counters before invoking the callback, executes the action, waits for the stage-specific terminal state, then returns only signals within that window. Callers cannot supply a post-action mark.
 
-Each window records final URL, route-specific visible sentinel, protected render history, session-cookie presence, protected request count, protected listener starts attributed by initiating frame URL, relevant HTTP results, page errors, application-console errors, unexpected request failures, and overflow.
+Each window records final URL, route-specific visible sentinel, protected render history, session-cookie presence, protected request count, protected listener starts attributed by initiating frame URL, fixed sanitized resource scopes, relevant HTTP results, page errors, application-console errors, unexpected request failures, and overflow.
 
 Logout uses separate windows for the logout click, stale-tab reload, stale-tab back, and second reload. Each stage independently requires login UI, no session, no protected render, no protected requests, and no protected listeners.
 
@@ -97,8 +98,9 @@ Executes only declarative scenarios from `scenario-contracts.mjs`.
 
 - Every admission and route terminal receives the exact expected path and heading together. A heading-only observation cannot complete a window, and a transient `Dashboard` cannot satisfy Parent A, League Creator, or School Admin.
 - Allowed routes require exact pathname plus route-specific visible content: Admin, Club/School Hub, Competition Hub, Billing, Coaches Corner, or Family Overview.
-- Denied routes require the exact settled role landing and no denied-route render/request/listener during the complete window.
-- `qa-missing-profile` and `qa-no-team` require zero protected requests and zero protected listener starts across login/admission and every denied-route window. Their onboarding/join activity may proceed only when it remains outside the protected-resource classifier; row aggregation cannot convert an earlier protected signal into PASS.
+- Denied routes require the exact settled role landing and no denied-route protected render. Ordinary active roles also reject denied-target request/listener attribution during the complete window.
+- `qa-missing-profile` retains the strict setup-isolation rule: zero protected requests and zero protected listener starts across login/admission and every denied-route window.
+- `qa-no-team` instead enforces the original tenant-isolation intent. Its own `users/{uid}` profile and `users/{uid}/teamMemberships` activity, the exact `PATCH /api/schools/admins` join-page lookup, non-tenant reference data, and transport-control messages may proceed. Any Team A, Team B, other-tenant, or unscoped protected request/listener fails in the login window and after each of the six denied-route attempts. Aggregation retains every typed scope so later clean windows cannot hide earlier tenant activity.
 - Horizontal isolation uses the real same-origin `GET /api/teams/chat?teamId=<id>` consumer: own team must return 200 and the opposite team must return 403. Direct Firestore REST GETs used by the client must return 200 for permitted team/player documents and 403 for opposite team/player documents. No `/team?teamId=` assertion is permitted because the page ignores that parameter.
 - Fresh unauthenticated and pending-deletion checks use complete action windows and fail on any transient protected UI, request, listener, session, error, or overflow.
 - Each scenario returns one complete sanitized ledger row. A failed or incomplete assertion aborts canonical progression and cannot be serialized as PASS.
@@ -125,7 +127,7 @@ Accepts only validated scenario results and lifecycle summaries. It writes the f
 
 1. The guardian validates local/GitHub/staging read-only prerequisites and an empty browser list.
 2. The guardian creates the private workspace, seeds v3 fixtures, and validates a zero-drift 20/82 inspection.
-3. The scenario runner opens isolated system-Chrome sessions. The client arms listeners on `about:blank` before login navigation.
+3. The scenario runner opens isolated system-Chrome sessions. The client receives the exact fixture run ID and arms listeners plus fixed resource-scope reduction on `about:blank` before login navigation.
 4. Each action is executed only through `observeAction()`. Pure validators decide PASS/FAIL from the complete action window and scenario contract.
 5. The pending-delete transition runs only after all pre-transition scenarios pass.
 6. All sessions close and the guardian verifies the browser list is empty.
@@ -143,8 +145,10 @@ The committed Node test must exercise real exported entrypoints and cover at lea
 - every logout/back/reload stage fails on transient protected render, request, listener, or session;
 - allowed routes fail on loading, blank, wrong sentinel, swallowed timeout, wrong path, console/page error, request failure, or overflow;
 - admission waits do not complete on an intermediate `Dashboard` and reject `Dashboard` as the final Parent A, League Creator, or School Admin landing;
-- denied routes fail on any protected flash/request/listener even if the final landing is correct;
-- Missing Profile and No Team fail on landing-attributed or denied-target protected requests/listeners in every admission window;
+- denied routes fail on any protected flash or denied-target tenant request/listener even if the final landing is correct;
+- Missing Profile fails on every protected request/listener in every admission window;
+- No Team permits exact self-account/membership and join-page admin lookup activity, but fails Team A, Team B, other-tenant, or unscoped requests/listeners in login and all six denied-route windows; aggregate validation must preserve earlier scopes;
+- a rendered product regression starts with an unresolved profile, hydrates `league_creator` without changing other redirect dependencies, and requires `/competition`; Parent and School redirects remain unchanged;
 - isolation calls the real configured same-origin endpoint and fails if it is not parameter-consuming, if own is not 200, or opposite is not 403;
 - direct Firestore probes require the full label/path set and exact 200/403 symmetry;
 - fresh unauthenticated and pending-delete rows fail on transient protected activity;
@@ -166,6 +170,6 @@ The final Task 7 report may claim completion only when:
 - every planned canonical row is present and validated;
 - there are no unexplained product or harness failures;
 - exact cleanup, complete independent absence, credential removal, workspace removal, and zero browser sessions are all proved;
-- the evidence-only commit is clearly distinguished from the deployed application SHA.
+- the final evidence-only commit is clearly distinguished from the reviewed/deployed application SHA that includes the bounded hydration fix.
 
 Until then, release status remains `NOT READY`.
