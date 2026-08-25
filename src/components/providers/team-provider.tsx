@@ -7,6 +7,8 @@ import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 import { hasStaffRole } from '@/lib/staff-position';
+import { activeTeamMembershipProjections } from '@/lib/team-membership-security';
+import { canStartProtectedAccountState } from '@/lib/client-account-admission';
 
 /**
  * Dispatch push + email notifications to all team members.
@@ -1080,6 +1082,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const storage = useStorage();
   const router = useRouter();
   const pathname = usePathname();
+  const canReadProtectedAccountState = canStartProtectedAccountState(pathname);
   
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -1103,7 +1106,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   useEffect(() => {
-    if (!isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
+    if (!canReadProtectedAccountState || !isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
     if (claimedSchoolAdminForUid === firebaseUser.uid) return;
 
     let cancelled = false;
@@ -1126,7 +1129,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     };
     claimPendingSchoolInvites();
     return () => { cancelled = true; };
-  }, [claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
+  }, [canReadProtectedAccountState, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
@@ -1152,7 +1155,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!firebaseUser || !db || (!firebaseUser.isAnonymous && firebaseUser.emailVerified !== true)) {
+    if (!canReadProtectedAccountState || !firebaseUser || !db || (!firebaseUser.isAnonymous && firebaseUser.emailVerified !== true)) {
       setUserProfile(null);
       return;
     }
@@ -1216,9 +1219,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         role: 'adult_player',
       } as unknown as UserProfile);
     });
-  }, [firebaseUser, db, userRole]);
+  }, [canReadProtectedAccountState, firebaseUser, db, userRole]);
 
-  const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
+  const teamsQuery = useMemoFirebase(() => (canReadProtectedAccountState && isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [canReadProtectedAccountState, isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
   // ── Shared deterministic invite-code fallback ─────────────────────────
@@ -1231,7 +1234,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return Math.abs(h).toString(36).toUpperCase().padStart(8, '0');
   }, []);
 
-  const teamsRaw = useMemo(() => (teamsData || []).map(m => {
+  const teamsRaw = useMemo(() => activeTeamMembershipProjections(teamsData || []).map(m => {
     const tid = m.teamId || m.id;
     const storedCode = (m.code || m.teamCode || m.inviteCode || '').toString().trim().toUpperCase();
     const finalCode = storedCode || generateTeamCode(tid);

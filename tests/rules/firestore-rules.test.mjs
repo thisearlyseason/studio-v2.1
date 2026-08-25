@@ -316,6 +316,7 @@ function authenticatedDb(uid, claims = {}) {
 test('user profiles remain private and billing authority cannot be self-granted', async () => {
   const ownerDb = authenticatedDb('owner');
   const outsiderDb = authenticatedDb('outsider');
+  const newUserDb = authenticatedDb('new-user');
 
   await assertSucceeds(getDoc(doc(ownerDb, 'users', 'owner')));
   await assertFails(getDoc(doc(outsiderDb, 'users', 'owner')));
@@ -323,6 +324,10 @@ test('user profiles remain private and billing authority cannot be self-granted'
     role: 'coach',
     plan_type: 'school',
     team_limit: 100,
+  }));
+  await assertFails(setDoc(doc(newUserDb, 'users', 'new-user'), {
+    role: 'adult_player',
+    isSchoolAdmin: true,
   }));
 });
 

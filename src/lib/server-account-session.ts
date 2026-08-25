@@ -37,6 +37,7 @@ export function createServerAccountAccessReader(
         const selectedAuthority = await dependencies.getTeamAuthority(activeTeamId, uid);
         if (
           selectedAuthority &&
+          isActiveOwnedTeam(selectedAuthority.teamData) &&
           (selectedAuthority.isOwner || selectedAuthority.isSuperAdmin || selectedAuthority.member)
         ) {
           return true;
@@ -52,10 +53,16 @@ export function createServerAccountAccessReader(
         dependencies.db
           .collection('teams')
           .where('ownerUserId', '==', uid)
-          .limit(1)
+          .limit(20)
           .get(),
       ]);
-      return members.docs.some(member => isActiveMember(member.data())) ||
+      const activeMemberTeamReads = members.docs.flatMap(member => {
+        if (!isActiveMember(member.data())) return [];
+        const teamRef = member.ref.parent.parent;
+        return teamRef ? [teamRef.get()] : [];
+      });
+      const activeMemberTeams = await Promise.all(activeMemberTeamReads);
+      return activeMemberTeams.some(team => team.exists && isActiveOwnedTeam(team.data() || {})) ||
         ownedTeams.docs.some(team => isActiveOwnedTeam(team.data()));
     },
   };

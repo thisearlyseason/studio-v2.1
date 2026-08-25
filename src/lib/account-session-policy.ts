@@ -49,7 +49,6 @@ function hasIndependentAuthority(
   return claimRole === 'superadmin' ||
     profileRole === 'superadmin' ||
     profileRole === 'league_creator' ||
-    profile.isSchoolAdmin === true ||
     profile.isPrimaryClubAuthority === true;
 }
 

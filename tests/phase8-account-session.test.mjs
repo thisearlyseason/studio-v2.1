@@ -10,12 +10,23 @@ import {
   establishBrowserSession,
   establishBrowserSessionOrSignOut,
 } from '../src/lib/client-auth.ts';
+import { canStartProtectedAccountState } from '../src/lib/client-account-admission.ts';
 
 function firestoreDouble({ profile = null, memberRows = [], ownedTeams = [] } = {}) {
   const operations = [];
   const snapshot = value => ({ exists: value !== null, data: () => value });
   const querySnapshot = rows => ({
-    docs: rows.map(value => ({ data: () => value })),
+    docs: rows.map(value => {
+      const { __teamData = {}, ...data } = value;
+      return {
+        data: () => data,
+        ref: {
+          parent: {
+            parent: { get: async () => snapshot(__teamData) },
+          },
+        },
+      };
+    }),
     empty: rows.length === 0,
     size: rows.length,
   });
@@ -145,7 +156,6 @@ test('session policy routes an account without a profile to onboarding', async (
 test('session policy preserves independently authorized accounts without squad lookup', async () => {
   const cases = [
     { identity: { uid: 'super', role: 'superadmin' }, profile: { role: 'member' } },
-    { identity: { uid: 'school' }, profile: { role: 'admin', isSchoolAdmin: true } },
     { identity: { uid: 'club' }, profile: { role: 'admin', isPrimaryClubAuthority: true } },
     { identity: { uid: 'league' }, profile: { role: 'league_creator' } },
   ];
@@ -167,6 +177,25 @@ test('session policy preserves independently authorized accounts without squad l
     });
     assert.equal(authorityReads, 0);
   }
+});
+
+test('session policy does not trust a self-authored school-admin profile flag', async () => {
+  let authorityReads = 0;
+  const profile = { role: 'member', accountStatus: 'active', isSchoolAdmin: true };
+  const resolve = createAccountSessionResolver({
+    getProfile: async () => profile,
+    hasActiveSquadAuthority: async () => {
+      authorityReads += 1;
+      return false;
+    },
+  });
+
+  assert.deepEqual(await resolve({ uid: 'user-1' }), {
+    allowed: true,
+    redirectTo: '/teams/join',
+    profile,
+  });
+  assert.equal(authorityReads, 1);
 });
 
 test('anonymous demo sessions do not read account state', async () => {
@@ -202,6 +231,7 @@ test('server account reader accepts direct selected-team membership without fall
       isOwner: false,
       isSuperAdmin: false,
       member: { data: { status: 'active' } },
+      teamData: {},
     }),
   });
 
@@ -222,6 +252,7 @@ test('server account reader finds alternate canonical membership and ignores rem
       isOwner: false,
       isSuperAdmin: false,
       member: null,
+      teamData: {},
     }),
   });
 
@@ -254,6 +285,37 @@ test('server account reader rejects removed/deleted rows but accepts canonical o
 
 test('server account reader does not preserve authority through a deleted owned squad', async () => {
   const fixture = firestoreDouble({ ownedTeams: [{ ownerUserId: 'user-1', isDeleted: true }] });
+  const reader = createServerAccountAccessReader({
+    db: fixture.db,
+    getTeamAuthority: async () => null,
+  });
+
+  assert.equal(await reader.hasActiveSquadAuthority('user-1', null), false);
+});
+
+test('server account reader does not preserve selected-team authority after the team is deleted', async () => {
+  const fixture = firestoreDouble();
+  const reader = createServerAccountAccessReader({
+    db: fixture.db,
+    getTeamAuthority: async () => ({
+      isOwner: true,
+      isSuperAdmin: false,
+      member: null,
+      teamData: { isDeleted: true },
+    }),
+  });
+
+  assert.equal(await reader.hasActiveSquadAuthority('user-1', 'deleted-team'), false);
+});
+
+test('server account reader ignores an active member row under a deleted alternate team', async () => {
+  const fixture = firestoreDouble({
+    memberRows: [{
+      userId: 'user-1',
+      status: 'active',
+      __teamData: { isDeleted: true },
+    }],
+  });
   const reader = createServerAccountAccessReader({
     db: fixture.db,
     getTeamAuthority: async () => null,
@@ -477,4 +539,13 @@ test('browser admission clears both HTTP and Firebase client state after denial'
   ), /denied/);
   assert.deepEqual(calls, ['clear', 'sign-out']);
   assert.deepEqual(Object.keys(error), []);
+});
+
+test('protected provider state waits until navigation leaves authentication and setup routes', () => {
+  for (const pathname of ['/login', '/signup', '/verify-email', '/onboarding']) {
+    assert.equal(canStartProtectedAccountState(pathname), false, pathname);
+  }
+  for (const pathname of ['/', '/dashboard', '/teams/join', '/club']) {
+    assert.equal(canStartProtectedAccountState(pathname), true, pathname);
+  }
 });
