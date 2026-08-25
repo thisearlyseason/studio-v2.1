@@ -244,11 +244,53 @@ const requireZeroSummary = (value, name) => {
   }
 };
 
+const requireCanonicalStagingLocation = (value, finalPath, name) => {
+  requireString(value, `${name} finalUrl`);
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must contain an absolute canonical finalUrl.`);
+  }
+  if (parsed.origin !== STAGING_ORIGIN || parsed.username || parsed.password) {
+    throw new Error(`${name} finalUrl must use the canonical staging origin.`);
+  }
+  if (parsed.search || parsed.hash || value !== `${STAGING_ORIGIN}${parsed.pathname}`) {
+    throw new Error(`${name} must contain a canonical finalUrl without query or hash.`);
+  }
+  if (parsed.pathname !== finalPath) {
+    throw new Error(`${name} finalUrl must match finalPath.`);
+  }
+  return parsed.pathname;
+};
+
+const requireCanonicalStagingAttribution = (value, name) => {
+  requireString(value, `${name} initiatingFrameUrl`);
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must have canonical staging attribution.`);
+  }
+  if (
+    parsed.origin !== STAGING_ORIGIN
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash
+    || value !== `${STAGING_ORIGIN}${parsed.pathname}`
+  ) throw new Error(`${name} must have canonical staging attribution.`);
+  return parsed.pathname;
+};
+
+const isExactPathOrSubtree = (pathname, root) => pathname === root || pathname.startsWith(`${root}/`);
+
 export function validateActionWindow(value, options = {}) {
   const window = requireRecord(value, 'Action window');
   requireBoolean(window.terminalReached, 'terminalReached');
   requireBoolean(window.loadingVisible, 'loadingVisible');
   requireString(window.finalPath, 'finalPath');
+  requireCanonicalStagingLocation(window.finalUrl, window.finalPath, 'Action window');
   if (!Array.isArray(window.visibleSentinels) || window.visibleSentinels.some(item => typeof item !== 'string')) {
     throw new Error('visibleSentinels must be an explicit string array.');
   }
@@ -374,26 +416,23 @@ export function validateRouteResult(value) {
       ))) throw new Error(`Denied route requires complete attributed ${name} evidence.`);
       return signals;
     };
-    const initiatedByDeniedTarget = signal => {
-      try {
-        const frame = new URL(signal.initiatingFrameUrl);
-        return frame.origin === STAGING_ORIGIN && frame.pathname === requestedPath;
-      } catch {
-        return false;
-      }
-    };
     const requestSignals = requireAttributedSignals(
       window.protectedRequestSignals, window.protectedRequests, 'protected request',
     );
     const listenerSignals = requireAttributedSignals(
       window.listenerSignals, window.protectedListenerStarts, 'protected listener',
     );
-    if (requestSignals.some(initiatedByDeniedTarget)) {
-      throw new Error('Denied route contains a denied-target protected request.');
-    }
-    if (listenerSignals.some(initiatedByDeniedTarget)) {
-      throw new Error('Denied route contains a denied-target protected listener.');
-    }
+    const validateAttribution = (signal, name) => {
+      const pathname = requireCanonicalStagingAttribution(signal.initiatingFrameUrl, name);
+      if (isExactPathOrSubtree(pathname, requestedPath)) {
+        throw new Error(`Denied route contains a denied-target ${name}.`);
+      }
+      if (pathname !== expectedPath) {
+        throw new Error(`Denied route ${name} must use the exact authorized landing attribution.`);
+      }
+    };
+    for (const signal of requestSignals) validateAttribution(signal, 'protected request');
+    for (const signal of listenerSignals) validateAttribution(signal, 'protected listener');
   }
 
   return { pass: true, allowed: result.allowed, window };

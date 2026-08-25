@@ -34,25 +34,29 @@ import {
   runRouteScenario,
 } from '../scripts/qa-evidence/phase9/scenarios.mjs';
 
-const safeWindow = overrides => ({
-  terminalReached: true,
-  loadingVisible: false,
-  finalPath: '/family',
-  visibleSentinels: ['Family Overview'],
-  renderSignals: [],
-  redirectReason: 'none',
-  sessionPresent: true,
-  protectedRender: false,
-  protectedRequests: 0,
-  protectedRequestSignals: [],
-  protectedListenerStarts: 0,
-  listenerSignals: [],
-  pageErrors: 0,
-  appConsoleErrors: 0,
-  unexpectedRequestFailures: 0,
-  overflow: 0,
-  ...overrides,
-});
+const safeWindow = (overrides = {}) => {
+  const finalPath = overrides.finalPath ?? '/family';
+  return {
+    terminalReached: true,
+    loadingVisible: false,
+    finalUrl: overrides.finalUrl ?? `${STAGING_ORIGIN}${finalPath}`,
+    finalPath,
+    visibleSentinels: ['Family Overview'],
+    renderSignals: [],
+    redirectReason: 'none',
+    sessionPresent: true,
+    protectedRender: false,
+    protectedRequests: 0,
+    protectedRequestSignals: [],
+    protectedListenerStarts: 0,
+    listenerSignals: [],
+    pageErrors: 0,
+    appConsoleErrors: 0,
+    unexpectedRequestFailures: 0,
+    overflow: 0,
+    ...overrides,
+  };
+};
 
 const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
 
@@ -191,6 +195,25 @@ test('phase 9 playwright client classifies only protected data resources', () =>
   ]) assert.equal(isProtectedResource(value), true);
 });
 
+test('phase 9 playwright client retains protected targets when frame attribution is noncanonical', () => {
+  const protectedApi = initiatingFrameUrl => ({
+    url: `${STAGING_ORIGIN}/api/teams/chat`,
+    method: 'GET',
+    resourceType: 'fetch',
+    initiatingFrameUrl,
+  });
+  const protectedListener = initiatingFrameUrl => ({
+    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    method: 'POST',
+    resourceType: 'fetch',
+    initiatingFrameUrl,
+  });
+  for (const initiatingFrameUrl of ['unattributed:', 'invalid:', 'about:blank', 'https://evil.invalid/admin']) {
+    assert.equal(isProtectedResource(protectedApi(initiatingFrameUrl)), true, initiatingFrameUrl);
+    assert.equal(isProtectedResource(protectedListener(initiatingFrameUrl)), true, initiatingFrameUrl);
+  }
+});
+
 test('phase 9 action window treats login terminal sentinels as nonprotected renders', async () => {
   const transport = createCliTransport(argv => {
     const code = argv[argv.indexOf('run-code') + 1] ?? '';
@@ -293,10 +316,10 @@ test('phase 9 action window marks the same page before action and returns saniti
         sessionPresent: false,
         protectedRender: true,
         protectedRequests: [{
-          url: 'https://example.invalid/api/teams/chat?allowed=1',
+          url: `${STAGING_ORIGIN}/api/teams/chat?allowed=1`,
           method: 'POST',
           resourceType: 'fetch',
-          initiatingFrameUrl: 'https://example.invalid/dashboard',
+          initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
           status: 401,
           body: 'password=must-not-return',
           headers: { authorization: 'Bearer must-not-return' },
@@ -318,10 +341,10 @@ test('phase 9 action window marks the same page before action and returns saniti
           resourceType: 'fetch',
           initiatingFrameUrl: 'https://example.invalid/dashboard?token=must-not-return',
         }, {
-          url: 'https://example.invalid/api/teams/chat?teamId=example',
+          url: `${STAGING_ORIGIN}/api/teams/chat?teamId=example`,
           method: 'GET',
           resourceType: 'fetch',
-          initiatingFrameUrl: 'https://example.invalid/dashboard',
+          initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
         }],
         relevantHttpResults: [{ url: 'https://example.invalid/api/protected', status: 401 }],
         pageErrors: [],
@@ -352,10 +375,10 @@ test('phase 9 action window marks the same page before action and returns saniti
   assert.equal(result.protectedRequests, 1);
   assert.equal(result.protectedRender, true);
   assert.deepEqual(result.requestSignals, [{
-    url: 'https://example.invalid/api/teams/chat',
+    url: `${STAGING_ORIGIN}/api/teams/chat`,
     method: 'POST',
     resourceType: 'fetch',
-    initiatingFrameUrl: 'https://example.invalid/dashboard',
+    initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
     status: 401,
   },
   { url: 'data:', method: 'GET', resourceType: 'fetch', initiatingFrameUrl: 'data:' },
@@ -368,10 +391,10 @@ test('phase 9 action window marks the same page before action and returns saniti
     resourceType: 'fetch',
     initiatingFrameUrl: 'https://example.invalid/dashboard',
   }, {
-    url: 'https://example.invalid/api/teams/chat',
+    url: `${STAGING_ORIGIN}/api/teams/chat`,
     method: 'GET',
     resourceType: 'fetch',
-    initiatingFrameUrl: 'https://example.invalid/dashboard',
+    initiatingFrameUrl: `${STAGING_ORIGIN}/dashboard`,
   }]);
   assert.equal(result.protectedListenerStarts, 2);
   assert.deepEqual(result.renderSignals, [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Family Overview' }]);
@@ -677,6 +700,22 @@ test('phase 9 evidence contracts require path and visible readiness for allowed 
   }).pass, true);
 });
 
+test('phase 9 evidence contracts bind every passing action window to canonical staging origin and path', () => {
+  assert.throws(() => validateActionWindow(safeWindow({
+    finalUrl: 'https://evil.invalid/family',
+  })), /canonical staging origin/i);
+  assert.throws(() => validateActionWindow(safeWindow({
+    finalUrl: `${STAGING_ORIGIN}/admin`,
+  })), /finalUrl.*finalPath/i);
+  assert.throws(() => validateActionWindow(safeWindow({
+    finalUrl: `${STAGING_ORIGIN}/family?source=redirect`,
+  })), /canonical.*finalUrl/i);
+  assert.throws(() => validateActionWindow(safeWindow({
+    finalUrl: `${STAGING_ORIGIN}/family#content`,
+  })), /canonical.*finalUrl/i);
+  assert.equal(validateActionWindow(safeWindow()).pass, true);
+});
+
 test('phase 9 evidence contracts reject an extra final protected heading even when it predates the action mark', () => {
   assert.throws(() => validateRouteResult({
     allowed: true,
@@ -742,6 +781,65 @@ test('phase 9 evidence contracts scope denied activity to the requested path and
       renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
     }),
   }).pass, true);
+});
+
+test('phase 9 evidence contracts fail closed on malformed or untrusted denied-route attribution', () => {
+  const protectedSignal = initiatingFrameUrl => ({
+    url: `${STAGING_ORIGIN}/api/teams/chat`,
+    method: 'GET',
+    resourceType: 'fetch',
+    initiatingFrameUrl,
+  });
+  const denied = (field, initiatingFrameUrl) => ({
+    allowed: false,
+    requestedPath: '/admin',
+    expectedPath: '/dashboard',
+    expectedSentinel: 'Dashboard',
+    window: safeWindow({
+      finalUrl: `${STAGING_ORIGIN}/dashboard`,
+      finalPath: '/dashboard',
+      visibleSentinels: ['Dashboard'],
+      protectedRender: true,
+      renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
+      [field === 'protectedRequestSignals' ? 'protectedRequests' : 'protectedListenerStarts']: 1,
+      [field]: [protectedSignal(initiatingFrameUrl)],
+    }),
+  });
+  for (const value of ['unattributed:', 'invalid:', 'about:blank', 'https://evil.invalid/dashboard']) {
+    assert.throws(() => validateRouteResult(denied('protectedRequestSignals', value)), /canonical staging.*attribution/i);
+    assert.throws(() => validateRouteResult(denied('listenerSignals', value)), /canonical staging.*attribution/i);
+  }
+});
+
+test('phase 9 evidence contracts permit only the exact canonical landing attribution and reject denied subtrees', () => {
+  const signal = initiatingFrameUrl => ({
+    url: `${STAGING_ORIGIN}/api/teams/chat`,
+    method: 'GET',
+    resourceType: 'fetch',
+    initiatingFrameUrl,
+  });
+  const denied = initiatingFrameUrl => ({
+    allowed: false,
+    requestedPath: '/admin',
+    expectedPath: '/dashboard',
+    expectedSentinel: 'Dashboard',
+    window: safeWindow({
+      finalUrl: `${STAGING_ORIGIN}/dashboard`,
+      finalPath: '/dashboard',
+      visibleSentinels: ['Dashboard'],
+      protectedRender: true,
+      renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
+      protectedRequests: 1,
+      protectedRequestSignals: [signal(initiatingFrameUrl)],
+    }),
+  });
+  assert.equal(validateRouteResult(denied(`${STAGING_ORIGIN}/dashboard`)).pass, true);
+  assert.throws(() => validateRouteResult(denied(`${STAGING_ORIGIN}/family`)), /authorized landing attribution/i);
+  assert.throws(() => validateRouteResult(denied(`${STAGING_ORIGIN}/admin/`)), /denied-target protected request/i);
+  assert.throws(() => validateRouteResult(denied(`${STAGING_ORIGIN}/admin/transient`)), /denied-target protected request/i);
+  assert.throws(() => validateRouteResult(denied(`${STAGING_ORIGIN}/dashboard/`)), /authorized landing attribution/i);
+  assert.throws(() => validateRouteResult(denied(`${STAGING_ORIGIN}/dashboard?source=redirect`)), /canonical.*attribution/i);
+  assert.throws(() => validateRouteResult(denied(`${STAGING_ORIGIN}/dashboard#content`)), /canonical.*attribution/i);
 });
 
 test('phase 9 evidence contracts reject every denied-route transient signal', () => {
@@ -880,7 +978,9 @@ test('phase 9 evidence contracts reject transient signals for fresh and pending 
       }] : [],
     });
     assert.equal(validateActionWindow(base, { kind }).pass, true);
-    assert.throws(() => validateActionWindow({ ...base, finalPath: '/dashboard' }, { kind }), /\/login/i);
+    assert.throws(() => validateActionWindow({
+      ...base, finalUrl: `${STAGING_ORIGIN}/dashboard`, finalPath: '/dashboard',
+    }, { kind }), /\/login/i);
     assert.throws(() => validateActionWindow({ ...base, visibleSentinels: [] }, { kind }), /Sign In/i);
     if (kind === 'pending-deletion-fresh') {
       assert.throws(() => validateActionWindow({ ...base, visibleSentinels: ['Sign In'] }, { kind }), /account is unavailable/i);
@@ -1156,6 +1256,22 @@ test('phase 9 browser scenarios require visible readiness and complete denied-ro
   assert.equal(row.result, 'PASS');
   assert.equal(row.finalUrl, `${STAGING_ORIGIN}/family`);
   assert.deepEqual(passingClient.calls, ['mark:admission-route', 'terminal:admission-route']);
+});
+
+test('phase 9 browser scenarios reject a foreign-origin redirect even when its final path and heading match', async () => {
+  const client = createScriptedScenarioClient([scenarioWindow({
+    finalUrl: 'https://evil.invalid/family',
+    finalPath: '/family',
+    visibleSentinels: ['Family Overview'],
+  })]);
+  await assert.rejects(runRouteScenario({
+    client,
+    session: 'foreign-origin-route',
+    context: scenarioContext({ contextId: 'foreign-origin-route' }),
+    path: '/family',
+    allowed: true,
+    actions: { navigate: async () => {}, waitForSentinel: async () => {} },
+  }), /canonical staging origin/i);
 });
 
 test('phase 9 browser scenarios use exact symmetric API and Firestore isolation probes', async () => {
@@ -1716,7 +1832,7 @@ test('phase 9 browser scenarios recorder observes an exact Radix status toast wi
 test('phase 9 browser scenarios split stale pending revocation from fresh unavailable login', async () => {
   assert.equal(accountSessionRedirect('/dashboard', { allowed: false, code: 'auth/account-unavailable' }), '/login?reason=unavailable');
   const stale = scenarioWindow({
-    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login?reason=unavailable`,
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`,
     visibleSentinels: ['Sign In'], sessionPresent: false,
     redirectReason: 'unavailable',
   });
@@ -1776,6 +1892,7 @@ test('phase 9 action window treats a real Dashboard h1 flash as protected activi
     )), true);
     assert.throws(() => validateActionWindow({
       ...result,
+      finalUrl: `${STAGING_ORIGIN}/login`,
       finalPath: '/login',
       visibleSentinels: ['Sign In'],
       sessionPresent: false,
@@ -1880,6 +1997,11 @@ test('phase 9 action window binds session evidence to exact staging __session co
     {
       name: 'same-origin auth-like cookie',
       cookies: [{ name: 'auth_session_hint', value: 'opaque-test-value', url: STAGING_ORIGIN }],
+      expected: false,
+    },
+    {
+      name: 'same-origin empty exact-name cookie',
+      cookies: [{ name: '__session', value: '', url: STAGING_ORIGIN }],
       expected: false,
     },
     {

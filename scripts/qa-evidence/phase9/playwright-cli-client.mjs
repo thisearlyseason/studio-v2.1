@@ -215,7 +215,11 @@ const sampleSource = mark => String.raw`async (page) => {
     finalUrl: page.url(),
     finalPath: render.path,
     visibleSentinels: render.sentinels,
-    sessionPresent: cookies.some(cookie => cookie.name === ${JSON.stringify(SESSION_COOKIE_NAME)}),
+    sessionPresent: cookies.some(cookie => (
+      cookie.name === ${JSON.stringify(SESSION_COOKIE_NAME)}
+      && typeof cookie.value === 'string'
+      && cookie.value.length > 0
+    )),
     protectedRender: renderHistory.some(item => item.kind === 'heading' && protectedHeadings.includes(item.sentinel)),
     renderSignals: renderHistory,
     redirectReason: render.redirectReason,
@@ -255,10 +259,8 @@ const NON_PROTECTED_API_PATHS = new Set([
 export function isProtectedResource(signal) {
   if (!signal || typeof signal !== 'object' || signal.resourceType === 'document') return false;
   let target;
-  let frame;
   try {
     target = new URL(signal.url);
-    frame = new URL(signal.initiatingFrameUrl);
   } catch {
     return false;
   }
@@ -266,7 +268,7 @@ export function isProtectedResource(signal) {
   if (target.hostname === 'firestore.googleapis.com') {
     return /\/documents(?::(?:runQuery|batchGet)|\/|$)|google\.firestore\.v1\.Firestore\/(?:Listen|RunQuery|BatchGetDocuments|Commit)/i.test(target.pathname);
   }
-  if (target.origin !== frame.origin) return false;
+  if (target.origin !== STAGING_ORIGIN) return false;
   if (!target.pathname.startsWith('/api/')) return false;
   return !NON_PROTECTED_API_PATHS.has(target.pathname);
 }
