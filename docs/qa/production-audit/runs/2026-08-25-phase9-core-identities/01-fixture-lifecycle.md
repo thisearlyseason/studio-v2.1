@@ -2,32 +2,33 @@
 
 ## Result
 
-`INCONCLUSIVE-HARNESS` — the v3 fixture seeded successfully, but its mandatory first inspection found one deterministic definition-versus-hosted-shape mismatch. Browser verification did not start.
+`INCONCLUSIVE-HARNESS` — retry 4 established a clean exact v3 baseline, then stopped before transition when the first responsive browser pair exposed an incomplete synthetic player contract.
 
-## Guard and seed
+## Guard and baseline
 
 | Gate | Sanitized result |
 | --- | --- |
 | Read-only preflight | PASS — exact staging project and canonical origin; `safe=true` |
-| Planned graph | Manifest v3; `20` Auth identities; `81` Firestore documents; `1` expected-absent profile |
-| Seed | `state=seeded`; created `20/81` |
+| Planned graph | Manifest v3; `20` Auth identities; `82` Firestore documents; `1` expected-absent profile |
+| Seed | PASS — `state=seeded`; created `20/82` |
 | Credential confinement | PASS — external regular file, mode `0600` |
-| Expected absence | No collision was reported for the intentionally absent missing-profile document |
+| Mandatory inspection | PASS — actual presence `20/82`; problems `0`; drift `0` |
+| Browser boundary | STOP — two Parent A diagnostic contexts reproduced the same synthetic-data exception |
+| Pending-delete transition | NOT RUN |
 
-## Mandatory inspection stop
+## Deterministic attribution
 
-The first inspection observed all expected-present resources (`20` Auth and `81` Firestore) but returned `ok=false`, manifest state `seeded`, and one drift item:
+Each context navigated to the Parent A `/family` landing seven times during the login/direct-route matrix. The Family itinerary consumes `PlayerProfile.firstName[0]`, while all four v3 `players` documents omitted `firstName`, `lastName`, `dateOfBirth`, `hasLogin`, and `createdAt`. Each real render exception was logged once by the application and once by the error boundary, producing `14` console entries per viewport. No product runtime change is required for this harness mismatch.
 
-| Alias | Kind | Field | Result |
-| --- | --- | --- | --- |
-| `qa-league` | Firestore shape | `memberUserIds` | Unexpected relative to the committed v3 definition |
+The earlier denied-route listener counts were also non-canonical: the harness used the transient page target URL and therefore attributed authorized landing-page listeners to the denied pathname during redirects. The private runner now attributes listener starts to the request's committed initiating frame URL. An offline system-Chrome smoke proves that a transient redirect landing listener is excluded while a committed denied-route listener is included.
 
-A guarded exact-document comparison, without retaining field values, confirmed `extraFields=[memberUserIds]` and `missingFields=[]`. The deployed trusted league synchronization trigger derives this cache from the league creator and writes it after league creation. The v3 fixture definition omits the same deterministic field, so strict inspection rejects the hosted result. This is a fixture-harness contract mismatch, not browser product evidence and not a product defect.
+## Fix round 4 — strict RED/GREEN
 
-Canonical progression stopped immediately. No login, route, tenant, logout, multi-tab, or pending-deletion browser scenario ran, and the pending-deletion transition was not invoked.
+- Focused RED: `0/1`; every required field was `undefined` on all four v3 player documents.
+- Minimal fixture correction: deterministic names, age-consistent birth dates, login state derived from the existing exact user relationship, and a fixed audit creation timestamp. Resource paths/counts and authorization relationships are unchanged; v2 recovery and product runtime are unchanged.
+- Focused GREEN: player contract and v2 recovery `2/2`.
+- Complete fixture safety: `158/158`.
+- Fixture/authorization/repository-hygiene gate: `203/203`.
+- Full verification: Node `628/628`, components `2/2`, rules `38/38`, production build PASS, Functions TypeScript build PASS.
 
-## Local correction before retry
-
-Fix round 1 added the deterministic creator-backed `memberUserIds` value to the v3 `qa-league` definition and a focused assertion in `tests/qa-fixture-safety.test.mjs`. `functions/src/index.ts` remains unchanged; it is the trusted producer that explains the observed field. The local regression and full verification gates pass, but this correction is not yet deployed and the blocked browser ledger is not promoted. Independent review, exact reviewed staging deployment, and a complete fresh Task 7 lifecycle remain required.
-
-Fix round 2 traced the complete create trigger and found its second output: `syncPublicLeagueView()` writes `publicLeagueViews/{leagueId}` with a deterministic public projection plus a server timestamp. The corrected v3 definition now journals `82` Firestore paths, treats the projection as trigger-derived rather than client-seeded, inspects its exact field allowlist and timestamp shape, and deletes it only while the exact run source and ownership proof are present. If that proof fails or deletion fails, cleanup preserves the projection's source/proof/Auth chain for exact recovery rather than indirectly deleting it through the source trigger. Version-2 recovery remains unchanged at `40` paths. This correction is local only pending independent review and exact staging deployment.
+No hosted retry, push, deployment, production action, or merge followed this local correction. Independent review is required before a complete fresh lifecycle.

@@ -1913,6 +1913,55 @@ test('phase 9 league fixture includes the trusted creator membership cache', () 
   assert.deepEqual(league.data.memberUserIds, [creator.uid]);
 });
 
+test('phase 9 player fixtures satisfy the Family PlayerProfile contract', () => {
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const players = phase9.documents
+    .filter(document => document.kind === 'player')
+    .map(document => ({
+      alias: document.alias,
+      firstName: document.data.firstName,
+      lastName: document.data.lastName,
+      dateOfBirth: document.data.dateOfBirth,
+      hasLogin: document.data.hasLogin,
+      createdAt: document.data.createdAt,
+    }));
+
+  assert.deepEqual(players, [
+    {
+      alias: 'qa-youth-active',
+      firstName: 'Youth',
+      lastName: 'Player A',
+      dateOfBirth: '2012-01-01',
+      hasLogin: true,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+    {
+      alias: 'qa-parent-b',
+      firstName: 'Youth',
+      lastName: 'Player B',
+      dateOfBirth: '2012-01-01',
+      hasLogin: false,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+    {
+      alias: 'qa-adult-player-a',
+      firstName: 'Adult',
+      lastName: 'Player A',
+      dateOfBirth: '2000-01-01',
+      hasLogin: true,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+    {
+      alias: 'qa-adult-player-b',
+      firstName: 'Adult',
+      lastName: 'Player B',
+      dateOfBirth: '2000-01-01',
+      hasLogin: true,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+  ]);
+});
+
 test('phase 9 journals the complete league-create trigger footprint without changing v2 recovery', () => {
   const legacy = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
   const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });

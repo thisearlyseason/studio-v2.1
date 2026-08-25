@@ -27,6 +27,8 @@ const V3_IDENTITY_SPECS = [
   ['qa-no-team', 'No Team Member', 'Member', 'active', true],
 ];
 
+const PHASE9_FIXTURE_CREATED_AT = '2026-08-25T00:00:00.000Z';
+
 function identitySpecsFor(manifestVersion) {
   if (manifestVersion === 2) return V2_IDENTITY_SPECS;
   if (manifestVersion === 3) return V3_IDENTITY_SPECS;
@@ -262,6 +264,9 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
       alias: 'qa-youth-active',
       id: `${runId}-player-youth-active`,
       name: 'Youth Player A',
+      firstName: 'Youth',
+      lastName: 'Player A',
+      dateOfBirth: '2012-01-01',
       userId: byAlias.get('qa-youth-active').uid,
       teamId: teamA.id,
       parentId: byAlias.get('qa-parent-a').uid,
@@ -272,6 +277,9 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
       alias: 'qa-parent-b',
       id: `${runId}-youth-player-b`,
       name: 'Youth Player B',
+      firstName: 'Youth',
+      lastName: 'Player B',
+      dateOfBirth: '2012-01-01',
       userId: null,
       teamId: teamB.id,
       parentId: byAlias.get('qa-parent-b').uid,
@@ -285,6 +293,9 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
         alias,
         id: membership.playerId,
         name: identity.name,
+        firstName: 'Adult',
+        lastName: alias === 'qa-adult-player-a' ? 'Player A' : 'Player B',
+        dateOfBirth: '2000-01-01',
         userId: identity.uid,
         teamId: membership.teamId,
         parentId: identity.uid,
@@ -298,6 +309,8 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
     path: `players/${player.id}`,
     data: {
       ...player,
+      hasLogin: player.userId !== null,
+      createdAt: PHASE9_FIXTURE_CREATED_AT,
       ...marker(runId, player.alias, expiresAt),
     },
   })) : [];
