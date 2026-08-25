@@ -66,6 +66,10 @@ export const LANDING_SENTINELS = deepFreeze([...new Set([
   ...Object.values(LANDING_SCENARIOS).flat(),
   ...Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels),
 ])]);
+export const PROTECTED_PAGE_HEADINGS = deepFreeze([...new Set([
+  'Dashboard',
+  ...Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels),
+])]);
 
 export const ISOLATION_SCENARIOS = deepFreeze({
   team: {
@@ -247,6 +251,15 @@ export function validateActionWindow(value, options = {}) {
   if (!Array.isArray(window.visibleSentinels) || window.visibleSentinels.some(item => typeof item !== 'string')) {
     throw new Error('visibleSentinels must be an explicit string array.');
   }
+  if (!Array.isArray(window.renderSignals) || window.renderSignals.some(signal => (
+    !isRecord(signal)
+    || !['heading', 'status'].includes(signal.kind)
+    || typeof signal.pathname !== 'string'
+    || typeof signal.sentinel !== 'string'
+  ))) throw new Error('renderSignals must contain typed heading or status signals.');
+  if (!['unavailable', 'none', 'other'].includes(window.redirectReason)) {
+    throw new Error('redirectReason must use the fixed sanitized enum.');
+  }
   requireBoolean(window.sessionPresent, 'sessionPresent');
   requireBoolean(window.protectedRender, 'protectedRender');
   requireCount(window.protectedRequests, 'protectedRequests');
@@ -263,6 +276,13 @@ export function validateActionWindow(value, options = {}) {
   if (window.unexpectedRequestFailures !== 0) throw new Error('Action window contains an unexpected request failure.');
   if (window.overflow !== 0) throw new Error('Action window signal overflow is nonzero.');
 
+  const protectedHistory = window.renderSignals.filter(signal => (
+    signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
+  ));
+  if (window.protectedRender !== (protectedHistory.length > 0)) {
+    throw new Error('Protected render flag must match protected heading history.');
+  }
+
   const pendingStale = options.kind === 'pending-deletion-stale';
   const pendingFresh = options.kind === 'pending-deletion-fresh';
   const revoked = options.kind === 'fresh-unauthenticated' || pendingStale || pendingFresh;
@@ -270,11 +290,20 @@ export function validateActionWindow(value, options = {}) {
   if (revoked && window.sessionPresent) throw new Error('Revoked action window retained a session.');
   if (revoked && window.finalPath !== '/login') throw new Error('Revoked action window must end at /login.');
   if (revoked && !window.visibleSentinels.includes('Sign In')) throw new Error('Revoked action window must reach the Sign In sentinel.');
-  if (pendingStale && window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL)) {
-    throw new Error(`Stale pending-deletion action window must not show unavailable toast: ${PENDING_UNAVAILABLE_SENTINEL}`);
+  const unavailableStatusObserved = window.renderSignals.some(signal => (
+    signal.kind === 'status' && signal.sentinel === PENDING_UNAVAILABLE_SENTINEL
+  ));
+  if (pendingStale && window.redirectReason !== 'unavailable') {
+    throw new Error('Stale pending-deletion redirect reason must be unavailable.');
   }
-  if (pendingFresh && !window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL)) {
-    throw new Error(`Fresh pending-deletion action window must show unavailable toast: ${PENDING_UNAVAILABLE_SENTINEL}`);
+  if (pendingFresh && window.redirectReason !== 'none') {
+    throw new Error('Fresh pending-deletion redirect reason must be none.');
+  }
+  if (pendingStale && (window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL) || unavailableStatusObserved)) {
+    throw new Error(`Stale pending-deletion action window must not show unavailable toast or contain transient unavailable status: ${PENDING_UNAVAILABLE_SENTINEL}`);
+  }
+  if (pendingFresh && (!window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL) || !unavailableStatusObserved)) {
+    throw new Error(`Fresh pending-deletion action window must show unavailable status signal: ${PENDING_UNAVAILABLE_SENTINEL}`);
   }
   if (requireNoProtected) {
     if (window.protectedRender) throw new Error('Revoked action window contains a protected render.');
@@ -305,12 +334,14 @@ export function validateRouteResult(value) {
     throw new Error('Route result did not reach its configured visible sentinel.');
   }
   if (result.allowed && window.protectedRender) {
-    if (!Array.isArray(window.renderSignals) || window.renderSignals.length === 0) {
+    const protectedSignals = window.renderSignals.filter(signal => (
+      signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
+    ));
+    if (protectedSignals.length === 0) {
       throw new Error('Allowed route protected-render history is incomplete.');
     }
-    const unexpected = window.renderSignals.some(signal => (
-      !isRecord(signal)
-      || signal.path !== expectedPath
+    const unexpected = protectedSignals.some(signal => (
+      signal.pathname !== expectedPath
       || signal.sentinel !== expectedSentinel
     ));
     if (unexpected) throw new Error('Allowed route contains an unexpected protected render.');

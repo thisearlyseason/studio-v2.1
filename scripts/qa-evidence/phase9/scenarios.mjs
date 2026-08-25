@@ -1,6 +1,6 @@
 import {
   PENDING_UNAVAILABLE_SENTINEL, REQUIRED_LEDGER_COLUMNS, REQUIRED_LOGOUT_STAGES,
-  ROUTE_SCENARIOS, SCENARIO_GROUP_COUNTS, VIEWPORTS, buildIsolationExpectation,
+  PROTECTED_PAGE_HEADINGS, ROUTE_SCENARIOS, SCENARIO_GROUP_COUNTS, VIEWPORTS, buildIsolationExpectation,
   validateActionWindow, validateIsolationResult, validateLogoutStages, validateRouteResult,
 } from './scenario-contracts.mjs';
 import { observeAction } from './signal-window.mjs';
@@ -112,8 +112,10 @@ const validateLandingWindow = (window, landing) => {
   }
   if (!window.sessionPresent) throw new Error('Admission landing requires an authenticated session.');
   if (window.protectedRender) {
-    const signals = window.renderSignals ?? [];
-    if (signals.length === 0 || signals.some(signal => signal.path !== landing.path || signal.sentinel !== landing.sentinel)) {
+    const signals = (window.renderSignals ?? []).filter(signal => (
+      signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
+    ));
+    if (signals.length === 0 || signals.some(signal => signal.pathname !== landing.path || signal.sentinel !== landing.sentinel)) {
       throw new Error('Admission contains an unexpected protected render.');
     }
   }

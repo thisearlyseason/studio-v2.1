@@ -39,6 +39,8 @@ const safeWindow = overrides => ({
   loadingVisible: false,
   finalPath: '/family',
   visibleSentinels: ['Family Overview'],
+  renderSignals: [],
+  redirectReason: 'none',
   sessionPresent: true,
   protectedRender: false,
   protectedRequests: 0,
@@ -209,9 +211,10 @@ test('phase 9 action window treats login terminal sentinels as nonprotected rend
       overflow: 0,
       renderPath: '/login',
       renderSentinel: 'Sign In',
+      redirectReason: 'none',
       renderSignals: [
-        { path: '/login', sentinel: 'Sign In' },
-        { path: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.' },
+        { kind: 'heading', pathname: '/login', sentinel: 'Sign In' },
+        { kind: 'status', pathname: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.' },
       ],
     });
     return blankAwareCliResult(argv);
@@ -250,7 +253,8 @@ test('phase 9 action window caps sanitized render history', async () => {
       overflow: 1,
       renderPath: '/family',
       renderSentinel: 'Family Overview',
-      renderSignals: Array.from({ length: 1001 }, () => ({ path: '/family', sentinel: 'Family Overview' })),
+      redirectReason: 'none',
+      renderSignals: Array.from({ length: 1001 }, () => ({ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' })),
     });
     return blankAwareCliResult(argv);
   });
@@ -324,7 +328,8 @@ test('phase 9 action window marks the same page before action and returns saniti
         overflow: 0,
         renderPath: '/login',
         renderSentinel: 'Sign In',
-        renderSignals: [{ path: '/dashboard', sentinel: 'Family Overview', text: 'must-not-return' }],
+        redirectReason: 'none',
+        renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Family Overview', text: 'must-not-return' }],
       });
     }
     return blankAwareCliResult(argv);
@@ -367,7 +372,7 @@ test('phase 9 action window marks the same page before action and returns saniti
     initiatingFrameUrl: 'https://example.invalid/dashboard',
   }]);
   assert.equal(result.protectedListenerStarts, 2);
-  assert.deepEqual(result.renderSignals, [{ path: '/dashboard', sentinel: 'Family Overview' }]);
+  assert.deepEqual(result.renderSignals, [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Family Overview' }]);
   assert.equal(JSON.stringify(result).includes('must-not-return'), false);
   assert.equal(result.finalPath, '/login');
   assert.equal(result.visibleSentinels[0], 'Sign In');
@@ -797,7 +802,13 @@ test('phase 9 evidence contracts reject transient signals for fresh and pending 
     const visibleSentinels = kind === 'pending-deletion-fresh'
       ? ['Sign In', 'The email or password is incorrect, or this account is unavailable.']
       : ['Sign In'];
-    const base = safeWindow({ finalPath: '/login', visibleSentinels, sessionPresent: false });
+    const base = safeWindow({
+      finalPath: '/login', visibleSentinels, sessionPresent: false,
+      redirectReason: kind === 'pending-deletion-stale' ? 'unavailable' : 'none',
+      renderSignals: kind === 'pending-deletion-fresh' ? [{
+        kind: 'status', pathname: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.',
+      }] : [],
+    });
     assert.equal(validateActionWindow(base, { kind }).pass, true);
     assert.throws(() => validateActionWindow({ ...base, finalPath: '/dashboard' }, { kind }), /\/login/i);
     assert.throws(() => validateActionWindow({ ...base, visibleSentinels: [] }, { kind }), /Sign In/i);
@@ -805,7 +816,9 @@ test('phase 9 evidence contracts reject transient signals for fresh and pending 
       assert.throws(() => validateActionWindow({ ...base, visibleSentinels: ['Sign In'] }, { kind }), /account is unavailable/i);
     }
     if (kind === 'pending-deletion-stale') assert.throws(() => validateActionWindow({
-      ...base, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+      ...base,
+      visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+      renderSignals: [{ kind: 'status', pathname: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.' }],
     }, { kind }), /must not show.*unavailable/i);
     assert.throws(() => validateActionWindow({ ...base, protectedRender: true }, { kind }), /protected render/i);
     assert.throws(() => validateActionWindow({ ...base, protectedRequests: 1 }, { kind }), /protected request/i);
@@ -1192,7 +1205,11 @@ test('phase 9 browser scenarios reject transient protected activity for fresh an
   const fresh = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
   });
-  const pending = { ...fresh, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'] };
+  const pending = {
+    ...fresh,
+    visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+    renderSignals: [{ kind: 'status', pathname: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.' }],
+  };
   const actions = {
     navigate: async () => {}, waitForLogin: async () => {}, freshLogin: async () => {}, waitForUnavailable: async () => {},
   };
@@ -1363,7 +1380,7 @@ test('phase 9 browser scenarios route validation distinguishes expected current 
     expectedSentinel: 'Family Overview',
     window: safeWindow({
       protectedRender: true,
-      renderSignals: [{ path: '/family', sentinel: 'Family Overview' }],
+      renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
     }),
   }).pass, true);
   assert.throws(() => validateRouteResult({
@@ -1373,8 +1390,8 @@ test('phase 9 browser scenarios route validation distinguishes expected current 
     window: safeWindow({
       protectedRender: true,
       renderSignals: [
-        { path: '/admin', sentinel: 'Account Lookup' },
-        { path: '/family', sentinel: 'Family Overview' },
+        { kind: 'heading', pathname: '/admin', sentinel: 'Account Lookup' },
+        { kind: 'heading', pathname: '/family', sentinel: 'Family Overview' },
       ],
     }),
   }), /unexpected protected render/i);
@@ -1492,8 +1509,14 @@ test('phase 9 browser scenarios pending rows use distinct baseline reload and fr
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`,
     visibleSentinels: ['Sign In'],
     sessionPresent: false,
+    redirectReason: 'unavailable',
   });
-  const fresh = { ...stale, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'] };
+  const fresh = {
+    ...stale,
+    visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+    redirectReason: 'none',
+    renderSignals: [{ kind: 'status', pathname: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.' }],
+  };
   const calls = [];
   const terminals = [];
   const shared = {
@@ -1604,11 +1627,14 @@ test('phase 9 browser scenarios split stale pending revocation from fresh unavai
   const stale = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login?reason=unavailable`,
     visibleSentinels: ['Sign In'], sessionPresent: false,
+    redirectReason: 'unavailable',
   });
   const fresh = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`,
     visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
     sessionPresent: false,
+    redirectReason: 'none',
+    renderSignals: [{ kind: 'status', pathname: '/login', sentinel: 'The email or password is incorrect, or this account is unavailable.' }],
   });
   const context = scenarioContext({ contextId: 'pending-split', alias: 'qa-pending-delete' });
   const commonActions = {
@@ -1623,11 +1649,11 @@ test('phase 9 browser scenarios split stale pending revocation from fresh unavai
   assert.equal(staleRow.visibleState, 'Sign In');
   assert.doesNotMatch(staleRow.expectedResult, /unavailable message/i);
   await assert.rejects(runPendingDeletionScenario({
-    client: createScriptedScenarioClient([fresh]), session: 'pending-stale-toast', context,
+    client: createScriptedScenarioClient([{ ...fresh, redirectReason: 'unavailable' }]), session: 'pending-stale-toast', context,
     scenario: 'stale-session', actions: commonActions,
   }), /must not show.*unavailable/i);
   await assert.rejects(runPendingDeletionScenario({
-    client: createScriptedScenarioClient([stale]), session: 'pending-fresh-no-toast', context,
+    client: createScriptedScenarioClient([{ ...stale, redirectReason: 'none' }]), session: 'pending-fresh-no-toast', context,
     scenario: 'fresh-login', actions: commonActions,
   }), /must show.*unavailable/i);
   const freshRow = await runPendingDeletionScenario({
@@ -1636,4 +1662,153 @@ test('phase 9 browser scenarios split stale pending revocation from fresh unavai
   });
   assert.equal(freshRow.result, 'PASS');
   assert.equal(freshRow.visibleState, 'The email or password is incorrect, or this account is unavailable.');
+});
+
+test('phase 9 action window treats a real Dashboard h1 flash as protected activity', { timeout: 30_000 }, async () => {
+  const client = createPlaywrightCliClient({});
+  try {
+    await installSignalRecorder(client, 'phase9-dashboard-flash');
+    const result = await observeAction({
+      client,
+      session: 'phase9-dashboard-flash',
+      stage: 'dashboard-flash',
+      terminal: async () => {},
+      action: () => client.runCode('phase9-dashboard-flash', `async (page) => {
+        await page.evaluate(() => { document.body.innerHTML = '<h1>Dashboard</h1>'; });
+        await page.waitForTimeout(250);
+        await page.evaluate(() => { document.body.innerHTML = '<h1>Sign In</h1>'; });
+      }`),
+    });
+    assert.equal(result.protectedRender, true);
+    assert.equal(result.renderSignals.some(signal => (
+      signal.kind === 'heading' && signal.sentinel === 'Dashboard'
+    )), true);
+    assert.throws(() => validateActionWindow({
+      ...result,
+      finalPath: '/login',
+      visibleSentinels: ['Sign In'],
+      sessionPresent: false,
+      redirectReason: 'none',
+    }, { kind: 'fresh-unauthenticated' }), /protected render/i);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
+test('phase 9 evidence contracts pending validation uses transient status history and sanitized redirect reason', () => {
+  const unavailable = 'The email or password is incorrect, or this account is unavailable.';
+  const stale = safeWindow({
+    finalPath: '/login', visibleSentinels: ['Sign In'], sessionPresent: false,
+    redirectReason: 'unavailable',
+    renderSignals: [
+      { kind: 'heading', pathname: '/login', sentinel: 'Sign In' },
+      { kind: 'status', pathname: '/login', sentinel: unavailable },
+    ],
+  });
+  assert.throws(() => validateActionWindow(stale, { kind: 'pending-deletion-stale' }), /transient.*unavailable status/i);
+
+  const freshWithoutHistory = safeWindow({
+    finalPath: '/login', visibleSentinels: ['Sign In', unavailable], sessionPresent: false,
+    redirectReason: 'none',
+    renderSignals: [{ kind: 'heading', pathname: '/login', sentinel: 'Sign In' }],
+  });
+  assert.throws(() => validateActionWindow(freshWithoutHistory, { kind: 'pending-deletion-fresh' }), /status signal/i);
+  assert.throws(() => validateActionWindow({
+    ...stale, renderSignals: stale.renderSignals.slice(0, 1), redirectReason: 'other',
+  }, { kind: 'pending-deletion-stale' }), /redirect reason.*unavailable/i);
+  assert.throws(() => validateActionWindow({
+    ...freshWithoutHistory,
+    renderSignals: [...freshWithoutHistory.renderSignals, { kind: 'status', pathname: '/login', sentinel: unavailable }],
+    redirectReason: 'unavailable',
+  }, { kind: 'pending-deletion-fresh' }), /redirect reason.*none/i);
+});
+
+test('phase 9 browser scenarios recorder types approved status history and never protects status text', { timeout: 30_000 }, async () => {
+  const client = createPlaywrightCliClient({});
+  try {
+    await installSignalRecorder(client, 'phase9-status-provenance');
+    const result = await observeAction({
+      client,
+      session: 'phase9-status-provenance',
+      stage: 'status-provenance',
+      terminal: async () => {},
+      action: () => client.runCode('phase9-status-provenance', `async (page) => {
+        await page.evaluate(() => { document.body.innerHTML = '<div role="status"><div>Family Overview</div></div>'; });
+        await page.waitForTimeout(200);
+        await page.evaluate(() => {
+          document.querySelector('[role="status"] div').textContent = 'The email or password is incorrect, or this account is unavailable.';
+        });
+        await page.waitForTimeout(200);
+      }`),
+    });
+    assert.equal(result.protectedRender, false);
+    assert.equal(result.renderSignals.some(signal => signal.sentinel === 'Family Overview'), false);
+    assert.deepEqual(result.renderSignals.map(({ kind, sentinel }) => ({ kind, sentinel })), [{
+      kind: 'status', sentinel: 'The email or password is incorrect, or this account is unavailable.',
+    }]);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
+test('phase 9 action window exposes only the fixed redirect reason enum', async () => {
+  const sample = async rawReason => {
+    const transport = createCliTransport(argv => {
+      const code = argv[argv.indexOf('run-code') + 1] ?? '';
+      if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+      if (code.includes('phase9:sample')) return cliResult({
+        pageId: 'page-a', terminalReached: true, loadingVisible: false,
+        finalUrl: 'https://example.invalid/login?reason=unavailable&token=must-not-return', finalPath: '/login',
+        visibleSentinels: ['Sign In'], sessionPresent: false, protectedRender: false,
+        protectedRequests: [], protectedListenerStarts: [], relevantHttpResults: [], pageErrors: [],
+        appConsoleErrors: [], unexpectedRequestFailures: [], overflow: 0, renderPath: '/login', renderSentinel: 'Sign In',
+        redirectReason: rawReason,
+        renderSignals: [{ kind: 'heading', pathname: '/login', sentinel: 'Sign In' }],
+      });
+      return blankAwareCliResult(argv);
+    });
+    const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+    await installSignalRecorder(client, `redirect-${rawReason}`);
+    return observeAction({ client, session: `redirect-${rawReason}`, stage: 'redirect-reason', terminal: async () => {}, action: async () => {} });
+  };
+  for (const reason of ['unavailable', 'none', 'other']) {
+    const result = await sample(reason);
+    assert.equal(result.redirectReason, reason);
+    assert.equal(JSON.stringify(result).includes('must-not-return'), false);
+  }
+});
+
+test('phase 9 browser scenarios admission history filters only protected heading signals', async () => {
+  const unavailable = 'The email or password is incorrect, or this account is unavailable.';
+  const heading = (pathname, sentinel) => ({ kind: 'heading', pathname, sentinel });
+  const login = scenarioWindow({
+    finalPath: '/admin', finalUrl: `${STAGING_ORIGIN}/admin`, visibleSentinels: ['Account Lookup'],
+    protectedRender: true,
+    renderSignals: [
+      heading('/login', 'Sign In'),
+      { kind: 'status', pathname: '/login', sentinel: unavailable },
+      heading('/admin', 'Account Lookup'),
+    ],
+  });
+  const routeHeadings = [
+    ['/admin', 'Account Lookup'], ['/club', 'Club Hub'], ['/competition', 'Competition Hub'],
+    ['/dashboard/billing', 'Manage Your Plan'], ['/coaches-corner', 'Coaches Corner'], ['/family', 'Family Overview'],
+  ];
+  const windows = [login, ...routeHeadings.map(([pathname, sentinel]) => scenarioWindow({
+    finalPath: pathname, finalUrl: `${STAGING_ORIGIN}${pathname}`, visibleSentinels: [sentinel],
+    protectedRender: true,
+    renderSignals: [heading('/login', 'Sign In'), { kind: 'status', pathname: '/login', sentinel: unavailable }, heading(pathname, sentinel)],
+  }))];
+  const row = await runAdmissionScenario({
+    client: createScriptedScenarioClient(windows), session: 'typed-admission',
+    context: scenarioContext({ contextId: 'typed-admission', alias: 'qa-superadmin' }),
+    actions: { loginAndLand: async () => {}, navigate: async () => {}, waitForSentinel: async () => {} },
+  });
+  assert.equal(row.result, 'PASS');
+
+  const wrong = validateRouteResult.bind(null, {
+    allowed: true, expectedPath: '/family', expectedSentinel: 'Family Overview',
+    window: safeWindow({ protectedRender: true, renderSignals: [heading('/admin', 'Account Lookup'), heading('/family', 'Family Overview')] }),
+  });
+  assert.throws(wrong, /unexpected protected render/i);
 });

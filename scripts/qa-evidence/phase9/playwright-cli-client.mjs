@@ -1,18 +1,17 @@
 import { execFile } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-import { LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, ROUTE_SCENARIOS } from './scenario-contracts.mjs';
+import {
+  LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, PROTECTED_PAGE_HEADINGS,
+} from './scenario-contracts.mjs';
 
 const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
 const MAX_SIGNAL_COUNT = 1000;
 const CLIENT_INTERNALS = new WeakMap();
-const PROTECTED_RENDER_SENTINELS = Object.freeze([
-  ...new Set(Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels)),
-]);
-const TERMINAL_SENTINELS = Object.freeze([...LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL]);
-const OBSERVED_RENDER_SENTINELS = Object.freeze([...new Set([...PROTECTED_RENDER_SENTINELS, ...TERMINAL_SENTINELS])]);
+const HEADING_SENTINELS = Object.freeze([...new Set(LANDING_SENTINELS)]);
+const STATUS_SENTINELS = Object.freeze([PENDING_UNAVAILABLE_SENTINEL]);
 
 const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
   // phase9:install
@@ -41,10 +40,15 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       return;
     }
     globalThis.__phase9RenderObserverInstalled = true;
-    const observedSentinels = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
-    const protectedSentinels = ${JSON.stringify(PROTECTED_RENDER_SENTINELS)};
-    const terminalSentinels = ${JSON.stringify(TERMINAL_SENTINELS)};
-    const candidates = new Map(observedSentinels.map(sentinel => [sentinel, new Set()]));
+    const headingSentinels = ${JSON.stringify(HEADING_SENTINELS)};
+    const statusSentinels = ${JSON.stringify(STATUS_SENTINELS)};
+    const protectedHeadings = ${JSON.stringify(PROTECTED_PAGE_HEADINGS)};
+    const definitions = [
+      ...headingSentinels.map(sentinel => ({ kind: 'heading', sentinel })),
+      ...statusSentinels.map(sentinel => ({ kind: 'status', sentinel })),
+    ];
+    const keyOf = signal => signal.kind + '\u0000' + signal.sentinel;
+    const candidates = new Map(definitions.map(signal => [keyOf(signal), new Set()]));
     const normalizedHeading = element => (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
     const visibleEdges = new Set();
     const visible = element => {
@@ -63,34 +67,37 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       if (!root) return;
       for (const heading of root.querySelectorAll('h1')) {
         const exactText = normalizedHeading(heading);
-        if (candidates.has(exactText)) candidates.get(exactText).add(heading);
+        const key = keyOf({ kind: 'heading', sentinel: exactText });
+        if (candidates.has(key)) candidates.get(key).add(heading);
       }
       for (const status of root.querySelectorAll('[role="status"]')) {
         for (const element of [status, ...status.querySelectorAll('*')]) {
           const exactText = normalizedHeading(element);
-          if (terminalSentinels.includes(exactText)) candidates.get(exactText).add(element);
+          const key = keyOf({ kind: 'status', sentinel: exactText });
+          if (candidates.has(key)) candidates.get(key).add(element);
         }
       }
     };
-    const visibleSentinels = sentinels => sentinels.filter(sentinel =>
-      [...candidates.get(sentinel)].some(visible));
-    const recordRisingEdges = sentinels => {
-      const current = new Set(visibleSentinels(sentinels));
-      for (const sentinel of sentinels) {
-        if (current.has(sentinel)) {
-          if (!visibleEdges.has(sentinel)) {
-            visibleEdges.add(sentinel);
-            void globalThis.__phase9RecordRender({ path: location.pathname, sentinel });
+    const visibleSignals = signals => signals.filter(signal =>
+      [...candidates.get(keyOf(signal))].some(visible));
+    const recordRisingEdges = signals => {
+      const current = new Set(visibleSignals(signals).map(keyOf));
+      for (const signal of signals) {
+        const key = keyOf(signal);
+        if (current.has(key)) {
+          if (!visibleEdges.has(key)) {
+            visibleEdges.add(key);
+            void globalThis.__phase9RecordRender({ ...signal, pathname: location.pathname });
           }
         } else {
-          visibleEdges.delete(sentinel);
+          visibleEdges.delete(key);
         }
       }
     };
-    globalThis.__phase9VisibleSentinels = () => visibleSentinels(observedSentinels);
+    globalThis.__phase9VisibleSentinels = () => [...new Set(visibleSignals(definitions).map(signal => signal.sentinel))];
     const mutationSample = records => {
       if (!records || records.some(record => record.type === 'childList' || record.type === 'characterData')) refreshCandidates();
-      recordRisingEdges(observedSentinels);
+      recordRisingEdges(definitions);
     };
     refreshCandidates();
     mutationSample();
@@ -99,7 +106,7 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'],
     });
     const sampleAnimationFrame = () => {
-      recordRisingEdges(protectedSentinels);
+      recordRisingEdges(definitions.filter(signal => signal.kind === 'heading' && protectedHeadings.includes(signal.sentinel)));
       requestAnimationFrame(sampleAnimationFrame);
     };
     requestAnimationFrame(sampleAnimationFrame);
@@ -149,8 +156,9 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       signature: 'REQUEST_FAILED',
     }));
     await page.exposeFunction('__phase9RecordRender', signal => {
-      if (!signal || typeof signal.path !== 'string' || typeof signal.sentinel !== 'string') return;
-      boundedPush(state, 'renders', { path: signal.path, sentinel: signal.sentinel });
+      if (!signal || !['heading', 'status'].includes(signal.kind)
+        || typeof signal.pathname !== 'string' || typeof signal.sentinel !== 'string') return;
+      boundedPush(state, 'renders', { kind: signal.kind, pathname: signal.pathname, sentinel: signal.sentinel });
     });
     await page.addInitScript(initializeRenderObserver);
     await page.evaluate(initializeRenderObserver);
@@ -190,10 +198,14 @@ const sampleSource = mark => String.raw`async (page) => {
       loadingVisible: /(^|\\s)loading(\\s|$)/i.test(text),
       path: location.pathname,
       sentinels: globalThis.__phase9VisibleSentinels?.() || [],
+      redirectReason: (() => {
+        const reason = new URLSearchParams(location.search).get('reason');
+        return reason === null ? 'none' : reason === 'unavailable' ? 'unavailable' : 'other';
+      })(),
     };
   });
   const renderHistory = state.renders.slice(mark.renders);
-  const protectedSentinels = ${JSON.stringify(PROTECTED_RENDER_SENTINELS)};
+  const protectedHeadings = ${JSON.stringify(PROTECTED_PAGE_HEADINGS)};
   const cookies = await page.context().cookies();
   return {
     pageId: state.pageId,
@@ -203,8 +215,9 @@ const sampleSource = mark => String.raw`async (page) => {
     finalPath: render.path,
     visibleSentinels: render.sentinels,
     sessionPresent: cookies.some(cookie => /session|auth/i.test(cookie.name)),
-    protectedRender: renderHistory.some(item => protectedSentinels.includes(item.sentinel)),
+    protectedRender: renderHistory.some(item => item.kind === 'heading' && protectedHeadings.includes(item.sentinel)),
     renderSignals: renderHistory,
+    redirectReason: render.redirectReason,
     protectedRequests: state.requests.slice(mark.requests),
     protectedListenerStarts: state.listeners.slice(mark.listeners),
     relevantHttpResults: state.responses.slice(mark.responses),
@@ -270,6 +283,7 @@ const sanitizeWindow = value => {
   const complete = booleanFields.every(field => typeof value[field] === 'boolean')
     && stringFields.every(field => typeof value[field] === 'string')
     && arrayFields.every(field => Array.isArray(value[field]))
+    && ['unavailable', 'none', 'other'].includes(value.redirectReason)
     && Number.isInteger(value.overflow) && value.overflow >= 0;
   if (!complete) throw new Error('Recorder must return a complete signal sample.');
   if (value.visibleSentinels.some(item => typeof item !== 'string')) throw new Error('Recorder must return a complete signal sample.');
@@ -290,10 +304,14 @@ const sanitizeWindow = value => {
     resourceType: typeof item?.resourceType === 'string' ? item.resourceType : 'unknown',
     initiatingFrameUrl: cleanUrl(item?.initiatingFrameUrl),
   })) : [];
-  const renderSignals = Array.isArray(value.renderSignals) ? value.renderSignals.slice(0, MAX_SIGNAL_COUNT).map(item => ({
-    path: typeof item?.path === 'string' ? item.path : '',
-    sentinel: typeof item?.sentinel === 'string' ? item.sentinel : '',
-  })) : [];
+  if (value.renderSignals.some(item => (
+    !item || typeof item !== 'object' || Array.isArray(item)
+    || !['heading', 'status'].includes(item.kind)
+    || typeof item.pathname !== 'string' || typeof item.sentinel !== 'string'
+  ))) throw new Error('Recorder must return typed render signals.');
+  const renderSignals = value.renderSignals.slice(0, MAX_SIGNAL_COUNT).map(item => ({
+    kind: item.kind, pathname: item.pathname, sentinel: item.sentinel,
+  }));
   const protectedListeners = listeners.filter(isProtectedResource);
   return {
     pageId: typeof value.pageId === 'string' ? value.pageId : '',
@@ -303,8 +321,9 @@ const sanitizeWindow = value => {
     finalPath: typeof value.finalPath === 'string' ? value.finalPath : '',
     visibleSentinels: Array.isArray(value.visibleSentinels) ? value.visibleSentinels.filter(item => typeof item === 'string') : [],
     sessionPresent: value.sessionPresent === true,
-    protectedRender: renderSignals.some(signal => PROTECTED_RENDER_SENTINELS.includes(signal.sentinel)),
+    protectedRender: renderSignals.some(signal => signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)),
     renderSignals,
+    redirectReason: value.redirectReason,
     protectedRequests: requests.filter(isProtectedResource).length,
     requestSignals: requests,
     protectedListenerStarts: protectedListeners.length,
