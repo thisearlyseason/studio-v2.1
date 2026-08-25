@@ -15,7 +15,12 @@ import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
-import { bootstrapDemoWorkspace, clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
+import {
+  bootstrapDemoWorkspace,
+  clearBrowserSession,
+  establishBrowserSession,
+  establishBrowserSessionOrSignOut,
+} from '@/lib/client-auth';
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return Promise.race([
@@ -63,12 +68,17 @@ export default function LoginPage() {
           return;
         }
         try {
-          await establishBrowserSession(user);
+          const session = await establishBrowserSessionOrSignOut(user, auth);
+          if (session.redirectTo) {
+            router.replace(session.redirectTo);
+            setIsLoading(false);
+            return;
+          }
         } catch {
           setIsLoading(false);
           toast({
-            title: 'Session Setup Failed',
-            description: 'Your login could not be secured. Please try again.',
+            title: 'Login Failed',
+            description: 'The email or password is incorrect, or this account is unavailable.',
             variant: 'destructive',
           });
           return;

@@ -9,6 +9,10 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import {
+  createLeagueAssignmentsGetHandler,
+  createLeagueAssignmentsReader,
+} from '@/lib/server-league-assignments';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const ASSIGNABLE_PROTOCOLS = new Set(['player_config', 'individual_config', 'team_config']);
@@ -21,32 +25,12 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
 }
 
-export async function GET(req: NextRequest) {
-  const auth = await verifyFirebaseToken(req);
-  if (auth instanceof NextResponse) return auth;
-
-  const teamId = req.nextUrl.searchParams.get('teamId');
-  if (!validId(teamId)) return NextResponse.json({ error: 'Invalid squad.' }, { status: 400 });
-
-  const authority = await getTeamAuthority(teamId, auth.uid, auth.role);
-  if (!authority?.isStaff) {
-    return NextResponse.json({ error: 'Only authorized squad staff can view assignments.' }, { status: 403 });
-  }
-
-  const snapshot = await adminDb.collectionGroup('registrationEntries')
-    .where('assigned_team_id', '==', teamId)
-    .limit(200)
-    .get();
-  const assignments = snapshot.docs
-    .filter(document => document.data().status === 'assigned')
-    .map(document => ({
-      ...document.data(),
-      id: document.id,
-      league_id: document.data().league_id || document.ref.parent.parent?.id || '',
-    }));
-
-  return NextResponse.json({ assignments });
-}
+export const GET = createLeagueAssignmentsGetHandler({
+  verifyFirebaseToken,
+  getTeamAuthority,
+  readAssignments: createLeagueAssignmentsReader(adminDb),
+  logUnavailable: code => console.error('[league-assignments] Query unavailable.', { code }),
+});
 
 export async function PATCH(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);

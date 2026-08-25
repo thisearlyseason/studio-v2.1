@@ -123,7 +123,7 @@
 | Page or route | `/login`, followed by `/onboarding` on mobile or an erroring `/login` state on desktop |
 | Description | Fresh credentials for a profile already transitioned to `suspended` can still create a session and enter an erroring protected flow. |
 | Expected behavior | A suspended identity fails closed before a protected session is created or protected UI/data flow is entered. |
-| Actual behavior | After an active positive baseline, the guarded transition recorded the profile as suspended and revoked the saved session. A fresh sign-in then returned session POST `200` at both viewports and left `__session` present. Mobile reached `/onboarding` with two captured page errors; desktop ended at `/login` with one captured page error; both rendered the application error boundary. |
+| Phase 7 actual behavior | After an active positive baseline, the guarded transition recorded the profile as suspended and revoked the saved session. A fresh sign-in then returned session POST `200` at both viewports and left `__session` present. Mobile reached `/onboarding` with two captured page errors; desktop ended at `/login` with one captured page error; both rendered the application error boundary. |
 | Exact reproduction steps | 1. Seed the exact Phase 7 staging fixture and record the active suspended-alias baseline. 2. Run the guarded `qa-suspended` transition and verify `suspended` state plus saved-session revocation. 3. Open a new Chrome context. 4. Sign in with the external temporary credential. 5. Observe the successful session response, final route, session presence, and captured page errors. |
 | Reproduction consistency | 2/2 canonical fresh contexts: 390×844 and 1440×900 |
 | Browser | System Chrome via the bundled Playwright CLI; new named context per viewport |
@@ -132,8 +132,10 @@
 | Exact deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, the last independently proven deployed revision; Phase 7 did not infer a newer deployment. |
 | Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase7-staging-fixtures/02-auth-tenant-browser.md`, canonical rows `P7-S02-SUSPENDED-FRESH-M/D` in `03-context-ledger.md`, and lifecycle state proof in `01-fixture-lifecycle.md`. |
 | Impact | A suspended account can obtain fresh session state and enter protected application flow instead of being rejected at the authentication/session boundary. |
-| Root-cause status | Not established by Phase 7. The confirmed symptom and data-flow evidence are retained; code-level root-cause analysis and a TDD repair are deferred to the next authorized repair phase. |
-| Status | CONFIRMED UNRESOLVED |
+| Phase 8 root cause | Session creation verified the Firebase token but did not resolve trusted account status before creating the cookie. Client routing then guessed from client-readable state, allowing a suspended identity into an erroring protected flow. |
+| Phase 8 implementation | The session POST resolves trusted server account state before cookie creation and returns a neutral destination only after success. Suspended/deletion-pending decisions return a sanitized `403`; the login denial helper clears HTTP and Firebase client state. Login/setup routes also suppress protected provider listeners. |
+| Phase 8 verification | Exact staging revision `b495b4eafe5fd9caf6e04c4cf5500a2b6d0baf97`; both 390×844 and 1440×900 fresh contexts visibly observed the generic unavailable message, returned session POST `403`, had no session cookie, remained `/login`, initiated zero protected requests and zero protected Firestore listeners, and recorded zero page/application errors, unexpected request failures, or overflow. Evidence: closure-supplement rows in `docs/qa/production-audit/runs/2026-08-24-phase8-confirmed-defects/03-browser-ledger.md`. |
+| Status | FIXED AND VERIFIED |
 
 ## BUG-007 — Removed member establishes a fresh dashboard session
 
@@ -144,8 +146,8 @@
 | Role | Removed team member |
 | Page or route | `/login` → `/dashboard` |
 | Description | A user whose direct membership is `removed` and whose membership-cache document is absent can still create a fresh session and reach the dashboard. |
-| Expected behavior | A removed member fails closed at both session/UI and protected-data boundaries after membership removal and token revocation. |
-| Actual behavior | The saved pre-transition session was revoked and denied, and a direct Team A Firestore read returned `403`. A fresh sign-in nevertheless returned session POST `200`, left `__session` present, and reached `/dashboard` at both viewports. |
+| Approved expected behavior | Removal from the sole squad revokes stale squad context but does not disable the whole account. A fresh account session may be created, must route to `/teams/join`, must not select/listen to the former squad, and the former-team read remains `403`. |
+| Phase 7 actual behavior | The saved pre-transition session was revoked and denied, and a direct Team A Firestore read returned `403`. A fresh sign-in nevertheless returned session POST `200`, left `__session` present, and reached `/dashboard` at both viewports. |
 | Exact reproduction steps | 1. Seed the exact Phase 7 staging fixture and record the active removed-member baseline. 2. Run the guarded `qa-removed-member` transition. 3. Verify direct membership `removed`, membership cache missing, and saved-session revocation. 4. Open a new Chrome context and sign in. 5. Observe `/dashboard` plus session presence, then probe the Team A read and observe `403`. |
 | Reproduction consistency | 2/2 canonical fresh contexts: 390×844 and 1440×900 |
 | Browser | System Chrome via the bundled Playwright CLI; new named context per viewport |
@@ -154,8 +156,10 @@
 | Exact deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, the last independently proven deployed revision; Phase 7 did not infer a newer deployment. |
 | Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase7-staging-fixtures/02-auth-tenant-browser.md`, canonical rows `P7-S09-REMOVED-STALE-M/D` and `P7-S09-REMOVED-FRESH-M/D` in `03-context-ledger.md`, and lifecycle state proof in `01-fixture-lifecycle.md`. |
 | Impact | A removed member receives authenticated dashboard state after removal, even though direct protected team data is denied. |
-| Root-cause status | Not established by Phase 7. The confirmed symptom and cross-boundary data flow are retained; code-level root-cause analysis and a TDD repair are deferred to the next authorized repair phase. |
-| Status | CONFIRMED UNRESOLVED |
+| Phase 8 root cause | Session and dashboard routing trusted stale profile/cache squad context instead of resolving current canonical membership/ownership. The client provider also admitted removed/deleted membership-cache projections into active-team selection. |
+| Phase 8 implementation | The shared server resolver accepts only live canonical membership/ownership, returns `/teams/join` when the account is valid without squad authority, and is reused by session/dashboard boundaries. Removed/deleted cache projections are filtered before client active-team selection. |
+| Phase 8 verification | Both fresh 390×844 and 1440×900 contexts received session POST `200`, held an account cookie, reached `/teams/join`, rendered no former squad UI, started zero former-Team A listeners, and received `403` for the former Team A Firestore GET with zero page/application errors, unexpected request failures, or overflow. Evidence: closure-supplement rows in `docs/qa/production-audit/runs/2026-08-24-phase8-confirmed-defects/03-browser-ledger.md`. |
+| Status | FIXED AND VERIFIED |
 
 ## BUG-010 — Authorized own-team assignments query returns 500
 
@@ -176,5 +180,7 @@
 | Exact deployed SHA | `658d3ca89f3cabf6c55800400aa17bc72229c1af`, the last independently proven deployed revision; Phase 7 did not infer a newer deployment. |
 | Fresh evidence | `docs/qa/production-audit/runs/2026-08-24-phase7-staging-fixtures/02-auth-tenant-browser.md` and canonical rows `P7-S07-OWNER-A-M` and `P7-S07-OWNER-B-D` in `03-context-ledger.md`. |
 | Impact | Authorized league-assignment reads fail for both isolated tenant owners, blocking the assignment contract while cross-tenant denial remains intact. |
-| Root-cause status | Not established by Phase 7. The confirmed symptom and authorization/data-flow statuses are retained; code-level root-cause analysis and a TDD repair are deferred to the next authorized repair phase. |
-| Status | CONFIRMED UNRESOLVED |
+| Phase 8 root cause | The authorized collection-group equality query required an ascending `registrationEntries.assigned_team_id` collection-group field override that was absent. A guarded read-only staging probe reproduced sanitized Firebase code `9` (`FAILED_PRECONDITION`). |
+| Phase 8 implementation | One exact ascending collection-group field override was added. The GET handler authorizes the requested team before a bounded `.limit(200)` query and returns a sanitized `503` for query service failure. |
+| Phase 8 verification | On exact staging revision `b495b4eafe5fd9caf6e04c4cf5500a2b6d0baf97`, both Team A and Team B owners received an own-team `200` whose `assignments` field was an array, changed-team API `403`, and direct other-team Firestore GET/PATCH `403/403` at 390×844 and 1440×900, with zero page/application errors, unexpected request failures, or overflow. Evidence: closure-supplement rows in `docs/qa/production-audit/runs/2026-08-24-phase8-confirmed-defects/03-browser-ledger.md`. |
+| Status | FIXED AND VERIFIED |

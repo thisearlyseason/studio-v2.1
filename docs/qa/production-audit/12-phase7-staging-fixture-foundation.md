@@ -158,3 +158,7 @@ Independent final review of this Task 5 reconciliation is controller-owned and i
 The final-review-3 repair wave changed only the local fixture guard, manifest, CLI/lifecycle, safety tests, and this audit report. It did not rerun or mutate hosted staging; the sanitized hosted evidence and exact-cleaned lifecycle records above remain authoritative.
 
 Release remains **`NOT READY`**. The next authorized phase should root-cause and repair `BUG-006`, `BUG-007`, and `BUG-010` under TDD, then rerun their affected journeys. The remaining 83 blocked contracts still require their named fixtures, provider/device authorization, destructive boundaries, or operational proof before production readiness can be reconsidered.
+
+## Phase 8 supersession
+
+Phase 8 completed that authorized repair on exact reviewed staging revision `b495b4eafe5fd9caf6e04c4cf5500a2b6d0baf97`. `BUG-006`, `BUG-007`, and `BUG-010` are now fixed and verified; their Phase 7 reproductions remain historical evidence rather than current failures. The three affected matrix rows return to `BLOCKED` because their named unexecuted variants remain, producing current arithmetic `2 PASS / 0 FAIL / 86 BLOCKED = 88`. See `13-phase8-confirmed-defect-repair.md` and `runs/2026-08-24-phase8-confirmed-defects/02-staging-deployment.md` through `04-cleanup.md`.

@@ -2,12 +2,13 @@ import 'server-only';
 
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { getAdminAuth, adminDb } from '@/lib/firebase-admin';
+import { getAdminAuth } from '@/lib/firebase-admin';
 import {
   authorizeDashboardRoute,
   isSensitiveDashboardPath,
-  type DashboardAccessProfile,
 } from '@/lib/dashboard-route-policy';
+import { resolveServerAccountSession } from '@/lib/server-account-session';
+import { accountSessionRedirect } from '@/lib/dashboard-account-session';
 
 export const SESSION_COOKIE_NAME = '__session';
 
@@ -30,9 +31,20 @@ export async function requireDashboardSession(pathname: string): Promise<void> {
     redirect(invalidSessionPath(pathname));
   }
 
-  const snapshot = await adminDb.collection('users').doc(decoded.uid).get();
-  const profile = snapshot.exists ? snapshot.data() as DashboardAccessProfile : null;
-  if (!profile) redirect('/onboarding');
+  let access;
+  try {
+    access = await resolveServerAccountSession({
+      uid: decoded.uid,
+      role: typeof decoded.role === 'string' ? decoded.role : undefined,
+      signInProvider: decoded.firebase?.sign_in_provider,
+    });
+  } catch {
+    redirect('/login?reason=session-unavailable');
+  }
+
+  const admissionRedirect = accountSessionRedirect(pathname, access);
+  if (admissionRedirect) redirect(admissionRedirect);
+  const profile = access.allowed ? access.profile : null;
   const decision = authorizeDashboardRoute(pathname, profile, decoded.role);
   if (!decision.allowed) redirect(decision.redirectTo);
 }
