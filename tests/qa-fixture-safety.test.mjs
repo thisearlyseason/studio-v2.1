@@ -8,6 +8,7 @@ import {
   assertHostedStagingIntent,
 } from '../scripts/qa-fixtures/guard.mjs';
 import {
+  assertExactFixtureJournal,
   assertManagedPath,
   assertManagedUid,
   createRunId,
@@ -42,11 +43,17 @@ function hostedEnvironment() {
   return { ALLOW_STAGING_QA_FIXTURES: 'true' };
 }
 
-function approvedActiveTransitions() {
-  return {
+function activeTransitions(version) {
+  const transitions = {
     'qa-suspended': { version: 1, state: 'active' },
     'qa-removed-member': { version: 1, state: 'active' },
   };
+  if (version === 3) transitions['qa-pending-delete'] = { version: 1, state: 'active' };
+  return transitions;
+}
+
+function approvedActiveTransitions() {
+  return activeTransitions(2);
 }
 
 function directAdapter(auth, firestore, calls = []) {
@@ -473,8 +480,8 @@ test('cli preflight resolves staging intent without Auth or Firestore mutation',
     command: 'preflight',
     projectId: STAGING,
     origin: 'https://studio--the-squad-v2-staging.us-east4.hosted.app',
-    plannedAliases: 9,
-    plannedTeams: 2,
+    plannedAliases: 20,
+    plannedTeams: 3,
     safe: true,
   });
 });
@@ -653,6 +660,66 @@ test('cli seed rejects an existing incomplete transition journal before adapter 
   }
 });
 
+test('CLI version 2 recovery rejects seed and transition before adapter construction', async t => {
+  const fixture = await lifecycleFixture(t);
+  const legacyManifest = completeManifest(fixture.definition);
+  await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`, { mode: 0o600 });
+  let factoryCalls = 0;
+  const adapterFactory = async () => {
+    factoryCalls += 1;
+    return directAdapter(fixture.auth, fixture.firestore);
+  };
+  const seedArgsForExistingV2 = [
+    'seed', '--project', STAGING, '--confirm-project', STAGING,
+    '--manifest', fixture.inputs.manifestPath, '--credentials', fixture.inputs.credentialPath,
+  ];
+  const transitionArgsForExistingV2 = [
+    'transition', '--project', STAGING, '--confirm-project', STAGING,
+    '--manifest', fixture.inputs.manifestPath, '--alias', 'qa-suspended',
+  ];
+
+  await assert.rejects(() => runCli({
+    argv: seedArgsForExistingV2,
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory,
+  }), /version 2.*recovery|new version 3 run/i);
+  assert.equal(factoryCalls, 0);
+  await assert.rejects(() => runCli({
+    argv: transitionArgsForExistingV2,
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory,
+  }), /version 2.*recovery/i);
+  assert.equal(factoryCalls, 0);
+});
+
+test('CLI version 2 recovery accepts inspect and cleanup after pure local validation', async t => {
+  const fixture = await lifecycleFixture(t);
+  const legacyManifest = completeManifest(fixture.definition);
+  let factoryCalls = 0;
+  const adapterFactory = async () => {
+    factoryCalls += 1;
+    return directAdapter(fixture.auth, fixture.firestore);
+  };
+
+  for (const command of ['inspect', 'cleanup']) {
+    await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`, { mode: 0o600 });
+    await runCli({
+      argv: [
+        command, '--project', STAGING, '--confirm-project', STAGING,
+        '--manifest', fixture.inputs.manifestPath,
+      ],
+      env: hostedEnvironment(),
+      cwd: repositoryRoot,
+      adapterFactory,
+      stdout: () => {},
+    });
+  }
+
+  assert.equal(factoryCalls, 2);
+});
+
 test('cli seed sanitizes an injected manifest read denial before adapter construction', async t => {
   const fixture = await lifecycleFixture(t);
   await writeFile(fixture.inputs.manifestPath, `${JSON.stringify({
@@ -775,13 +842,20 @@ test('cli seed obtains its run ID from the injected internal generator seam', as
   assert.equal(JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8')).runId, RUN_ID);
 });
 
-test('two real CLI seed invocations recover the same exact run without regenerating its definition', async t => {
+test('two real CLI seed invocations recover the same exact v3 run without regenerating its definition', async t => {
   const fixture = await lifecycleFixture(t);
-  const replacementRunId = 'qa-phase7-20260824T140001Z-cd34ef56ab78';
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const plannedManifest = completeManifest(phase9Definition, {
+    version: 3,
+    state: 'planned',
+    expectedAbsentFirestorePaths: phase9Definition.expectedAbsentDocuments.map(item => item.path),
+    transitions: activeTransitions(3),
+  });
+  await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(plannedManifest, null, 2)}\n`, { mode: 0o600 });
   let generatorCalls = 0;
   const runIdGenerator = () => {
     generatorCalls += 1;
-    return generatorCalls === 1 ? RUN_ID : replacementRunId;
+    throw new Error('existing v3 manifest must not regenerate its run ID');
   };
   const args = hostedArgs(
     'seed',
@@ -806,7 +880,7 @@ test('two real CLI seed invocations recover the same exact run without regenerat
   const second = await invoke();
   const secondManifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
 
-  assert.equal(generatorCalls, 1);
+  assert.equal(generatorCalls, 0);
   assert.equal(first.runId, RUN_ID);
   assert.equal(second.runId, RUN_ID);
   assert.deepEqual({ ...secondManifest, updatedAt: firstManifest.updatedAt }, firstManifest);
@@ -817,7 +891,7 @@ test('two real CLI seed invocations recover the same exact run without regenerat
 
 test('CLI rejects every incomplete or extra journal before adapter construction for every manifest command', async t => {
   for (const command of ['seed', 'inspect', 'transition', 'cleanup']) {
-    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT }))) {
+    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 }))) {
       await t.test(`${command}: ${item.name}`, async caseTest => {
         const fixture = await lifecycleFixture(caseTest);
         await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(item.manifest, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
@@ -864,6 +938,13 @@ test('CLI rejects every incomplete or extra journal before adapter construction 
 
 test('cli transition uses a fresh lifecycle with the persistent seeded manifest after guard resolution', async t => {
   const fixture = await lifecycleFixture(t);
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(completeManifest(phase9Definition, {
+    version: 3,
+    state: 'planned',
+    expectedAbsentFirestorePaths: phase9Definition.expectedAbsentDocuments.map(item => item.path),
+    transitions: activeTransitions(3),
+  }), null, 2)}\n`, { mode: 0o600 });
   const seededCalls = [];
   const seededOutput = [];
   await runCli({
@@ -1158,6 +1239,14 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
     state: 'planned',
   }), /version/i);
   assert.throws(() => validateManifest({
+    version: 'toString',
+    runId: RUN_ID,
+    projectId: STAGING,
+    authUids: [],
+    firestorePaths: [],
+    state: 'planned',
+  }), /version/i);
+  assert.throws(() => validateManifest({
     version: 2,
     runId: RUN_ID,
     projectId: 'production-project',
@@ -1210,10 +1299,124 @@ test('manifest v2 requires exactly both approved transition records', () => {
   }
 });
 
+test('manifest v3 validates the exact present and expected absence journal sets', () => {
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const expectedAbsentFirestorePaths = phase9Definition.expectedAbsentDocuments.map(item => item.path);
+  const v3 = completeManifest(phase9Definition, {
+    version: 3,
+    expectedAbsentFirestorePaths,
+    transitions: activeTransitions(3),
+  });
+
+  const normalized = validateManifest(v3);
+  assert.equal(normalized.version, 3);
+  assert.deepEqual(normalized.expectedAbsentFirestorePaths, expectedAbsentFirestorePaths);
+  assert(Object.isFrozen(normalized.expectedAbsentFirestorePaths));
+  assert.doesNotThrow(() => assertExactFixtureJournal(v3, phase9Definition));
+
+  const mutations = [
+    { name: 'omitted Auth UID', change: { authUids: v3.authUids.slice(1) } },
+    { name: 'extra Auth UID', change: { authUids: [...v3.authUids, `${RUN_ID}-extra-user`] } },
+    { name: 'omitted present path', change: { firestorePaths: v3.firestorePaths.slice(1) } },
+    { name: 'extra present path', change: { firestorePaths: [...v3.firestorePaths, `users/${RUN_ID}-extra-user`] } },
+    { name: 'omitted expected absence path', change: { expectedAbsentFirestorePaths: [] } },
+    {
+      name: 'extra expected absence path',
+      change: { expectedAbsentFirestorePaths: [...expectedAbsentFirestorePaths, `users/${RUN_ID}-extra-user`] },
+    },
+    {
+      name: 'omitted transition alias',
+      change: {
+        transitions: {
+          'qa-suspended': v3.transitions['qa-suspended'],
+          'qa-removed-member': v3.transitions['qa-removed-member'],
+        },
+      },
+    },
+    {
+      name: 'extra transition alias',
+      change: { transitions: { ...v3.transitions, 'qa-extra': { version: 1, state: 'active' } } },
+    },
+  ];
+  for (const item of mutations) {
+    assert.throws(
+      () => assertExactFixtureJournal({ ...v3, ...item.change }, phase9Definition),
+      /exact fixture definition|transition/i,
+      item.name,
+    );
+  }
+});
+
+test('manifest v3 expected absence paths are managed, unique, and disjoint from present paths', () => {
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const expectedPath = phase9Definition.expectedAbsentDocuments[0].path;
+  const base = completeManifest(phase9Definition, {
+    version: 3,
+    expectedAbsentFirestorePaths: [expectedPath],
+    transitions: activeTransitions(3),
+  });
+
+  for (const expectedAbsentFirestorePaths of [
+    [expectedPath, expectedPath],
+    ['users/unrelated-user'],
+    [base.firestorePaths[0]],
+  ]) {
+    assert.throws(
+      () => validateManifest({ ...base, expectedAbsentFirestorePaths }),
+      /expectedAbsentFirestorePaths|managed|overlap|present/i,
+    );
+  }
+
+  const legacyDefinition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const legacy = completeManifest(legacyDefinition);
+  assert.equal(validateManifest(legacy).version, 2);
+  assert.doesNotThrow(() => assertExactFixtureJournal(legacy, legacyDefinition));
+  assert.throws(
+    () => validateManifest({ ...legacy, expectedAbsentFirestorePaths: [] }),
+    /expectedAbsentFirestorePaths|version 2/i,
+  );
+});
+
+test('manifest v3 pending-delete transition uses suspended checkpoint ordering and final state', () => {
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const base = completeManifest(definition, {
+    version: 3,
+    expectedAbsentFirestorePaths: definition.expectedAbsentDocuments.map(item => item.path),
+    transitions: activeTransitions(3),
+  });
+  const completed = {
+    version: 1,
+    state: 'pending_deletion',
+    startedAt: '2026-08-24T14:00:00.000Z',
+    firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+    revokedAt: '2026-08-24T14:00:02.000Z',
+    completedAt: '2026-08-24T14:00:03.000Z',
+  };
+
+  assert.doesNotThrow(() => validateManifest({
+    ...base,
+    transitions: { ...base.transitions, 'qa-pending-delete': completed },
+  }));
+  assert.throws(() => validateManifest({
+    ...base,
+    transitions: {
+      ...base.transitions,
+      'qa-pending-delete': { ...completed, cacheDeletedAt: '2026-08-24T14:00:01.500Z' },
+    },
+  }), /cache-deletion|cacheDeletedAt/i);
+  assert.throws(() => validateManifest({
+    ...base,
+    transitions: {
+      ...base.transitions,
+      'qa-pending-delete': { ...completed, firestoreUpdatedAt: undefined },
+    },
+  }), /checkpoint|ordering/i);
+});
+
 test('pure exact-journal validation compares manifest UID and path sets to the deterministic definition', async () => {
   const manifestModule = await import('../scripts/qa-fixtures/manifest.mjs');
   assert.equal(typeof manifestModule.assertExactFixtureJournal, 'function');
-  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
   const complete = completeManifest(definition, {
     authUids: definition.identities.map(identity => identity.uid).reverse(),
     firestorePaths: definition.documents.map(document => document.path).reverse(),
@@ -1768,7 +1971,7 @@ test('re-seed rejects omitted or one-alias transition journals before credential
 
 test('lifecycle defense rejects incomplete or extra journals before adapter access for every operation', async t => {
   for (const operation of ['seed', 'inspect', 'transition', 'cleanup']) {
-    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT }))) {
+    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 }))) {
       await t.test(`${operation}: ${item.name}`, async caseTest => {
         const fixture = await lifecycleFixture(caseTest);
         await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(item.manifest, null, 2)}\n`, { mode: 0o600, flag: 'wx' });

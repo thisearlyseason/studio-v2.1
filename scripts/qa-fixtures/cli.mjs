@@ -3,7 +3,7 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { buildFixtureDefinition } from './definition.mjs';
+import { buildFixtureDefinition, fixturePlanSummary } from './definition.mjs';
 import { createFirebaseAdapter } from './firebase-adapter.mjs';
 import {
   assertHostedStagingIntent,
@@ -179,14 +179,22 @@ export async function runCli({
       readManifestFile: manifestReadFile,
     });
     if (manifest) {
-      definition = buildFixtureDefinition({ runId: manifest.runId, expiresAt: manifest.expiresAt });
+      definition = buildFixtureDefinition({
+        runId: manifest.runId,
+        expiresAt: manifest.expiresAt,
+        manifestVersion: manifest.version,
+      });
       manifest = assertExactFixtureJournal(manifest, definition);
     } else {
       if (typeof runIdGenerator !== 'function') throw new Error('runIdGenerator must be a function.');
       const runId = runIdGenerator();
       const expiresAt = argv.includes('--expires-at') ? argumentValue(argv, '--expires-at') : defaultExpiry();
-      definition = buildFixtureDefinition({ runId, expiresAt });
+      definition = buildFixtureDefinition({ runId, expiresAt, manifestVersion: 3 });
     }
+  }
+
+  if (manifest?.version === 2 && !new Set(['inspect', 'cleanup']).has(command)) {
+    throw new Error('Manifest version 2 is recovery-only; seed a new version 3 run.');
   }
 
   // Resolving the Admin project is read-only. The second guard verifies it
@@ -195,12 +203,13 @@ export async function runCli({
   const { projectId } = assertHostedStagingIntent({ argv, env, resolvedProjectId: adapter?.projectId });
 
   if (command === 'preflight') {
+    const plan = fixturePlanSummary({ manifestVersion: 3 });
     output(stdout, {
       command,
       projectId,
       origin,
-      plannedAliases: 9,
-      plannedTeams: 2,
+      plannedAliases: plan.identityCount,
+      plannedTeams: plan.teamCount,
       safe: true,
     });
     return { command, projectId, origin, safe: true };
