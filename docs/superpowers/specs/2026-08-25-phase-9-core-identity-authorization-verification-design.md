@@ -1,9 +1,9 @@
 # Phase 9 Core Identity and Authorization Verification Design
 
-**Date:** 2026-08-25  
+**Date:** 2026-08-25
 **Status:** Approved
-**Repository:** `studio-v2.1`  
-**Starting commit:** `64ffb8d58965ffbc8115d882e545a4798610fa88`  
+**Repository:** `studio-v2.1`
+**Starting commit:** `64ffb8d58965ffbc8115d882e545a4798610fa88`
 **Branch:** `agent/phase9-core-identity-verification`
 
 ## Purpose
