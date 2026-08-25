@@ -1,7 +1,9 @@
 # Phase 8 Confirmed Defects — BUG-010 Root Cause
 
-**Probe time:** 2026-08-25T03:33:09Z  
-**Pre-fix commit:** `b1c8d3b42c23872fd3d39f029487614e04315b09`  
+**Probe time:** 2026-08-25T03:33:09Z
+
+**Pre-fix commit:** `b1c8d3b42c23872fd3d39f029487614e04315b09`
+
 **Environment:** isolated hosted staging only
 
 ## Guard result
