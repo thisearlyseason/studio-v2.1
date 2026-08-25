@@ -110,6 +110,12 @@ const validateLandingWindow = (window, landing) => {
   if (window.finalPath !== landing.path || !window.visibleSentinels.includes(landing.sentinel)) {
     throw new Error('Admission did not reach its exact landing path and heading.');
   }
+  const finalProtectedHeadings = window.visibleSentinels.filter(sentinel => PROTECTED_PAGE_HEADINGS.includes(sentinel));
+  const expectedFinalProtectedHeadings = PROTECTED_PAGE_HEADINGS.includes(landing.sentinel) ? [landing.sentinel] : [];
+  if (
+    finalProtectedHeadings.length !== expectedFinalProtectedHeadings.length
+    || finalProtectedHeadings.some((sentinel, index) => sentinel !== expectedFinalProtectedHeadings[index])
+  ) throw new Error('Admission final visible protected heading must exactly match the expected sentinel.');
   if (!window.sessionPresent) throw new Error('Admission landing requires an authenticated session.');
   if (window.protectedRender) {
     const signals = (window.renderSignals ?? []).filter(signal => (
@@ -128,7 +134,10 @@ const executeRoute = async ({ client, session, path, isAllowed, landing, sentine
     action: () => requireFunction(actions?.navigate, 'navigate')(path),
     terminal: () => requireFunction(actions?.waitForSentinel, 'waitForSentinel')(expected.sentinel),
   });
-  validateRouteResult({ allowed: isAllowed, expectedPath: expected.path, expectedSentinel: expected.sentinel, window });
+  validateRouteResult({
+    allowed: isAllowed, requestedPath: path,
+    expectedPath: expected.path, expectedSentinel: expected.sentinel, window,
+  });
   return {
     window,
     summary: {

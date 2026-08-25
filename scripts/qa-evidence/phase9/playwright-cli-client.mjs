@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
   LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, PROTECTED_PAGE_HEADINGS,
+  SESSION_COOKIE_NAME, STAGING_ORIGIN,
 } from './scenario-contracts.mjs';
 
 const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
@@ -206,7 +207,7 @@ const sampleSource = mark => String.raw`async (page) => {
   });
   const renderHistory = state.renders.slice(mark.renders);
   const protectedHeadings = ${JSON.stringify(PROTECTED_PAGE_HEADINGS)};
-  const cookies = await page.context().cookies();
+  const cookies = await page.context().cookies(${JSON.stringify(STAGING_ORIGIN)});
   return {
     pageId: state.pageId,
     terminalReached: true,
@@ -214,7 +215,7 @@ const sampleSource = mark => String.raw`async (page) => {
     finalUrl: page.url(),
     finalPath: render.path,
     visibleSentinels: render.sentinels,
-    sessionPresent: cookies.some(cookie => /session|auth/i.test(cookie.name)),
+    sessionPresent: cookies.some(cookie => cookie.name === ${JSON.stringify(SESSION_COOKIE_NAME)}),
     protectedRender: renderHistory.some(item => item.kind === 'heading' && protectedHeadings.includes(item.sentinel)),
     renderSignals: renderHistory,
     redirectReason: render.redirectReason,
@@ -313,6 +314,7 @@ const sanitizeWindow = value => {
     kind: item.kind, pathname: item.pathname, sentinel: item.sentinel,
   }));
   const protectedListeners = listeners.filter(isProtectedResource);
+  const protectedRequests = requests.filter(isProtectedResource);
   return {
     pageId: typeof value.pageId === 'string' ? value.pageId : '',
     terminalReached: value.terminalReached === true,
@@ -324,7 +326,8 @@ const sanitizeWindow = value => {
     protectedRender: renderSignals.some(signal => signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)),
     renderSignals,
     redirectReason: value.redirectReason,
-    protectedRequests: requests.filter(isProtectedResource).length,
+    protectedRequests: protectedRequests.length,
+    protectedRequestSignals: protectedRequests,
     requestSignals: requests,
     protectedListenerStarts: protectedListeners.length,
     listenerSignals: protectedListeners,

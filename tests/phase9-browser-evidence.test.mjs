@@ -44,7 +44,9 @@ const safeWindow = overrides => ({
   sessionPresent: true,
   protectedRender: false,
   protectedRequests: 0,
+  protectedRequestSignals: [],
   protectedListenerStarts: 0,
+  listenerSignals: [],
   pageErrors: 0,
   appConsoleErrors: 0,
   unexpectedRequestFailures: 0,
@@ -675,9 +677,77 @@ test('phase 9 evidence contracts require path and visible readiness for allowed 
   }).pass, true);
 });
 
+test('phase 9 evidence contracts reject an extra final protected heading even when it predates the action mark', () => {
+  assert.throws(() => validateRouteResult({
+    allowed: true,
+    requestedPath: '/family',
+    expectedPath: '/family',
+    expectedSentinel: 'Family Overview',
+    window: safeWindow({
+      visibleSentinels: ['Dashboard', 'Family Overview'],
+      protectedRender: true,
+      renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
+    }),
+  }), /final visible protected heading/i);
+});
+
+test('phase 9 evidence contracts scope denied activity to the requested path and allow exact authorized landing activity', () => {
+  const protectedSignal = initiatingFrameUrl => ({
+    url: `${STAGING_ORIGIN}/api/teams/chat`,
+    method: 'GET',
+    resourceType: 'fetch',
+    initiatingFrameUrl,
+  });
+  const denied = overrides => ({
+    allowed: false,
+    requestedPath: '/admin',
+    expectedPath: '/dashboard',
+    expectedSentinel: 'Dashboard',
+    window: safeWindow({
+      finalPath: '/dashboard',
+      visibleSentinels: ['Dashboard'],
+      protectedRender: true,
+      renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
+      protectedRequests: 1,
+      protectedRequestSignals: [protectedSignal(`${STAGING_ORIGIN}/dashboard`)],
+      protectedListenerStarts: 1,
+      listenerSignals: [protectedSignal(`${STAGING_ORIGIN}/dashboard`)],
+      ...overrides,
+    }),
+  });
+
+  assert.equal(validateRouteResult(denied()).pass, true);
+  assert.throws(() => validateRouteResult(denied({
+    protectedRequestSignals: [protectedSignal(`${STAGING_ORIGIN}/admin`)],
+  })), /denied-target protected request/i);
+  assert.throws(() => validateRouteResult(denied({
+    listenerSignals: [protectedSignal(`${STAGING_ORIGIN}/admin`)],
+  })), /denied-target protected listener/i);
+  assert.throws(() => validateRouteResult(denied({
+    renderSignals: [
+      { kind: 'heading', pathname: '/admin', sentinel: 'Account Lookup' },
+      { kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' },
+    ],
+  })), /unexpected protected render/i);
+
+  assert.equal(validateRouteResult({
+    allowed: false,
+    requestedPath: '/admin',
+    expectedPath: '/family',
+    expectedSentinel: 'Family Overview',
+    window: safeWindow({
+      finalPath: '/family',
+      visibleSentinels: ['Family Overview'],
+      protectedRender: true,
+      renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
+    }),
+  }).pass, true);
+});
+
 test('phase 9 evidence contracts reject every denied-route transient signal', () => {
   const input = overrides => ({
     allowed: false,
+    requestedPath: '/admin',
     expectedPath: '/dashboard',
     expectedSentinel: 'Dashboard',
     window: safeWindow({ finalPath: '/dashboard', visibleSentinels: ['Dashboard'], sessionPresent: true, ...overrides }),
@@ -1270,6 +1340,24 @@ test('phase 9 browser scenarios distinguish active pending baseline, stale revoc
   }), /pending-deletion scenario/i);
 });
 
+test('phase 9 browser scenarios reject an extra final protected heading on an active landing', async () => {
+  const active = scenarioWindow({
+    finalPath: '/dashboard',
+    finalUrl: `${STAGING_ORIGIN}/dashboard`,
+    visibleSentinels: ['Dashboard', 'Family Overview'],
+    sessionPresent: true,
+    protectedRender: true,
+    renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
+  });
+  await assert.rejects(runPendingDeletionScenario({
+    client: createScriptedScenarioClient([active]),
+    session: 'pending-active-extra-heading',
+    context: scenarioContext({ contextId: 'pending-active-extra-heading', alias: 'qa-pending-delete' }),
+    scenario: 'active-baseline',
+    actions: { navigate: async () => {}, waitForDashboard: async () => {} },
+  }), /final visible protected heading/i);
+});
+
 test('phase 9 browser scenarios build the exact canonical two-viewport plan and reject invalid contexts', async () => {
   const plan = buildCanonicalScenarioPlan();
   assert.equal(plan.length, 44);
@@ -1397,12 +1485,14 @@ test('phase 9 browser scenarios route validation distinguishes expected current 
   }), /unexpected protected render/i);
   assert.throws(() => validateRouteResult({
     allowed: false,
+    requestedPath: '/admin',
     expectedPath: '/dashboard',
     expectedSentinel: 'Access Denied',
     window: safeWindow({ finalPath: '/dashboard', visibleSentinels: ['Access Denied'] }),
   }), /landing sentinel/i);
   assert.throws(() => validateRouteResult({
     allowed: false,
+    requestedPath: '/admin',
     expectedPath: '/dashboard',
     expectedSentinel: 'Family Overview',
     window: safeWindow({ finalPath: '/dashboard', visibleSentinels: ['Family Overview'] }),
@@ -1553,6 +1643,7 @@ test('phase 9 browser scenarios allowed and denied active-user routes require an
     },
     {
       allowed: false,
+      requestedPath: '/admin',
       expectedPath: '/dashboard',
       expectedSentinel: 'Dashboard',
       window: safeWindow({
@@ -1776,6 +1867,46 @@ test('phase 9 action window exposes only the fixed redirect reason enum', async 
     assert.equal(result.redirectReason, reason);
     assert.equal(JSON.stringify(result).includes('must-not-return'), false);
   }
+});
+
+test('phase 9 action window binds session evidence to exact staging __session cookie', { timeout: 60_000 }, async t => {
+  const client = createPlaywrightCliClient({});
+  const cases = [
+    {
+      name: 'wrong-origin exact-name cookie',
+      cookies: [{ name: '__session', value: 'opaque-test-value', url: 'https://example.invalid' }],
+      expected: false,
+    },
+    {
+      name: 'same-origin auth-like cookie',
+      cookies: [{ name: 'auth_session_hint', value: 'opaque-test-value', url: STAGING_ORIGIN }],
+      expected: false,
+    },
+    {
+      name: 'same-origin exact-name cookie',
+      cookies: [{ name: '__session', value: 'opaque-test-value', url: STAGING_ORIGIN }],
+      expected: true,
+    },
+  ];
+  try {
+    for (const [index, entry] of cases.entries()) await t.test(entry.name, async () => {
+      const session = `phase9-session-cookie-${index}`;
+      await installSignalRecorder(client, session);
+      const result = await observeAction({
+        client,
+        session,
+        stage: entry.name,
+        terminal: async () => {},
+        action: () => client.runCode(session, `async (page) => {
+          await page.context().addCookies(${JSON.stringify(entry.cookies)});
+        }`),
+      });
+      assert.equal(result.sessionPresent, entry.expected);
+    });
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
 test('phase 9 browser scenarios admission history filters only protected heading signals', async () => {

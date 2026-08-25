@@ -10,6 +10,7 @@ const deepFreeze = value => {
 
 export const STAGING_PROJECT_ID = 'the-squad-v2-staging';
 export const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
+export const SESSION_COOKIE_NAME = '__session';
 export const FIXTURE_MANIFEST_VERSION = 3;
 export const FIXTURE_RESOURCE_COUNTS = deepFreeze({ aliases: 20, teams: 3, auth: 20, firestore: 82, expectedAbsent: 1 });
 export const PENDING_UNAVAILABLE_SENTINEL = 'The email or password is incorrect, or this account is unavailable.';
@@ -317,15 +318,24 @@ export function validateActionWindow(value, options = {}) {
 export function validateRouteResult(value) {
   const result = requireRecord(value, 'Route result');
   requireBoolean(result.allowed, 'allowed');
+  const requestedPath = result.allowed
+    ? result.requestedPath ?? result.expectedPath
+    : requireString(result.requestedPath, 'requestedPath');
   const expectedPath = requireString(result.expectedPath, 'expectedPath');
   const expectedSentinel = requireString(result.expectedSentinel, 'expectedSentinel');
+  if (!ROUTE_SCENARIOS[requestedPath]) throw new Error('Route result requestedPath must be a configured protected route.');
   if (result.allowed && !ROUTE_SCENARIOS[expectedPath]?.visibleSentinels.includes(expectedSentinel)) {
     throw new Error('Allowed route must use its configured route sentinel.');
   }
-  if (!result.allowed && !LANDING_SCENARIOS[expectedPath]?.includes(expectedSentinel)) {
+  const exactDeniedLanding = LANDING_SCENARIOS[expectedPath]?.includes(expectedSentinel)
+    || ROUTE_SCENARIOS[expectedPath]?.visibleSentinels.includes(expectedSentinel);
+  if (!result.allowed && !exactDeniedLanding) {
     throw new Error('Denied route must use an exact landing sentinel.');
   }
-  const window = validateActionWindow(result.window, { requireNoProtected: !result.allowed });
+  if (!result.allowed && requestedPath === expectedPath) {
+    throw new Error('Denied route requestedPath must differ from its authorized landing path.');
+  }
+  const window = validateActionWindow(result.window);
 
   if (!window.sessionPresent) throw new Error('Active-user route result must retain an authenticated session.');
 
@@ -333,7 +343,13 @@ export function validateRouteResult(value) {
   if (!window.visibleSentinels.includes(expectedSentinel)) {
     throw new Error('Route result did not reach its configured visible sentinel.');
   }
-  if (result.allowed && window.protectedRender) {
+  const finalProtectedHeadings = window.visibleSentinels.filter(sentinel => PROTECTED_PAGE_HEADINGS.includes(sentinel));
+  const expectedFinalProtectedHeadings = PROTECTED_PAGE_HEADINGS.includes(expectedSentinel) ? [expectedSentinel] : [];
+  if (
+    finalProtectedHeadings.length !== expectedFinalProtectedHeadings.length
+    || finalProtectedHeadings.some((sentinel, index) => sentinel !== expectedFinalProtectedHeadings[index])
+  ) throw new Error('Route result final visible protected heading must exactly match the expected sentinel.');
+  if (window.protectedRender) {
     const protectedSignals = window.renderSignals.filter(signal => (
       signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
     ));
@@ -345,6 +361,39 @@ export function validateRouteResult(value) {
       || signal.sentinel !== expectedSentinel
     ));
     if (unexpected) throw new Error('Allowed route contains an unexpected protected render.');
+  }
+
+  if (!result.allowed) {
+    const requireAttributedSignals = (signals, count, name) => {
+      if (!Array.isArray(signals) || signals.length !== count || signals.some(signal => (
+        !isRecord(signal)
+        || typeof signal.url !== 'string'
+        || typeof signal.method !== 'string'
+        || typeof signal.resourceType !== 'string'
+        || typeof signal.initiatingFrameUrl !== 'string'
+      ))) throw new Error(`Denied route requires complete attributed ${name} evidence.`);
+      return signals;
+    };
+    const initiatedByDeniedTarget = signal => {
+      try {
+        const frame = new URL(signal.initiatingFrameUrl);
+        return frame.origin === STAGING_ORIGIN && frame.pathname === requestedPath;
+      } catch {
+        return false;
+      }
+    };
+    const requestSignals = requireAttributedSignals(
+      window.protectedRequestSignals, window.protectedRequests, 'protected request',
+    );
+    const listenerSignals = requireAttributedSignals(
+      window.listenerSignals, window.protectedListenerStarts, 'protected listener',
+    );
+    if (requestSignals.some(initiatedByDeniedTarget)) {
+      throw new Error('Denied route contains a denied-target protected request.');
+    }
+    if (listenerSignals.some(initiatedByDeniedTarget)) {
+      throw new Error('Denied route contains a denied-target protected listener.');
+    }
   }
 
   return { pass: true, allowed: result.allowed, window };
