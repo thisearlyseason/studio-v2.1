@@ -216,6 +216,45 @@ test('phase 9 action window treats login terminal sentinels as nonprotected rend
   assert.equal(result.protectedRender, false);
 });
 
+test('phase 9 action window caps sanitized render history', async () => {
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+    if (code.includes('phase9:sample')) return cliResult({
+      pageId: 'page-a',
+      terminalReached: true,
+      loadingVisible: false,
+      finalUrl: 'https://example.invalid/family',
+      finalPath: '/family',
+      visibleSentinels: ['Family Overview'],
+      sessionPresent: true,
+      protectedRender: true,
+      protectedRequests: [],
+      protectedListenerStarts: [],
+      relevantHttpResults: [],
+      pageErrors: [],
+      appConsoleErrors: [],
+      unexpectedRequestFailures: [],
+      overflow: 1,
+      renderPath: '/family',
+      renderSentinel: 'Family Overview',
+      renderSignals: Array.from({ length: 1001 }, () => ({ path: '/family', sentinel: 'Family Overview' })),
+    });
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'bounded-renders');
+  const result = await observeAction({
+    client,
+    session: 'bounded-renders',
+    stage: 'bounded-renders',
+    terminal: async () => {},
+    action: async () => {},
+  });
+  assert.equal(result.renderSignals.length, 1000);
+  assert.equal(result.overflow, 1);
+});
+
 test('phase 9 action window marks the same page before action and returns sanitized complete signals', async () => {
   const order = [];
   const transport = createCliTransport(argv => {
@@ -458,6 +497,57 @@ test('phase 9 action window real Chrome captures each independent transient visi
       assert.equal(transient.protectedRender, true, JSON.stringify(transient));
       assert.equal(transient.renderSignals.some(signal => signal.sentinel === 'Family Overview'), true);
     });
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+});
+
+test('phase 9 action window real Chrome captures distinct CSS-animation-only protected flashes', { timeout: 30_000 }, async () => {
+  const client = createPlaywrightCliClient({});
+  try {
+    await installSignalRecorder(client, 'phase9-animation-regression');
+    await client.goto('phase9-animation-regression', 'about:blank');
+    const hidden = await observeAction({
+      client,
+      session: 'phase9-animation-regression',
+      stage: 'animation-hidden-baseline',
+      terminal: async () => {},
+      action: async () => client.runCode('phase9-animation-regression', `async (page) => {
+        await page.evaluate(() => {
+          document.head.innerHTML = '<style>#protected-flash{opacity:0}</style>';
+          document.body.innerHTML = '<h1 id="protected-flash">Family Overview</h1>';
+        });
+        await page.waitForTimeout(50);
+        return { ok: true };
+      }`),
+    });
+    assert.equal(hidden.protectedRender, false);
+
+    const flashes = await observeAction({
+      client,
+      session: 'phase9-animation-regression',
+      stage: 'animation-only-flashes',
+      terminal: async () => {},
+      action: async () => client.runCode('phase9-animation-regression', `async (page) => {
+        await page.evaluate(async () => {
+          const heading = document.querySelector('#protected-flash');
+          for (let flash = 0; flash < 2; flash += 1) {
+            const animation = heading.animate([
+              { opacity: 0 },
+              { opacity: 1, offset: 0.25 },
+              { opacity: 1, offset: 0.75 },
+              { opacity: 0 },
+            ], { duration: 220, fill: 'forwards' });
+            await animation.finished;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          }
+        });
+        return { ok: true };
+      }`),
+    });
+    assert.equal(flashes.protectedRender, true, JSON.stringify(flashes));
+    assert.equal(flashes.renderSignals.filter(signal => signal.sentinel === 'Family Overview').length, 2);
   } finally {
     await closeAndVerifyBrowsers(client);
   }

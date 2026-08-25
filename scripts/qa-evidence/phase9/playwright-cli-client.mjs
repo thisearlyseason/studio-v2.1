@@ -6,6 +6,7 @@ import { ROUTE_SCENARIOS } from './scenario-contracts.mjs';
 const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
+const MAX_SIGNAL_COUNT = 1000;
 const CLIENT_INTERNALS = new WeakMap();
 const PROTECTED_RENDER_SENTINELS = Object.freeze(Object.values(ROUTE_SCENARIOS).map(value => value.visibleSentinel));
 const TERMINAL_SENTINELS = Object.freeze([
@@ -28,11 +29,76 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
     }
   };
   const boundedPush = (state, key, value) => {
-    if (state[key].length >= 1000) {
+    if (state[key].length >= ${MAX_SIGNAL_COUNT}) {
       state.overflow += 1;
       return;
     }
     state[key].push(value);
+  };
+  const initializeRenderObserver = function initializeRenderObserver() {
+    if (globalThis.__phase9RenderObserverInstalled) return;
+    if (!document.documentElement) {
+      document.addEventListener('DOMContentLoaded', initializeRenderObserver, { once: true });
+      return;
+    }
+    globalThis.__phase9RenderObserverInstalled = true;
+    const observedSentinels = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
+    const protectedSentinels = ${JSON.stringify(PROTECTED_RENDER_SENTINELS)};
+    const candidates = new Map(observedSentinels.map(sentinel => [sentinel, new Set()]));
+    const visibleEdges = new Set();
+    const visible = element => {
+      if (!element?.isConnected) return false;
+      for (let current = element; current; current = current.parentElement) {
+        if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
+        const style = getComputedStyle(current);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0) return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const refreshCandidates = () => {
+      for (const elements of candidates.values()) elements.clear();
+      const root = document.body || document.documentElement;
+      if (!root) return;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.nodeValue || '';
+        for (const sentinel of observedSentinels) {
+          if (text.includes(sentinel) && node.parentElement) candidates.get(sentinel).add(node.parentElement);
+        }
+      }
+    };
+    const visibleSentinels = sentinels => sentinels.filter(sentinel =>
+      [...candidates.get(sentinel)].some(visible));
+    const recordRisingEdges = sentinels => {
+      const current = new Set(visibleSentinels(sentinels));
+      for (const sentinel of sentinels) {
+        if (current.has(sentinel)) {
+          if (!visibleEdges.has(sentinel)) {
+            visibleEdges.add(sentinel);
+            void globalThis.__phase9RecordRender({ path: location.pathname, sentinel });
+          }
+        } else {
+          visibleEdges.delete(sentinel);
+        }
+      }
+    };
+    globalThis.__phase9VisibleSentinels = () => visibleSentinels(observedSentinels);
+    const mutationSample = records => {
+      if (!records || records.some(record => record.type === 'childList' || record.type === 'characterData')) refreshCandidates();
+      recordRisingEdges(observedSentinels);
+    };
+    refreshCandidates();
+    mutationSample();
+    new MutationObserver(mutationSample).observe(document.documentElement, {
+      childList: true, subtree: true, characterData: true, attributes: true,
+      attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'],
+    });
+    const sampleAnimationFrame = () => {
+      recordRisingEdges(protectedSentinels);
+      requestAnimationFrame(sampleAnimationFrame);
+    };
+    requestAnimationFrame(sampleAnimationFrame);
   };
   if (!page.__phase9EvidenceRecorder) {
     const state = {
@@ -82,80 +148,8 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       if (!signal || typeof signal.path !== 'string' || typeof signal.sentinel !== 'string') return;
       boundedPush(state, 'renders', { path: signal.path, sentinel: signal.sentinel });
     });
-    await page.addInitScript(() => {
-      const initialize = () => {
-        if (globalThis.__phase9RenderObserverInstalled) return;
-        globalThis.__phase9RenderObserverInstalled = true;
-        globalThis.__phase9VisibleSentinels = () => {
-          const known = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
-          const visible = element => {
-            if (!element) return false;
-            for (let current = element; current; current = current.parentElement) {
-              if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
-              const style = getComputedStyle(current);
-              if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0) return false;
-            }
-            const rect = element.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          };
-          const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
-          const found = new Set();
-          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-            if (!visible(node.parentElement)) continue;
-            for (const sentinel of known) if ((node.nodeValue || '').includes(sentinel)) found.add(sentinel);
-          }
-          return known.filter(sentinel => found.has(sentinel));
-        };
-        const sample = () => {
-          if (!document.body) return;
-          for (const sentinel of globalThis.__phase9VisibleSentinels()) {
-            void globalThis.__phase9RecordRender({ path: location.pathname, sentinel });
-          }
-        };
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sample, { once: true });
-        else sample();
-        new MutationObserver(sample).observe(document.documentElement, {
-          childList: true, subtree: true, characterData: true, attributes: true,
-          attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'],
-        });
-      };
-      initialize();
-    });
-    await page.evaluate(() => {
-      if (globalThis.__phase9RenderObserverInstalled) return;
-      globalThis.__phase9RenderObserverInstalled = true;
-      globalThis.__phase9VisibleSentinels = () => {
-        const known = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
-        const visible = element => {
-          if (!element) return false;
-          for (let current = element; current; current = current.parentElement) {
-            if (current.hidden || current.getAttribute('aria-hidden') === 'true') return false;
-            const style = getComputedStyle(current);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0) return false;
-          }
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        };
-        const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
-        const found = new Set();
-        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          if (!visible(node.parentElement)) continue;
-          for (const sentinel of known) if ((node.nodeValue || '').includes(sentinel)) found.add(sentinel);
-        }
-        return known.filter(sentinel => found.has(sentinel));
-      };
-      const sample = () => {
-        if (!document.body) return;
-        for (const sentinel of globalThis.__phase9VisibleSentinels()) {
-          void globalThis.__phase9RecordRender({ path: location.pathname, sentinel });
-        }
-      };
-      sample();
-      new MutationObserver(sample).observe(document.documentElement, {
-        childList: true, subtree: true, characterData: true, attributes: true,
-        attributeFilter: ['style', 'class', 'hidden', 'aria-hidden'],
-      });
-    });
+    await page.addInitScript(initializeRenderObserver);
+    await page.evaluate(initializeRenderObserver);
   }
   return { pageId: page.__phase9EvidenceRecorder.pageId };
 }`;
@@ -292,7 +286,7 @@ const sanitizeWindow = value => {
     resourceType: typeof item?.resourceType === 'string' ? item.resourceType : 'unknown',
     initiatingFrameUrl: cleanUrl(item?.initiatingFrameUrl),
   })) : [];
-  const renderSignals = Array.isArray(value.renderSignals) ? value.renderSignals.map(item => ({
+  const renderSignals = Array.isArray(value.renderSignals) ? value.renderSignals.slice(0, MAX_SIGNAL_COUNT).map(item => ({
     path: typeof item?.path === 'string' ? item.path : '',
     sentinel: typeof item?.sentinel === 'string' ? item.sentinel : '',
   })) : [];
@@ -500,9 +494,13 @@ async function smoke() {
       session: 'phase9-offline-smoke',
       stage: 'second-tab',
       terminal: async () => {},
-      action: async () => {},
+      action: async () => {
+        await client.runCode('phase9-offline-smoke', 'async (page) => page.evaluate(() => { document.body.textContent = "Family Overview"; })');
+      },
     });
-    if (!first.pageId || !second.pageId || first.pageId === second.pageId) throw new Error('Offline smoke did not isolate tab marks.');
+    if (!first.pageId || !second.pageId || first.pageId === second.pageId || !second.protectedRender) {
+      throw new Error('Offline smoke did not isolate and re-arm tab marks.');
+    }
     let cliErrorRejected = false;
     try {
       await client.runCode('phase9-offline-smoke', 'async (page) => { throw new Error("EXPECTED_OFFLINE_SMOKE_FAILURE"); }');
