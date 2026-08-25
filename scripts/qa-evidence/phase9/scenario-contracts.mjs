@@ -263,13 +263,18 @@ export function validateActionWindow(value, options = {}) {
   if (window.unexpectedRequestFailures !== 0) throw new Error('Action window contains an unexpected request failure.');
   if (window.overflow !== 0) throw new Error('Action window signal overflow is nonzero.');
 
-  const revoked = options.kind === 'fresh-unauthenticated' || options.kind === 'pending-deletion';
+  const pendingStale = options.kind === 'pending-deletion-stale';
+  const pendingFresh = options.kind === 'pending-deletion-fresh';
+  const revoked = options.kind === 'fresh-unauthenticated' || pendingStale || pendingFresh;
   const requireNoProtected = revoked || options.requireNoProtected === true;
   if (revoked && window.sessionPresent) throw new Error('Revoked action window retained a session.');
   if (revoked && window.finalPath !== '/login') throw new Error('Revoked action window must end at /login.');
   if (revoked && !window.visibleSentinels.includes('Sign In')) throw new Error('Revoked action window must reach the Sign In sentinel.');
-  if (options.kind === 'pending-deletion' && !window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL)) {
-    throw new Error(`Pending-deletion action window must show: ${PENDING_UNAVAILABLE_SENTINEL}`);
+  if (pendingStale && window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL)) {
+    throw new Error(`Stale pending-deletion action window must not show unavailable toast: ${PENDING_UNAVAILABLE_SENTINEL}`);
+  }
+  if (pendingFresh && !window.visibleSentinels.includes(PENDING_UNAVAILABLE_SENTINEL)) {
+    throw new Error(`Fresh pending-deletion action window must show unavailable toast: ${PENDING_UNAVAILABLE_SENTINEL}`);
   }
   if (requireNoProtected) {
     if (window.protectedRender) throw new Error('Revoked action window contains a protected render.');
@@ -292,6 +297,8 @@ export function validateRouteResult(value) {
     throw new Error('Denied route must use an exact landing sentinel.');
   }
   const window = validateActionWindow(result.window, { requireNoProtected: !result.allowed });
+
+  if (!window.sessionPresent) throw new Error('Active-user route result must retain an authenticated session.');
 
   if (window.finalPath !== expectedPath) throw new Error('Route result pathname does not match the expected pathname.');
   if (!window.visibleSentinels.includes(expectedSentinel)) {

@@ -43,6 +43,7 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
     globalThis.__phase9RenderObserverInstalled = true;
     const observedSentinels = ${JSON.stringify(OBSERVED_RENDER_SENTINELS)};
     const protectedSentinels = ${JSON.stringify(PROTECTED_RENDER_SENTINELS)};
+    const terminalSentinels = ${JSON.stringify(TERMINAL_SENTINELS)};
     const candidates = new Map(observedSentinels.map(sentinel => [sentinel, new Set()]));
     const normalizedHeading = element => (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
     const visibleEdges = new Set();
@@ -63,6 +64,12 @@ const INSTALL_RECORDER_SOURCE = String.raw`async (page) => {
       for (const heading of root.querySelectorAll('h1')) {
         const exactText = normalizedHeading(heading);
         if (candidates.has(exactText)) candidates.get(exactText).add(heading);
+      }
+      for (const status of root.querySelectorAll('[role="status"]')) {
+        for (const element of [status, ...status.querySelectorAll('*')]) {
+          const exactText = normalizedHeading(element);
+          if (terminalSentinels.includes(exactText)) candidates.get(exactText).add(element);
+        }
       }
     };
     const visibleSentinels = sentinels => sentinels.filter(sentinel =>

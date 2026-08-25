@@ -241,6 +241,8 @@ export async function runIsolationScenario({ client, session, context: inputCont
 export async function runLogoutScenario({ client, session, freshSession, context: inputContext, actions } = {}) {
   const context = validateContext(inputContext, 'logout');
   const sharedSession = requireText(session, 'session');
+  const isolatedSession = requireText(freshSession, 'freshSession');
+  if (isolatedSession === sharedSession) throw new Error('freshSession must be distinct from the shared logout session.');
   const stages = [];
   for (const name of REQUIRED_LOGOUT_STAGES) {
     stages.push({
@@ -253,8 +255,8 @@ export async function runLogoutScenario({ client, session, freshSession, context
   }
   validateLogoutStages(stages);
   const freshWindow = await observe({
-    client, session: requireText(freshSession, 'freshSession'), stage: 'fresh-isolated-unauthenticated',
-    action: requireFunction(actions?.freshUnauthenticated, 'freshUnauthenticated'),
+    client, session: isolatedSession, stage: 'fresh-isolated-unauthenticated',
+    action: () => requireFunction(actions?.freshUnauthenticated, 'freshUnauthenticated')('/dashboard'),
     terminal: requireFunction(actions?.waitForFreshLogin, 'waitForFreshLogin'),
   });
   validateActionWindow(freshWindow, { kind: 'fresh-unauthenticated' });
@@ -275,7 +277,8 @@ export async function runFreshUnauthenticatedScenario({ client, session, context
   const context = validateContext(inputContext, 'logout');
   const window = await observe({
     client, session: requireText(session, 'session'), stage: 'fresh-unauthenticated',
-    action: requireFunction(actions?.navigate, 'navigate'), terminal: requireFunction(actions?.waitForLogin, 'waitForLogin'),
+    action: () => requireFunction(actions?.navigate, 'navigate')('/dashboard'),
+    terminal: requireFunction(actions?.waitForLogin, 'waitForLogin'),
   });
   validateActionWindow(window, { kind: 'fresh-unauthenticated' });
   return rowFromWindow({
@@ -285,17 +288,23 @@ export async function runFreshUnauthenticatedScenario({ client, session, context
   });
 }
 
-const runPendingRevocation = async ({ client, session, context: inputContext, action, actions, stage, actionLabel }) => {
+const runPendingRevocation = async ({ client, session, context: inputContext, action, actions, stage, actionLabel, fresh }) => {
   const context = validateContext(inputContext, 'pending-deletion');
   const window = await observe({
     client, session: requireText(session, 'session'), stage, action: requireFunction(action, stage),
-    terminal: requireFunction(actions?.waitForLogin, 'waitForLogin'),
+    terminal: async () => {
+      await requireFunction(actions?.waitForLogin, 'waitForLogin')(stage, 'Sign In');
+      if (fresh) await requireFunction(actions?.waitForUnavailable, 'waitForUnavailable')(stage, PENDING_UNAVAILABLE_SENTINEL);
+    },
   });
-  validateActionWindow(window, { kind: 'pending-deletion' });
+  validateActionWindow(window, { kind: fresh ? 'pending-deletion-fresh' : 'pending-deletion-stale' });
   return rowFromWindow({
     context, group: 'pending-deletion', action: actionLabel,
-    expectedResult: 'login UI with generic unavailable message and no protected activity', window,
-    visibleState: PENDING_UNAVAILABLE_SENTINEL, actionSummaries: [{ stage, finalPath: window.finalPath }],
+    expectedResult: fresh
+      ? 'login UI with generic unavailable message and no protected activity'
+      : 'login UI with no session or protected activity after revocation',
+    window, visibleState: fresh ? PENDING_UNAVAILABLE_SENTINEL : 'Sign In',
+    actionSummaries: [{ stage, finalPath: window.finalPath }],
   });
 };
 
@@ -319,6 +328,7 @@ export async function runPendingDeletionScenario(options = {}) {
   }
   return runPendingRevocation({
     ...options, stage: `pending-deletion-${scenario}`,
+    fresh: scenario === 'fresh-login',
     action: scenario === 'stale-session' ? options.actions?.reloadRevokedSession : options.actions?.freshLogin,
     actionLabel: scenario === 'stale-session'
       ? 'reload pre-transition session after pending deletion' : 'fresh pending-deletion login',

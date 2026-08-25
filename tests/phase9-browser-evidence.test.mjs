@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+import { accountSessionRedirect } from '../src/lib/dashboard-account-session.ts';
+
 import {
   ISOLATION_SCENARIOS,
   REQUIRED_LOGOUT_STAGES,
@@ -791,17 +793,20 @@ test('phase 9 evidence contracts validate all ordered logout stages independentl
 });
 
 test('phase 9 evidence contracts reject transient signals for fresh and pending revocation windows', () => {
-  for (const kind of ['fresh-unauthenticated', 'pending-deletion']) {
-    const visibleSentinels = kind === 'pending-deletion'
+  for (const kind of ['fresh-unauthenticated', 'pending-deletion-stale', 'pending-deletion-fresh']) {
+    const visibleSentinels = kind === 'pending-deletion-fresh'
       ? ['Sign In', 'The email or password is incorrect, or this account is unavailable.']
       : ['Sign In'];
     const base = safeWindow({ finalPath: '/login', visibleSentinels, sessionPresent: false });
     assert.equal(validateActionWindow(base, { kind }).pass, true);
     assert.throws(() => validateActionWindow({ ...base, finalPath: '/dashboard' }, { kind }), /\/login/i);
     assert.throws(() => validateActionWindow({ ...base, visibleSentinels: [] }, { kind }), /Sign In/i);
-    if (kind === 'pending-deletion') {
+    if (kind === 'pending-deletion-fresh') {
       assert.throws(() => validateActionWindow({ ...base, visibleSentinels: ['Sign In'] }, { kind }), /account is unavailable/i);
     }
+    if (kind === 'pending-deletion-stale') assert.throws(() => validateActionWindow({
+      ...base, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+    }, { kind }), /must not show.*unavailable/i);
     assert.throws(() => validateActionWindow({ ...base, protectedRender: true }, { kind }), /protected render/i);
     assert.throws(() => validateActionWindow({ ...base, protectedRequests: 1 }, { kind }), /protected request/i);
     assert.throws(() => validateActionWindow({ ...base, protectedListenerStarts: 1 }, { kind }), /protected listener/i);
@@ -1188,7 +1193,9 @@ test('phase 9 browser scenarios reject transient protected activity for fresh an
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
   });
   const pending = { ...fresh, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'] };
-  const actions = { navigate: async () => {}, waitForLogin: async () => {}, freshLogin: async () => {} };
+  const actions = {
+    navigate: async () => {}, waitForLogin: async () => {}, freshLogin: async () => {}, waitForUnavailable: async () => {},
+  };
   for (const runner of [runFreshUnauthenticatedScenario, runPendingDeletionScenario]) {
     for (const [field, value, message] of [
       ['protectedRender', true, /protected render/i],
@@ -1481,26 +1488,152 @@ test('phase 9 browser scenarios aggregate every isolation action window from act
 });
 
 test('phase 9 browser scenarios pending rows use distinct baseline reload and fresh-login actions', async () => {
-  const denied = scenarioWindow({
+  const stale = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`,
-    visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+    visibleSentinels: ['Sign In'],
     sessionPresent: false,
   });
+  const fresh = { ...stale, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'] };
   const calls = [];
+  const terminals = [];
   const shared = {
-    waitForLogin: async () => {},
+    waitForLogin: async (...args) => terminals.push(args),
+    waitForUnavailable: async (...args) => terminals.push(args),
     reloadRevokedSession: async () => calls.push('reload'),
     freshLogin: async () => calls.push('fresh-login'),
   };
   await runPendingDeletionScenario({
-    client: createScriptedScenarioClient([denied]), session: 'pending-stale',
+    client: createScriptedScenarioClient([stale]), session: 'pending-stale',
     context: scenarioContext({ contextId: 'pending-stale', alias: 'qa-pending-delete' }),
     scenario: 'stale-session', actions: shared,
   });
   await runPendingDeletionScenario({
-    client: createScriptedScenarioClient([denied]), session: 'pending-fresh',
+    client: createScriptedScenarioClient([fresh]), session: 'pending-fresh',
     context: scenarioContext({ contextId: 'pending-fresh', alias: 'qa-pending-delete' }),
     scenario: 'fresh-login', actions: shared,
   });
   assert.deepEqual(calls, ['reload', 'fresh-login']);
+  assert.deepEqual(terminals, [
+    ['pending-deletion-stale-session', 'Sign In'],
+    ['pending-deletion-fresh-login', 'Sign In'],
+    ['pending-deletion-fresh-login', 'The email or password is incorrect, or this account is unavailable.'],
+  ]);
+});
+
+test('phase 9 browser scenarios allowed and denied active-user routes require an authenticated session', () => {
+  for (const result of [
+    {
+      allowed: true,
+      expectedPath: '/family',
+      expectedSentinel: 'Family Overview',
+      window: safeWindow({ sessionPresent: false }),
+    },
+    {
+      allowed: false,
+      expectedPath: '/dashboard',
+      expectedSentinel: 'Dashboard',
+      window: safeWindow({
+        finalPath: '/dashboard', visibleSentinels: ['Dashboard'], sessionPresent: false,
+      }),
+    },
+  ]) assert.throws(() => validateRouteResult(result), /authenticated session/i);
+});
+
+test('phase 9 browser scenarios navigate the exact protected dashboard in fresh unauthenticated contexts', async () => {
+  const login = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const requested = [];
+  await runFreshUnauthenticatedScenario({
+    client: createScriptedScenarioClient([login]), session: 'fresh-dashboard',
+    context: scenarioContext({ contextId: 'fresh-dashboard' }),
+    actions: { navigate: async path => requested.push(path), waitForLogin: async () => {} },
+  });
+  assert.deepEqual(requested, ['/dashboard']);
+});
+
+test('phase 9 browser scenarios require a distinct logout context and navigate its exact protected dashboard', async () => {
+  const login = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const actions = Object.fromEntries(REQUIRED_LOGOUT_STAGES.map(name => [name, async () => {}]));
+  const requested = [];
+  Object.assign(actions, {
+    waitForLogin: async () => {},
+    freshUnauthenticated: async path => requested.push(path),
+    waitForFreshLogin: async () => {},
+  });
+  const base = () => ({
+    client: createScriptedScenarioClient([...REQUIRED_LOGOUT_STAGES.map(() => login), login]),
+    session: 'logout-shared',
+    context: scenarioContext({ contextId: 'logout-distinct' }),
+    actions,
+  });
+  await assert.rejects(runLogoutScenario(base()), /freshSession/i);
+  await assert.rejects(runLogoutScenario({ ...base(), freshSession: 'logout-shared' }), /distinct/i);
+  await runLogoutScenario({ ...base(), freshSession: 'logout-fresh' });
+  assert.deepEqual(requested, ['/dashboard']);
+});
+
+test('phase 9 browser scenarios recorder observes an exact Radix status toast without classifying it as protected', { timeout: 30_000 }, async () => {
+  const client = createPlaywrightCliClient({});
+  try {
+    await installSignalRecorder(client, 'phase9-toast-terminal');
+    const result = await observeAction({
+      client,
+      session: 'phase9-toast-terminal',
+      stage: 'toast-terminal',
+      terminal: async () => {},
+      action: () => client.runCode('phase9-toast-terminal', `async (page) => page.evaluate(() => {
+        document.body.innerHTML = '<h1>Sign In</h1><div role="status"><div><div>Login Failed</div><div>The email or password is incorrect, or this account is unavailable.</div></div></div>';
+      })`),
+    });
+    assert.deepEqual(result.visibleSentinels, [
+      'Sign In',
+      'The email or password is incorrect, or this account is unavailable.',
+    ]);
+    assert.equal(result.renderSignals.some(signal => signal.sentinel === 'The email or password is incorrect, or this account is unavailable.'), true);
+    assert.equal(result.protectedRender, false);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
+test('phase 9 browser scenarios split stale pending revocation from fresh unavailable login', async () => {
+  assert.equal(accountSessionRedirect('/dashboard', { allowed: false, code: 'auth/account-unavailable' }), '/login?reason=unavailable');
+  const stale = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login?reason=unavailable`,
+    visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const fresh = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`,
+    visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'],
+    sessionPresent: false,
+  });
+  const context = scenarioContext({ contextId: 'pending-split', alias: 'qa-pending-delete' });
+  const commonActions = {
+    reloadRevokedSession: async () => {}, freshLogin: async () => {}, waitForLogin: async () => {},
+    waitForUnavailable: async () => {},
+  };
+  const staleRow = await runPendingDeletionScenario({
+    client: createScriptedScenarioClient([stale]), session: 'pending-stale-split', context,
+    scenario: 'stale-session', actions: commonActions,
+  });
+  assert.equal(staleRow.result, 'PASS');
+  assert.equal(staleRow.visibleState, 'Sign In');
+  assert.doesNotMatch(staleRow.expectedResult, /unavailable message/i);
+  await assert.rejects(runPendingDeletionScenario({
+    client: createScriptedScenarioClient([fresh]), session: 'pending-stale-toast', context,
+    scenario: 'stale-session', actions: commonActions,
+  }), /must not show.*unavailable/i);
+  await assert.rejects(runPendingDeletionScenario({
+    client: createScriptedScenarioClient([stale]), session: 'pending-fresh-no-toast', context,
+    scenario: 'fresh-login', actions: commonActions,
+  }), /must show.*unavailable/i);
+  const freshRow = await runPendingDeletionScenario({
+    client: createScriptedScenarioClient([fresh]), session: 'pending-fresh-split', context,
+    scenario: 'fresh-login', actions: commonActions,
+  });
+  assert.equal(freshRow.result, 'PASS');
+  assert.equal(freshRow.visibleState, 'The email or password is incorrect, or this account is unavailable.');
 });
