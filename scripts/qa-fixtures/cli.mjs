@@ -23,13 +23,18 @@ function argumentValue(argv, flag) {
 
 async function resolvedExternalPath(value, cwd, repositoryRoot, label) {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} path is required.`);
-  const resolvedRepositoryRoot = await realpath(resolve(repositoryRoot));
+  let resolvedRepositoryRoot;
+  try {
+    resolvedRepositoryRoot = await realpath(resolve(repositoryRoot));
+  } catch {
+    throw new Error('Repository boundary could not be resolved.');
+  }
   const target = isAbsolute(value) ? resolve(value) : resolve(cwd, value);
   let physicalTarget;
   try {
     physicalTarget = await realpath(target);
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
+    if (error?.code !== 'ENOENT') throw new Error(`${label} path could not be resolved.`);
     let parent = dirname(target);
     let suffix = target.slice(parent.length + 1);
     while (true) {
@@ -37,7 +42,7 @@ async function resolvedExternalPath(value, cwd, repositoryRoot, label) {
         physicalTarget = join(await realpath(parent), suffix);
         break;
       } catch (parentError) {
-        if (parentError?.code !== 'ENOENT') throw parentError;
+        if (parentError?.code !== 'ENOENT') throw new Error(`${label} path could not be resolved.`);
         const next = dirname(parent);
         if (next === parent) throw new Error(`${label} path parent must exist.`);
         suffix = join(parent.slice(next.length + 1), suffix);
@@ -52,22 +57,32 @@ async function resolvedExternalPath(value, cwd, repositoryRoot, label) {
   return target;
 }
 
-async function readExternalManifest(manifestPath, { allowMissing = false } = {}) {
+async function readExternalManifest(manifestPath, {
+  allowMissing = false,
+  readManifestFile = readFile,
+} = {}) {
   let file;
   try {
     file = await lstat(manifestPath);
   } catch (error) {
     if (error?.code === 'ENOENT' && allowMissing) return null;
     if (error?.code === 'ENOENT') throw new Error('Fixture manifest does not exist.');
-    throw error;
+    throw new Error('Fixture manifest metadata could not be read.');
   }
   if (!file.isFile() || file.isSymbolicLink()) throw new Error('Fixture manifest must be a regular file.');
+  let contents;
   try {
-    return validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')));
-  } catch (error) {
-    if (error instanceof SyntaxError) throw new Error('Fixture manifest must contain valid JSON.');
-    throw error;
+    contents = await readManifestFile(manifestPath, 'utf8');
+  } catch {
+    throw new Error('Fixture manifest could not be read.');
   }
+  let manifest;
+  try {
+    manifest = JSON.parse(contents);
+  } catch {
+    throw new Error('Fixture manifest must contain valid JSON.');
+  }
+  return validateManifest(manifest);
 }
 
 function output(writer, value) {
@@ -128,6 +143,7 @@ export async function runCli({
   cwd = process.cwd(),
   repositoryRoot = MODULE_REPOSITORY_ROOT,
   adapterFactory = createFirebaseAdapter,
+  manifestReadFile = readFile,
   runIdGenerator = defaultRunId,
   stdout = process.stdout,
   stderr = process.stderr,
@@ -151,7 +167,9 @@ export async function runCli({
 
   // An existing seed journal is pure local input and must be schema-valid
   // before Firebase Admin initialization or client construction is reachable.
-  if (command === 'seed') await readExternalManifest(manifestPath, { allowMissing: true });
+  if (command === 'seed') {
+    await readExternalManifest(manifestPath, { allowMissing: true, readManifestFile: manifestReadFile });
+  }
 
   // Resolving the Admin project is read-only. The second guard verifies it
   // agrees with the prechecked caller intent before lifecycle operations.
@@ -177,7 +195,7 @@ export async function runCli({
     const expiresAt = argv.includes('--expires-at') ? argumentValue(argv, '--expires-at') : defaultExpiry();
     definition = buildFixtureDefinition({ runId, expiresAt });
   } else {
-    const manifest = await readExternalManifest(manifestPath);
+    const manifest = await readExternalManifest(manifestPath, { readManifestFile: manifestReadFile });
     definition = buildFixtureDefinition({ runId: manifest.runId, expiresAt: manifest.expiresAt });
   }
 

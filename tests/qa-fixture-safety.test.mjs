@@ -514,6 +514,57 @@ test('cli seed rejects an existing incomplete transition journal before adapter 
   }
 });
 
+test('cli seed sanitizes an injected manifest read denial before adapter construction', async t => {
+  const fixture = await lifecycleFixture(t);
+  await writeFile(fixture.inputs.manifestPath, `${JSON.stringify({
+    version: 2,
+    runId: RUN_ID,
+    projectId: STAGING,
+    authUids: [],
+    firestorePaths: [],
+    state: 'planned',
+    expiresAt: EXPIRES_AT,
+    transitions: approvedActiveTransitions(),
+  }, null, 2)}\n`, { mode: 0o600 });
+  const stdout = [];
+  const stderr = [];
+  let manifestReadCalls = 0;
+  let factoryCalls = 0;
+  const rawDiagnostic = `EACCES: permission denied, open '${fixture.inputs.manifestPath}'`;
+
+  const error = await runCli({
+    argv: hostedArgs(
+      'seed',
+      '--manifest', fixture.inputs.manifestPath,
+      '--credentials', fixture.inputs.credentialPath,
+      '--expires-at', EXPIRES_AT,
+    ),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    manifestReadFile: async path => {
+      manifestReadCalls += 1;
+      assert.equal(path, fixture.inputs.manifestPath);
+      const error = new Error(rawDiagnostic);
+      error.code = 'EACCES';
+      throw error;
+    },
+    adapterFactory: async () => {
+      factoryCalls += 1;
+      throw new Error('adapter factory must not run');
+    },
+    stdout: line => stdout.push(line),
+    stderr: line => stderr.push(line),
+  }).then(() => null, reason => reason);
+
+  assert.equal(error?.message, 'Fixture manifest could not be read.');
+  assert.doesNotMatch(error.message, /EACCES|permission denied/i);
+  assert.equal(error.message.includes(fixture.inputs.manifestPath), false);
+  assert.equal(manifestReadCalls, 1);
+  assert.equal(factoryCalls, 0);
+  assert.deepEqual(stdout, []);
+  assert.deepEqual(stderr, []);
+});
+
 test('cli rejects caller-supplied run IDs before generator or adapter access', async t => {
   const fixture = await lifecycleFixture(t);
   let generatorCalls = 0;

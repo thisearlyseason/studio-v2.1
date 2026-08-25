@@ -7,9 +7,11 @@ import {
   fstatSync,
   lstatSync,
   mkdtempSync,
+  mkdirSync,
   openSync,
   readFileSync,
   readSync,
+  renameSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -24,6 +26,7 @@ const MAX_AGGREGATE_SOURCE_BYTES = 64 * 1024 * 1024;
 const MAX_GIT_METADATA_BYTES = 8 * 1024 * 1024;
 const TEST_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const TEST_MAX_AGGREGATE_SOURCE_BYTES = 64 * 1024 * 1024;
+const WORKTREE_CONFINEMENT_CODE = 'ERR_REPOSITORY_WORKTREE_CONFINEMENT';
 
 function enumerateRepositoryFromGit(repositoryRoot = process.cwd()) {
   const tracked = execFileSync(
@@ -111,29 +114,36 @@ function readBoundedGitBlobs(sources, repositoryRoot) {
 }
 
 function readBoundedWorktreeFile(file, repositoryRoot, expectedSize, {
+  expectedIdentities,
+  statFile = path => lstatSync(resolve(repositoryRoot, path)),
   noFollowFlag = fsConstants.O_NOFOLLOW,
   openFile = openSync,
+  readDescriptor = readSync,
 } = {}) {
   if (!Number.isInteger(noFollowFlag) || noFollowFlag <= 0) {
     throw new Error('Repository worktree scanning requires O_NOFOLLOW support.');
   }
-  const descriptor = openFile(resolve(repositoryRoot, file), fsConstants.O_RDONLY | noFollowFlag);
+  let descriptor;
   try {
+    descriptor = openFile(resolve(repositoryRoot, file), fsConstants.O_RDONLY | noFollowFlag);
+  } catch (error) {
+    revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize);
+    throw error;
+  }
+  try {
+    revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize);
     const before = fstatSync(descriptor);
-    if (!before.isFile() || before.size !== expectedSize || before.size > MAX_SOURCE_BYTES) {
-      throw new Error('Repository regular file changed after size preflight.');
-    }
+    assertDescriptorIdentity(before, expectedIdentities, expectedSize);
     const rawBytes = Buffer.allocUnsafe(expectedSize);
     let offset = 0;
     while (offset < expectedSize) {
-      const count = readSync(descriptor, rawBytes, offset, expectedSize - offset, null);
+      const count = readDescriptor(descriptor, rawBytes, offset, expectedSize - offset, null);
       if (count === 0) throw new Error('Repository regular file returned truncated bytes.');
       offset += count;
     }
     const after = fstatSync(descriptor);
-    if (!after.isFile() || after.size !== expectedSize) {
-      throw new Error('Repository regular file changed while being read.');
-    }
+    assertDescriptorIdentity(after, expectedIdentities, expectedSize);
+    revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize);
     return rawBytes;
   } finally {
     closeSync(descriptor);
@@ -144,9 +154,70 @@ function asBuffer(value) {
   return Buffer.isBuffer(value) ? value : Buffer.from(value);
 }
 
+function worktreeMetadataType(metadata) {
+  if (metadata?.isSymbolicLink?.()) return 'symlink';
+  if (metadata?.isDirectory?.()) return 'directory';
+  if (metadata?.isFile?.()) return 'file';
+  return 'other';
+}
+
+function worktreeIdentity(file, metadata) {
+  const validIdentityPart = value => (
+    (typeof value === 'number' && Number.isFinite(value))
+    || typeof value === 'bigint'
+  );
+  if (!validIdentityPart(metadata?.dev) || !validIdentityPart(metadata?.ino)) {
+    throw new Error('Repository metadata omitted a stable file identity.');
+  }
+  return { file, dev: metadata.dev, ino: metadata.ino, type: worktreeMetadataType(metadata) };
+}
+
+function sameWorktreeIdentity(actual, expected) {
+  return actual.dev === expected.dev && actual.ino === expected.ino && actual.type === expected.type;
+}
+
+function worktreeConfinementError() {
+  const error = new Error('Repository worktree path identity changed during acquisition.');
+  error.code = WORKTREE_CONFINEMENT_CODE;
+  return error;
+}
+
+function revalidateWorktreeIdentities(expectedIdentities, statFile, expectedSize) {
+  try {
+    if (!Array.isArray(expectedIdentities) || expectedIdentities.length === 0) throw worktreeConfinementError();
+    for (const expected of expectedIdentities) {
+      const metadata = statFile(expected.file);
+      const actual = worktreeIdentity(expected.file, metadata);
+      if (!sameWorktreeIdentity(actual, expected)) throw worktreeConfinementError();
+      if (expected.type === 'file' && metadata.size !== expectedSize) throw worktreeConfinementError();
+    }
+  } catch (error) {
+    if (error?.code === WORKTREE_CONFINEMENT_CODE) throw error;
+    throw worktreeConfinementError();
+  }
+}
+
+function assertDescriptorIdentity(metadata, expectedIdentities, expectedSize) {
+  const expected = expectedIdentities?.at(-1);
+  try {
+    const actual = worktreeIdentity(expected?.file, metadata);
+    if (
+      !expected
+      || expected.type !== 'file'
+      || !sameWorktreeIdentity(actual, expected)
+      || metadata.size !== expectedSize
+      || metadata.size > MAX_SOURCE_BYTES
+    ) throw worktreeConfinementError();
+  } catch (error) {
+    if (error?.code === WORKTREE_CONFINEMENT_CODE) throw error;
+    throw worktreeConfinementError();
+  }
+}
+
 function inspectWorktreePath(file, statFile) {
   const segments = file.split('/');
   let component = '';
+  const identities = [];
   for (let index = 0; index < segments.length - 1; index += 1) {
     component = component ? `${component}/${segments[index]}` : segments[index];
     let metadata;
@@ -157,9 +228,14 @@ function inspectWorktreePath(file, statFile) {
     }
     if (metadata.isSymbolicLink?.()) return { confinementError: true };
     if (typeof metadata.isDirectory !== 'function' || !metadata.isDirectory()) return { statError: true };
+    try {
+      identities.push(worktreeIdentity(component, metadata));
+    } catch {
+      return { statError: true };
+    }
   }
   try {
-    return { metadata: statFile(file) };
+    return { metadata: statFile(file), identities };
   } catch (error) {
     return { error };
   }
@@ -174,6 +250,7 @@ function repositoryScanFiles({
   readFile,
   noFollowFlag = fsConstants.O_NOFOLLOW,
   openFile = openSync,
+  readDescriptor = readSync,
 } = {}) {
   let repository;
   try {
@@ -250,9 +327,17 @@ function repositoryScanFiles({
       planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
       continue;
     }
+    let finalIdentity;
+    try {
+      finalIdentity = worktreeIdentity(worktree.file, file);
+    } catch {
+      planned.push({ entry: { file: worktree.file, contents: null, rawBytes: null, statError: true } });
+      continue;
+    }
+    const expectedIdentities = [...inspection.identities, finalIdentity];
     planned.push(file.size > MAX_SOURCE_BYTES
       ? { entry: { file: worktree.file, contents: null, rawBytes: null, sourceSizeError: true }, size: file.size }
-      : { source: { kind: 'worktree', file: worktree.file, size: file.size } });
+      : { source: { kind: 'worktree', file: worktree.file, size: file.size, expectedIdentities } });
   }
 
   const aggregateBytes = planned.reduce((total, item) => total + (item.size ?? item.source?.size ?? 0), 0);
@@ -279,9 +364,12 @@ function repositoryScanFiles({
     if (!boundedGitBlobs?.has(entry.oid)) throw new Error('Git blob is unavailable.');
     return boundedGitBlobs.get(entry.oid);
   });
-  const loadWorktree = readFile || ((file, root, size) => readBoundedWorktreeFile(file, root, size, {
+  const loadWorktree = readFile || ((file, root, size, expectedIdentities) => readBoundedWorktreeFile(file, root, size, {
+    expectedIdentities,
+    statFile,
     noFollowFlag,
     openFile,
+    readDescriptor,
   }));
   return planned.map(item => {
     if (item.entry) return item.entry;
@@ -294,11 +382,14 @@ function repositoryScanFiles({
         }
         rawBytes = blobCache.get(source.tracked.oid);
       } else {
-        rawBytes = asBuffer(loadWorktree(source.file, repositoryRoot, source.size));
+        rawBytes = asBuffer(loadWorktree(source.file, repositoryRoot, source.size, source.expectedIdentities));
       }
       if (rawBytes.length !== source.size) throw new Error('Repository source length changed after preflight.');
       return { file: source.file, contents: null, rawBytes, sourceBytes: source.size };
-    } catch {
+    } catch (error) {
+      if (source.kind === 'worktree' && error?.code === WORKTREE_CONFINEMENT_CODE) {
+        return { file: '<repository>', contents: null, rawBytes: null, confinementError: true };
+      }
       const errorField = source.kind === 'blob' ? 'blobReadError' : 'readError';
       return { file: source.file, contents: null, rawBytes: null, [errorField]: true };
     }
@@ -951,6 +1042,8 @@ test('cached tracked regular files scan one current confined worktree copy separ
       return Buffer.from('safe index bytes');
     },
     lstat: () => ({
+      dev: 1,
+      ino: 2,
       isFile: () => true,
       isSymbolicLink: () => false,
       size: Buffer.byteLength(privateKey),
@@ -1042,6 +1135,81 @@ test('repository scan rejects a symlinked parent component without reading outsi
   assert.equal(outsideReads, 0);
 });
 
+test('repository scan rejects a parent swapped to an external symlink between preflight and open without reading bytes', t => {
+  const repositoryRoot = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-race-root-'));
+  const outsideDirectory = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-race-outside-'));
+  const parentPath = join(repositoryRoot, 'nested');
+  const originalParentPath = join(repositoryRoot, 'nested-original');
+  const relativeFile = 'nested/leaf.bin';
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  mkdirSync(parentPath);
+  writeFileSync(join(repositoryRoot, relativeFile), '.'.repeat(Buffer.byteLength(privateKey)));
+  writeFileSync(join(outsideDirectory, 'leaf.bin'), privateKey);
+  t.after(() => {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  });
+  let swapped = false;
+  let descriptorReads = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    repositoryRoot,
+    enumerateRepository: () => ({ tracked: [], untracked: [{ file: relativeFile }] }),
+    openFile(path, flags) {
+      assert.equal(swapped, false);
+      renameSync(parentPath, originalParentPath);
+      symlinkSync(outsideDirectory, parentPath);
+      swapped = true;
+      return openSync(path, flags);
+    },
+    readDescriptor(...args) {
+      descriptorReads += 1;
+      return readSync(...args);
+    },
+  })), [
+    '<repository>: repository enumeration escaped the repository',
+  ]);
+  assert.equal(swapped, true);
+  assert.equal(descriptorReads, 0);
+});
+
+test('repository scan discards bytes when a parent changes identity during the descriptor read', t => {
+  const repositoryRoot = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-postread-root-'));
+  const outsideDirectory = mkdtempSync(join(tmpdir(), 'qa-hygiene-parent-postread-outside-'));
+  const parentPath = join(repositoryRoot, 'nested');
+  const originalParentPath = join(repositoryRoot, 'nested-original');
+  const relativeFile = 'nested/leaf.bin';
+  const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  mkdirSync(parentPath);
+  writeFileSync(join(repositoryRoot, relativeFile), privateKey);
+  writeFileSync(join(outsideDirectory, 'leaf.bin'), '.'.repeat(Buffer.byteLength(privateKey)));
+  t.after(() => {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  });
+  let swapped = false;
+  let descriptorReads = 0;
+
+  assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
+    repositoryRoot,
+    enumerateRepository: () => ({ tracked: [], untracked: [{ file: relativeFile }] }),
+    readDescriptor(...args) {
+      descriptorReads += 1;
+      const count = readSync(...args);
+      if (!swapped) {
+        renameSync(parentPath, originalParentPath);
+        symlinkSync(outsideDirectory, parentPath);
+        swapped = true;
+      }
+      return count;
+    },
+  })), [
+    '<repository>: repository enumeration escaped the repository',
+  ]);
+  assert.equal(swapped, true);
+  assert.ok(descriptorReads > 0);
+});
+
 test('repository scan fails closed before opening worktree content when O_NOFOLLOW is unavailable', t => {
   const directory = mkdtempSync(join(tmpdir(), 'qa-hygiene-no-no-follow-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -1079,6 +1247,8 @@ test('repository scan rejects oversize Git and worktree sources before invoking 
       return Buffer.from('reader must remain unreachable');
     },
     lstat: () => ({
+      dev: 1,
+      ino: 3,
       isFile: () => true,
       isSymbolicLink: () => false,
       size: TEST_MAX_SOURCE_BYTES + 1,
@@ -1106,6 +1276,8 @@ test('repository scan rejects an aggregate source budget overflow before reading
   assert.deepEqual(fixtureArtifactViolations(repositoryScanFiles({
     enumerateRepository: () => ({ tracked: [], untracked: files }),
     lstat: () => ({
+      dev: 1,
+      ino: 4,
       isFile: () => true,
       isSymbolicLink: () => false,
       size: TEST_MAX_SOURCE_BYTES,
