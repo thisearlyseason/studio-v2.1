@@ -1209,7 +1209,7 @@ test('phase 9 browser scenarios require visible readiness and complete denied-ro
   const context = scenarioContext();
   const actions = {
     navigate: async target => target,
-    waitForSentinel: async sentinel => sentinel,
+    waitForExactLocation: async (path, sentinel) => ({ path, sentinel }),
   };
   for (const [overrides, message] of [
     [{ visibleSentinels: [] }, /visible sentinel/i],
@@ -1227,7 +1227,7 @@ test('phase 9 browser scenarios require visible readiness and complete denied-ro
     context,
     path: '/family',
     allowed: true,
-    actions: { ...actions, waitForSentinel: async () => { throw new Error('readiness timeout'); } },
+    actions: { ...actions, waitForExactLocation: async () => { throw new Error('readiness timeout'); } },
   }), /readiness timeout/);
 
   for (const [field, value, message] of [
@@ -1270,7 +1270,7 @@ test('phase 9 browser scenarios reject a foreign-origin redirect even when its f
     context: scenarioContext({ contextId: 'foreign-origin-route' }),
     path: '/family',
     allowed: true,
-    actions: { navigate: async () => {}, waitForSentinel: async () => {} },
+    actions: { navigate: async () => {}, waitForExactLocation: async () => {} },
   }), /canonical staging origin/i);
 });
 
@@ -1500,10 +1500,10 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
   assert.equal(new Set(plan.map(item => item.contextId)).size, 44);
   assert.deepEqual([...new Set(plan.map(item => item.viewport))], ['390x844', '1440x900']);
   const expectedLandings = {
-    'qa-parent-a': ['/dashboard', 'Dashboard'],
+    'qa-parent-a': ['/family', 'Family Overview'],
     'qa-adult-player-a': ['/dashboard', 'Dashboard'],
     'qa-youth-active': ['/dashboard', 'Dashboard'],
-    'qa-league-creator': ['/dashboard', 'Dashboard'],
+    'qa-league-creator': ['/competition', 'Competition Hub'],
     'qa-school-admin': ['/club', 'School Hub'],
     'qa-superadmin': ['/admin', 'Account Lookup'],
     'qa-fake-superadmin': ['/dashboard', 'Dashboard'],
@@ -1517,6 +1517,17 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
     ]);
     assert.equal(entry.routeExpectations.length, 6);
   }
+  const settledDeniedLandings = {
+    'qa-parent-a': ['/family', 'Family Overview'],
+    'qa-league-creator': ['/competition', 'Competition Hub'],
+    'qa-school-admin': ['/club', 'School Hub'],
+  };
+  for (const [alias, expected] of Object.entries(settledDeniedLandings)) {
+    const entry = plan.find(item => item.group === 'admission-route' && item.alias === alias);
+    const deniedRoutes = entry.routeExpectations.filter(route => !route.allowed);
+    assert.equal(deniedRoutes.length > 0, true);
+    for (const route of deniedRoutes) assert.deepEqual([route.path, route.sentinel], expected);
+  }
 
   const client = createScriptedScenarioClient([scenarioWindow()]);
   await assert.rejects(runAdmissionScenario({
@@ -1525,18 +1536,19 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
     context: { ...scenarioContext(), startUrl: undefined },
     path: '/family',
     allowed: true,
-    actions: { navigate: async () => {}, waitForSentinel: async () => {} },
+    actions: { navigate: async () => {}, waitForExactLocation: async () => {} },
   }), /startUrl/i);
   assert.throws(() => buildCanonicalScenarioPlan({ contextIds: ['duplicate', 'duplicate'] }), /duplicate context ID/i);
 });
 
 test('phase 9 browser scenarios admission row owns login landing and all six direct routes', async () => {
+  const family = overrides => scenarioWindow({
+    finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'], ...overrides,
+  });
   const windows = [
-    scenarioWindow({ finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'], protectedRequests: 1 }),
-    ...['/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner'].map(() => scenarioWindow({
-      finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'], protectedRender: false,
-    })),
-    scenarioWindow({ finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'], protectedRequests: 2 }),
+    family({ protectedRequests: 1 }),
+    ...['/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner'].map(() => family({ protectedRender: false })),
+    family({ protectedRequests: 2 }),
   ];
   const actionCalls = [];
   const client = createScriptedScenarioClient(windows);
@@ -1547,7 +1559,7 @@ test('phase 9 browser scenarios admission row owns login landing and all six dir
     actions: {
       loginAndLand: async alias => actionCalls.push(`login:${alias}`),
       navigate: async path => actionCalls.push(`navigate:${path}`),
-      waitForSentinel: async sentinel => actionCalls.push(`wait:${sentinel}`),
+      waitForExactLocation: async (path, sentinel) => actionCalls.push(`wait:${path}:${sentinel}`),
     },
   });
   assert.deepEqual(actionCalls.filter(item => item.startsWith('login:') || item.startsWith('navigate:')), [
@@ -1563,6 +1575,123 @@ test('phase 9 browser scenarios admission row owns login landing and all six dir
   assert.equal(row.actionSummaries.length, 7);
   assert.equal(row.protectedRequests, 3);
   assert.match(row.action, /login.*6 direct routes/i);
+});
+
+test('phase 9 browser scenarios wait for the exact settled landing instead of an intermediate heading', async () => {
+  const family = scenarioWindow({
+    finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'],
+  });
+  const client = createScriptedScenarioClient(Array.from({ length: 7 }, () => family));
+  const observations = [];
+  let waitIndex = 0;
+  const row = await runAdmissionScenario({
+    client,
+    session: 'parent-settled-landing',
+    context: scenarioContext({ contextId: 'parent-settled-landing', alias: 'qa-parent-a' }),
+    actions: {
+      loginAndLand: async () => {},
+      navigate: async () => {},
+      waitForExactLocation: async (path, sentinel) => {
+        const states = waitIndex++ === 0
+          ? [
+              { path: '/dashboard', sentinel: 'Dashboard' },
+              { path: '/dashboard', sentinel: 'Family Overview' },
+              { path: '/family', sentinel: 'Family Overview' },
+            ]
+          : [{ path, sentinel }];
+        for (const state of states) {
+          observations.push(state);
+          if (state.path === path && state.sentinel === sentinel) return;
+        }
+        throw new Error('exact settled location was not reached');
+      },
+    },
+  });
+  assert.equal(row.result, 'PASS');
+  assert.deepEqual(observations.slice(0, 3), [
+    { path: '/dashboard', sentinel: 'Dashboard' },
+    { path: '/dashboard', sentinel: 'Family Overview' },
+    { path: '/family', sentinel: 'Family Overview' },
+  ]);
+  assert.equal(waitIndex, 7);
+});
+
+test('phase 9 browser scenarios reject Dashboard as the final role landing for routed aliases', async () => {
+  const dashboard = scenarioWindow({
+    finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'],
+  });
+  for (const alias of ['qa-parent-a', 'qa-league-creator', 'qa-school-admin']) {
+    await assert.rejects(runAdmissionScenario({
+      client: createScriptedScenarioClient([dashboard]),
+      session: `wrong-final-${alias}`,
+      context: scenarioContext({ contextId: `wrong-final-${alias}`, alias }),
+      actions: {
+        loginAndLand: async () => {},
+        navigate: async () => {},
+        waitForExactLocation: async () => {},
+      },
+    }), /exact landing path and heading/i, alias);
+  }
+});
+
+test('phase 9 browser scenarios require zero protected data for incomplete accounts in every admission window', async () => {
+  const signal = initiatingFrameUrl => ({
+    url: `${STAGING_ORIGIN}/api/teams/chat`,
+    method: 'GET',
+    resourceType: 'fetch',
+    initiatingFrameUrl,
+  });
+  const cases = [
+    ['qa-missing-profile', '/onboarding', 'Complete your profile'],
+    ['qa-no-team', '/teams/join', 'Join & Invite'],
+  ];
+  for (const [alias, path, sentinel] of cases) {
+    const clean = scenarioWindow({
+      finalPath: path,
+      finalUrl: `${STAGING_ORIGIN}${path}`,
+      visibleSentinels: [sentinel],
+      protectedRender: false,
+      renderSignals: [],
+    });
+    const run = windows => runAdmissionScenario({
+      client: createScriptedScenarioClient(windows),
+      session: `incomplete-${alias}`,
+      context: scenarioContext({ contextId: `incomplete-${alias}`, alias }),
+      actions: {
+        loginAndLand: async () => {},
+        navigate: async () => {},
+        waitForExactLocation: async () => {},
+      },
+    });
+    for (const [countField, signalsField, message] of [
+      ['protectedRequests', 'protectedRequestSignals', /protected request/i],
+      ['protectedListenerStarts', 'listenerSignals', /protected listener/i],
+    ]) {
+      for (const windowIndex of [0, 1, 2, 3, 4, 5, 6]) {
+        const windows = Array.from({ length: 7 }, () => ({ ...clean }));
+        windows[windowIndex] = {
+          ...clean,
+          [countField]: 1,
+          [signalsField]: [signal(`${STAGING_ORIGIN}${path}`)],
+        };
+        await assert.rejects(run(windows), message, `${alias} landing-attributed ${countField} at window ${windowIndex}`);
+      }
+      for (const [routeIndex, requestedPath] of [
+        '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
+      ].entries()) {
+        const deniedTargetWindows = Array.from({ length: 7 }, () => ({ ...clean }));
+        deniedTargetWindows[routeIndex + 1] = {
+          ...clean,
+          [countField]: 1,
+          [signalsField]: [signal(`${STAGING_ORIGIN}${requestedPath}`)],
+        };
+        await assert.rejects(run(deniedTargetWindows), message, `${alias} ${requestedPath} ${countField}`);
+      }
+    }
+    const row = await run(Array.from({ length: 7 }, () => ({ ...clean })));
+    assert.equal(row.protectedRequests, 0);
+    assert.equal(row.protectedListenerStarts, 0);
+  }
 });
 
 test('phase 9 browser scenarios expose exact route-specific accessible heading contracts', () => {
@@ -2055,7 +2184,7 @@ test('phase 9 browser scenarios admission history filters only protected heading
   const row = await runAdmissionScenario({
     client: createScriptedScenarioClient(windows), session: 'typed-admission',
     context: scenarioContext({ contextId: 'typed-admission', alias: 'qa-superadmin' }),
-    actions: { loginAndLand: async () => {}, navigate: async () => {}, waitForSentinel: async () => {} },
+    actions: { loginAndLand: async () => {}, navigate: async () => {}, waitForExactLocation: async () => {} },
   });
   assert.equal(row.result, 'PASS');
 

@@ -15,11 +15,11 @@ const JOIN = exact('/teams/join', 'Join & Invite');
 const allowed = sentinel => Object.freeze({ allowed: true, sentinel });
 
 const ALIAS_CONTRACTS = Object.freeze({
-  'qa-parent-a': { landing: DASHBOARD, routes: { '/family': allowed('Family Overview') } },
+  'qa-parent-a': { landing: exact('/family', 'Family Overview'), routes: { '/family': allowed('Family Overview') } },
   'qa-adult-player-a': { landing: DASHBOARD, routes: {} },
   'qa-youth-active': { landing: DASHBOARD, routes: {} },
   'qa-league-creator': {
-    landing: DASHBOARD,
+    landing: exact('/competition', 'Competition Hub'),
     routes: {
       '/competition': allowed('Competition Hub'), '/dashboard/billing': allowed('Manage Your Plan'),
       '/coaches-corner': allowed('Coaches Corner'),
@@ -48,6 +48,7 @@ const ALIAS_CONTRACTS = Object.freeze({
 const ISOLATION_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-parent-b', 'qa-adult-player-b']);
 const LOGOUT_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin']);
 const PENDING_CASES = Object.freeze(['active-baseline', 'stale-session', 'fresh-login']);
+const PROTECTED_FREE_ADMISSION_ALIASES = new Set(['qa-missing-profile', 'qa-no-team']);
 
 const requireText = (value, name) => {
   if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${name} is required.`);
@@ -105,8 +106,8 @@ const rowFromWindow = ({ context, group, action, expectedResult, window, visible
   return Object.freeze(row);
 };
 
-const validateLandingWindow = (window, landing) => {
-  validateActionWindow(window);
+const validateLandingWindow = (window, landing, { requireNoProtected = false } = {}) => {
+  validateActionWindow(window, { requireNoProtected });
   if (window.finalPath !== landing.path || !window.visibleSentinels.includes(landing.sentinel)) {
     throw new Error('Admission did not reach its exact landing path and heading.');
   }
@@ -127,16 +128,16 @@ const validateLandingWindow = (window, landing) => {
   }
 };
 
-const executeRoute = async ({ client, session, path, isAllowed, landing, sentinel, actions, stage }) => {
+const executeRoute = async ({ client, session, path, isAllowed, landing, sentinel, actions, stage, requireNoProtected = false }) => {
   const expected = isAllowed ? exact(path, sentinel) : landing;
   const window = await observe({
     client, session, stage,
     action: () => requireFunction(actions?.navigate, 'navigate')(path),
-    terminal: () => requireFunction(actions?.waitForSentinel, 'waitForSentinel')(expected.sentinel),
+    terminal: () => requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(expected.path, expected.sentinel),
   });
   validateRouteResult({
     allowed: isAllowed, requestedPath: path,
-    expectedPath: expected.path, expectedSentinel: expected.sentinel, window,
+    expectedPath: expected.path, expectedSentinel: expected.sentinel, requireNoProtected, window,
   });
   return {
     window,
@@ -173,12 +174,16 @@ export async function runAdmissionScenario({ client, session, context: inputCont
   const contract = ALIAS_CONTRACTS[context.alias];
   if (!contract) throw new Error('Admission alias is not in the canonical Task 7 matrix.');
   const authenticatedSession = requireText(session, 'session');
+  const requireNoProtected = PROTECTED_FREE_ADMISSION_ALIASES.has(context.alias);
   const loginWindow = await observe({
     client, session: authenticatedSession, stage: 'admission-login',
     action: () => requireFunction(actions?.loginAndLand, 'loginAndLand')(context.alias),
-    terminal: () => requireFunction(actions?.waitForSentinel, 'waitForSentinel')(contract.landing.sentinel),
+    terminal: () => requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(
+      contract.landing.path,
+      contract.landing.sentinel,
+    ),
   });
-  validateLandingWindow(loginWindow, contract.landing);
+  validateLandingWindow(loginWindow, contract.landing, { requireNoProtected });
   const windows = [loginWindow];
   const summaries = [{
     stage: 'admission-login', requestedPath: '/login', allowed: true, finalPath: loginWindow.finalPath,
@@ -189,15 +194,17 @@ export async function runAdmissionScenario({ client, session, context: inputCont
     const route = contract.routes[path];
     const result = await executeRoute({
       client, session: authenticatedSession, path, isAllowed: route?.allowed === true,
-      landing: contract.deniedLanding ?? DASHBOARD, sentinel: route?.sentinel,
-      actions, stage: `admission-route:${path}`,
+      landing: contract.deniedLanding ?? contract.landing, sentinel: route?.sentinel,
+      actions, stage: `admission-route:${path}`, requireNoProtected,
     });
     windows.push(result.window);
     summaries.push(result.summary);
   }
+  const aggregate = aggregateWindows(windows);
+  if (requireNoProtected) validateActionWindow(aggregate, { requireNoProtected: true });
   return rowFromWindow({
     context, group: 'admission-route', action: 'login and land, then validate 6 direct routes',
-    expectedResult: 'exact admission landing and complete six-route policy', window: aggregateWindows(windows),
+    expectedResult: 'exact admission landing and complete six-route policy', window: aggregate,
     visibleState: summaries.map(value => value.visibleSentinel).join('; '), actionSummaries: summaries,
   });
 }
@@ -365,7 +372,7 @@ export function buildCanonicalScenarioPlan(options = {}) {
         const route = contract.routes[requestedPath];
         const outcome = route?.allowed === true
           ? exact(requestedPath, route.sentinel)
-          : contract.deniedLanding ?? DASHBOARD;
+          : contract.deniedLanding ?? contract.landing;
         return Object.freeze({ requestedPath, allowed: route?.allowed === true, ...outcome });
       }),
     });

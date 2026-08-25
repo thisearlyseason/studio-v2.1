@@ -154,6 +154,7 @@ git commit -m "feat: add testable browser observation windows"
 
 **Files:**
 - Create: `scripts/qa-evidence/phase9/scenarios.mjs`
+- Modify: `scripts/qa-evidence/phase9/scenario-contracts.mjs`
 - Modify: `tests/phase9-browser-evidence.test.mjs`
 
 **Interfaces:**
@@ -172,6 +173,9 @@ Require the real scenario functions to fail when:
 - logout activity occurs during the click, reload, back, or second reload;
 - a fresh or pending-deletion route transiently restores protected UI/data;
 - a context omits required ledger fields or uses a duplicate ID.
+- a Parent A, League Creator, or School Admin admission stops at transient or final `Dashboard` instead of its exact settled role landing;
+- an exact heading appears on the wrong pathname and a heading-only terminal would complete early;
+- Missing Profile or No Team observes any protected request or protected listener during login/admission or any denied-route action, including activity attributed to the onboarding/join landing itself.
 
 Also require the canonical plan to include both viewports and exact aliases/groups from Task 7.
 
@@ -185,7 +189,23 @@ Expected: FAIL because `scenarios.mjs` does not exist.
 
 - [ ] **Step 3: Implement minimal declarative scenarios**
 
-Every browser action must be wrapped by `observeAction()`. The same-origin isolation request must call the existing parameter-consuming `GET /api/teams/chat?teamId=<encoded-id>` with the authenticated session and record status only. Direct Firestore checks receive exact `{label,path,expectedStatus}` entries from the fixture-derived ID map. Allowed routes wait for configured accessible sentinel and reject loading/error boundaries. Denied/revoked routes validate the entire action window.
+Every browser action must be wrapped by `observeAction()`. The same-origin isolation request must call the existing parameter-consuming `GET /api/teams/chat?teamId=<encoded-id>` with the authenticated session and record status only. Direct Firestore checks receive exact `{label,path,expectedStatus}` entries from the fixture-derived ID map. Allowed routes wait for the configured exact pathname plus accessible sentinel and reject loading/error boundaries. Denied/revoked routes validate the entire action window.
+
+Admission and denial waits must use the complete settled `{path, accessible heading}` pair below. A transient `/dashboard` is not a terminal for a role that the product layout routes onward:
+
+| Alias | Settled path | Accessible heading |
+|---|---|---|
+| `qa-parent-a` | `/family` | `Family Overview` |
+| `qa-adult-player-a` | `/dashboard` | `Dashboard` |
+| `qa-youth-active` | `/dashboard` | `Dashboard` |
+| `qa-league-creator` | `/competition` | `Competition Hub` |
+| `qa-school-admin` | `/club` | `School Hub` |
+| `qa-superadmin` | `/admin` | `Account Lookup` |
+| `qa-fake-superadmin` | `/dashboard` | `Dashboard` |
+| `qa-missing-profile` | `/onboarding` | `Complete your profile` |
+| `qa-no-team` | `/teams/join` | `Join & Invite` |
+
+For `qa-missing-profile` and `qa-no-team`, validate every login/admission and denied-route window with `requireNoProtected`: protected request count and protected listener-start count must both remain zero regardless of whether attribution points to the incomplete-account landing or the denied target. Validate the aggregate row under the same invariant so earlier activity cannot be hidden by a clean final window.
 
 Return a row only after the Task 1 validator passes. Never catch a readiness timeout and continue as PASS.
 

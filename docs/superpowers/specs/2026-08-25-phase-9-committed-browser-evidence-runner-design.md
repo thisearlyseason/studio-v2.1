@@ -81,8 +81,24 @@ Logout uses separate windows for the logout click, stale-tab reload, stale-tab b
 
 Executes only declarative scenarios from `scenario-contracts.mjs`.
 
+- Admission and denial terminals use the following settled role landings. These are the final product-layout destinations, not the transient `/dashboard` rendered before a client-side role redirect:
+
+  | Alias | Exact settled path | Exact accessible heading |
+  |---|---|---|
+  | `qa-parent-a` | `/family` | `Family Overview` |
+  | `qa-adult-player-a` | `/dashboard` | `Dashboard` |
+  | `qa-youth-active` | `/dashboard` | `Dashboard` |
+  | `qa-league-creator` | `/competition` | `Competition Hub` |
+  | `qa-school-admin` | `/club` | `School Hub` |
+  | `qa-superadmin` | `/admin` | `Account Lookup` |
+  | `qa-fake-superadmin` | `/dashboard` | `Dashboard` |
+  | `qa-missing-profile` | `/onboarding` | `Complete your profile` |
+  | `qa-no-team` | `/teams/join` | `Join & Invite` |
+
+- Every admission and route terminal receives the exact expected path and heading together. A heading-only observation cannot complete a window, and a transient `Dashboard` cannot satisfy Parent A, League Creator, or School Admin.
 - Allowed routes require exact pathname plus route-specific visible content: Admin, Club/School Hub, Competition Hub, Billing, Coaches Corner, or Family Overview.
-- Denied routes require the expected landing sentinel and no denied-route render/request/listener during the complete window.
+- Denied routes require the exact settled role landing and no denied-route render/request/listener during the complete window.
+- `qa-missing-profile` and `qa-no-team` require zero protected requests and zero protected listener starts across login/admission and every denied-route window. Their onboarding/join activity may proceed only when it remains outside the protected-resource classifier; row aggregation cannot convert an earlier protected signal into PASS.
 - Horizontal isolation uses the real same-origin `GET /api/teams/chat?teamId=<id>` consumer: own team must return 200 and the opposite team must return 403. Direct Firestore REST GETs used by the client must return 200 for permitted team/player documents and 403 for opposite team/player documents. No `/team?teamId=` assertion is permitted because the page ignores that parameter.
 - Fresh unauthenticated and pending-deletion checks use complete action windows and fail on any transient protected UI, request, listener, session, error, or overflow.
 - Each scenario returns one complete sanitized ledger row. A failed or incomplete assertion aborts canonical progression and cannot be serialized as PASS.
@@ -126,7 +142,9 @@ The committed Node test must exercise real exported entrypoints and cover at lea
 - `observeAction()` samples before invoking the callback and includes activity emitted during logout;
 - every logout/back/reload stage fails on transient protected render, request, listener, or session;
 - allowed routes fail on loading, blank, wrong sentinel, swallowed timeout, wrong path, console/page error, request failure, or overflow;
+- admission waits do not complete on an intermediate `Dashboard` and reject `Dashboard` as the final Parent A, League Creator, or School Admin landing;
 - denied routes fail on any protected flash/request/listener even if the final landing is correct;
+- Missing Profile and No Team fail on landing-attributed or denied-target protected requests/listeners in every admission window;
 - isolation calls the real configured same-origin endpoint and fails if it is not parameter-consuming, if own is not 200, or opposite is not 403;
 - direct Firestore probes require the full label/path set and exact 200/403 symmetry;
 - fresh unauthenticated and pending-delete rows fail on transient protected activity;

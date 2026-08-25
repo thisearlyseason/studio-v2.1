@@ -360,6 +360,9 @@ export function validateActionWindow(value, options = {}) {
 export function validateRouteResult(value) {
   const result = requireRecord(value, 'Route result');
   requireBoolean(result.allowed, 'allowed');
+  if (Object.hasOwn(result, 'requireNoProtected')) {
+    requireBoolean(result.requireNoProtected, 'requireNoProtected');
+  }
   const requestedPath = result.allowed
     ? result.requestedPath ?? result.expectedPath
     : requireString(result.requestedPath, 'requestedPath');
@@ -377,7 +380,9 @@ export function validateRouteResult(value) {
   if (!result.allowed && requestedPath === expectedPath) {
     throw new Error('Denied route requestedPath must differ from its authorized landing path.');
   }
-  const window = validateActionWindow(result.window);
+  const window = validateActionWindow(result.window, {
+    requireNoProtected: result.requireNoProtected === true,
+  });
 
   if (!window.sessionPresent) throw new Error('Active-user route result must retain an authenticated session.');
 
