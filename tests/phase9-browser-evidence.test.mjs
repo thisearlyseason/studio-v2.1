@@ -21,6 +21,15 @@ import {
   isProtectedResource,
 } from '../scripts/qa-evidence/phase9/playwright-cli-client.mjs';
 import { observeAction } from '../scripts/qa-evidence/phase9/signal-window.mjs';
+import {
+  buildCanonicalScenarioPlan,
+  runAdmissionScenario,
+  runFreshUnauthenticatedScenario,
+  runIsolationScenario,
+  runLogoutScenario,
+  runPendingDeletionScenario,
+  runRouteScenario,
+} from '../scripts/qa-evidence/phase9/scenarios.mjs';
 
 const safeWindow = overrides => ({
   terminalReached: true,
@@ -972,4 +981,294 @@ test('phase 9 evidence contracts reject missing duplicate and arithmetically fal
     groupCounts: { 'admission-route': 18 },
     totals: { total: 18, pass: 18, fail: 0, inconclusive: 0 },
   }), /canonical group arithmetic/i);
+});
+
+const scenarioWindow = overrides => ({
+  ...safeWindow(),
+  finalUrl: `${STAGING_ORIGIN}/family`,
+  relevantHttpResults: [],
+  ...overrides,
+});
+
+const scenarioContext = overrides => ({
+  contextId: 'admission-route-qa-parent-a-mobile',
+  alias: 'qa-parent-a',
+  viewport: '390x844',
+  startState: 'active',
+  startUrl: 'about:blank',
+  ...overrides,
+});
+
+const createScriptedScenarioClient = windows => {
+  const calls = [];
+  const queue = [...windows];
+  return {
+    calls,
+    async captureSignalWindow({ stage, action, terminal }) {
+      calls.push(`mark:${stage}`);
+      const actionResult = await action();
+      calls.push(`terminal:${stage}`);
+      await terminal();
+      const window = queue.shift();
+      if (!window) throw new Error(`No scripted window for ${stage}`);
+      return { ...window, actionResult };
+    },
+  };
+};
+
+test('phase 9 browser scenarios require visible readiness and complete denied-route windows', async () => {
+  const context = scenarioContext();
+  const actions = {
+    navigate: async target => target,
+    waitForSentinel: async sentinel => sentinel,
+  };
+  for (const [overrides, message] of [
+    [{ visibleSentinels: [] }, /visible sentinel/i],
+    [{ loadingVisible: true }, /loading/i],
+  ]) {
+    const client = createScriptedScenarioClient([scenarioWindow(overrides)]);
+    await assert.rejects(runAdmissionScenario({
+      client, session: 'admission', context, path: '/family', allowed: true, actions,
+    }), message);
+  }
+  const timeoutClient = createScriptedScenarioClient([scenarioWindow()]);
+  await assert.rejects(runRouteScenario({
+    client: timeoutClient,
+    session: 'timeout',
+    context,
+    path: '/family',
+    allowed: true,
+    actions: { ...actions, waitForSentinel: async () => { throw new Error('readiness timeout'); } },
+  }), /readiness timeout/);
+
+  for (const [field, value, message] of [
+    ['protectedRender', true, /protected render/i],
+    ['protectedRequests', 1, /protected request/i],
+    ['protectedListenerStarts', 1, /protected listener/i],
+  ]) {
+    const client = createScriptedScenarioClient([scenarioWindow({
+      finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'], [field]: value,
+    })]);
+    await assert.rejects(runRouteScenario({
+      client,
+      session: 'denied',
+      context,
+      path: '/admin',
+      allowed: false,
+      landing: { path: '/dashboard', sentinel: 'Dashboard' },
+      actions,
+    }), message);
+  }
+
+  const passingClient = createScriptedScenarioClient([scenarioWindow()]);
+  const row = await runAdmissionScenario({
+    client: passingClient, session: 'allowed', context, path: '/family', allowed: true, actions,
+  });
+  assert.equal(row.result, 'PASS');
+  assert.equal(row.finalUrl, `${STAGING_ORIGIN}/family`);
+  assert.deepEqual(passingClient.calls, ['mark:admission-route', 'terminal:admission-route']);
+});
+
+test('phase 9 browser scenarios use exact symmetric API and Firestore isolation probes', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const expectation = buildIsolationExpectation({ runId, alias: 'qa-parent-a' });
+  const windows = [
+    scenarioWindow({ relevantHttpResults: [{ url: `${STAGING_ORIGIN}${expectation.sameOriginApi[0].target}`, status: 200 }] }),
+    scenarioWindow({ relevantHttpResults: [{ url: `${STAGING_ORIGIN}${expectation.sameOriginApi[1].target}`, status: 403 }] }),
+    ...expectation.directFirestore.map(probe => scenarioWindow({ relevantHttpResults: [{ url: `https://firestore.googleapis.com/v1/${probe.path}`, status: probe.status }] })),
+  ];
+  const client = createScriptedScenarioClient(windows);
+  const apiCalls = [];
+  const firestoreCalls = [];
+  const row = await runIsolationScenario({
+    client,
+    session: 'isolation',
+    context: scenarioContext({ contextId: 'isolation-qa-parent-a-mobile' }),
+    runId,
+    actions: {
+      sameOriginGet: async (target, authentication) => {
+        apiCalls.push({ target, authentication });
+        return target.includes('team-a') ? 200 : 403;
+      },
+      firestoreGet: async (probe, authentication) => {
+        firestoreCalls.push({ probe, authentication });
+        return probe.expectedStatus;
+      },
+      waitForSettled: async () => {},
+    },
+  });
+  assert.deepEqual(apiCalls, expectation.sameOriginApi.map(item => ({
+    target: item.target,
+    authentication: { session: 'isolation', method: 'GET', credentials: 'same-origin' },
+  })));
+  assert.equal(apiCalls.some(({ target }) => target.startsWith('/team?teamId=')), false);
+  assert.deepEqual(firestoreCalls, expectation.directFirestore.map(({ label, path, status }) => ({
+    probe: { label, path, expectedStatus: status },
+    authentication: { session: 'isolation' },
+  })));
+  assert.equal(row.result, 'PASS');
+
+  for (const [mutate, message] of [
+    [statuses => { statuses.api[0] = 403; }, /own-team-api.*200/i],
+    [statuses => { statuses.api[1] = 200; }, /opposite-team-api.*403/i],
+    [statuses => { statuses.firestore.pop(); }, /complete.*Firestore|Firestore.*complete/i],
+    [statuses => { statuses.firestore[3] = 200; }, /opposite-player.*403/i],
+  ]) {
+    const statuses = { api: [200, 403], firestore: [200, 403, 200, 403] };
+    mutate(statuses);
+    const failingClient = createScriptedScenarioClient([
+      ...statuses.api.map(status => scenarioWindow({ relevantHttpResults: [{ url: STAGING_ORIGIN, status }] })),
+      ...statuses.firestore.map(status => scenarioWindow({ relevantHttpResults: [{ url: 'https://firestore.googleapis.com', status }] })),
+    ]);
+    let firestoreIndex = 0;
+    let apiIndex = 0;
+    await assert.rejects(runIsolationScenario({
+      client: failingClient,
+      session: 'isolation-fail',
+      context: scenarioContext({ contextId: 'isolation-fail-mobile' }),
+      runId,
+      actions: {
+        sameOriginGet: async () => statuses.api[apiIndex++],
+        firestoreGet: async () => statuses.firestore[firestoreIndex++],
+        waitForSettled: async () => {},
+      },
+    }), message);
+  }
+});
+
+test('phase 9 browser scenarios mark before every logout stage and reject transient activity', async () => {
+  const clean = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const actionOrder = [];
+  const actions = Object.fromEntries(REQUIRED_LOGOUT_STAGES.map(name => [name, async () => actionOrder.push(`action:${name}`)]));
+  actions.waitForLogin = async stage => actionOrder.push(`wait:${stage}`);
+  const client = createScriptedScenarioClient(REQUIRED_LOGOUT_STAGES.map(() => clean));
+  const row = await runLogoutScenario({
+    client,
+    session: 'logout',
+    context: scenarioContext({ contextId: 'logout-qa-parent-a-mobile' }),
+    actions,
+  });
+  assert.equal(row.result, 'PASS');
+  assert.deepEqual(client.calls.filter(call => call.startsWith('mark:')), REQUIRED_LOGOUT_STAGES.map(name => `mark:${name}`));
+  assert.deepEqual(actionOrder, REQUIRED_LOGOUT_STAGES.flatMap(name => [`action:${name}`, `wait:${name}`]));
+
+  for (const stageIndex of [0, 1, 2, 3]) {
+    for (const [field, value, message] of [
+      ['protectedRender', true, /protected render/i],
+      ['protectedRequests', 1, /protected request/i],
+      ['protectedListenerStarts', 1, /protected listener/i],
+      ['sessionPresent', true, /session/i],
+    ]) {
+      const windows = REQUIRED_LOGOUT_STAGES.map((_, index) => index === stageIndex ? { ...clean, [field]: value } : clean);
+      await assert.rejects(runLogoutScenario({
+        client: createScriptedScenarioClient(windows),
+        session: 'logout-fail',
+        context: scenarioContext({ contextId: `logout-fail-${stageIndex}-${field}` }),
+        actions,
+      }), message);
+    }
+  }
+});
+
+test('phase 9 browser scenarios reject transient protected activity for fresh and pending deletion', async () => {
+  const fresh = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const pending = { ...fresh, visibleSentinels: ['Sign In', 'The email or password is incorrect, or this account is unavailable.'] };
+  const actions = { navigate: async () => {}, waitForLogin: async () => {} };
+  for (const runner of [runFreshUnauthenticatedScenario, runPendingDeletionScenario]) {
+    for (const [field, value, message] of [
+      ['protectedRender', true, /protected render/i],
+      ['protectedRequests', 1, /protected request/i],
+      ['protectedListenerStarts', 1, /protected listener/i],
+    ]) {
+      const base = runner === runPendingDeletionScenario ? pending : fresh;
+      await assert.rejects(runner({
+        client: createScriptedScenarioClient([{ ...base, [field]: value }]),
+        session: 'revoked',
+        context: scenarioContext({
+          contextId: `revoked-${field}`,
+          alias: runner === runPendingDeletionScenario ? 'qa-pending-delete' : 'qa-parent-a',
+        }),
+        actions,
+      }), message);
+    }
+  }
+  assert.equal((await runFreshUnauthenticatedScenario({
+    client: createScriptedScenarioClient([fresh]), session: 'fresh', context: scenarioContext({ contextId: 'fresh' }), actions,
+  })).result, 'PASS');
+  assert.equal((await runPendingDeletionScenario({
+    client: createScriptedScenarioClient([pending]), session: 'pending',
+    context: scenarioContext({ contextId: 'pending', alias: 'qa-pending-delete' }), actions,
+  })).result, 'PASS');
+});
+
+test('phase 9 browser scenarios distinguish active pending baseline, stale revocation, and fresh denial', async () => {
+  const active = scenarioWindow({
+    finalPath: '/dashboard',
+    finalUrl: `${STAGING_ORIGIN}/dashboard`,
+    visibleSentinels: ['Dashboard'],
+    sessionPresent: true,
+  });
+  const actions = {
+    navigate: async () => {},
+    waitForDashboard: async () => {},
+  };
+  const row = await runPendingDeletionScenario({
+    client: createScriptedScenarioClient([active]),
+    session: 'pending-active',
+    context: scenarioContext({ contextId: 'pending-active', alias: 'qa-pending-delete' }),
+    scenario: 'active-baseline',
+    actions,
+  });
+  assert.equal(row.group, 'pending-deletion');
+  assert.equal(row.visibleState, 'Dashboard');
+  assert.equal(row.sessionPresent, true);
+  await assert.rejects(runPendingDeletionScenario({
+    client: createScriptedScenarioClient([active]),
+    session: 'pending-invalid',
+    context: scenarioContext({ contextId: 'pending-invalid', alias: 'qa-pending-delete' }),
+    scenario: 'unsupported',
+    actions,
+  }), /pending-deletion scenario/i);
+});
+
+test('phase 9 browser scenarios build the exact canonical two-viewport plan and reject invalid contexts', async () => {
+  const plan = buildCanonicalScenarioPlan();
+  assert.equal(plan.length, 44);
+  assert.deepEqual(Object.fromEntries(Object.entries(VIEWPORTS).map(([name, size]) => [name, `${size.width}x${size.height}`])), {
+    mobile: '390x844', desktop: '1440x900',
+  });
+  assert.deepEqual(plan.reduce((counts, entry) => ({ ...counts, [entry.group]: (counts[entry.group] ?? 0) + 1 }), {}), {
+    'admission-route': 18,
+    isolation: 10,
+    logout: 10,
+    'pending-deletion': 6,
+  });
+  assert.deepEqual([...new Set(plan.filter(item => item.group === 'admission-route').map(item => item.alias))], [
+    'qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-league-creator', 'qa-school-admin',
+    'qa-superadmin', 'qa-fake-superadmin', 'qa-missing-profile', 'qa-no-team',
+  ]);
+  assert.deepEqual([...new Set(plan.filter(item => item.group === 'isolation').map(item => item.alias))], [
+    'qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-parent-b', 'qa-adult-player-b',
+  ]);
+  assert.deepEqual([...new Set(plan.filter(item => item.group === 'logout').map(item => item.alias))], [
+    'qa-parent-a', 'qa-adult-player-a', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin',
+  ]);
+  assert.deepEqual([...new Set(plan.filter(item => item.group === 'pending-deletion').map(item => item.alias))], ['qa-pending-delete']);
+  assert.equal(new Set(plan.map(item => item.contextId)).size, 44);
+  assert.deepEqual([...new Set(plan.map(item => item.viewport))], ['390x844', '1440x900']);
+
+  const client = createScriptedScenarioClient([scenarioWindow()]);
+  await assert.rejects(runAdmissionScenario({
+    client,
+    session: 'invalid',
+    context: { ...scenarioContext(), startUrl: undefined },
+    path: '/family',
+    allowed: true,
+    actions: { navigate: async () => {}, waitForSentinel: async () => {} },
+  }), /startUrl/i);
+  assert.throws(() => buildCanonicalScenarioPlan({ contextIds: ['duplicate', 'duplicate'] }), /duplicate context ID/i);
 });
