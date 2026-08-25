@@ -14,6 +14,12 @@ import {
   validateLogoutStages,
   validateRouteResult,
 } from '../scripts/qa-evidence/phase9/scenario-contracts.mjs';
+import {
+  closeAndVerifyBrowsers,
+  createPlaywrightCliClient,
+  installSignalRecorder,
+} from '../scripts/qa-evidence/phase9/playwright-cli-client.mjs';
+import { observeAction } from '../scripts/qa-evidence/phase9/signal-window.mjs';
 
 const safeWindow = overrides => ({
   terminalReached: true,
@@ -53,6 +59,239 @@ const ledgerRow = (contextId, group, viewport = '390x844') => ({
   unexpectedRequestFailures: 0,
   overflow: 0,
   result: 'PASS',
+});
+
+const cliResult = result => ({
+  stdout: JSON.stringify({ isError: false, result }),
+  stderr: '',
+  exitCode: 0,
+  timedOut: false,
+});
+
+const createCliTransport = handler => {
+  const calls = [];
+  const execute = async argv => {
+    calls.push([...argv]);
+    return handler(argv, calls.length - 1);
+  };
+  return { calls, execute };
+};
+
+test('phase 9 playwright client arms about:blank before navigation and compiles run-code locally', async () => {
+  const transport = createCliTransport(() => cliResult({ ok: true }));
+  const client = createPlaywrightCliClient({
+    execute: transport.execute,
+    wrapperPath: '/safe/playwright_cli.sh',
+    cwd: '/safe/cwd',
+    env: { SAFE_FLAG: '1' },
+  });
+  assert.equal('sampleSignalWindow' in client, false, 'callers must not be able to supply their own mark');
+
+  await installSignalRecorder(client, 'page-a');
+  await client.goto('page-a', 'about:blank');
+
+  assert.deepEqual(transport.calls[0].slice(0, 6), [
+    '/safe/playwright_cli.sh', '-s=page-a', 'open', 'about:blank', '--browser', 'chrome',
+  ]);
+  assert.equal(transport.calls[1].includes('run-code'), true);
+  assert.equal(transport.calls[2].includes('goto'), true);
+  await assert.rejects(
+    client.runCode('page-a', 'async (page) => {'),
+    /compile/i,
+  );
+  assert.equal(transport.calls.length, 3, 'invalid code must fail before transport');
+
+  const unarmed = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await assert.rejects(unarmed.goto('page-b', 'about:blank'), /recorder.*armed/i);
+  await assert.rejects(unarmed.runCode('page-b', 'async (page) => page.goto("https://example.invalid")'), /recorder.*armed/i);
+
+  await client.tabNew('page-a', 'about:blank');
+  await assert.rejects(client.goto('page-a', 'about:blank'), /recorder.*armed/i);
+  await installSignalRecorder(client, 'page-a');
+  await client.goto('page-a', 'about:blank');
+  await assert.rejects(client.tabNew('page-a', 'https://example.invalid'), /about:blank/i);
+});
+
+test('phase 9 action window marks the same page before action and returns sanitized complete signals', async () => {
+  const order = [];
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) {
+      order.push('mark:logout');
+      return cliResult({ pageId: 'page-a', sequence: 4 });
+    }
+    if (code.includes('phase9:sample')) {
+      order.push('sample:logout');
+      return cliResult({
+        pageId: 'page-a',
+        terminalReached: true,
+        loadingVisible: false,
+        finalUrl: 'https://example.invalid/login',
+        finalPath: '/login',
+        visibleSentinels: ['Sign In'],
+        sessionPresent: false,
+        protectedRender: true,
+        protectedRequests: [{
+          url: 'https://example.invalid/api/protected?allowed=1',
+          method: 'POST',
+          resourceType: 'fetch',
+          initiatingFrameUrl: 'https://example.invalid/dashboard',
+          status: 401,
+          body: 'password=must-not-return',
+          headers: { authorization: 'Bearer must-not-return' },
+        }],
+        protectedListenerStarts: [{
+          url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?token=must-not-return',
+          method: 'POST',
+          resourceType: 'fetch',
+          initiatingFrameUrl: 'https://example.invalid/dashboard?token=must-not-return',
+          body: 'must-not-return',
+        }],
+        relevantHttpResults: [{ url: 'https://example.invalid/api/protected', status: 401 }],
+        pageErrors: [],
+        appConsoleErrors: [],
+        unexpectedRequestFailures: [],
+        overflow: 0,
+        renderPath: '/login',
+        renderSentinel: 'Sign In',
+        renderSignals: [{ path: '/dashboard', sentinel: 'Family Overview', text: 'must-not-return' }],
+      });
+    }
+    return cliResult({ ok: true });
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'logout');
+  order.length = 0;
+
+  const result = await observeAction({
+    client,
+    session: 'logout',
+    stage: 'logout-tab',
+    terminal: async () => order.push('terminal:logout'),
+    action: async () => order.push('action:logout'),
+  });
+
+  assert.deepEqual(order, ['mark:logout', 'action:logout', 'terminal:logout', 'sample:logout']);
+  assert.equal(result.protectedRequests, 1);
+  assert.equal(result.protectedRender, true);
+  assert.deepEqual(result.requestSignals, [{
+    url: 'https://example.invalid/api/protected',
+    method: 'POST',
+    resourceType: 'fetch',
+    initiatingFrameUrl: 'https://example.invalid/dashboard',
+    status: 401,
+  }]);
+  assert.deepEqual(result.listenerSignals, [{
+    url: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    method: 'POST',
+    resourceType: 'fetch',
+    initiatingFrameUrl: 'https://example.invalid/dashboard',
+  }]);
+  assert.deepEqual(result.renderSignals, [{ path: '/dashboard', sentinel: 'Family Overview' }]);
+  assert.equal(JSON.stringify(result).includes('must-not-return'), false);
+  assert.equal(result.finalPath, '/login');
+  assert.equal(result.visibleSentinels[0], 'Sign In');
+});
+
+test('phase 9 action window rejects cross-page samples and terminal failures without sampling', async () => {
+  let sampled = false;
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+    if (code.includes('phase9:sample')) {
+      sampled = true;
+      return cliResult({ pageId: 'page-b' });
+    }
+    return cliResult({ ok: true });
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'one');
+  await assert.rejects(observeAction({
+    client,
+    session: 'one',
+    stage: 'logout-tab',
+    terminal: async () => {},
+    action: async () => {},
+  }), /same page/i);
+  assert.equal(sampled, true);
+
+  sampled = false;
+  await assert.rejects(observeAction({
+    client,
+    session: 'one',
+    stage: 'logout-tab',
+    terminal: async () => { throw new Error('terminal timeout'); },
+    action: async () => {},
+  }), /terminal timeout/);
+  assert.equal(sampled, false, 'a terminal failure must not be swallowed or converted into a sample');
+});
+
+test('phase 9 action window rejects incomplete recorder samples instead of defaulting missing signals to zero', async () => {
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+    if (code.includes('phase9:sample')) return cliResult({ pageId: 'page-a', terminalReached: true });
+    return cliResult({ ok: true });
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'one');
+  await assert.rejects(observeAction({
+    client,
+    session: 'one',
+    stage: 'logout-tab',
+    terminal: async () => {},
+    action: async () => {},
+  }), /complete signal sample/i);
+});
+
+test('phase 9 playwright client rejects malformed, failed, timed-out, and isError responses', async () => {
+  for (const [response, message] of [
+    [{ stdout: '{', stderr: '', exitCode: 0, timedOut: false }, /valid JSON/i],
+    [{ stdout: JSON.stringify({ isError: false, result: null }), stderr: '', exitCode: 2, timedOut: false }, /nonzero/i],
+    [{ stdout: '', stderr: '', exitCode: null, timedOut: true }, /timed out/i],
+    [{ stdout: JSON.stringify({ isError: true, result: 'provider secret' }), stderr: '', exitCode: 0, timedOut: false }, /reported an error/i],
+  ]) {
+    const client = createPlaywrightCliClient({ execute: async () => response, wrapperPath: '/safe/playwright_cli.sh' });
+    await assert.rejects(client.listBrowsers(), message);
+  }
+});
+
+test('phase 9 playwright client accepts real wrapper top-level and nested JSON results', async () => {
+  const listClient = createPlaywrightCliClient({
+    execute: async () => ({ stdout: JSON.stringify({ browsers: [] }), stderr: '', exitCode: 0, timedOut: false }),
+    wrapperPath: '/safe/playwright_cli.sh',
+  });
+  assert.deepEqual(await listClient.listBrowsers(), { browsers: [] });
+  const responses = [
+    { stdout: JSON.stringify({ session: 'page-a', result: { snapshot: {} } }), stderr: '', exitCode: 0, timedOut: false },
+    { stdout: JSON.stringify({ result: JSON.stringify({ pageId: 'page-a' }) }), stderr: '', exitCode: 0, timedOut: false },
+    { stdout: JSON.stringify({ result: JSON.stringify({ pageId: 'page-a' }) }), stderr: '', exitCode: 0, timedOut: false },
+  ];
+  const client = createPlaywrightCliClient({ execute: async () => responses.shift(), wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'page-a');
+  assert.deepEqual(await client.runCode('page-a', 'async (page) => ({ pageId: "page-a" })'), { pageId: 'page-a' });
+});
+
+test('phase 9 playwright client fails closed unless close-all yields an empty browser list', async () => {
+  const responses = [cliResult({ closed: true }), cliResult({ browsers: [] })];
+  const client = createPlaywrightCliClient({ execute: async () => responses.shift(), wrapperPath: '/safe/playwright_cli.sh' });
+  assert.deepEqual(await closeAndVerifyBrowsers(client), { browsers: [] });
+
+  const closeFailure = createPlaywrightCliClient({
+    execute: async argv => argv.includes('close-all')
+      ? { stdout: '', stderr: '', exitCode: 1, timedOut: false }
+      : cliResult({ browsers: [] }),
+    wrapperPath: '/safe/playwright_cli.sh',
+  });
+  await assert.rejects(closeAndVerifyBrowsers(closeFailure), /close-all|nonzero/i);
+
+  const nonempty = createPlaywrightCliClient({
+    execute: async argv => argv.includes('close-all')
+      ? cliResult({ closed: true })
+      : cliResult({ browsers: [{ session: 'still-open' }] }),
+    wrapperPath: '/safe/playwright_cli.sh',
+  });
+  await assert.rejects(closeAndVerifyBrowsers(nonempty), /browser sessions remain/i);
 });
 
 test('phase 9 evidence contracts expose exact immutable scenario definitions', () => {
