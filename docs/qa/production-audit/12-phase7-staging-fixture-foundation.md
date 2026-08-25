@@ -3,6 +3,7 @@
 **Phase 7 base:** `3aae3288c459670a4f35993762069d22f81b307f`\
 **Task 5 reconciliation input HEAD:** `72e8ebab1a26e2a73f43d6478129d31a293cccf2`\
 **Final-review-2 input HEAD:** `1b298acc333f5d41160e23ae4b974935bbec0b51`\
+**Final-review-3 input HEAD:** `9a6ae1b34b131399e94d82bb386d7e0617eed23f`\
 **Last independently proven deployed SHA:** `658d3ca89f3cabf6c55800400aa17bc72229c1af`\
 **Environment:** isolated Firebase project `the-squad-v2-staging`, App Hosting backend `studio`, canonical hosted staging origin\
 **Release decision:** `NOT READY`
@@ -23,6 +24,7 @@ Phase 7 does not claim a repair root cause for the three product findings. Its e
 | Fixture implementation and safety-repair chain | `063fb33` through the final committed revision; this report intentionally does not self-embed its own hash |
 | Final sanitized hosted evidence commit / Task 5 input HEAD | `72e8ebab1a26e2a73f43d6478129d31a293cccf2` |
 | Final-review-2 input HEAD | `1b298acc333f5d41160e23ae4b974935bbec0b51` |
+| Final-review-3 input HEAD | `9a6ae1b34b131399e94d82bb386d7e0617eed23f` |
 | Last independently proven deployed application revision | `658d3ca89f3cabf6c55800400aa17bc72229c1af` |
 | Authoritative hosted evidence | `runs/2026-08-24-phase7-staging-fixtures/00-environment.md` through `04-roster-console-diagnostic.md` |
 
@@ -40,9 +42,15 @@ Final review 2 closed the remaining lifecycle and repository-hygiene gaps withou
 
 Task 7 made every manifest-v2 transition journal structurally complete: both `qa-suspended` and `qa-removed-member` records are mandatory and retain the existing active, applying, and alias-specific final-state checkpoint rules. Omitted or one-alias journals now fail validation before credential or adapter access, so they cannot bypass terminal re-seed protection or strand a run that cannot transition. Existing seed journals are read and validated as pure local input after the caller-intent guard but before adapter factory or connection access; a nonexistent manifest remains the valid fresh-seed path. Manifest path-resolution, metadata, read, and JSON failures use fixed path-free diagnostics, while schema validation retains its useful field-level messages.
 
+Final review 3 completed the cross-invocation boundary. A valid existing seed journal now supplies its original run ID and expiry to the deterministic definition; the internal generator runs only after the external manifest is proven absent. One pure exact-journal validator compares the complete UID and Firestore-path sets with that definition. The CLI applies it to every manifest-consuming command before adapter construction, and the lifecycle applies it again before any seed, inspect, transition, cleanup, or manifest persistence work. Missing or extra UIDs/paths therefore leave the journal byte-identical, reach zero adapter operations, and cannot make truncated cleanup evidence appear cleaned. Preflight separately requires exactly one canonical hosted-staging origin and outputs that validated argument.
+
 Repository hygiene reads tracked regular-file bytes from the Git index object database, separately size-preflights and reads one current regular worktree copy for every cached tracked path, and reads deduplicated unignored worktree paths while failing closed on enumeration, metadata, blob, or read errors. It does not trust Git modified-state reporting, so `assume-unchanged` cannot hide current bytes; an actually deleted cached path continues to rely on its index blob. All sources are size-preflighted before content reads, with an 8 MiB per-source cap and a 64 MiB aggregate scanned-source cap; Git content uses a size-validated bounded batch and worktree content uses bounded exact-size reads. Every relative parent component and the final file have their device, inode, and type recorded during preflight. The final open requires `O_NOFOLLOW`; before the first descriptor read and again after the exact read, every pathname identity is revalidated and the descriptor identity and expected size must agree. A changed identity yields only a sanitized confinement violation and any acquired bytes are discarded. Platforms without `O_NOFOLLOW` fail closed before opening content. The scanner recognizes complete, wrapped, serialized, encoded, and NUL-containing fixture manifests and credential payloads with bounded iterative decoding, including credential-shaped HAR header records and raw `Cookie:` lines for the managed session cookie. Harmless placeholders, ordinary cookies, and non-credential token/session configuration remain accepted. No source-file allowlist is used.
 
 Atomic credential publication retains the same-directory `0600` temporary file plus no-replace hard-link primitive and never falls back to overwrite rename. The temporary and destination names therefore require hard-link support on the same filesystem; same-directory creation supplies the same-filesystem placement, while filesystems or mounts that reject hard links require operator recovery. Unsupported hard-link capability and exact-temporary-file unlink failures are reported only as sanitized recovery-required errors, without raw operating-system messages or filesystem paths.
+
+Final review 3 also binds credential publication to the external parent chain observed after initial repository exclusion. Every existing parent component's device, inode, and type are snapshotted, then the full chain and repository exclusion are revalidated immediately before exclusive temporary creation, immediately before no-replace hard-link publication, and after publication. The open `wx` descriptor, temporary pathname, and final target must retain the same regular-file identity, `0600` mode, and exact byte size. Cleanup considers a temporary name owned only after this invocation successfully opens it and unlinks it only while its pathname still matches the retained descriptor identity; collisions and replacements are preserved byte-for-byte with path-free recovery guidance.
+
+The strongest portable limitation is that Node's filesystem API does not expose directory-descriptor-relative `openat`/`linkat`/conditional-`unlinkat` operations. The retained descriptor plus repeated full-parent and pathname identity checks detect the deterministic acquisition/publication/replacement races covered here, but cannot make the final identity-check-to-unlink interval one atomic kernel operation. Any observed change fails closed and preserves the competing pathname for operator recovery.
 
 The suspended and removed-member identities were seeded active. Both reached `/dashboard` with a session at mobile and desktop before the guarded transitions changed their state and revoked tokens. This sequencing prevents a malformed negative fixture from being mistaken for a product denial.
 
@@ -128,18 +136,18 @@ The failed-row linkage is exact: row 4 links `BUG-006` and `BUG-007`; row 12 lin
 | Credential-value scan | PASS — eight Phase 7 reconciliation/evidence Markdown files scanned; credential-like retained values `0`. |
 | Artifact/output absence | PASS — no Phase 7 raw trace, network, stack, HAR, log, JSON, image, video, or archive artifact; no repository-local fixture credential, storage-state, or run-manifest output. |
 | Fixture artifact/secret regression | PASS — scans tracked Git blobs and unignored confined worktree files without a source-file allowlist; rejects complete, wrapped, serialized, encoded, and binary fixture or credential material. |
-| Focused safety/hygiene tests | PASS — Task 7 fix-round-2 correction set 113 passed, 0 failed. |
+| Focused safety/hygiene tests | PASS — final-review-3 correction set 160 passed, 0 failed. |
 | Diff hygiene | PASS — `git diff --check` exited `0`. |
 | TypeScript typecheck | PASS — `tsc --noEmit` exited `0`. |
 | ESLint | PASS — zero errors; existing warnings remain. |
-| Node tests | PASS — Task 7 fix-round-2 exact-head run 502 passed, 0 failed/cancelled/skipped/todo. |
+| Node tests | PASS — final-review-3 exact-head run 549 passed, 0 failed/cancelled/skipped/todo. |
 | Rendered component tests | PASS — 2 passed in 1 test file. |
 | Firestore/Storage rules tests | PASS — 38 passed, 0 failed/cancelled/skipped/todo. |
 | Next.js production build | PASS — optimized production build completed. |
 | Functions build | PASS — Functions TypeScript build exited `0`. |
 | Complete command | PASS — `npm run verify` exited `0`. |
 
-The final safety revalidation used a strict canonical run ID. Initial exhaustive inspect was healthy at actual-present `9/40` with drift `0`; post-transition inspect was healthy at `9/39`; cleaned inspect was healthy with problems `0` and actual-present `0/0`; and an independent guarded adapter probe also returned `0/0`. Credential and exact private-workspace paths are absent. Final-review-2 tests add crash-safe credential publication, pre-mutation terminal re-seed rejection, non-seeded absence drift, exact Firestore shapes, bounded repository decoding, and sanitized best-effort cleanup coverage. Task 7 adds credential-shaped HAR/raw-cookie coverage, every-cached-path worktree scanning, pre-read source and aggregate caps, exact transition-map invariants enforced before adapter initialization, before/after-read pathname and descriptor identity checks, sanitized local-manifest I/O, and sanitized hard-link capability/temp-cleanup failures.
+The final safety revalidation used a strict canonical run ID. Initial exhaustive inspect was healthy at actual-present `9/40` with drift `0`; post-transition inspect was healthy at `9/39`; cleaned inspect was healthy with problems `0` and actual-present `0/0`; and an independent guarded adapter probe also returned `0/0`. Credential and exact private-workspace paths are absent. Final-review-2 tests add crash-safe credential publication, pre-mutation terminal re-seed rejection, non-seeded absence drift, exact Firestore shapes, bounded repository decoding, and sanitized best-effort cleanup coverage. Task 7 adds credential-shaped HAR/raw-cookie coverage, every-cached-path worktree scanning, pre-read source and aggregate caps, exact transition-map invariants enforced before adapter initialization, before/after-read pathname and descriptor identity checks, sanitized local-manifest I/O, and sanitized hard-link capability/temp-cleanup failures. Final review 3 adds real two-invocation CLI recovery, complete-journal command/lifecycle matrices, before-temp/before-link/after-link parent-swap confinement, final-target identity/size validation, invocation-owned temporary cleanup, collision/replacement preservation, and exact-origin preflight coverage.
 
 ## Review, cleanup, and release posture
 
@@ -147,6 +155,6 @@ Task 4's first independent evidence review found zero Critical and four Importan
 
 Independent final review of this Task 5 reconciliation is controller-owned and is not claimed here. No product source, rules, Functions, provider, deployment, production resource, real user, or real customer data was changed by this reconciliation.
 
-The second final-review repair wave changed only the local fixture CLI/lifecycle, repository-hygiene and safety tests, and this audit report. It did not rerun or mutate hosted staging; the sanitized hosted evidence and exact-cleaned lifecycle records above remain authoritative.
+The final-review-3 repair wave changed only the local fixture guard, manifest, CLI/lifecycle, safety tests, and this audit report. It did not rerun or mutate hosted staging; the sanitized hosted evidence and exact-cleaned lifecycle records above remain authoritative.
 
 Release remains **`NOT READY`**. The next authorized phase should root-cause and repair `BUG-006`, `BUG-007`, and `BUG-010` under TDD, then rerun their affected journeys. The remaining 83 blocked contracts still require their named fixtures, provider/device authorization, destructive boundaries, or operational proof before production readiness can be reconsidered.

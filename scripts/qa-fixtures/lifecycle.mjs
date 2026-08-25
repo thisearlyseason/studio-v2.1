@@ -1,11 +1,12 @@
-import { link, lstat, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
+import { link, lstat, open, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { STAGING_PROJECT_ID } from './guard.mjs';
-import { assertManagedPath, assertManagedUid, validateManifest } from './manifest.mjs';
+import { assertExactFixtureJournal, assertManagedPath, assertManagedUid } from './manifest.mjs';
 
 const NEGATIVE_ALIASES = new Set(['qa-suspended', 'qa-removed-member']);
+const CREDENTIAL_CONFINEMENT_ERROR = 'Credential recovery required: credential path confinement changed.';
 
 function nowIso(clock) {
   const value = typeof clock === 'function' ? clock() : new Date();
@@ -51,6 +52,82 @@ function assertDefinition(definition) {
   if (new Set(uids).size !== uids.length) throw new Error('Fixture definition contains duplicate Auth UIDs.');
   for (const uid of uids) assertManagedUid(uid, definition.runId);
   for (const path of paths) assertManagedPath(path, definition.runId);
+}
+
+function confinementError() {
+  return new Error(CREDENTIAL_CONFINEMENT_ERROR);
+}
+
+function statType(stats) {
+  if (stats.isFile()) return 'file';
+  if (stats.isDirectory()) return 'directory';
+  if (stats.isSymbolicLink()) return 'symlink';
+  if (stats.isBlockDevice()) return 'block-device';
+  if (stats.isCharacterDevice()) return 'character-device';
+  if (stats.isFIFO()) return 'fifo';
+  if (stats.isSocket()) return 'socket';
+  return 'other';
+}
+
+function statIdentity(stats) {
+  return { device: stats.dev, inode: stats.ino, type: statType(stats) };
+}
+
+function identityMatches(stats, identity) {
+  return stats.dev === identity.device && stats.ino === identity.inode && statType(stats) === identity.type;
+}
+
+function parentComponentPaths(target) {
+  const paths = [];
+  let current = dirname(target);
+  while (true) {
+    paths.unshift(current);
+    const next = dirname(current);
+    if (next === current) return paths;
+    current = next;
+  }
+}
+
+async function snapshotCredentialParents(target) {
+  const parents = [];
+  for (const path of parentComponentPaths(target)) {
+    try {
+      parents.push({ path, exists: true, identity: statIdentity(await lstat(path)) });
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw confinementError();
+      parents.push({ path, exists: false });
+    }
+  }
+  return parents;
+}
+
+async function revalidateCredentialConfinement({ target, repositoryRoot, parents }) {
+  try {
+    for (const parent of parents) {
+      let current;
+      try {
+        current = await lstat(parent.path);
+      } catch (error) {
+        if (error?.code === 'ENOENT' && !parent.exists) continue;
+        throw error;
+      }
+      if (!parent.exists || !identityMatches(current, parent.identity)) throw confinementError();
+    }
+    await resolveExternalCredentialPath(target, repositoryRoot);
+  } catch {
+    throw confinementError();
+  }
+}
+
+function assertOwnedCredentialFile(stats, identity, expectedSize) {
+  if (
+    !stats.isFile()
+    || !identityMatches(stats, identity)
+    || (stats.mode & 0o777) !== 0o600
+    || (expectedSize !== undefined && stats.size !== expectedSize)
+  ) {
+    throw confinementError();
+  }
 }
 
 async function resolveExternalCredentialPath(path, repositoryRoot) {
@@ -125,17 +202,22 @@ function parseCredentialPayload(text, definition) {
 
 async function readExistingCredentials(path, repositoryRoot, definition) {
   const target = await resolveExternalCredentialPath(path, repositoryRoot);
+  const confinement = {
+    target,
+    repositoryRoot,
+    parents: await snapshotCredentialParents(target),
+  };
   let file;
   try {
     file = await lstat(target);
   } catch (error) {
-    if (error?.code === 'ENOENT') return { target, passwords: null };
+    if (error?.code === 'ENOENT') return { target, passwords: null, confinement };
     throw error;
   }
   if (!file.isFile() || file.isSymbolicLink() || (file.mode & 0o777) !== 0o600) {
     throw new Error('Credential recovery required: existing credential file must be a regular 0600 file.');
   }
-  return { target, passwords: parseCredentialPayload(await readFile(target, 'utf8'), definition) };
+  return { target, passwords: parseCredentialPayload(await readFile(target, 'utf8'), definition), confinement };
 }
 
 function credentialPayload(definition, passwords) {
@@ -150,12 +232,14 @@ function credentialPayload(definition, passwords) {
   });
 }
 
-export function createLifecycle({ auth, firestore, clock = () => new Date(), randomBytes, definition, repositoryRoot = process.cwd(), manifestPath: configuredManifestPath, logger = () => {}, faultInjector = () => {}, linkFile = link, unlinkFile = unlink } = {}) {
+export function createLifecycle({ auth, firestore, clock = () => new Date(), randomBytes, definition, repositoryRoot = process.cwd(), manifestPath: configuredManifestPath, logger = () => {}, faultInjector = () => {}, linkFile = link, openCredentialFile = open, unlinkFile = unlink } = {}) {
   if (!auth || !firestore) throw new Error('Auth and Firestore adapters are required.');
   if (typeof randomBytes !== 'function') throw new Error('randomBytes must be injected.');
   if (typeof logger !== 'function') throw new Error('logger must be a function.');
   if (typeof faultInjector !== 'function') throw new Error('faultInjector must be a function.');
-  if (typeof linkFile !== 'function' || typeof unlinkFile !== 'function') throw new Error('Credential publication file operations must be functions.');
+  if (typeof linkFile !== 'function' || typeof openCredentialFile !== 'function' || typeof unlinkFile !== 'function') {
+    throw new Error('Credential publication file operations must be functions.');
+  }
   assertDefinition(definition);
 
   const identityByUid = new Map(definition.identities.map(identity => [identity.uid, identity]));
@@ -207,7 +291,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
 
   async function readManifest(manifestPath) {
     try {
-      return validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')));
+      return assertExactFixtureJournal(JSON.parse(await readFile(manifestPath, 'utf8')), definition);
     } catch (error) {
       if (error?.code === 'ENOENT') return null;
       throw error;
@@ -215,10 +299,10 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
   }
 
   async function writeManifest(manifestPath, manifest) {
-    const normalized = validateManifest({
+    const normalized = assertExactFixtureJournal({
       ...manifest,
       updatedAt: nowIso(clock),
-    });
+    }, definition);
     const tempPath = join(dirname(manifestPath), `.${basename(manifestPath)}.${process.pid}-${++manifestWriteSequence}.tmp`);
     try {
       await writeFile(tempPath, `${JSON.stringify(normalized, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
@@ -232,11 +316,37 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     return normalized;
   }
 
-  async function publishCredentials(target, payload) {
+  async function publishCredentials(target, payload, confinement) {
     const tempPath = join(dirname(target), `.${basename(target)}.${process.pid}-${++credentialWriteSequence}.tmp`);
+    const expectedSize = Buffer.byteLength(payload, 'utf8');
+    let handle = null;
+    let ownedIdentity = null;
     try {
-      await writeFile(tempPath, payload, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      await injectFault('credentials.beforeTempCreate');
+      await revalidateCredentialConfinement(confinement);
+      try {
+        handle = await openCredentialFile(tempPath, 'wx', 0o600);
+      } catch (error) {
+        if (error?.code === 'EEXIST') {
+          throw new Error('Credential recovery required: private temporary credential already exists.');
+        }
+        throw new Error('Credential recovery required: private temporary credential creation failed.');
+      }
+      const initialStats = await handle.stat().catch(() => { throw confinementError(); });
+      if (!initialStats.isFile() || initialStats.size !== 0) throw confinementError();
+      ownedIdentity = statIdentity(initialStats);
+      try {
+        await handle.writeFile(payload, { encoding: 'utf8' });
+        await handle.sync();
+      } catch {
+        throw new Error('Credential recovery required: private temporary credential write failed.');
+      }
+      assertOwnedCredentialFile(await handle.stat().catch(() => { throw confinementError(); }), ownedIdentity, expectedSize);
+      assertOwnedCredentialFile(await lstat(tempPath).catch(() => { throw confinementError(); }), ownedIdentity, expectedSize);
       await injectFault('credentials.beforePublish');
+      await revalidateCredentialConfinement(confinement);
+      assertOwnedCredentialFile(await handle.stat().catch(() => { throw confinementError(); }), ownedIdentity, expectedSize);
+      assertOwnedCredentialFile(await lstat(tempPath).catch(() => { throw confinementError(); }), ownedIdentity, expectedSize);
       try {
         await linkFile(tempPath, target);
       } catch (error) {
@@ -246,26 +356,49 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
         }
         throw new Error('Credential recovery required: atomic credential publication failed.');
       }
+      await injectFault('credentials.afterPublish');
+      await revalidateCredentialConfinement(confinement);
+      assertOwnedCredentialFile(await handle.stat().catch(() => { throw confinementError(); }), ownedIdentity, expectedSize);
+      assertOwnedCredentialFile(await lstat(tempPath).catch(() => { throw confinementError(); }), ownedIdentity, expectedSize);
+      assertOwnedCredentialFile(await lstat(target).catch(() => { throw confinementError(); }), ownedIdentity, expectedSize);
     } finally {
-      await unlinkFile(tempPath).catch(error => {
-        if (error?.code !== 'ENOENT') {
-          throw new Error('Credential recovery required: private temporary credential cleanup failed.');
+      let descriptorOwned = false;
+      if (handle && ownedIdentity) {
+        try {
+          descriptorOwned = identityMatches(await handle.stat(), ownedIdentity);
+        } catch {
+          descriptorOwned = false;
         }
-      });
+      }
+      if (handle) {
+        await handle.close().catch(() => {
+          throw new Error('Credential recovery required: private temporary credential cleanup failed.');
+        });
+      }
+      if (ownedIdentity && descriptorOwned) {
+        let pathStats = null;
+        try {
+          pathStats = await lstat(tempPath);
+        } catch (error) {
+          if (error?.code !== 'ENOENT') {
+            throw new Error('Credential recovery required: private temporary credential cleanup failed.');
+          }
+        }
+        if (pathStats) {
+          if (!identityMatches(pathStats, ownedIdentity)) throw confinementError();
+          await unlinkFile(tempPath).catch(error => {
+            if (error?.code !== 'ENOENT') {
+              throw new Error('Credential recovery required: private temporary credential cleanup failed.');
+            }
+          });
+        }
+      }
     }
   }
 
   function assertManifestForDefinition(manifest) {
     if (manifest && (manifest.runId !== definition.runId || manifest.expiresAt !== definition.expiresAt)) {
       throw new Error('Manifest does not match the exact fixture definition.');
-    }
-  }
-
-  function assertCompleteJournal(manifest) {
-    const intendedUids = definition.identities.map(identity => identity.uid);
-    const intendedPaths = definition.documents.map(document => document.path);
-    if (!manifest || !isDeepStrictEqual(manifest.authUids, intendedUids) || !isDeepStrictEqual(manifest.firestorePaths, intendedPaths)) {
-      throw new Error('Manifest must pre-journal the exact fixture definition before mutation.');
     }
   }
 
@@ -327,7 +460,6 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
     const existingManifest = await readManifest(manifestPath);
     assertManifestForDefinition(existingManifest);
     if (existingManifest) {
-      assertCompleteJournal(existingManifest);
       assertReseedableManifest(existingManifest);
     }
     const credentials = await readExistingCredentials(credentialPath, repositoryRoot, definition);
@@ -375,7 +507,7 @@ export function createLifecycle({ auth, firestore, clock = () => new Date(), ran
       }
 
       if (!credentials.passwords) {
-        await publishCredentials(credentials.target, credentialPayload(definition, passwords));
+        await publishCredentials(credentials.target, credentialPayload(definition, passwords), credentials.confinement);
       }
       manifest = await writeManifest(manifestPath, { ...manifest, state: 'seeded' });
       lastSeededManifestPath = manifestPath;

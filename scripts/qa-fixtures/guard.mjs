@@ -1,5 +1,6 @@
 export const STAGING_PROJECT_ID = 'the-squad-v2-staging';
 export const MANAGED_PREFIX = 'qa-phase7-';
+export const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
 
 const EMULATOR_VARIABLES = [
   'FIRESTORE_EMULATOR_HOST',
@@ -45,6 +46,15 @@ export function assertRequestedHostedStagingIntent({ argv, env } = {}) {
   }
 
   return { projectId: STAGING_PROJECT_ID };
+}
+
+/** Require the one canonical hosted-staging application origin. */
+export function assertStagingOrigin(argv) {
+  const origin = argumentValue(argv, '--origin');
+  if (origin !== STAGING_ORIGIN) {
+    throw new Error('Origin must equal the canonical hosted staging origin.');
+  }
+  return origin;
 }
 
 /**

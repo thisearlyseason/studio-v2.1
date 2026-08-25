@@ -17,12 +17,13 @@ import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
 import { createLifecycle, removeCredentialFile } from '../scripts/qa-fixtures/lifecycle.mjs';
 import { runCli } from '../scripts/qa-fixtures/cli.mjs';
 import { createFirebaseAdapter } from '../scripts/qa-fixtures/firebase-adapter.mjs';
-import { chmod, mkdir, mkdtemp, readFile, readdir, stat, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rmdir, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const STAGING = STAGING_PROJECT_ID;
+const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
 const RUN_ID = 'qa-phase7-20260824T140000Z-ab12cd34ef56';
 const EXPIRES_AT = '2026-08-31T14:00:00.000Z';
 const repositoryRoot = process.cwd();
@@ -32,6 +33,7 @@ function hostedArgs(command, ...args) {
     command,
     '--project', STAGING,
     '--confirm-project', STAGING,
+    ...(command === 'preflight' ? ['--origin', STAGING_ORIGIN] : []),
     ...args,
   ];
 }
@@ -256,6 +258,103 @@ async function lifecycleFixture(t, runId = RUN_ID) {
   };
 }
 
+function completeManifest(definition, overrides = {}) {
+  return {
+    version: 2,
+    runId: definition.runId,
+    projectId: STAGING,
+    authUids: definition.identities.map(identity => identity.uid),
+    firestorePaths: definition.documents.map(document => document.path),
+    state: 'seeded',
+    createdAt: '2026-08-24T14:00:00.000Z',
+    updatedAt: '2026-08-24T14:00:00.000Z',
+    expiresAt: definition.expiresAt,
+    transitions: approvedActiveTransitions(),
+    ...overrides,
+  };
+}
+
+function incompleteJournalCases(definition) {
+  const complete = completeManifest(definition);
+  return [
+    {
+      name: 'omitted UID',
+      manifest: { ...complete, authUids: complete.authUids.slice(1) },
+    },
+    {
+      name: 'omitted path',
+      manifest: { ...complete, firestorePaths: complete.firestorePaths.slice(1) },
+    },
+    {
+      name: 'extra UID',
+      manifest: { ...complete, authUids: [...complete.authUids, `${definition.runId}-extra-user`] },
+    },
+    {
+      name: 'extra path',
+      manifest: { ...complete, firestorePaths: [...complete.firestorePaths, `users/${definition.runId}-extra-user`] },
+    },
+  ];
+}
+
+async function removeFlatDirectory(path) {
+  let entry;
+  try {
+    entry = await lstat(path);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return;
+    throw error;
+  }
+  if (entry.isSymbolicLink() || entry.isFile()) {
+    await unlink(path);
+    return;
+  }
+  for (const name of await readdir(path)) await unlink(join(path, name));
+  await rmdir(path);
+}
+
+async function credentialConfinementFixture(t, runId) {
+  const base = await mkdtemp(join(tmpdir(), 'qa-fixture-credential-confinement-'));
+  const repository = join(base, 'repository');
+  const manifestDirectory = join(base, 'manifest-state');
+  const credentialParent = join(base, 'credential-parent');
+  const movedCredentialParent = join(base, 'credential-parent-original');
+  await Promise.all([mkdir(repository), mkdir(manifestDirectory), mkdir(credentialParent)]);
+  t.after(async () => {
+    await removeFlatDirectory(credentialParent);
+    await removeFlatDirectory(movedCredentialParent);
+    await removeFlatDirectory(manifestDirectory);
+    await removeFlatDirectory(repository);
+    await rmdir(base);
+  });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
+  const auth = new FakeAuth();
+  const firestore = new FakeFirestore();
+  const inputs = {
+    manifestPath: join(manifestDirectory, 'manifest.json'),
+    credentialPath: join(credentialParent, 'credentials.json'),
+  };
+  const lifecycleOptions = {
+    auth,
+    firestore,
+    clock: () => new Date('2026-08-24T14:00:00.000Z'),
+    randomBytes: size => Buffer.alloc(size, 7),
+    definition,
+    repositoryRoot: repository,
+    manifestPath: inputs.manifestPath,
+  };
+  return {
+    auth,
+    base,
+    credentialParent,
+    definition,
+    firestore,
+    inputs,
+    lifecycleOptions,
+    movedCredentialParent,
+    repository,
+  };
+}
+
 async function hardExitSeedProcess(fixture, alias) {
   const remoteStatePath = join(fixture.directory, 'remote-state.json');
   await writeFile(remoteStatePath, JSON.stringify({
@@ -380,6 +479,46 @@ test('cli preflight resolves staging intent without Auth or Firestore mutation',
   });
 });
 
+test('cli preflight requires one exact staging origin before adapter construction or output', async t => {
+  const cases = [
+    {
+      name: 'missing',
+      argv: ['preflight', '--project', STAGING, '--confirm-project', STAGING],
+    },
+    {
+      name: 'duplicate',
+      argv: [...hostedArgs('preflight'), '--origin', STAGING_ORIGIN],
+    },
+    {
+      name: 'malformed',
+      argv: ['preflight', '--project', STAGING, '--confirm-project', STAGING, '--origin', 'not-a-url'],
+    },
+    {
+      name: 'production',
+      argv: ['preflight', '--project', STAGING, '--confirm-project', STAGING, '--origin', 'https://studio.example.com'],
+    },
+  ];
+
+  for (const item of cases) {
+    await t.test(item.name, async () => {
+      let factoryCalls = 0;
+      const lines = [];
+      await assert.rejects(() => runCli({
+        argv: item.argv,
+        env: hostedEnvironment(),
+        cwd: repositoryRoot,
+        adapterFactory: async () => {
+          factoryCalls += 1;
+          return directAdapter(new FakeAuth(), new FakeFirestore());
+        },
+        stdout: line => lines.push(line),
+      }), /origin/i);
+      assert.equal(factoryCalls, 0);
+      assert.deepEqual(lines, []);
+    });
+  }
+});
+
 test('cli rejects repository-local credential output before adapter mutation', async () => {
   const calls = [];
   await assert.rejects(() => runCli({
@@ -441,7 +580,7 @@ test('cli rejects invalid requested intent before constructing an adapter', asyn
     { argv: hostedArgs('preflight'), env: {} },
     { argv: hostedArgs('preflight'), env: { ...hostedEnvironment(), FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080' } },
     {
-      argv: ['preflight', '--project', 'production-project', '--confirm-project', STAGING],
+      argv: ['preflight', '--project', 'production-project', '--confirm-project', STAGING, '--origin', STAGING_ORIGIN],
       env: hostedEnvironment(),
     },
   ];
@@ -634,6 +773,93 @@ test('cli seed obtains its run ID from the injected internal generator seam', as
   });
   assert.equal(generatorCalls, 1);
   assert.equal(JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8')).runId, RUN_ID);
+});
+
+test('two real CLI seed invocations recover the same exact run without regenerating its definition', async t => {
+  const fixture = await lifecycleFixture(t);
+  const replacementRunId = 'qa-phase7-20260824T140001Z-cd34ef56ab78';
+  let generatorCalls = 0;
+  const runIdGenerator = () => {
+    generatorCalls += 1;
+    return generatorCalls === 1 ? RUN_ID : replacementRunId;
+  };
+  const args = hostedArgs(
+    'seed',
+    '--manifest', fixture.inputs.manifestPath,
+    '--credentials', fixture.inputs.credentialPath,
+    '--expires-at', EXPIRES_AT,
+  );
+  const invoke = () => runCli({
+    argv: args,
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    runIdGenerator,
+    adapterFactory: async () => directAdapter(fixture.auth, fixture.firestore),
+    stdout: () => {},
+  });
+
+  const first = await invoke();
+  const firstManifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  const firstCredentials = await readFile(fixture.inputs.credentialPath, 'utf8');
+  const firstAuth = structuredClone([...fixture.auth.users]);
+  const firstFirestore = structuredClone([...fixture.firestore.documents]);
+  const second = await invoke();
+  const secondManifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+
+  assert.equal(generatorCalls, 1);
+  assert.equal(first.runId, RUN_ID);
+  assert.equal(second.runId, RUN_ID);
+  assert.deepEqual({ ...secondManifest, updatedAt: firstManifest.updatedAt }, firstManifest);
+  assert.equal(await readFile(fixture.inputs.credentialPath, 'utf8'), firstCredentials);
+  assert.deepEqual([...fixture.auth.users], firstAuth);
+  assert.deepEqual([...fixture.firestore.documents], firstFirestore);
+});
+
+test('CLI rejects every incomplete or extra journal before adapter construction for every manifest command', async t => {
+  for (const command of ['seed', 'inspect', 'transition', 'cleanup']) {
+    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT }))) {
+      await t.test(`${command}: ${item.name}`, async caseTest => {
+        const fixture = await lifecycleFixture(caseTest);
+        await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(item.manifest, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+        const beforeManifest = await readFile(fixture.inputs.manifestPath, 'utf8');
+        let factoryCalls = 0;
+        let connectCalls = 0;
+        let generatorCalls = 0;
+        const commandArgs = [
+          '--manifest', fixture.inputs.manifestPath,
+          ...(command === 'seed' ? ['--credentials', fixture.inputs.credentialPath, '--expires-at', EXPIRES_AT] : []),
+          ...(command === 'transition' ? ['--alias', 'qa-suspended'] : []),
+        ];
+
+        await assert.rejects(() => runCli({
+          argv: hostedArgs(command, ...commandArgs),
+          env: hostedEnvironment(),
+          cwd: repositoryRoot,
+          runIdGenerator() {
+            generatorCalls += 1;
+            return RUN_ID;
+          },
+          adapterFactory: async () => {
+            factoryCalls += 1;
+            return {
+              projectId: STAGING,
+              connect() {
+                connectCalls += 1;
+                return directAdapter(fixture.auth, fixture.firestore);
+              },
+            };
+          },
+          stdout: () => {},
+        }), /exact fixture definition|complete.*journal|pre-journal/i);
+
+        assert.equal(factoryCalls, 0);
+        assert.equal(connectCalls, 0);
+        assert.equal(generatorCalls, 0);
+        assert.equal(await readFile(fixture.inputs.manifestPath, 'utf8'), beforeManifest);
+        assert.equal(JSON.parse(beforeManifest).state, 'seeded');
+      });
+    }
+  }
 });
 
 test('cli transition uses a fresh lifecycle with the persistent seeded manifest after guard resolution', async t => {
@@ -981,6 +1207,24 @@ test('manifest v2 requires exactly both approved transition records', () => {
     const candidate = { ...base };
     if (transitions !== undefined) candidate.transitions = transitions;
     assert.throws(() => validateManifest(candidate), /transition/i);
+  }
+});
+
+test('pure exact-journal validation compares manifest UID and path sets to the deterministic definition', async () => {
+  const manifestModule = await import('../scripts/qa-fixtures/manifest.mjs');
+  assert.equal(typeof manifestModule.assertExactFixtureJournal, 'function');
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
+  const complete = completeManifest(definition, {
+    authUids: definition.identities.map(identity => identity.uid).reverse(),
+    firestorePaths: definition.documents.map(document => document.path).reverse(),
+  });
+  assert.doesNotThrow(() => manifestModule.assertExactFixtureJournal(complete, definition));
+  for (const item of incompleteJournalCases(definition)) {
+    assert.throws(
+      () => manifestModule.assertExactFixtureJournal(item.manifest, definition),
+      /exact fixture definition|complete.*journal|pre-journal/i,
+      item.name,
+    );
   }
 });
 
@@ -1408,6 +1652,36 @@ test('re-seed rejects omitted or one-alias transition journals before credential
   }
 });
 
+test('lifecycle defense rejects incomplete or extra journals before adapter access for every operation', async t => {
+  for (const operation of ['seed', 'inspect', 'transition', 'cleanup']) {
+    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT }))) {
+      await t.test(`${operation}: ${item.name}`, async caseTest => {
+        const fixture = await lifecycleFixture(caseTest);
+        await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(item.manifest, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+        const beforeManifest = await readFile(fixture.inputs.manifestPath, 'utf8');
+        const calls = [];
+        const adapter = directAdapter(fixture.auth, fixture.firestore, calls);
+        const lifecycle = createLifecycle({
+          ...fixture.lifecycleOptions,
+          auth: adapter.auth,
+          firestore: adapter.firestore,
+        });
+        const invoke = {
+          seed: () => lifecycle.seed(fixture.inputs),
+          inspect: () => lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath }),
+          transition: () => lifecycle.applyNegativeState('qa-suspended'),
+          cleanup: () => lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath }),
+        }[operation];
+
+        await assert.rejects(invoke, /exact fixture definition|complete.*journal|pre-journal/i);
+        assert.deepEqual(calls, []);
+        assert.equal(await readFile(fixture.inputs.manifestPath, 'utf8'), beforeManifest);
+        assert.equal(JSON.parse(beforeManifest).state, 'seeded');
+      });
+    }
+  }
+});
+
 test('seed pre-journals every intended resource before an ambiguous Auth create response', async t => {
   const fixture = await lifecycleFixture(t);
   const identity = fixture.definition.identities[0];
@@ -1456,7 +1730,7 @@ test('atomic manifest failure preserves the last complete JSON document and remo
   assert.equal(names.some(name => name.includes('.manifest.json.') && name.endsWith('.tmp')), false);
 });
 
-test('cleanup retains an unmarked exact-namespace user from a forged partial manifest without ownership proof', async t => {
+test('cleanup rejects a forged incomplete journal without changing it or deleting an unmarked user', async t => {
   const fixture = await lifecycleFixture(t);
   const identity = fixture.definition.identities[0];
   await fixture.auth.createUser({ uid: identity.uid, email: identity.email });
@@ -1472,9 +1746,13 @@ test('cleanup retains an unmarked exact-namespace user from a forged partial man
     expiresAt: EXPIRES_AT,
     transitions: approvedActiveTransitions(),
   }));
-  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
-  assert.deepEqual(result.deleted, { auth: 0, firestore: 0 });
-  assert.deepEqual(result.retained, ['auth']);
+  const beforeManifest = await readFile(fixture.inputs.manifestPath, 'utf8');
+  await assert.rejects(
+    () => fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath }),
+    /exact fixture definition|complete.*journal|pre-journal/i,
+  );
+  assert.equal(await readFile(fixture.inputs.manifestPath, 'utf8'), beforeManifest);
+  assert.equal(JSON.parse(beforeManifest).state, 'partial');
   assert.equal((await fixture.auth.getUser(identity.uid)).uid, identity.uid);
 });
 
@@ -1643,6 +1921,140 @@ test('credential publication sanitizes an exact temporary-file unlink failure', 
   assert.ok(retainedTempPath);
   const published = JSON.parse(await readFile(fixture.inputs.credentialPath, 'utf8'));
   assert.equal(published.runId, fixture.definition.runId);
+});
+
+test('credential publication rejects a parent swap into the repository before temporary creation', async t => {
+  const fixture = await credentialConfinementFixture(t, 'qa-phase7-20260824T140030Z-ab12cd34ef56');
+  const originalSet = fixture.firestore.set.bind(fixture.firestore);
+  const lastPath = fixture.definition.documents.at(-1).path;
+  let swapped = false;
+  fixture.firestore.set = async (path, data) => {
+    await originalSet(path, data);
+    if (!swapped && path === lastPath) {
+      swapped = true;
+      await rename(fixture.credentialParent, fixture.movedCredentialParent);
+      await symlink(fixture.repository, fixture.credentialParent);
+    }
+  };
+  const lifecycle = createLifecycle(fixture.lifecycleOptions);
+
+  await assert.rejects(() => lifecycle.seed(fixture.inputs), error => {
+    assert.equal(error.message, 'Credential recovery required: credential path confinement changed.');
+    assert.equal(error.message.includes(fixture.base), false);
+    return true;
+  });
+  assert.deepEqual(await readdir(fixture.repository), []);
+  assert.deepEqual(await readdir(fixture.movedCredentialParent), []);
+});
+
+test('credential publication rejects a parent swap into the repository before hard-link publication', async t => {
+  const fixture = await credentialConfinementFixture(t, 'qa-phase7-20260824T140031Z-cd34ef56ab78');
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    async faultInjector(stage) {
+      if (stage === 'credentials.beforePublish') {
+        await rename(fixture.credentialParent, fixture.movedCredentialParent);
+        await symlink(fixture.repository, fixture.credentialParent);
+      }
+    },
+  });
+
+  await assert.rejects(() => lifecycle.seed(fixture.inputs), error => {
+    assert.equal(error.message, 'Credential recovery required: credential path confinement changed.');
+    assert.equal(error.message.includes(fixture.base), false);
+    return true;
+  });
+  assert.deepEqual(await readdir(fixture.repository), []);
+  assert.equal((await readdir(fixture.movedCredentialParent)).some(name => name.endsWith('.tmp')), true);
+});
+
+test('credential publication rejects a parent swap into the repository after hard-link publication', async t => {
+  const fixture = await credentialConfinementFixture(t, 'qa-phase7-20260824T140034Z-1234ab56cd78');
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    async faultInjector(stage) {
+      if (stage === 'credentials.afterPublish') {
+        await rename(fixture.credentialParent, fixture.movedCredentialParent);
+        await symlink(fixture.repository, fixture.credentialParent);
+      }
+    },
+  });
+
+  await assert.rejects(() => lifecycle.seed(fixture.inputs), error => {
+    assert.equal(error.message, 'Credential recovery required: credential path confinement changed.');
+    assert.equal(error.message.includes(fixture.base), false);
+    return true;
+  });
+  assert.deepEqual(await readdir(fixture.repository), []);
+  assert.deepEqual((await readdir(fixture.movedCredentialParent)).sort(), [
+    `.credentials.json.${process.pid}-1.tmp`,
+    'credentials.json',
+  ]);
+});
+
+test('credential publication validates final target identity and size after linking', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140035Z-3456ab78cd90');
+  const replacement = 'replacement-final-target';
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    async faultInjector(stage) {
+      if (stage !== 'credentials.afterPublish') return;
+      await unlink(fixture.inputs.credentialPath);
+      await writeFile(fixture.inputs.credentialPath, replacement, { mode: 0o600, flag: 'wx' });
+    },
+  });
+
+  await assert.rejects(() => lifecycle.seed(fixture.inputs), /credential.*confinement/i);
+  assert.equal(await readFile(fixture.inputs.credentialPath, 'utf8'), replacement);
+  assert.equal((await readdir(fixture.directory)).some(name => name.endsWith('.tmp')), false);
+});
+
+test('credential publication preserves a pre-existing predictable temporary file byte-for-byte', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140032Z-ef56ab78cd90');
+  const predictableTemp = join(fixture.directory, `.credentials.json.${process.pid}-1.tmp`);
+  const existing = 'operator-owned temporary recovery state';
+  await writeFile(predictableTemp, existing, { mode: 0o600, flag: 'wx' });
+  t.after(async () => {
+    await unlink(predictableTemp).catch(error => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  });
+
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), error => {
+    assert.match(error.message, /credential recovery required/i);
+    assert.equal(error.message.includes(fixture.directory), false);
+    return true;
+  });
+  assert.equal(await readFile(predictableTemp, 'utf8'), existing);
+  await assert.rejects(() => stat(fixture.inputs.credentialPath), /ENOENT/);
+});
+
+test('credential publication never unlinks or publishes a replacement at its owned temporary pathname', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140033Z-f012ab34cd56');
+  const replacement = 'replacement-owned-by-another-actor';
+  let replacementPath;
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    async faultInjector(stage) {
+      if (stage !== 'credentials.beforePublish') return;
+      const tempName = (await readdir(fixture.directory)).find(name => name.includes('.credentials.json.') && name.endsWith('.tmp'));
+      assert.ok(tempName);
+      replacementPath = join(fixture.directory, tempName);
+      await unlink(replacementPath);
+      await writeFile(replacementPath, replacement, { mode: 0o600, flag: 'wx' });
+    },
+  });
+  t.after(async () => {
+    if (replacementPath) {
+      await unlink(replacementPath).catch(error => {
+        if (error?.code !== 'ENOENT') throw error;
+      });
+    }
+  });
+
+  await assert.rejects(() => lifecycle.seed(fixture.inputs), /credential.*(?:confinement|recovery)/i);
+  assert.equal(await readFile(replacementPath, 'utf8'), replacement);
+  await assert.rejects(() => stat(fixture.inputs.credentialPath), /ENOENT/);
 });
 
 test('seed rejects an existing credential file unless it is exact-run, regular, and mode 0600', async t => {

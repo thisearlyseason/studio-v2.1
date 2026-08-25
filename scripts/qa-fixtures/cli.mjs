@@ -5,12 +5,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { buildFixtureDefinition } from './definition.mjs';
 import { createFirebaseAdapter } from './firebase-adapter.mjs';
-import { assertHostedStagingIntent, assertRequestedHostedStagingIntent } from './guard.mjs';
+import {
+  assertHostedStagingIntent,
+  assertRequestedHostedStagingIntent,
+  assertStagingOrigin,
+} from './guard.mjs';
 import { createLifecycle } from './lifecycle.mjs';
-import { createRunId, validateManifest } from './manifest.mjs';
+import { assertExactFixtureJournal, createRunId, validateManifest } from './manifest.mjs';
 
 const COMMANDS = new Set(['preflight', 'seed', 'inspect', 'cleanup', 'transition']);
-const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
 const MODULE_REPOSITORY_ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 
 function argumentValue(argv, flag) {
@@ -155,6 +158,7 @@ export async function runCli({
   if (argv.some(value => value === '--run-id' || value.startsWith('--run-id='))) {
     throw new Error('Hosted fixture run IDs are generated internally and cannot be overridden.');
   }
+  const origin = command === 'preflight' ? assertStagingOrigin(argv) : null;
 
   const credentialPath = command === 'seed'
     ? await resolvedExternalPath(argumentValue(argv, '--credentials'), cwd, repositoryRoot, 'Credential')
@@ -165,10 +169,24 @@ export async function runCli({
   // Reject malformed caller intent before creating even a read-only Admin client.
   assertRequestedHostedStagingIntent({ argv, env });
 
-  // An existing seed journal is pure local input and must be schema-valid
-  // before Firebase Admin initialization or client construction is reachable.
-  if (command === 'seed') {
-    await readExternalManifest(manifestPath, { allowMissing: true, readManifestFile: manifestReadFile });
+  // Every manifest is pure local input and must describe the complete exact
+  // definition before Firebase Admin initialization is reachable.
+  let manifest = null;
+  let definition = null;
+  if (command !== 'preflight') {
+    manifest = await readExternalManifest(manifestPath, {
+      allowMissing: command === 'seed',
+      readManifestFile: manifestReadFile,
+    });
+    if (manifest) {
+      definition = buildFixtureDefinition({ runId: manifest.runId, expiresAt: manifest.expiresAt });
+      manifest = assertExactFixtureJournal(manifest, definition);
+    } else {
+      if (typeof runIdGenerator !== 'function') throw new Error('runIdGenerator must be a function.');
+      const runId = runIdGenerator();
+      const expiresAt = argv.includes('--expires-at') ? argumentValue(argv, '--expires-at') : defaultExpiry();
+      definition = buildFixtureDefinition({ runId, expiresAt });
+    }
   }
 
   // Resolving the Admin project is read-only. The second guard verifies it
@@ -180,23 +198,12 @@ export async function runCli({
     output(stdout, {
       command,
       projectId,
-      origin: STAGING_ORIGIN,
+      origin,
       plannedAliases: 9,
       plannedTeams: 2,
       safe: true,
     });
-    return { command, projectId, safe: true };
-  }
-
-  let definition;
-  if (command === 'seed') {
-    if (typeof runIdGenerator !== 'function') throw new Error('runIdGenerator must be a function.');
-    const runId = runIdGenerator();
-    const expiresAt = argv.includes('--expires-at') ? argumentValue(argv, '--expires-at') : defaultExpiry();
-    definition = buildFixtureDefinition({ runId, expiresAt });
-  } else {
-    const manifest = await readExternalManifest(manifestPath, { readManifestFile: manifestReadFile });
-    definition = buildFixtureDefinition({ runId: manifest.runId, expiresAt: manifest.expiresAt });
+    return { command, projectId, origin, safe: true };
   }
 
   const connectedAdapter = typeof adapter.connect === 'function' ? adapter.connect() : adapter;

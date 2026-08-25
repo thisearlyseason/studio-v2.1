@@ -231,4 +231,32 @@ export function validateManifest(manifest) {
   return freezeDeep(normalized);
 }
 
+/**
+ * Validate that one manifest journals exactly the UID and document-path sets
+ * produced by its deterministic fixture definition.
+ */
+export function assertExactFixtureJournal(manifest, definition) {
+  const normalized = validateManifest(manifest);
+  if (
+    !isRecord(definition)
+    || definition.runId !== normalized.runId
+    || definition.expiresAt !== normalized.expiresAt
+    || !Array.isArray(definition.identities)
+    || !Array.isArray(definition.documents)
+  ) {
+    throw new Error('Manifest journal must contain the exact fixture definition.');
+  }
+
+  const expectedUids = definition.identities.map(identity => identity?.uid);
+  const expectedPaths = definition.documents.map(document => document?.path);
+  const hasExactSet = (actual, expected) => (
+    actual.length === expected.length
+    && expected.every(value => typeof value === 'string' && actual.includes(value))
+  );
+  if (!hasExactSet(normalized.authUids, expectedUids) || !hasExactSet(normalized.firestorePaths, expectedPaths)) {
+    throw new Error('Manifest journal must contain the exact fixture definition.');
+  }
+  return normalized;
+}
+
 export { MANAGED_PREFIX, STAGING_PROJECT_ID };
