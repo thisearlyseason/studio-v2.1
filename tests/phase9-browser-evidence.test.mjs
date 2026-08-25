@@ -141,6 +141,26 @@ test('phase 9 evidence contracts reject every denied-route transient signal', ()
 test('phase 9 evidence contracts require symmetric real-consumer isolation', () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const expectation = buildIsolationExpectation({ runId, alias: 'qa-parent-a' });
+  assert.equal(expectation.ownTeamId, `${runId}-team-a`);
+  assert.equal(expectation.oppositeTeamId, `${runId}-team-b`);
+  assert.deepEqual(expectation.sameOriginApi, [
+    {
+      label: 'own-team-api',
+      endpoint: '/api/teams/chat',
+      parameter: 'teamId',
+      teamId: `${runId}-team-a`,
+      target: `/api/teams/chat?teamId=${runId}-team-a`,
+      status: 200,
+    },
+    {
+      label: 'opposite-team-api',
+      endpoint: '/api/teams/chat',
+      parameter: 'teamId',
+      teamId: `${runId}-team-b`,
+      target: `/api/teams/chat?teamId=${runId}-team-b`,
+      status: 403,
+    },
+  ]);
   assert.deepEqual(expectation.directFirestore, [
     { label: 'own-team', path: `teams/${runId}-team-a`, status: 200 },
     { label: 'opposite-team', path: `teams/${runId}-team-b`, status: 403 },
@@ -155,8 +175,9 @@ test('phase 9 evidence contracts require symmetric real-consumer isolation', () 
     'qa-youth-active': ['team-a', 'team-b', 'player-youth-active', 'youth-player-b'],
   };
   for (const [alias, suffixes] of Object.entries(supportedPaths)) {
+    const aliasExpectation = buildIsolationExpectation({ runId, alias });
     assert.deepEqual(
-      buildIsolationExpectation({ runId, alias }).directFirestore.map(item => item.path),
+      aliasExpectation.directFirestore.map(item => item.path),
       [
         `teams/${runId}-${suffixes[0]}`,
         `teams/${runId}-${suffixes[1]}`,
@@ -164,21 +185,30 @@ test('phase 9 evidence contracts require symmetric real-consumer isolation', () 
         `players/${runId}-${suffixes[3]}`,
       ],
     );
+    assert.deepEqual(
+      [aliasExpectation.ownTeamId, aliasExpectation.oppositeTeamId],
+      [`${runId}-${suffixes[0]}`, `${runId}-${suffixes[1]}`],
+    );
   }
   assert.throws(() => buildIsolationExpectation({ runId: 'arbitrary', alias: 'qa-parent-a' }), /run ID/i);
   assert.throws(() => buildIsolationExpectation({ runId, alias: 'qa-school-admin' }), /supported isolation alias/i);
   const safe = overrides => ({
     ...expectation,
-    ownApiStatus: 200,
-    oppositeApiStatus: 403,
     oppositeProtectedRender: false,
     oppositeListenerStarts: 0,
     ...overrides,
   });
   assert.equal(validateIsolationResult(safe()).pass, true);
   assert.throws(() => validateIsolationResult(safe({ endpoint: '/team' })), /same-origin endpoint/i);
-  assert.throws(() => validateIsolationResult(safe({ ownApiStatus: 403 })), /own API.*200/i);
-  assert.throws(() => validateIsolationResult(safe({ oppositeApiStatus: 200 })), /opposite API.*403/i);
+  assert.throws(() => validateIsolationResult(safe({ sameOriginApi: expectation.sameOriginApi.slice(0, 1) })), /same-origin API target pairs/i);
+  assert.throws(() => validateIsolationResult(safe({ oppositeTeamId: expectation.ownTeamId })), /oppositeTeamId/i);
+  assert.throws(() => validateIsolationResult(safe({ sameOriginApi: [...expectation.sameOriginApi].reverse() })), /own-team-api/i);
+  assert.throws(() => validateIsolationResult(safe({
+    sameOriginApi: expectation.sameOriginApi.map(item => item.label === 'own-team-api' ? { ...item, target: '/api/teams/chat?teamId=arbitrary' } : item),
+  })), /own-team-api.*target/i);
+  assert.throws(() => validateIsolationResult(safe({
+    sameOriginApi: expectation.sameOriginApi.map(item => item.label === 'opposite-team-api' ? { ...item, status: 200 } : item),
+  })), /opposite-team-api.*403/i);
   assert.throws(() => validateIsolationResult(safe({ directFirestore: safe().directFirestore.slice(0, 3) })), /Firestore probe/i);
   assert.throws(() => validateIsolationResult(safe({
     directFirestore: safe().directFirestore.map(item => item.label === 'own-team' ? { ...item, path: 'teams/arbitrary' } : item),
@@ -243,6 +273,13 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
     'qa-parent-b', 'qa-adult-player-a', 'qa-adult-player-b', 'qa-youth-active', 'qa-league-creator',
     'qa-school-admin', 'qa-superadmin', 'qa-pending-delete', 'qa-missing-profile', 'qa-no-team',
   ];
+  const sortedAliases = [
+    'qa-adult-player-a', 'qa-adult-player-b', 'qa-coach-owner-a', 'qa-coach-owner-b',
+    'qa-fake-superadmin', 'qa-league-creator', 'qa-missing-profile', 'qa-multi-org', 'qa-no-team',
+    'qa-parent-a', 'qa-parent-b', 'qa-pending-delete', 'qa-removed-member', 'qa-school-admin',
+    'qa-superadmin', 'qa-suspended', 'qa-team-assistant', 'qa-team-member', 'qa-unverified',
+    'qa-youth-active',
+  ];
   const uidSuffixes = [
     'adult-player-a', 'adult-player-b', 'coach-owner-a', 'coach-owner-b', 'fake-superadmin',
     'league-creator', 'missing-profile', 'multi-org', 'no-team', 'parent-a', 'parent-b',
@@ -287,19 +324,32 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
   const inspect = {
     command: 'inspect',
     ok: true,
+    aliases: sortedAliases,
     states: { manifest: 'seeded', problems: 0 },
     drift: [],
     counts: {
       expected: { auth: 20, firestore: 82 },
       actualPresent: { auth: 20, firestore: 82 },
     },
+    uidSuffixes,
   };
   assert.equal(validateLifecycleResult('inspect', inspect, 'seeded-present').pass, true);
   assert.equal(validateLifecycleResult('inspect', {
     ...inspect,
+    aliases: [],
     states: { manifest: 'cleaned', problems: 0 },
     counts: { ...inspect.counts, actualPresent: { auth: 0, firestore: 0 } },
   }, 'cleaned-absent').pass, true);
+  assert.throws(() => validateLifecycleResult('inspect', { ...inspect, aliases: undefined }, 'seeded-present'), /aliases/i);
+  assert.throws(() => validateLifecycleResult('inspect', { ...inspect, aliases: [...sortedAliases].reverse() }, 'seeded-present'), /aliases/i);
+  assert.throws(() => validateLifecycleResult('inspect', { ...inspect, uidSuffixes: uidSuffixes.slice(1) }, 'seeded-present'), /UID suffixes/i);
+  assert.throws(() => validateLifecycleResult('inspect', {
+    ...inspect,
+    aliases: [],
+    uidSuffixes: [...uidSuffixes].reverse(),
+    states: { manifest: 'cleaned', problems: 0 },
+    counts: { ...inspect.counts, actualPresent: { auth: 0, firestore: 0 } },
+  }, 'cleaned-absent'), /UID suffixes/i);
   assert.throws(() => validateLifecycleResult('inspect', { ...inspect, drift: ['one'] }, 'seeded-present'), /drift/i);
   assert.throws(() => validateLifecycleResult('inspect', { ...inspect, states: { manifest: 'seeded', problems: 1 } }, 'seeded-present'), /problems/i);
   assert.throws(() => validateLifecycleResult('inspect', {

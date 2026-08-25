@@ -28,6 +28,8 @@ const FIXTURE_UID_SUFFIXES = deepFreeze([
   'team-member', 'unverified', 'youth-active',
 ]);
 
+const FIXTURE_SORTED_ALIASES = deepFreeze([...FIXTURE_ALIASES].sort());
+
 export const LIFECYCLE_STAGES = deepFreeze({
   preflight: ['preflight'],
   seed: ['seeded'],
@@ -83,14 +85,37 @@ export function buildIsolationExpectation({ runId, alias } = {}) {
   if (!shape) throw new Error('Isolation expectation requires a supported isolation alias.');
   const oppositeSide = shape.side === 'a' ? 'b' : 'a';
   const oppositePlayer = shape.side === 'a' ? 'youth-player-b' : 'player-youth-active';
+  const ownTeamId = `${runId}-team-${shape.side}`;
+  const oppositeTeamId = `${runId}-team-${oppositeSide}`;
+  const apiTarget = teamId => `${ISOLATION_SCENARIOS.team.endpoint}?${ISOLATION_SCENARIOS.team.parameter}=${encodeURIComponent(teamId)}`;
   return deepFreeze({
     runId,
     alias,
     endpoint: ISOLATION_SCENARIOS.team.endpoint,
     parameter: ISOLATION_SCENARIOS.team.parameter,
+    ownTeamId,
+    oppositeTeamId,
+    sameOriginApi: [
+      {
+        label: 'own-team-api',
+        endpoint: ISOLATION_SCENARIOS.team.endpoint,
+        parameter: ISOLATION_SCENARIOS.team.parameter,
+        teamId: ownTeamId,
+        target: apiTarget(ownTeamId),
+        status: 200,
+      },
+      {
+        label: 'opposite-team-api',
+        endpoint: ISOLATION_SCENARIOS.team.endpoint,
+        parameter: ISOLATION_SCENARIOS.team.parameter,
+        teamId: oppositeTeamId,
+        target: apiTarget(oppositeTeamId),
+        status: 403,
+      },
+    ],
     directFirestore: [
-      { label: 'own-team', path: `teams/${runId}-team-${shape.side}`, status: 200 },
-      { label: 'opposite-team', path: `teams/${runId}-team-${oppositeSide}`, status: 403 },
+      { label: 'own-team', path: `teams/${ownTeamId}`, status: 200 },
+      { label: 'opposite-team', path: `teams/${oppositeTeamId}`, status: 403 },
       { label: 'own-player', path: `players/${runId}-${shape.ownPlayer}`, status: 200 },
       { label: 'opposite-player', path: `players/${runId}-${oppositePlayer}`, status: 403 },
     ],
@@ -268,8 +293,22 @@ export function validateIsolationResult(value) {
   if (result.endpoint !== ISOLATION_SCENARIOS.team.endpoint || result.parameter !== ISOLATION_SCENARIOS.team.parameter) {
     throw new Error('Isolation must use the configured parameter-consuming same-origin endpoint.');
   }
-  if (result.ownApiStatus !== 200) throw new Error('Isolation own API status must be 200.');
-  if (result.oppositeApiStatus !== 403) throw new Error('Isolation opposite API status must be 403.');
+  requireString(result.ownTeamId, 'Isolation ownTeamId');
+  requireString(result.oppositeTeamId, 'Isolation oppositeTeamId');
+  requireExact(result.ownTeamId, canonical.ownTeamId, 'Isolation ownTeamId');
+  requireExact(result.oppositeTeamId, canonical.oppositeTeamId, 'Isolation oppositeTeamId');
+  if (result.ownTeamId === result.oppositeTeamId) throw new Error('Isolation ownTeamId and oppositeTeamId must differ.');
+  if (!Array.isArray(result.sameOriginApi) || result.sameOriginApi.length !== canonical.sameOriginApi.length) {
+    throw new Error('Isolation must contain both exact same-origin API target pairs.');
+  }
+  for (const [index, expected] of canonical.sameOriginApi.entries()) {
+    const actual = requireRecord(result.sameOriginApi[index], `${expected.label} same-origin API result`);
+    for (const field of ['label', 'endpoint', 'parameter', 'teamId', 'target', 'status']) {
+      if (actual[field] !== expected[field]) {
+        throw new Error(`${expected.label} ${field} must equal the canonical ${expected.status} target pair.`);
+      }
+    }
+  }
   if (!Array.isArray(result.directFirestore) || result.directFirestore.length !== ISOLATION_SCENARIOS.directFirestore.length) {
     throw new Error('Isolation Firestore probe must contain the complete exact label set.');
   }
@@ -403,6 +442,7 @@ export function validateLifecycleResult(kind, input, stage) {
     }
     case 'inspect': {
       requireOk(value);
+      requireExactKeys(value, ['command', 'ok', 'aliases', 'counts', 'states', 'drift', 'uidSuffixes'], 'Inspect');
       requireExact(value.command, 'inspect', 'Inspect command');
       const canonical = stage === 'seeded-present'
         ? {
@@ -420,6 +460,8 @@ export function validateLifecycleResult(kind, input, stage) {
             actualFirestore: 0,
           };
       validateInspect(value, canonical);
+      requireExactArray(value.aliases, stage === 'seeded-present' ? FIXTURE_SORTED_ALIASES : [], 'Inspect aliases');
+      requireExactArray(value.uidSuffixes, FIXTURE_UID_SUFFIXES, 'Inspect UID suffixes');
       break;
     }
     case 'transition': {
