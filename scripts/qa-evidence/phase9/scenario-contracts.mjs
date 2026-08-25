@@ -1,3 +1,5 @@
+import { assertRunId } from '../../qa-fixtures/manifest.mjs';
+
 const deepFreeze = value => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -11,6 +13,32 @@ export const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hos
 export const FIXTURE_MANIFEST_VERSION = 3;
 export const FIXTURE_RESOURCE_COUNTS = deepFreeze({ aliases: 20, teams: 3, auth: 20, firestore: 82, expectedAbsent: 1 });
 export const PENDING_UNAVAILABLE_SENTINEL = 'The email or password is incorrect, or this account is unavailable.';
+
+const FIXTURE_ALIASES = deepFreeze([
+  'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member', 'qa-multi-org',
+  'qa-fake-superadmin', 'qa-unverified', 'qa-suspended', 'qa-removed-member', 'qa-parent-a',
+  'qa-parent-b', 'qa-adult-player-a', 'qa-adult-player-b', 'qa-youth-active', 'qa-league-creator',
+  'qa-school-admin', 'qa-superadmin', 'qa-pending-delete', 'qa-missing-profile', 'qa-no-team',
+]);
+
+const FIXTURE_UID_SUFFIXES = deepFreeze([
+  'adult-player-a', 'adult-player-b', 'coach-owner-a', 'coach-owner-b', 'fake-superadmin',
+  'league-creator', 'missing-profile', 'multi-org', 'no-team', 'parent-a', 'parent-b',
+  'pending-delete', 'removed-member', 'school-admin', 'superadmin', 'suspended', 'team-assistant',
+  'team-member', 'unverified', 'youth-active',
+]);
+
+export const LIFECYCLE_STAGES = deepFreeze({
+  preflight: ['preflight'],
+  seed: ['seeded'],
+  inspect: ['seeded-present', 'cleaned-absent'],
+  transition: ['pending-deletion'],
+  cleanup: ['cleaned'],
+  probe: ['independently-absent'],
+  'browser-sessions': ['browsers-closed'],
+  'credential-removal': ['credential-absent'],
+  'workspace-removal': ['workspace-absent'],
+});
 
 export const VIEWPORTS = deepFreeze({
   mobile: { width: 390, height: 844 },
@@ -40,6 +68,34 @@ export const ISOLATION_SCENARIOS = deepFreeze({
     { label: 'opposite-player', status: 403 },
   ],
 });
+
+const ISOLATION_ALIAS_SHAPES = deepFreeze({
+  'qa-parent-a': { side: 'a', ownPlayer: 'player-youth-active' },
+  'qa-parent-b': { side: 'b', ownPlayer: 'youth-player-b' },
+  'qa-adult-player-a': { side: 'a', ownPlayer: 'player-adult-a' },
+  'qa-adult-player-b': { side: 'b', ownPlayer: 'player-adult-b' },
+  'qa-youth-active': { side: 'a', ownPlayer: 'player-youth-active' },
+});
+
+export function buildIsolationExpectation({ runId, alias } = {}) {
+  assertRunId(runId);
+  const shape = ISOLATION_ALIAS_SHAPES[alias];
+  if (!shape) throw new Error('Isolation expectation requires a supported isolation alias.');
+  const oppositeSide = shape.side === 'a' ? 'b' : 'a';
+  const oppositePlayer = shape.side === 'a' ? 'youth-player-b' : 'player-youth-active';
+  return deepFreeze({
+    runId,
+    alias,
+    endpoint: ISOLATION_SCENARIOS.team.endpoint,
+    parameter: ISOLATION_SCENARIOS.team.parameter,
+    directFirestore: [
+      { label: 'own-team', path: `teams/${runId}-team-${shape.side}`, status: 200 },
+      { label: 'opposite-team', path: `teams/${runId}-team-${oppositeSide}`, status: 403 },
+      { label: 'own-player', path: `players/${runId}-${shape.ownPlayer}`, status: 200 },
+      { label: 'opposite-player', path: `players/${runId}-${oppositePlayer}`, status: 403 },
+    ],
+  });
+}
 
 export const REQUIRED_LOGOUT_STAGES = deepFreeze([
   'logout-tab',
@@ -105,8 +161,24 @@ const requireExact = (actual, expected, name) => {
   if (actual !== expected) throw new Error(`${name} must equal the exact expected value.`);
 };
 
-const requireExpectedString = (expected, key, name) => requireString(expected[key], `Expected ${name}`);
-const requireExpectedCount = (expected, key, name) => requireCount(expected[key], `Expected ${name}`);
+const requireExactArray = (value, expected, name) => {
+  if (!Array.isArray(value) || value.length !== expected.length || value.some((item, index) => item !== expected[index])) {
+    throw new Error(`${name} must match the complete canonical ordered values.`);
+  }
+};
+
+const requireExactKeys = (value, expected, name) => {
+  const actualKeys = Object.keys(value).sort();
+  const expectedKeys = [...expected].sort();
+  if (actualKeys.length !== expectedKeys.length || actualKeys.some((key, index) => key !== expectedKeys[index])) {
+    throw new Error(`${name} must contain exactly its real producer fields.`);
+  }
+};
+
+const requireLifecycleStage = (kind, stage) => {
+  const supported = LIFECYCLE_STAGES[kind];
+  if (!supported || !supported.includes(stage)) throw new Error(`Unsupported lifecycle stage for ${kind}.`);
+};
 
 const parseResult = value => {
   if (typeof value !== 'string') return requireRecord(value, 'Lifecycle result');
@@ -192,6 +264,7 @@ export function validateRouteResult(value) {
 
 export function validateIsolationResult(value) {
   const result = requireRecord(value, 'Isolation result');
+  const canonical = buildIsolationExpectation({ runId: result.runId, alias: result.alias });
   if (result.endpoint !== ISOLATION_SCENARIOS.team.endpoint || result.parameter !== ISOLATION_SCENARIOS.team.parameter) {
     throw new Error('Isolation must use the configured parameter-consuming same-origin endpoint.');
   }
@@ -210,8 +283,13 @@ export function validateIsolationResult(value) {
     probes.set(probe.label, probe.status);
   }
   for (const expected of ISOLATION_SCENARIOS.directFirestore) {
-    if (probes.get(expected.label) !== expected.status) {
-      throw new Error(`${expected.label} Firestore probe must return ${expected.status}.`);
+    const canonicalProbe = canonical.directFirestore.find(probe => probe.label === expected.label);
+    const actual = result.directFirestore.find(probe => probe.label === expected.label);
+    if (actual?.path !== canonicalProbe.path) {
+      throw new Error(`${expected.label} Firestore probe path must match the canonical isolation path.`);
+    }
+    if (probes.get(expected.label) !== canonicalProbe.status) {
+      throw new Error(`${expected.label} Firestore probe must return ${canonicalProbe.status}.`);
     }
   }
 
@@ -289,93 +367,85 @@ const validateProbe = (value, expected) => {
   requireExact(value.expectedAbsentPresent, 0, 'Probe present expected-absence count');
 };
 
-export function validateLifecycleResult(kind, input, expected) {
+export function validateLifecycleResult(kind, input, stage) {
   const value = parseResult(input);
-  if ('ok' in value && value.ok !== true) requireOk(value);
+  requireLifecycleStage(kind, stage);
   switch (kind) {
-    case 'preflight': {
-      const contract = requireRecord(expected, 'Preflight expected contract');
-      requireExpectedString(contract, 'projectId', 'projectId');
-      requireExpectedString(contract, 'origin', 'origin');
-      requireExpectedCount(contract, 'manifestVersion', 'manifestVersion');
-      requireExpectedCount(contract, 'plannedAliases', 'plannedAliases');
-      requireExpectedCount(contract, 'plannedTeams', 'plannedTeams');
-      if (
-        contract.projectId !== STAGING_PROJECT_ID
-        || contract.origin !== STAGING_ORIGIN
-        || contract.manifestVersion !== FIXTURE_MANIFEST_VERSION
-        || contract.plannedAliases !== FIXTURE_RESOURCE_COUNTS.aliases
-        || contract.plannedTeams !== FIXTURE_RESOURCE_COUNTS.teams
-      ) throw new Error('Expected contract does not match the canonical preflight.');
+    case 'preflight':
+      requireExactKeys(value, ['command', 'projectId', 'origin', 'plannedAliases', 'plannedTeams', 'safe'], 'Preflight');
+      requireExact(value.command, 'preflight', 'Preflight command');
       requireBoolean(value.safe, 'Preflight safe');
       requireString(value.projectId, 'Preflight projectId');
       requireString(value.origin, 'Preflight origin');
-      requireCount(value.manifestVersion, 'Preflight manifestVersion');
       requireCount(value.plannedAliases, 'Preflight plannedAliases');
       requireCount(value.plannedTeams, 'Preflight plannedTeams');
       if (!value.safe) throw new Error('Preflight must report safe=true.');
-      for (const key of ['projectId', 'origin', 'manifestVersion', 'plannedAliases', 'plannedTeams']) requireExact(value[key], contract[key], `Preflight ${key}`);
+      requireExact(value.projectId, STAGING_PROJECT_ID, 'Preflight projectId');
+      requireExact(value.origin, STAGING_ORIGIN, 'Preflight origin');
+      requireExact(value.plannedAliases, FIXTURE_RESOURCE_COUNTS.aliases, 'Preflight plannedAliases');
+      requireExact(value.plannedTeams, FIXTURE_RESOURCE_COUNTS.teams, 'Preflight plannedTeams');
       break;
-    }
     case 'seed': {
-      const contract = requireRecord(expected, 'Seed expected contract');
-      requireExpectedString(contract, 'state', 'seed state');
-      requireExpectedCount(contract, 'auth', 'seed Auth count');
-      requireExpectedCount(contract, 'firestore', 'seed Firestore count');
+      requireExactKeys(value, ['command', 'state', 'aliases', 'counts', 'uidSuffixes'], 'Seed');
+      requireExact(value.command, 'seed', 'Seed command');
       requireString(value.state, 'Seed state');
       const counts = requireRecord(value.counts, 'Seed counts');
       requireCount(counts.auth, 'Seed Auth count');
       requireCount(counts.firestore, 'Seed Firestore count');
-      requireExact(value.state, contract.state, 'Seed state');
-      requireExact(counts.auth, contract.auth, 'Seed Auth count');
-      requireExact(counts.firestore, contract.firestore, 'Seed Firestore count');
+      if (
+        value.state !== 'seeded'
+        || counts.auth !== FIXTURE_RESOURCE_COUNTS.auth
+        || counts.firestore !== FIXTURE_RESOURCE_COUNTS.firestore
+      ) throw new Error('Seed result does not match the canonical seed state and counts.');
+      requireExactArray(value.aliases, FIXTURE_ALIASES, 'Seed aliases');
+      requireExactArray(value.uidSuffixes, FIXTURE_UID_SUFFIXES, 'Seed UID suffixes');
       break;
     }
     case 'inspect': {
-      const contract = requireRecord(expected, 'Inspect expected contract');
-      requireExpectedString(contract, 'state', 'inspect state');
-      requireExpectedCount(contract, 'auth', 'inspect Auth count');
-      requireExpectedCount(contract, 'firestore', 'inspect Firestore count');
-      requireExpectedCount(contract, 'actualAuth', 'inspect present Auth count');
-      requireExpectedCount(contract, 'actualFirestore', 'inspect present Firestore count');
       requireOk(value);
-      validateInspect(value, contract);
+      requireExact(value.command, 'inspect', 'Inspect command');
+      const canonical = stage === 'seeded-present'
+        ? {
+            state: 'seeded',
+            auth: FIXTURE_RESOURCE_COUNTS.auth,
+            firestore: FIXTURE_RESOURCE_COUNTS.firestore,
+            actualAuth: FIXTURE_RESOURCE_COUNTS.auth,
+            actualFirestore: FIXTURE_RESOURCE_COUNTS.firestore,
+          }
+        : {
+            state: 'cleaned',
+            auth: FIXTURE_RESOURCE_COUNTS.auth,
+            firestore: FIXTURE_RESOURCE_COUNTS.firestore,
+            actualAuth: 0,
+            actualFirestore: 0,
+          };
+      validateInspect(value, canonical);
       break;
     }
     case 'transition': {
-      const contract = requireRecord(expected, 'Transition expected contract');
-      requireExpectedString(contract, 'alias', 'transition alias');
-      requireExpectedString(contract, 'state', 'transition state');
-      if (contract.alias !== 'qa-pending-delete' || contract.state !== 'pending_deletion') {
-        throw new Error('Expected contract must name the canonical pending-deletion transition.');
-      }
+      requireExact(value.command, 'transition', 'Transition command');
       requireString(value.alias, 'Transition alias');
       requireString(value.state, 'Transition state');
-      requireExact(value.alias, contract.alias, 'Transition alias');
-      requireExact(value.state, contract.state, 'Transition state');
+      requireString(value.uidSuffix, 'Transition UID suffix');
+      requireExact(value.alias, 'qa-pending-delete', 'Transition alias');
+      requireExact(value.state, 'pending_deletion', 'Transition state');
+      requireExact(value.uidSuffix, 'pending-delete', 'Transition UID suffix');
+      if ('resumed' in value) requireBoolean(value.resumed, 'Transition resumed');
       break;
     }
-    case 'cleanup': {
-      const contract = requireRecord(expected, 'Cleanup expected contract');
-      requireExpectedCount(contract, 'auth', 'cleanup Auth count');
-      requireExpectedCount(contract, 'firestore', 'cleanup Firestore count');
+    case 'cleanup':
       requireOk(value);
-      validateCleanup(value, contract);
+      requireExact(value.command, 'cleanup', 'Cleanup command');
+      validateCleanup(value, { auth: FIXTURE_RESOURCE_COUNTS.auth, firestore: FIXTURE_RESOURCE_COUNTS.firestore });
       break;
-    }
-    case 'probe': {
-      const contract = requireRecord(expected, 'Probe expected contract');
-      requireExpectedCount(contract, 'auth', 'probe Auth count');
-      requireExpectedCount(contract, 'firestore', 'probe Firestore count');
-      requireExpectedCount(contract, 'expectedAbsent', 'probe expected-absence count');
-      if (
-        contract.auth !== FIXTURE_RESOURCE_COUNTS.auth
-        || contract.firestore !== FIXTURE_RESOURCE_COUNTS.firestore
-        || contract.expectedAbsent !== FIXTURE_RESOURCE_COUNTS.expectedAbsent
-      ) throw new Error('Expected probe contract must cover the canonical fixture graph.');
-      validateProbe(value, contract);
+    case 'probe':
+      requireExact(value.projectId, STAGING_PROJECT_ID, 'Probe projectId');
+      validateProbe(value, {
+        auth: FIXTURE_RESOURCE_COUNTS.auth,
+        firestore: FIXTURE_RESOURCE_COUNTS.firestore,
+        expectedAbsent: FIXTURE_RESOURCE_COUNTS.expectedAbsent,
+      });
       break;
-    }
     case 'browser-sessions':
       if (!Array.isArray(value.sessions) || value.sessions.length !== 0) throw new Error('Lifecycle closure requires zero browser sessions.');
       break;
@@ -383,8 +453,6 @@ export function validateLifecycleResult(kind, input, expected) {
     case 'workspace-removal':
       if (value.absent !== true) throw new Error(`${kind} must prove absence.`);
       break;
-    default:
-      throw new Error(`Unsupported lifecycle result kind: ${kind}.`);
   }
   return { pass: true, kind };
 }

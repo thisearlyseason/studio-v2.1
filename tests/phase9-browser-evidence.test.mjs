@@ -6,6 +6,7 @@ import {
   REQUIRED_LOGOUT_STAGES,
   ROUTE_SCENARIOS,
   VIEWPORTS,
+  buildIsolationExpectation,
   validateActionWindow,
   validateIsolationResult,
   validateLedger,
@@ -138,17 +139,38 @@ test('phase 9 evidence contracts reject every denied-route transient signal', ()
 });
 
 test('phase 9 evidence contracts require symmetric real-consumer isolation', () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const expectation = buildIsolationExpectation({ runId, alias: 'qa-parent-a' });
+  assert.deepEqual(expectation.directFirestore, [
+    { label: 'own-team', path: `teams/${runId}-team-a`, status: 200 },
+    { label: 'opposite-team', path: `teams/${runId}-team-b`, status: 403 },
+    { label: 'own-player', path: `players/${runId}-player-youth-active`, status: 200 },
+    { label: 'opposite-player', path: `players/${runId}-youth-player-b`, status: 403 },
+  ]);
+  const supportedPaths = {
+    'qa-parent-a': ['team-a', 'team-b', 'player-youth-active', 'youth-player-b'],
+    'qa-parent-b': ['team-b', 'team-a', 'youth-player-b', 'player-youth-active'],
+    'qa-adult-player-a': ['team-a', 'team-b', 'player-adult-a', 'youth-player-b'],
+    'qa-adult-player-b': ['team-b', 'team-a', 'player-adult-b', 'player-youth-active'],
+    'qa-youth-active': ['team-a', 'team-b', 'player-youth-active', 'youth-player-b'],
+  };
+  for (const [alias, suffixes] of Object.entries(supportedPaths)) {
+    assert.deepEqual(
+      buildIsolationExpectation({ runId, alias }).directFirestore.map(item => item.path),
+      [
+        `teams/${runId}-${suffixes[0]}`,
+        `teams/${runId}-${suffixes[1]}`,
+        `players/${runId}-${suffixes[2]}`,
+        `players/${runId}-${suffixes[3]}`,
+      ],
+    );
+  }
+  assert.throws(() => buildIsolationExpectation({ runId: 'arbitrary', alias: 'qa-parent-a' }), /run ID/i);
+  assert.throws(() => buildIsolationExpectation({ runId, alias: 'qa-school-admin' }), /supported isolation alias/i);
   const safe = overrides => ({
-    endpoint: '/api/teams/chat',
-    parameter: 'teamId',
+    ...expectation,
     ownApiStatus: 200,
     oppositeApiStatus: 403,
-    directFirestore: [
-      { label: 'own-team', status: 200 },
-      { label: 'opposite-team', status: 403 },
-      { label: 'own-player', status: 200 },
-      { label: 'opposite-player', status: 403 },
-    ],
     oppositeProtectedRender: false,
     oppositeListenerStarts: 0,
     ...overrides,
@@ -158,6 +180,9 @@ test('phase 9 evidence contracts require symmetric real-consumer isolation', () 
   assert.throws(() => validateIsolationResult(safe({ ownApiStatus: 403 })), /own API.*200/i);
   assert.throws(() => validateIsolationResult(safe({ oppositeApiStatus: 200 })), /opposite API.*403/i);
   assert.throws(() => validateIsolationResult(safe({ directFirestore: safe().directFirestore.slice(0, 3) })), /Firestore probe/i);
+  assert.throws(() => validateIsolationResult(safe({
+    directFirestore: safe().directFirestore.map(item => item.label === 'own-team' ? { ...item, path: 'teams/arbitrary' } : item),
+  })), /own-team.*path/i);
   assert.throws(() => validateIsolationResult(safe({
     directFirestore: safe().directFirestore.map(item => item.label === 'opposite-player' ? { ...item, status: 200 } : item),
   })), /opposite-player.*403/i);
@@ -212,52 +237,55 @@ test('phase 9 evidence contracts reject transient signals for fresh and pending 
 });
 
 test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () => {
-  assert.equal(validateLifecycleResult('preflight', JSON.stringify({
+  const aliases = [
+    'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member', 'qa-multi-org',
+    'qa-fake-superadmin', 'qa-unverified', 'qa-suspended', 'qa-removed-member', 'qa-parent-a',
+    'qa-parent-b', 'qa-adult-player-a', 'qa-adult-player-b', 'qa-youth-active', 'qa-league-creator',
+    'qa-school-admin', 'qa-superadmin', 'qa-pending-delete', 'qa-missing-profile', 'qa-no-team',
+  ];
+  const uidSuffixes = [
+    'adult-player-a', 'adult-player-b', 'coach-owner-a', 'coach-owner-b', 'fake-superadmin',
+    'league-creator', 'missing-profile', 'multi-org', 'no-team', 'parent-a', 'parent-b',
+    'pending-delete', 'removed-member', 'school-admin', 'superadmin', 'suspended', 'team-assistant',
+    'team-member', 'unverified', 'youth-active',
+  ];
+  const preflight = {
+    command: 'preflight',
     safe: true,
     projectId: 'the-squad-v2-staging',
     origin: STAGING_ORIGIN,
-    manifestVersion: 3,
     plannedAliases: 20,
     plannedTeams: 3,
-  }), {
-    projectId: 'the-squad-v2-staging',
-    origin: STAGING_ORIGIN,
-    manifestVersion: 3,
-    plannedAliases: 20,
-    plannedTeams: 3,
-  }).pass, true);
-  assert.throws(() => validateLifecycleResult('preflight', {
-    safe: true, projectId: undefined, origin: undefined, manifestVersion: undefined, plannedAliases: undefined, plannedTeams: undefined,
-  }, {}), /expected.*projectId/i);
-  assert.throws(() => validateLifecycleResult('preflight', {
-    safe: true, projectId: 'wrong', origin: 'https://wrong.invalid', manifestVersion: 2, plannedAliases: 1, plannedTeams: 1,
-  }, {
-    projectId: 'wrong', origin: 'https://wrong.invalid', manifestVersion: 2, plannedAliases: 1, plannedTeams: 1,
-  }), /canonical preflight/i);
-  assert.throws(() => validateLifecycleResult('preflight', {
-    safe: true, projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN, plannedAliases: 20, plannedTeams: 3,
-  }, {
-    projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN, manifestVersion: 3, plannedAliases: 20, plannedTeams: 3,
-  }), /manifestVersion/i);
-  assert.throws(() => validateLifecycleResult('seed', '{'), /valid JSON/i);
-  assert.throws(() => validateLifecycleResult('inspect', { ok: false }), /ok=true/i);
-  assert.equal(validateLifecycleResult('seed', {
-    state: 'seeded', counts: { auth: 20, firestore: 82 },
-  }, { state: 'seeded', auth: 20, firestore: 82 }).pass, true);
+  };
+  assert.equal(validateLifecycleResult('preflight', JSON.stringify(preflight), 'preflight').pass, true);
+  assert.throws(() => validateLifecycleResult('preflight', { ...preflight, command: undefined }, 'preflight'), /command/i);
+  assert.throws(() => validateLifecycleResult('preflight', { ...preflight, plannedTeams: 1 }, 'preflight'), /plannedTeams/i);
+  assert.throws(() => validateLifecycleResult('preflight', { ...preflight, ok: true }, 'preflight'), /producer fields/i);
+  assert.throws(() => validateLifecycleResult('preflight', preflight, 'arbitrary'), /lifecycle stage/i);
+  assert.throws(() => validateLifecycleResult('seed', '{', 'seeded'), /valid JSON/i);
+  assert.throws(() => validateLifecycleResult('inspect', { ok: false }, 'seeded-present'), /ok=true/i);
+  const seed = {
+    command: 'seed',
+    state: 'seeded',
+    aliases,
+    counts: { auth: 20, firestore: 82 },
+    uidSuffixes,
+  };
+  assert.equal(validateLifecycleResult('seed', seed, 'seeded').pass, true);
+  assert.throws(() => validateLifecycleResult('seed', { ...seed, aliases: aliases.slice(1) }, 'seeded'), /aliases/i);
+  assert.throws(() => validateLifecycleResult('seed', { ...seed, ok: true }, 'seeded'), /producer fields/i);
   assert.throws(() => validateLifecycleResult('seed', {
-    state: 'seeded', counts: { auth: 20 },
-  }, { state: 'seeded', auth: 20, firestore: 82 }), /Firestore count/i);
+    ...seed, counts: { auth: 1, firestore: 1 }, aliases: ['qa-parent-a'], uidSuffixes: ['parent-a'],
+  }, 'seeded'), /canonical seed/i);
   assert.throws(() => validateLifecycleResult('transition', {
-    state: 'pending_deletion',
-  }, { alias: 'qa-pending-delete', state: 'pending_deletion' }), /alias/i);
-  assert.throws(() => validateLifecycleResult('transition', {
-    alias: 'qa-pending-delete', state: 'pending_deletion',
-  }, {}), /expected.*alias/i);
-  assert.throws(() => validateLifecycleResult('transition', {
-    alias: 'qa-suspended', state: 'suspended',
-  }, { alias: 'qa-suspended', state: 'suspended' }), /canonical pending-deletion transition/i);
+    command: 'transition', state: 'pending_deletion', uidSuffix: 'pending-delete',
+  }, 'pending-deletion'), /alias/i);
+  assert.equal(validateLifecycleResult('transition', {
+    command: 'transition', alias: 'qa-pending-delete', state: 'pending_deletion', uidSuffix: 'pending-delete',
+  }, 'pending-deletion').pass, true);
 
   const inspect = {
+    command: 'inspect',
     ok: true,
     states: { manifest: 'seeded', problems: 0 },
     drift: [],
@@ -266,17 +294,22 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
       actualPresent: { auth: 20, firestore: 82 },
     },
   };
-  assert.equal(validateLifecycleResult('inspect', inspect, {
-    state: 'seeded', auth: 20, firestore: 82, actualAuth: 20, actualFirestore: 82,
-  }).pass, true);
-  assert.throws(() => validateLifecycleResult('inspect', { ...inspect, drift: ['one'] }, {
-    state: 'seeded', auth: 20, firestore: 82, actualAuth: 20, actualFirestore: 82,
-  }), /drift/i);
-  assert.throws(() => validateLifecycleResult('inspect', { ...inspect, states: { manifest: 'seeded', problems: 1 } }, {
-    state: 'seeded', auth: 20, firestore: 82, actualAuth: 20, actualFirestore: 82,
-  }), /problems/i);
+  assert.equal(validateLifecycleResult('inspect', inspect, 'seeded-present').pass, true);
+  assert.equal(validateLifecycleResult('inspect', {
+    ...inspect,
+    states: { manifest: 'cleaned', problems: 0 },
+    counts: { ...inspect.counts, actualPresent: { auth: 0, firestore: 0 } },
+  }, 'cleaned-absent').pass, true);
+  assert.throws(() => validateLifecycleResult('inspect', { ...inspect, drift: ['one'] }, 'seeded-present'), /drift/i);
+  assert.throws(() => validateLifecycleResult('inspect', { ...inspect, states: { manifest: 'seeded', problems: 1 } }, 'seeded-present'), /problems/i);
+  assert.throws(() => validateLifecycleResult('inspect', {
+    ...inspect,
+    states: { manifest: 'arbitrary', problems: 0 },
+    counts: { expected: { auth: 1, firestore: 1 }, actualPresent: { auth: 1, firestore: 1 } },
+  }, 'seeded-present'), /expected Auth count|state/i);
 
   const cleanup = {
+    command: 'cleanup',
     ok: true,
     retained: [],
     deleted: { auth: 20, firestore: 82 },
@@ -285,14 +318,18 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
       failures: { auth: { count: 0, aliases: [] }, firestore: { count: 0, aliases: [] } },
     },
   };
-  assert.equal(validateLifecycleResult('cleanup', cleanup, { auth: 20, firestore: 82 }).pass, true);
-  assert.throws(() => validateLifecycleResult('cleanup', { ...cleanup, retained: ['one'] }, { auth: 20, firestore: 82 }), /retained/i);
+  assert.equal(validateLifecycleResult('cleanup', cleanup, 'cleaned').pass, true);
+  assert.throws(() => validateLifecycleResult('cleanup', { ...cleanup, retained: ['one'] }, 'cleaned'), /retained/i);
   assert.throws(() => validateLifecycleResult('cleanup', {
     ...cleanup,
     followUp: { ...cleanup.followUp, failures: { ...cleanup.followUp.failures, auth: { count: 1, aliases: ['one'] } } },
-  }, { auth: 20, firestore: 82 }), /failures/i);
+  }, 'cleaned'), /failures/i);
+  assert.throws(() => validateLifecycleResult('cleanup', {
+    ...cleanup, deleted: { auth: 1, firestore: 1 },
+  }, 'cleaned'), /deleted Auth count/i);
 
   const probe = {
+    projectId: 'the-squad-v2-staging',
     checkedAuth: 20,
     checkedFirestore: 82,
     checkedExpectedAbsent: 1,
@@ -300,19 +337,12 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
     firestorePresent: 0,
     expectedAbsentPresent: 0,
   };
-  assert.equal(validateLifecycleResult('probe', probe, { auth: 20, firestore: 82, expectedAbsent: 1 }).pass, true);
-  assert.throws(() => validateLifecycleResult('probe', { ...probe, checkedExpectedAbsent: 0 }, {
-    auth: 20, firestore: 82, expectedAbsent: 1,
-  }), /expected-absence/i);
-  assert.throws(() => validateLifecycleResult('probe', { ...probe, checkedAuth: undefined }, {
-    auth: 20, firestore: 82, expectedAbsent: 1,
-  }), /checked Auth/i);
-  assert.throws(() => validateLifecycleResult('probe', probe, {}), /expected.*Auth/i);
-  assert.throws(() => validateLifecycleResult('probe', {
-    ...probe, checkedAuth: 1, checkedFirestore: 1, checkedExpectedAbsent: 0,
-  }, { auth: 1, firestore: 1, expectedAbsent: 0 }), /canonical fixture graph/i);
-  assert.equal(validateLifecycleResult('browser-sessions', { sessions: [] }, {}).pass, true);
-  assert.throws(() => validateLifecycleResult('browser-sessions', { sessions: ['open'] }, {}), /zero browser sessions/i);
+  assert.equal(validateLifecycleResult('probe', probe, 'independently-absent').pass, true);
+  assert.throws(() => validateLifecycleResult('probe', { ...probe, checkedExpectedAbsent: 0 }, 'independently-absent'), /expected-absence/i);
+  assert.throws(() => validateLifecycleResult('probe', { ...probe, checkedAuth: undefined }, 'independently-absent'), /checked Auth/i);
+  assert.throws(() => validateLifecycleResult('probe', probe, 'arbitrary'), /lifecycle stage/i);
+  assert.equal(validateLifecycleResult('browser-sessions', { sessions: [] }, 'browsers-closed').pass, true);
+  assert.throws(() => validateLifecycleResult('browser-sessions', { sessions: ['open'] }, 'browsers-closed'), /zero browser sessions/i);
 });
 
 test('phase 9 evidence contracts reject missing duplicate and arithmetically false ledger rows', () => {
