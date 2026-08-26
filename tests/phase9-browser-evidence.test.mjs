@@ -127,6 +127,16 @@ const JOIN_ADMIN_PRODUCER_HEADERS = Object.freeze({
 });
 const RAW_STAGING_FRAME = `${STAGING_ORIGIN}/teams/join`;
 
+const closedResourceSignal = (initiatingFrameUrl, overrides = {}) => ({
+  targetKind: 'staging-protected-api',
+  method: 'GET',
+  resourceType: 'fetch',
+  initiatingFrameUrl,
+  scopeEvidence: ['unscoped-resource'],
+  resourceScopes: ['unscoped'],
+  ...overrides,
+});
+
 const firestoreRaw = overrides => ({
   url: FIRESTORE_INITIAL_LISTEN_URL,
   method: 'POST',
@@ -473,13 +483,65 @@ test('phase 9 action window marks the same page before action and returns saniti
   assert.deepEqual(order, ['mark:logout', 'action:logout', 'terminal:logout', 'sample:logout']);
   assert.equal(result.protectedRequests, 0);
   assert.equal(result.protectedRender, true);
-  assert.deepEqual(result.requestSignals, []);
+  assert.equal(Object.hasOwn(result, 'requestSignals'), false);
   assert.deepEqual(result.listenerSignals, []);
   assert.equal(result.protectedListenerStarts, 0);
   assert.deepEqual(result.renderSignals, [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Family Overview' }]);
   assert.equal(JSON.stringify(result).includes('must-not-return'), false);
   assert.equal(result.finalPath, '/login');
   assert.equal(result.visibleSentinels[0], 'Sign In');
+});
+
+test('phase 9 action window never returns a legacy signal container or opaque raw query', async () => {
+  const opaqueQuery = 'opaque-query=must-not-return';
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+    if (code.includes('phase9:sample')) return cliResult({
+      pageId: 'page-a',
+      terminalReached: true,
+      loadingVisible: false,
+      finalUrl: `${STAGING_ORIGIN}/dashboard`,
+      finalPath: '/dashboard',
+      visibleSentinels: ['Dashboard'],
+      sessionPresent: true,
+      protectedRender: true,
+      rawRequests: [{
+        url: `${STAGING_ORIGIN}/api/teams/chat?${opaqueQuery}`,
+        method: 'GET',
+        resourceType: 'fetch',
+        headers: {},
+        body: '',
+        frameUrl: `${STAGING_ORIGIN}/dashboard`,
+        navigationGeneration: 0,
+      }],
+      rawResponses: [],
+      rawTeamSelections: [],
+      pageErrors: [],
+      appConsoleErrors: [],
+      unexpectedRequestFailures: [],
+      overflow: 0,
+      renderPath: '/dashboard',
+      renderSentinel: 'Dashboard',
+      redirectReason: 'none',
+      renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
+    });
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'closed-public-signals');
+  const result = await observeAction({
+    client,
+    session: 'closed-public-signals',
+    stage: 'closed-public-signals',
+    terminal: async () => {},
+    action: async () => {},
+  });
+
+  assert.equal(Object.hasOwn(result, 'requestSignals'), false);
+  assert.equal(result.protectedRequestSignals.length, 1);
+  assert.equal(JSON.stringify(result).includes(opaqueQuery), false);
+  assert.doesNotThrow(() => validateActionWindow(result));
 });
 
 test('phase 9 action window rejects cross-page samples and terminal failures without sampling', async () => {
@@ -746,6 +808,50 @@ test('phase 9 evidence contracts reject incomplete and vacuous action windows', 
   assert.equal(validateActionWindow(safeWindow()).finalPath, '/family');
 });
 
+test('phase 9 evidence contracts accept only closed count-coherent request and listener signals', () => {
+  const signal = closedResourceSignal(`${STAGING_ORIGIN}/dashboard`, {
+    targetKind: 'firestore-listen',
+    method: 'POST',
+  });
+  const complete = safeWindow({
+    protectedRequests: 1,
+    protectedRequestSignals: [signal],
+    protectedListenerStarts: 1,
+    listenerSignals: [signal],
+  });
+  assert.equal(validateActionWindow(complete).pass, true);
+
+  for (const [field, value] of [
+    ['url', `${STAGING_ORIGIN}/api/teams/chat?opaque-query=must-not-return`],
+    ['rawUrl', `${STAGING_ORIGIN}/api/teams/chat?opaque-query=must-not-return`],
+    ['path', '/api/teams/chat'],
+    ['query', 'opaque-query=must-not-return'],
+    ['arbitrary', 'field'],
+  ]) {
+    assert.throws(() => validateActionWindow({
+      ...complete,
+      protectedRequestSignals: [{ ...signal, [field]: value }],
+    }), /closed resource evidence schema/i, `protected request ${field}`);
+    assert.throws(() => validateActionWindow({
+      ...complete,
+      listenerSignals: [{ ...signal, [field]: value }],
+    }), /closed resource evidence schema/i, `protected listener ${field}`);
+  }
+
+  assert.throws(() => validateActionWindow({
+    ...complete,
+    protectedRequests: 2,
+  }), /complete protected request signals/i);
+  assert.throws(() => validateActionWindow({
+    ...complete,
+    protectedListenerStarts: 2,
+  }), /complete protected listener signals/i);
+  assert.throws(() => validateActionWindow({
+    ...complete,
+    requestSignals: [{ url: `${STAGING_ORIGIN}/api/teams/chat?opaque-query=must-not-return` }],
+  }), /legacy request signals/i);
+});
+
 test('phase 9 evidence contracts require path and visible readiness for allowed routes', () => {
   assert.throws(() => validateRouteResult({
     allowed: true,
@@ -810,11 +916,9 @@ test('phase 9 evidence contracts reject an extra final protected heading even wh
 });
 
 test('phase 9 evidence contracts scope denied activity to the requested path and allow exact authorized landing activity', () => {
-  const protectedSignal = initiatingFrameUrl => ({
-    url: `${STAGING_ORIGIN}/api/teams/chat`,
-    method: 'GET',
-    resourceType: 'fetch',
-    initiatingFrameUrl,
+  const protectedSignal = initiatingFrameUrl => closedResourceSignal(initiatingFrameUrl, {
+    targetKind: 'firestore-listen',
+    method: 'POST',
   });
   const denied = overrides => ({
     allowed: false,
@@ -863,12 +967,10 @@ test('phase 9 evidence contracts scope denied activity to the requested path and
 });
 
 test('phase 9 evidence contracts fail closed on malformed or untrusted denied-route attribution', () => {
-  const protectedSignal = initiatingFrameUrl => ({
-    url: `${STAGING_ORIGIN}/api/teams/chat`,
-    method: 'GET',
-    resourceType: 'fetch',
+  const protectedSignal = (initiatingFrameUrl, listener) => closedResourceSignal(
     initiatingFrameUrl,
-  });
+    listener ? { targetKind: 'firestore-listen', method: 'POST' } : {},
+  );
   const denied = (field, initiatingFrameUrl) => ({
     allowed: false,
     requestedPath: '/admin',
@@ -881,7 +983,7 @@ test('phase 9 evidence contracts fail closed on malformed or untrusted denied-ro
       protectedRender: true,
       renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
       [field === 'protectedRequestSignals' ? 'protectedRequests' : 'protectedListenerStarts']: 1,
-      [field]: [protectedSignal(initiatingFrameUrl)],
+      [field]: [protectedSignal(initiatingFrameUrl, field === 'listenerSignals')],
     }),
   });
   for (const value of ['unattributed:', 'invalid:', 'about:blank', 'https://evil.invalid/dashboard']) {
@@ -891,12 +993,7 @@ test('phase 9 evidence contracts fail closed on malformed or untrusted denied-ro
 });
 
 test('phase 9 evidence contracts permit only the exact canonical landing attribution and reject denied subtrees', () => {
-  const signal = initiatingFrameUrl => ({
-    url: `${STAGING_ORIGIN}/api/teams/chat`,
-    method: 'GET',
-    resourceType: 'fetch',
-    initiatingFrameUrl,
-  });
+  const signal = initiatingFrameUrl => closedResourceSignal(initiatingFrameUrl);
   const denied = initiatingFrameUrl => ({
     allowed: false,
     requestedPath: '/admin',
@@ -1420,6 +1517,39 @@ test('phase 9 browser scenarios use exact symmetric API and Firestore isolation 
   }
 });
 
+test('phase 9 browser scenarios require an authenticated session in each indexed isolation window', async t => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const expectation = buildIsolationExpectation({ runId, alias: 'qa-parent-a' });
+  const stages = [
+    ...expectation.sameOriginApi.map(probe => probe.label),
+    ...expectation.directFirestore.map(probe => probe.label),
+  ];
+  const statuses = [200, 403, 200, 403, 200, 403];
+
+  for (const [windowIndex, stage] of stages.entries()) await t.test(`${windowIndex}:${stage}`, async () => {
+    const windows = statuses.map((status, index) => scenarioWindow({
+      sessionPresent: index !== windowIndex,
+      relevantHttpResults: [{
+        targetKind: index < 2 ? 'staging-protected-api' : 'firestore-document',
+        status,
+      }],
+    }));
+    let apiIndex = 0;
+    let firestoreIndex = 0;
+    await assert.rejects(runIsolationScenario({
+      client: createScriptedScenarioClient(windows),
+      session: `isolation-session-${windowIndex}`,
+      context: scenarioContext({ contextId: `isolation-session-${windowIndex}` }),
+      runId,
+      actions: {
+        sameOriginGet: async () => statuses[apiIndex++],
+        firestoreGet: async () => statuses[2 + firestoreIndex++],
+        waitForSettled: async () => {},
+      },
+    }), new RegExp(`isolation-${stage}.*authenticated session`, 'i'));
+  });
+});
+
 test('phase 9 browser scenarios mark before every logout stage and reject transient activity', async () => {
   const clean = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
@@ -1624,10 +1754,14 @@ test('phase 9 browser scenarios admission row owns login landing and all six dir
   const family = overrides => scenarioWindow({
     finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'], ...overrides,
   });
+  const familySignals = count => Array.from(
+    { length: count },
+    () => closedResourceSignal(`${STAGING_ORIGIN}/family`),
+  );
   const windows = [
-    family({ protectedRequests: 1 }),
+    family({ protectedRequests: 1, protectedRequestSignals: familySignals(1) }),
     ...['/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner'].map(() => family({ protectedRender: false })),
-    family({ protectedRequests: 2 }),
+    family({ protectedRequests: 2, protectedRequestSignals: familySignals(2) }),
   ];
   const actionCalls = [];
   const client = createScriptedScenarioClient(windows);
@@ -1714,12 +1848,10 @@ test('phase 9 browser scenarios reject Dashboard as the final role landing for r
 });
 
 test('phase 9 browser scenarios retain strict zero protected data for Missing Profile in every admission window', async () => {
-  const signal = initiatingFrameUrl => ({
-    url: `${STAGING_ORIGIN}/api/teams/chat`,
-    method: 'GET',
-    resourceType: 'fetch',
+  const signal = (initiatingFrameUrl, listener) => closedResourceSignal(
     initiatingFrameUrl,
-  });
+    listener ? { targetKind: 'firestore-listen', method: 'POST' } : {},
+  );
   const cases = [['qa-missing-profile', '/onboarding', 'Complete your profile']];
   for (const [alias, path, sentinel] of cases) {
     const clean = scenarioWindow({
@@ -1748,7 +1880,7 @@ test('phase 9 browser scenarios retain strict zero protected data for Missing Pr
         windows[windowIndex] = {
           ...clean,
           [countField]: 1,
-          [signalsField]: [signal(`${STAGING_ORIGIN}${path}`)],
+          [signalsField]: [signal(`${STAGING_ORIGIN}${path}`, signalsField === 'listenerSignals')],
         };
         await assert.rejects(run(windows), message, `${alias} landing-attributed ${countField} at window ${windowIndex}`);
       }
@@ -1759,7 +1891,7 @@ test('phase 9 browser scenarios retain strict zero protected data for Missing Pr
         deniedTargetWindows[routeIndex + 1] = {
           ...clean,
           [countField]: 1,
-          [signalsField]: [signal(`${STAGING_ORIGIN}${requestedPath}`)],
+          [signalsField]: [signal(`${STAGING_ORIGIN}${requestedPath}`, signalsField === 'listenerSignals')],
         };
         await assert.rejects(run(deniedTargetWindows), message, `${alias} ${requestedPath} ${countField}`);
       }
@@ -3467,7 +3599,11 @@ test('phase 9 browser scenarios aggregate every isolation action window from act
   const statuses = [200, 403, 200, 403, 200, 403];
   const windows = statuses.map((status, index) => scenarioWindow({
     protectedRequests: index + 1,
-    relevantHttpResults: [{ url: `${STAGING_ORIGIN}/probe-${index}`, status }],
+    protectedRequestSignals: Array.from(
+      { length: index + 1 },
+      () => closedResourceSignal(`${STAGING_ORIGIN}/dashboard`),
+    ),
+    relevantHttpResults: [{ targetKind: 'staging-protected-api', status }],
   }));
   let apiIndex = 0;
   let firestoreIndex = 0;

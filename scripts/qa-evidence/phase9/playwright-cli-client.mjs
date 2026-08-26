@@ -1283,7 +1283,6 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState }
     redirectReason: value.redirectReason,
     protectedRequests: protectedRequests.length,
     protectedRequestSignals: protectedRequests,
-    requestSignals: requests,
     protectedListenerStarts: protectedListeners.length,
     listenerSignals: protectedListeners,
     teamSelectionSignals,

@@ -173,6 +173,8 @@ Require the real scenario functions to fail when:
 - own/opposite `/api/teams/chat?teamId=` results are not exactly 200/403;
 - a scenario attempts `/team?teamId=` as isolation evidence;
 - direct Firestore team/player results are incomplete or not exactly 200/403;
+- any of the two API or four Firestore isolation windows reports `sessionPresent:false` even when all statuses and the final aggregate otherwise pass;
+- a protected request/listener count differs from its complete closed-signal array, a signal uses a legacy raw URL/path/query or arbitrary field, or a public action window exposes the legacy general request-signal container;
 - logout activity occurs during the click, reload, back, or second reload;
 - a fresh or pending-deletion route transiently restores protected UI/data;
 - a context omits required ledger fields or uses a duplicate ID.
@@ -197,6 +199,8 @@ Expected: FAIL because `scenarios.mjs` does not exist.
 - [ ] **Step 3: Implement minimal declarative scenarios**
 
 Every browser action must be wrapped by `observeAction()`. The same-origin isolation request must call the existing parameter-consuming `GET /api/teams/chat?teamId=<encoded-id>` with the authenticated session and record status only. Direct Firestore checks receive exact `{label,path,expectedStatus}` entries from the fixture-derived ID map. Allowed routes wait for the configured exact pathname plus accessible sentinel and reject loading/error boundaries. Denied/revoked routes validate the entire action window.
+
+Each of the six isolation action windows must independently require `sessionPresent:true` before its status can be accepted. Every public action-window validator must require exact scalar/array count coherence and the closed `requireClosedResourceSignal` schema for protected requests and listeners; remove the legacy raw-signal fallback and do not return the general `requestSignals` container or opaque request queries.
 
 Admission and denial waits must use the complete settled `{path, accessible heading}` pair below. A transient `/dashboard` is not a terminal for a role that the product layout routes onward:
 

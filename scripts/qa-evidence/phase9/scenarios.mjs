@@ -80,7 +80,6 @@ const aggregateWindows = windows => {
     protectedRender: windows.some(window => window.protectedRender),
     protectedRequests: windows.reduce((sum, window) => sum + window.protectedRequests, 0),
     protectedRequestSignals: windows.flatMap(window => window.protectedRequestSignals ?? []),
-    requestSignals: windows.flatMap(window => window.requestSignals ?? []),
     protectedListenerStarts: windows.reduce((sum, window) => sum + window.protectedListenerStarts, 0),
     listenerSignals: windows.flatMap(window => window.listenerSignals ?? []),
     teamSelectionSignals: windows.flatMap(window => window.teamSelectionSignals ?? []),
@@ -237,6 +236,9 @@ export async function runIsolationScenario({ client, session, context: inputCont
       }, terminal: () => waitForSettled(probe.label),
     });
     validateActionWindow(window);
+    if (!window.sessionPresent) {
+      throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
+    }
     api.push({ ...probe, status }); windows.push(window); summaries.push({ stage: probe.label, status });
   }
   for (const probe of expected.directFirestore) {
@@ -250,6 +252,9 @@ export async function runIsolationScenario({ client, session, context: inputCont
       }, terminal: () => waitForSettled(probe.label),
     });
     validateActionWindow(window);
+    if (!window.sessionPresent) {
+      throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
+    }
     firestore.push({ label: probe.label, path: probe.path, status }); windows.push(window);
     summaries.push({ stage: probe.label, status });
   }

@@ -569,6 +569,9 @@ export function validateNoTeamResourceIsolation(value) {
 export function validateActionWindow(value, options = {}) {
   const window = requireRecord(value, 'Action window');
   assertNoFixtureIdentifierLeak(window, 'Action window');
+  if (Object.hasOwn(window, 'requestSignals')) {
+    throw new Error('Action window must not expose legacy request signals.');
+  }
   if (Object.hasOwn(window, 'pageId') && !/^phase9-page-[1-9]\d*$/.test(window.pageId)) {
     throw new Error('pageId must use the closed local page identifier format.');
   }
@@ -602,6 +605,25 @@ export function validateActionWindow(value, options = {}) {
   requireBoolean(window.protectedRender, 'protectedRender');
   requireCount(window.protectedRequests, 'protectedRequests');
   requireCount(window.protectedListenerStarts, 'protectedListenerStarts');
+  const validateClosedSignals = (signals, count, name, { listener = false } = {}) => {
+    if (!Array.isArray(signals) || signals.length !== count) {
+      throw new Error(`Action window requires complete ${name} signals matching its exact count.`);
+    }
+    return signals.map((signal, index) => {
+      const closed = requireClosedResourceSignal(signal, `Action window ${name} ${index}`);
+      if (listener && closed.targetKind !== 'firestore-listen') {
+        throw new Error(`Action window ${name} ${index} must be a Firestore listener signal.`);
+      }
+      return closed;
+    });
+  };
+  validateClosedSignals(window.protectedRequestSignals, window.protectedRequests, 'protected request');
+  validateClosedSignals(
+    window.listenerSignals,
+    window.protectedListenerStarts,
+    'protected listener',
+    { listener: true },
+  );
   requireCount(window.pageErrors, 'pageErrors');
   requireCount(window.appConsoleErrors, 'appConsoleErrors');
   requireCount(window.unexpectedRequestFailures, 'unexpectedRequestFailures');
@@ -714,32 +736,6 @@ export function validateRouteResult(value) {
   }
 
   if (!result.allowed && result.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
-    const requireAttributedSignals = (signals, count, name) => {
-      if (!Array.isArray(signals) || signals.length !== count) {
-        throw new Error(`Denied route requires complete attributed ${name} evidence.`);
-      }
-      return signals.map((signal, index) => {
-        if (Object.hasOwn(signal ?? {}, 'targetKind')) {
-          return requireClosedResourceSignal(signal, `Denied route ${name} ${index}`);
-        }
-        if (
-          !isRecord(signal)
-          || typeof signal.url !== 'string'
-          || typeof signal.method !== 'string'
-          || typeof signal.resourceType !== 'string'
-          || typeof signal.initiatingFrameUrl !== 'string'
-          || Object.hasOwn(signal, 'resourceScope')
-          || Object.hasOwn(signal, 'resourceScopes')
-        ) throw new Error(`Denied route requires complete attributed ${name} evidence.`);
-        return signal;
-      });
-    };
-    const requestSignals = requireAttributedSignals(
-      window.protectedRequestSignals, window.protectedRequests, 'protected request',
-    );
-    const listenerSignals = requireAttributedSignals(
-      window.listenerSignals, window.protectedListenerStarts, 'protected listener',
-    );
     const validateAttribution = (signal, name) => {
       const pathname = requireCanonicalStagingAttribution(signal.initiatingFrameUrl, name);
       if (isExactPathOrSubtree(pathname, requestedPath)) {
@@ -749,8 +745,8 @@ export function validateRouteResult(value) {
         throw new Error(`Denied route ${name} must use the exact authorized landing attribution.`);
       }
     };
-    for (const signal of requestSignals) validateAttribution(signal, 'protected request');
-    for (const signal of listenerSignals) validateAttribution(signal, 'protected listener');
+    for (const signal of window.protectedRequestSignals) validateAttribution(signal, 'protected request');
+    for (const signal of window.listenerSignals) validateAttribution(signal, 'protected listener');
   }
 
   return { pass: true, allowed: result.allowed, window };
