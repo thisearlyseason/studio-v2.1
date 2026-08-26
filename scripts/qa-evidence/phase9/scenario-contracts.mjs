@@ -362,6 +362,12 @@ const requireClosedResourceSignal = (value, name) => {
   requireString(signal.method, `${name} method`);
   requireString(signal.resourceType, `${name} resourceType`);
   requireString(signal.initiatingFrameUrl, `${name} initiatingFrameUrl`);
+  if (!['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(signal.method)) {
+    throw new Error(`${name} method is outside the closed recorder schema.`);
+  }
+  if (!['fetch', 'xhr', 'other'].includes(signal.resourceType)) {
+    throw new Error(`${name} resource type is outside the closed recorder schema.`);
+  }
   if (Object.hasOwn(signal, 'status')) requireCount(signal.status, `${name} status`);
   if (
     !Array.isArray(signal.scopeEvidence)
@@ -397,6 +403,43 @@ const requireClosedResourceSignal = (value, name) => {
   ));
   if (firestoreEvidence && !signal.targetKind.startsWith('firestore-')) {
     throw new Error(`${name} Firestore evidence is disconnected from its target.`);
+  }
+  const documentEvidence = new Set([
+    'self-user-document', 'self-memberships-document',
+    'fixture-team-a-document', 'fixture-team-b-document', 'fixture-league-document',
+    'other-tenant-resource', 'foreign-user-resource', 'foreign-player-resource',
+    'plans-reference-data', 'unscoped-resource',
+  ]);
+  const queryEvidence = new Set([
+    'self-memberships-query', 'self-parent-players-query',
+    'fixture-team-a-query', 'fixture-team-b-query', 'fixture-league-query',
+    'other-tenant-resource', 'foreign-user-resource', 'foreign-player-resource',
+    'plans-reference-data', 'unscoped-resource',
+  ]);
+  const listenEvidence = new Set([
+    ...documentEvidence,
+    ...queryEvidence,
+    'firestore-transport-control',
+  ]);
+  const compatibleEvidence = {
+    'firestore-document': documentEvidence,
+    'firestore-run-query': queryEvidence,
+    'firestore-listen': listenEvidence,
+    'firestore-protected': new Set(['unscoped-resource']),
+    'staging-join-admin-api': new Set(['join-admin-patch']),
+    'staging-protected-api': new Set(['unscoped-resource']),
+  }[signal.targetKind];
+  if (signal.scopeEvidence.some(item => !compatibleEvidence.has(item))) {
+    throw new Error(`${name} target kind is incompatible with its closed evidence.`);
+  }
+  if (signal.targetKind === 'firestore-document' && signal.method !== 'GET') {
+    throw new Error(`${name} Firestore document evidence requires GET.`);
+  }
+  if (signal.targetKind === 'firestore-run-query' && signal.method !== 'POST') {
+    throw new Error(`${name} Firestore query evidence requires POST.`);
+  }
+  if (signal.targetKind === 'firestore-listen' && !['GET', 'POST'].includes(signal.method)) {
+    throw new Error(`${name} Firestore listener evidence requires GET or POST.`);
   }
   return signal;
 };
