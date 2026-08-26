@@ -5478,3 +5478,236 @@ test('phase 9 lifecycle guardian binds one stable owned-runner handle snapshot',
   assert.equal(substitutedJoinCalls, 0);
   assert.equal(fixture.events.some(event => event.includes('late-session')), false);
 });
+
+test('phase 9 lifecycle guardian never assimilates hostile runner async results', async t => {
+  const hostileThenable = result => {
+    let getterCalls = 0;
+    const value = {};
+    Object.defineProperty(value, 'then', {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return resolve => resolve(result);
+      },
+    });
+    return { value, get getterCalls() { return getterCalls; } };
+  };
+  const hostileProxy = result => {
+    let traps = 0;
+    const value = new Proxy(Promise.resolve(result), {
+      get(_target, key) {
+        traps += 1;
+        return key === 'then' ? (resolve => resolve(result)) : undefined;
+      },
+      getPrototypeOf() { traps += 1; return Object.prototype; },
+    });
+    return { value, get traps() { return traps; } };
+  };
+  class UnsafePromise extends Promise {}
+  const unsafeSubclass = result => ({ value: new UnsafePromise(resolve => resolve(result)) });
+
+  for (const [name, candidate] of [
+    ['foreign thenable', hostileThenable],
+    ['proxy thenable', hostileProxy],
+    ['Promise subclass', unsafeSubclass],
+  ]) {
+    for (const resultKind of ['completion', 'terminate', 'join']) await t.test(`${resultKind} rejects ${name}`, async () => {
+      const hostile = candidate(resultKind === 'completion' ? { ok: true } : { closed: true });
+      const fixture = lifecycleGuardianFixture({
+        scenarioJoinTimeoutMs: 5,
+        scenarioStart: ({ request }) => {
+          if (request.phase !== 'before-transition') return undefined;
+          return {
+            browserSessions: [],
+            completion: resultKind === 'completion'
+              ? hostile.value
+              : resultKind === 'terminate'
+                ? Promise.reject(new Error('force owned-runner recovery'))
+                : Promise.resolve({ ok: true }),
+            terminate: resultKind === 'terminate'
+              ? () => hostile.value
+              : () => Promise.resolve(undefined),
+            join: resultKind === 'join'
+              ? () => hostile.value
+              : () => Promise.resolve({ closed: true }),
+          };
+        },
+      });
+      const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+      assert.equal(result.ok, false);
+      assert.equal(result.category, 'scenario-closure-failed');
+      assert.equal(result.closureCertified, false);
+      assert.equal(fixture.events.includes('fixture:cleanup'), false);
+      if ('getterCalls' in hostile) assert.equal(hostile.getterCalls, 0);
+      if ('traps' in hostile) assert.equal(hostile.traps, 0);
+    });
+  }
+});
+
+test('phase 9 lifecycle guardian attaches join and terminate bounds intrinsically to native Promises', async t => {
+  const pendingWithHostileThen = result => {
+    let getterCalls = 0;
+    const value = new Promise(() => {});
+    Object.defineProperty(value, 'then', {
+      configurable: true,
+      get() {
+        getterCalls += 1;
+        return resolve => resolve(result);
+      },
+    });
+    return { value, get getterCalls() { return getterCalls; } };
+  };
+
+  await t.test('join cannot forge closed proof through an own then getter', async () => {
+    const hostile = pendingWithHostileThen({ closed: true });
+    const fixture = lifecycleGuardianFixture({
+      scenarioJoinTimeoutMs: 5,
+      scenarioStart: ({ request }) => request.phase === 'before-transition' ? {
+        browserSessions: [],
+        completion: Promise.resolve({ ok: true }),
+        terminate: () => Promise.resolve(undefined),
+        join: () => hostile.value,
+      } : undefined,
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.closureCertified, false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+    assert.equal(hostile.getterCalls, 0);
+  });
+
+  await t.test('terminate cannot forge completion through an own then getter', async () => {
+    const hostile = pendingWithHostileThen(undefined);
+    const fixture = lifecycleGuardianFixture({
+      scenarioJoinTimeoutMs: 5,
+      scenarioStart: ({ request }) => request.phase === 'before-transition' ? {
+        browserSessions: [],
+        completion: Promise.reject(new Error('force owned-runner recovery')),
+        terminate: () => hostile.value,
+        join: () => Promise.resolve({ closed: true }),
+      } : undefined,
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.closureCertified, false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+    assert.equal(hostile.getterCalls, 0);
+  });
+});
+
+test('phase 9 lifecycle guardian authorizes only the planned pending-delete manifest transition', async t => {
+  const completedTransition = (state, includesCacheDeletion = false) => ({
+    version: 1,
+    state,
+    startedAt: '2026-08-26T12:00:00Z',
+    firestoreUpdatedAt: '2026-08-26T12:00:00Z',
+    ...(includesCacheDeletion ? { cacheDeletedAt: '2026-08-26T12:00:00Z' } : {}),
+    revokedAt: '2026-08-26T12:00:00Z',
+    completedAt: '2026-08-26T12:00:00Z',
+  });
+  for (const [alias, transition] of [
+    ['qa-suspended', completedTransition('suspended')],
+    ['qa-removed-member', completedTransition('removed', true)],
+  ]) await t.test(`rejects internally valid ${alias} advancement`, async () => {
+    const fixture = lifecycleGuardianFixture({
+      manifestMutation: value => value.transitions['qa-pending-delete'].state === 'pending_deletion'
+        ? { ...value, transitions: { ...value.transitions, [alias]: transition } }
+        : value,
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'manifest-uncertain');
+    assert.equal(result.manifestPreservation, 'uncertain');
+    assert.equal(fixture.events.includes('scenario:after-transition'), false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  });
+
+  await t.test('rejects pending-delete advancement before the planned boundary', async () => {
+    const fixture = lifecycleGuardianFixture({
+      commandResult: ({ command, result }) => command === 'seed'
+        ? { exitCode: 9, stdout: JSON.stringify(result) }
+        : undefined,
+      manifestMutation: value => ({
+        ...value,
+        transitions: {
+          ...value.transitions,
+          'qa-pending-delete': completedTransition('pending_deletion'),
+        },
+      }),
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'manifest-uncertain');
+    assert.equal(result.closureCertified, false);
+    assert.equal(fixture.events.includes('scenario:after-transition'), false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian bounds pending-delete checkpoints to manifest time', async t => {
+  const cases = [
+    ['checkpoint before the pinned manifest time', {
+      startedAt: '2026-08-26T11:59:59Z', firestoreUpdatedAt: '2026-08-26T11:59:59Z',
+      revokedAt: '2026-08-26T11:59:59Z', completedAt: '2026-08-26T11:59:59Z',
+    }],
+    ['checkpoint after the candidate updated time', {
+      startedAt: '2026-08-26T12:00:01Z', firestoreUpdatedAt: '2026-08-26T12:00:01Z',
+      revokedAt: '2026-08-26T12:00:01Z', completedAt: '2026-08-26T12:00:01Z',
+    }],
+    ['checkpoint order travels backward', {
+      startedAt: '2026-08-26T12:00:00Z', firestoreUpdatedAt: '2026-08-26T12:00:02Z',
+      revokedAt: '2026-08-26T12:00:01Z', completedAt: '2026-08-26T12:00:03Z',
+      updatedAt: '2026-08-26T12:00:03Z',
+    }],
+  ];
+  for (const [name, timestamps] of cases) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture({
+      manifestMutation: value => {
+        if (value.transitions['qa-pending-delete'].state !== 'pending_deletion') return value;
+        const { updatedAt, ...checkpoints } = timestamps;
+        return {
+          ...value,
+          ...(updatedAt ? { updatedAt } : {}),
+          transitions: {
+            ...value.transitions,
+            'qa-pending-delete': {
+              ...value.transitions['qa-pending-delete'],
+              ...checkpoints,
+            },
+          },
+        };
+      },
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'manifest-uncertain');
+    assert.equal(fixture.events.includes('scenario:after-transition'), false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian accepts the exact in-bound pending-delete checkpoint sequence', async () => {
+  const fixture = lifecycleGuardianFixture({
+    manifestMutation: value => value.transitions['qa-pending-delete'].state === 'pending_deletion'
+      ? {
+        ...value,
+        updatedAt: '2026-08-26T12:00:04Z',
+        transitions: {
+          ...value.transitions,
+          'qa-pending-delete': {
+            ...value.transitions['qa-pending-delete'],
+            startedAt: '2026-08-26T12:00:01Z',
+            firestoreUpdatedAt: '2026-08-26T12:00:02Z',
+            revokedAt: '2026-08-26T12:00:03Z',
+            completedAt: '2026-08-26T12:00:04Z',
+          },
+        },
+      }
+      : value,
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, true);
+  assert.equal(fixture.events.includes('scenario:after-transition'), true);
+});

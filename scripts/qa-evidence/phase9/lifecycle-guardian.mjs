@@ -150,6 +150,11 @@ function ensureManifestShape(manifest) {
 }
 
 const MANIFEST_STATE_RANK = Object.freeze({ planned: 0, partial: 1, seeded: 2, cleaned: 3 });
+const PINNED_TRANSITION_ALIASES = Object.freeze(['qa-suspended', 'qa-removed-member']);
+const PENDING_TRANSITION_ALIAS = 'qa-pending-delete';
+const PENDING_CHECKPOINT_FIELDS = Object.freeze([
+  'startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt',
+]);
 
 function manifestIdentity(manifest, options) {
   if (
@@ -204,26 +209,100 @@ function assertManifestIdentity(manifest, options, pin) {
   }
 }
 
-function assertLifecycleAdvance(previous, next) {
+function assertInitialManifestBaseline(manifest) {
+  if (requireManifestTime(manifest.updatedAt) < requireManifestTime(manifest.createdAt)) {
+    throw new GuardianFailure('manifest-uncertain');
+  }
+  const active = { version: 1, state: 'active' };
+  for (const alias of [...PINNED_TRANSITION_ALIASES, PENDING_TRANSITION_ALIAS]) {
+    if (!isDeepStrictEqual(manifest.transitions[alias], active)) {
+      throw new GuardianFailure('manifest-uncertain');
+    }
+  }
+}
+
+function requireManifestTime(value) {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new GuardianFailure('manifest-uncertain');
+  return parsed;
+}
+
+function requireExactPendingTransitionShape(transition) {
+  const checkpointCount = PENDING_CHECKPOINT_FIELDS
+    .findIndex(field => transition[field] === undefined);
+  const presentCount = checkpointCount === -1 ? PENDING_CHECKPOINT_FIELDS.length : checkpointCount;
+  if (PENDING_CHECKPOINT_FIELDS.slice(presentCount).some(field => transition[field] !== undefined)) {
+    throw new GuardianFailure('manifest-uncertain');
+  }
+  const expectedCheckpointCount = {
+    active: 0,
+    applying: presentCount,
+    pending_deletion: PENDING_CHECKPOINT_FIELDS.length,
+  }[transition.state];
+  if (
+    expectedCheckpointCount === undefined
+    || presentCount !== expectedCheckpointCount
+    || (transition.state === 'applying' && presentCount < 1)
+  ) throw new GuardianFailure('manifest-uncertain');
+  const expectedKeys = ['version', 'state', ...PENDING_CHECKPOINT_FIELDS.slice(0, presentCount)];
+  if (!isDeepStrictEqual(Object.keys(transition), expectedKeys)) {
+    throw new GuardianFailure('manifest-uncertain');
+  }
+}
+
+function assertPendingTransitionAdvance(previous, next, before, after, authorized) {
+  requireExactPendingTransitionShape(before);
+  requireExactPendingTransitionShape(after);
+  if (isDeepStrictEqual(after, before)) return;
+  if (!authorized) throw new GuardianFailure('manifest-uncertain');
+  const ranks = { active: 0, applying: 1, pending_deletion: 2 };
+  if (ranks[after.state] < ranks[before.state]) throw new GuardianFailure('manifest-uncertain');
+  for (const field of ['version', ...PENDING_CHECKPOINT_FIELDS]) {
+    if (before[field] !== undefined && after[field] !== before[field]) {
+      throw new GuardianFailure('manifest-uncertain');
+    }
+  }
+  const priorUpdatedAt = requireManifestTime(previous.updatedAt);
+  const createdAt = requireManifestTime(next.createdAt);
+  const nextUpdatedAt = requireManifestTime(next.updatedAt);
+  const lowerBound = Math.max(priorUpdatedAt, createdAt);
+  if (nextUpdatedAt < lowerBound) throw new GuardianFailure('manifest-uncertain');
+  let priorCheckpoint = null;
+  for (const field of PENDING_CHECKPOINT_FIELDS) {
+    const timestamp = after[field];
+    if (timestamp === undefined) continue;
+    const parsed = requireManifestTime(timestamp);
+    if (priorCheckpoint !== null && parsed < priorCheckpoint) {
+      throw new GuardianFailure('manifest-uncertain');
+    }
+    if (before[field] === undefined && (parsed < lowerBound || parsed > nextUpdatedAt)) {
+      throw new GuardianFailure('manifest-uncertain');
+    }
+    priorCheckpoint = parsed;
+  }
+}
+
+function assertLifecycleAdvance(previous, next, { pendingTransitionAuthorized = false } = {}) {
   if (!previous) return;
   if (
     MANIFEST_STATE_RANK[next.state] < MANIFEST_STATE_RANK[previous.state]
     || Date.parse(next.updatedAt) < Date.parse(previous.updatedAt)
   ) throw new GuardianFailure('manifest-uncertain');
-  for (const alias of Object.keys(previous.transitions)) {
-    const before = previous.transitions[alias];
-    const after = next.transitions[alias];
-    const finalState = {
-      'qa-suspended': 'suspended',
-      'qa-removed-member': 'removed',
-      'qa-pending-delete': 'pending_deletion',
-    }[alias];
-    const ranks = { active: 0, applying: 1, [finalState]: 2 };
-    if (!after || ranks[after.state] < ranks[before.state]) throw new GuardianFailure('manifest-uncertain');
-    for (const [field, value] of Object.entries(before)) {
-      if (field !== 'state' && after[field] !== value) throw new GuardianFailure('manifest-uncertain');
+  if (requireManifestTime(next.updatedAt) < requireManifestTime(next.createdAt)) {
+    throw new GuardianFailure('manifest-uncertain');
+  }
+  for (const alias of PINNED_TRANSITION_ALIASES) {
+    if (!isDeepStrictEqual(next.transitions[alias], previous.transitions[alias])) {
+      throw new GuardianFailure('manifest-uncertain');
     }
   }
+  assertPendingTransitionAdvance(
+    previous,
+    next,
+    previous.transitions[PENDING_TRANSITION_ALIAS],
+    next.transitions[PENDING_TRANSITION_ALIAS],
+    pendingTransitionAuthorized,
+  );
 }
 
 function isMissing(error) {
@@ -266,7 +345,7 @@ async function manifestPreservationState(
   filesystem,
   workspacePath,
   manifestPath,
-  { pin, priorManifest, options },
+  { pin, priorManifest, options, pendingTransitionAuthorized },
 ) {
   if (!manifestPath) return 'verified-absent';
   try {
@@ -286,7 +365,7 @@ async function manifestPreservationState(
     const candidate = ensureManifestShape(validateManifest(JSON.parse(text)));
     if (!pin) return 'uncertain';
     assertManifestIdentity(candidate, options, pin);
-    assertLifecycleAdvance(priorManifest, candidate);
+    assertLifecycleAdvance(priorManifest, candidate, { pendingTransitionAuthorized });
     return 'verified-present';
   } catch (error) {
     return isMissing(error) ? 'verified-absent' : 'uncertain';
@@ -592,6 +671,24 @@ function validateScenarioHandle(value) {
   });
 }
 
+function requireNativePromise(value, category) {
+  if (
+    utilTypes.isProxy(value)
+    || !utilTypes.isPromise(value)
+    || Object.getPrototypeOf(value) !== Promise.prototype
+  ) throw new GuardianFailure(category);
+  return value;
+}
+
+function consumeNativePromise(value, onFulfilled, onRejected, category) {
+  const promise = requireNativePromise(value, category);
+  try {
+    Promise.prototype.then.call(promise, onFulfilled, onRejected);
+  } catch {
+    throw new GuardianFailure(category);
+  }
+}
+
 function validateScenarioCompletion(value) {
   const snapshot = snapshotBooleanResult(value, 'ok', 'scenario-failed');
   if (snapshot.ok !== true) throw new GuardianFailure('scenario-failed');
@@ -683,6 +780,7 @@ export function createLifecycleGuardian({
   let manifest = null;
   let manifestPin = null;
   let lastManifestSnapshot = null;
+  let pendingTransitionAuthorized = false;
   let browserClosureCertified = false;
   let closureCertified = false;
   const ownedBrowserSessions = new Set();
@@ -695,7 +793,12 @@ export function createLifecycleGuardian({
     filesystem,
     workspacePath,
     manifestPath,
-    { pin: manifestPin, priorManifest: lastManifestSnapshot, options: currentOptions },
+    {
+      pin: manifestPin,
+      priorManifest: lastManifestSnapshot,
+      options: currentOptions,
+      pendingTransitionAuthorized,
+    },
   );
 
   const transition = next => {
@@ -759,10 +862,11 @@ export function createLifecycleGuardian({
         if (!new Set(['planned', 'partial', 'seeded']).has(candidate.state)) {
           throw new GuardianFailure('manifest-uncertain');
         }
+        assertInitialManifestBaseline(candidate);
         manifestPin = manifestIdentity(candidate, currentOptions);
       } else {
         assertManifestIdentity(candidate, currentOptions, manifestPin);
-        assertLifecycleAdvance(lastManifestSnapshot, candidate);
+        assertLifecycleAdvance(lastManifestSnapshot, candidate, { pendingTransitionAuthorized });
       }
       manifest = candidate;
       lastManifestSnapshot = candidate;
@@ -798,7 +902,7 @@ export function createLifecycleGuardian({
     browserClosureCertified = true;
   });
 
-  const bounded = promise => new Promise(resolvePromise => {
+  const bounded = candidate => new Promise((resolvePromise, rejectPromise) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (!settled) {
@@ -806,20 +910,28 @@ export function createLifecycleGuardian({
         resolvePromise({ status: 'timeout' });
       }
     }, scenarioJoinTimeoutMs);
-    Promise.resolve(promise).then(
-      value => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolvePromise({ status: 'fulfilled', value });
-      },
-      () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolvePromise({ status: 'rejected' });
-      },
-    );
+    try {
+      consumeNativePromise(
+        candidate,
+        value => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolvePromise({ status: 'fulfilled', value });
+        },
+        () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolvePromise({ status: 'rejected' });
+        },
+        'scenario-closure-failed',
+      );
+    } catch (error) {
+      settled = true;
+      clearTimeout(timer);
+      rejectPromise(error);
+    }
   });
 
   const joinScenario = async handle => {
@@ -840,9 +952,10 @@ export function createLifecycleGuardian({
 
   const requestScenarioTermination = async (handle, force) => {
     try {
-      await bounded(handle.terminate({ force }));
+      const outcome = await bounded(handle.terminate({ force }));
+      return outcome.status === 'fulfilled';
     } catch {
-      // A failed termination request is followed by an independently bounded join proof.
+      return false;
     }
   };
 
@@ -850,12 +963,13 @@ export function createLifecycleGuardian({
     if (scenarioStartUncertain) throw new GuardianFailure('scenario-closure-failed');
     const handle = activeScenario;
     if (!handle) return;
-    await requestScenarioTermination(handle, false);
-    if (await joinScenario(handle)) {
+    const softTerminated = await requestScenarioTermination(handle, false);
+    if (softTerminated && await joinScenario(handle)) {
       activeScenario = null;
       return;
     }
-    await requestScenarioTermination(handle, true);
+    const hardTerminated = await requestScenarioTermination(handle, true);
+    if (!hardTerminated) throw new GuardianFailure('scenario-closure-failed');
     if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
     activeScenario = null;
   };
@@ -1021,7 +1135,12 @@ export function createLifecycleGuardian({
     activeScenario = handle;
     scenarioStartUncertain = false;
     const completion = new Promise((resolveCompletion, rejectCompletion) => {
-      Promise.prototype.then.call(handle.completion, resolveCompletion, rejectCompletion);
+      consumeNativePromise(
+        handle.completion,
+        resolveCompletion,
+        rejectCompletion,
+        'scenario-runner-invalid',
+      );
     });
     void completion.catch(() => {});
     const completed = await Promise.race([
@@ -1111,6 +1230,7 @@ export function createLifecycleGuardian({
       });
       await runScenarioPhase('before-transition', privateContext);
       checkInterrupted();
+      pendingTransitionAuthorized = true;
       await runFixture('transition', currentOptions, 'pending-deletion');
       checkInterrupted();
       await loadExactManifest('pending_deletion');
