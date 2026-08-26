@@ -231,6 +231,7 @@ export const REQUIRED_LEDGER_COLUMNS = deepFreeze([
 
 const MAX_SNAPSHOT_NODES = 100_000;
 const MAX_SNAPSHOT_DEPTH = 128;
+const MAX_SNAPSHOT_ARRAY_LENGTH = 100_000;
 
 // Node's structuredClone invokes accessors and drops hidden/symbol keys. This
 // descriptor snapshot preserves the closed-schema evidence needed to reject
@@ -240,13 +241,20 @@ const snapshotClosedDataGraph = (value, name) => {
   const active = new WeakSet();
   let nodes = 0;
 
+  const reserveNodes = count => {
+    if (!Number.isSafeInteger(count) || count < 0 || count > MAX_SNAPSHOT_NODES - nodes) {
+      throw new Error('oversized snapshot graph');
+    }
+    nodes += count;
+  };
+
   const capture = (current, depth) => {
     if (current === null || ['undefined', 'boolean', 'string', 'number', 'bigint'].includes(typeof current)) {
       return current;
     }
     if (typeof current !== 'object') throw new Error('unsupported snapshot value');
     if (utilTypes.isProxy(current)) throw new Error('proxy snapshot value');
-    if (depth > MAX_SNAPSHOT_DEPTH || nodes >= MAX_SNAPSHOT_NODES) throw new Error('oversized snapshot graph');
+    if (depth > MAX_SNAPSHOT_DEPTH) throw new Error('oversized snapshot graph');
     if (active.has(current)) throw new Error('cyclic snapshot graph');
     if (copies.has(current)) return copies.get(current);
 
@@ -257,28 +265,72 @@ const snapshotClosedDataGraph = (value, name) => {
       || (!array && prototype !== Object.prototype && prototype !== null)
     ) throw new Error('unsupported snapshot prototype');
 
-    nodes += 1;
+    let length = 0;
+    if (array) {
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(current, 'length');
+      if (
+        !lengthDescriptor
+        || !Object.hasOwn(lengthDescriptor, 'value')
+        || !Number.isSafeInteger(lengthDescriptor.value)
+        || lengthDescriptor.value < 0
+        || lengthDescriptor.value > MAX_SNAPSHOT_ARRAY_LENGTH
+        || lengthDescriptor.enumerable !== false
+        || lengthDescriptor.configurable !== false
+      ) throw new Error('invalid array snapshot length');
+      length = lengthDescriptor.value;
+    }
+
     const descriptors = Object.getOwnPropertyDescriptors(current);
     const keys = Reflect.ownKeys(descriptors);
     if (keys.some(key => typeof key !== 'string')) throw new Error('symbol snapshot key');
-    if (array && (!descriptors.length || !Object.hasOwn(descriptors.length, 'value'))) {
-      throw new Error('invalid array snapshot length');
+    if (array) {
+      if (keys.length !== length + 1) throw new Error('non-dense array snapshot');
+      for (const key of keys) {
+        if (key === 'length') continue;
+        const index = Number(key);
+        if (!Number.isInteger(index) || index < 0 || index >= length || String(index) !== key) {
+          throw new Error('non-index array snapshot key');
+        }
+      }
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = descriptors[String(index)];
+        if (
+          !descriptor
+          || !Object.hasOwn(descriptor, 'value')
+          || descriptor.enumerable !== true
+        ) throw new Error('non-dense array snapshot');
+      }
+    } else {
+      for (const key of keys) {
+        const descriptor = descriptors[key];
+        if (
+          !descriptor
+          || !Object.hasOwn(descriptor, 'value')
+          || descriptor.enumerable !== true
+        ) throw new Error('hidden or accessor snapshot value');
+      }
     }
-    const copy = array ? new Array(descriptors.length.value) : Object.create(prototype);
+
+    reserveNodes(1 + (array ? length : keys.length));
+    const copy = array ? new Array(length) : Object.create(prototype);
     copies.set(current, copy);
     active.add(current);
 
-    for (const key of keys) {
-      const descriptor = descriptors[key];
-      if (!descriptor || !Object.hasOwn(descriptor, 'value')) throw new Error('accessor snapshot value');
-      if (array && key === 'length') continue;
+    const copyValue = (key, descriptor) => {
       const child = capture(descriptor.value, depth + 1);
       Object.defineProperty(copy, key, {
         value: child,
-        enumerable: descriptor.enumerable,
+        enumerable: true,
         configurable: true,
         writable: true,
       });
+    };
+    if (array) {
+      for (let index = 0; index < length; index += 1) {
+        copyValue(String(index), descriptors[String(index)]);
+      }
+    } else {
+      for (const key of keys) copyValue(key, descriptors[key]);
     }
 
     active.delete(current);
@@ -330,22 +382,35 @@ const requireClosedArray = (value, name) => {
   if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
     throw new Error(`${name} must be a closed plain array.`);
   }
-  const ownKeys = Reflect.ownKeys(value);
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
   if (
-    ownKeys.length !== value.length + 1
-    || ownKeys.some(key => {
-      if (key === 'length') return false;
-      if (typeof key !== 'string') return true;
-      const index = Number(key);
-      return !Number.isInteger(index) || index < 0 || index >= value.length || String(index) !== key;
-    })
+    !lengthDescriptor
+    || !Object.hasOwn(lengthDescriptor, 'value')
+    || !Number.isSafeInteger(lengthDescriptor.value)
+    || lengthDescriptor.value < 0
+    || lengthDescriptor.value > MAX_SNAPSHOT_ARRAY_LENGTH
+    || lengthDescriptor.enumerable !== false
+    || lengthDescriptor.configurable !== false
   ) throw new Error(`${name} must be a closed plain array.`);
+  const length = lengthDescriptor.value;
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.length !== length + 1) throw new Error(`${name} must be a closed plain array.`);
   const descriptors = Object.getOwnPropertyDescriptors(value);
-  if (ownKeys.some(key => {
+  for (const key of ownKeys) {
+    if (key === 'length') continue;
+    if (typeof key !== 'string') throw new Error(`${name} must be a closed plain array.`);
+    const index = Number(key);
+    if (!Number.isInteger(index) || index < 0 || index >= length || String(index) !== key) {
+      throw new Error(`${name} must be a closed plain array.`);
+    }
     const descriptor = descriptors[key];
-    if (!descriptor || !Object.hasOwn(descriptor, 'value')) return true;
-    return key !== 'length' && descriptor.enumerable !== true;
-  })) throw new Error(`${name} must be a closed plain array.`);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
+      throw new Error(`${name} must be a closed plain array.`);
+    }
+  }
+  for (let index = 0; index < length; index += 1) {
+    if (!Object.hasOwn(descriptors, String(index))) throw new Error(`${name} must be a closed plain array.`);
+  }
   return value;
 };
 
@@ -369,8 +434,14 @@ const requireExact = (actual, expected, name) => {
 };
 
 const requireExactArray = (value, expected, name) => {
-  if (!Array.isArray(value) || value.length !== expected.length || value.some((item, index) => item !== expected[index])) {
+  const array = requireClosedArray(value, name);
+  if (array.length !== expected.length) {
     throw new Error(`${name} must match the complete canonical ordered values.`);
+  }
+  for (let index = 0; index < array.length; index += 1) {
+    if (array[index] !== expected[index]) {
+      throw new Error(`${name} must match the complete canonical ordered values.`);
+    }
   }
 };
 
@@ -405,7 +476,7 @@ const requireZeroSummary = (value, name) => {
   requireRecord(value, name);
   requireCount(value.count, `${name}.count`);
   if (value.count !== 0) throw new Error(`${name} must report zero retained resources or failures.`);
-  if (!Array.isArray(value.aliases) || value.aliases.length !== 0) {
+  if (requireClosedArray(value.aliases, `${name} aliases`).length !== 0) {
     throw new Error(`${name} aliases must be empty.`);
   }
 };
@@ -593,8 +664,7 @@ const requireClosedResourceSignal = (value, name) => {
   ) throw new Error(`${name} scope evidence must use canonical order.`);
   const derivedScopes = deriveResourceScopes(signal.scopeEvidence);
   if (
-    !Array.isArray(signal.resourceScopes)
-    || signal.resourceScopes.length !== derivedScopes.length
+    signal.resourceScopes.length !== derivedScopes.length
     || signal.resourceScopes.some((scope, index) => scope !== derivedScopes[index])
   ) throw new Error(`${name} resource scopes must be derived from its closed resource evidence.`);
 
@@ -673,18 +743,20 @@ export function validateResourceSignal(value, name = 'Resource signal') {
 const validateNoTeamResourceIsolationSnapshot = value => {
   const window = requireRecord(value, 'No Team action window');
   if (window.protectedRender === true) throw new Error('No Team action window contains a protected render.');
-  if (!Array.isArray(window.teamSelectionSignals) || window.teamSelectionSignals.some(scope => (
+  const teamSelectionSignals = requireClosedArray(window.teamSelectionSignals, 'No Team team-selection signals');
+  if (teamSelectionSignals.some(scope => (
     !['tenant-team-a', 'tenant-team-b', 'tenant-other'].includes(scope)
   ))) throw new Error('No Team evidence requires complete typed team-selection scopes.');
-  if (window.teamSelectionSignals.includes('tenant-team-a')) throw new Error('No Team selected Team A.');
-  if (window.teamSelectionSignals.includes('tenant-team-b')) throw new Error('No Team selected Team B.');
-  if (window.teamSelectionSignals.includes('tenant-other')) throw new Error('No Team selected another tenant.');
+  if (teamSelectionSignals.includes('tenant-team-a')) throw new Error('No Team selected Team A.');
+  if (teamSelectionSignals.includes('tenant-team-b')) throw new Error('No Team selected Team B.');
+  if (teamSelectionSignals.includes('tenant-other')) throw new Error('No Team selected another tenant.');
   const validateSignals = (signals, count, name) => {
     requireCount(count, `No Team ${name} count`);
-    if (!Array.isArray(signals) || signals.length !== count) {
+    const closedSignals = requireClosedArray(signals, `No Team ${name} signals`);
+    if (closedSignals.length !== count) {
       throw new Error(`No Team evidence requires complete ${name} signals.`);
     }
-    for (const [index, value] of signals.entries()) {
+    for (const [index, value] of closedSignals.entries()) {
       const signal = requireClosedResourceSignal(value, `No Team ${name} ${index}`);
       if (signal.resourceScopes.includes('tenant-team-a')) {
         throw new Error('No Team evidence contains Team A tenant resource activity.');
@@ -1043,23 +1115,25 @@ const validateIsolationResultSnapshot = value => {
   requireExact(result.ownTeamId, canonical.ownTeamId, 'Isolation ownTeamId');
   requireExact(result.oppositeTeamId, canonical.oppositeTeamId, 'Isolation oppositeTeamId');
   if (result.ownTeamId === result.oppositeTeamId) throw new Error('Isolation ownTeamId and oppositeTeamId must differ.');
-  if (!Array.isArray(result.sameOriginApi) || result.sameOriginApi.length !== canonical.sameOriginApi.length) {
+  const sameOriginApi = requireClosedArray(result.sameOriginApi, 'Isolation same-origin API results');
+  if (sameOriginApi.length !== canonical.sameOriginApi.length) {
     throw new Error('Isolation must contain both exact same-origin API target pairs.');
   }
   for (const [index, expected] of canonical.sameOriginApi.entries()) {
-    const actual = requireRecord(result.sameOriginApi[index], `${expected.label} same-origin API result`);
+    const actual = requireRecord(sameOriginApi[index], `${expected.label} same-origin API result`);
     for (const field of ['label', 'endpoint', 'parameter', 'teamId', 'target', 'status']) {
       if (actual[field] !== expected[field]) {
         throw new Error(`${expected.label} ${field} must equal the canonical ${expected.status} target pair.`);
       }
     }
   }
-  if (!Array.isArray(result.directFirestore) || result.directFirestore.length !== ISOLATION_SCENARIOS.directFirestore.length) {
+  const directFirestore = requireClosedArray(result.directFirestore, 'Isolation Firestore probes');
+  if (directFirestore.length !== ISOLATION_SCENARIOS.directFirestore.length) {
     throw new Error('Isolation Firestore probe must contain the complete exact label set.');
   }
 
   const probes = new Map();
-  for (const probe of result.directFirestore) {
+  for (const probe of directFirestore) {
     requireRecord(probe, 'Firestore probe');
     requireString(probe.label, 'Firestore probe label');
     requireCount(probe.status, `${probe.label} status`);
@@ -1068,7 +1142,7 @@ const validateIsolationResultSnapshot = value => {
   }
   for (const expected of ISOLATION_SCENARIOS.directFirestore) {
     const canonicalProbe = canonical.directFirestore.find(probe => probe.label === expected.label);
-    const actual = result.directFirestore.find(probe => probe.label === expected.label);
+    const actual = directFirestore.find(probe => probe.label === expected.label);
     if (actual?.path !== canonicalProbe.path) {
       throw new Error(`${expected.label} Firestore probe path must match the canonical isolation path.`);
     }
@@ -1092,10 +1166,11 @@ export function validateIsolationResult(value) {
 }
 
 const validateLogoutStagesSnapshot = value => {
-  if (!Array.isArray(value) || value.length !== REQUIRED_LOGOUT_STAGES.length) {
+  const inputStages = requireClosedArray(value, 'Logout stages');
+  if (inputStages.length !== REQUIRED_LOGOUT_STAGES.length) {
     throw new Error('Logout validation requires every logout stage.');
   }
-  const stages = value.map((stage, index) => {
+  const stages = inputStages.map((stage, index) => {
     requireRecord(stage, `Logout stage ${index}`);
     if (stage.name !== REQUIRED_LOGOUT_STAGES[index]) throw new Error('Logout stages are missing or out of order.');
     const window = validateActionWindowSnapshot(stage.window, { requireNoProtected: true });
@@ -1119,7 +1194,7 @@ const validateInspect = (value, expected) => {
   requireCount(states.problems, 'Inspect problems');
   if (states.problems !== 0) throw new Error('Inspect problems must be zero.');
   requireExact(states.manifest, expected.state, 'Inspect state');
-  if (!Array.isArray(value.drift) || value.drift.length !== 0) throw new Error('Inspect drift must be empty.');
+  if (requireClosedArray(value.drift, 'Inspect drift').length !== 0) throw new Error('Inspect drift must be empty.');
   const counts = requireRecord(value.counts, 'Inspect counts');
   const expectedCounts = requireRecord(counts.expected, 'Inspect expected counts');
   const actual = requireRecord(counts.actualPresent, 'Inspect actual-present counts');
@@ -1134,7 +1209,9 @@ const validateInspect = (value, expected) => {
 };
 
 const validateCleanup = (value, expected) => {
-  if (!Array.isArray(value.retained) || value.retained.length !== 0) throw new Error('Cleanup retained list must be empty.');
+  if (requireClosedArray(value.retained, 'Cleanup retained list').length !== 0) {
+    throw new Error('Cleanup retained list must be empty.');
+  }
   const deleted = requireRecord(value.deleted, 'Cleanup deleted counts');
   requireCount(deleted.auth, 'Cleanup deleted Auth count');
   requireCount(deleted.firestore, 'Cleanup deleted Firestore count');
@@ -1251,7 +1328,9 @@ export function validateLifecycleResult(kind, input, stage) {
       });
       break;
     case 'browser-sessions':
-      if (!Array.isArray(value.sessions) || value.sessions.length !== 0) throw new Error('Lifecycle closure requires zero browser sessions.');
+      if (requireClosedArray(value.sessions, 'Browser sessions').length !== 0) {
+        throw new Error('Lifecycle closure requires zero browser sessions.');
+      }
       break;
     case 'credential-removal':
     case 'workspace-removal':
@@ -1267,7 +1346,7 @@ export function validateLedger(rows, expected) {
   const snapshot = snapshotClosedDataGraph({ rows, expected }, 'Ledger validation input');
   rows = snapshot.rows;
   expected = snapshot.expected;
-  if (!Array.isArray(rows)) throw new Error('Ledger rows must be an array.');
+  rows = requireClosedArray(rows, 'Ledger rows');
   const contract = requireRecord(expected, 'Ledger expectation');
   const groupCounts = requireRecord(contract.groupCounts, 'Ledger group counts');
   const totals = requireRecord(contract.totals, 'Ledger totals');

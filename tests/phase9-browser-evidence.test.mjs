@@ -881,7 +881,7 @@ test('phase 9 evidence contracts reject unknown action-window acquisition fields
 
   const hidden = safeWindow();
   Object.defineProperty(hidden, 'rawRequests', { value: [], enumerable: false });
-  assert.throws(() => validateActionWindow(hidden), /closed action-window schema/i);
+  assert.throws(() => validateActionWindow(hidden), /cloneable closed data graph|closed action-window schema/i);
 
   const symbol = Symbol('rawRequests');
   const symbolWindow = safeWindow();
@@ -908,7 +908,11 @@ test('phase 9 evidence contracts reject unknown action-window acquisition fields
         ? []
         : [];
     values.rawRequests = [];
-    assert.throws(() => validateActionWindow(safeWindow({ [field]: values })), /closed .* array/i, field);
+    assert.throws(
+      () => validateActionWindow(safeWindow({ [field]: values })),
+      /cloneable closed data graph|closed .* array/i,
+      field,
+    );
   }
 
   const request = closedResourceSignal(`${STAGING_ORIGIN}/family`);
@@ -1052,6 +1056,168 @@ test('phase 9 evidence validators snapshot caller-owned graphs once and fail clo
     () => validateResourceSignal(closedResourceSignal('Bearer must-not-return-sensitive-value')),
     /credential-shaped evidence/i,
   );
+});
+
+test('phase 9 evidence snapshots reject sparse arrays and hidden data before validation', async t => {
+  const snapshotError = /must be a cloneable closed data graph/i;
+  const safeStage = name => ({
+    name,
+    window: safeWindow({
+      finalPath: '/login',
+      visibleSentinels: ['Sign In'],
+      sessionPresent: false,
+    }),
+  });
+  const denseStages = () => REQUIRED_LOGOUT_STAGES.map(safeStage);
+
+  await t.test('rejects a four-hole logout stage array', () => {
+    assert.throws(() => validateLogoutStages(new Array(4)), snapshotError);
+  });
+
+  await t.test('rejects sparse canonical 20-entry lifecycle arrays', () => {
+    const sparseSeed = {
+      command: 'seed',
+      state: 'seeded',
+      aliases: new Array(20),
+      counts: { auth: 20, firestore: 82 },
+      uidSuffixes: new Array(20),
+    };
+    assert.throws(() => validateLifecycleResult('seed', sparseSeed, 'seeded'), snapshotError);
+  });
+
+  await t.test('rejects an oversized sparse array', () => {
+    const oversizedSparse = new Array(1_000_000);
+    assert.throws(() => assertNoFixtureIdentifierLeak(oversizedSparse), snapshotError);
+  });
+
+  await t.test('counts dense array entries against the global snapshot budget', () => {
+    const oversizedDenseGraph = [
+      new Array(60_000).fill(null),
+      new Array(60_000).fill(null),
+    ];
+    assert.throws(() => assertNoFixtureIdentifierLeak(oversizedDenseGraph), snapshotError);
+  });
+
+  await t.test('rejects a hidden top-level field', () => {
+    const hiddenTop = { sessions: [] };
+    Object.defineProperty(hiddenTop, 'hiddenCanary', {
+      value: 'benign-top-canary',
+      enumerable: false,
+    });
+    assert.throws(
+      () => validateLifecycleResult('browser-sessions', hiddenTop, 'browsers-closed'),
+      snapshotError,
+    );
+  });
+
+  await t.test('rejects a hidden nested field', () => {
+    const hiddenNested = {
+      projectId: 'the-squad-v2-staging',
+      checkedAuth: 20,
+      checkedFirestore: 82,
+      checkedExpectedAbsent: 1,
+      authPresent: 0,
+      firestorePresent: 0,
+      expectedAbsentPresent: 0,
+      detail: { state: 'closed' },
+    };
+    Object.defineProperty(hiddenNested.detail, 'hiddenCanary', {
+      value: 'benign-nested-canary',
+      enumerable: false,
+    });
+    assert.throws(
+      () => validateLifecycleResult('probe', hiddenNested, 'independently-absent'),
+      snapshotError,
+    );
+  });
+
+  await t.test('rejects a hidden array field', () => {
+    const hiddenArray = [];
+    Object.defineProperty(hiddenArray, 'hiddenCanary', {
+      value: 'benign-array-canary',
+      enumerable: false,
+    });
+    assert.throws(
+      () => validateLifecycleResult('browser-sessions', { sessions: hiddenArray }, 'browsers-closed'),
+      snapshotError,
+    );
+  });
+
+  await t.test('rejects a hidden array index', () => {
+    const hiddenIndex = denseStages();
+    Object.defineProperty(hiddenIndex, '0', {
+      value: hiddenIndex[0],
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+    assert.throws(() => validateLogoutStages(hiddenIndex), snapshotError);
+  });
+
+  await t.test('rejects a non-index array field', () => {
+    const nonIndexField = denseStages();
+    nonIndexField.canary = 'benign-array-field';
+    assert.throws(() => validateLogoutStages(nonIndexField), snapshotError);
+  });
+
+  await t.test('accepts a frozen intrinsic array length descriptor', () => {
+    const frozenLength = denseStages();
+    Object.defineProperty(frozenLength, 'length', { writable: false });
+    assert.equal(validateLogoutStages(frozenLength).pass, true);
+  });
+
+  await t.test('rejects an abnormal array prototype', () => {
+    const abnormalPrototype = denseStages();
+    Object.setPrototypeOf(abnormalPrototype, null);
+    assert.throws(() => validateLogoutStages(abnormalPrototype), snapshotError);
+  });
+
+  await t.test('accepts dense arrays and nested plain data', () => {
+    assert.equal(validateLogoutStages(denseStages()).pass, true);
+    assert.deepEqual(assertNoFixtureIdentifierLeak([
+      'dense',
+      { nested: Object.freeze(['closed', 'data']) },
+    ]), [
+      'dense',
+      { nested: ['closed', 'data'] },
+    ]);
+  });
+});
+
+test('phase 9 evidence snapshots reject traps and accessors without invoking them', () => {
+  const snapshotError = /must be a cloneable closed data graph/i;
+  let trapCalls = 0;
+  const trappedArray = new Proxy([], {
+    getPrototypeOf(target) {
+      trapCalls += 1;
+      return Reflect.getPrototypeOf(target);
+    },
+    ownKeys(target) {
+      trapCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      trapCalls += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+  });
+  assert.throws(() => assertNoFixtureIdentifierLeak(trappedArray), snapshotError);
+  assert.equal(trapCalls, 0);
+
+  let accessorCalls = 0;
+  const nestedAccessor = { sessions: [] };
+  Object.defineProperty(nestedAccessor.sessions, 'hiddenCanary', {
+    enumerable: false,
+    get() {
+      accessorCalls += 1;
+      return 'must-not-be-read';
+    },
+  });
+  assert.throws(
+    () => validateLifecycleResult('browser-sessions', nestedAccessor, 'browsers-closed'),
+    snapshotError,
+  );
+  assert.equal(accessorCalls, 0);
 });
 
 test('phase 9 evidence contracts require path and visible readiness for allowed routes', () => {
@@ -1290,6 +1456,8 @@ test('phase 9 evidence contracts require symmetric real-consumer isolation', () 
   assert.throws(() => buildIsolationExpectation({ runId, alias: 'qa-school-admin' }), /supported isolation alias/i);
   const safe = overrides => ({
     ...expectation,
+    sameOriginApi: expectation.sameOriginApi.map(probe => ({ ...probe })),
+    directFirestore: expectation.directFirestore.map(probe => ({ ...probe })),
     oppositeProtectedRender: false,
     oppositeListenerStarts: 0,
     ...overrides,
