@@ -31,6 +31,7 @@ import {
 import {
   closeAndVerifyBrowsers,
   createPlaywrightCliClient,
+  executeCapturedPlaywrightTransportCommand,
   installSignalRecorder,
   isProtectedResource,
   setAndVerifyViewport,
@@ -4558,6 +4559,7 @@ function lifecycleGuardianFixture(overrides = {}) {
       assert.deepEqual(argv.slice(7), ['--credentials', credentialPath, '--expires-at', '2026-09-02T12:00:00Z']);
     }
     if (command === 'transition') {
+      await overrides.beforeTransition?.();
       if (!overrides.transitionNotPersisted) transitioned = true;
       assert.deepEqual(argv.slice(7), ['--alias', 'qa-pending-delete']);
     }
@@ -4734,6 +4736,146 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   assert.equal(fixture.probeFirestoreChecks, 83);
   assert.equal(fixture.workspaceExists, false);
   assert.equal(fixture.handlers.size, 0);
+});
+
+const realGuardianSession = 'phase9-real-guardian-retained';
+const realGuardianInfoPath = phase => `/tmp/phase9-guardian-real-retained-${process.pid}-${phase}.json`;
+const realGuardianBrowserClient = Object.freeze({
+  closeBrowser: session => executeCapturedPlaywrightTransportCommand([`-s=${session}`, 'close'], { timeoutMs: 30_000 }),
+  listBrowsers: () => executeCapturedPlaywrightTransportCommand(['list'], { timeoutMs: 30_000 }),
+});
+const markedProcessLines = marker => {
+  const result = spawnSync('/bin/ps', ['eww', '-axo', 'pid=,command='], {
+    encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' }, maxBuffer: 16_777_216,
+  });
+  assert.equal(result.status, 0);
+  const token = `PHASE9_GUARDIAN_RUN_MARKER=${marker}`;
+  return result.stdout.split('\n').filter(line => {
+    const words = line.split(/\s+/);
+    return words.includes(token) || words.includes(`--${token}`);
+  });
+};
+const pidAlive = pid => {
+  try { process.kill(pid, 0); return true; } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+};
+const cleanupRealGuardianIntegration = async () => {
+  await realGuardianBrowserClient.closeBrowser(realGuardianSession).catch(() => {});
+  const paths = ['before-transition', 'after-transition'].map(realGuardianInfoPath);
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    const info = JSON.parse(readFileSync(path, 'utf8'));
+    for (const line of markedProcessLines(info.marker)) {
+      const pid = Number(/^\s*([1-9][0-9]*)\s/.exec(line)?.[1]);
+      if (!Number.isSafeInteger(pid)) continue;
+      try { process.kill(pid, 'SIGTERM'); } catch {}
+    }
+  }
+  await new Promise(resolve => setTimeout(resolve, 100));
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    const info = JSON.parse(readFileSync(path, 'utf8'));
+    for (const line of markedProcessLines(info.marker)) {
+      const pid = Number(/^\s*([1-9][0-9]*)\s/.exec(line)?.[1]);
+      if (!Number.isSafeInteger(pid)) continue;
+      try { process.kill(pid, 'SIGKILL'); } catch {}
+    }
+    rmSync(path, { force: true });
+  }
+};
+
+test('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: 120_000 }, async () => {
+  await cleanupRealGuardianIntegration();
+  let retainedBoundaryObserved = false;
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser',
+    scenarioJoinTimeoutMs: 3_000,
+    browserClient: realGuardianBrowserClient,
+    async beforeTransition() {
+      const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+      assert.deepEqual(
+        (await realGuardianBrowserClient.listBrowsers()).browsers.map(item => item.name).sort(),
+        [realGuardianSession],
+      );
+      const lines = markedProcessLines(info.marker);
+      assert.equal(lines.some(line => line.includes('/node_modules/playwright-core/lib/entry/cliDaemon.js')), true);
+      assert.equal(lines.some(line => line.includes('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
+        && line.includes(`--PHASE9_GUARDIAN_RUN_MARKER=${info.marker}`)), true);
+      retainedBoundaryObserved = true;
+    },
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(retainedBoundaryObserved, true);
+    assert.equal(result.rows.length, 44);
+    assert.equal(result.rows.filter(row => row.startState === 'pending_deletion').length, 4);
+    const beforeInfo = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+    const afterInfo = JSON.parse(readFileSync(realGuardianInfoPath('after-transition'), 'utf8'));
+    assert.equal(afterInfo.attached, true);
+    assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
+    assert.deepEqual(markedProcessLines(beforeInfo.marker), []);
+    assert.deepEqual(markedProcessLines(afterInfo.marker), []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
+});
+
+test('phase 9 guardian closes its real browser before killing an extra marked rogue process', { timeout: 120_000 }, async () => {
+  await cleanupRealGuardianIntegration();
+  let closeObservedLiveRogue = false;
+  const orderedBrowserClient = Object.freeze({
+    async closeBrowser(session) {
+      const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+      assert.equal(pidAlive(info.roguePid), true);
+      closeObservedLiveRogue = true;
+      return realGuardianBrowserClient.closeBrowser(session);
+    },
+    listBrowsers: () => realGuardianBrowserClient.listBrowsers(),
+  });
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser-rogue',
+    scenarioJoinTimeoutMs: 3_000,
+    browserClient: orderedBrowserClient,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.closureCertified, true);
+    assert.equal(closeObservedLiveRogue, true);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    assert.equal(fixture.workspaceExists, false);
+    assert.equal(pidAlive(info.roguePid), false);
+    assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
+    assert.deepEqual(markedProcessLines(info.marker), []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
+});
+
+test('phase 9 guardian rejects a declared real retained browser missing from inventory', { timeout: 120_000 }, async () => {
+  await cleanupRealGuardianIntegration();
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser-missing-session',
+    scenarioJoinTimeoutMs: 3_000,
+    browserClient: realGuardianBrowserClient,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'browser-ownership-invalid');
+    assert.equal(result.closureCertified, true);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
+    assert.deepEqual(markedProcessLines(info.marker), []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
 });
 
 test('phase 9 lifecycle guardian never closes a pre-existing unowned browser session', async () => {

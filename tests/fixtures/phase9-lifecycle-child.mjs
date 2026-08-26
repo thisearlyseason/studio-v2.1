@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const nativeJsonStringify = JSON.stringify;
 const nativeSetInterval = globalThis.setInterval;
@@ -102,6 +104,11 @@ function finishWithRows(phase, mode, browserSessions = [], ok = true) {
   if (mode === 'row-out-of-order') [rows[0], rows[1]] = [rows[1], rows[0]];
   if (mode === 'row-wrong-phase') rows = phaseRows(phase === 'before-transition' ? 'after-transition' : 'before-transition');
   writeMessage({ version: 1, type: 'ownership', phase, browserSessions });
+  finishRowsAfterOwnership(phase, mode, browserSessions, ok, rows);
+}
+
+function finishRowsAfterOwnership(phase, mode, browserSessions = [], ok = true, suppliedRows) {
+  const rows = suppliedRows ?? phaseRows(phase);
   const emitted = mode === 'row-early-completion' ? rows.slice(0, 1) : rows;
   emitted.forEach((row, index) => writeMessage({ version: 1, type: 'row', phase, index, row }));
   writeMessage({
@@ -112,6 +119,51 @@ function finishWithRows(phase, mode, browserSessions = [], ok = true) {
     browserSessions,
     rowCount: rows.length,
   }, () => nativeExit(0));
+}
+
+async function runRealRetainedBrowser(mode, phase, args) {
+  const clientModule = await import(pathToFileURL(join(
+    process.cwd(), 'scripts', 'qa-evidence', 'phase9', 'playwright-cli-client.mjs',
+  )).href);
+  const session = 'phase9-real-guardian-retained';
+  const guardianMarkerName = args.get('--guardian-marker-env');
+  const marker = process.env[guardianMarkerName];
+  if (!/^[0-9a-f]{64}$/.test(marker ?? '')) nativeExit(66);
+  const transport = clientModule.capturePlaywrightTransport();
+  const client = clientModule.createPlaywrightCliClient({
+    transport,
+    guardianMarkerName,
+    sourceEnvironment: process.env,
+    cwd: process.cwd(),
+  });
+  const browserSessions = phase === 'before-transition' ? [session] : [];
+  writeMessage({ version: 1, type: 'ownership', phase, browserSessions });
+  const infoPath = `/tmp/phase9-guardian-real-retained-${process.ppid}-${phase}.json`;
+  if (phase === 'before-transition') {
+    if (mode !== 'real-retained-browser-missing-session') {
+      await clientModule.installSignalRecorder(client, session);
+      await clientModule.setAndVerifyViewport(client, session, { width: 390, height: 844 });
+      await client.runCode(session, `async (page) => {
+        page.__phase9RetainedSessionMarker = ${nativeJsonStringify(session)};
+        return true;
+      }`);
+    }
+    let roguePid = null;
+    if (mode === 'real-retained-browser-rogue') {
+      const rogue = spawn(process.execPath, [
+        '-e', "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)", 'phase9-real-retained-rogue',
+      ], { detached: true, env: process.env, stdio: 'ignore' });
+      rogue.unref();
+      roguePid = rogue.pid;
+    }
+    writeFileSync(infoPath, nativeJsonStringify({ marker, roguePid, session }), { mode: 0o600 });
+  } else {
+    await clientModule.attachExistingSignalRecorder(client, session, {
+      width: 390, height: 844, marker: session,
+    });
+    writeFileSync(infoPath, nativeJsonStringify({ attached: true, marker, session }), { mode: 0o600 });
+  }
+  finishRowsAfterOwnership(phase, mode, browserSessions);
 }
 
 const args = parseArguments(process.argv.slice(process.argv[1]?.startsWith('--') ? 1 : 2));
@@ -210,6 +262,11 @@ if (mode === 'success') {
     }, 150);
   });
   nativeSetInterval(() => {}, 1_000);
+} else if (new Set([
+  'real-retained-browser', 'real-retained-browser-rogue',
+  'real-retained-browser-missing-session',
+]).has(mode)) {
+  await runRealRetainedBrowser(mode, phase, args);
 } else {
   nativeExit(65);
 }

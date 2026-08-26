@@ -57,6 +57,9 @@ const RUNNER_CONFIG_LIMIT = 65_536;
 const RUNNER_CONFIG_TOTAL_LIMIT = 131_072;
 const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
 const RUN_MARKER_ENV = 'PHASE9_GUARDIAN_RUN_MARKER';
+const PLAYWRIGHT_TRANSPORT_ROOT_PATTERN = '/private/tmp/phase9-playwright-transport.';
+const PLAYWRIGHT_DAEMON_SUFFIX = '/node_modules/playwright-core/lib/entry/cliDaemon.js';
+const SYSTEM_CHROME_BINARY = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PROCESS_EVENTS = Object.freeze(['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']);
 const ORDERED_STATES = Object.freeze([
   'uninitialized',
@@ -943,8 +946,8 @@ function auditMarkedProcesses(runMarker) {
   }
   const token = `${RUN_MARKER_ENV}=${runMarker}`;
   const args = INTRINSIC_PROCESS_PLATFORM === 'linux'
-    ? ['eww', '-eo', 'pid=,args=']
-    : ['eww', '-axo', 'pid=,command='];
+    ? ['eww', '-eo', 'pid=,ppid=,args=']
+    : ['eww', '-axo', 'pid=,ppid=,command='];
   return new INTRINSIC_PROMISE((resolveAudit, rejectAudit) => {
     INTRINSIC_CHILD_EXEC_FILE('/bin/ps', args, {
       encoding: 'utf8',
@@ -957,20 +960,27 @@ function auditMarkedProcesses(runMarker) {
         rejectAudit(new GuardianFailure(category));
         return;
       }
-      const pids = [];
+      const processes = [];
       for (const line of stdout.split('\n')) {
         const words = line.split(/\s+/);
         if (!words.includes(token) && !words.includes(`--${token}`)) continue;
-        const match = /^\s*([1-9][0-9]*)\s/.exec(line);
+        const match = /^\s*([1-9][0-9]*)\s+([0-9]+)\s+(.+)$/.exec(line);
         const pid = Number(match?.[1]);
-        if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) {
+        const ppid = Number(match?.[2]);
+        const command = match?.[3];
+        if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid
+          || !Number.isSafeInteger(ppid) || ppid < 0 || typeof command !== 'string') {
           rejectAudit(new GuardianFailure(category));
           return;
         }
-        pids.push(pid);
+        processes.push(Object.freeze({ pid, ppid, command }));
       }
-      const unique = [...new Set(pids)].sort((left, right) => left - right);
-      resolveAudit(Object.freeze(unique));
+      processes.sort((left, right) => left.pid - right.pid);
+      if (processes.some((item, index) => index > 0 && processes[index - 1].pid === item.pid)) {
+        rejectAudit(new GuardianFailure(category));
+        return;
+      }
+      resolveAudit(Object.freeze(processes));
     });
   });
 }
@@ -979,16 +989,16 @@ function signalMarkedProcesses(runMarker, signal) {
   return new INTRINSIC_PROMISE((resolveSignal, rejectSignal) => {
     consumeNativePromise(
       auditMarkedProcesses(runMarker),
-      pids => {
+      processes => {
         let ok = true;
-        for (const pid of pids) {
+        for (const { pid } of processes) {
           try {
             INTRINSIC_PROCESS_KILL(pid, signal);
           } catch (error) {
             if (error?.code !== 'ESRCH') ok = false;
           }
         }
-        resolveSignal(Object.freeze({ ok, pids }));
+        resolveSignal(Object.freeze({ ok, pids: processes.map(item => item.pid) }));
       },
       () => rejectSignal(new GuardianFailure('scenario-closure-failed')),
       'scenario-closure-failed',
@@ -1040,6 +1050,33 @@ async function terminateMarkedProcesses(runMarker, timeoutMs) {
     cleared: await waitForMarkedProcessesGone(runMarker, timeoutMs),
     discovered: true,
   });
+}
+
+function retainedBrowserProcessesAreExact(processes, browserSessions) {
+  if (!Array.isArray(processes) || processes.length < 2 || browserSessions.length === 0) return false;
+  const daemonPrefix = `${INTRINSIC_PROCESS_EXEC_PATH} ${PLAYWRIGHT_TRANSPORT_ROOT_PATTERN}`;
+  const daemonSessions = new Map(processes.flatMap(({ pid, command }) => {
+    if (!command.startsWith(daemonPrefix)) return [];
+    const suffix = command.slice(daemonPrefix.length);
+    const match = new RegExp(
+      `^[0-9a-f]{48}${PLAYWRIGHT_DAEMON_SUFFIX.replaceAll('.', '\\.')} `
+        + '([A-Za-z0-9][A-Za-z0-9_-]{0,63}) --browser=chrome(?:\\s|$)',
+    ).exec(suffix);
+    return match ? [[pid, match[1]]] : [];
+  }));
+  const daemonPids = new Set(daemonSessions.keys());
+  const expectedSessions = [...browserSessions].sort();
+  const actualSessions = [...daemonSessions.values()].sort();
+  if (daemonPids.size !== expectedSessions.length
+    || !isDeepStrictEqual(actualSessions, expectedSessions)) return false;
+  let chromeCount = 0;
+  for (const processRecord of processes) {
+    if (daemonPids.has(processRecord.pid)) continue;
+    if (!processRecord.command.startsWith(`${SYSTEM_CHROME_BINARY} `)
+      || !daemonPids.has(processRecord.ppid)) return false;
+    chromeCount += 1;
+  }
+  return chromeCount > 0;
 }
 
 function processGroupAlive(handle) {
@@ -1356,6 +1393,7 @@ export function createLifecycleGuardian({
   let closureCertified = false;
   const ownedBrowserSessions = new Set();
   let activeScenario = null;
+  const phaseMarkers = new Map();
   let startupGeneration = null;
   let nextStartupGeneration = 0;
   let verifiedRepositoryRoot = null;
@@ -1495,6 +1533,63 @@ export function createLifecycleGuardian({
     browserClosureCertified = true;
   });
 
+  const exactBrowserInventory = async () => {
+    let names;
+    try {
+      names = browserSessionNames(await browserClient.listBrowsers()).sort();
+    } catch {
+      throw new GuardianFailure('browser-ownership-invalid');
+    }
+    const expected = [...ownedBrowserSessions].sort();
+    if (!isDeepStrictEqual(names, expected)) throw new GuardianFailure('browser-ownership-invalid');
+    return names;
+  };
+
+  const validateRetainedBrowserBoundary = async () => {
+    const names = await exactBrowserInventory();
+    const markedByPhase = [];
+    for (const [marker, phase] of phaseMarkers) {
+      let processes;
+      try { processes = await auditMarkedProcesses(marker); } catch {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+      markedByPhase.push(Object.freeze({ marker, phase, processes }));
+    }
+    const processes = markedByPhase.flatMap(item => item.processes);
+    if (names.length === 0) {
+      if (processes.length !== 0) throw new GuardianFailure('scenario-closure-failed');
+      return;
+    }
+    if (!retainedBrowserProcessesAreExact(processes, names)) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+  };
+
+  const terminateStoredPhaseMarkers = async () => {
+    let cleared = true;
+    for (const marker of phaseMarkers.keys()) {
+      const result = await terminateMarkedProcesses(marker, Math.max(scenarioJoinTimeoutMs, 500));
+      if (!result.cleared) cleared = false;
+    }
+    if (!cleared) throw new GuardianFailure('scenario-closure-failed');
+    for (const marker of phaseMarkers.keys()) {
+      const remaining = await auditMarkedProcesses(marker);
+      if (remaining.length !== 0) throw new GuardianFailure('scenario-closure-failed');
+    }
+    phaseMarkers.clear();
+  };
+
+  const certifyEmptyBrowserInventory = async () => {
+    let names;
+    try { names = browserSessionNames(await browserClient.listBrowsers()); } catch {
+      throw new GuardianFailure('browser-closure-failed');
+    }
+    if (names.length !== 0) throw new GuardianFailure('browser-closure-failed');
+    ownedBrowserSessions.clear();
+    validateLifecycleResult('browser-sessions', { sessions: [] }, 'browsers-closed');
+    browserClosureCertified = true;
+  };
+
   const bounded = candidate => new INTRINSIC_PROMISE((resolvePromise, rejectPromise) => {
     let settled = false;
     const timer = INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_TIMEOUT, INTRINSIC_GLOBAL_THIS, [() => {
@@ -1566,22 +1661,14 @@ export function createLifecycleGuardian({
       || handle.protocolFailure
       || !handle.terminal
     ) return false;
-    if (!(await waitForGroupGone(handle))) return false;
-    const marked = await terminateMarkedProcesses(
-      handle.runMarker, Math.max(scenarioJoinTimeoutMs, 500),
-    );
-    return marked.cleared && !marked.discovered;
+    return waitForGroupGone(handle);
   };
 
   const requestScenarioTermination = async (handle, force) => {
     if (!signalProcessGroup(handle, force ? 'SIGKILL' : 'SIGTERM')) return false;
     let outcome;
     try { outcome = await bounded(handle.closed); } catch { return false; }
-    if (outcome.status !== 'fulfilled' || !(await waitForGroupGone(handle))) return false;
-    const marked = await terminateMarkedProcesses(
-      handle.runMarker, Math.max(scenarioJoinTimeoutMs, 500),
-    );
-    return marked.cleared;
+    return outcome.status === 'fulfilled' && waitForGroupGone(handle);
   };
 
   const beginStartupGeneration = phase => {
@@ -1647,9 +1734,33 @@ export function createLifecycleGuardian({
     if (emergencyPromise) return emergencyPromise;
     interrupted ||= isInterruption;
     emergencyPromise = (async () => {
+      let recoveryCategory = category;
       try {
         await stopActiveScenario();
       } catch {
+        recoveryCategory = 'scenario-closure-failed';
+      }
+      let browserFailure = false;
+      try {
+        await closeOwnedBrowsers();
+      } catch {
+        browserFailure = true;
+      }
+      let markerFailure = false;
+      try {
+        await terminateStoredPhaseMarkers();
+      } catch {
+        markerFailure = true;
+      }
+      if (browserFailure) {
+        removeHandlers();
+        return failureSummary({
+          category: 'browser-closure-failed', state, history, interrupted: isInterruption,
+          browserClosureCertified: false, closureCertified: false,
+          ...await currentPreservationStates(),
+        });
+      }
+      if (markerFailure) {
         removeHandlers();
         return failureSummary({
           category: 'scenario-closure-failed', state, history, interrupted: isInterruption,
@@ -1658,7 +1769,7 @@ export function createLifecycleGuardian({
         });
       }
       try {
-        await closeOwnedBrowsers();
+        await certifyEmptyBrowserInventory();
       } catch {
         removeHandlers();
         return failureSummary({
@@ -1669,7 +1780,9 @@ export function createLifecycleGuardian({
       }
       if (!workspacePath) {
         removeHandlers();
-        return failureSummary({ category, state, history, interrupted: isInterruption, browserClosureCertified: true });
+        return failureSummary({
+          category: recoveryCategory, state, history, interrupted: isInterruption, browserClosureCertified: true,
+        });
       }
       if (closureCertified && state === 'credential-removed') {
         try {
@@ -1686,7 +1799,7 @@ export function createLifecycleGuardian({
         }
         removeHandlers();
         return failureSummary({
-          category, state, history, interrupted: isInterruption,
+          category: recoveryCategory, state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
         });
       }
@@ -1748,7 +1861,7 @@ export function createLifecycleGuardian({
       }
       removeHandlers();
       return failureSummary({
-        category, state, history, interrupted: isInterruption,
+        category: recoveryCategory, state, history, interrupted: isInterruption,
         browserClosureCertified: true, closureCertified: true,
       });
     })();
@@ -1783,6 +1896,7 @@ export function createLifecycleGuardian({
       const runMarker = INTRINSIC_RANDOM_BYTES(32).toString('hex');
       const collisions = await auditMarkedProcesses(runMarker);
       if (collisions.length !== 0) throw new GuardianFailure('scenario-runner-invalid');
+      phaseMarkers.set(runMarker, phase);
       verifyRunnerSnapshot(verifiedRunnerSnapshot);
       if (
         interrupted
@@ -1833,6 +1947,7 @@ export function createLifecycleGuardian({
     if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
     activeScenario = null;
     if (completed.ok !== true) throw new GuardianFailure('scenario-failed');
+    await validateRetainedBrowserBoundary();
     return completed.rows;
   };
 
@@ -1933,6 +2048,8 @@ export function createLifecycleGuardian({
       checkInterrupted();
 
       await closeOwnedBrowsers();
+      await terminateStoredPhaseMarkers();
+      await certifyEmptyBrowserInventory();
       checkInterrupted();
       transition('browsers-closed');
       await loadExactManifest('pending_deletion');
