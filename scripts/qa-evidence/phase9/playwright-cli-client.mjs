@@ -1435,6 +1435,12 @@ export function createPlaywrightCliClient({
     expectedViewportByTab.set(tabKey(session), Object.freeze({ ...viewport }));
     return `${result.width}x${result.height}`;
   };
+  const forgetSession = session => {
+    opened.delete(session); currentTabs.delete(session); tabCounts.delete(session);
+    for (const collection of [armedTabs, publicPageIds, listenTargetStateByTab, expectedViewportByTab, authenticatedStartByTab]) {
+      for (const key of [...collection.keys()]) if (key.startsWith(`${session}:`)) collection.delete(key);
+    }
+  };
   const client = {
     async goto(session, url) {
       if (!armedTabs.has(tabKey(session))) throw new Error('Signal recorder must be armed before navigation.');
@@ -1475,12 +1481,17 @@ export function createPlaywrightCliClient({
       try {
         await applyViewport(session, viewport);
       } catch {
-        await command(['close'], session).catch(() => {});
-        opened.delete(session); currentTabs.delete(session); tabCounts.delete(session);
-        for (const collection of [armedTabs, publicPageIds, listenTargetStateByTab, expectedViewportByTab, authenticatedStartByTab]) {
-          for (const key of [...collection.keys()]) if (key.startsWith(`${session}:`)) collection.delete(key);
+        try {
+          await command(['close'], session);
+          const inventory = await command(['list']);
+          const names = inventory?.browsers?.map(item => typeof item === 'string' ? item : item?.name);
+          if (!Array.isArray(names) || names.includes(session)) throw new Error('closure-unverified');
+          forgetSession(session);
+          throw new Error('New tab viewport application failed and the browser was closed.');
+        } catch (closeError) {
+          if (closeError?.message === 'New tab viewport application failed and the browser was closed.') throw closeError;
+          throw new Error('New tab viewport failed; browser closure is unverified and ownership was retained.');
         }
-        throw new Error('New tab viewport application failed and the browser was closed.');
       }
       return result;
     },
@@ -1497,18 +1508,12 @@ export function createPlaywrightCliClient({
         throw new Error('Browser closure requires an exact session opened by this client.');
       }
       const result = await command(['close'], session);
-      opened.delete(session);
-      currentTabs.delete(session);
-      tabCounts.delete(session);
-      for (const key of [...armedTabs]) {
-        if (key.startsWith(`${session}:`)) armedTabs.delete(key);
+      const inventory = await command(['list']);
+      const names = inventory?.browsers?.map(item => typeof item === 'string' ? item : item?.name);
+      if (!Array.isArray(names) || names.includes(session)) {
+        throw new Error('Browser closure is unverified and session ownership was retained.');
       }
-      for (const key of [...publicPageIds.keys()]) {
-        if (key.startsWith(`${session}:`)) publicPageIds.delete(key);
-      }
-      for (const key of [...listenTargetStateByTab.keys()]) {
-        if (key.startsWith(`${session}:`)) listenTargetStateByTab.delete(key);
-      }
+      forgetSession(session);
       return result;
     },
     listBrowsers: async () => command(['list']),

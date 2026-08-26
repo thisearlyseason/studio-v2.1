@@ -3,7 +3,7 @@ import { createHook } from 'node:async_hooks';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync,
+  chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -324,6 +324,7 @@ test('phase 9 playwright client closes only an exact session it opened', async (
     execute: async argv => {
       calls.push(argv);
       if (argv.includes('run-code')) return { exitCode: 0, stdout: JSON.stringify({ result: JSON.stringify({ url: 'about:blank', pageId: 'raw-page', navigationGeneration: 0 }) }) };
+      if (argv.includes('list')) return { exitCode: 0, stdout: JSON.stringify({ browsers: [] }) };
       return { exitCode: 0, stdout: JSON.stringify({ ok: true }) };
     },
   });
@@ -5825,6 +5826,7 @@ test('phase 9 client closes the owned browser when a new-tab viewport readback m
     if (code.includes('phase9:verify-about-blank')) return cliResult({ url: 'about:blank' });
     if (code.includes('setViewportSize')) return cliResult(++viewportCalls === 1
       ? { width: 390, height: 844 } : { width: 1280, height: 720 });
+    if (argv.includes('list')) return cliResult({ browsers: [] });
     return cliResult({ pageId: 'raw', navigationGeneration: 0 });
   });
   const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
@@ -5834,10 +5836,36 @@ test('phase 9 client closes the owned browser when a new-tab viewport readback m
   assert.equal(transport.calls.some(argv => argv.includes('close')), true);
 });
 
+test('phase 9 client retains ownership after new-tab viewport close failure and permits exact retry', async () => {
+  let viewportCalls = 0;
+  let closeCalls = 0;
+  let listCalls = 0;
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:verify-about-blank')) return cliResult({ url: 'about:blank' });
+    if (code.includes('setViewportSize')) return cliResult(++viewportCalls === 1
+      ? { width: 390, height: 844 } : { width: 1280, height: 720 });
+    if (argv.includes('close')) return ++closeCalls === 1
+      ? { stdout: '', stderr: '', exitCode: 1, timedOut: false }
+      : cliResult({ closed: true });
+    if (argv.includes('list')) return cliResult({ browsers: ++listCalls === 1 ? [{ name: 'viewport-owned' }] : [] });
+    return cliResult({ pageId: 'raw', navigationGeneration: 0 });
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'viewport-owned');
+  await setAndVerifyViewport(client, 'viewport-owned', { width: 390, height: 844 });
+  await assert.rejects(client.tabNew('viewport-owned'), /ownership.*retained/i);
+  await assert.rejects(client.closeBrowser('viewport-owned'), /ownership.*retained/i);
+  await client.closeBrowser('viewport-owned');
+  await assert.rejects(client.closeBrowser('viewport-owned'), /exact session.*opened/i);
+  assert.equal(closeCalls, 3);
+});
+
 test('phase 9 committed runner uses a pinned local Playwright transport and literal artifact hashes', async () => {
   const { PHASE9_ARTIFACT_PINS, phase9PlaywrightTransport } = await import('../scripts/qa-evidence/phase9/cli.mjs');
   assert.match(PHASE9_ARTIFACT_PINS.child, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.config, /^[0-9a-f]{64}$/);
+  assert.match(PHASE9_ARTIFACT_PINS.helper, /^[0-9a-f]{64}$/);
   assert.equal(phase9PlaywrightTransport.version, '0.1.18');
   assert.match(phase9PlaywrightTransport.modulePath, /node_modules\/@playwright\/cli\/playwright-cli\.js$/);
   assert.equal(readFileSync(phase9PlaywrightTransport.modulePath, 'utf8').includes('npx --yes'), false);
@@ -5966,6 +5994,97 @@ test('phase 9 writer rolls back every promoted file after a mid-transaction rena
     }), /atomically/i);
     assert.deepEqual(readdirSync(outputDirectory).sort(), [...PHASE9_EVIDENCE_FILES].sort());
     for (const name of PHASE9_EVIDENCE_FILES) assert.equal(readFileSync(join(outputDirectory, name), 'utf8'), `original:${name}\n`);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 writer executes captured helper bytes after the verified helper path is replaced', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/private/tmp/phase9-writer-captured-helper-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  const helperPath = join(root, 'captured-helper.py');
+  const reviewedHelper = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'evidence-dirfd-helper.py');
+  mkdirSync(outputDirectory, { recursive: true }); writeFileSync(helperPath, readFileSync(reviewedHelper));
+  let replaced = false;
+  const filesystem = {
+    ...fsPromises,
+    async readFile(path, ...args) {
+      const bytes = await fsPromises.readFile(path, ...args);
+      if (path === helperPath && !replaced) { replaced = true; writeFileSync(helperPath, 'raise SystemExit(91)\n'); }
+      return bytes;
+    },
+  };
+  try {
+    const writer = createPhase9EvidenceWriter({ repositoryRoot: root, filesystem, helperPath });
+    await writer.write({ lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory });
+    assert.deepEqual(readdirSync(outputDirectory).sort(), [...PHASE9_EVIDENCE_FILES].sort());
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 writer rejects FIFO and hardlinked targets promptly without opening or modifying them', async () => {
+  const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  for (const kind of ['fifo', 'hardlink']) {
+    const root = mkdtempSync(`/tmp/phase9-writer-${kind}-`);
+    const outputDirectory = join(root, phase9EvidenceDirectorySuffix); mkdirSync(outputDirectory, { recursive: true });
+    const target = join(outputDirectory, '00-environment.md');
+    if (kind === 'fifo') assert.equal(spawnSync('/usr/bin/mkfifo', [target]).status, 0);
+    else { writeFileSync(target, 'original'); linkSync(target, join(root, 'external-link')); }
+    const started = Date.now();
+    try {
+      const writer = createPhase9EvidenceWriter({ repositoryRoot: root, helperTimeoutMs: 2_000 });
+      await assert.rejects(writer.write({
+        lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+      }), /atomically/i);
+      assert.ok(Date.now() - started < 2_000, `${kind} rejection blocked`);
+      assert.deepEqual(readdirSync(outputDirectory), ['00-environment.md']);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
+test('phase 9 writer rejects stale crash artifacts on the next run without writing anything', async () => {
+  const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-crash-artifact-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix); mkdirSync(outputDirectory, { recursive: true });
+  const input = { lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory };
+  try {
+    const crashing = createPhase9EvidenceWriter({
+      repositoryRoot: root, helperEnvironment: { PHASE9_WRITER_TEST_SIGKILL_AFTER_TEMP: '1' }, helperTimeoutMs: 2_000,
+    });
+    await assert.rejects(crashing.write(input), /atomically/i);
+    const stale = readdirSync(outputDirectory);
+    assert.equal(stale.length, 1); assert.match(stale[0], /\.tmp$/);
+    const retry = createPhase9EvidenceWriter({ repositoryRoot: root });
+    await assert.rejects(retry.write(input), /atomically/i);
+    assert.deepEqual(readdirSync(outputDirectory), stale);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 writer detects a promoted path replacement and rolls back without changing an external inode', async () => {
+  const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-replaced-promotion-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix); mkdirSync(outputDirectory, { recursive: true });
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root, helperEnvironment: { PHASE9_WRITER_TEST_REPLACE_PROMOTION: '1' },
+    });
+    await assert.rejects(writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    }), /atomically/i);
+    assert.deepEqual(readdirSync(outputDirectory), []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 writer terminates and joins a hanging helper without creating files', async () => {
+  const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-hang-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix); mkdirSync(outputDirectory, { recursive: true });
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root, helperEnvironment: { PHASE9_WRITER_TEST_HANG: '1' }, helperTimeoutMs: 200,
+    });
+    await assert.rejects(writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    }), /atomically/i);
+    assert.deepEqual(readdirSync(outputDirectory), []);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

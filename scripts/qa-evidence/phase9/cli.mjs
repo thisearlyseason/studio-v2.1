@@ -22,6 +22,7 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(moduleDirectory, '../../..');
 const childEntrypoint = join(moduleDirectory, 'child-runner.mjs');
 const childConfig = join(moduleDirectory, 'runner-config.json');
+const evidenceHelper = join(moduleDirectory, 'evidence-dirfd-helper.py');
 const fixtureCli = join(repositoryRoot, 'scripts', 'qa-fixtures', 'cli.mjs');
 const evidenceDirectory = join(repositoryRoot, 'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities');
 const playwrightModule = join(repositoryRoot, 'node_modules', '@playwright', 'cli', 'playwright-cli.js');
@@ -32,9 +33,10 @@ const PLAYWRIGHT_MODULE_SHA256 = '66ea6722d77e57ce1bc7e850cb990d14895d17d8584405
 const PLAYWRIGHT_PACKAGE_SHA256 = '184ed53662eadeeb6923f2890a87b3699ed5b09fc11ed5297ca7abd5356f3c09';
 const PLAYWRIGHT_LOCK_INTEGRITY = 'sha512-ggNfYYH+GsZTGUiBEL8f6N5j0seYEUE52v+fIWqK/A36QG36cL0EJ79qWTXYO2uZMUU7vm+jk3x0fKCPL6UuIw==';
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: 'c658b95187baac37b94181d297e464ccd77cad326443cb7fe7ec283e484bd078',
+  child: 'df74a373de399d0cc7aba84fbe22bd9625ac6be6164e422f1c0e9eac931b4937',
   config: '60956e4ac3b3341e55f4829fe520abe74130b8c6766854a8598075920562b268',
   transport: PLAYWRIGHT_MODULE_SHA256,
+  helper: 'd2a9538af6301d36eddbff98ffb751327ac176446b473c0c8ac4c1644c0efa76',
 });
 export const phase9PlaywrightTransport = Object.freeze({ version: PLAYWRIGHT_VERSION, modulePath: playwrightModule });
 const githubRepository = 'thisearlyseason/studio-v2.1';
@@ -93,6 +95,7 @@ async function buildRunnerCommand() {
   if (await sha256(childEntrypoint) !== PHASE9_ARTIFACT_PINS.child || await sha256(childConfig) !== PHASE9_ARTIFACT_PINS.config) {
     throw new Error('Committed runner bytes do not match the literal reviewed pins.');
   }
+  if (await sha256(evidenceHelper) !== PHASE9_ARTIFACT_PINS.helper) throw new Error('Committed evidence helper does not match its literal reviewed pin.');
   return Object.freeze({
     entrypoint: childEntrypoint,
     entrypointSha256: PHASE9_ARTIFACT_PINS.child,
@@ -233,6 +236,7 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
   for (const [relativePath, path, pin] of [
     ['scripts/qa-evidence/phase9/child-runner.mjs', childEntrypoint, PHASE9_ARTIFACT_PINS.child],
     ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
+    ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],
   ]) {
     const [{ stdout: blob }, worktree] = await Promise.all([
       execFileAsync('git', ['cat-file', 'blob', `${deployedSha}:${relativePath}`], { cwd: repositoryRoot, encoding: 'buffer', timeout: 10_000, maxBuffer: 1_048_576 }),

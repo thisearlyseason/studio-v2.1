@@ -28,9 +28,12 @@ const SENSITIVE = /(?:bearer\s+[a-z0-9._~-]+|(?:cookie|password|credential|stora
 const PRIVATE_PATH = /(?:^|[\s`'"(])(?:\/tmp\/|\/Users\/|\/home\/|[A-Za-z]:\\)/;
 const DEFAULT_FILESYSTEM = Object.freeze({ lstat, open, readFile, realpath });
 const HELPER_PATH = join(dirname(fileURLToPath(import.meta.url)), 'evidence-dirfd-helper.py');
-const HELPER_SHA256 = 'dc6852d3027dff6160f97bfa8a249f587787eab23369bd0550a9f7685e15bfef';
-const PYTHON_RUNTIME = '/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9';
-const PYTHON_SHA256 = 'fb49353c025e39b9253567759fc80f20ed0f6e8b0d0bc6c5fddb47dc235ce22a';
+const HELPER_SHA256 = 'd2a9538af6301d36eddbff98ffb751327ac176446b473c0c8ac4c1644c0efa76';
+const PYTHON_RUNTIME = '/usr/bin/python3';
+const PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
+const CAPTURED_SET_TIMEOUT = globalThis.setTimeout;
+const CAPTURED_CLEAR_TIMEOUT = globalThis.clearTimeout;
+const CAPTURED_PROCESS_KILL = process.kill.bind(process);
 
 function snapshotData(value, depth = 0) {
   if (depth > 12) throw new Error('Evidence input nesting is unsafe.');
@@ -221,21 +224,49 @@ No broad enumeration, recursive Firebase deletion, credential material, raw brow
 
 const sha256Bytes = bytes => createHash('sha256').update(bytes).digest('hex');
 
-async function verifyHelper(filesystem) {
-  const [helperMetadata, helperCanonical, helperBytes, runtimeMetadata, runtimeCanonical, runtimeBytes] = await Promise.all([
-    filesystem.lstat(HELPER_PATH), filesystem.realpath(HELPER_PATH), filesystem.readFile(HELPER_PATH),
-    filesystem.lstat(PYTHON_RUNTIME), filesystem.realpath(PYTHON_RUNTIME), filesystem.readFile(PYTHON_RUNTIME),
-  ]);
-  if (!helperMetadata.isFile() || helperMetadata.isSymbolicLink() || helperCanonical !== HELPER_PATH
+async function snapshotImmutableRuntime(filesystem) {
+  const paths = ['/'];
+  let cursor = '';
+  for (const component of PYTHON_RUNTIME.split('/').filter(Boolean)) { cursor += `/${component}`; paths.push(cursor); }
+  const snapshots = [];
+  for (const path of paths) {
+    const metadata = await filesystem.lstat(path);
+    if (metadata.isSymbolicLink() || metadata.uid !== 0 || (metadata.mode & 0o022) !== 0
+      || (path === PYTHON_RUNTIME ? !metadata.isFile() : !metadata.isDirectory())) {
+      throw new Error('Pinned Python runtime boundary is not immutable.');
+    }
+    snapshots.push({ path, dev: metadata.dev, ino: metadata.ino, mode: metadata.mode, size: metadata.size });
+  }
+  return snapshots;
+}
+
+async function revalidateImmutableRuntime(filesystem, snapshots) {
+  for (const snapshot of snapshots) {
+    const metadata = await filesystem.lstat(snapshot.path);
+    if (metadata.isSymbolicLink() || metadata.uid !== 0 || (metadata.mode & 0o022) !== 0
+      || metadata.dev !== snapshot.dev || metadata.ino !== snapshot.ino || metadata.mode !== snapshot.mode
+      || metadata.size !== snapshot.size) throw new Error('Pinned Python runtime boundary identity changed.');
+  }
+}
+
+async function verifyHelper(filesystem, helperPath) {
+  const helperMetadata = await filesystem.lstat(helperPath);
+  const helperCanonical = await filesystem.realpath(helperPath);
+  const helperBytes = await filesystem.readFile(helperPath);
+  const runtimeMetadata = await filesystem.lstat(PYTHON_RUNTIME);
+  const runtimeCanonical = await filesystem.realpath(PYTHON_RUNTIME);
+  const runtimeBytes = await filesystem.readFile(PYTHON_RUNTIME);
+  if (!helperMetadata.isFile() || helperMetadata.isSymbolicLink() || helperCanonical !== helperPath
     || (helperMetadata.mode & 0o022) !== 0 || sha256Bytes(helperBytes) !== HELPER_SHA256
     || !runtimeMetadata.isFile() || runtimeMetadata.isSymbolicLink() || runtimeCanonical !== PYTHON_RUNTIME
     || (runtimeMetadata.mode & 0o022) !== 0 || sha256Bytes(runtimeBytes) !== PYTHON_SHA256) {
     throw new Error('Descriptor-anchored evidence helper is not the reviewed local runtime.');
   }
+  return { helperSource: helperBytes.toString('utf8'), runtimeBoundary: await snapshotImmutableRuntime(filesystem) };
 }
 
-async function runDescriptorTransaction(outputDirectory, documents, boundary, filesystem, helperEnvironment) {
-  await verifyHelper(filesystem);
+async function runDescriptorTransaction(outputDirectory, documents, boundary, filesystem, helperEnvironment, helperPath, helperTimeoutMs) {
+  const captured = await verifyHelper(filesystem, helperPath);
   await revalidateBoundary(boundary, filesystem);
   const directory = await filesystem.open(
     outputDirectory,
@@ -254,23 +285,36 @@ async function runDescriptorTransaction(outputDirectory, documents, boundary, fi
       directory: { dev: metadata.dev, ino: metadata.ino, mode: metadata.mode & 0o777 },
       documents: documents.map(([name, contents]) => ({ name, contents })),
     });
+    await revalidateImmutableRuntime(filesystem, captured.runtimeBoundary);
     const result = await new Promise(resolvePromise => {
-      const child = spawn(PYTHON_RUNTIME, [HELPER_PATH], {
+      const child = spawn(PYTHON_RUNTIME, ['-c', captured.helperSource], {
         cwd: '/',
         env: {
           LANG: 'C', LC_ALL: 'C', PYTHONHASHSEED: '0', PYTHONNOUSERSITE: '1',
           ...helperEnvironment,
         },
-        stdio: ['pipe', 'pipe', 'pipe', directory.fd],
+        stdio: ['pipe', 'pipe', 'pipe', directory.fd], detached: true,
       });
       let stdout = '';
       let stderrBytes = 0;
+      let timedOut = false;
+      let killTimer;
+      const timer = CAPTURED_SET_TIMEOUT(() => {
+        timedOut = true;
+        try { CAPTURED_PROCESS_KILL(-child.pid, 'SIGTERM'); } catch {}
+        killTimer = CAPTURED_SET_TIMEOUT(() => { try { CAPTURED_PROCESS_KILL(-child.pid, 'SIGKILL'); } catch {} }, 250);
+      }, helperTimeoutMs);
       child.stdout.on('data', chunk => { stdout += chunk.toString('utf8'); if (stdout.length > 65536) child.kill('SIGKILL'); });
       child.stderr.on('data', chunk => { stderrBytes += chunk.length; if (stderrBytes > 65536) child.kill('SIGKILL'); });
-      child.on('error', () => resolvePromise({ ok: false }));
-      child.on('close', code => resolvePromise({ ok: code === 0 && stdout === '{"ok":true}\n' }));
+      child.stdin.on('error', () => {});
+      child.on('error', () => { CAPTURED_CLEAR_TIMEOUT(timer); resolvePromise({ ok: false }); });
+      child.on('close', code => {
+        CAPTURED_CLEAR_TIMEOUT(timer); if (killTimer) CAPTURED_CLEAR_TIMEOUT(killTimer);
+        resolvePromise({ ok: !timedOut && code === 0 && stdout === '{"ok":true}\n' });
+      });
       child.stdin.end(request);
     });
+    await revalidateImmutableRuntime(filesystem, captured.runtimeBoundary);
     const after = await directory.stat();
     if (!result.ok || after.dev !== expected.dev || after.ino !== expected.ino) {
       throw new Error('Evidence files were not written atomically.');
@@ -280,7 +324,7 @@ async function runDescriptorTransaction(outputDirectory, documents, boundary, fi
   }
 }
 
-async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = {}, repositoryRoot, filesystem = DEFAULT_FILESYSTEM, helperEnvironment = {}) {
+async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = {}, repositoryRoot, filesystem = DEFAULT_FILESYSTEM, helperEnvironment = {}, helperPath = HELPER_PATH, helperTimeoutMs = 10_000) {
   ({ lifecycle, rows, deployment, outputDirectory } = snapshotData({ lifecycle, rows, deployment, outputDirectory }));
   validateLifecycle(lifecycle);
   validateDeployment(deployment);
@@ -298,7 +342,7 @@ async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = 
     ['04-cleanup.md', cleanupMarkdown()],
   ];
   for (const [, contents] of documents) rejectSensitive(contents, 'Rendered evidence');
-  await runDescriptorTransaction(directory, documents, boundary, filesystem, helperEnvironment);
+  await runDescriptorTransaction(directory, documents, boundary, filesystem, helperEnvironment, helperPath, helperTimeoutMs);
   return Object.freeze({ files: Object.freeze([...FILES]) });
 }
 
@@ -306,7 +350,7 @@ export async function writePhase9Evidence(options) {
   return writeEvidence(options, MODULE_REPOSITORY_ROOT);
 }
 
-export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAULT_FILESYSTEM, helperEnvironment = {} } = {}) {
+export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAULT_FILESYSTEM, helperEnvironment = {}, helperPath = HELPER_PATH, helperTimeoutMs = 10_000 } = {}) {
   if (typeof repositoryRoot !== 'string' || !isAbsolute(repositoryRoot) || resolve(repositoryRoot) !== repositoryRoot) {
     throw new Error('Evidence repository root is invalid.');
   }
@@ -314,10 +358,20 @@ export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAUL
     throw new Error('Evidence filesystem boundary is invalid.');
   }
   if (!helperEnvironment || typeof helperEnvironment !== 'object' || Array.isArray(helperEnvironment)
-    || Object.keys(helperEnvironment).some(key => !['PHASE9_WRITER_TEST_FAIL_PROMOTION', 'PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS'].includes(key))) {
+    || Object.keys(helperEnvironment).some(key => ![
+      'PHASE9_WRITER_TEST_FAIL_PROMOTION', 'PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS',
+      'PHASE9_WRITER_TEST_SIGKILL_AFTER_TEMP', 'PHASE9_WRITER_TEST_HANG',
+      'PHASE9_WRITER_TEST_REPLACE_PROMOTION',
+    ].includes(key))) {
     throw new Error('Evidence helper environment is invalid.');
   }
-  return Object.freeze({ write: options => writeEvidence(options, repositoryRoot, filesystem, helperEnvironment) });
+  if (typeof helperPath !== 'string' || !isAbsolute(helperPath) || resolve(helperPath) !== helperPath
+    || !Number.isInteger(helperTimeoutMs) || helperTimeoutMs < 100 || helperTimeoutMs > 30_000) {
+    throw new Error('Evidence helper execution boundary is invalid.');
+  }
+  return Object.freeze({ write: options => writeEvidence(
+    options, repositoryRoot, filesystem, helperEnvironment, helperPath, helperTimeoutMs,
+  ) });
 }
 
 export { FILES as PHASE9_EVIDENCE_FILES };
