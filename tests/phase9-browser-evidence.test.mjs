@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { accountSessionRedirect } from '../src/lib/dashboard-account-session.ts';
+import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
 
 import {
   ISOLATION_SCENARIOS,
@@ -35,6 +36,10 @@ import {
   runPendingDeletionScenario,
   runRouteScenario,
 } from '../scripts/qa-evidence/phase9/scenarios.mjs';
+import {
+  createLifecycleGuardian,
+  runGuardedLifecycle,
+} from '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs';
 
 const safeWindow = (overrides = {}) => {
   const finalPath = overrides.finalPath ?? '/family';
@@ -4375,4 +4380,407 @@ test('phase 9 browser scenarios admission history filters only protected heading
     window: safeWindow({ protectedRender: true, renderSignals: [heading('/admin', 'Account Lookup'), heading('/family', 'Family Overview')] }),
   });
   assert.throws(wrong, /unexpected protected render/i);
+});
+
+const guardianAliases = [
+  'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member', 'qa-multi-org',
+  'qa-fake-superadmin', 'qa-unverified', 'qa-suspended', 'qa-removed-member', 'qa-parent-a',
+  'qa-parent-b', 'qa-adult-player-a', 'qa-adult-player-b', 'qa-youth-active', 'qa-league-creator',
+  'qa-school-admin', 'qa-superadmin', 'qa-pending-delete', 'qa-missing-profile', 'qa-no-team',
+];
+const guardianSortedAliases = [...guardianAliases].sort();
+const guardianUidSuffixes = [
+  'adult-player-a', 'adult-player-b', 'coach-owner-a', 'coach-owner-b', 'fake-superadmin',
+  'league-creator', 'missing-profile', 'multi-org', 'no-team', 'parent-a', 'parent-b',
+  'pending-delete', 'removed-member', 'school-admin', 'superadmin', 'suspended', 'team-assistant',
+  'team-member', 'unverified', 'youth-active',
+];
+
+function lifecycleGuardianFixture(overrides = {}) {
+  const runId = 'qa-phase7-20260826T120000Z-abcdef123456';
+  const workspace = '/tmp/phase9-core-identities.test';
+  const manifestPath = `${workspace}/manifest.json`;
+  const credentialPath = `${workspace}/credentials.json`;
+  const definition = buildFixtureDefinition({ runId, expiresAt: '2026-09-02T12:00:00Z', manifestVersion: 3 });
+  const authUids = definition.identities.map(identity => identity.uid);
+  const firestorePaths = definition.documents.map(document => document.path);
+  const expectedAbsentFirestorePaths = definition.expectedAbsentDocuments.map(document => document.path);
+  const events = [];
+  const files = new Set();
+  let workspaceExists = false;
+  let cleaned = false;
+  let transitioned = false;
+  let probeAuthChecks = 0;
+  let probeFirestoreChecks = 0;
+  const manifest = () => JSON.stringify({
+    version: 3,
+    runId,
+    projectId: 'the-squad-v2-staging',
+    authUids,
+    firestorePaths,
+    expectedAbsentFirestorePaths,
+    state: cleaned ? 'cleaned' : 'seeded',
+    createdAt: '2026-08-26T12:00:00Z',
+    updatedAt: '2026-08-26T12:00:00Z',
+    expiresAt: '2026-09-02T12:00:00Z',
+    transitions: {
+      'qa-suspended': { version: 1, state: 'active' },
+      'qa-removed-member': { version: 1, state: 'active' },
+      'qa-pending-delete': transitioned ? {
+        version: 1, state: 'pending_deletion', startedAt: '2026-08-26T12:00:00Z',
+        firestoreUpdatedAt: '2026-08-26T12:00:00Z', revokedAt: '2026-08-26T12:00:00Z',
+        completedAt: '2026-08-26T12:00:00Z',
+      } : { version: 1, state: 'active' },
+    },
+  });
+  const inspectResult = () => ({
+    command: 'inspect', ok: true,
+    aliases: cleaned ? [] : guardianSortedAliases,
+    states: { manifest: cleaned ? 'cleaned' : 'seeded', problems: 0 },
+    drift: [],
+    counts: { expected: { auth: 20, firestore: 82 }, actualPresent: cleaned ? { auth: 0, firestore: 0 } : { auth: 20, firestore: 82 } },
+    uidSuffixes: guardianUidSuffixes,
+  });
+  const results = {
+    preflight: { command: 'preflight', safe: true, projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN, plannedAliases: 20, plannedTeams: 3 },
+    seed: { command: 'seed', state: 'seeded', aliases: guardianAliases, counts: { auth: 20, firestore: 82 }, uidSuffixes: guardianUidSuffixes },
+    transition: { command: 'transition', alias: 'qa-pending-delete', state: 'pending_deletion', uidSuffix: 'pending-delete' },
+    cleanup: { command: 'cleanup', ok: true, retained: [], deleted: { auth: 20, firestore: 82 }, followUp: {
+      retained: { auth: { count: 0, aliases: [] }, firestore: { count: 0, aliases: [] } },
+      failures: { auth: { count: 0, aliases: [] }, firestore: { count: 0, aliases: [] } },
+    } },
+  };
+  let inspectCount = 0;
+  const fixtureCommand = async argv => {
+    assert.equal(Array.isArray(argv), true);
+    const command = argv[0];
+    events.push(`fixture:${command}`);
+    assert.deepEqual(argv.slice(1, 5), ['--project', 'the-squad-v2-staging', '--confirm-project', 'the-squad-v2-staging']);
+    assert.equal(argv.includes('--run-id'), false);
+    if (command === 'preflight') assert.deepEqual(argv.slice(5), ['--origin', STAGING_ORIGIN]);
+    else {
+      assert.equal(argv[5], '--manifest');
+      assert.equal(argv[6], manifestPath);
+    }
+    if (command === 'seed') {
+      if (!overrides.missingManifest) files.add(manifestPath);
+      if (!overrides.missingCredential) files.add(credentialPath);
+      assert.deepEqual(argv.slice(7), ['--credentials', credentialPath, '--expires-at', '2026-09-02T12:00:00Z']);
+    }
+    if (command === 'transition') {
+      if (!overrides.transitionNotPersisted) transitioned = true;
+      assert.deepEqual(argv.slice(7), ['--alias', 'qa-pending-delete']);
+    }
+    if (command === 'cleanup') cleaned = true;
+    const result = command === 'inspect' ? inspectResult() : results[command];
+    inspectCount += command === 'inspect' ? 1 : 0;
+    const mutation = overrides.commandResult?.({ command, result: structuredClone(result), inspectCount });
+    return mutation ?? { exitCode: 0, stdout: JSON.stringify(result) };
+  };
+  const browserClient = {
+    async closeAllBrowsers() { events.push('browser:close'); if (overrides.browserCloseFailure) throw new Error('raw close failure'); },
+    async listBrowsers() {
+      events.push('browser:list');
+      const afterClose = events.includes('browser:close');
+      return { browsers: overrides.remainingBrowsersAfterClose && afterClose ? ['private-session'] : [] };
+    },
+  };
+  const filesystem = {
+    async mkdtemp(prefix) { events.push('fs:mkdtemp'); assert.equal(prefix, '/tmp/phase9-core-identities.'); workspaceExists = true; return workspace; },
+    async chmod(path, mode) { events.push('fs:chmod'); assert.equal(path, workspace); assert.equal(mode, 0o700); },
+    async stat(path) {
+      if (path === workspace && workspaceExists) return { isDirectory: () => true, mode: overrides.workspaceMode ?? 0o40700 };
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    },
+    async lstat(path) {
+      if (path === workspace && workspaceExists) return { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false, mode: 0o40700 };
+      if (files.has(path)) return {
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        mode: path === credentialPath ? (overrides.credentialMode ?? 0o100600) : (overrides.manifestMode ?? 0o100600),
+      };
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    },
+    async readFile(path) {
+      events.push('fs:read-manifest');
+      if (overrides.corruptManifest) return '{';
+      if (!files.has(path)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      return manifest();
+    },
+    async removeCredentialFile(path) {
+      events.push('fs:remove-credential');
+      if (overrides.credentialRemovalFailure) throw new Error('raw credential failure');
+      if (path !== credentialPath || !files.has(path)) return false;
+      if (!overrides.credentialRemovalLeavesFile) files.delete(path);
+      return true;
+    },
+    async rm(path) {
+      events.push('fs:remove-workspace');
+      if (overrides.workspaceRemovalFailure) throw new Error('raw workspace failure');
+      assert.equal(path, workspace);
+      if (!overrides.workspaceRemovalLeavesDirectory) {
+        workspaceExists = false;
+        files.clear();
+      }
+    },
+  };
+  const adapterFactory = async () => {
+    events.push('adapter:init');
+    return {
+      projectId: 'the-squad-v2-staging',
+      connect: () => ({
+        auth: { async getUser() { probeAuthChecks += 1; throw Object.assign(new Error('not found'), { code: 'auth/user-not-found' }); } },
+        firestore: { async get() { probeFirestoreChecks += 1; return { exists: false, data: () => undefined }; } },
+      }),
+    };
+  };
+  const handlers = new Map();
+  const processHooks = {
+    on(name, handler) {
+      events.push(`hook:on:${name}`);
+      if (overrides.hookOnFailure) throw new Error('raw hook registration');
+      handlers.set(name, handler);
+    },
+    off(name) {
+      events.push(`hook:off:${name}`);
+      if (overrides.hookOffFailure) throw new Error('raw hook removal');
+      handlers.delete(name);
+    },
+  };
+  return {
+    dependencies: { fixtureCommand, browserClient, adapterFactory: overrides.adapterFactory ?? adapterFactory, filesystem, processHooks },
+    options: {
+      projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN,
+      expiresAt: '2026-09-02T12:00:00Z',
+      beforeTransition: async () => events.push('scenario:before-transition'),
+      afterTransition: async () => events.push('scenario:after-transition'),
+    },
+    events, handlers, files, workspace, manifestPath, credentialPath,
+    get workspaceExists() { return workspaceExists; },
+    get probeAuthChecks() { return probeAuthChecks; },
+    get probeFirestoreChecks() { return probeFirestoreChecks; },
+  };
+}
+
+test('phase 9 lifecycle guardian runs the exact ordered state machine and exact absence proof', async () => {
+  const fixture = lifecycleGuardianFixture();
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.deepEqual(result, {
+    ok: true,
+    state: 'disarmed',
+    history: [
+      'uninitialized', 'guarded', 'preflighted', 'seeded', 'inspected', 'browsers-closed',
+      'preclean-inspected', 'cleaned', 'clean-inspected', 'independently-absent',
+      'credential-removed', 'workspace-removed', 'disarmed',
+    ],
+    browserClosureCertified: true,
+    closureCertified: true,
+  });
+  assert.deepEqual(fixture.events.filter(event => event.startsWith('fixture:')), [
+    'fixture:preflight', 'fixture:seed', 'fixture:inspect', 'fixture:transition',
+    'fixture:inspect', 'fixture:cleanup', 'fixture:inspect',
+  ]);
+  assert.equal(fixture.events.indexOf('scenario:before-transition') < fixture.events.indexOf('fixture:transition'), true);
+  assert.equal(fixture.events.indexOf('fixture:transition') < fixture.events.indexOf('scenario:after-transition'), true);
+  assert.equal(fixture.events.indexOf('browser:close') < fixture.events.indexOf('fixture:cleanup'), true);
+  assert.equal(fixture.events.indexOf('adapter:init') < fixture.events.indexOf('fs:remove-credential'), true);
+  assert.equal(fixture.events.filter(event => event.startsWith('hook:on:')).length, 4);
+  assert.equal(fixture.events.indexOf('hook:on:SIGINT') < fixture.events.indexOf('fs:mkdtemp'), true);
+  assert.equal(fixture.events.indexOf('fixture:preflight') < fixture.events.indexOf('fs:mkdtemp'), true);
+  assert.equal(fixture.probeAuthChecks, 20);
+  assert.equal(fixture.probeFirestoreChecks, 83);
+  assert.equal(fixture.workspaceExists, false);
+  assert.equal(fixture.handlers.size, 0);
+});
+
+test('phase 9 lifecycle guardian rejects command and lifecycle contract failures despite exit zero', async t => {
+  const cases = [
+    ['nonzero preflight', ({ command, result }) => command === 'preflight' ? { exitCode: 2, stdout: JSON.stringify(result) } : undefined, 'command-failed'],
+    ['malformed seed JSON', ({ command }) => command === 'seed' ? { exitCode: 0, stdout: '{' } : undefined, 'invalid-result'],
+    ['inspect ok false', ({ command, result, inspectCount }) => command === 'inspect' && inspectCount === 1 ? { exitCode: 0, stdout: JSON.stringify({ ...result, ok: false }) } : undefined, 'invalid-result'],
+    ['inspect drift', ({ command, result, inspectCount }) => command === 'inspect' && inspectCount === 1 ? { exitCode: 0, stdout: JSON.stringify({ ...result, drift: ['private'], states: { manifest: 'seeded', problems: 1 } }) } : undefined, 'invalid-result'],
+    ['preclean inspect drift', ({ command, result, inspectCount }) => command === 'inspect' && inspectCount === 2 ? { exitCode: 0, stdout: JSON.stringify({ ...result, drift: ['private'], states: { manifest: 'seeded', problems: 1 } }) } : undefined, 'invalid-result'],
+    ['malformed transition', ({ command, result }) => command === 'transition' ? { exitCode: 0, stdout: JSON.stringify({ ...result, alias: 'wrong' }) } : undefined, 'invalid-result'],
+    ['cleanup ok false on exit zero', ({ command, result }) => command === 'cleanup' ? { exitCode: 0, stdout: JSON.stringify({ ...result, ok: false }) } : undefined, 'invalid-result'],
+    ['cleanup retention', ({ command, result }) => command === 'cleanup' ? { exitCode: 0, stdout: JSON.stringify({ ...result, retained: ['auth'] }) } : undefined, 'invalid-result'],
+    ['cleanup failures', ({ command, result }) => command === 'cleanup' ? { exitCode: 0, stdout: JSON.stringify({ ...result, followUp: { ...result.followUp, failures: { ...result.followUp.failures, auth: { count: 1, aliases: ['private'] } } } }) } : undefined, 'invalid-result'],
+    ['clean inspect still present', ({ command, result, inspectCount }) => command === 'inspect' && inspectCount >= 3 ? { exitCode: 0, stdout: JSON.stringify({ ...result, aliases: guardianSortedAliases, states: { manifest: 'seeded', problems: 0 }, counts: { ...result.counts, actualPresent: { auth: 20, firestore: 82 } } }) } : undefined, 'invalid-result'],
+  ];
+  for (const [name, commandResult, category] of cases) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture({ commandResult });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, category);
+    assert.equal(JSON.stringify(result).includes('/tmp/'), false);
+    assert.equal(JSON.stringify(result).includes('private'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian rejects nonzero fixture exits at every mutating boundary', async t => {
+  const cases = [
+    ['seed', ({ command }) => command === 'seed'],
+    ['initial inspect', ({ command, inspectCount }) => command === 'inspect' && inspectCount === 1],
+    ['transition', ({ command }) => command === 'transition'],
+    ['preclean inspect', ({ command, inspectCount }) => command === 'inspect' && inspectCount === 2],
+    ['cleanup', ({ command }) => command === 'cleanup'],
+    ['clean inspect', ({ command, inspectCount }) => command === 'inspect' && inspectCount === 3],
+  ];
+  for (const [name, matches] of cases) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture({
+      commandResult: details => matches(details)
+        ? { exitCode: 9, stdout: JSON.stringify(details.result) }
+        : undefined,
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'command-failed');
+    assert.equal(JSON.stringify(result).includes(fixture.manifestPath), false);
+  });
+});
+
+test('phase 9 lifecycle guardian preserves exact recovery state when browser closure or manifest certainty fails', async t => {
+  for (const [name, overrides, category, manifestPreserved] of [
+    ['browser close failure', { browserCloseFailure: true }, 'browser-closure-failed', true],
+    ['browser list remains nonempty', { remainingBrowsersAfterClose: true }, 'browser-closure-failed', true],
+    ['manifest is corrupt', { corruptManifest: true }, 'manifest-uncertain', true],
+    ['manifest is missing after seed', { missingManifest: true }, 'manifest-uncertain', false],
+  ]) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture(overrides);
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, category);
+    assert.equal(result.workspacePreserved, true);
+    assert.equal(result.manifestPreserved, manifestPreserved);
+    assert.equal(fixture.workspaceExists, true);
+    assert.equal(fixture.events.includes('fs:remove-credential'), false);
+    assert.equal(fixture.events.includes('fs:remove-workspace'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian fails closed on incomplete probe and removal uncertainty', async t => {
+  const probe = lifecycleGuardianFixture({
+    adapterFactory: async () => ({
+      projectId: 'the-squad-v2-staging',
+      connect: () => ({
+        auth: { async getUser() { throw Object.assign(new Error('not found'), { code: 'auth/user-not-found' }); } },
+        firestore: { async get() { throw new Error('raw probe failure'); } },
+      }),
+    }),
+  });
+  const probeResult = await runGuardedLifecycle({ ...probe.dependencies, options: probe.options });
+  assert.equal(probeResult.ok, false);
+  assert.equal(probeResult.category, 'independent-probe-failed');
+  assert.equal(probeResult.workspacePreserved, true);
+
+  const wrongProject = lifecycleGuardianFixture({
+    adapterFactory: async () => ({ projectId: 'wrong-project', connect: () => ({}) }),
+  });
+  const wrongProjectResult = await runGuardedLifecycle({ ...wrongProject.dependencies, options: wrongProject.options });
+  assert.equal(wrongProjectResult.ok, false);
+  assert.equal(wrongProjectResult.category, 'independent-probe-failed');
+
+  const unexpectedPresence = lifecycleGuardianFixture({
+    adapterFactory: async () => ({
+      projectId: 'the-squad-v2-staging',
+      connect: () => ({
+        auth: { async getUser() { throw Object.assign(new Error('not found'), { code: 'auth/user-not-found' }); } },
+        firestore: { async get() { return { exists: true, data: () => ({}) }; } },
+      }),
+    }),
+  });
+  const unexpectedPresenceResult = await runGuardedLifecycle({ ...unexpectedPresence.dependencies, options: unexpectedPresence.options });
+  assert.equal(unexpectedPresenceResult.ok, false);
+  assert.equal(unexpectedPresenceResult.category, 'independent-probe-failed');
+
+  for (const [name, overrides, category] of [
+    ['credential removal', { credentialRemovalFailure: true }, 'credential-removal-failed'],
+    ['credential still present after removal', { credentialRemovalLeavesFile: true }, 'credential-removal-failed'],
+    ['workspace removal', { workspaceRemovalFailure: true }, 'workspace-removal-failed'],
+    ['workspace still present after removal', { workspaceRemovalLeavesDirectory: true }, 'workspace-removal-failed'],
+  ]) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture(overrides);
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, category);
+    assert.equal(result.state === 'disarmed', false);
+  });
+});
+
+test('phase 9 lifecycle guardian rejects unsafe workspace and private-file boundaries', async t => {
+  for (const [name, overrides, category] of [
+    ['workspace is not mode 0700', { workspaceMode: 0o40755 }, 'manifest-uncertain'],
+    ['manifest is not mode 0600', { manifestMode: 0o100644 }, 'manifest-uncertain'],
+    ['credential is missing', { missingCredential: true }, 'credential-uncertain'],
+    ['credential is not mode 0600', { credentialMode: 0o100644 }, 'credential-uncertain'],
+  ]) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture(overrides);
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, category);
+    assert.equal(JSON.stringify(result).includes(fixture.workspace), false);
+  });
+});
+
+test('phase 9 lifecycle guardian fails closed when process guarding cannot arm or disarm', async t => {
+  for (const [name, overrides, category] of [
+    ['handler registration fails', { hookOnFailure: true }, 'guardian-registration-failed'],
+    ['handler removal fails', { hookOffFailure: true }, 'guardian-disarm-failed'],
+  ]) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture(overrides);
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, category);
+    assert.equal(result.state === 'disarmed', false);
+    assert.equal(JSON.stringify(result).includes('raw hook'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian cleans exact resources when either scenario phase fails', async t => {
+  for (const phase of ['beforeTransition', 'afterTransition']) await t.test(phase, async () => {
+    const fixture = lifecycleGuardianFixture();
+    fixture.options[phase] = async () => { throw new Error('provider detail must not escape'); };
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'operation-failed');
+    assert.equal(result.closureCertified, true);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    assert.equal(fixture.workspaceExists, false);
+    assert.equal(JSON.stringify(result).includes('provider detail'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transition before cleanup', async () => {
+  const fixture = lifecycleGuardianFixture({ transitionNotPersisted: true });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'manifest-uncertain');
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.workspaceExists, false);
+  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+});
+
+test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', async () => {
+  const fixture = lifecycleGuardianFixture();
+  let release;
+  fixture.options.beforeTransition = () => new Promise(resolve => { release = resolve; });
+  const guardian = createLifecycleGuardian(fixture.dependencies);
+  const running = guardian.run(fixture.options);
+  while (!release) await new Promise(resolve => setImmediate(resolve));
+  const second = await guardian.run(fixture.options);
+  assert.equal(second.ok, false);
+  assert.equal(second.category, 'reentry');
+  const interrupt = fixture.handlers.get('SIGTERM');
+  const firstEmergencyPromise = interrupt();
+  const secondEmergencyPromise = interrupt();
+  assert.equal(firstEmergencyPromise, secondEmergencyPromise);
+  release();
+  const [firstEmergency, secondEmergency] = await Promise.all([firstEmergencyPromise, secondEmergencyPromise]);
+  assert.deepEqual(secondEmergency, firstEmergency);
+  assert.equal(firstEmergency.ok, false);
+  assert.equal(firstEmergency.interrupted, true);
+  assert.deepEqual(await running, firstEmergency);
+  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+  assert.equal(fixture.events.filter(event => event === 'fs:remove-workspace').length, 1);
+  assert.equal(fixture.events.indexOf('browser:close') < fixture.events.indexOf('fixture:cleanup'), true);
 });
