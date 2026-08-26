@@ -57,6 +57,7 @@ function requireDependencies(value) {
   for (const name of ['fixtureCommand', 'adapterFactory', 'preconditionVerifier']) {
     if (typeof value[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
+  if (typeof value.scenarioRunner?.start !== 'function') throw new GuardianFailure('configuration-invalid');
   for (const name of ['closeBrowser', 'listBrowsers']) {
     if (typeof value.browserClient?.[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
@@ -82,8 +83,8 @@ function exactOptions(value) {
     || !/^[1-9][0-9]{5,20}$/.test(value.stagingRunId)
     || !Number.isSafeInteger(value.pullRequestNumber)
     || value.pullRequestNumber <= 0
-    || (value.beforeTransition !== undefined && typeof value.beforeTransition !== 'function')
-    || (value.afterTransition !== undefined && typeof value.afterTransition !== 'function')
+    || value.beforeTransition !== undefined
+    || value.afterTransition !== undefined
   ) throw new GuardianFailure('configuration-invalid');
   return Object.freeze({
     projectId: value.projectId,
@@ -92,8 +93,6 @@ function exactOptions(value) {
     deployedSha: value.deployedSha,
     stagingRunId: value.stagingRunId,
     pullRequestNumber: value.pullRequestNumber,
-    beforeTransition: value.beforeTransition,
-    afterTransition: value.afterTransition,
   });
 }
 
@@ -163,14 +162,56 @@ async function proveAbsent(filesystem, path) {
   }
 }
 
-async function preservationState(filesystem, path) {
+function exactWorkspacePath(path) {
+  return typeof path === 'string'
+    && resolve(path) === path
+    && /^\/tmp\/phase9-core-identities\.[A-Za-z0-9_-]+$/.test(path);
+}
+
+async function workspacePreservationState(filesystem, path) {
   if (!path) return 'verified-absent';
   try {
-    await filesystem.lstat(path);
+    if (!exactWorkspacePath(path)) return 'uncertain';
+    const metadata = await filesystem.lstat(path);
+    if (
+      !metadata?.isDirectory?.()
+      || metadata.isSymbolicLink?.()
+      || (metadata.mode & 0o777) !== 0o700
+    ) return 'uncertain';
     return 'verified-present';
   } catch (error) {
     return isMissing(error) ? 'verified-absent' : 'uncertain';
   }
+}
+
+async function manifestPreservationState(filesystem, workspacePath, manifestPath) {
+  if (!manifestPath) return 'verified-absent';
+  try {
+    if (
+      !exactWorkspacePath(workspacePath)
+      || manifestPath !== join(workspacePath, 'manifest.json')
+    ) return 'uncertain';
+    const metadata = await filesystem.lstat(manifestPath);
+    if (await workspacePreservationState(filesystem, workspacePath) !== 'verified-present') return 'uncertain';
+    if (
+      !metadata?.isFile?.()
+      || metadata.isSymbolicLink?.()
+      || (metadata.mode & 0o777) !== 0o600
+    ) return 'uncertain';
+    const text = await filesystem.readFile(manifestPath, 'utf8');
+    if (typeof text !== 'string' || text.length > 262_144) return 'uncertain';
+    ensureManifestShape(validateManifest(JSON.parse(text)));
+    return 'verified-present';
+  } catch (error) {
+    return isMissing(error) ? 'verified-absent' : 'uncertain';
+  }
+}
+
+async function preservationStates(filesystem, workspacePath, manifestPath) {
+  return {
+    workspacePreservation: await workspacePreservationState(filesystem, workspacePath),
+    manifestPreservation: await manifestPreservationState(filesystem, workspacePath, manifestPath),
+  };
 }
 
 async function requirePrivateRegularFile(filesystem, path, category) {
@@ -268,6 +309,145 @@ function browserSessionNames(result) {
   return names;
 }
 
+function requireExactObject(value, keys, category) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new GuardianFailure(category);
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new GuardianFailure(category);
+  }
+  return value;
+}
+
+function requireCount(value, maximum, category) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) throw new GuardianFailure(category);
+  return value;
+}
+
+function requireExactStringSet(value, allowed, category, { complete = false } = {}) {
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new GuardianFailure(category);
+  if (new Set(value).size !== value.length || value.some(item => !allowed.has(item))) throw new GuardianFailure(category);
+  if (complete && (value.length !== allowed.size || value.some(item => !allowed.has(item)))) {
+    throw new GuardianFailure(category);
+  }
+  if (value.some((item, index) => index > 0 && value[index - 1].localeCompare(item) >= 0)) {
+    throw new GuardianFailure(category);
+  }
+  return value;
+}
+
+function validateRecoveryInspect(value, exactManifest) {
+  const category = 'recovery-inspect-uncertain';
+  requireExactObject(value, ['command', 'ok', 'aliases', 'counts', 'states', 'drift', 'uidSuffixes'], category);
+  if (value.command !== 'inspect' || typeof value.ok !== 'boolean') throw new GuardianFailure(category);
+  const definition = buildFixtureDefinition({
+    runId: exactManifest.runId,
+    expiresAt: exactManifest.expiresAt,
+    manifestVersion: FIXTURE_MANIFEST_VERSION,
+  });
+  const aliases = new Set(definition.identities.map(identity => identity.alias));
+  const driftAliases = new Set([...aliases, ...definition.documents.map(document => document.alias)]);
+  requireExactStringSet(value.aliases, aliases, category);
+  const uidSuffixes = new Set(exactManifest.authUids.map(uid => uid.slice(`${exactManifest.runId}-`.length)));
+  requireExactStringSet(value.uidSuffixes, uidSuffixes, category, { complete: true });
+  const counts = requireExactObject(value.counts, ['expected', 'actualPresent'], category);
+  const expected = requireExactObject(counts.expected, ['auth', 'firestore'], category);
+  const actual = requireExactObject(counts.actualPresent, ['auth', 'firestore'], category);
+  if (expected.auth !== exactManifest.authUids.length || expected.firestore !== exactManifest.firestorePaths.length) {
+    throw new GuardianFailure(category);
+  }
+  requireCount(actual.auth, exactManifest.authUids.length, category);
+  requireCount(actual.firestore, exactManifest.firestorePaths.length, category);
+  const states = requireExactObject(value.states, ['manifest', 'problems'], category);
+  if (states.manifest !== exactManifest.state) throw new GuardianFailure(category);
+  if (!Array.isArray(value.drift) || value.drift.length > FIXTURE_RESOURCE_COUNTS.auth + FIXTURE_RESOURCE_COUNTS.firestore) {
+    throw new GuardianFailure(category);
+  }
+  requireCount(states.problems, value.drift.length, category);
+  if (states.problems !== value.drift.length || value.ok !== (value.drift.length === 0)) throw new GuardianFailure(category);
+  for (const entry of value.drift) {
+    requireExactObject(entry, ['kind', 'alias', 'field', 'reason'], category);
+    if (
+      !new Set(['auth', 'firestore']).has(entry.kind)
+      || !driftAliases.has(entry.alias)
+      || entry.field !== 'presence'
+      || entry.reason !== 'missing'
+    ) throw new GuardianFailure(category);
+  }
+  const authMaximum = new Map(definition.identities.map(identity => [identity.alias, 1]));
+  const firestoreMaximum = new Map();
+  for (const document of definition.documents) {
+    firestoreMaximum.set(document.alias, (firestoreMaximum.get(document.alias) ?? 0) + 1);
+  }
+  const observedMissing = { auth: new Map(), firestore: new Map() };
+  for (const entry of value.drift) {
+    const countsForKind = observedMissing[entry.kind];
+    countsForKind.set(entry.alias, (countsForKind.get(entry.alias) ?? 0) + 1);
+  }
+  for (const [kind, maximum] of [['auth', authMaximum], ['firestore', firestoreMaximum]]) {
+    for (const [alias, count] of observedMissing[kind]) {
+      if (count > (maximum.get(alias) ?? 0)) throw new GuardianFailure(category);
+    }
+  }
+  const missingAuth = value.drift.filter(entry => entry.kind === 'auth').length;
+  const missingFirestore = value.drift.filter(entry => entry.kind === 'firestore').length;
+  if (
+    missingAuth !== exactManifest.authUids.length - actual.auth
+    || missingFirestore !== exactManifest.firestorePaths.length - actual.firestore
+  ) throw new GuardianFailure(category);
+  return Object.freeze({ auth: actual.auth, firestore: actual.firestore });
+}
+
+function validateRecoveryCleanup(value, expectedDeleted) {
+  const category = 'recovery-cleanup-failed';
+  requireExactObject(value, ['command', 'ok', 'retained', 'deleted', 'followUp'], category);
+  if (value.command !== 'cleanup' || value.ok !== true || !Array.isArray(value.retained) || value.retained.length !== 0) {
+    throw new GuardianFailure(category);
+  }
+  const deleted = requireExactObject(value.deleted, ['auth', 'firestore'], category);
+  if (deleted.auth !== expectedDeleted.auth || deleted.firestore !== expectedDeleted.firestore) {
+    throw new GuardianFailure(category);
+  }
+  const followUp = requireExactObject(value.followUp, ['retained', 'failures'], category);
+  for (const name of ['retained', 'failures']) {
+    const group = requireExactObject(followUp[name], ['auth', 'firestore'], category);
+    for (const resource of ['auth', 'firestore']) {
+      const summary = requireExactObject(group[resource], ['count', 'aliases'], category);
+      if (summary.count !== 0 || !Array.isArray(summary.aliases) || summary.aliases.length !== 0) {
+        throw new GuardianFailure(category);
+      }
+    }
+  }
+  return value;
+}
+
+function validateScenarioHandle(value) {
+  const category = 'scenario-runner-invalid';
+  requireExactObject(value, ['browserSessions', 'completion', 'terminate', 'join'], category);
+  if (
+    !value.completion
+    || typeof value.completion.then !== 'function'
+    || typeof value.terminate !== 'function'
+    || typeof value.join !== 'function'
+  ) throw new GuardianFailure(category);
+  if (
+    !Array.isArray(value.browserSessions)
+    || value.browserSessions.some(session => typeof session !== 'string')
+  ) throw new GuardianFailure(category);
+  const browserSessions = browserSessionNames({ browsers: value.browserSessions });
+  return { ...value, browserSessions };
+}
+
+function validateScenarioCompletion(value) {
+  requireExactObject(value, ['ok'], 'scenario-failed');
+  if (value.ok !== true) throw new GuardianFailure('scenario-failed');
+}
+
+function validateScenarioJoin(value) {
+  requireExactObject(value, ['closed'], 'scenario-closure-failed');
+  if (value.closed !== true) throw new GuardianFailure('scenario-closure-failed');
+}
+
 async function exactIndependentProbe(adapterFactory, manifest) {
   let adapter;
   try {
@@ -322,12 +502,19 @@ export function createLifecycleGuardian({
   browserClient,
   adapterFactory,
   preconditionVerifier,
+  scenarioRunner,
+  scenarioJoinTimeoutMs = 5_000,
   filesystem = defaultFilesystem,
   processHooks = defaultProcessHooks,
   repositoryRoot = process.cwd(),
 } = {}) {
-  const dependencies = { fixtureCommand, browserClient, adapterFactory, preconditionVerifier, filesystem, processHooks };
+  const dependencies = {
+    fixtureCommand, browserClient, adapterFactory, preconditionVerifier, scenarioRunner, filesystem, processHooks,
+  };
   requireDependencies(dependencies);
+  if (!Number.isSafeInteger(scenarioJoinTimeoutMs) || scenarioJoinTimeoutMs < 1 || scenarioJoinTimeoutMs > 60_000) {
+    throw new GuardianFailure('configuration-invalid');
+  }
 
   let state = 'uninitialized';
   const history = [state];
@@ -342,8 +529,9 @@ export function createLifecycleGuardian({
   let manifest = null;
   let browserClosureCertified = false;
   let closureCertified = false;
-  let acceptingBrowserOwnership = false;
   const ownedBrowserSessions = new Set();
+  let activeScenario = null;
+  let scenarioStartUncertain = false;
   const handlers = new Map();
   let operationTail = Promise.resolve();
 
@@ -364,7 +552,7 @@ export function createLifecycleGuardian({
     if (interrupted) throw new GuardianFailure('interrupted');
   };
 
-  const runFixture = async (command, options, stage, { recovery = false } = {}) => exclusive(async () => {
+  const runFixtureRaw = async (command, options, { recovery = false } = {}) => exclusive(async () => {
     if (!recovery) checkInterrupted();
     let result;
     try {
@@ -373,15 +561,20 @@ export function createLifecycleGuardian({
       throw new GuardianFailure('command-failed');
     }
     const parsed = parseCommandOutput(result);
+    if (!recovery) checkInterrupted();
+    return parsed;
+  });
+
+  const runFixture = async (command, options, stage, { recovery = false } = {}) => {
+    const parsed = await runFixtureRaw(command, options, { recovery });
     let validated;
     try {
       validated = validateLifecycleResult(command, parsed, stage);
     } catch {
       throw new GuardianFailure('invalid-result');
     }
-    if (!recovery) checkInterrupted();
     return validated;
-  });
+  };
 
   const loadExactManifest = async expectedPendingState => {
     if (!manifestPath) throw new GuardianFailure('manifest-uncertain');
@@ -431,6 +624,68 @@ export function createLifecycleGuardian({
     browserClosureCertified = true;
   });
 
+  const bounded = promise => new Promise(resolvePromise => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolvePromise({ status: 'timeout' });
+      }
+    }, scenarioJoinTimeoutMs);
+    Promise.resolve(promise).then(
+      value => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolvePromise({ status: 'fulfilled', value });
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolvePromise({ status: 'rejected' });
+      },
+    );
+  });
+
+  const joinScenario = async handle => {
+    let outcome;
+    try {
+      outcome = await bounded(handle.join({ timeoutMs: scenarioJoinTimeoutMs }));
+    } catch {
+      return false;
+    }
+    if (outcome.status !== 'fulfilled') return false;
+    try {
+      validateScenarioJoin(outcome.value);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const requestScenarioTermination = async (handle, force) => {
+    try {
+      await bounded(handle.terminate({ force }));
+    } catch {
+      // A failed termination request is followed by an independently bounded join proof.
+    }
+  };
+
+  const stopActiveScenario = async () => {
+    if (scenarioStartUncertain) throw new GuardianFailure('scenario-closure-failed');
+    const handle = activeScenario;
+    if (!handle) return;
+    await requestScenarioTermination(handle, false);
+    if (await joinScenario(handle)) {
+      activeScenario = null;
+      return;
+    }
+    await requestScenarioTermination(handle, true);
+    if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
+    activeScenario = null;
+  };
+
   const removeHandlers = () => {
     const remaining = [];
     for (const [name, handler] of handlers) {
@@ -450,14 +705,23 @@ export function createLifecycleGuardian({
     interrupted ||= isInterruption;
     emergencyPromise = (async () => {
       try {
+        await stopActiveScenario();
+      } catch {
+        removeHandlers();
+        return failureSummary({
+          category: 'scenario-closure-failed', state, history, interrupted: isInterruption,
+          browserClosureCertified: false, closureCertified: false,
+          ...await preservationStates(filesystem, workspacePath, manifestPath),
+        });
+      }
+      try {
         await closeOwnedBrowsers();
       } catch {
         removeHandlers();
         return failureSummary({
           category: 'browser-closure-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: false, closureCertified: false,
-          workspacePreservation: await preservationState(filesystem, workspacePath),
-          manifestPreservation: await preservationState(filesystem, manifestPath),
+          ...await preservationStates(filesystem, workspacePath, manifestPath),
         });
       }
       if (!workspacePath) {
@@ -474,8 +738,7 @@ export function createLifecycleGuardian({
           return failureSummary({
             category: 'workspace-removal-failed', state, history, interrupted: isInterruption,
             browserClosureCertified: true, closureCertified: true,
-            workspacePreservation: await preservationState(filesystem, workspacePath),
-            manifestPreservation: await preservationState(filesystem, manifestPath),
+            ...await preservationStates(filesystem, workspacePath, manifestPath),
           });
         }
         removeHandlers();
@@ -491,25 +754,30 @@ export function createLifecycleGuardian({
         return failureSummary({
           category: 'manifest-uncertain', state, history, interrupted: isInterruption,
           browserClosureCertified: true,
-          workspacePreservation: await preservationState(filesystem, workspacePath),
-          manifestPreservation: await preservationState(filesystem, manifestPath),
+          ...await preservationStates(filesystem, workspacePath, manifestPath),
         });
       }
       try {
-        await runFixture('inspect', currentOptions, manifest.state === 'cleaned' ? 'cleaned-absent' : 'seeded-present', { recovery: true });
-        if (manifest.state !== 'cleaned') await runFixture('cleanup', currentOptions, 'cleaned', { recovery: true });
+        if (manifest.state === 'cleaned') {
+          await runFixture('inspect', currentOptions, 'cleaned-absent', { recovery: true });
+        } else {
+          const recoveryInspect = await runFixtureRaw('inspect', currentOptions, { recovery: true });
+          const expectedDeleted = validateRecoveryInspect(recoveryInspect, manifest);
+          const recoveryCleanup = await runFixtureRaw('cleanup', currentOptions, { recovery: true });
+          validateRecoveryCleanup(recoveryCleanup, expectedDeleted);
+        }
         await runFixture('inspect', currentOptions, 'cleaned-absent', { recovery: true });
         await loadExactManifest();
         if (manifest.state !== 'cleaned') throw new GuardianFailure('manifest-uncertain');
         await exactIndependentProbe(adapterFactory, manifest);
         closureCertified = true;
-      } catch {
+      } catch (error) {
         removeHandlers();
         return failureSummary({
-          category, state, history, interrupted: isInterruption,
+          category: error instanceof GuardianFailure ? error.category : category,
+          state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: false,
-          workspacePreservation: await preservationState(filesystem, workspacePath),
-          manifestPreservation: await preservationState(filesystem, manifestPath),
+          ...await preservationStates(filesystem, workspacePath, manifestPath),
         });
       }
       try {
@@ -520,8 +788,7 @@ export function createLifecycleGuardian({
         return failureSummary({
           category: 'credential-removal-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
-          workspacePreservation: await preservationState(filesystem, workspacePath),
-          manifestPreservation: await preservationState(filesystem, manifestPath),
+          ...await preservationStates(filesystem, workspacePath, manifestPath),
         });
       }
       try {
@@ -533,8 +800,7 @@ export function createLifecycleGuardian({
         return failureSummary({
           category: 'workspace-removal-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
-          workspacePreservation: await preservationState(filesystem, workspacePath),
-          manifestPreservation: await preservationState(filesystem, manifestPath),
+          ...await preservationStates(filesystem, workspacePath, manifestPath),
         });
       }
       removeHandlers();
@@ -564,30 +830,31 @@ export function createLifecycleGuardian({
     }
   };
 
-  const ownBrowserSession = session => {
-    if (
-      !acceptingBrowserOwnership
-      || typeof session !== 'string'
-      || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)
-      || ownedBrowserSessions.has(session)
-    ) throw new GuardianFailure('browser-ownership-invalid');
-    ownedBrowserSessions.add(session);
-    return session;
-  };
-
-  const runScenarioPhase = async (callback, privateContext) => {
-    if (typeof callback !== 'function') return;
-    acceptingBrowserOwnership = true;
-    const callbackPromise = Promise.resolve().then(() => callback(privateContext));
-    void callbackPromise.catch(() => {});
+  const runScenarioPhase = async (phase, privateContext) => {
+    let handle;
+    scenarioStartUncertain = true;
     try {
-      await Promise.race([
-        callbackPromise,
-        abortGate.then(() => { throw new GuardianFailure('interrupted'); }),
-      ]);
-    } finally {
-      acceptingBrowserOwnership = false;
+      handle = validateScenarioHandle(scenarioRunner.start(Object.freeze({ phase, ...privateContext })));
+    } catch (error) {
+      if (error instanceof GuardianFailure) throw error;
+      throw new GuardianFailure('scenario-runner-invalid');
     }
+    if (activeScenario) throw new GuardianFailure('scenario-runner-invalid');
+    for (const session of handle.browserSessions) {
+      if (ownedBrowserSessions.has(session)) throw new GuardianFailure('browser-ownership-invalid');
+      ownedBrowserSessions.add(session);
+    }
+    activeScenario = handle;
+    scenarioStartUncertain = false;
+    const completion = Promise.resolve(handle.completion);
+    void completion.catch(() => {});
+    const completed = await Promise.race([
+      completion,
+      abortGate.then(() => { throw new GuardianFailure('interrupted'); }),
+    ]);
+    validateScenarioCompletion(completed);
+    if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
+    activeScenario = null;
   };
 
   let currentOptions = null;
@@ -595,8 +862,7 @@ export function createLifecycleGuardian({
     if (running || state !== 'uninitialized') {
       return failureSummary({
         category: 'reentry', state, history, browserClosureCertified, closureCertified,
-        workspacePreservation: await preservationState(filesystem, workspacePath),
-        manifestPreservation: await preservationState(filesystem, manifestPath),
+        ...await preservationStates(filesystem, workspacePath, manifestPath),
       });
     }
     running = true;
@@ -666,15 +932,14 @@ export function createLifecycleGuardian({
         manifestPath,
         credentialPath,
         runId: manifest.runId,
-        ownBrowserSession,
       });
-      await runScenarioPhase(currentOptions.beforeTransition, privateContext);
+      await runScenarioPhase('before-transition', privateContext);
       checkInterrupted();
       await runFixture('transition', currentOptions, 'pending-deletion');
       checkInterrupted();
       await loadExactManifest('pending_deletion');
       checkInterrupted();
-      await runScenarioPhase(currentOptions.afterTransition, privateContext);
+      await runScenarioPhase('after-transition', privateContext);
       checkInterrupted();
 
       await closeOwnedBrowsers();

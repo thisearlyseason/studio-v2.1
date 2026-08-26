@@ -4438,6 +4438,19 @@ const guardianUidSuffixes = [
   'pending-delete', 'removed-member', 'school-admin', 'superadmin', 'suspended', 'team-assistant',
   'team-member', 'unverified', 'youth-active',
 ];
+const guardianRecoveryDefinition = buildFixtureDefinition({
+  runId: 'qa-phase7-20260826T120000Z-abcdef123456',
+  expiresAt: '2026-09-02T12:00:00Z',
+  manifestVersion: 3,
+});
+const guardianMissingDrift = (authPresent, firestorePresent) => [
+  ...guardianRecoveryDefinition.identities.slice(authPresent).map(identity => ({
+    kind: 'auth', alias: identity.alias, field: 'presence', reason: 'missing',
+  })),
+  ...guardianRecoveryDefinition.documents.slice(firestorePresent).map(document => ({
+    kind: 'firestore', alias: document.alias, field: 'presence', reason: 'missing',
+  })),
+];
 
 function lifecycleGuardianFixture(overrides = {}) {
   const runId = 'qa-phase7-20260826T120000Z-abcdef123456';
@@ -4456,27 +4469,30 @@ function lifecycleGuardianFixture(overrides = {}) {
   let probeAuthChecks = 0;
   let probeFirestoreChecks = 0;
   const browserSessions = new Set(overrides.initialBrowsers ?? []);
-  const manifest = () => JSON.stringify({
-    version: 3,
-    runId,
-    projectId: 'the-squad-v2-staging',
-    authUids,
-    firestorePaths,
-    expectedAbsentFirestorePaths,
-    state: cleaned ? 'cleaned' : 'seeded',
-    createdAt: '2026-08-26T12:00:00Z',
-    updatedAt: '2026-08-26T12:00:00Z',
-    expiresAt: '2026-09-02T12:00:00Z',
-    transitions: {
-      'qa-suspended': { version: 1, state: 'active' },
-      'qa-removed-member': { version: 1, state: 'active' },
-      'qa-pending-delete': transitioned ? {
-        version: 1, state: 'pending_deletion', startedAt: '2026-08-26T12:00:00Z',
-        firestoreUpdatedAt: '2026-08-26T12:00:00Z', revokedAt: '2026-08-26T12:00:00Z',
-        completedAt: '2026-08-26T12:00:00Z',
-      } : { version: 1, state: 'active' },
-    },
-  });
+  const manifest = () => {
+    const value = {
+      version: 3,
+      runId,
+      projectId: 'the-squad-v2-staging',
+      authUids,
+      firestorePaths,
+      expectedAbsentFirestorePaths,
+      state: cleaned ? 'cleaned' : (overrides.manifestState ?? 'seeded'),
+      createdAt: '2026-08-26T12:00:00Z',
+      updatedAt: '2026-08-26T12:00:00Z',
+      expiresAt: '2026-09-02T12:00:00Z',
+      transitions: {
+        'qa-suspended': { version: 1, state: 'active' },
+        'qa-removed-member': { version: 1, state: 'active' },
+        'qa-pending-delete': transitioned ? {
+          version: 1, state: 'pending_deletion', startedAt: '2026-08-26T12:00:00Z',
+          firestoreUpdatedAt: '2026-08-26T12:00:00Z', revokedAt: '2026-08-26T12:00:00Z',
+          completedAt: '2026-08-26T12:00:00Z',
+        } : { version: 1, state: 'active' },
+      },
+    };
+    return JSON.stringify(overrides.manifestMutation?.(structuredClone(value)) ?? value);
+  };
   const inspectResult = () => ({
     command: 'inspect', ok: true,
     aliases: cleaned ? [] : guardianSortedAliases,
@@ -4552,11 +4568,16 @@ function lifecycleGuardianFixture(overrides = {}) {
         && events.some(event => event.startsWith('browser:close'))
         && (path === workspace || path === manifestPath)
       ) throw Object.assign(new Error('uncertain'), { code: 'EACCES' });
-      if (path === workspace && workspaceExists) return { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false, mode: 0o40700 };
+      if (path === workspace && workspaceExists) return {
+        isDirectory: () => overrides.workspaceLstatType !== 'file',
+        isFile: () => overrides.workspaceLstatType === 'file',
+        isSymbolicLink: () => overrides.workspaceLstatType === 'symlink',
+        mode: overrides.workspaceLstatMode ?? overrides.workspaceMode ?? 0o40700,
+      };
       if (files.has(path)) return {
-        isDirectory: () => false,
-        isFile: () => true,
-        isSymbolicLink: () => false,
+        isDirectory: () => path === manifestPath && overrides.manifestLstatType === 'directory',
+        isFile: () => !(path === manifestPath && new Set(['directory', 'symlink']).has(overrides.manifestLstatType)),
+        isSymbolicLink: () => path === manifestPath && overrides.manifestLstatType === 'symlink',
         mode: path === credentialPath ? (overrides.credentialMode ?? 0o100600) : (overrides.manifestMode ?? 0o100600),
       };
       throw Object.assign(new Error('missing'), { code: 'ENOENT' });
@@ -4630,17 +4651,38 @@ function lifecycleGuardianFixture(overrides = {}) {
     };
     return overrides.preconditionResult?.({ request, result: structuredClone(result) }) ?? result;
   };
+  const scenarioRunner = {
+    start(request) {
+      assert.deepEqual(Object.keys(request).sort(), [
+        'credentialPath', 'manifestPath', 'phase', 'runId', 'workspacePath',
+      ]);
+      events.push(`scenario:${request.phase}`);
+      const custom = overrides.scenarioStart?.({ request, events, browserSessions });
+      if (custom) return custom;
+      const sessions = [...(overrides.scenarioBrowserSessions?.[request.phase] ?? [])];
+      for (const session of sessions) browserSessions.add(session);
+      return {
+        browserSessions: sessions,
+        completion: Promise.resolve({ ok: true }),
+        async terminate({ force }) { events.push(`scenario:terminate:${request.phase}:${force ? 'hard' : 'soft'}`); },
+        async join({ timeoutMs }) {
+          assert.equal(Number.isSafeInteger(timeoutMs), true);
+          events.push(`scenario:join:${request.phase}`);
+          return { closed: true };
+        },
+      };
+    },
+  };
   return {
     dependencies: {
       fixtureCommand, browserClient, adapterFactory: overrides.adapterFactory ?? adapterFactory,
-      filesystem, processHooks, preconditionVerifier,
+      filesystem, processHooks, preconditionVerifier, scenarioRunner,
+      scenarioJoinTimeoutMs: overrides.scenarioJoinTimeoutMs ?? 50,
     },
     options: {
       projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN,
       expiresAt: '2026-09-02T12:00:00Z',
       deployedSha, stagingRunId, pullRequestNumber,
-      beforeTransition: async () => events.push('scenario:before-transition'),
-      afterTransition: async () => events.push('scenario:after-transition'),
     },
     events, handlers, files, browserSessions, workspace, manifestPath, credentialPath,
     get workspaceExists() { return workspaceExists; },
@@ -4669,6 +4711,8 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   ]);
   assert.equal(fixture.events.indexOf('scenario:before-transition') < fixture.events.indexOf('fixture:transition'), true);
   assert.equal(fixture.events.indexOf('fixture:transition') < fixture.events.indexOf('scenario:after-transition'), true);
+  assert.equal(fixture.events.indexOf('scenario:join:before-transition') < fixture.events.indexOf('fixture:transition'), true);
+  assert.equal(fixture.events.indexOf('scenario:join:after-transition') < fixture.events.lastIndexOf('browser:list'), true);
   assert.equal(fixture.events.lastIndexOf('browser:list') < fixture.events.indexOf('fixture:cleanup'), true);
   assert.equal(fixture.events.indexOf('adapter:init') < fixture.events.indexOf('fs:remove-credential'), true);
   assert.equal(fixture.events.filter(event => event.startsWith('hook:on:')).length, 4);
@@ -4760,16 +4804,15 @@ test('phase 9 lifecycle guardian preserves exact recovery state when browser clo
   for (const [name, overrides, category, manifestPreservation] of [
     ['browser close failure', { browserCloseFailure: true }, 'browser-closure-failed', 'verified-present'],
     ['browser list remains nonempty', { remainingBrowsersAfterClose: true }, 'browser-closure-failed', 'verified-present'],
-    ['manifest is corrupt', { corruptManifest: true }, 'manifest-uncertain', 'verified-present'],
+    ['manifest is corrupt', { corruptManifest: true }, 'manifest-uncertain', 'uncertain'],
     ['manifest is missing after seed', { missingManifest: true }, 'manifest-uncertain', 'verified-absent'],
   ]) await t.test(name, async () => {
-    const fixture = lifecycleGuardianFixture(overrides);
-    if (overrides.browserCloseFailure || overrides.remainingBrowsersAfterClose) {
-      fixture.options.beforeTransition = context => {
-        context.ownBrowserSession('phase9-guardian-owned');
-        fixture.browserSessions.add('phase9-guardian-owned');
-      };
-    }
+    const fixture = lifecycleGuardianFixture({
+      ...overrides,
+      ...(overrides.browserCloseFailure || overrides.remainingBrowsersAfterClose
+        ? { scenarioBrowserSessions: { 'before-transition': ['phase9-guardian-owned'] } }
+        : {}),
+    });
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
     assert.equal(result.ok, false);
     assert.equal(result.category, category);
@@ -4836,11 +4879,11 @@ test('phase 9 lifecycle guardian fails closed on incomplete probe and removal un
 });
 
 test('phase 9 lifecycle guardian reports preservation uncertainty without claiming presence', async () => {
-  const fixture = lifecycleGuardianFixture({ browserCloseFailure: true, preservationLstatUncertain: true });
-  fixture.options.beforeTransition = context => {
-    context.ownBrowserSession('phase9-guardian-owned');
-    fixture.browserSessions.add('phase9-guardian-owned');
-  };
+  const fixture = lifecycleGuardianFixture({
+    browserCloseFailure: true,
+    preservationLstatUncertain: true,
+    scenarioBrowserSessions: { 'before-transition': ['phase9-guardian-owned'] },
+  });
   const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
   assert.equal(result.ok, false);
   assert.equal(result.workspacePreservation, 'uncertain');
@@ -4879,9 +4922,17 @@ test('phase 9 lifecycle guardian fails closed when process guarding cannot arm o
 });
 
 test('phase 9 lifecycle guardian cleans exact resources when either scenario phase fails', async t => {
-  for (const phase of ['beforeTransition', 'afterTransition']) await t.test(phase, async () => {
-    const fixture = lifecycleGuardianFixture();
-    fixture.options[phase] = async () => { throw new Error('provider detail must not escape'); };
+  for (const phase of ['before-transition', 'after-transition']) await t.test(phase, async () => {
+    const fixture = lifecycleGuardianFixture({
+      scenarioStart: ({ request, events }) => ({
+        browserSessions: [],
+        completion: request.phase === phase
+          ? Promise.reject(new Error('provider detail must not escape'))
+          : Promise.resolve({ ok: true }),
+        async terminate({ force }) { events.push(`scenario:terminate:${request.phase}:${force ? 'hard' : 'soft'}`); },
+        async join() { events.push(`scenario:join:${request.phase}`); return { closed: true }; },
+      }),
+    });
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
     assert.equal(result.ok, false);
     assert.equal(result.category, 'operation-failed');
@@ -4904,16 +4955,30 @@ test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transit
 });
 
 test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', { timeout: 2_000 }, async () => {
-  const fixture = lifecycleGuardianFixture();
-  let release;
-  fixture.options.beforeTransition = context => {
-    context.ownBrowserSession('phase9-guardian-owned');
-    fixture.browserSessions.add('phase9-guardian-owned');
-    return new Promise(resolve => { release = resolve; });
-  };
+  let started = false;
+  let hardTerminated = false;
+  const fixture = lifecycleGuardianFixture({
+    scenarioStart: ({ request, events, browserSessions }) => {
+      if (request.phase !== 'before-transition') return undefined;
+      started = true;
+      browserSessions.add('phase9-guardian-owned');
+      return {
+        browserSessions: ['phase9-guardian-owned'],
+        completion: new Promise(() => {}),
+        async terminate({ force }) {
+          events.push(`scenario:terminate:${force ? 'hard' : 'soft'}`);
+          if (force) hardTerminated = true;
+        },
+        async join() {
+          events.push('scenario:join');
+          return { closed: hardTerminated };
+        },
+      };
+    },
+  });
   const guardian = createLifecycleGuardian(fixture.dependencies);
   const running = guardian.run(fixture.options);
-  while (!release) await new Promise(resolve => setImmediate(resolve));
+  while (!started) await new Promise(resolve => setImmediate(resolve));
   const second = await guardian.run(fixture.options);
   assert.equal(second.ok, false);
   assert.equal(second.category, 'reentry');
@@ -4926,9 +4991,241 @@ test('phase 9 lifecycle guardian interruption is idempotent and reentry fails cl
   assert.equal(firstEmergency.ok, false);
   assert.equal(firstEmergency.interrupted, true);
   assert.deepEqual(await running, firstEmergency);
-  release();
+  assert.equal(hardTerminated, true);
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
   assert.equal(fixture.events.filter(event => event === 'fs:remove-workspace').length, 1);
   assert.equal(fixture.events.indexOf('browser:close:phase9-guardian-owned') < fixture.events.indexOf('fixture:cleanup'), true);
   assert.equal(fixture.events.includes('browser:close-all'), false);
+});
+
+test('phase 9 lifecycle guardian rejects arbitrary in-process scenario callbacks', async () => {
+  const fixture = lifecycleGuardianFixture();
+  fixture.options.beforeTransition = async () => {};
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'configuration-invalid');
+  assert.equal(fixture.events.includes('fs:mkdtemp'), false);
+});
+
+test('phase 9 lifecycle guardian preservation proof rejects a corrupt manifest as uncertain', async () => {
+  const fixture = lifecycleGuardianFixture({ corruptManifest: true });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.manifestPreservation, 'uncertain');
+});
+
+test('phase 9 lifecycle guardian recovers an exact partial seed with fewer manifest-owned deletions', async () => {
+  const fixture = lifecycleGuardianFixture({
+    manifestState: 'partial',
+    commandResult: ({ command, result, inspectCount }) => {
+      if (command === 'seed') return { exitCode: 9, stdout: JSON.stringify(result) };
+      if (command === 'inspect' && inspectCount === 1) return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          ...result,
+          ok: false,
+          aliases: guardianSortedAliases.slice(0, 3),
+          states: { manifest: 'partial', problems: 92 },
+          counts: { expected: { auth: 20, firestore: 82 }, actualPresent: { auth: 3, firestore: 7 } },
+          drift: guardianMissingDrift(3, 7),
+        }),
+      };
+      if (command === 'cleanup') return {
+        exitCode: 0,
+        stdout: JSON.stringify({ ...result, deleted: { auth: 3, firestore: 7 } }),
+      };
+      return undefined;
+    },
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'command-failed');
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+});
+
+test('phase 9 lifecycle guardian requires bounded owned-runner join proof before browser closure', async t => {
+  for (const [name, join] of [
+    ['join rejection', async () => { throw new Error('private join error'); }],
+    ['join timeout', () => new Promise(() => {})],
+  ]) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture({
+      scenarioJoinTimeoutMs: 5,
+      scenarioStart: ({ request, browserSessions }) => {
+        if (request.phase !== 'before-transition') return undefined;
+        browserSessions.add('phase9-owned-runner');
+        return {
+          browserSessions: ['phase9-owned-runner'],
+          completion: Promise.resolve({ ok: true }),
+          async terminate() {},
+          join,
+        };
+      },
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
+    assert.equal(fixture.events.some(event => event.startsWith('browser:close:')), false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+    assert.deepEqual([...fixture.browserSessions], ['phase9-owned-runner']);
+  });
+});
+
+test('phase 9 lifecycle guardian preserves recovery when runner start ownership is uncertain', async () => {
+  const fixture = lifecycleGuardianFixture({
+    scenarioStart: ({ request }) => request.phase === 'before-transition'
+      ? { completion: Promise.resolve({ ok: true }) }
+      : undefined,
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-closure-failed');
+  assert.equal(result.browserClosureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.events.some(event => event.startsWith('browser:close:')), false);
+  assert.equal(fixture.events.includes('fixture:cleanup'), false);
+});
+
+test('phase 9 lifecycle guardian hard-terminates a hung runner and blocks late work before cleanup', { timeout: 2_000 }, async () => {
+  let started = false;
+  let alive = true;
+  let joined = false;
+  let lateHostedActions = 0;
+  let lateBrowserActions = 0;
+  const fixture = lifecycleGuardianFixture({
+    scenarioJoinTimeoutMs: 10,
+    scenarioStart: ({ request, events, browserSessions }) => {
+      if (request.phase !== 'before-transition') return undefined;
+      started = true;
+      browserSessions.add('phase9-owned-runner');
+      return {
+        browserSessions: ['phase9-owned-runner'],
+        completion: new Promise(() => {}),
+        async terminate({ force }) {
+          events.push(force ? 'runner:hard-killed' : 'runner:soft-ignored');
+          if (force) alive = false;
+        },
+        async join() {
+          if (!alive) {
+            joined = true;
+            events.push('runner:joined');
+          }
+          return { closed: joined };
+        },
+      };
+    },
+  });
+  const guardian = createLifecycleGuardian(fixture.dependencies);
+  const running = guardian.run(fixture.options);
+  while (!started) await new Promise(resolve => setImmediate(resolve));
+  const recovered = await fixture.handlers.get('SIGINT')();
+  assert.deepEqual(await running, recovered);
+  if (alive) {
+    lateHostedActions += 1;
+    lateBrowserActions += 1;
+  }
+  assert.equal(lateHostedActions, 0);
+  assert.equal(lateBrowserActions, 0);
+  assert.equal(joined, true);
+  assert.equal(fixture.events.indexOf('runner:hard-killed') < fixture.events.indexOf('runner:joined'), true);
+  assert.equal(fixture.events.indexOf('runner:joined') < fixture.events.indexOf('browser:close:phase9-owned-runner'), true);
+  assert.equal(fixture.events.indexOf('browser:close:phase9-owned-runner') < fixture.events.indexOf('fixture:cleanup'), true);
+});
+
+test('phase 9 lifecycle guardian preservation proof validates exact filesystem object and journal', async t => {
+  for (const [name, overrides, field] of [
+    ['workspace symlink', { workspaceLstatType: 'symlink' }, 'workspacePreservation'],
+    ['workspace regular file', { workspaceLstatType: 'file' }, 'workspacePreservation'],
+    ['workspace wrong mode', { workspaceLstatMode: 0o40755 }, 'workspacePreservation'],
+    ['manifest symlink', { manifestLstatType: 'symlink' }, 'manifestPreservation'],
+    ['manifest directory', { manifestLstatType: 'directory' }, 'manifestPreservation'],
+    ['manifest wrong mode', { manifestMode: 0o100644 }, 'manifestPreservation'],
+    ['manifest corrupt JSON', { corruptManifest: true }, 'manifestPreservation'],
+    ['manifest mismatched run journal', {
+      manifestMutation: value => ({ ...value, runId: 'qa-phase7-20260826T120001Z-fedcba654321' }),
+    }, 'manifestPreservation'],
+  ]) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture(overrides);
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result[field], 'uncertain');
+    assert.equal(JSON.stringify(result).includes(fixture.workspace), false);
+  });
+});
+
+test('phase 9 lifecycle guardian recovers planned and partial journals from exact present counts', async t => {
+  for (const [name, manifestState, authPresent, firestorePresent] of [
+    ['planned empty journal', 'planned', 0, 0],
+    ['partial Auth seed', 'partial', 7, 0],
+    ['partial Firestore seed', 'partial', 20, 13],
+    ['partial mixed seed', 'partial', 4, 11],
+  ]) await t.test(name, async () => {
+    const drift = guardianMissingDrift(authPresent, firestorePresent);
+    const fixture = lifecycleGuardianFixture({
+      manifestState,
+      commandResult: ({ command, result, inspectCount }) => {
+        if (command === 'seed') return { exitCode: 9, stdout: JSON.stringify(result) };
+        if (command === 'inspect' && inspectCount === 1) return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            ...result,
+            ok: false,
+            aliases: authPresent + firestorePresent === 0 ? [] : guardianSortedAliases.slice(0, 2),
+            states: { manifest: manifestState, problems: drift.length },
+            counts: { expected: { auth: 20, firestore: 82 }, actualPresent: { auth: authPresent, firestore: firestorePresent } },
+            drift,
+          }),
+        };
+        if (command === 'cleanup') return {
+          exitCode: 0,
+          stdout: JSON.stringify({ ...result, deleted: { auth: authPresent, firestore: firestorePresent } }),
+        };
+        return undefined;
+      },
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'command-failed');
+    assert.equal(result.closureCertified, true);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    assert.equal(fixture.probeAuthChecks, 20);
+    assert.equal(fixture.probeFirestoreChecks, 83);
+    assert.equal(fixture.workspaceExists, false);
+  });
+});
+
+test('phase 9 lifecycle guardian preserves unsafe recovery drift without cleanup', async () => {
+  const drift = guardianMissingDrift(1, 1);
+  drift[19] = { ...drift[19], field: 'shape', reason: 'mismatch' };
+  const fixture = lifecycleGuardianFixture({
+    manifestState: 'partial',
+    commandResult: ({ command, result, inspectCount }) => {
+      if (command === 'seed') return { exitCode: 9, stdout: JSON.stringify(result) };
+      if (command === 'inspect' && inspectCount === 1) return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          ...result,
+          ok: false,
+          aliases: ['qa-unverified'],
+          states: { manifest: 'partial', problems: drift.length },
+          counts: { expected: { auth: 20, firestore: 82 }, actualPresent: { auth: 1, firestore: 1 } },
+          drift,
+        }),
+      };
+      return undefined;
+    },
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'recovery-inspect-uncertain');
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  assert.equal(fixture.events.includes('adapter:init'), false);
 });
