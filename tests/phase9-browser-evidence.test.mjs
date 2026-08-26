@@ -39,6 +39,7 @@ import {
 const safeWindow = (overrides = {}) => {
   const finalPath = overrides.finalPath ?? '/family';
   return {
+    pageId: 'phase9-page-1',
     terminalReached: true,
     loadingVisible: false,
     finalUrl: overrides.finalUrl ?? `${STAGING_ORIGIN}${finalPath}`,
@@ -53,6 +54,7 @@ const safeWindow = (overrides = {}) => {
     protectedListenerStarts: 0,
     listenerSignals: [],
     teamSelectionSignals: [],
+    relevantHttpResults: [],
     pageErrors: 0,
     appConsoleErrors: 0,
     unexpectedRequestFailures: 0,
@@ -826,6 +828,10 @@ test('phase 9 evidence contracts accept only closed count-coherent request and l
     ['rawUrl', `${STAGING_ORIGIN}/api/teams/chat?opaque-query=must-not-return`],
     ['path', '/api/teams/chat'],
     ['query', 'opaque-query=must-not-return'],
+    ['body', 'opaque-body=must-not-return'],
+    ['headers', { authorization: 'must-not-return' }],
+    ['rawRequests', []],
+    ['rawResponses', []],
     ['arbitrary', 'field'],
   ]) {
     assert.throws(() => validateActionWindow({
@@ -850,6 +856,94 @@ test('phase 9 evidence contracts accept only closed count-coherent request and l
     ...complete,
     requestSignals: [{ url: `${STAGING_ORIGIN}/api/teams/chat?opaque-query=must-not-return` }],
   }), /legacy request signals/i);
+});
+
+test('phase 9 evidence contracts reject unknown action-window acquisition fields and reconstruct a closed result', () => {
+  const unknownFields = [
+    ['rawRequests', []],
+    ['rawResponses', []],
+    ['requestSignals', []],
+    ['query', 'opaque-query=must-not-return'],
+    ['url', `${STAGING_ORIGIN}/api/teams/chat?opaque-query=must-not-return`],
+    ['rawUrl', `${STAGING_ORIGIN}/api/teams/chat?opaque-query=must-not-return`],
+    ['body', 'opaque-body=must-not-return'],
+    ['headers', { authorization: 'must-not-return' }],
+    ['acquisition', { rawRequests: [], rawResponses: [] }],
+    ['arbitrary', 'field'],
+  ];
+  for (const [field, value] of unknownFields) {
+    assert.throws(
+      () => validateActionWindow(safeWindow({ [field]: value })),
+      /closed action-window schema|legacy request signals/i,
+      field,
+    );
+  }
+
+  const hidden = safeWindow();
+  Object.defineProperty(hidden, 'rawRequests', { value: [], enumerable: false });
+  assert.throws(() => validateActionWindow(hidden), /closed action-window schema/i);
+
+  const symbol = Symbol('rawRequests');
+  const symbolWindow = safeWindow();
+  symbolWindow[symbol] = [];
+  assert.throws(() => validateActionWindow(symbolWindow), /closed action-window schema/i);
+
+  const inherited = Object.assign(Object.create({ rawRequests: [] }), safeWindow());
+  assert.throws(() => validateActionWindow(inherited), /plain action-window object/i);
+
+  for (const [field, value] of [
+    ['renderSignals', [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview', rawRequests: [] }]],
+    ['relevantHttpResults', [{ targetKind: 'staging-protected-api', status: 200, rawUrl: 'opaque:' }]],
+  ]) {
+    assert.throws(() => validateActionWindow(safeWindow({
+      protectedRender: field === 'renderSignals',
+      [field]: value,
+    })), /closed .* schema/i, field);
+  }
+
+  for (const field of ['visibleSentinels', 'teamSelectionSignals', 'relevantHttpResults']) {
+    const values = field === 'visibleSentinels'
+      ? ['Family Overview']
+      : field === 'teamSelectionSignals'
+        ? []
+        : [];
+    values.rawRequests = [];
+    assert.throws(() => validateActionWindow(safeWindow({ [field]: values })), /closed .* array/i, field);
+  }
+
+  const request = closedResourceSignal(`${STAGING_ORIGIN}/family`);
+  const input = safeWindow({
+    protectedRender: true,
+    renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
+    protectedRequests: 1,
+    protectedRequestSignals: [request],
+    teamSelectionSignals: ['tenant-team-a'],
+    relevantHttpResults: [{ targetKind: 'staging-protected-api', status: 200 }],
+  });
+  const result = validateActionWindow(input);
+  assert.deepEqual(Reflect.ownKeys(result).sort(), [
+    'appConsoleErrors', 'finalPath', 'finalUrl', 'listenerSignals', 'loadingVisible', 'overflow', 'pageErrors',
+    'pageId', 'pass', 'protectedListenerStarts', 'protectedRender', 'protectedRequestSignals', 'protectedRequests',
+    'redirectReason', 'relevantHttpResults', 'renderSignals', 'sessionPresent', 'teamSelectionSignals',
+    'terminalReached', 'unexpectedRequestFailures', 'visibleSentinels',
+  ]);
+  assert.notEqual(result.visibleSentinels, input.visibleSentinels);
+  assert.notEqual(result.renderSignals, input.renderSignals);
+  assert.notEqual(result.renderSignals[0], input.renderSignals[0]);
+  assert.notEqual(result.protectedRequestSignals, input.protectedRequestSignals);
+  assert.notEqual(result.protectedRequestSignals[0], input.protectedRequestSignals[0]);
+  assert.notEqual(result.teamSelectionSignals, input.teamSelectionSignals);
+  assert.notEqual(result.relevantHttpResults, input.relevantHttpResults);
+  input.visibleSentinels.push('Dashboard');
+  input.renderSignals[0].sentinel = 'Dashboard';
+  input.protectedRequestSignals[0].method = 'DELETE';
+  input.teamSelectionSignals.push('tenant-team-b');
+  input.relevantHttpResults[0].status = 500;
+  assert.deepEqual(result.visibleSentinels, ['Family Overview']);
+  assert.deepEqual(result.renderSignals, [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }]);
+  assert.equal(result.protectedRequestSignals[0].method, 'GET');
+  assert.deepEqual(result.teamSelectionSignals, ['tenant-team-a']);
+  assert.deepEqual(result.relevantHttpResults, [{ targetKind: 'staging-protected-api', status: 200 }]);
 });
 
 test('phase 9 evidence contracts require path and visible readiness for allowed routes', () => {
@@ -1371,15 +1465,36 @@ const createScriptedScenarioClient = windows => {
     calls,
     async captureSignalWindow({ stage, action, terminal }) {
       calls.push(`mark:${stage}`);
-      const actionResult = await action();
+      await action();
       calls.push(`terminal:${stage}`);
       await terminal();
       const window = queue.shift();
       if (!window) throw new Error(`No scripted window for ${stage}`);
-      return { ...window, actionResult };
+      return window;
     },
   };
 };
+
+test('phase 9 browser scenario entrypoints reject acquisition fields before row or aggregate assembly', async () => {
+  const context = scenarioContext({ contextId: 'closed-scenario-entrypoint' });
+  const actions = { navigate: async () => {}, waitForExactLocation: async () => {} };
+  for (const window of [
+    scenarioWindow({ rawRequests: [] }),
+    scenarioWindow({ acquisition: { rawResponses: [] } }),
+    scenarioWindow({
+      relevantHttpResults: [{ targetKind: 'staging-protected-api', status: 200, headers: {} }],
+    }),
+  ]) {
+    await assert.rejects(runRouteScenario({
+      client: createScriptedScenarioClient([window]),
+      session: 'closed-scenario-entrypoint',
+      context,
+      path: '/family',
+      allowed: true,
+      actions,
+    }), /closed .* schema/i);
+  }
+});
 
 test('phase 9 browser scenarios require visible readiness and complete denied-route windows', async () => {
   const context = scenarioContext();
@@ -1498,8 +1613,12 @@ test('phase 9 browser scenarios use exact symmetric API and Firestore isolation 
     const statuses = { api: [200, 403], firestore: [200, 403, 200, 403] };
     mutate(statuses);
     const failingClient = createScriptedScenarioClient([
-      ...statuses.api.map(status => scenarioWindow({ relevantHttpResults: [{ url: STAGING_ORIGIN, status }] })),
-      ...statuses.firestore.map(status => scenarioWindow({ relevantHttpResults: [{ url: 'https://firestore.googleapis.com', status }] })),
+      ...statuses.api.map(status => scenarioWindow({
+        relevantHttpResults: [{ targetKind: 'staging-protected-api', status }],
+      })),
+      ...statuses.firestore.map(status => scenarioWindow({
+        relevantHttpResults: [{ targetKind: 'firestore-document', status }],
+      })),
     ]);
     let firestoreIndex = 0;
     let apiIndex = 0;

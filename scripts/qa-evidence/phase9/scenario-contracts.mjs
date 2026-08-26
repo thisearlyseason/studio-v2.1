@@ -234,6 +234,56 @@ const requireRecord = (value, name) => {
   return value;
 };
 
+const requireClosedOwnDataObject = (value, {
+  name, schemaName, requiredKeys, optionalKeys = [],
+}) => {
+  const record = requireRecord(value, name);
+  const prototype = Object.getPrototypeOf(record);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(`${name} must be a plain ${schemaName} object.`);
+  }
+  const ownKeys = Reflect.ownKeys(record);
+  if (ownKeys.some(key => typeof key !== 'string')) {
+    throw new Error(`${name} must use the closed ${schemaName} schema.`);
+  }
+  const permitted = new Set([...requiredKeys, ...optionalKeys]);
+  const unknown = ownKeys.find(key => !permitted.has(key));
+  if (unknown !== undefined) throw new Error(`${name} must use the closed ${schemaName} schema.`);
+  const missing = requiredKeys.find(key => !Object.hasOwn(record, key));
+  if (missing !== undefined) {
+    throw new Error(`${missing} is required by the closed ${schemaName} schema.`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(record);
+  if (ownKeys.some(key => {
+    const descriptor = descriptors[key];
+    return !descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true;
+  })) throw new Error(`${name} must use the closed ${schemaName} schema.`);
+  return record;
+};
+
+const requireClosedArray = (value, name) => {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new Error(`${name} must be a closed plain array.`);
+  }
+  const ownKeys = Reflect.ownKeys(value);
+  if (
+    ownKeys.length !== value.length + 1
+    || ownKeys.some(key => {
+      if (key === 'length') return false;
+      if (typeof key !== 'string') return true;
+      const index = Number(key);
+      return !Number.isInteger(index) || index < 0 || index >= value.length || String(index) !== key;
+    })
+  ) throw new Error(`${name} must be a closed plain array.`);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (ownKeys.some(key => {
+    const descriptor = descriptors[key];
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) return true;
+    return key !== 'length' && descriptor.enumerable !== true;
+  })) throw new Error(`${name} must be a closed plain array.`);
+  return value;
+};
+
 const requireBoolean = (value, name) => {
   if (typeof value !== 'boolean') throw new Error(`${name} must be an explicit boolean.`);
   return value;
@@ -423,16 +473,16 @@ const deriveResourceScopes = evidence => RESOURCE_SCOPES.filter(scope => (
 ));
 
 const requireClosedResourceSignal = (value, name) => {
-  const signal = requireRecord(value, name);
   const requiredKeys = [
     'targetKind', 'method', 'resourceType', 'initiatingFrameUrl', 'scopeEvidence', 'resourceScopes',
   ];
   const optionalKeys = ['status'];
-  const actualKeys = Object.keys(signal);
-  if (
-    requiredKeys.some(key => !actualKeys.includes(key))
-    || actualKeys.some(key => !requiredKeys.includes(key) && !optionalKeys.includes(key))
-  ) throw new Error(`${name} must use the closed resource evidence schema.`);
+  const signal = requireClosedOwnDataObject(value, {
+    name,
+    schemaName: 'resource evidence',
+    requiredKeys,
+    optionalKeys,
+  });
   if (!RESOURCE_TARGET_KINDS.includes(signal.targetKind)) {
     throw new Error(`${name} target kind is unsupported.`);
   }
@@ -446,9 +496,10 @@ const requireClosedResourceSignal = (value, name) => {
     throw new Error(`${name} resource type is outside the closed recorder schema.`);
   }
   if (Object.hasOwn(signal, 'status')) requireCount(signal.status, `${name} status`);
+  requireClosedArray(signal.scopeEvidence, `${name} scopeEvidence`);
+  requireClosedArray(signal.resourceScopes, `${name} resourceScopes`);
   if (
-    !Array.isArray(signal.scopeEvidence)
-    || signal.scopeEvidence.length === 0
+    signal.scopeEvidence.length === 0
     || signal.scopeEvidence.some(item => !Object.hasOwn(RESOURCE_SCOPE_EVIDENCE, item))
     || new Set(signal.scopeEvidence).size !== signal.scopeEvidence.length
   ) throw new Error(`${name} must contain complete closed resource evidence.`);
@@ -518,7 +569,15 @@ const requireClosedResourceSignal = (value, name) => {
   if (signal.targetKind === 'firestore-listen' && !['GET', 'POST'].includes(signal.method)) {
     throw new Error(`${name} Firestore listener evidence requires GET or POST.`);
   }
-  return signal;
+  return {
+    targetKind: signal.targetKind,
+    method: signal.method,
+    resourceType: signal.resourceType,
+    initiatingFrameUrl: signal.initiatingFrameUrl,
+    scopeEvidence: signal.scopeEvidence.map(item => item),
+    resourceScopes: signal.resourceScopes.map(item => item),
+    ...(Object.hasOwn(signal, 'status') ? { status: signal.status } : {}),
+  };
 };
 
 export function validateResourceSignal(value, name = 'Resource signal') {
@@ -566,38 +625,94 @@ export function validateNoTeamResourceIsolation(value) {
   return { pass: true };
 }
 
+const ACTION_WINDOW_KEYS = [
+  'terminalReached',
+  'loadingVisible',
+  'finalUrl',
+  'finalPath',
+  'visibleSentinels',
+  'renderSignals',
+  'redirectReason',
+  'sessionPresent',
+  'protectedRender',
+  'protectedRequests',
+  'protectedRequestSignals',
+  'protectedListenerStarts',
+  'listenerSignals',
+  'teamSelectionSignals',
+  'relevantHttpResults',
+  'pageErrors',
+  'appConsoleErrors',
+  'unexpectedRequestFailures',
+  'overflow',
+  'pageId',
+];
+
+const TEAM_SELECTION_SCOPES = ['tenant-team-a', 'tenant-team-b', 'tenant-other'];
+
+const requireClosedRenderSignal = (value, index) => {
+  const name = `Action window render signal ${index}`;
+  const signal = requireClosedOwnDataObject(value, {
+    name,
+    schemaName: 'render signal',
+    requiredKeys: ['kind', 'pathname', 'sentinel'],
+  });
+  if (!['heading', 'status'].includes(signal.kind)) {
+    throw new Error('renderSignals must contain typed heading or status signals.');
+  }
+  requireString(signal.pathname, `${name} pathname`);
+  requireString(signal.sentinel, `${name} sentinel`);
+  if (
+    !PUBLIC_RENDER_PATHS.includes(signal.pathname)
+    || (signal.kind === 'heading' && !LANDING_SENTINELS.includes(signal.sentinel))
+    || (signal.kind === 'status' && (
+      signal.pathname !== '/login' || signal.sentinel !== PENDING_UNAVAILABLE_SENTINEL
+    ))
+  ) throw new Error('renderSignals must use closed source-backed paths and sentinels.');
+  return { kind: signal.kind, pathname: signal.pathname, sentinel: signal.sentinel };
+};
+
+const requireClosedHttpResult = (value, index) => {
+  const name = `Action window relevant HTTP result ${index}`;
+  const result = requireClosedOwnDataObject(value, {
+    name,
+    schemaName: 'HTTP result',
+    requiredKeys: ['targetKind', 'status'],
+  });
+  if (!RESOURCE_TARGET_KINDS.includes(result.targetKind)) {
+    throw new Error(`${name} target kind is unsupported.`);
+  }
+  requireCount(result.status, `${name} status`);
+  return { targetKind: result.targetKind, status: result.status };
+};
+
 export function validateActionWindow(value, options = {}) {
-  const window = requireRecord(value, 'Action window');
-  assertNoFixtureIdentifierLeak(window, 'Action window');
-  if (Object.hasOwn(window, 'requestSignals')) {
+  const candidate = requireRecord(value, 'Action window');
+  if (Object.hasOwn(candidate, 'requestSignals')) {
     throw new Error('Action window must not expose legacy request signals.');
   }
-  if (Object.hasOwn(window, 'pageId') && !/^phase9-page-[1-9]\d*$/.test(window.pageId)) {
+  const window = requireClosedOwnDataObject(candidate, {
+    name: 'Action window',
+    schemaName: 'action-window',
+    requiredKeys: ACTION_WINDOW_KEYS,
+  });
+  assertNoFixtureIdentifierLeak(window, 'Action window');
+  if (!/^phase9-page-[1-9]\d*$/.test(window.pageId)) {
     throw new Error('pageId must use the closed local page identifier format.');
   }
   requireBoolean(window.terminalReached, 'terminalReached');
   requireBoolean(window.loadingVisible, 'loadingVisible');
   requireString(window.finalPath, 'finalPath');
   requireCanonicalStagingLocation(window.finalUrl, window.finalPath, 'Action window');
-  if (!Array.isArray(window.visibleSentinels) || window.visibleSentinels.some(item => typeof item !== 'string')) {
+  const visibleSentinels = requireClosedArray(window.visibleSentinels, 'visibleSentinels').map(item => item);
+  if (visibleSentinels.some(item => typeof item !== 'string')) {
     throw new Error('visibleSentinels must be an explicit string array.');
   }
-  if (window.visibleSentinels.some(item => !PUBLIC_VISIBLE_SENTINELS.includes(item))) {
+  if (visibleSentinels.some(item => !PUBLIC_VISIBLE_SENTINELS.includes(item))) {
     throw new Error('visibleSentinels must use the closed source-backed sentinel enum.');
   }
-  if (!Array.isArray(window.renderSignals) || window.renderSignals.some(signal => (
-    !isRecord(signal)
-    || !['heading', 'status'].includes(signal.kind)
-    || typeof signal.pathname !== 'string'
-    || typeof signal.sentinel !== 'string'
-  ))) throw new Error('renderSignals must contain typed heading or status signals.');
-  if (window.renderSignals.some(signal => (
-    !PUBLIC_RENDER_PATHS.includes(signal.pathname)
-    || (signal.kind === 'heading' && !LANDING_SENTINELS.includes(signal.sentinel))
-    || (signal.kind === 'status' && (
-      signal.pathname !== '/login' || signal.sentinel !== PENDING_UNAVAILABLE_SENTINEL
-    ))
-  ))) throw new Error('renderSignals must use closed source-backed paths and sentinels.');
+  const renderSignals = requireClosedArray(window.renderSignals, 'renderSignals')
+    .map((signal, index) => requireClosedRenderSignal(signal, index));
   if (!['unavailable', 'none', 'other'].includes(window.redirectReason)) {
     throw new Error('redirectReason must use the fixed sanitized enum.');
   }
@@ -606,10 +721,11 @@ export function validateActionWindow(value, options = {}) {
   requireCount(window.protectedRequests, 'protectedRequests');
   requireCount(window.protectedListenerStarts, 'protectedListenerStarts');
   const validateClosedSignals = (signals, count, name, { listener = false } = {}) => {
-    if (!Array.isArray(signals) || signals.length !== count) {
+    const closedArray = requireClosedArray(signals, `${name} signals`);
+    if (closedArray.length !== count) {
       throw new Error(`Action window requires complete ${name} signals matching its exact count.`);
     }
-    return signals.map((signal, index) => {
+    return closedArray.map((signal, index) => {
       const closed = requireClosedResourceSignal(signal, `Action window ${name} ${index}`);
       if (listener && closed.targetKind !== 'firestore-listen') {
         throw new Error(`Action window ${name} ${index} must be a Firestore listener signal.`);
@@ -617,13 +733,26 @@ export function validateActionWindow(value, options = {}) {
       return closed;
     });
   };
-  validateClosedSignals(window.protectedRequestSignals, window.protectedRequests, 'protected request');
-  validateClosedSignals(
+  const protectedRequestSignals = validateClosedSignals(
+    window.protectedRequestSignals,
+    window.protectedRequests,
+    'protected request',
+  );
+  const listenerSignals = validateClosedSignals(
     window.listenerSignals,
     window.protectedListenerStarts,
     'protected listener',
     { listener: true },
   );
+  const teamSelectionSignals = requireClosedArray(window.teamSelectionSignals, 'teamSelectionSignals')
+    .map(scope => {
+      if (!TEAM_SELECTION_SCOPES.includes(scope)) {
+        throw new Error('teamSelectionSignals must use the closed team-selection scope enum.');
+      }
+      return scope;
+    });
+  const relevantHttpResults = requireClosedArray(window.relevantHttpResults, 'relevantHttpResults')
+    .map((result, index) => requireClosedHttpResult(result, index));
   requireCount(window.pageErrors, 'pageErrors');
   requireCount(window.appConsoleErrors, 'appConsoleErrors');
   requireCount(window.unexpectedRequestFailures, 'unexpectedRequestFailures');
@@ -636,7 +765,7 @@ export function validateActionWindow(value, options = {}) {
   if (window.unexpectedRequestFailures !== 0) throw new Error('Action window contains an unexpected request failure.');
   if (window.overflow !== 0) throw new Error('Action window signal overflow is nonzero.');
 
-  const protectedHistory = window.renderSignals.filter(signal => (
+  const protectedHistory = renderSignals.filter(signal => (
     signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
   ));
   if (window.protectedRender !== (protectedHistory.length > 0)) {
@@ -653,7 +782,7 @@ export function validateActionWindow(value, options = {}) {
   if (revoked && window.sessionPresent) throw new Error('Revoked action window retained a session.');
   if (revoked && window.finalPath !== '/login') throw new Error('Revoked action window must end at /login.');
   if (revoked && !window.visibleSentinels.includes('Sign In')) throw new Error('Revoked action window must reach the Sign In sentinel.');
-  const unavailableStatusObserved = window.renderSignals.some(signal => (
+  const unavailableStatusObserved = renderSignals.some(signal => (
     signal.kind === 'status' && signal.sentinel === PENDING_UNAVAILABLE_SENTINEL
   ));
   if (pendingStale && window.redirectReason !== 'unavailable') {
@@ -673,9 +802,53 @@ export function validateActionWindow(value, options = {}) {
     if (window.protectedRequests !== 0) throw new Error('Revoked action window contains a protected request.');
     if (window.protectedListenerStarts !== 0) throw new Error('Revoked action window contains a protected listener start.');
   }
-  if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) validateNoTeamResourceIsolation(window);
+  const closedWindow = {
+    pageId: window.pageId,
+    terminalReached: window.terminalReached,
+    loadingVisible: window.loadingVisible,
+    finalUrl: window.finalUrl,
+    finalPath: window.finalPath,
+    visibleSentinels,
+    renderSignals,
+    redirectReason: window.redirectReason,
+    sessionPresent: window.sessionPresent,
+    protectedRender: window.protectedRender,
+    protectedRequests: window.protectedRequests,
+    protectedRequestSignals,
+    protectedListenerStarts: window.protectedListenerStarts,
+    listenerSignals,
+    teamSelectionSignals,
+    relevantHttpResults,
+    pageErrors: window.pageErrors,
+    appConsoleErrors: window.appConsoleErrors,
+    unexpectedRequestFailures: window.unexpectedRequestFailures,
+    overflow: window.overflow,
+  };
+  if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) validateNoTeamResourceIsolation(closedWindow);
 
-  return { ...window, pass: true };
+  return {
+    pageId: closedWindow.pageId,
+    terminalReached: closedWindow.terminalReached,
+    loadingVisible: closedWindow.loadingVisible,
+    finalUrl: closedWindow.finalUrl,
+    finalPath: closedWindow.finalPath,
+    visibleSentinels: closedWindow.visibleSentinels,
+    renderSignals: closedWindow.renderSignals,
+    redirectReason: closedWindow.redirectReason,
+    sessionPresent: closedWindow.sessionPresent,
+    protectedRender: closedWindow.protectedRender,
+    protectedRequests: closedWindow.protectedRequests,
+    protectedRequestSignals: closedWindow.protectedRequestSignals,
+    protectedListenerStarts: closedWindow.protectedListenerStarts,
+    listenerSignals: closedWindow.listenerSignals,
+    teamSelectionSignals: closedWindow.teamSelectionSignals,
+    relevantHttpResults: closedWindow.relevantHttpResults,
+    pageErrors: closedWindow.pageErrors,
+    appConsoleErrors: closedWindow.appConsoleErrors,
+    unexpectedRequestFailures: closedWindow.unexpectedRequestFailures,
+    overflow: closedWindow.overflow,
+    pass: true,
+  };
 }
 
 export function validateRouteResult(value) {
