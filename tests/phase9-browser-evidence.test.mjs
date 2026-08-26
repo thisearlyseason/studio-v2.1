@@ -886,10 +886,10 @@ test('phase 9 evidence contracts reject unknown action-window acquisition fields
   const symbol = Symbol('rawRequests');
   const symbolWindow = safeWindow();
   symbolWindow[symbol] = [];
-  assert.throws(() => validateActionWindow(symbolWindow), /closed action-window schema/i);
+  assert.throws(() => validateActionWindow(symbolWindow), /cloneable closed data graph|closed action-window schema/i);
 
   const inherited = Object.assign(Object.create({ rawRequests: [] }), safeWindow());
-  assert.throws(() => validateActionWindow(inherited), /plain action-window object/i);
+  assert.throws(() => validateActionWindow(inherited), /cloneable closed data graph|plain action-window object/i);
 
   for (const [field, value] of [
     ['renderSignals', [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview', rawRequests: [] }]],
@@ -944,6 +944,114 @@ test('phase 9 evidence contracts reject unknown action-window acquisition fields
   assert.equal(result.protectedRequestSignals[0].method, 'GET');
   assert.deepEqual(result.teamSelectionSignals, ['tenant-team-a']);
   assert.deepEqual(result.relevantHttpResults, [{ targetKind: 'staging-protected-api', status: 200 }]);
+});
+
+test('phase 9 evidence validators snapshot caller-owned graphs once and fail closed on dynamic inputs', () => {
+  const snapshotError = /must be a cloneable closed data graph/i;
+
+  let terminalReads = 0;
+  const statefulWindow = new Proxy(safeWindow(), {
+    get(target, property, receiver) {
+      if (property === 'terminalReached') {
+        terminalReads += 1;
+        return terminalReads < 4;
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  assert.throws(() => validateActionWindow(statefulWindow), snapshotError);
+  assert.equal(terminalReads, 0);
+
+  const routeProxy = new Proxy({
+    allowed: true,
+    requestedPath: '/family',
+    expectedPath: '/family',
+    expectedSentinel: 'Family Overview',
+    window: safeWindow(),
+  }, {
+    get(target, property, receiver) {
+      if (property === 'allowed') return !Reflect.get(target, property, receiver);
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  assert.throws(() => validateRouteResult(routeProxy), snapshotError);
+
+  const renderSignal = new Proxy({
+    kind: 'heading', pathname: '/family', sentinel: 'Family Overview',
+  }, {});
+  assert.throws(() => validateActionWindow(safeWindow({
+    protectedRender: true,
+    renderSignals: [renderSignal],
+  })), snapshotError);
+
+  let methodReads = 0;
+  const resourceSignal = new Proxy(closedResourceSignal(`${STAGING_ORIGIN}/family`), {
+    get(target, property, receiver) {
+      if (property === 'method') {
+        methodReads += 1;
+        return methodReads < 4 ? 'GET' : 'DELETE';
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  assert.throws(() => validateActionWindow(safeWindow({
+    protectedRequests: 1,
+    protectedRequestSignals: [resourceSignal],
+  })), snapshotError);
+  assert.throws(() => validateResourceSignal(resourceSignal), snapshotError);
+  assert.equal(methodReads, 0);
+
+  assert.throws(() => validateActionWindow(safeWindow({
+    visibleSentinels: new Proxy(['Family Overview'], {}),
+  })), snapshotError);
+
+  assert.throws(() => validateActionWindow(safeWindow({
+    visibleSentinels: ['Family Overview', () => 'dynamic'],
+  })), snapshotError);
+  assert.throws(() => validateActionWindow(safeWindow({
+    redirectReason: Symbol('dynamic'),
+  })), snapshotError);
+
+  let accessorCalls = 0;
+  const accessorWindow = safeWindow();
+  Object.defineProperty(accessorWindow, 'terminalReached', {
+    enumerable: true,
+    get() {
+      accessorCalls += 1;
+      return true;
+    },
+  });
+  assert.throws(() => validateActionWindow(accessorWindow), snapshotError);
+  assert.equal(accessorCalls, 0);
+
+  const routeInput = {
+    allowed: true,
+    requestedPath: '/family',
+    expectedPath: '/family',
+    expectedSentinel: 'Family Overview',
+    window: safeWindow({
+      protectedRender: true,
+      renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
+      protectedRequests: 1,
+      protectedRequestSignals: [closedResourceSignal(`${STAGING_ORIGIN}/family`)],
+    }),
+  };
+  const routeResult = validateRouteResult(routeInput);
+  routeInput.allowed = false;
+  routeInput.window.visibleSentinels[0] = 'Dashboard';
+  routeInput.window.renderSignals[0].sentinel = 'Dashboard';
+  routeInput.window.protectedRequestSignals[0].method = 'DELETE';
+  assert.equal(routeResult.allowed, true);
+  assert.deepEqual(routeResult.window.visibleSentinels, ['Family Overview']);
+  assert.equal(routeResult.window.renderSignals[0].sentinel, 'Family Overview');
+  assert.equal(routeResult.window.protectedRequestSignals[0].method, 'GET');
+
+  assert.equal(validateActionWindow(safeWindow()).pass, true);
+  assert.equal(validateResourceSignal(closedResourceSignal(`${STAGING_ORIGIN}/family`)).method, 'GET');
+  assert.throws(
+    () => validateResourceSignal(closedResourceSignal('Bearer must-not-return-sensitive-value')),
+    /credential-shaped evidence/i,
+  );
 });
 
 test('phase 9 evidence contracts require path and visible readiness for allowed routes', () => {

@@ -1,3 +1,5 @@
+import { types as utilTypes } from 'node:util';
+
 import { assertRunId } from '../../qa-fixtures/manifest.mjs';
 
 const deepFreeze = value => {
@@ -227,6 +229,69 @@ export const REQUIRED_LEDGER_COLUMNS = deepFreeze([
   'result',
 ]);
 
+const MAX_SNAPSHOT_NODES = 100_000;
+const MAX_SNAPSHOT_DEPTH = 128;
+
+// Node's structuredClone invokes accessors and drops hidden/symbol keys. This
+// descriptor snapshot preserves the closed-schema evidence needed to reject
+// those shapes while rejecting Proxies before any caller trap can run.
+const snapshotClosedDataGraph = (value, name) => {
+  const copies = new WeakMap();
+  const active = new WeakSet();
+  let nodes = 0;
+
+  const capture = (current, depth) => {
+    if (current === null || ['undefined', 'boolean', 'string', 'number', 'bigint'].includes(typeof current)) {
+      return current;
+    }
+    if (typeof current !== 'object') throw new Error('unsupported snapshot value');
+    if (utilTypes.isProxy(current)) throw new Error('proxy snapshot value');
+    if (depth > MAX_SNAPSHOT_DEPTH || nodes >= MAX_SNAPSHOT_NODES) throw new Error('oversized snapshot graph');
+    if (active.has(current)) throw new Error('cyclic snapshot graph');
+    if (copies.has(current)) return copies.get(current);
+
+    const array = Array.isArray(current);
+    const prototype = Object.getPrototypeOf(current);
+    if (
+      (array && prototype !== Array.prototype)
+      || (!array && prototype !== Object.prototype && prototype !== null)
+    ) throw new Error('unsupported snapshot prototype');
+
+    nodes += 1;
+    const descriptors = Object.getOwnPropertyDescriptors(current);
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.some(key => typeof key !== 'string')) throw new Error('symbol snapshot key');
+    if (array && (!descriptors.length || !Object.hasOwn(descriptors.length, 'value'))) {
+      throw new Error('invalid array snapshot length');
+    }
+    const copy = array ? new Array(descriptors.length.value) : Object.create(prototype);
+    copies.set(current, copy);
+    active.add(current);
+
+    for (const key of keys) {
+      const descriptor = descriptors[key];
+      if (!descriptor || !Object.hasOwn(descriptor, 'value')) throw new Error('accessor snapshot value');
+      if (array && key === 'length') continue;
+      const child = capture(descriptor.value, depth + 1);
+      Object.defineProperty(copy, key, {
+        value: child,
+        enumerable: descriptor.enumerable,
+        configurable: true,
+        writable: true,
+      });
+    }
+
+    active.delete(current);
+    return copy;
+  };
+
+  try {
+    return capture(value, 0);
+  } catch {
+    throw new Error(`${name} must be a cloneable closed data graph.`);
+  }
+};
+
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const requireRecord = (value, name) => {
@@ -435,7 +500,15 @@ const inspectEvidenceString = input => {
   }
 };
 
-export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
+const sanitizeEvidenceName = (value, fallback) => (
+  typeof value === 'string'
+  && value.length <= 128
+  && inspectEvidenceString(value) === null
+    ? value
+    : fallback
+);
+
+const assertNoFixtureIdentifierLeakSnapshot = (value, name) => {
   const seen = new WeakSet();
   let scannedBytes = 0;
   const visit = current => {
@@ -455,17 +528,26 @@ export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
     if (seen.has(current)) throw new Error(`${name} must be serializable before fixture identifier validation.`);
     seen.add(current);
     if (Array.isArray(current)) {
-      for (const child of current) visit(child);
-    } else {
-      for (const [key, child] of Object.entries(current)) {
+      for (const key of Reflect.ownKeys(current)) {
+        if (key === 'length') continue;
         visit(key);
-        visit(child);
+        visit(current[key]);
+      }
+    } else {
+      for (const key of Reflect.ownKeys(current)) {
+        visit(key);
+        visit(current[key]);
       }
     }
     seen.delete(current);
   };
   visit(value);
   return value;
+};
+
+export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
+  const snapshot = snapshotClosedDataGraph(value, 'Evidence input');
+  return assertNoFixtureIdentifierLeakSnapshot(snapshot, sanitizeEvidenceName(name, 'Evidence'));
 }
 
 const deriveResourceScopes = evidence => RESOURCE_SCOPES.filter(scope => (
@@ -581,10 +663,14 @@ const requireClosedResourceSignal = (value, name) => {
 };
 
 export function validateResourceSignal(value, name = 'Resource signal') {
-  return requireClosedResourceSignal(value, name);
+  const snapshot = snapshotClosedDataGraph(value, 'Resource signal input');
+  const label = sanitizeEvidenceName(name, 'Resource signal');
+  const result = requireClosedResourceSignal(snapshot, label);
+  assertNoFixtureIdentifierLeakSnapshot(result, 'Validated resource signal');
+  return result;
 }
 
-export function validateNoTeamResourceIsolation(value) {
+const validateNoTeamResourceIsolationSnapshot = value => {
   const window = requireRecord(value, 'No Team action window');
   if (window.protectedRender === true) throw new Error('No Team action window contains a protected render.');
   if (!Array.isArray(window.teamSelectionSignals) || window.teamSelectionSignals.some(scope => (
@@ -622,7 +708,14 @@ export function validateNoTeamResourceIsolation(value) {
   };
   validateSignals(window.protectedRequestSignals, window.protectedRequests, 'protected request');
   validateSignals(window.listenerSignals, window.protectedListenerStarts, 'protected listener');
-  return { pass: true };
+  const result = { pass: true };
+  assertNoFixtureIdentifierLeakSnapshot(result, 'Validated No Team resource isolation');
+  return result;
+};
+
+export function validateNoTeamResourceIsolation(value) {
+  const snapshot = snapshotClosedDataGraph(value, 'No Team action window input');
+  return validateNoTeamResourceIsolationSnapshot(snapshot);
 }
 
 const ACTION_WINDOW_KEYS = [
@@ -686,7 +779,7 @@ const requireClosedHttpResult = (value, index) => {
   return { targetKind: result.targetKind, status: result.status };
 };
 
-export function validateActionWindow(value, options = {}) {
+const validateActionWindowSnapshot = (value, options = {}) => {
   const candidate = requireRecord(value, 'Action window');
   if (Object.hasOwn(candidate, 'requestSignals')) {
     throw new Error('Action window must not expose legacy request signals.');
@@ -696,7 +789,7 @@ export function validateActionWindow(value, options = {}) {
     schemaName: 'action-window',
     requiredKeys: ACTION_WINDOW_KEYS,
   });
-  assertNoFixtureIdentifierLeak(window, 'Action window');
+  assertNoFixtureIdentifierLeakSnapshot(window, 'Action window');
   if (!/^phase9-page-[1-9]\d*$/.test(window.pageId)) {
     throw new Error('pageId must use the closed local page identifier format.');
   }
@@ -824,9 +917,9 @@ export function validateActionWindow(value, options = {}) {
     unexpectedRequestFailures: window.unexpectedRequestFailures,
     overflow: window.overflow,
   };
-  if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) validateNoTeamResourceIsolation(closedWindow);
+  if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) validateNoTeamResourceIsolationSnapshot(closedWindow);
 
-  return {
+  const result = {
     pageId: closedWindow.pageId,
     terminalReached: closedWindow.terminalReached,
     loadingVisible: closedWindow.loadingVisible,
@@ -849,9 +942,16 @@ export function validateActionWindow(value, options = {}) {
     overflow: closedWindow.overflow,
     pass: true,
   };
+  assertNoFixtureIdentifierLeakSnapshot(result, 'Validated action window');
+  return result;
+};
+
+export function validateActionWindow(value, options = {}) {
+  const snapshot = snapshotClosedDataGraph({ value, options }, 'Action window input');
+  return validateActionWindowSnapshot(snapshot.value, snapshot.options);
 }
 
-export function validateRouteResult(value) {
+const validateRouteResultSnapshot = value => {
   const result = requireRecord(value, 'Route result');
   requireBoolean(result.allowed, 'allowed');
   if (Object.hasOwn(result, 'requireNoProtected')) {
@@ -877,7 +977,7 @@ export function validateRouteResult(value) {
   if (!result.allowed && requestedPath === expectedPath) {
     throw new Error('Denied route requestedPath must differ from its authorized landing path.');
   }
-  const window = validateActionWindow(result.window, {
+  const window = validateActionWindowSnapshot(result.window, {
     requireNoProtected: result.requireNoProtected === true,
     resourcePolicy: result.resourcePolicy,
   });
@@ -922,10 +1022,17 @@ export function validateRouteResult(value) {
     for (const signal of window.listenerSignals) validateAttribution(signal, 'protected listener');
   }
 
-  return { pass: true, allowed: result.allowed, window };
+  const validated = { pass: true, allowed: result.allowed, window };
+  assertNoFixtureIdentifierLeakSnapshot(validated, 'Validated route result');
+  return validated;
+};
+
+export function validateRouteResult(value) {
+  const snapshot = snapshotClosedDataGraph(value, 'Route result input');
+  return validateRouteResultSnapshot(snapshot);
 }
 
-export function validateIsolationResult(value) {
+const validateIsolationResultSnapshot = value => {
   const result = requireRecord(value, 'Isolation result');
   const canonical = buildIsolationExpectation({ runId: result.runId, alias: result.alias });
   if (result.endpoint !== ISOLATION_SCENARIOS.team.endpoint || result.parameter !== ISOLATION_SCENARIOS.team.parameter) {
@@ -974,23 +1081,37 @@ export function validateIsolationResult(value) {
   requireCount(result.oppositeListenerStarts, 'oppositeListenerStarts');
   if (result.oppositeProtectedRender) throw new Error('Isolation observed an opposite protected render.');
   if (result.oppositeListenerStarts !== 0) throw new Error('Isolation observed an opposite listener start.');
-  return { pass: true };
+  const validated = { pass: true };
+  assertNoFixtureIdentifierLeakSnapshot(validated, 'Validated isolation result');
+  return validated;
+};
+
+export function validateIsolationResult(value) {
+  const snapshot = snapshotClosedDataGraph(value, 'Isolation result input');
+  return validateIsolationResultSnapshot(snapshot);
 }
 
-export function validateLogoutStages(value) {
+const validateLogoutStagesSnapshot = value => {
   if (!Array.isArray(value) || value.length !== REQUIRED_LOGOUT_STAGES.length) {
     throw new Error('Logout validation requires every logout stage.');
   }
   const stages = value.map((stage, index) => {
     requireRecord(stage, `Logout stage ${index}`);
     if (stage.name !== REQUIRED_LOGOUT_STAGES[index]) throw new Error('Logout stages are missing or out of order.');
-    const window = validateActionWindow(stage.window, { requireNoProtected: true });
+    const window = validateActionWindowSnapshot(stage.window, { requireNoProtected: true });
     if (window.sessionPresent) throw new Error(`${stage.name} retained a session.`);
     if (window.finalPath !== '/login') throw new Error(`${stage.name} pathname must be /login.`);
     if (!window.visibleSentinels.includes('Sign In')) throw new Error(`${stage.name} must reach the login visible sentinel.`);
     return { name: stage.name, window };
   });
-  return { pass: true, stages };
+  const result = { pass: true, stages };
+  assertNoFixtureIdentifierLeakSnapshot(result, 'Validated logout stages');
+  return result;
+};
+
+export function validateLogoutStages(value) {
+  const snapshot = snapshotClosedDataGraph(value, 'Logout stages input');
+  return validateLogoutStagesSnapshot(snapshot);
 }
 
 const validateInspect = (value, expected) => {
@@ -1045,7 +1166,10 @@ const validateProbe = (value, expected) => {
 };
 
 export function validateLifecycleResult(kind, input, stage) {
-  const value = parseResult(input);
+  const snapshot = snapshotClosedDataGraph({ kind, input, stage }, 'Lifecycle validation input');
+  kind = snapshot.kind;
+  stage = snapshot.stage;
+  const value = parseResult(snapshot.input);
   requireLifecycleStage(kind, stage);
   switch (kind) {
     case 'preflight':
@@ -1134,10 +1258,15 @@ export function validateLifecycleResult(kind, input, stage) {
       if (value.absent !== true) throw new Error(`${kind} must prove absence.`);
       break;
   }
-  return { pass: true, kind };
+  const result = { pass: true, kind };
+  assertNoFixtureIdentifierLeakSnapshot(result, 'Validated lifecycle result');
+  return result;
 }
 
 export function validateLedger(rows, expected) {
+  const snapshot = snapshotClosedDataGraph({ rows, expected }, 'Ledger validation input');
+  rows = snapshot.rows;
+  expected = snapshot.expected;
   if (!Array.isArray(rows)) throw new Error('Ledger rows must be an array.');
   const contract = requireRecord(expected, 'Ledger expectation');
   const groupCounts = requireRecord(contract.groupCounts, 'Ledger group counts');
@@ -1157,7 +1286,7 @@ export function validateLedger(rows, expected) {
 
   for (const [index, row] of rows.entries()) {
     requireRecord(row, `Ledger row ${index}`);
-    assertNoFixtureIdentifierLeak(row, `Ledger row ${index}`);
+    assertNoFixtureIdentifierLeakSnapshot(row, `Ledger row ${index}`);
     for (const column of REQUIRED_LEDGER_COLUMNS) {
       if (!(column in row) || row[column] === undefined || row[column] === null || row[column] === '') {
         throw new Error(`Ledger row ${index} is missing ${column}.`);
@@ -1205,5 +1334,7 @@ export function validateLedger(rows, expected) {
   if (actualTotals.pass + actualTotals.fail + actualTotals.inconclusive !== actualTotals.total) {
     throw new Error('Ledger result arithmetic does not sum to the total.');
   }
-  return { pass: true, groupCounts: Object.fromEntries(actualGroups), totals: actualTotals };
+  const result = { pass: true, groupCounts: Object.fromEntries(actualGroups), totals: actualTotals };
+  assertNoFixtureIdentifierLeakSnapshot(result, 'Validated ledger');
+  return result;
 }
