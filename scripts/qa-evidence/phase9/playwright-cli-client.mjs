@@ -1445,6 +1445,25 @@ export function createPlaywrightCliClient({
       currentTabs.set(session, index);
       return result;
     },
+    async closeBrowser(session) {
+      if (typeof session !== 'string' || !opened.has(session)) {
+        throw new Error('Browser closure requires an exact session opened by this client.');
+      }
+      const result = await command(['close'], session);
+      opened.delete(session);
+      currentTabs.delete(session);
+      tabCounts.delete(session);
+      for (const key of [...armedTabs]) {
+        if (key.startsWith(`${session}:`)) armedTabs.delete(key);
+      }
+      for (const key of [...publicPageIds.keys()]) {
+        if (key.startsWith(`${session}:`)) publicPageIds.delete(key);
+      }
+      for (const key of [...listenTargetStateByTab.keys()]) {
+        if (key.startsWith(`${session}:`)) listenTargetStateByTab.delete(key);
+      }
+      return result;
+    },
     listBrowsers: async () => command(['list']),
     closeAllBrowsers: async () => command(['close-all']),
   };

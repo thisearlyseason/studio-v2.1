@@ -288,6 +288,23 @@ test('phase 9 playwright client refuses to arm an existing nonblank tab', async 
   assert.equal(transport.calls.filter(argv => (argv[argv.indexOf('run-code') + 1] ?? '').includes('phase9:install')).length, 0);
 });
 
+test('phase 9 playwright client closes only an exact session it opened', async () => {
+  const calls = [];
+  const client = createPlaywrightCliClient({
+    wrapperPath: '/private/playwright-cli',
+    execute: async argv => {
+      calls.push(argv);
+      if (argv.includes('run-code')) return { exitCode: 0, stdout: JSON.stringify({ result: JSON.stringify({ url: 'about:blank', pageId: 'raw-page', navigationGeneration: 0 }) }) };
+      return { exitCode: 0, stdout: JSON.stringify({ ok: true }) };
+    },
+  });
+  await installSignalRecorder(client, 'guardian-owned-session');
+  await client.closeBrowser('guardian-owned-session');
+  assert.equal(calls.some(argv => argv.includes('-s=guardian-owned-session') && argv.includes('close')), true);
+  await assert.rejects(() => client.closeBrowser('never-opened-session'), /opened|owned/i);
+  assert.equal(calls.some(argv => argv.includes('-s=never-opened-session')), false);
+});
+
 test('phase 9 playwright client classifies only protected data resources', () => {
   const origin = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
   const signal = (url, resourceType = 'fetch', method = 'GET') => ({
@@ -1598,9 +1615,21 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
   }, 'seeded'), /canonical seed/i);
   assert.throws(() => validateLifecycleResult('transition', {
     command: 'transition', state: 'pending_deletion', uidSuffix: 'pending-delete',
-  }, 'pending-deletion'), /alias/i);
+  }, 'pending-deletion'), /alias|producer fields/i);
   assert.equal(validateLifecycleResult('transition', {
     command: 'transition', alias: 'qa-pending-delete', state: 'pending_deletion', uidSuffix: 'pending-delete',
+  }, 'pending-deletion').pass, true);
+  assert.throws(() => validateLifecycleResult('transition', {
+    command: 'transition', alias: 'qa-pending-delete', state: 'pending_deletion', uidSuffix: 'pending-delete', extra: true,
+  }, 'pending-deletion'), /producer fields/i);
+  assert.throws(() => validateLifecycleResult('transition', {
+    command: 'transition', alias: 'qa-pending-delete', state: 'pending_deletion', uidSuffix: 'pending-delete', resumed: false,
+  }, 'pending-deletion'), /resumed/i);
+  assert.throws(() => validateLifecycleResult('transition', {
+    command: 'transition', alias: 'qa-pending-delete', state: 'pending_deletion', uidSuffix: 'pending-delete', ok: false,
+  }, 'pending-deletion'), /producer fields/i);
+  assert.equal(validateLifecycleResult('transition', {
+    command: 'transition', alias: 'qa-pending-delete', state: 'pending_deletion', uidSuffix: 'pending-delete', resumed: true,
   }, 'pending-deletion').pass, true);
 
   const inspect = {
@@ -1651,6 +1680,20 @@ test('phase 9 evidence contracts validate lifecycle JSON and fail closed', () =>
     },
   };
   assert.equal(validateLifecycleResult('cleanup', cleanup, 'cleaned').pass, true);
+  assert.throws(() => validateLifecycleResult('cleanup', { ...cleanup, extra: true }, 'cleaned'), /producer fields/i);
+  assert.throws(() => validateLifecycleResult('cleanup', {
+    ...cleanup, deleted: { ...cleanup.deleted, extra: 0 },
+  }, 'cleaned'), /producer fields/i);
+  assert.throws(() => validateLifecycleResult('cleanup', {
+    ...cleanup, followUp: { ...cleanup.followUp, extra: {} },
+  }, 'cleaned'), /producer fields/i);
+  assert.throws(() => validateLifecycleResult('cleanup', {
+    ...cleanup,
+    followUp: {
+      ...cleanup.followUp,
+      retained: { ...cleanup.followUp.retained, auth: { ...cleanup.followUp.retained.auth, extra: 0 } },
+    },
+  }, 'cleaned'), /producer fields/i);
   assert.throws(() => validateLifecycleResult('cleanup', { ...cleanup, retained: ['one'] }, 'cleaned'), /retained/i);
   assert.throws(() => validateLifecycleResult('cleanup', {
     ...cleanup,
@@ -4412,6 +4455,7 @@ function lifecycleGuardianFixture(overrides = {}) {
   let transitioned = false;
   let probeAuthChecks = 0;
   let probeFirestoreChecks = 0;
+  const browserSessions = new Set(overrides.initialBrowsers ?? []);
   const manifest = () => JSON.stringify({
     version: 3,
     runId,
@@ -4478,11 +4522,21 @@ function lifecycleGuardianFixture(overrides = {}) {
     return mutation ?? { exitCode: 0, stdout: JSON.stringify(result) };
   };
   const browserClient = {
-    async closeAllBrowsers() { events.push('browser:close'); if (overrides.browserCloseFailure) throw new Error('raw close failure'); },
+    async closeBrowser(session) {
+      events.push(`browser:close:${session}`);
+      if (overrides.browserCloseFailure) throw new Error('raw close failure');
+      browserSessions.delete(session);
+    },
+    async closeAllBrowsers() {
+      events.push('browser:close-all');
+      throw new Error('guardian must never close unowned browser sessions');
+    },
     async listBrowsers() {
       events.push('browser:list');
-      const afterClose = events.includes('browser:close');
-      return { browsers: overrides.remainingBrowsersAfterClose && afterClose ? ['private-session'] : [] };
+      const afterClose = events.some(event => event.startsWith('browser:close:'));
+      const browsers = [...browserSessions].map(name => ({ name }));
+      if (overrides.remainingBrowsersAfterClose && afterClose) browsers.push({ name: 'private-session' });
+      return { browsers };
     },
   };
   const filesystem = {
@@ -4493,6 +4547,11 @@ function lifecycleGuardianFixture(overrides = {}) {
       throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     },
     async lstat(path) {
+      if (
+        overrides.preservationLstatUncertain
+        && events.some(event => event.startsWith('browser:close'))
+        && (path === workspace || path === manifestPath)
+      ) throw Object.assign(new Error('uncertain'), { code: 'EACCES' });
       if (path === workspace && workspaceExists) return { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false, mode: 0o40700 };
       if (files.has(path)) return {
         isDirectory: () => false,
@@ -4519,6 +4578,10 @@ function lifecycleGuardianFixture(overrides = {}) {
       events.push('fs:remove-workspace');
       if (overrides.workspaceRemovalFailure) throw new Error('raw workspace failure');
       assert.equal(path, workspace);
+      if (overrides.workspaceRemovalDeletesFilesOnly) {
+        files.clear();
+        return;
+      }
       if (!overrides.workspaceRemovalLeavesDirectory) {
         workspaceExists = false;
         files.clear();
@@ -4548,15 +4611,38 @@ function lifecycleGuardianFixture(overrides = {}) {
       handlers.delete(name);
     },
   };
+  const deployedSha = '0123456789abcdef0123456789abcdef01234567';
+  const stagingRunId = '32856314233';
+  const pullRequestNumber = 41;
+  const preconditionVerifier = async request => {
+    events.push('precondition:verify');
+    assert.deepEqual(request, { deployedSha, stagingRunId, pullRequestNumber });
+    const result = {
+      deployedSha,
+      stagingRunId,
+      runStatus: 'completed',
+      runConclusion: 'success',
+      runSha: deployedSha,
+      pullRequestNumber,
+      pullRequestState: 'OPEN',
+      pullRequestMerged: false,
+      pullRequestHeadSha: deployedSha,
+    };
+    return overrides.preconditionResult?.({ request, result: structuredClone(result) }) ?? result;
+  };
   return {
-    dependencies: { fixtureCommand, browserClient, adapterFactory: overrides.adapterFactory ?? adapterFactory, filesystem, processHooks },
+    dependencies: {
+      fixtureCommand, browserClient, adapterFactory: overrides.adapterFactory ?? adapterFactory,
+      filesystem, processHooks, preconditionVerifier,
+    },
     options: {
       projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN,
       expiresAt: '2026-09-02T12:00:00Z',
+      deployedSha, stagingRunId, pullRequestNumber,
       beforeTransition: async () => events.push('scenario:before-transition'),
       afterTransition: async () => events.push('scenario:after-transition'),
     },
-    events, handlers, files, workspace, manifestPath, credentialPath,
+    events, handlers, files, browserSessions, workspace, manifestPath, credentialPath,
     get workspaceExists() { return workspaceExists; },
     get probeAuthChecks() { return probeAuthChecks; },
     get probeFirestoreChecks() { return probeFirestoreChecks; },
@@ -4583,7 +4669,7 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   ]);
   assert.equal(fixture.events.indexOf('scenario:before-transition') < fixture.events.indexOf('fixture:transition'), true);
   assert.equal(fixture.events.indexOf('fixture:transition') < fixture.events.indexOf('scenario:after-transition'), true);
-  assert.equal(fixture.events.indexOf('browser:close') < fixture.events.indexOf('fixture:cleanup'), true);
+  assert.equal(fixture.events.lastIndexOf('browser:list') < fixture.events.indexOf('fixture:cleanup'), true);
   assert.equal(fixture.events.indexOf('adapter:init') < fixture.events.indexOf('fs:remove-credential'), true);
   assert.equal(fixture.events.filter(event => event.startsWith('hook:on:')).length, 4);
   assert.equal(fixture.events.indexOf('hook:on:SIGINT') < fixture.events.indexOf('fs:mkdtemp'), true);
@@ -4592,6 +4678,37 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   assert.equal(fixture.probeFirestoreChecks, 83);
   assert.equal(fixture.workspaceExists, false);
   assert.equal(fixture.handlers.size, 0);
+});
+
+test('phase 9 lifecycle guardian never closes a pre-existing unowned browser session', async () => {
+  const fixture = lifecycleGuardianFixture({ initialBrowsers: ['user-owned-session'] });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'browser-precondition-failed');
+  assert.equal(fixture.events.some(event => event.startsWith('browser:close')), false);
+  assert.equal(fixture.events.includes('fs:mkdtemp'), false);
+  assert.deepEqual([...fixture.browserSessions], ['user-owned-session']);
+});
+
+test('phase 9 lifecycle guardian validates exact deployment run and open PR before mutation', async t => {
+  for (const [name, mutate] of [
+    ['wrong deployed SHA', result => ({ ...result, runSha: 'abcdef0123456789abcdef0123456789abcdef01' })],
+    ['wrong staging run', result => ({ ...result, stagingRunId: '99999999999' })],
+    ['failed staging run', result => ({ ...result, runConclusion: 'failure' })],
+    ['closed PR', result => ({ ...result, pullRequestState: 'CLOSED' })],
+    ['merged PR', result => ({ ...result, pullRequestMerged: true })],
+    ['wrong PR head', result => ({ ...result, pullRequestHeadSha: 'abcdef0123456789abcdef0123456789abcdef01' })],
+  ]) await t.test(name, async () => {
+    const fixture = lifecycleGuardianFixture({
+      preconditionResult: ({ result }) => mutate(result),
+    });
+    const lifecycleResult = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(lifecycleResult.ok, false);
+    assert.equal(lifecycleResult.category, 'hosted-precondition-failed');
+    assert.equal(fixture.events.includes('fs:mkdtemp'), false);
+    assert.equal(fixture.events.includes('fixture:seed'), false);
+    assert.equal(fixture.events.some(event => event.startsWith('browser:close')), false);
+  });
 });
 
 test('phase 9 lifecycle guardian rejects command and lifecycle contract failures despite exit zero', async t => {
@@ -4640,18 +4757,24 @@ test('phase 9 lifecycle guardian rejects nonzero fixture exits at every mutating
 });
 
 test('phase 9 lifecycle guardian preserves exact recovery state when browser closure or manifest certainty fails', async t => {
-  for (const [name, overrides, category, manifestPreserved] of [
-    ['browser close failure', { browserCloseFailure: true }, 'browser-closure-failed', true],
-    ['browser list remains nonempty', { remainingBrowsersAfterClose: true }, 'browser-closure-failed', true],
-    ['manifest is corrupt', { corruptManifest: true }, 'manifest-uncertain', true],
-    ['manifest is missing after seed', { missingManifest: true }, 'manifest-uncertain', false],
+  for (const [name, overrides, category, manifestPreservation] of [
+    ['browser close failure', { browserCloseFailure: true }, 'browser-closure-failed', 'verified-present'],
+    ['browser list remains nonempty', { remainingBrowsersAfterClose: true }, 'browser-closure-failed', 'verified-present'],
+    ['manifest is corrupt', { corruptManifest: true }, 'manifest-uncertain', 'verified-present'],
+    ['manifest is missing after seed', { missingManifest: true }, 'manifest-uncertain', 'verified-absent'],
   ]) await t.test(name, async () => {
     const fixture = lifecycleGuardianFixture(overrides);
+    if (overrides.browserCloseFailure || overrides.remainingBrowsersAfterClose) {
+      fixture.options.beforeTransition = context => {
+        context.ownBrowserSession('phase9-guardian-owned');
+        fixture.browserSessions.add('phase9-guardian-owned');
+      };
+    }
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
     assert.equal(result.ok, false);
     assert.equal(result.category, category);
-    assert.equal(result.workspacePreserved, true);
-    assert.equal(result.manifestPreserved, manifestPreserved);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, manifestPreservation);
     assert.equal(fixture.workspaceExists, true);
     assert.equal(fixture.events.includes('fs:remove-credential'), false);
     assert.equal(fixture.events.includes('fs:remove-workspace'), false);
@@ -4671,7 +4794,7 @@ test('phase 9 lifecycle guardian fails closed on incomplete probe and removal un
   const probeResult = await runGuardedLifecycle({ ...probe.dependencies, options: probe.options });
   assert.equal(probeResult.ok, false);
   assert.equal(probeResult.category, 'independent-probe-failed');
-  assert.equal(probeResult.workspacePreserved, true);
+  assert.equal(probeResult.workspacePreservation, 'verified-present');
 
   const wrongProject = lifecycleGuardianFixture({
     adapterFactory: async () => ({ projectId: 'wrong-project', connect: () => ({}) }),
@@ -4698,13 +4821,32 @@ test('phase 9 lifecycle guardian fails closed on incomplete probe and removal un
     ['credential still present after removal', { credentialRemovalLeavesFile: true }, 'credential-removal-failed'],
     ['workspace removal', { workspaceRemovalFailure: true }, 'workspace-removal-failed'],
     ['workspace still present after removal', { workspaceRemovalLeavesDirectory: true }, 'workspace-removal-failed'],
+    ['workspace partially removed', { workspaceRemovalDeletesFilesOnly: true }, 'workspace-removal-failed'],
   ]) await t.test(name, async () => {
     const fixture = lifecycleGuardianFixture(overrides);
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
     assert.equal(result.ok, false);
     assert.equal(result.category, category);
     assert.equal(result.state === 'disarmed', false);
+    if (overrides.workspaceRemovalDeletesFilesOnly) {
+      assert.equal(result.workspacePreservation, 'verified-present');
+      assert.equal(result.manifestPreservation, 'verified-absent');
+    }
   });
+});
+
+test('phase 9 lifecycle guardian reports preservation uncertainty without claiming presence', async () => {
+  const fixture = lifecycleGuardianFixture({ browserCloseFailure: true, preservationLstatUncertain: true });
+  fixture.options.beforeTransition = context => {
+    context.ownBrowserSession('phase9-guardian-owned');
+    fixture.browserSessions.add('phase9-guardian-owned');
+  };
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.workspacePreservation, 'uncertain');
+  assert.equal(result.manifestPreservation, 'uncertain');
+  assert.equal(Object.hasOwn(result, 'workspacePreserved'), false);
+  assert.equal(Object.hasOwn(result, 'manifestPreserved'), false);
 });
 
 test('phase 9 lifecycle guardian rejects unsafe workspace and private-file boundaries', async t => {
@@ -4758,12 +4900,17 @@ test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transit
   assert.equal(result.closureCertified, true);
   assert.equal(fixture.workspaceExists, false);
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+  assert.equal(fixture.events.includes('scenario:after-transition'), false);
 });
 
-test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', async () => {
+test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', { timeout: 2_000 }, async () => {
   const fixture = lifecycleGuardianFixture();
   let release;
-  fixture.options.beforeTransition = () => new Promise(resolve => { release = resolve; });
+  fixture.options.beforeTransition = context => {
+    context.ownBrowserSession('phase9-guardian-owned');
+    fixture.browserSessions.add('phase9-guardian-owned');
+    return new Promise(resolve => { release = resolve; });
+  };
   const guardian = createLifecycleGuardian(fixture.dependencies);
   const running = guardian.run(fixture.options);
   while (!release) await new Promise(resolve => setImmediate(resolve));
@@ -4774,13 +4921,14 @@ test('phase 9 lifecycle guardian interruption is idempotent and reentry fails cl
   const firstEmergencyPromise = interrupt();
   const secondEmergencyPromise = interrupt();
   assert.equal(firstEmergencyPromise, secondEmergencyPromise);
-  release();
   const [firstEmergency, secondEmergency] = await Promise.all([firstEmergencyPromise, secondEmergencyPromise]);
   assert.deepEqual(secondEmergency, firstEmergency);
   assert.equal(firstEmergency.ok, false);
   assert.equal(firstEmergency.interrupted, true);
   assert.deepEqual(await running, firstEmergency);
+  release();
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
   assert.equal(fixture.events.filter(event => event === 'fs:remove-workspace').length, 1);
-  assert.equal(fixture.events.indexOf('browser:close') < fixture.events.indexOf('fixture:cleanup'), true);
+  assert.equal(fixture.events.indexOf('browser:close:phase9-guardian-owned') < fixture.events.indexOf('fixture:cleanup'), true);
+  assert.equal(fixture.events.includes('browser:close-all'), false);
 });

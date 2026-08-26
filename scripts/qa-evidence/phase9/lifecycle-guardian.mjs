@@ -11,7 +11,6 @@ import {
   STAGING_PROJECT_ID,
   validateLifecycleResult,
 } from './scenario-contracts.mjs';
-import { closeAndVerifyBrowsers } from './playwright-cli-client.mjs';
 
 const WORKSPACE_PREFIX = '/tmp/phase9-core-identities.';
 const PROCESS_EVENTS = Object.freeze(['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']);
@@ -55,10 +54,10 @@ const defaultProcessHooks = Object.freeze({
 
 function requireDependencies(value) {
   if (!value || typeof value !== 'object') throw new GuardianFailure('configuration-invalid');
-  for (const name of ['fixtureCommand', 'adapterFactory']) {
+  for (const name of ['fixtureCommand', 'adapterFactory', 'preconditionVerifier']) {
     if (typeof value[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
-  for (const name of ['closeAllBrowsers', 'listBrowsers']) {
+  for (const name of ['closeBrowser', 'listBrowsers']) {
     if (typeof value.browserClient?.[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
   for (const name of ['mkdtemp', 'chmod', 'stat', 'lstat', 'readFile', 'removeCredentialFile', 'rm']) {
@@ -77,6 +76,12 @@ function exactOptions(value) {
     || value.origin !== STAGING_ORIGIN
     || typeof value.expiresAt !== 'string'
     || Number.isNaN(Date.parse(value.expiresAt))
+    || typeof value.deployedSha !== 'string'
+    || !/^[0-9a-f]{40}$/.test(value.deployedSha)
+    || typeof value.stagingRunId !== 'string'
+    || !/^[1-9][0-9]{5,20}$/.test(value.stagingRunId)
+    || !Number.isSafeInteger(value.pullRequestNumber)
+    || value.pullRequestNumber <= 0
     || (value.beforeTransition !== undefined && typeof value.beforeTransition !== 'function')
     || (value.afterTransition !== undefined && typeof value.afterTransition !== 'function')
   ) throw new GuardianFailure('configuration-invalid');
@@ -84,6 +89,9 @@ function exactOptions(value) {
     projectId: value.projectId,
     origin: value.origin,
     expiresAt: value.expiresAt,
+    deployedSha: value.deployedSha,
+    stagingRunId: value.stagingRunId,
+    pullRequestNumber: value.pullRequestNumber,
     beforeTransition: value.beforeTransition,
     afterTransition: value.afterTransition,
   });
@@ -155,13 +163,13 @@ async function proveAbsent(filesystem, path) {
   }
 }
 
-async function pathExists(filesystem, path) {
-  if (!path) return false;
+async function preservationState(filesystem, path) {
+  if (!path) return 'verified-absent';
   try {
     await filesystem.lstat(path);
-    return true;
+    return 'verified-present';
   } catch (error) {
-    return !isMissing(error);
+    return isMissing(error) ? 'verified-absent' : 'uncertain';
   }
 }
 
@@ -193,7 +201,16 @@ async function requirePrivateDirectory(filesystem, path, category) {
   ) throw new GuardianFailure(category);
 }
 
-function failureSummary({ category, state, history, interrupted = false, browserClosureCertified = false, closureCertified = false, workspacePreserved = false, manifestPreserved = false }) {
+function failureSummary({
+  category,
+  state,
+  history,
+  interrupted = false,
+  browserClosureCertified = false,
+  closureCertified = false,
+  workspacePreservation = 'verified-absent',
+  manifestPreservation = 'verified-absent',
+}) {
   return Object.freeze({
     ok: false,
     category,
@@ -202,10 +219,53 @@ function failureSummary({ category, state, history, interrupted = false, browser
     interrupted,
     browserClosureCertified,
     closureCertified,
-    workspacePreserved,
-    manifestPreserved,
-    recovery: workspacePreserved ? 'recovery-required' : 'no-recovery-artifact',
+    workspacePreservation,
+    manifestPreservation,
+    recovery: new Set([workspacePreservation, manifestPreservation]).has('verified-present')
+      || new Set([workspacePreservation, manifestPreservation]).has('uncertain')
+      ? 'recovery-required'
+      : 'no-recovery-artifact',
   });
+}
+
+function validateHostedPreconditions(value, options) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new GuardianFailure('hosted-precondition-failed');
+  }
+  const expectedKeys = [
+    'deployedSha', 'stagingRunId', 'runStatus', 'runConclusion', 'runSha',
+    'pullRequestNumber', 'pullRequestState', 'pullRequestMerged', 'pullRequestHeadSha',
+  ].sort();
+  const keys = Object.keys(value).sort();
+  if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) {
+    throw new GuardianFailure('hosted-precondition-failed');
+  }
+  if (
+    value.deployedSha !== options.deployedSha
+    || value.stagingRunId !== options.stagingRunId
+    || value.runStatus !== 'completed'
+    || value.runConclusion !== 'success'
+    || value.runSha !== options.deployedSha
+    || value.pullRequestNumber !== options.pullRequestNumber
+    || value.pullRequestState !== 'OPEN'
+    || value.pullRequestMerged !== false
+    || value.pullRequestHeadSha !== options.deployedSha
+  ) throw new GuardianFailure('hosted-precondition-failed');
+}
+
+function browserSessionNames(result) {
+  if (!result || typeof result !== 'object' || !Array.isArray(result.browsers)) {
+    throw new GuardianFailure('browser-closure-failed');
+  }
+  const names = result.browsers.map(item => {
+    const name = typeof item === 'string' ? item : item?.name;
+    if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) {
+      throw new GuardianFailure('browser-closure-failed');
+    }
+    return name;
+  });
+  if (new Set(names).size !== names.length) throw new GuardianFailure('browser-closure-failed');
+  return names;
 }
 
 async function exactIndependentProbe(adapterFactory, manifest) {
@@ -261,11 +321,12 @@ export function createLifecycleGuardian({
   fixtureCommand,
   browserClient,
   adapterFactory,
+  preconditionVerifier,
   filesystem = defaultFilesystem,
   processHooks = defaultProcessHooks,
   repositoryRoot = process.cwd(),
 } = {}) {
-  const dependencies = { fixtureCommand, browserClient, adapterFactory, filesystem, processHooks };
+  const dependencies = { fixtureCommand, browserClient, adapterFactory, preconditionVerifier, filesystem, processHooks };
   requireDependencies(dependencies);
 
   let state = 'uninitialized';
@@ -273,14 +334,16 @@ export function createLifecycleGuardian({
   let running = false;
   let interrupted = false;
   let emergencyPromise = null;
-  let interruptWaitPromise = null;
-  let resolveInterruptWait = null;
+  let releaseAbortGate = null;
+  const abortGate = new Promise(resolve => { releaseAbortGate = resolve; });
   let workspacePath = null;
   let manifestPath = null;
   let credentialPath = null;
   let manifest = null;
   let browserClosureCertified = false;
   let closureCertified = false;
+  let acceptingBrowserOwnership = false;
+  const ownedBrowserSessions = new Set();
   const handlers = new Map();
   let operationTail = Promise.resolve();
 
@@ -342,15 +405,30 @@ export function createLifecycleGuardian({
     }
   };
 
-  const closeBrowsers = async () => exclusive(async () => {
+  const closeOwnedBrowsers = async () => exclusive(async () => {
+    let closeFailed = false;
+    for (const session of [...ownedBrowserSessions].sort()) {
+      try {
+        await browserClient.closeBrowser(session);
+      } catch {
+        closeFailed = true;
+      }
+    }
+    let names;
     try {
-      const closed = await closeAndVerifyBrowsers(browserClient);
-      validateLifecycleResult('browser-sessions', { sessions: closed.browsers }, 'browsers-closed');
-      browserClosureCertified = true;
+      names = browserSessionNames(await browserClient.listBrowsers());
     } catch {
       browserClosureCertified = false;
       throw new GuardianFailure('browser-closure-failed');
     }
+    const ownedRemain = names.some(name => ownedBrowserSessions.has(name));
+    if (closeFailed || ownedRemain || names.length !== 0) {
+      browserClosureCertified = false;
+      throw new GuardianFailure('browser-closure-failed');
+    }
+    ownedBrowserSessions.clear();
+    validateLifecycleResult('browser-sessions', { sessions: [] }, 'browsers-closed');
+    browserClosureCertified = true;
   });
 
   const removeHandlers = () => {
@@ -367,23 +445,44 @@ export function createLifecycleGuardian({
     return remaining.length === 0;
   };
 
-  const recover = async (category, isInterruption = false) => {
+  const recover = (category, isInterruption = false) => {
     if (emergencyPromise) return emergencyPromise;
     interrupted ||= isInterruption;
     emergencyPromise = (async () => {
       try {
-        await closeBrowsers();
+        await closeOwnedBrowsers();
       } catch {
         removeHandlers();
         return failureSummary({
           category: 'browser-closure-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: false, closureCertified: false,
-          workspacePreserved: Boolean(workspacePath), manifestPreserved: await pathExists(filesystem, manifestPath),
+          workspacePreservation: await preservationState(filesystem, workspacePath),
+          manifestPreservation: await preservationState(filesystem, manifestPath),
         });
       }
       if (!workspacePath) {
         removeHandlers();
         return failureSummary({ category, state, history, interrupted: isInterruption, browserClosureCertified: true });
+      }
+      if (closureCertified && state === 'credential-removed') {
+        try {
+          await requirePrivateDirectory(filesystem, workspacePath, 'workspace-removal-failed');
+          await filesystem.rm(workspacePath, { recursive: true, force: false });
+          if (!(await proveAbsent(filesystem, workspacePath))) throw new GuardianFailure('workspace-removal-failed');
+        } catch {
+          removeHandlers();
+          return failureSummary({
+            category: 'workspace-removal-failed', state, history, interrupted: isInterruption,
+            browserClosureCertified: true, closureCertified: true,
+            workspacePreservation: await preservationState(filesystem, workspacePath),
+            manifestPreservation: await preservationState(filesystem, manifestPath),
+          });
+        }
+        removeHandlers();
+        return failureSummary({
+          category, state, history, interrupted: isInterruption,
+          browserClosureCertified: true, closureCertified: true,
+        });
       }
       try {
         await loadExactManifest();
@@ -391,8 +490,9 @@ export function createLifecycleGuardian({
         removeHandlers();
         return failureSummary({
           category: 'manifest-uncertain', state, history, interrupted: isInterruption,
-          browserClosureCertified: true, workspacePreserved: true,
-          manifestPreserved: await pathExists(filesystem, manifestPath),
+          browserClosureCertified: true,
+          workspacePreservation: await preservationState(filesystem, workspacePath),
+          manifestPreservation: await preservationState(filesystem, manifestPath),
         });
       }
       try {
@@ -408,7 +508,8 @@ export function createLifecycleGuardian({
         return failureSummary({
           category, state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: false,
-          workspacePreserved: true, manifestPreserved: true,
+          workspacePreservation: await preservationState(filesystem, workspacePath),
+          manifestPreservation: await preservationState(filesystem, manifestPath),
         });
       }
       try {
@@ -419,7 +520,8 @@ export function createLifecycleGuardian({
         return failureSummary({
           category: 'credential-removal-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
-          workspacePreserved: true, manifestPreserved: true,
+          workspacePreservation: await preservationState(filesystem, workspacePath),
+          manifestPreservation: await preservationState(filesystem, manifestPath),
         });
       }
       try {
@@ -431,7 +533,8 @@ export function createLifecycleGuardian({
         return failureSummary({
           category: 'workspace-removal-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
-          workspacePreserved: true, manifestPreserved: true,
+          workspacePreservation: await preservationState(filesystem, workspacePath),
+          manifestPreservation: await preservationState(filesystem, manifestPath),
         });
       }
       removeHandlers();
@@ -447,10 +550,9 @@ export function createLifecycleGuardian({
     for (const name of PROCESS_EVENTS) {
       const handler = () => {
         interrupted = true;
-        if (!interruptWaitPromise) {
-          interruptWaitPromise = new Promise(resolve => { resolveInterruptWait = resolve; });
-        }
-        return interruptWaitPromise;
+        const recovery = recover('interrupted', true);
+        releaseAbortGate();
+        return recovery;
       };
       handlers.set(name, handler);
       try {
@@ -462,10 +564,40 @@ export function createLifecycleGuardian({
     }
   };
 
+  const ownBrowserSession = session => {
+    if (
+      !acceptingBrowserOwnership
+      || typeof session !== 'string'
+      || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)
+      || ownedBrowserSessions.has(session)
+    ) throw new GuardianFailure('browser-ownership-invalid');
+    ownedBrowserSessions.add(session);
+    return session;
+  };
+
+  const runScenarioPhase = async (callback, privateContext) => {
+    if (typeof callback !== 'function') return;
+    acceptingBrowserOwnership = true;
+    const callbackPromise = Promise.resolve().then(() => callback(privateContext));
+    void callbackPromise.catch(() => {});
+    try {
+      await Promise.race([
+        callbackPromise,
+        abortGate.then(() => { throw new GuardianFailure('interrupted'); }),
+      ]);
+    } finally {
+      acceptingBrowserOwnership = false;
+    }
+  };
+
   let currentOptions = null;
   const run = async rawOptions => {
     if (running || state !== 'uninitialized') {
-      return failureSummary({ category: 'reentry', state, history, browserClosureCertified, closureCertified });
+      return failureSummary({
+        category: 'reentry', state, history, browserClosureCertified, closureCertified,
+        workspacePreservation: await preservationState(filesystem, workspacePath),
+        manifestPreservation: await preservationState(filesystem, manifestPath),
+      });
     }
     running = true;
     try {
@@ -473,12 +605,27 @@ export function createLifecycleGuardian({
       registerHandlers();
       transition('guarded');
 
-      let initialBrowsers;
+      let initialBrowserNames;
       try {
-        initialBrowsers = await browserClient.listBrowsers();
-        validateLifecycleResult('browser-sessions', { sessions: initialBrowsers?.browsers }, 'browsers-closed');
+        initialBrowserNames = browserSessionNames(await browserClient.listBrowsers());
       } catch {
-        throw new GuardianFailure('browser-closure-failed');
+        removeHandlers();
+        return failureSummary({ category: 'browser-precondition-failed', state, history });
+      }
+      if (initialBrowserNames.length !== 0) {
+        removeHandlers();
+        return failureSummary({ category: 'browser-precondition-failed', state, history });
+      }
+      try {
+        const verified = await preconditionVerifier({
+          deployedSha: currentOptions.deployedSha,
+          stagingRunId: currentOptions.stagingRunId,
+          pullRequestNumber: currentOptions.pullRequestNumber,
+        });
+        validateHostedPreconditions(verified, currentOptions);
+      } catch {
+        removeHandlers();
+        return failureSummary({ category: 'hosted-precondition-failed', state, history });
       }
       await runFixture('preflight', currentOptions, 'preflight');
       transition('preflighted');
@@ -514,15 +661,23 @@ export function createLifecycleGuardian({
       await runFixture('inspect', currentOptions, 'seeded-present');
       transition('inspected');
       checkInterrupted();
-      const privateContext = Object.freeze({ workspacePath, manifestPath, credentialPath, runId: manifest.runId });
-      await currentOptions.beforeTransition?.(privateContext);
+      const privateContext = Object.freeze({
+        workspacePath,
+        manifestPath,
+        credentialPath,
+        runId: manifest.runId,
+        ownBrowserSession,
+      });
+      await runScenarioPhase(currentOptions.beforeTransition, privateContext);
       checkInterrupted();
       await runFixture('transition', currentOptions, 'pending-deletion');
       checkInterrupted();
-      await currentOptions.afterTransition?.(privateContext);
+      await loadExactManifest('pending_deletion');
+      checkInterrupted();
+      await runScenarioPhase(currentOptions.afterTransition, privateContext);
       checkInterrupted();
 
-      await closeBrowsers();
+      await closeOwnedBrowsers();
       checkInterrupted();
       transition('browsers-closed');
       await loadExactManifest('pending_deletion');
@@ -573,12 +728,10 @@ export function createLifecycleGuardian({
         browserClosureCertified: true,
         closureCertified: true,
       });
-      resolveInterruptWait?.(result);
       return result;
     } catch (error) {
       const category = error instanceof GuardianFailure ? error.category : 'operation-failed';
       const result = await recover(category, interrupted);
-      resolveInterruptWait?.(result);
       return result;
     } finally {
       running = false;

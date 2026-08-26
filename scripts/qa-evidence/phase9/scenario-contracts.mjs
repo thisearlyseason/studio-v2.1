@@ -474,6 +474,7 @@ const requireOk = value => {
 
 const requireZeroSummary = (value, name) => {
   requireRecord(value, name);
+  requireExactKeys(value, ['count', 'aliases'], name);
   requireCount(value.count, `${name}.count`);
   if (value.count !== 0) throw new Error(`${name} must report zero retained resources or failures.`);
   if (requireClosedArray(value.aliases, `${name} aliases`).length !== 0) {
@@ -1209,17 +1210,21 @@ const validateInspect = (value, expected) => {
 };
 
 const validateCleanup = (value, expected) => {
+  requireExactKeys(value, ['command', 'ok', 'retained', 'deleted', 'followUp'], 'Cleanup');
   if (requireClosedArray(value.retained, 'Cleanup retained list').length !== 0) {
     throw new Error('Cleanup retained list must be empty.');
   }
   const deleted = requireRecord(value.deleted, 'Cleanup deleted counts');
+  requireExactKeys(deleted, ['auth', 'firestore'], 'Cleanup deleted counts');
   requireCount(deleted.auth, 'Cleanup deleted Auth count');
   requireCount(deleted.firestore, 'Cleanup deleted Firestore count');
   requireExact(deleted.auth, expected.auth, 'Cleanup deleted Auth count');
   requireExact(deleted.firestore, expected.firestore, 'Cleanup deleted Firestore count');
   const followUp = requireRecord(value.followUp, 'Cleanup follow-up');
+  requireExactKeys(followUp, ['retained', 'failures'], 'Cleanup follow-up');
   for (const category of ['retained', 'failures']) {
     const summary = requireRecord(followUp[category], `Cleanup ${category}`);
+    requireExactKeys(summary, ['auth', 'firestore'], `Cleanup ${category}`);
     requireZeroSummary(summary.auth, `Cleanup ${category} Auth`);
     requireZeroSummary(summary.firestore, `Cleanup ${category} Firestore`);
   }
@@ -1304,6 +1309,14 @@ export function validateLifecycleResult(kind, input, stage) {
       break;
     }
     case 'transition': {
+      if ('resumed' in value) requireExact(value.resumed, true, 'Transition resumed');
+      requireExactKeys(
+        value,
+        value.resumed === true
+          ? ['command', 'alias', 'state', 'uidSuffix', 'resumed']
+          : ['command', 'alias', 'state', 'uidSuffix'],
+        'Transition',
+      );
       requireExact(value.command, 'transition', 'Transition command');
       requireString(value.alias, 'Transition alias');
       requireString(value.state, 'Transition state');
@@ -1311,7 +1324,6 @@ export function validateLifecycleResult(kind, input, stage) {
       requireExact(value.alias, 'qa-pending-delete', 'Transition alias');
       requireExact(value.state, 'pending_deletion', 'Transition state');
       requireExact(value.uidSuffix, 'pending-delete', 'Transition UID suffix');
-      if ('resumed' in value) requireBoolean(value.resumed, 'Transition resumed');
       break;
     }
     case 'cleanup':
