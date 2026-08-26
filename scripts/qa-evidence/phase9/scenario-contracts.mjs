@@ -345,23 +345,44 @@ const CREDENTIAL_PATTERNS = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
 ];
 
+const inspectPercentLayer = value => {
+  let encoded = false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== '%') continue;
+    if (/^[0-9a-f]{2}$/i.test(value.slice(index + 1, index + 3))) {
+      encoded = true;
+      index += 2;
+      continue;
+    }
+    const next = value[index + 1];
+    if (next === undefined || /\s/.test(next)) continue;
+    return { encoded, malformed: true };
+  }
+  return { encoded, malformed: false };
+};
+
+const decodePercentLayer = value => {
+  try {
+    return value.replace(/(?:%[0-9a-f]{2})+/gi, encoded => decodeURIComponent(encoded));
+  } catch {
+    return null;
+  }
+};
+
 const inspectEvidenceString = input => {
   if (typeof input !== 'string') return null;
   let value = input;
-  for (let round = 0; round <= MAX_PERCENT_DECODE_ROUNDS; round += 1) {
+  for (let round = 0; ; round += 1) {
     if (FIXTURE_IDENTIFIER_PATTERN.test(value)) return 'fixture';
     if (CREDENTIAL_PATTERNS.some(pattern => pattern.test(value))) return 'credential';
-    if (/%(?![0-9a-f]{2})/i.test(value)) return 'percent';
-    if (round === MAX_PERCENT_DECODE_ROUNDS || !/%[0-9a-f]{2}/i.test(value)) break;
-    try {
-      const decoded = decodeURIComponent(value);
-      if (decoded === value) break;
-      value = decoded;
-    } catch {
-      return 'percent';
-    }
+    const layer = inspectPercentLayer(value);
+    if (layer.malformed) return 'percent';
+    if (!layer.encoded) return null;
+    if (round === MAX_PERCENT_DECODE_ROUNDS) return 'percent-depth';
+    const decoded = decodePercentLayer(value);
+    if (decoded === null || decoded === value) return 'percent';
+    value = decoded;
   }
-  return null;
 };
 
 export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
@@ -377,6 +398,7 @@ export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
       if (violation === 'fixture') throw new Error(`${name} contains a raw fixture identifier.`);
       if (violation === 'credential') throw new Error(`${name} contains credential-shaped evidence.`);
       if (violation === 'percent') throw new Error(`${name} contains a malformed percent-encoding layer.`);
+      if (violation === 'percent-depth') throw new Error(`${name} exceeds the bounded percent-decoding depth.`);
       return;
     }
     if (!current || typeof current !== 'object') return;

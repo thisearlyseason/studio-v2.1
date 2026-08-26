@@ -134,6 +134,7 @@ const firestoreRaw = overrides => ({
   headers: FIRESTORE_LISTEN_TRANSPORT_HEADERS,
   body: '',
   frameUrl: RAW_STAGING_FRAME,
+  navigationGeneration: 0,
   ...overrides,
 });
 
@@ -144,6 +145,7 @@ const joinAdminRaw = overrides => ({
   headers: JOIN_ADMIN_PRODUCER_HEADERS,
   body: '',
   frameUrl: RAW_STAGING_FRAME,
+  navigationGeneration: 0,
   ...overrides,
 });
 
@@ -2623,6 +2625,30 @@ test('phase 9 public evidence scanner rejects malformed percent layers and crede
   ]) assert.throws(() => assertNoFixtureIdentifierLeak({ evidence: value }), /credential/i, value);
 });
 
+test('phase 9 percent scanning fails closed at the decode budget without rejecting literal prose percentages', () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const encodeLayers = (value, layers) => {
+    let encoded = value.replaceAll('-', '%2D');
+    for (let index = 1; index < layers; index += 1) encoded = encoded.replaceAll('%', '%25');
+    return encoded;
+  };
+
+  for (const layers of [5, 6, 128]) {
+    const encoded = encodeLayers(runId, layers);
+    assert.throws(
+      () => assertNoFixtureIdentifierLeak({ evidence: encoded }),
+      /percent|decod.*depth|fixture identifier/i,
+      `${layers} encoded layers must fail closed`,
+    );
+  }
+  for (const value of ['coverage is 100% complete', 'coverage: 100%']) {
+    assert.doesNotThrow(() => assertNoFixtureIdentifierLeak({ evidence: value }), value);
+  }
+  for (const value of ['bad%GG', 'bad%2G', 'bad%G2', 'bad%A']) {
+    assert.throws(() => assertNoFixtureIdentifierLeak({ evidence: value }), /percent/i, value);
+  }
+});
+
 test('phase 9 protected producers require exact canonical frame origin and referrer provenance', async () => {
   const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
@@ -2690,6 +2716,70 @@ test('phase 9 Listen target IDs are stateful, private, removable, and reusable w
   );
 });
 
+test('phase 9 Listen state changes commit only after a complete valid producer request', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const selfTarget = targetId => ({
+    database: FIRESTORE_DATABASE,
+    addTarget: {
+      documents: { documents: [`${databaseRoot}/users/${runId}-no-team`] },
+      targetId,
+    },
+  });
+  const malformedTarget = targetId => ({
+    database: FIRESTORE_DATABASE,
+    addTarget: { documents: { documents: [] }, targetId },
+  });
+  const removeTarget = targetId => ({ database: FIRESTORE_DATABASE, removeTarget: targetId });
+  const bodies = [
+    initialListenForm(malformedTarget(1)),
+    initialListenForm(removeTarget(1)),
+    initialListenForm(selfTarget(2), selfTarget(2)),
+    initialListenForm(removeTarget(2)),
+    initialListenForm(selfTarget(3)),
+    initialListenForm(removeTarget(3), malformedTarget(4)),
+    initialListenForm(removeTarget(3)),
+    initialListenForm(removeTarget(4)),
+  ];
+  const expectedScopes = [
+    ['unscoped'],
+    ['unscoped'],
+    ['self-account', 'unscoped'],
+    ['unscoped'],
+    ['self-account'],
+    ['transport-control', 'unscoped'],
+    ['transport-control'],
+    ['unscoped'],
+  ];
+  let sequence = 0;
+  let sampleIndex = 0;
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: ++sequence });
+    if (code.includes('phase9:sample')) return cliResult({
+      pageId: 'page-a', terminalReached: true, loadingVisible: false,
+      finalUrl: `${STAGING_ORIGIN}/teams/join`, finalPath: '/teams/join',
+      visibleSentinels: ['Join & Invite'], sessionPresent: true, protectedRender: false,
+      rawRequests: [firestoreRaw({ body: bodies[sampleIndex++] })],
+      rawResponses: [], rawTeamSelections: [], pageErrors: [], appConsoleErrors: [],
+      unexpectedRequestFailures: [], overflow: 0, renderPath: '/teams/join', renderSentinel: 'Join & Invite',
+      redirectReason: 'none', renderSignals: [],
+    });
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({
+    execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh', fixtureRunId: runId,
+  });
+  await installSignalRecorder(client, 'transactional-listen');
+  for (const expected of expectedScopes) {
+    const result = await observeAction({
+      client, session: 'transactional-listen', stage: 'transactional-listen',
+      terminal: async () => {}, action: async () => {},
+    });
+    assert.deepEqual(result.protectedRequestSignals[0].resourceScopes, expected);
+  }
+});
+
 test('phase 9 client owns Listen target state across action windows and resets it on navigation', async () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
@@ -2704,6 +2794,7 @@ test('phase 9 client owns Listen target state across action windows and resets i
   const messages = [selfTarget(1), selfTarget(1), removeTarget(1), selfTarget(1), selfTarget(1)];
   let sequence = 0;
   let sampleIndex = 0;
+  let navigationGeneration = 0;
   const transport = createCliTransport(argv => {
     const code = argv[argv.indexOf('run-code') + 1] ?? '';
     if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: ++sequence });
@@ -2713,10 +2804,14 @@ test('phase 9 client owns Listen target state across action windows and resets i
         pageId: 'page-a', terminalReached: true, loadingVisible: false,
         finalUrl: `${STAGING_ORIGIN}/teams/join`, finalPath: '/teams/join',
         visibleSentinels: ['Join & Invite'], sessionPresent: true, protectedRender: false,
-        rawRequests: [firestoreRaw({ body: initialListenForm(message), listenState: { activeTargetIds: [999] } })],
+        rawRequests: [firestoreRaw({
+          body: initialListenForm(message),
+          listenState: { activeTargetIds: [999] },
+          navigationGeneration,
+        })],
         rawResponses: [], rawTeamSelections: [], pageErrors: [], appConsoleErrors: [],
         unexpectedRequestFailures: [], overflow: 0, renderPath: '/teams/join', renderSentinel: 'Join & Invite',
-        redirectReason: 'none', renderSignals: [],
+        redirectReason: 'none', renderSignals: [], navigationGeneration,
       });
     }
     return blankAwareCliResult(argv);
@@ -2734,7 +2829,155 @@ test('phase 9 client owns Listen target state across action windows and resets i
   assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['transport-control']);
   assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['self-account']);
   await client.goto('stateful-listen', 'about:blank');
+  navigationGeneration += 1;
   assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['self-account']);
+});
+
+test('phase 9 client binds Listen state to recorder navigation generation for every public run-code path', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const selfTarget = targetId => ({
+    database: FIRESTORE_DATABASE,
+    addTarget: {
+      documents: { documents: [`${databaseRoot}/users/${runId}-no-team`] },
+      targetId,
+    },
+  });
+  const removeTarget = targetId => ({ database: FIRESTORE_DATABASE, removeTarget: targetId });
+  const queued = [];
+  let generation = 0;
+  let sequence = 0;
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({
+      pageId: 'page-a', sequence: ++sequence, navigationGeneration: generation,
+    });
+    if (code.includes('phase9:sample')) {
+      const message = queued.shift();
+      return cliResult({
+        pageId: 'page-a', terminalReached: true, loadingVisible: false,
+        finalUrl: `${STAGING_ORIGIN}/teams/join`, finalPath: '/teams/join',
+        visibleSentinels: ['Join & Invite'], sessionPresent: true, protectedRender: false,
+        rawRequests: [firestoreRaw({
+          body: initialListenForm(message),
+          navigationGeneration: generation,
+        })],
+        rawResponses: [], rawTeamSelections: [], pageErrors: [], appConsoleErrors: [],
+        unexpectedRequestFailures: [], overflow: 0, renderPath: '/teams/join', renderSentinel: 'Join & Invite',
+        redirectReason: 'none', renderSignals: [], navigationGeneration: generation,
+      });
+    }
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({
+    execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh', fixtureRunId: runId,
+  });
+  await installSignalRecorder(client, 'generation-listen');
+  const capture = async message => {
+    queued.push(message);
+    const result = await observeAction({
+      client, session: 'generation-listen', stage: 'generation-listen',
+      terminal: async () => {}, action: async () => {},
+    });
+    return result.protectedRequestSignals[0].resourceScopes;
+  };
+
+  assert.deepEqual(await capture(selfTarget(10)), ['self-account']);
+  await client.runCode('generation-listen', 'async (page) => page.evaluate(() => { document.body.dataset.noNavigation = "true"; })');
+  assert.deepEqual(await capture(removeTarget(10)), ['transport-control'], 'DOM-only run-code must retain state');
+
+  for (const [targetId, source] of [
+    [11, 'async (page) => page.goto("about:blank")'],
+    [12, 'async (page) => page.click("a")'],
+    [13, 'async (page) => page.reload()'],
+    [14, 'async (page) => page.evaluate(() => { location.href = "about:blank"; })'],
+  ]) {
+    assert.deepEqual(await capture(selfTarget(targetId)), ['self-account']);
+    await client.runCode('generation-listen', source);
+    generation += 1;
+    assert.deepEqual(
+      await capture(removeTarget(targetId)),
+      ['unscoped'],
+      `navigation generation must reset target ${targetId}`,
+    );
+  }
+});
+
+test('phase 9 real recorder increments navigation generation for goto click reload and location changes', { timeout: 90_000 }, async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const selfTarget = targetId => ({
+    database: FIRESTORE_DATABASE,
+    addTarget: {
+      documents: { documents: [`${databaseRoot}/users/${runId}-no-team`] },
+      targetId,
+    },
+  });
+  const removeTarget = targetId => ({ database: FIRESTORE_DATABASE, removeTarget: targetId });
+  const client = createPlaywrightCliClient({ fixtureRunId: runId });
+  const request = async (session, message) => observeAction({
+    client,
+    session,
+    stage: 'real-navigation-generation',
+    terminal: async () => {},
+    action: () => client.runCode(session, `async (page) => {
+      await page.evaluate(async ({ url, body }) => {
+        await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body,
+        });
+      }, {
+        url: ${JSON.stringify(FIRESTORE_INITIAL_LISTEN_URL)},
+        body: ${JSON.stringify(initialListenForm(message))},
+      });
+      await page.waitForTimeout(50);
+    }`),
+  });
+  const navigate = async (session, source) => client.runCode(session, source);
+  try {
+    const session = 'phase9-real-navigation-generation';
+    await installSignalRecorder(client, session);
+    await client.runCode(session, `async (page) => {
+      await page.route(${JSON.stringify(`${STAGING_ORIGIN}/**`)}, route => route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+        body: '<!doctype html><h1>Join & Invite</h1><a id="same-url" href="/teams/join">same</a>',
+      }));
+      await page.route('https://firestore.googleapis.com/**', route => route.fulfill({
+        status: 200,
+        headers: {
+          'access-control-allow-origin': ${JSON.stringify(STAGING_ORIGIN)},
+          'content-type': 'application/json',
+        },
+        body: '{}',
+      }));
+      await page.goto(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)});
+    }`);
+
+    const retained = await request(session, selfTarget(90));
+    assert.deepEqual(retained.protectedRequestSignals[0].resourceScopes, ['self-account']);
+    await navigate(session, 'async (page) => page.evaluate(() => { document.body.dataset.noNavigation = "true"; })');
+    assert.deepEqual((await request(session, removeTarget(90))).protectedRequestSignals[0].resourceScopes, ['transport-control']);
+
+    const cases = [
+      [91, `async (page) => page.goto(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)})`],
+      [92, 'async (page) => Promise.all([page.waitForNavigation(), page.click("#same-url")])'],
+      [93, 'async (page) => page.reload()'],
+      [94, `async (page) => Promise.all([page.waitForNavigation(), page.evaluate(url => { location.href = url; }, ${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)} )])`],
+    ];
+    for (const [targetId, source] of cases) {
+      assert.deepEqual((await request(session, selfTarget(targetId))).protectedRequestSignals[0].resourceScopes, ['self-account']);
+      await navigate(session, source);
+      assert.deepEqual(
+        (await request(session, removeTarget(targetId))).protectedRequestSignals[0].resourceScopes,
+        ['unscoped'],
+      );
+    }
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
 test('phase 9 Listen parser rejects enormous counts and integer fields without throwing or allocating', async () => {

@@ -27,19 +27,42 @@ const CLIENT_INTERNALS = new WeakMap();
 const HEADING_SENTINELS = Object.freeze([...new Set(LANDING_SENTINELS)]);
 const STATUS_SENTINELS = Object.freeze([PENDING_UNAVAILABLE_SENTINEL]);
 
+const inspectPercentLayer = value => {
+  let encoded = false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== '%') continue;
+    if (/^[0-9a-f]{2}$/i.test(value.slice(index + 1, index + 3))) {
+      encoded = true;
+      index += 2;
+      continue;
+    }
+    const next = value[index + 1];
+    if (next === undefined || /\s/.test(next)) continue;
+    return { encoded, malformed: true };
+  }
+  return { encoded, malformed: false };
+};
+
+const decodePercentLayer = value => {
+  try {
+    return value.replace(/(?:%[0-9a-f]{2})+/gi, encoded => decodeURIComponent(encoded));
+  } catch {
+    return null;
+  }
+};
+
 const iterativePercentDecode = input => {
   if (typeof input !== 'string') return null;
   let value = input;
-  for (let round = 0; round < MAX_PERCENT_DECODE_ROUNDS && /%[0-9a-f]{2}/i.test(value); round += 1) {
-    try {
-      const decoded = decodeURIComponent(value);
-      if (decoded === value) break;
-      value = decoded;
-    } catch {
-      return null;
-    }
+  for (let round = 0; ; round += 1) {
+    const layer = inspectPercentLayer(value);
+    if (layer.malformed) return null;
+    if (!layer.encoded) return value;
+    if (round === MAX_PERCENT_DECODE_ROUNDS) return null;
+    const decoded = decodePercentLayer(value);
+    if (decoded === null || decoded === value) return null;
+    value = decoded;
   }
-  return value;
 };
 
 const rawContainsIdentifier = (value, identifiers) => {
@@ -206,8 +229,12 @@ const classifyFixtureResourceScopesValue = (
     'tenant-other', 'foreign-account', 'non-tenant', 'transport-control', 'unscoped',
   ];
   const evidence = new Set();
+  let invalidEvidenceCount = 0;
   const add = value => evidence.add(value);
-  const unknown = () => add('unscoped-resource');
+  const unknown = () => {
+    invalidEvidenceCount += 1;
+    add('unscoped-resource');
+  };
   const result = () => {
     const scopeEvidence = evidenceOrder.filter(value => evidence.has(value));
     if (scopeEvidence.length === 0) scopeEvidence.push('unscoped-resource');
@@ -477,6 +504,7 @@ const classifyFixtureResourceScopesValue = (
     unknown();
   };
   const classifyTarget = addTarget => {
+    const invalidBefore = invalidEvidenceCount;
     if (!exactKeys(addTarget, ['targetId'], ['documents', 'query', 'resumeToken', 'readTime', 'expectedCount'])) {
       unknown();
       return false;
@@ -526,49 +554,50 @@ const classifyFixtureResourceScopesValue = (
       } else classifyDocumentName(documents.documents[0]);
     }
     if (hasQuery) classifyQuery(addTarget.query);
-    return true;
+    return invalidEvidenceCount === invalidBefore;
   };
   const validLabels = value => (
     exactKeys(value, ['goog-listen-tags'])
     && ['existence-filter-mismatch', 'existence-filter-mismatch-bloom', 'limbo-document']
       .includes(value['goog-listen-tags'])
   );
-  const classifyListenMessage = message => {
+  const classifyListenMessage = (message, draftTargetIds) => {
     if (!isRecord(message) || message.database !== database) {
       unknown();
-      return;
+      return false;
     }
     const hasAddTarget = Object.hasOwn(message, 'addTarget');
     const hasRemoveTarget = Object.hasOwn(message, 'removeTarget');
     if (hasAddTarget === hasRemoveTarget) {
       unknown();
-      return;
+      return false;
     }
     if (hasAddTarget) {
       const exactMessage = exactKeys(message, ['database', 'addTarget'], ['labels']);
       const exactLabels = !Object.hasOwn(message, 'labels') || validLabels(message.labels);
       if (!exactMessage || !exactLabels) unknown();
       const exactTarget = classifyTarget(message.addTarget);
-      if (!exactMessage || !exactLabels || !exactTarget) return;
+      if (!exactMessage || !exactLabels || !exactTarget) return false;
       const targetId = message.addTarget.targetId;
-      if (activeListenTargetIds.has(targetId) || activeListenTargetIds.size >= MAX_ACTIVE_LISTEN_TARGETS) {
+      if (draftTargetIds.has(targetId) || draftTargetIds.size >= MAX_ACTIVE_LISTEN_TARGETS) {
         unknown();
-        return;
+        return false;
       }
-      activeListenTargetIds.add(targetId);
-      return;
+      draftTargetIds.add(targetId);
+      return true;
     }
     if (!exactKeys(message, ['database', 'removeTarget'])
       || !boundedPositiveInteger(message.removeTarget, MAX_LISTEN_TARGET_ID)) {
       unknown();
-      return;
+      return false;
     }
-    if (!activeListenTargetIds.has(message.removeTarget)) {
+    if (!draftTargetIds.has(message.removeTarget)) {
       unknown();
-      return;
+      return false;
     }
-    activeListenTargetIds.delete(message.removeTarget);
+    draftTargetIds.delete(message.removeTarget);
     add('firestore-transport-control');
+    return true;
   };
   const parseListenBody = body => {
     if (typeof body !== 'string' || body.length === 0 || body.length > MAX_RAW_BODY_BYTES) return null;
@@ -713,7 +742,17 @@ const classifyFixtureResourceScopesValue = (
   else if (!['initial-forward', 'forward'].includes(listenQueryKind)) unknown();
   else if (parsed.hasHeaders !== (listenQueryKind === 'initial-forward')) unknown();
   else if (parsed.control) add('firestore-transport-control');
-  else parsed.messages.forEach(classifyListenMessage);
+  else {
+    const draftTargetIds = new Set(activeListenTargetIds);
+    let requestStateValid = true;
+    for (const message of parsed.messages) {
+      if (!classifyListenMessage(message, draftTargetIds)) requestStateValid = false;
+    }
+    if (requestStateValid) {
+      activeListenTargetIds.clear();
+      for (const targetId of draftTargetIds) activeListenTargetIds.add(targetId);
+    }
+  }
   return result();
 };
 
@@ -864,6 +903,7 @@ const installRecorderSource = () => String.raw`async (page) => {
     const state = {
       pageId: 'phase9-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2),
       sequence: 0,
+      navigationGeneration: 0,
       rawRequests: [],
       rawSelections: [],
       renders: [],
@@ -874,6 +914,9 @@ const installRecorderSource = () => String.raw`async (page) => {
       overflow: 0,
     };
     page.__phase9EvidenceRecorder = state;
+    page.on('framenavigated', frame => {
+      if (frame === page.mainFrame()) state.navigationGeneration += 1;
+    });
     const captureRequest = request => {
       let frameUrl = null;
       try {
@@ -889,6 +932,7 @@ const installRecorderSource = () => String.raw`async (page) => {
         headers: boundedHeaders(state, request.headers()),
         body: boundedString(state, postData === null ? '' : postData, ${MAX_RAW_BODY_BYTES}),
         frameUrl,
+        navigationGeneration: state.navigationGeneration,
       };
     };
     page.on('request', request => {
@@ -917,7 +961,10 @@ const installRecorderSource = () => String.raw`async (page) => {
     await page.addInitScript(initializeRenderObserver);
     await page.evaluate(initializeRenderObserver);
   }
-  return { pageId: page.__phase9EvidenceRecorder.pageId };
+  return {
+    pageId: page.__phase9EvidenceRecorder.pageId,
+    navigationGeneration: page.__phase9EvidenceRecorder.navigationGeneration,
+  };
 }`;
 
 const MARK_SOURCE = String.raw`async (page) => {
@@ -936,6 +983,7 @@ const MARK_SOURCE = String.raw`async (page) => {
   return {
     pageId: state.pageId,
     sequence: state.sequence,
+    navigationGeneration: state.navigationGeneration,
   };
 }`;
 
@@ -963,6 +1011,7 @@ const sampleSource = mark => String.raw`async (page) => {
   const cookies = await page.context().cookies(${JSON.stringify(STAGING_ORIGIN)});
   return {
     pageId: state.pageId,
+    navigationGeneration: state.navigationGeneration,
     terminalReached: true,
     loadingVisible: render.loadingVisible,
     finalUrl: page.url(),
@@ -1079,7 +1128,9 @@ const failClosedScopes = Object.freeze({
   resourceScopes: ['unscoped'],
 });
 
-const sanitizeResourceSignal = (item, fixtureRunId, activeListenTargetIds = new Set()) => {
+const sanitizeResourceSignal = (
+  item, fixtureRunId, activeListenTargetIds = new Set(), { forceUnscoped = false } = {},
+) => {
   const raw = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
   const targetKind = targetKindFromRawUrl(raw.url);
   if (targetKind === null) return null;
@@ -1094,11 +1145,11 @@ const sanitizeResourceSignal = (item, fixtureRunId, activeListenTargetIds = new 
   const normalizedMethod = typeof raw.method === 'string' ? raw.method.toUpperCase() : '';
   const method = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(normalizedMethod) ? normalizedMethod : 'GET';
   const resourceType = ['fetch', 'xhr', 'other'].includes(raw.resourceType) ? raw.resourceType : 'other';
-  const scopes = completeRaw && fixtureRunId
+  const scopes = !forceUnscoped && completeRaw && fixtureRunId
     ? classifyFixtureResourceScopesValue(
       raw, fixtureRunId, 'qa-no-team', STAGING_ORIGIN, STAGING_PROJECT_ID, activeListenTargetIds,
     )
-    : completeRaw && targetKind === 'staging-join-admin-api'
+    : !forceUnscoped && completeRaw && targetKind === 'staging-join-admin-api'
       ? classifyFixtureResourceScopesValue(
         raw, undefined, 'qa-no-team', STAGING_ORIGIN, STAGING_PROJECT_ID, activeListenTargetIds,
       )
@@ -1129,7 +1180,33 @@ const classifyTeamSelections = (values, fixtureRunId) => values.map(value => {
   return 'tenant-other';
 });
 
-const sanitizeWindow = (value, { fixtureRunId, publicPageId, activeListenTargetIds } = {}) => {
+const bindRecorderGeneration = (raw, listenTargetState) => {
+  const generation = raw?.navigationGeneration;
+  if (!Number.isSafeInteger(generation) || generation < 0 || generation < listenTargetState.generation) {
+    listenTargetState.activeTargetIds.clear();
+    return false;
+  }
+  if (generation > listenTargetState.generation) {
+    listenTargetState.activeTargetIds.clear();
+    listenTargetState.generation = generation;
+  }
+  return true;
+};
+
+const bindFinalRecorderGeneration = (value, listenTargetState) => {
+  if (!Object.hasOwn(value, 'navigationGeneration')) return;
+  const generation = value.navigationGeneration;
+  if (!Number.isSafeInteger(generation) || generation < 0 || generation < listenTargetState.generation) {
+    listenTargetState.activeTargetIds.clear();
+    throw new Error('Recorder navigation generation must be monotonic.');
+  }
+  if (generation > listenTargetState.generation) {
+    listenTargetState.activeTargetIds.clear();
+    listenTargetState.generation = generation;
+  }
+};
+
+const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState } = {}) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Signal sample must be an object.');
   const booleanFields = ['terminalReached', 'loadingVisible', 'sessionPresent', 'protectedRender'];
   const stringFields = ['pageId', 'finalUrl', 'finalPath', 'renderPath', 'renderSentinel'];
@@ -1156,10 +1233,24 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, activeListenTargetI
   for (const field of ['rawRequests', 'rawResponses', 'rawTeamSelections']) {
     if (value[field].length > MAX_SIGNAL_COUNT) throw new Error(`Recorder ${field} exceeds the bounded signal history.`);
   }
-  if (!(activeListenTargetIds instanceof Set)) throw new Error('Client must own private Listen target state.');
-  const requests = value.rawRequests
-    .map(item => sanitizeResourceSignal(item, fixtureRunId, activeListenTargetIds))
-    .filter(Boolean);
+  if (
+    !listenTargetState
+    || !(listenTargetState.activeTargetIds instanceof Set)
+    || !Number.isSafeInteger(listenTargetState.generation)
+    || listenTargetState.generation < 0
+  ) throw new Error('Client must own private Listen target state.');
+  const requests = [];
+  for (const item of value.rawRequests) {
+    const generationTrusted = bindRecorderGeneration(item, listenTargetState);
+    const signal = sanitizeResourceSignal(
+      item,
+      fixtureRunId,
+      listenTargetState.activeTargetIds,
+      { forceUnscoped: !generationTrusted },
+    );
+    if (signal) requests.push(signal);
+  }
+  bindFinalRecorderGeneration(value, listenTargetState);
   const http = value.rawResponses.map(sanitizeHttpResult).filter(Boolean);
   const teamSelectionSignals = classifyTeamSelections(value.rawTeamSelections, fixtureRunId);
   if (value.renderSignals.some(item => (
@@ -1241,7 +1332,7 @@ export function createPlaywrightCliClient({
   const tabCounts = new Map();
   const armedTabs = new Set();
   const publicPageIds = new Map();
-  const activeListenTargetsByTab = new Map();
+  const listenTargetStateByTab = new Map();
   let publicPageSequence = 0;
   const tabKey = session => `${session}:${currentTabs.get(session) ?? 0}`;
 
@@ -1300,18 +1391,22 @@ export function createPlaywrightCliClient({
   };
   const installRecorder = async session => {
     const key = tabKey(session);
-    await executeRunCode(session, installRecorderSource());
+    const installed = await executeRunCode(session, installRecorderSource());
     if (!publicPageIds.has(key)) {
       publicPageSequence += 1;
       publicPageIds.set(key, `phase9-page-${publicPageSequence}`);
     }
-    activeListenTargetsByTab.set(key, new Set());
+    listenTargetStateByTab.set(key, {
+      activeTargetIds: new Set(),
+      generation: Number.isSafeInteger(installed?.navigationGeneration) && installed.navigationGeneration >= 0
+        ? installed.navigationGeneration
+        : 0,
+    });
     armedTabs.add(key);
   };
   const client = {
     async goto(session, url) {
       if (!armedTabs.has(tabKey(session))) throw new Error('Signal recorder must be armed before navigation.');
-      activeListenTargetsByTab.set(tabKey(session), new Set());
       return command(['goto', url], session);
     },
     async runCode(session, source) {
@@ -1321,15 +1416,17 @@ export function createPlaywrightCliClient({
     async captureSignalWindow({ session, action, terminal }) {
       if (!armedTabs.has(tabKey(session))) throw new Error('Signal recorder must be armed before an action window.');
       const mark = await executeRunCode(session, MARK_SOURCE);
+      const key = tabKey(session);
+      const listenTargetState = listenTargetStateByTab.get(key);
+      bindFinalRecorderGeneration(mark, listenTargetState);
       await action();
       await terminal();
       const result = await executeRunCode(session, sampleSource(mark));
       if (!result || result.pageId !== mark.pageId) throw new Error('Action window must sample the same page as its pre-action mark.');
-      const key = tabKey(session);
       const sample = sanitizeWindow(result, {
         fixtureRunId,
         publicPageId: publicPageIds.get(key),
-        activeListenTargetIds: activeListenTargetsByTab.get(key),
+        listenTargetState,
       });
       return sample;
     },
