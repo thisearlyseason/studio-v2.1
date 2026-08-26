@@ -5711,3 +5711,116 @@ test('phase 9 lifecycle guardian accepts the exact in-bound pending-delete check
   assert.equal(result.ok, true);
   assert.equal(fixture.events.includes('scenario:after-transition'), true);
 });
+
+test('phase 9 lifecycle guardian captures Promise and timer controls before runner injection', { timeout: 2_000 }, async () => {
+  const NativePromise = globalThis.Promise;
+  const nativeThenDescriptor = Object.getOwnPropertyDescriptor(NativePromise.prototype, 'then');
+  const nativeCatchDescriptor = Object.getOwnPropertyDescriptor(NativePromise.prototype, 'catch');
+  const nativeFinallyDescriptor = Object.getOwnPropertyDescriptor(NativePromise.prototype, 'finally');
+  const nativeSetTimeout = globalThis.setTimeout;
+  const nativeClearTimeout = globalThis.clearTimeout;
+  const nativeQueueMicrotask = globalThis.queueMicrotask;
+  const nativeReflectApply = Reflect.apply;
+  const delay = milliseconds => new NativePromise(resolveDelay => nativeSetTimeout(resolveDelay, milliseconds));
+  const pendingCompletion = new NativePromise(() => {});
+  const pendingJoin = new NativePromise(() => {});
+  const pendingTerminate = new NativePromise(() => {});
+  let runnerStarted = false;
+  let hostileThenCalls = 0;
+  let hostileTimerCalls = 0;
+  let terminateCalls = 0;
+
+  function ForgedPromise(executor) {
+    return new NativePromise(executor);
+  }
+  ForgedPromise.prototype = NativePromise.prototype;
+  Object.defineProperties(ForgedPromise, {
+    resolve: { value: value => NativePromise.resolve(value) },
+    reject: { value: reason => NativePromise.reject(reason) },
+    race: { value: () => NativePromise.resolve({ ok: true, closed: true }) },
+    all: { value: values => NativePromise.all(values) },
+  });
+
+  const fixture = lifecycleGuardianFixture({
+    scenarioJoinTimeoutMs: 5,
+    scenarioStart: ({ request, events, browserSessions }) => {
+      if (request.phase !== 'before-transition') return undefined;
+      runnerStarted = true;
+      browserSessions.add('phase9-owned-runner');
+      Object.defineProperty(NativePromise.prototype, 'then', {
+        ...nativeThenDescriptor,
+        value(onFulfilled, onRejected) {
+          hostileThenCalls += 1;
+          if (this === pendingCompletion || this === pendingJoin) {
+            nativeQueueMicrotask(() => onFulfilled?.(
+              this === pendingCompletion ? { ok: true } : { closed: true },
+            ));
+            return new NativePromise(() => {});
+          }
+          return nativeReflectApply(nativeThenDescriptor.value, this, [onFulfilled, onRejected]);
+        },
+      });
+      Object.defineProperty(NativePromise.prototype, 'catch', {
+        ...nativeCatchDescriptor,
+        value(onRejected) {
+          return nativeReflectApply(nativeCatchDescriptor.value, this, [onRejected]);
+        },
+      });
+      Object.defineProperty(NativePromise.prototype, 'finally', {
+        ...nativeFinallyDescriptor,
+        value(onFinally) {
+          return nativeReflectApply(nativeFinallyDescriptor.value, this, [onFinally]);
+        },
+      });
+      globalThis.Promise = ForgedPromise;
+      globalThis.setTimeout = () => {
+        hostileTimerCalls += 1;
+        return 99;
+      };
+      globalThis.clearTimeout = () => {};
+      events.push('runner:patched-async-controls');
+      return {
+        browserSessions: ['phase9-owned-runner'],
+        completion: pendingCompletion,
+        terminate: () => {
+          terminateCalls += 1;
+          return pendingTerminate;
+        },
+        join: () => pendingJoin,
+      };
+    },
+  });
+
+  let running;
+  try {
+    const guardian = createLifecycleGuardian(fixture.dependencies);
+    running = guardian.run(fixture.options);
+    while (!runnerStarted) await delay(0);
+    await delay(20);
+    assert.equal(fixture.events.includes('fixture:transition'), false);
+    assert.equal(fixture.events.some(event => event.startsWith('browser:close:')), false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+    assert.equal(hostileThenCalls, 0);
+    assert.equal(hostileTimerCalls, 0);
+
+    const recovered = await fixture.handlers.get('SIGINT')();
+    const result = await running;
+    assert.deepEqual(result, recovered);
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(terminateCalls, 2);
+    assert.equal(hostileThenCalls, 0);
+    assert.equal(hostileTimerCalls, 0);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  } finally {
+    Object.defineProperty(NativePromise.prototype, 'then', nativeThenDescriptor);
+    Object.defineProperty(NativePromise.prototype, 'catch', nativeCatchDescriptor);
+    Object.defineProperty(NativePromise.prototype, 'finally', nativeFinallyDescriptor);
+    globalThis.Promise = NativePromise;
+    globalThis.setTimeout = nativeSetTimeout;
+    globalThis.clearTimeout = nativeClearTimeout;
+    if (running) await NativePromise.race([running, delay(100)]);
+  }
+});

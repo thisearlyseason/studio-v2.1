@@ -13,6 +13,25 @@ import {
   validateLifecycleResult,
 } from './scenario-contracts.mjs';
 
+const INTRINSIC_PROMISE = Promise;
+const INTRINSIC_PROMISE_PROTOTYPE = Promise.prototype;
+const INTRINSIC_PROMISE_THEN = Promise.prototype.then;
+const INTRINSIC_PROMISE_CONSTRUCTOR_DESCRIPTOR = Object.getOwnPropertyDescriptor(
+  Promise.prototype, 'constructor',
+);
+const INTRINSIC_PROMISE_SPECIES_DESCRIPTOR = Object.getOwnPropertyDescriptor(
+  Promise, Symbol.species,
+);
+const INTRINSIC_REFLECT_APPLY = Reflect.apply;
+const INTRINSIC_OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const INTRINSIC_OBJECT_GET_OWN_PROPERTY_DESCRIPTOR = Object.getOwnPropertyDescriptor;
+const INTRINSIC_FUNCTION_BIND = Function.prototype.bind;
+const INTRINSIC_SET_TIMEOUT = globalThis.setTimeout;
+const INTRINSIC_CLEAR_TIMEOUT = globalThis.clearTimeout;
+const INTRINSIC_GLOBAL_THIS = globalThis;
+const INTRINSIC_IS_PROMISE = utilTypes.isPromise;
+const INTRINSIC_IS_PROXY = utilTypes.isProxy;
+
 const WORKSPACE_PREFIX = '/tmp/phase9-core-identities.';
 const PROCESS_EVENTS = Object.freeze(['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']);
 const ORDERED_STATES = Object.freeze([
@@ -656,26 +675,46 @@ function validateScenarioHandle(value) {
   const terminate = descriptors.terminate.value;
   const joinRunner = descriptors.join.value;
   if (
-    !utilTypes.isPromise(completion)
-    || Object.getPrototypeOf(completion) !== Promise.prototype
+    !INTRINSIC_IS_PROMISE(completion)
+    || INTRINSIC_OBJECT_GET_PROTOTYPE_OF(completion) !== INTRINSIC_PROMISE_PROTOTYPE
     || typeof terminate !== 'function'
     || typeof joinRunner !== 'function'
-    || utilTypes.isProxy(terminate)
-    || utilTypes.isProxy(joinRunner)
+    || INTRINSIC_IS_PROXY(terminate)
+    || INTRINSIC_IS_PROXY(joinRunner)
   ) throw new GuardianFailure(category);
   return Object.freeze({
     browserSessions: Object.freeze(snapshotSessionIds(descriptors.browserSessions.value, category)),
     completion,
-    terminate: Function.prototype.bind.call(terminate, undefined),
-    join: Function.prototype.bind.call(joinRunner, undefined),
+    terminate: INTRINSIC_REFLECT_APPLY(INTRINSIC_FUNCTION_BIND, terminate, [undefined]),
+    join: INTRINSIC_REFLECT_APPLY(INTRINSIC_FUNCTION_BIND, joinRunner, [undefined]),
   });
+}
+
+function exactDescriptor(actual, expected) {
+  return actual
+    && expected
+    && actual.value === expected.value
+    && actual.get === expected.get
+    && actual.set === expected.set
+    && actual.writable === expected.writable
+    && actual.enumerable === expected.enumerable
+    && actual.configurable === expected.configurable;
 }
 
 function requireNativePromise(value, category) {
   if (
-    utilTypes.isProxy(value)
-    || !utilTypes.isPromise(value)
-    || Object.getPrototypeOf(value) !== Promise.prototype
+    INTRINSIC_IS_PROXY(value)
+    || !INTRINSIC_IS_PROMISE(value)
+    || INTRINSIC_OBJECT_GET_PROTOTYPE_OF(value) !== INTRINSIC_PROMISE_PROTOTYPE
+    || INTRINSIC_OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(value, 'constructor') !== undefined
+    || !exactDescriptor(
+      INTRINSIC_OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(INTRINSIC_PROMISE_PROTOTYPE, 'constructor'),
+      INTRINSIC_PROMISE_CONSTRUCTOR_DESCRIPTOR,
+    )
+    || !exactDescriptor(
+      INTRINSIC_OBJECT_GET_OWN_PROPERTY_DESCRIPTOR(INTRINSIC_PROMISE, Symbol.species),
+      INTRINSIC_PROMISE_SPECIES_DESCRIPTOR,
+    )
   ) throw new GuardianFailure(category);
   return value;
 }
@@ -683,7 +722,7 @@ function requireNativePromise(value, category) {
 function consumeNativePromise(value, onFulfilled, onRejected, category) {
   const promise = requireNativePromise(value, category);
   try {
-    Promise.prototype.then.call(promise, onFulfilled, onRejected);
+    INTRINSIC_REFLECT_APPLY(INTRINSIC_PROMISE_THEN, promise, [onFulfilled, onRejected]);
   } catch {
     throw new GuardianFailure(category);
   }
@@ -773,7 +812,7 @@ export function createLifecycleGuardian({
   let interrupted = false;
   let emergencyPromise = null;
   let releaseAbortGate = null;
-  const abortGate = new Promise(resolve => { releaseAbortGate = resolve; });
+  const abortGate = new INTRINSIC_PROMISE(resolve => { releaseAbortGate = resolve; });
   let workspacePath = null;
   let manifestPath = null;
   let credentialPath = null;
@@ -787,7 +826,7 @@ export function createLifecycleGuardian({
   let activeScenario = null;
   let scenarioStartUncertain = false;
   const handlers = new Map();
-  let operationTail = Promise.resolve();
+  let operationTail = new INTRINSIC_PROMISE(resolveOperation => resolveOperation());
 
   const currentPreservationStates = () => preservationStates(
     filesystem,
@@ -809,8 +848,25 @@ export function createLifecycleGuardian({
   };
 
   const exclusive = operation => {
-    const pending = operationTail.then(operation, operation);
-    operationTail = pending.catch(() => {});
+    const pending = new INTRINSIC_PROMISE((resolveOperation, rejectOperation) => {
+      const invoke = () => {
+        let result;
+        try {
+          result = operation();
+          consumeNativePromise(result, resolveOperation, rejectOperation, 'operation-failed');
+        } catch (error) {
+          rejectOperation(error);
+        }
+      };
+      try {
+        consumeNativePromise(operationTail, invoke, invoke, 'operation-failed');
+      } catch (error) {
+        rejectOperation(error);
+      }
+    });
+    operationTail = new INTRINSIC_PROMISE(resolveTail => {
+      consumeNativePromise(pending, resolveTail, resolveTail, 'operation-failed');
+    });
     return pending;
   };
 
@@ -902,34 +958,34 @@ export function createLifecycleGuardian({
     browserClosureCertified = true;
   });
 
-  const bounded = candidate => new Promise((resolvePromise, rejectPromise) => {
+  const bounded = candidate => new INTRINSIC_PROMISE((resolvePromise, rejectPromise) => {
     let settled = false;
-    const timer = setTimeout(() => {
+    const timer = INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_TIMEOUT, INTRINSIC_GLOBAL_THIS, [() => {
       if (!settled) {
         settled = true;
         resolvePromise({ status: 'timeout' });
       }
-    }, scenarioJoinTimeoutMs);
+    }, scenarioJoinTimeoutMs]);
     try {
       consumeNativePromise(
         candidate,
         value => {
           if (settled) return;
           settled = true;
-          clearTimeout(timer);
+          INTRINSIC_REFLECT_APPLY(INTRINSIC_CLEAR_TIMEOUT, INTRINSIC_GLOBAL_THIS, [timer]);
           resolvePromise({ status: 'fulfilled', value });
         },
         () => {
           if (settled) return;
           settled = true;
-          clearTimeout(timer);
+          INTRINSIC_REFLECT_APPLY(INTRINSIC_CLEAR_TIMEOUT, INTRINSIC_GLOBAL_THIS, [timer]);
           resolvePromise({ status: 'rejected' });
         },
         'scenario-closure-failed',
       );
     } catch (error) {
       settled = true;
-      clearTimeout(timer);
+      INTRINSIC_REFLECT_APPLY(INTRINSIC_CLEAR_TIMEOUT, INTRINSIC_GLOBAL_THIS, [timer]);
       rejectPromise(error);
     }
   });
@@ -1134,19 +1190,24 @@ export function createLifecycleGuardian({
     }
     activeScenario = handle;
     scenarioStartUncertain = false;
-    const completion = new Promise((resolveCompletion, rejectCompletion) => {
-      consumeNativePromise(
-        handle.completion,
-        resolveCompletion,
-        rejectCompletion,
-        'scenario-runner-invalid',
-      );
+    const completed = await new INTRINSIC_PROMISE((resolveCompletion, rejectCompletion) => {
+      try {
+        consumeNativePromise(
+          handle.completion,
+          resolveCompletion,
+          rejectCompletion,
+          'scenario-runner-invalid',
+        );
+        consumeNativePromise(
+          abortGate,
+          () => rejectCompletion(new GuardianFailure('interrupted')),
+          rejectCompletion,
+          'scenario-runner-invalid',
+        );
+      } catch (error) {
+        rejectCompletion(error);
+      }
     });
-    void completion.catch(() => {});
-    const completed = await Promise.race([
-      completion,
-      abortGate.then(() => { throw new GuardianFailure('interrupted'); }),
-    ]);
     validateScenarioCompletion(completed);
     if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
     activeScenario = null;
