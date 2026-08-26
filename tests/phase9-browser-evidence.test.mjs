@@ -5867,8 +5867,61 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.match(PHASE9_ARTIFACT_PINS.config, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.helper, /^[0-9a-f]{64}$/);
   assert.equal(phase9PlaywrightTransport.version, '0.1.18');
-  assert.match(phase9PlaywrightTransport.modulePath, /node_modules\/@playwright\/cli\/playwright-cli\.js$/);
-  assert.equal(readFileSync(phase9PlaywrightTransport.modulePath, 'utf8').includes('npx --yes'), false);
+  assert.equal(phase9PlaywrightTransport.coreVersion, '1.63.0-alpha-2026-08-05');
+  assert.match(phase9PlaywrightTransport.artifactPath, /playwright-transport\.bundle\.json\.gz$/);
+});
+
+test('phase 9 committed transport is a self-contained reviewed artifact outside node_modules', async () => {
+  const { PHASE9_ARTIFACT_PINS, phase9PlaywrightTransport } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  assert.match(PHASE9_ARTIFACT_PINS.transport, /^[0-9a-f]{64}$/);
+  assert.doesNotMatch(phase9PlaywrightTransport.artifactPath, /node_modules/);
+  assert.match(phase9PlaywrightTransport.artifactPath, /playwright-transport\.bundle\.json\.gz$/);
+  assert.equal(sha256File(phase9PlaywrightTransport.artifactPath), PHASE9_ARTIFACT_PINS.transport);
+  const manifest = JSON.parse(readFileSync(phase9PlaywrightTransport.manifestPath, 'utf8'));
+  assert.deepEqual(Object.keys(manifest).sort(), [
+    'artifactSha256', 'files', 'format', 'playwrightCliVersion', 'playwrightCoreVersion', 'version',
+  ]);
+  assert.equal(manifest.artifactSha256, PHASE9_ARTIFACT_PINS.transport);
+  assert.equal(manifest.playwrightCliVersion, '0.1.18');
+  assert.equal(manifest.playwrightCoreVersion, '1.63.0-alpha-2026-08-05');
+  assert.equal(manifest.files.some(file => file.path === 'node_modules/playwright-core/lib/entry/cliDaemon.js'), true);
+  assert.equal(manifest.files.every(file => /^[0-9a-f]{64}$/.test(file.sha256)), true);
+});
+
+test('phase 9 captured transport ignores later bundle-path and installed-transitive replacement', async () => {
+  const { capturePlaywrightTransport } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const { PHASE9_ARTIFACT_PINS, phase9PlaywrightTransport } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  const root = mkdtempSync('/private/tmp/phase9-captured-transport-');
+  const copiedArtifact = join(root, 'playwright-transport.bundle.json.gz');
+  const installedTransitive = join(testDirectory, '..', 'node_modules', 'playwright-core', 'lib', 'tools', 'cli-client', 'output.js');
+  const originalTransitive = readFileSync(installedTransitive);
+  const originalMode = statSync(installedTransitive).mode & 0o777;
+  try {
+    writeFileSync(copiedArtifact, readFileSync(phase9PlaywrightTransport.artifactPath), { flag: 'wx', mode: 0o644 });
+    const captured = capturePlaywrightTransport({
+      artifactPath: copiedArtifact, expectedSha256: PHASE9_ARTIFACT_PINS.transport,
+    });
+    writeFileSync(copiedArtifact, 'attacker-bundle\n');
+    writeFileSync(installedTransitive, 'throw new Error("attacker-transitive-executed");\n');
+    const client = createPlaywrightCliClient({ transport: captured, timeoutMs: 30_000 });
+    assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+  } finally {
+    writeFileSync(installedTransitive, originalTransitive); chmodSync(installedTransitive, originalMode);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 transport closes its environment and controlled fetch audit observes exactly zero calls', async () => {
+  const { auditPlaywrightTransportFetches, buildPlaywrightTransportEnvironment } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  assert.deepEqual(buildPlaywrightTransportEnvironment({
+    HOME: '/safe-home', NODE_OPTIONS: '--require /attacker/preload.cjs', NODE_PATH: '/attacker/modules',
+    npm_config_registry: 'https://attacker.invalid', HTTPS_PROXY: 'https://attacker.invalid',
+  }), {
+    HOME: '/safe-home', PATH: '/usr/bin:/bin:/usr/sbin:/sbin', NO_UPDATE_NOTIFIER: '1', CI: '1',
+    npm_config_offline: 'true', NPM_CONFIG_OFFLINE: 'true',
+    npm_config_update_notifier: 'false', NPM_CONFIG_UPDATE_NOTIFIER: 'false',
+  });
+  assert.deepEqual(await auditPlaywrightTransportFetches(), { fetchCalls: 0, browsers: 0 });
 });
 
 test('phase 9 writer rejects a symlinked evidence-directory ancestor before creating any file', async () => {
@@ -6024,7 +6077,7 @@ test('phase 9 writer restores from held backup bytes when a backup pathname is r
     rmSync(hostileBackupPath);
     writeFileSync(hostileBackupPath, 'attacker-backup-content\n', { flag: 'wx', mode: 0o640 });
 
-    await assert.rejects(pending, /recovery.*incomplete/i);
+    await assert.rejects(pending, /recovery status is uncertain; directory preserved for manual recovery/i);
 
     for (const name of PHASE9_EVIDENCE_FILES) {
       assert.equal(readFileSync(join(outputDirectory, name), 'utf8'), `original:${name}\n`);
@@ -6102,6 +6155,74 @@ test('phase 9 writer removes transaction-owned public output when rollback prepa
   }
 });
 
+test('phase 9 writer never promotes a recovery pathname swapped immediately before rollback rename', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-rollback-swap-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  mkdirSync(outputDirectory, { recursive: true });
+  for (const name of PHASE9_EVIDENCE_FILES) writeFileSync(join(outputDirectory, name), `original:${name}\n`);
+  let hostileRecoveryName;
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root,
+      helperEnvironment: {
+        PHASE9_WRITER_TEST_FAIL_PROMOTION: '2',
+        PHASE9_WRITER_TEST_BEFORE_ROLLBACK_PROMOTION_MS: '500',
+      },
+    });
+    const pending = writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    });
+    const deadline = Date.now() + 2_000;
+    while (!hostileRecoveryName && Date.now() < deadline) {
+      hostileRecoveryName = readdirSync(outputDirectory).find(name => name.endsWith('.rollback.tmp'));
+      if (!hostileRecoveryName) await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    assert.ok(hostileRecoveryName, 'helper did not expose a recovery temp for the promotion-race regression');
+    const hostileRecoveryPath = join(outputDirectory, hostileRecoveryName);
+    rmSync(hostileRecoveryPath);
+    writeFileSync(hostileRecoveryPath, 'attacker-recovery-content\n', { flag: 'wx', mode: 0o640 });
+
+    await assert.rejects(pending, /recovery status is uncertain; directory preserved for manual recovery/i);
+    for (const name of PHASE9_EVIDENCE_FILES) {
+      const path = join(outputDirectory, name);
+      if (existsSync(path)) assert.notEqual(readFileSync(path, 'utf8'), 'attacker-recovery-content\n');
+    }
+    assert.equal(readFileSync(hostileRecoveryPath, 'utf8'), 'attacker-recovery-content\n');
+    assert.equal(statSync(hostileRecoveryPath).mode & 0o777, 0o640);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 writer reports only the fixed uncertain result when bounded emergency inventory overflows', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-emergency-overflow-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  mkdirSync(outputDirectory, { recursive: true });
+  for (const name of PHASE9_EVIDENCE_FILES) writeFileSync(join(outputDirectory, name), `original:${name}\n`);
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root,
+      helperEnvironment: {
+        PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS: '500', PHASE9_WRITER_TEST_STEAL_PROMOTION: '1',
+      },
+    });
+    const pending = writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    });
+    const deadline = Date.now() + 2_000;
+    while (!readdirSync(outputDirectory).some(name => name.endsWith('.bak')) && Date.now() < deadline) {
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    for (let index = 0; index < 33; index += 1) {
+      writeFileSync(join(outputDirectory, `.hostile-${String(index).padStart(2, '0')}`), 'foreign\n', { flag: 'wx', mode: 0o640 });
+    }
+    const error = await pending.then(() => null, reason => reason);
+    assert.equal(error?.message, 'Evidence recovery status is uncertain; directory preserved for manual recovery.');
+    assert.doesNotMatch(error.message, /output was removed|restored atomically/i);
+    assert.equal(readdirSync(outputDirectory).filter(name => name.startsWith('.hostile-')).length, 33);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('phase 9 writer removes a stolen promoted inode after restoring the original set', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-stolen-promotion-');
@@ -6158,7 +6279,7 @@ test('phase 9 writer rejects FIFO and hardlinked targets promptly without openin
       const writer = createPhase9EvidenceWriter({ repositoryRoot: root, helperTimeoutMs: 2_000 });
       await assert.rejects(writer.write({
         lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
-      }), /atomically/i);
+      }), /recovery status is uncertain; directory preserved for manual recovery/i);
       assert.ok(Date.now() - started < 2_000, `${kind} rejection blocked`);
       assert.deepEqual(readdirSync(outputDirectory), ['00-environment.md']);
     } finally { rmSync(root, { recursive: true, force: true }); }
@@ -6174,11 +6295,11 @@ test('phase 9 writer rejects stale crash artifacts on the next run without writi
     const crashing = createPhase9EvidenceWriter({
       repositoryRoot: root, helperEnvironment: { PHASE9_WRITER_TEST_SIGKILL_AFTER_TEMP: '1' }, helperTimeoutMs: 2_000,
     });
-    await assert.rejects(crashing.write(input), /atomically/i);
+    await assert.rejects(crashing.write(input), /recovery status is uncertain; directory preserved for manual recovery/i);
     const stale = readdirSync(outputDirectory);
     assert.equal(stale.length, 1); assert.match(stale[0], /\.tmp$/);
     const retry = createPhase9EvidenceWriter({ repositoryRoot: root });
-    await assert.rejects(retry.write(input), /atomically/i);
+    await assert.rejects(retry.write(input), /recovery status is uncertain; directory preserved for manual recovery/i);
     assert.deepEqual(readdirSync(outputDirectory), stale);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -6208,7 +6329,7 @@ test('phase 9 writer terminates and joins a hanging helper without creating file
     });
     await assert.rejects(writer.write({
       lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
-    }), /atomically/i);
+    }), /recovery status is uncertain; directory preserved for manual recovery/i);
     assert.deepEqual(readdirSync(outputDirectory), []);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

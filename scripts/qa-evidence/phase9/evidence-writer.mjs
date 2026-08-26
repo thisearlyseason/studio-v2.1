@@ -28,7 +28,7 @@ const SENSITIVE = /(?:bearer\s+[a-z0-9._~-]+|(?:cookie|password|credential|stora
 const PRIVATE_PATH = /(?:^|[\s`'"(])(?:\/tmp\/|\/Users\/|\/home\/|[A-Za-z]:\\)/;
 const DEFAULT_FILESYSTEM = Object.freeze({ lstat, open, readFile, realpath });
 const HELPER_PATH = join(dirname(fileURLToPath(import.meta.url)), 'evidence-dirfd-helper.py');
-const HELPER_SHA256 = 'bf46a4f50f6bbdc81d4f76a30e56559c68937fb1f12a7407dbb8847e864e78fb';
+const HELPER_SHA256 = '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1';
 const PYTHON_RUNTIME = '/usr/bin/python3';
 const PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
 const CAPTURED_SET_TIMEOUT = globalThis.setTimeout;
@@ -279,14 +279,11 @@ async function runDescriptorTransaction(outputDirectory, documents, boundary, fi
       || (metadata.mode & 0o777) !== expected.mode) {
       throw new Error('Evidence output descriptor identity does not match the reviewed boundary.');
     }
-    const request = JSON.stringify({
-      version: 1,
-      transaction: `${process.pid}-${Date.now()}-${randomBytes(8).toString('hex')}`,
-      directory: { dev: metadata.dev, ino: metadata.ino, mode: metadata.mode & 0o777 },
-      documents: documents.map(([name, contents]) => ({ name, contents })),
-    });
-    await revalidateImmutableRuntime(filesystem, captured.runtimeBoundary);
-    const result = await new Promise(resolvePromise => {
+    const directoryIdentity = { dev: metadata.dev, ino: metadata.ino, mode: metadata.mode & 0o777 };
+    const invokeHelper = async payload => {
+      await revalidateImmutableRuntime(filesystem, captured.runtimeBoundary);
+      const request = JSON.stringify(payload);
+      const result = await new Promise(resolvePromise => {
       const child = spawn(PYTHON_RUNTIME, ['-c', captured.helperSource], {
         cwd: '/',
         env: {
@@ -310,21 +307,50 @@ async function runDescriptorTransaction(outputDirectory, documents, boundary, fi
       child.on('error', () => { CAPTURED_CLEAR_TIMEOUT(timer); resolvePromise({ ok: false }); });
       child.on('close', code => {
         CAPTURED_CLEAR_TIMEOUT(timer); if (killTimer) CAPTURED_CLEAR_TIMEOUT(killTimer);
-        resolvePromise({
-          ok: !timedOut && code === 0 && stdout === '{"ok":true}\n',
-          unsafeRecovery: !timedOut && code === 2 && stdout === '',
-        });
+        let status;
+        try { status = stdout.length <= 65536 ? JSON.parse(stdout) : null; } catch { status = null; }
+        resolvePromise({ code, timedOut, status });
       });
       child.stdin.end(request);
     });
+      await revalidateImmutableRuntime(filesystem, captured.runtimeBoundary);
+      return result;
+    };
+    const initial = await invokeHelper({ version: 1, operation: 'snapshot', directory: directoryIdentity });
+    if (initial.timedOut || initial.code !== 0 || initial.status?.ok !== true || initial.status?.status !== 'snapshot'
+      || !Array.isArray(initial.status.files) || initial.status.files.length !== FILES.length) {
+      throw new Error('Evidence recovery status is uncertain; directory preserved for manual recovery.');
+    }
+    const result = await invokeHelper({
+      version: 1, operation: 'write',
+      transaction: `${process.pid}-${Date.now()}-${randomBytes(8).toString('hex')}`,
+      directory: directoryIdentity,
+      documents: documents.map(([name, contents]) => ({ name, contents })),
+    });
     await revalidateImmutableRuntime(filesystem, captured.runtimeBoundary);
     const after = await directory.stat();
-    if (result.unsafeRecovery && after.dev === expected.dev && after.ino === expected.ino) {
-      throw new Error('Evidence recovery is incomplete; transaction-owned public output was removed, evidence was not written atomically, and no atomicity is claimed.');
-    }
-    if (!result.ok || after.dev !== expected.dev || after.ino !== expected.ino) {
+    if (after.dev !== expected.dev || after.ino !== expected.ino) {
       throw new Error('Evidence files were not written atomically.');
     }
+    if (!result.timedOut && result.code === 0 && result.status?.ok === true && result.status?.status === 'committed') return;
+    const final = await invokeHelper({ version: 1, operation: 'snapshot', directory: directoryIdentity });
+    if (final.timedOut || final.code !== 0 || final.status?.ok !== true || final.status?.status !== 'snapshot'
+      || !Array.isArray(final.status.files) || final.status.files.length !== FILES.length) {
+      throw new Error('Evidence recovery status is uncertain; directory preserved for manual recovery.');
+    }
+    const exactRestoration = JSON.stringify(final.status.files) === JSON.stringify(initial.status.files);
+    const originalByName = new Map(initial.status.files.map(file => [file.name, file]));
+    const noTransactionOutput = final.status.files.every(file => {
+      const original = originalByName.get(file.name);
+      return file.present === false || JSON.stringify(file) === JSON.stringify(original);
+    });
+    if (result.status?.status === 'atomic-restoration' && exactRestoration) {
+      throw new Error('Evidence files were not written atomically.');
+    }
+    if (result.status?.status === 'transaction-outputs-removed' && noTransactionOutput) {
+      throw new Error('Evidence recovery is incomplete; transaction-owned public output was removed, evidence was not written atomically, and no atomicity is claimed.');
+    }
+    throw new Error('Evidence recovery status is uncertain; directory preserved for manual recovery.');
   } finally {
     await directory.close();
   }
@@ -369,6 +395,7 @@ export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAUL
       'PHASE9_WRITER_TEST_SIGKILL_AFTER_TEMP', 'PHASE9_WRITER_TEST_HANG',
       'PHASE9_WRITER_TEST_REPLACE_PROMOTION',
       'PHASE9_WRITER_TEST_FAIL_ROLLBACK_PREPARATION', 'PHASE9_WRITER_TEST_FAIL_ROLLBACK_PROMOTION',
+      'PHASE9_WRITER_TEST_BEFORE_ROLLBACK_PROMOTION_MS',
       'PHASE9_WRITER_TEST_STEAL_PROMOTION',
     ].includes(key))) {
     throw new Error('Evidence helper environment is invalid.');

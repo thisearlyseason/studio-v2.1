@@ -6,7 +6,10 @@ import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { runGuardedLifecycle } from './lifecycle-guardian.mjs';
-import { closeAndVerifyBrowsers, createPlaywrightCliClient } from './playwright-cli-client.mjs';
+import {
+  closeAndVerifyBrowsers, createPlaywrightCliClient, phase9CapturedPlaywrightTransport,
+  executeCapturedPlaywrightTransportCommand,
+} from './playwright-cli-client.mjs';
 import {
   SCENARIO_GROUP_COUNTS,
   SCENARIO_TOTALS,
@@ -25,20 +28,30 @@ const childConfig = join(moduleDirectory, 'runner-config.json');
 const evidenceHelper = join(moduleDirectory, 'evidence-dirfd-helper.py');
 const fixtureCli = join(repositoryRoot, 'scripts', 'qa-fixtures', 'cli.mjs');
 const evidenceDirectory = join(repositoryRoot, 'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities');
-const playwrightModule = join(repositoryRoot, 'node_modules', '@playwright', 'cli', 'playwright-cli.js');
-const playwrightPackage = join(repositoryRoot, 'node_modules', '@playwright', 'cli', 'package.json');
-const packageLock = join(repositoryRoot, 'package-lock.json');
+const playwrightArtifact = join(moduleDirectory, 'playwright-transport.bundle.json.gz');
+const playwrightManifest = join(moduleDirectory, 'playwright-transport-manifest.json');
+const playwrightEntrySource = join(moduleDirectory, 'playwright-transport-entry.cjs');
+const playwrightModuleGuard = join(moduleDirectory, 'playwright-transport-module-guard.cjs');
+const playwrightBuilder = join(moduleDirectory, 'build-playwright-transport.mjs');
+const playwrightClient = join(moduleDirectory, 'playwright-cli-client.mjs');
 const PLAYWRIGHT_VERSION = '0.1.18';
-const PLAYWRIGHT_MODULE_SHA256 = '66ea6722d77e57ce1bc7e850cb990d14895d17d8584405ed54a8c72fab38eb75';
-const PLAYWRIGHT_PACKAGE_SHA256 = '184ed53662eadeeb6923f2890a87b3699ed5b09fc11ed5297ca7abd5356f3c09';
-const PLAYWRIGHT_LOCK_INTEGRITY = 'sha512-ggNfYYH+GsZTGUiBEL8f6N5j0seYEUE52v+fIWqK/A36QG36cL0EJ79qWTXYO2uZMUU7vm+jk3x0fKCPL6UuIw==';
+const PLAYWRIGHT_CORE_VERSION = '1.63.0-alpha-2026-08-05';
+const PLAYWRIGHT_ARTIFACT_SHA256 = 'e596203d478f04d3af855f8a27fb0e6500bc168ecbda67de544a49542616dc61';
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: 'df74a373de399d0cc7aba84fbe22bd9625ac6be6164e422f1c0e9eac931b4937',
-  config: '60956e4ac3b3341e55f4829fe520abe74130b8c6766854a8598075920562b268',
-  transport: PLAYWRIGHT_MODULE_SHA256,
-  helper: 'bf46a4f50f6bbdc81d4f76a30e56559c68937fb1f12a7407dbb8847e864e78fb',
+  child: 'cd87026b0e50248e5cd21901374ff141afb83bae3878d585eeabc42574a27369',
+  config: 'a6b6b6737a1d75d100c8a73534c89b63cd50f0f89c8cdcda7f060f20ed786377',
+  transport: PLAYWRIGHT_ARTIFACT_SHA256,
+  transportManifest: '7cda2ed7a3a470cc5fb43cddb845ff69e32cb7d60f14bd09d7801a592773e8ac',
+  transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
+  transportGuard: 'e9edd042a13eb09816a6c314e7a858bd8eca2dec7730cb77bee342fcc63ff1b6',
+  transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
+  transportClient: 'd5bbe7663a210a3e524cf9d8c61046562e719b88dce1a80f79e50619900b1b58',
+  helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
 });
-export const phase9PlaywrightTransport = Object.freeze({ version: PLAYWRIGHT_VERSION, modulePath: playwrightModule });
+export const phase9PlaywrightTransport = Object.freeze({
+  version: PLAYWRIGHT_VERSION, coreVersion: PLAYWRIGHT_CORE_VERSION,
+  artifactPath: playwrightArtifact, manifestPath: playwrightManifest,
+});
 const githubRepository = 'thisearlyseason/studio-v2.1';
 
 function exactArgs(argv, flags) {
@@ -65,26 +78,27 @@ async function sha256(path) {
 }
 
 async function validatePinnedTransport() {
-  const [moduleMetadata, packageMetadata, moduleHash, packageHash, packageJson, lock] = await Promise.all([
-    lstat(playwrightModule), lstat(playwrightPackage), sha256(playwrightModule), sha256(playwrightPackage),
-    readFile(playwrightPackage, 'utf8').then(JSON.parse), readFile(packageLock, 'utf8').then(JSON.parse),
+  const [artifactMetadata, manifestMetadata, artifactHash, manifest] = await Promise.all([
+    lstat(playwrightArtifact), lstat(playwrightManifest), sha256(playwrightArtifact),
+    readFile(playwrightManifest, 'utf8').then(JSON.parse),
   ]);
-  const locked = lock?.packages?.['node_modules/@playwright/cli'];
-  if (moduleMetadata.isSymbolicLink() || !moduleMetadata.isFile() || packageMetadata.isSymbolicLink() || !packageMetadata.isFile()
-    || moduleHash !== PLAYWRIGHT_MODULE_SHA256 || packageHash !== PLAYWRIGHT_PACKAGE_SHA256
-    || packageJson.version !== PLAYWRIGHT_VERSION || packageJson.bin?.['playwright-cli'] !== 'playwright-cli.js'
-    || locked?.version !== PLAYWRIGHT_VERSION || locked?.integrity !== PLAYWRIGHT_LOCK_INTEGRITY) {
-    throw new Error('Pinned local Playwright CLI transport is invalid.');
+  if (artifactMetadata.isSymbolicLink() || !artifactMetadata.isFile() || manifestMetadata.isSymbolicLink()
+    || !manifestMetadata.isFile() || artifactHash !== PLAYWRIGHT_ARTIFACT_SHA256
+    || manifest.artifactSha256 !== PLAYWRIGHT_ARTIFACT_SHA256 || manifest.playwrightCliVersion !== PLAYWRIGHT_VERSION
+    || manifest.playwrightCoreVersion !== PLAYWRIGHT_CORE_VERSION || manifest.format !== 'phase9-playwright-transport-v1'
+    || !Array.isArray(manifest.files) || manifest.files.length < 10) {
+    throw new Error('Pinned self-contained Playwright CLI transport is invalid.');
   }
 }
 
 async function validatePinnedConfig({ verifyTransport = false } = {}) {
   const config = JSON.parse(await readFile(childConfig, 'utf8'));
   if (
-    Object.keys(config).sort().join(',') !== 'origin,playwrightModule,playwrightModuleSha256,playwrightVersion,projectId'
+    Object.keys(config).sort().join(',') !== 'origin,playwrightArtifact,playwrightArtifactSha256,playwrightCoreVersion,playwrightVersion,projectId'
     || config.projectId !== STAGING_PROJECT_ID || config.origin !== STAGING_ORIGIN
-    || config.playwrightModule !== playwrightModule || config.playwrightVersion !== PLAYWRIGHT_VERSION
-    || config.playwrightModuleSha256 !== PLAYWRIGHT_MODULE_SHA256
+    || config.playwrightArtifact !== playwrightArtifact || config.playwrightVersion !== PLAYWRIGHT_VERSION
+    || config.playwrightCoreVersion !== PLAYWRIGHT_CORE_VERSION
+    || config.playwrightArtifactSha256 !== PLAYWRIGHT_ARTIFACT_SHA256
   ) throw new Error('Pinned child configuration is invalid.');
   if (verifyTransport) await validatePinnedTransport();
   return config;
@@ -96,6 +110,14 @@ async function buildRunnerCommand() {
     throw new Error('Committed runner bytes do not match the literal reviewed pins.');
   }
   if (await sha256(evidenceHelper) !== PHASE9_ARTIFACT_PINS.helper) throw new Error('Committed evidence helper does not match its literal reviewed pin.');
+  for (const [path, pin] of [
+    [playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
+    [playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
+    [playwrightEntrySource, PHASE9_ARTIFACT_PINS.transportEntry],
+    [playwrightModuleGuard, PHASE9_ARTIFACT_PINS.transportGuard],
+    [playwrightBuilder, PHASE9_ARTIFACT_PINS.transportBuilder],
+    [playwrightClient, PHASE9_ARTIFACT_PINS.transportClient],
+  ]) if (await sha256(path) !== pin) throw new Error('Committed Playwright transport closure does not match its literal reviewed pins.');
   return Object.freeze({
     entrypoint: childEntrypoint,
     entrypointSha256: PHASE9_ARTIFACT_PINS.child,
@@ -125,12 +147,9 @@ async function dryRun(stdout) {
 }
 
 async function runWrapper(args) {
-  const { stdout } = await execFileAsync(process.execPath, [playwrightModule, ...args, '--json'], {
-    cwd: repositoryRoot, env: { ...process.env, npm_config_offline: 'true' }, timeout: 90_000, maxBuffer: 1_048_576,
+  return executeCapturedPlaywrightTransportCommand(args, {
+    transport: phase9CapturedPlaywrightTransport, cwd: repositoryRoot, timeoutMs: 90_000,
   });
-  const result = JSON.parse(stdout);
-  if (result?.isError === true) throw new Error('Playwright CLI reported an error.');
-  return Object.hasOwn(result, 'result') ? result.result : result;
 }
 
 function guardianBrowserClient() {
@@ -152,7 +171,7 @@ async function offlineSmoke(stdout) {
   if (!initial || !Array.isArray(initial.browsers) || initial.browsers.length !== 0) {
     throw new Error('Offline smoke requires an empty initial browser inventory.');
   }
-  const client = createPlaywrightCliClient({ transportModule: playwrightModule, env: { ...process.env, npm_config_offline: 'true' } });
+  const client = createPlaywrightCliClient({ transport: phase9CapturedPlaywrightTransport });
   try {
     const { stdout: smokeOutput } = await execFileAsync(process.execPath, [
       join(moduleDirectory, 'playwright-cli-client.mjs'), 'smoke', '--origin', 'about:blank',
@@ -237,9 +256,15 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ['scripts/qa-evidence/phase9/child-runner.mjs', childEntrypoint, PHASE9_ARTIFACT_PINS.child],
     ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
     ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],
+    ['scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz', playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
+    ['scripts/qa-evidence/phase9/playwright-transport-manifest.json', playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
+    ['scripts/qa-evidence/phase9/playwright-transport-entry.cjs', playwrightEntrySource, PHASE9_ARTIFACT_PINS.transportEntry],
+    ['scripts/qa-evidence/phase9/playwright-transport-module-guard.cjs', playwrightModuleGuard, PHASE9_ARTIFACT_PINS.transportGuard],
+    ['scripts/qa-evidence/phase9/build-playwright-transport.mjs', playwrightBuilder, PHASE9_ARTIFACT_PINS.transportBuilder],
+    ['scripts/qa-evidence/phase9/playwright-cli-client.mjs', playwrightClient, PHASE9_ARTIFACT_PINS.transportClient],
   ]) {
     const [{ stdout: blob }, worktree] = await Promise.all([
-      execFileAsync('git', ['cat-file', 'blob', `${deployedSha}:${relativePath}`], { cwd: repositoryRoot, encoding: 'buffer', timeout: 10_000, maxBuffer: 1_048_576 }),
+      execFileAsync('git', ['cat-file', 'blob', `${deployedSha}:${relativePath}`], { cwd: repositoryRoot, encoding: 'buffer', timeout: 10_000, maxBuffer: 4_194_304 }),
       readFile(path),
     ]);
     if (!Buffer.from(blob).equals(worktree) || createHash('sha256').update(blob).digest('hex') !== pin) {
@@ -256,7 +281,7 @@ async function hosted(argv, env, stdout) {
   ]);
   if (
     values['--project'] !== STAGING_PROJECT_ID || values['--confirm-project'] !== STAGING_PROJECT_ID
-    || values['--origin'] !== STAGING_ORIGIN || values['--transport'] !== playwrightModule
+    || values['--origin'] !== STAGING_ORIGIN || values['--transport'] !== playwrightArtifact
     || env.ALLOW_STAGING_QA_FIXTURES !== 'true'
   ) throw new Error('Hosted execution requires exact staging confirmation and pinned local Chrome transport.');
   await validatePinnedConfig({ verifyTransport: true });

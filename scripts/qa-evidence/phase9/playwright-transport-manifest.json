@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "format": "phase9-playwright-transport-v1",
+  "playwrightCliVersion": "0.1.18",
+  "playwrightCoreVersion": "1.63.0-alpha-2026-08-05",
+  "artifactSha256": "e596203d478f04d3af855f8a27fb0e6500bc168ecbda67de544a49542616dc61",
+  "files": [
+    {
+      "path": "node_modules/@playwright/cli/playwright-cli.js",
+      "mode": 365,
+      "size": 1987,
+      "sha256": "a72096cf843959bf25c6667033fb6a806c6b5d339bcee6e0e5c2384400185128"
+    },
+    {
+      "path": "node_modules/playwright-core/browsers.json",
+      "mode": 292,
+      "size": 1135,
+      "sha256": "1a95c3070d781eb5aebaf2e058f82799a564e449890dd87dffa1d74ad5ab8ab3"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/coreBundle.js",
+      "mode": 292,
+      "size": 3449273,
+      "sha256": "adf9246486a03bee08b2895db057ba470c62377911d291693fe783d91d6fec52"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/entry/cliDaemon.js",
+      "mode": 292,
+      "size": 1406,
+      "sha256": "cff5c382d830308189146751381182552002d3c7e272b45292f0def11ea8bcf7"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/package.js",
+      "mode": 292,
+      "size": 2112,
+      "sha256": "9f938e1d44a0dd231b1660ca62f7dae964859b79cbdc370b8542c5d375ca3c05"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/serverRegistry.js",
+      "mode": 292,
+      "size": 247258,
+      "sha256": "3399bc7c2f9e3d578ae4d68807c8f0f3d962c1d7b9e5bdeac7598f4b27373c76"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/channelSessions.js",
+      "mode": 292,
+      "size": 7087,
+      "sha256": "6b9c613e87340f48ad7182addd7495a8ff3fbe55feb1bbd0ce04f59f1552e126"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/cli.js",
+      "mode": 292,
+      "size": 153,
+      "sha256": "dfde8e9dfde30c4b3914eb25ba1c5a8524ec64651d866171d75cd7b41a827180"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/help.json",
+      "mode": 292,
+      "size": 38313,
+      "sha256": "52cd2b2f2a315a9ed99e70782d4a30071c4824854f7b4f0ed10076b54ecec29f"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/minimist.js",
+      "mode": 292,
+      "size": 4106,
+      "sha256": "1d200627373a367e0097f1abeaaa4d67cde2c33f2e5efca5cb55222c7667adc3"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/output.js",
+      "mode": 292,
+      "size": 11973,
+      "sha256": "f15a1e11882b0673f79bfbb45380a20b5c0fb2ebc00002725897de36f3af2f56"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/program.js",
+      "mode": 292,
+      "size": 16346,
+      "sha256": "fe8b2cbdf13c371a7bca93a4d0144d2ee29a410751381f7a847dcaff7d02db85"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/registry.js",
+      "mode": 292,
+      "size": 6768,
+      "sha256": "4976cd5b2b3a25572cc1a4b5f055a756dacd4cc1b19d48987ee3253428e759b8"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/cli-client/session.js",
+      "mode": 292,
+      "size": 9519,
+      "sha256": "716e87fc77251129adf8c66374cccc6788f76a02b4b33692c7e63a01a659cb5c"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/utils/extension.js",
+      "mode": 292,
+      "size": 4260,
+      "sha256": "ed1a56cb9a6b4643a6a1dea604c541a4e3a4be8d8971edcfe53c7dc9cceefe98"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/tools/utils/socketConnection.js",
+      "mode": 292,
+      "size": 3317,
+      "sha256": "973c2bea70a1f1445f4673f99e9fa351e50a2ec9fd93d7381b2c41bb4de764dd"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/utilsBundle.js",
+      "mode": 292,
+      "size": 3239355,
+      "sha256": "580f571bf063e2256b51b3946a035bc452fc0e22808d5547b198baea39923a32"
+    },
+    {
+      "path": "node_modules/playwright-core/lib/webp_codec.wasm",
+      "mode": 292,
+      "size": 565369,
+      "sha256": "164cd9583a3e4d081f767d3b41ff0a730443dc7535fcc5caff83561463384b79"
+    },
+    {
+      "path": "node_modules/playwright-core/package.json",
+      "mode": 292,
+      "size": 893,
+      "sha256": "cc20d8407732820e1a334b890b204360aabf5e675ebfe0d2881bc2f54d32e681"
+    }
+  ]
+}

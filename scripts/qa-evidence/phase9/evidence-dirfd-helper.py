@@ -10,6 +10,9 @@ MAX_ENTRIES = 32
 class UnsafeRecovery(Exception):
     """The original four-file set could not be certified after rollback."""
 
+    def __init__(self, status):
+        super().__init__(status); self.status = status
+
 
 def exact_object(value, keys):
     if not isinstance(value, dict) or set(value) != set(keys): raise ValueError("invalid-protocol")
@@ -191,6 +194,22 @@ def emergency_cleanup(states):
     return safe
 
 
+def snapshot_directory():
+    names = inventory(FILES); files = []
+    for name in FILES:
+        if name not in names:
+            files.append({"name": name, "present": False}); continue
+        descriptor, metadata = open_existing(name)
+        try:
+            bounded_size(metadata.st_size)
+            files.append({
+                "name": name, "present": True, "mode": stat.S_IMODE(metadata.st_mode),
+                "size": metadata.st_size, "sha256": hash_fd(descriptor, metadata.st_size),
+            })
+        finally: os.close(descriptor)
+    return {"ok": True, "status": "snapshot", "files": files}
+
+
 def require_absent(name):
     try: os.stat(name, dir_fd=DIR_FD, follow_symlinks=False)
     except FileNotFoundError: return
@@ -221,11 +240,14 @@ def rollback(states, transaction):
             os.fchmod(descriptor, original["mode"]); sync(descriptor)
             verify_held(descriptor, original["mode"], original["size"], original["hash"])
     except Exception:
-        emergency_cleanup(states)
-        return False
+        clean = emergency_cleanup(states)
+        raise UnsafeRecovery("transaction-outputs-removed" if clean else "cleanup-uncertain")
 
     promotion_index = 0
     try:
+        delay_ms = int(os.environ.get("PHASE9_WRITER_TEST_BEFORE_ROLLBACK_PROMOTION_MS", "0"))
+        if delay_ms < 0 or delay_ms > 2000: raise ValueError("invalid-test-delay")
+        if delay_ms: time.sleep(delay_ms / 1000)
         for state in states:
             original = state["original"]
             if original is None:
@@ -236,6 +258,7 @@ def rollback(states, transaction):
             promotion_index += 1
             if fail_promotion == promotion_index: raise OSError("injected-rollback-promotion-failure")
             recovery = state["recovery"]
+            verify_exposed(recovery["temporary"], recovery["fd"], original["mode"], original["size"], original["hash"])
             os.rename(recovery["temporary"], state["name"], src_dir_fd=DIR_FD, dst_dir_fd=DIR_FD)
             recovery["promoted"] = True
             verify_exposed(state["name"], recovery["fd"], original["mode"], original["size"], original["hash"])
@@ -245,8 +268,8 @@ def rollback(states, transaction):
             if original is None: require_absent(state["name"])
             else: verify_exposed(state["name"], state["recovery"]["fd"], original["mode"], original["size"], original["hash"])
     except Exception:
-        emergency_cleanup(states)
-        return False
+        clean = emergency_cleanup(states)
+        raise UnsafeRecovery("transaction-outputs-removed" if clean else "cleanup-uncertain")
 
     for state in states: state["promoted"] = False
     clean = cleanup_private(states)
@@ -255,16 +278,28 @@ def rollback(states, transaction):
         original = state["original"]
         if original is None: require_absent(state["name"])
         else: verify_exposed(state["name"], state["recovery"]["fd"], original["mode"], original["size"], original["hash"])
-    return clean
+    if not clean: raise UnsafeRecovery("cleanup-uncertain")
+    return True
 
 
 def main():
     if os.environ.get("PHASE9_WRITER_TEST_HANG") == "1": time.sleep(3600)
     raw = sys.stdin.buffer.read(MAX_INPUT + 1)
     if len(raw) > MAX_INPUT: raise ValueError("invalid-protocol")
-    request = exact_object(json.loads(raw), ("version", "transaction", "directory", "documents"))
+    request = json.loads(raw)
+    if not isinstance(request, dict) or request.get("version") != 1: raise ValueError("invalid-protocol")
+    operation = request.get("operation")
+    if operation == "snapshot":
+        exact_object(request, ("version", "operation", "directory"))
+    elif operation == "write":
+        exact_object(request, ("version", "operation", "transaction", "directory", "documents"))
+    else: raise ValueError("invalid-protocol")
     directory = exact_object(request["directory"], ("dev", "ino", "mode"))
-    if request["version"] != 1 or not re.fullmatch(r"[0-9]+-[0-9]+-[a-f0-9]{16}", request["transaction"]): raise ValueError("invalid-protocol")
+    metadata = os.fstat(DIR_FD)
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_dev != directory["dev"] or metadata.st_ino != directory["ino"] or stat.S_IMODE(metadata.st_mode) != directory["mode"]: raise ValueError("directory-identity-mismatch")
+    if operation == "snapshot":
+        sys.stdout.write(json.dumps(snapshot_directory(), sort_keys=True, separators=(",", ":")) + "\n"); return
+    if not re.fullmatch(r"[0-9]+-[0-9]+-[a-f0-9]{16}", request["transaction"]): raise ValueError("invalid-protocol")
     if not isinstance(request["documents"], list) or len(request["documents"]) != len(FILES): raise ValueError("invalid-protocol")
     states = []
     for index, item in enumerate(request["documents"]):
@@ -276,8 +311,6 @@ def main():
             "temporary": f'.{item["name"]}.{request["transaction"]}.tmp', "temp_fd": None,
             "original": None, "recovery": None, "promoted": False,
         })
-    metadata = os.fstat(DIR_FD)
-    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_dev != directory["dev"] or metadata.st_ino != directory["ino"] or stat.S_IMODE(metadata.st_mode) != directory["mode"]: raise ValueError("directory-identity-mismatch")
     inventory(FILES)
     transaction = request["transaction"]
     allowed = set(FILES)
@@ -330,12 +363,14 @@ def main():
         safe = True
         if capture_complete and any(state["promoted"] for state in states):
             try: safe = rollback(states, transaction)
+            except UnsafeRecovery: raise
             except Exception:
-                emergency_cleanup(states); safe = False
+                safe = emergency_cleanup(states)
+                raise UnsafeRecovery("transaction-outputs-removed" if safe else "cleanup-uncertain")
         else:
             try: safe = cleanup_private(states); os.fsync(DIR_FD)
             except Exception: safe = False
-        if not safe: raise UnsafeRecovery() from failure
+        if not safe: raise UnsafeRecovery("cleanup-uncertain") from failure
         raise
     finally:
         descriptors = []
@@ -347,12 +382,12 @@ def main():
             if descriptor is None: continue
             try: os.close(descriptor)
             except OSError: pass
-    sys.stdout.write('{"ok":true}\n')
+    sys.stdout.write('{"ok":true,"status":"committed"}\n')
 
 
 if __name__ == "__main__":
     try: main()
-    except UnsafeRecovery:
-        sys.stderr.write("descriptor-anchored evidence unsafe recovery\n"); sys.exit(2)
+    except UnsafeRecovery as failure:
+        sys.stdout.write(json.dumps({"ok": False, "status": failure.status}, sort_keys=True, separators=(",", ":")) + "\n"); sys.exit(2)
     except Exception:
-        sys.stderr.write("descriptor-anchored evidence transaction failed\n"); sys.exit(1)
+        sys.stdout.write('{"ok":false,"status":"atomic-restoration"}\n'); sys.exit(1)

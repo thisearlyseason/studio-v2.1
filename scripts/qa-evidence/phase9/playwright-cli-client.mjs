@@ -1,7 +1,11 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { constants as fsConstants, lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { chmod, mkdir, mkdtemp, open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 
 import {
   LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, PROTECTED_PAGE_HEADINGS,
@@ -11,7 +15,16 @@ import {
 } from './scenario-contracts.mjs';
 import { assertRunId } from '../../qa-fixtures/manifest.mjs';
 
-const DEFAULT_TRANSPORT_MODULE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../node_modules/@playwright/cli/playwright-cli.js');
+const MODULE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_TRANSPORT_ARTIFACT = resolve(MODULE_DIRECTORY, 'playwright-transport.bundle.json.gz');
+const DEFAULT_TRANSPORT_SHA256 = 'e596203d478f04d3af855f8a27fb0e6500bc168ecbda67de544a49542616dc61';
+const TRANSPORT_FORMAT = 'phase9-playwright-transport-v1';
+const TRANSPORT_TOKENS = new WeakMap();
+const MATERIALIZED_TRANSPORTS = new WeakMap();
+const TRANSPORT_ROOT_PREFIX = '/tmp/phase9-playwright-transport.';
+const SYSTEM_CHROME_APP = '/Applications/Google Chrome.app';
+const SYSTEM_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const SYSTEM_CODESIGN = '/usr/bin/codesign';
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
 const MAX_SIGNAL_COUNT = 1000;
@@ -28,6 +41,136 @@ const MAX_LISTEN_OFFSET = 2_147_483_647;
 const CLIENT_INTERNALS = new WeakMap();
 const HEADING_SENTINELS = Object.freeze([...new Set(LANDING_SENTINELS)]);
 const STATUS_SENTINELS = Object.freeze([PENDING_UNAVAILABLE_SENTINEL]);
+
+const sha256Bytes = bytes => createHash('sha256').update(bytes).digest('hex');
+
+export function capturePlaywrightTransport({
+  artifactPath = DEFAULT_TRANSPORT_ARTIFACT,
+  expectedSha256 = DEFAULT_TRANSPORT_SHA256,
+} = {}) {
+  if (typeof artifactPath !== 'string' || !artifactPath.startsWith('/') || resolve(artifactPath) !== artifactPath
+    || !/^[0-9a-f]{64}$/.test(expectedSha256)) throw new Error('Playwright transport capture boundary is invalid.');
+  const metadata = lstatSync(artifactPath);
+  const artifact = readFileSync(artifactPath);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || realpathSync(artifactPath) !== artifactPath
+    || (metadata.mode & 0o022) !== 0 || artifact.length !== metadata.size || artifact.length > 8_388_608
+    || sha256Bytes(artifact) !== expectedSha256) throw new Error('Playwright transport artifact is not the reviewed bytes.');
+  let payload;
+  try {
+    const expanded = gunzipSync(artifact, { maxOutputLength: 16_777_216 });
+    payload = JSON.parse(expanded.toString('utf8'));
+  } catch {
+    throw new Error('Playwright transport artifact is invalid.');
+  }
+  if (!payload || Object.keys(payload).sort().join(',') !== 'entry,files,format,version'
+    || payload.version !== 1 || payload.format !== TRANSPORT_FORMAT
+    || payload.entry !== 'node_modules/@playwright/cli/playwright-cli.js'
+    || !Array.isArray(payload.files) || payload.files.length < 10 || payload.files.length > 64) {
+    throw new Error('Playwright transport artifact has an invalid closed manifest.');
+  }
+  const files = [];
+  let previous = '';
+  for (const file of payload.files) {
+    if (!file || Object.keys(file).sort().join(',') !== 'contents,mode,path,sha256,size'
+      || typeof file.path !== 'string' || !/^node_modules\/(?:@playwright\/cli|playwright-core)\/[A-Za-z0-9._/-]+$/.test(file.path)
+      || file.path.includes('/../') || file.path <= previous || ![0o444, 0o555].includes(file.mode)
+      || !Number.isInteger(file.size) || file.size < 0 || file.size > 8_388_608 || !/^[0-9a-f]{64}$/.test(file.sha256)
+      || typeof file.contents !== 'string') throw new Error('Playwright transport artifact file is invalid.');
+    const contents = Buffer.from(file.contents, 'base64');
+    if (contents.toString('base64') !== file.contents || contents.length !== file.size || sha256Bytes(contents) !== file.sha256) {
+      throw new Error('Playwright transport artifact file bytes are invalid.');
+    }
+    files.push({ path: file.path, mode: file.mode, size: file.size, sha256: file.sha256, contents });
+    previous = file.path;
+  }
+  const entry = files.find(file => file.path === payload.entry);
+  if (!entry || entry.mode !== 0o555) throw new Error('Playwright transport entrypoint is invalid.');
+  const token = Object.freeze({ artifactSha256: expectedSha256, format: TRANSPORT_FORMAT });
+  TRANSPORT_TOKENS.set(token, { entry: payload.entry, files });
+  return token;
+}
+
+const DEFAULT_CAPTURED_TRANSPORT = capturePlaywrightTransport();
+export const phase9CapturedPlaywrightTransport = DEFAULT_CAPTURED_TRANSPORT;
+
+async function materializePlaywrightTransport(token) {
+  if (!TRANSPORT_TOKENS.has(token)) throw new Error('Captured Playwright transport is required.');
+  if (MATERIALIZED_TRANSPORTS.has(token)) return MATERIALIZED_TRANSPORTS.get(token);
+  const pending = (async () => {
+    const captured = TRANSPORT_TOKENS.get(token);
+    const root = await mkdtemp(TRANSPORT_ROOT_PREFIX);
+    await chmod(root, 0o700);
+    try {
+      for (const file of captured.files) {
+        const path = `${root}/${file.path}`;
+        await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+        const descriptor = await open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+        try {
+          await descriptor.writeFile(file.contents); await descriptor.sync(); await descriptor.chmod(file.mode);
+          const metadata = await descriptor.stat();
+          if (!metadata.isFile() || metadata.nlink !== 1 || metadata.size !== file.size
+            || (metadata.mode & 0o777) !== file.mode) throw new Error('Materialized Playwright transport metadata changed.');
+        } finally { await descriptor.close(); }
+        const exposed = readFileSync(path);
+        if (sha256Bytes(exposed) !== file.sha256) throw new Error('Materialized Playwright transport bytes changed.');
+      }
+      const entrypoint = `${root}/${captured.entry}`;
+      process.once('exit', () => {
+        if (root.startsWith(TRANSPORT_ROOT_PREFIX)) rmSync(root, { recursive: true, force: true });
+      });
+      return entrypoint;
+    } catch (error) {
+      rmSync(root, { recursive: true, force: true }); throw error;
+    }
+  })();
+  MATERIALIZED_TRANSPORTS.set(token, pending);
+  return pending;
+}
+
+export function buildPlaywrightTransportEnvironment(source = process.env) {
+  const allowed = ['HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'USER', 'LOGNAME', '__CF_USER_TEXT_ENCODING'];
+  const env = {};
+  for (const key of allowed) if (typeof source?.[key] === 'string' && source[key].length <= 4096) env[key] = source[key];
+  return Object.freeze({
+    ...env,
+    PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    NO_UPDATE_NOTIFIER: '1', CI: '1',
+    npm_config_offline: 'true', NPM_CONFIG_OFFLINE: 'true',
+    npm_config_update_notifier: 'false', NPM_CONFIG_UPDATE_NOTIFIER: 'false',
+  });
+}
+
+async function verifyExternalChrome(argv, options) {
+  if (!argv.includes('open') || !argv.includes('--browser') || !argv.includes('chrome')) return;
+  const chrome = lstatSync(SYSTEM_CHROME);
+  const codesign = lstatSync(SYSTEM_CODESIGN);
+  if (!chrome.isFile() || chrome.isSymbolicLink() || realpathSync(SYSTEM_CHROME) !== SYSTEM_CHROME
+    || (chrome.mode & 0o111) === 0 || !codesign.isFile() || codesign.isSymbolicLink()
+    || realpathSync(SYSTEM_CODESIGN) !== SYSTEM_CODESIGN || codesign.uid !== 0 || (codesign.mode & 0o022) !== 0) {
+    throw new Error('External system Chrome verification boundary is invalid.');
+  }
+  await new Promise((resolvePromise, reject) => execFile(SYSTEM_CODESIGN, [
+    '--verify', '--deep',
+    '-R=identifier "com.google.Chrome" and anchor apple generic and certificate leaf[subject.OU] = "EQHXZ8M8AV"',
+    SYSTEM_CHROME_APP,
+  ], {
+    cwd: '/', env: options.env, timeout: 30_000, maxBuffer: 65_536,
+  }, error => error ? reject(new Error('External system Chrome signature is invalid.')) : resolvePromise()));
+}
+
+export async function auditPlaywrightTransportFetches({ transport = DEFAULT_CAPTURED_TRANSPORT } = {}) {
+  const entrypoint = await materializePlaywrightTransport(transport);
+  const env = { ...buildPlaywrightTransportEnvironment(), PHASE9_TRANSPORT_FETCH_AUDIT: '1' };
+  const result = await new Promise(resolvePromise => execFile(process.execPath, [entrypoint, 'list', '--json'], {
+    cwd: process.cwd(), env, timeout: 30_000, maxBuffer: 1_048_576, encoding: 'utf8',
+  }, (error, stdout = '', stderr = '') => resolvePromise({ error, stdout, stderr })));
+  if (result.error || result.stderr !== 'phase9-transport-fetch-calls=0\n') {
+    throw new Error('Playwright transport performed or could not audit a Node-side fetch.');
+  }
+  const output = JSON.parse(result.stdout);
+  if (!output || !Array.isArray(output.browsers)) throw new Error('Playwright transport fetch audit response is invalid.');
+  return Object.freeze({ fetchCalls: 0, browsers: output.browsers.length });
+}
 
 const inspectPercentLayer = value => {
   let encoded = false;
@@ -1308,36 +1451,58 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, 
   return sanitized;
 };
 
-const defaultExecute = (argv, options) => new Promise(resolve => {
-  const [file, ...args] = argv;
-  execFile(file, args, {
-    cwd: options.cwd,
-    env: options.env,
-    timeout: options.timeoutMs,
-    maxBuffer: options.maxOutputBytes,
-    encoding: 'utf8',
-  }, (error, stdout = '', stderr = '') => {
-    resolve({
-      stdout,
-      stderr,
-      exitCode: error ? (Number.isInteger(error.code) ? error.code : null) : 0,
-      timedOut: Boolean(error?.killed && error?.signal),
+const defaultExecute = async (argv, options) => {
+  const entrypoint = await materializePlaywrightTransport(options.transport);
+  const [file, , ...args] = argv;
+  await verifyExternalChrome(args, options);
+  return new Promise(resolvePromise => {
+    execFile(file, [entrypoint, ...args], {
+      argv0: process.execPath,
+      cwd: options.cwd,
+      env: options.env,
+      timeout: options.timeoutMs,
+      maxBuffer: options.maxOutputBytes,
+      encoding: 'utf8',
+    }, (error, stdout = '', stderr = '') => {
+      resolvePromise({
+        stdout,
+        stderr,
+        exitCode: error ? (Number.isInteger(error.code) ? error.code : null) : 0,
+        timedOut: Boolean(error?.killed && error?.signal),
+      });
     });
   });
-});
+};
+
+export async function executeCapturedPlaywrightTransportCommand(args, {
+  transport = DEFAULT_CAPTURED_TRANSPORT, cwd = process.cwd(), timeoutMs = DEFAULT_TIMEOUT_MS,
+} = {}) {
+  if (!Array.isArray(args) || !(
+    (args.length === 1 && args[0] === 'list')
+    || (args.length === 2 && /^-s=[A-Za-z0-9_-]{1,64}$/.test(args[0]) && args[1] === 'close')
+  )) throw new Error('Captured Playwright transport command is outside the closed guardian surface.');
+  const result = await defaultExecute([process.execPath, 'captured-playwright-transport', ...args, '--json'], {
+    cwd, env: buildPlaywrightTransportEnvironment(), timeoutMs, maxOutputBytes: MAX_OUTPUT_BYTES, transport,
+  });
+  if (result.timedOut || result.exitCode !== 0) throw new Error('Captured Playwright transport command failed.');
+  let output;
+  try { output = JSON.parse(result.stdout); } catch { throw new Error('Captured Playwright transport response is invalid.'); }
+  if (!output || typeof output !== 'object' || output.isError === true) throw new Error('Captured Playwright transport response is invalid.');
+  return Object.hasOwn(output, 'result') ? output.result : output;
+}
 
 export function createPlaywrightCliClient({
   execute = defaultExecute,
   wrapperPath,
-  transportModule = DEFAULT_TRANSPORT_MODULE,
+  transport = DEFAULT_CAPTURED_TRANSPORT,
   cwd = process.cwd(),
-  env = process.env,
+  env = buildPlaywrightTransportEnvironment(),
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fixtureRunId,
 } = {}) {
   if (typeof execute !== 'function') throw new Error('Playwright CLI execute transport must be a function.');
   if (wrapperPath !== undefined && (typeof wrapperPath !== 'string' || wrapperPath.length === 0)) throw new Error('Playwright CLI wrapper path is invalid.');
-  if (wrapperPath === undefined && (typeof transportModule !== 'string' || !transportModule.startsWith('/'))) throw new Error('Pinned Playwright CLI module is required.');
+  if (wrapperPath === undefined && !TRANSPORT_TOKENS.has(transport)) throw new Error('Captured Playwright transport is required.');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('Playwright CLI timeout must be a positive integer.');
   if (fixtureRunId !== undefined) assertRunId(fixtureRunId);
   const opened = new Set();
@@ -1354,11 +1519,13 @@ export function createPlaywrightCliClient({
   const command = async (args, session, { parseNestedJson = false } = {}) => {
     const sessionArgs = session ? [`-s=${session}`] : [];
     const argv = wrapperPath === undefined
-      ? [process.execPath, transportModule, ...sessionArgs, ...args, '--json']
+      ? [process.execPath, 'captured-playwright-transport', ...sessionArgs, ...args, '--json']
       : [wrapperPath, ...sessionArgs, ...args, '--json'];
     let output;
     try {
-      output = await execute(argv, { cwd, env, timeoutMs, maxOutputBytes: MAX_OUTPUT_BYTES });
+      output = await execute(argv, {
+        cwd, env: buildPlaywrightTransportEnvironment(env), timeoutMs, maxOutputBytes: MAX_OUTPUT_BYTES, transport,
+      });
     } catch {
       throw new Error('Playwright CLI transport failed.');
     }
