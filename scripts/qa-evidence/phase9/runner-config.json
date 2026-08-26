@@ -1,6 +1,7 @@
 {
   "origin": "https://studio--the-squad-v2-staging.us-east4.hosted.app",
   "projectId": "the-squad-v2-staging",
-  "wrapperPath": "/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh",
-  "wrapperSha256": "aa3fdff5d0e4556177f4dfd5f04117e772aa54f94b6a2e34b6c0edf629c6b9b5"
+  "playwrightModule": "/Users/tylerans/Documents/The Squad V2 BRANCH/studio-v2.1/.worktrees/phase3-root-cause-repair/node_modules/@playwright/cli/playwright-cli.js",
+  "playwrightModuleSha256": "66ea6722d77e57ce1bc7e850cb990d14895d17d8584405ed54a8c72fab38eb75",
+  "playwrightVersion": "0.1.18"
 }

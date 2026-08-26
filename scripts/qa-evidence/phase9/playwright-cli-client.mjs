@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import {
   LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, PROTECTED_PAGE_HEADINGS,
@@ -9,7 +11,7 @@ import {
 } from './scenario-contracts.mjs';
 import { assertRunId } from '../../qa-fixtures/manifest.mjs';
 
-const DEFAULT_WRAPPER = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
+const DEFAULT_TRANSPORT_MODULE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../node_modules/@playwright/cli/playwright-cli.js');
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
 const MAX_SIGNAL_COUNT = 1000;
@@ -980,10 +982,12 @@ const MARK_SOURCE = String.raw`async (page) => {
   state.appConsoleErrors = [];
   state.requestFailures = [];
   state.overflow = 0;
+  const cookies = await page.context().cookies(${JSON.stringify(STAGING_ORIGIN)});
   return {
     pageId: state.pageId,
     sequence: state.sequence,
     navigationGeneration: state.navigationGeneration,
+    sessionPresentAtMark: cookies.some(cookie => cookie.name === ${JSON.stringify(SESSION_COOKIE_NAME)} && cookie.value.length > 0),
   };
 }`;
 
@@ -1034,6 +1038,8 @@ const sampleSource = mark => String.raw`async (page) => {
     overflow: state.overflow,
     renderPath: render.path,
     renderSentinel: render.sentinels[0] || '',
+    viewport: page.viewportSize(),
+    sessionPresentAtMark: mark.sessionPresentAtMark,
   };
 }`;
 
@@ -1206,7 +1212,7 @@ const bindFinalRecorderGeneration = (value, listenTargetState) => {
   }
 };
 
-const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState } = {}) => {
+const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, expectedViewport, requireAuthenticatedStart = false } = {}) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Signal sample must be an object.');
   const booleanFields = ['terminalReached', 'loadingVisible', 'sessionPresent', 'protectedRender'];
   const stringFields = ['pageId', 'finalUrl', 'finalPath', 'renderPath', 'renderSentinel'];
@@ -1220,6 +1226,12 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState }
     && ['unavailable', 'none', 'other'].includes(value.redirectReason)
     && Number.isInteger(value.overflow) && value.overflow >= 0;
   if (!complete) throw new Error('Recorder must return a complete signal sample.');
+  if (expectedViewport && (
+    value.viewport?.width !== expectedViewport.width || value.viewport?.height !== expectedViewport.height
+  )) throw new Error('Recorder viewport does not match the verified context viewport.');
+  if (requireAuthenticatedStart && value.sessionPresentAtMark !== true) {
+    throw new Error('Retained stale session was not authenticated at action start.');
+  }
   if (typeof publicPageId !== 'string' || !/^phase9-page-\d+$/.test(publicPageId)) {
     throw new Error('Client must assign a fixed local page identifier.');
   }
@@ -1316,14 +1328,16 @@ const defaultExecute = (argv, options) => new Promise(resolve => {
 
 export function createPlaywrightCliClient({
   execute = defaultExecute,
-  wrapperPath = DEFAULT_WRAPPER,
+  wrapperPath,
+  transportModule = DEFAULT_TRANSPORT_MODULE,
   cwd = process.cwd(),
   env = process.env,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fixtureRunId,
 } = {}) {
   if (typeof execute !== 'function') throw new Error('Playwright CLI execute transport must be a function.');
-  if (typeof wrapperPath !== 'string' || wrapperPath.length === 0) throw new Error('Playwright CLI wrapper path is required.');
+  if (wrapperPath !== undefined && (typeof wrapperPath !== 'string' || wrapperPath.length === 0)) throw new Error('Playwright CLI wrapper path is invalid.');
+  if (wrapperPath === undefined && (typeof transportModule !== 'string' || !transportModule.startsWith('/'))) throw new Error('Pinned Playwright CLI module is required.');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('Playwright CLI timeout must be a positive integer.');
   if (fixtureRunId !== undefined) assertRunId(fixtureRunId);
   const opened = new Set();
@@ -1332,12 +1346,16 @@ export function createPlaywrightCliClient({
   const armedTabs = new Set();
   const publicPageIds = new Map();
   const listenTargetStateByTab = new Map();
+  const expectedViewportByTab = new Map();
+  const authenticatedStartByTab = new Set();
   let publicPageSequence = 0;
   const tabKey = session => `${session}:${currentTabs.get(session) ?? 0}`;
 
   const command = async (args, session, { parseNestedJson = false } = {}) => {
     const sessionArgs = session ? [`-s=${session}`] : [];
-    const argv = [wrapperPath, ...sessionArgs, ...args, '--json'];
+    const argv = wrapperPath === undefined
+      ? [process.execPath, transportModule, ...sessionArgs, ...args, '--json']
+      : [wrapperPath, ...sessionArgs, ...args, '--json'];
     let output;
     try {
       output = await execute(argv, { cwd, env, timeoutMs, maxOutputBytes: MAX_OUTPUT_BYTES });
@@ -1426,15 +1444,20 @@ export function createPlaywrightCliClient({
         fixtureRunId,
         publicPageId: publicPageIds.get(key),
         listenTargetState,
+        expectedViewport: expectedViewportByTab.get(key),
+        requireAuthenticatedStart: authenticatedStartByTab.delete(key),
       });
       return sample;
     },
     async tabNew(session, url = 'about:blank') {
       if (url !== 'about:blank') throw new Error('A new tab must open on about:blank before recorder arming.');
+      const previousKey = tabKey(session);
       const result = await command(['tab-new', url], session);
       const index = tabCounts.get(session) ?? 1;
       tabCounts.set(session, index + 1);
       currentTabs.set(session, index);
+      const viewport = expectedViewportByTab.get(previousKey);
+      if (viewport) expectedViewportByTab.set(`${session}:${index}`, viewport);
       return result;
     },
     async tabSelect(session, index) {
@@ -1467,7 +1490,13 @@ export function createPlaywrightCliClient({
     listBrowsers: async () => command(['list']),
     closeAllBrowsers: async () => command(['close-all']),
   };
-  CLIENT_INTERNALS.set(client, { executeRunCode, installRecorder, openBlank });
+  CLIENT_INTERNALS.set(client, {
+    executeRunCode, installRecorder, openBlank, command, opened, currentTabs, tabCounts, armedTabs,
+    publicPageIds, listenTargetStateByTab, expectedViewportByTab, authenticatedStartByTab,
+    nextPublicPageId: key => {
+      if (!publicPageIds.has(key)) { publicPageSequence += 1; publicPageIds.set(key, `phase9-page-${publicPageSequence}`); }
+    },
+  });
   return client;
 }
 
@@ -1481,6 +1510,49 @@ export async function installSignalRecorder(client, session) {
   }`);
   if (current?.url !== 'about:blank') throw new Error('Signal recorder requires the exact current tab to be about:blank.');
   return internals.installRecorder(session);
+}
+
+export async function setAndVerifyViewport(client, session, viewport) {
+  const internals = CLIENT_INTERNALS.get(client);
+  if (!internals || !viewport || ![390, 1440].includes(viewport.width) || ![844, 900].includes(viewport.height)
+    || !new Set(['390x844', '1440x900']).has(`${viewport.width}x${viewport.height}`)) {
+    throw new Error('Viewport must be an exact reviewed Phase 9 viewport.');
+  }
+  const result = await internals.executeRunCode(session, `async (page) => {
+    await page.setViewportSize(${JSON.stringify(viewport)});
+    return page.viewportSize();
+  }`);
+  if (result?.width !== viewport.width || result?.height !== viewport.height) throw new Error('Playwright did not apply the exact context viewport.');
+  internals.expectedViewportByTab.set(`${session}:${internals.currentTabs.get(session) ?? 0}`, Object.freeze({ ...viewport }));
+  return `${result.width}x${result.height}`;
+}
+
+export async function attachExistingSignalRecorder(client, session, { width, height, marker, requireAuthenticated = false } = {}) {
+  const internals = CLIENT_INTERNALS.get(client);
+  if (!internals || typeof session !== 'string' || typeof marker !== 'string' || marker !== session) {
+    throw new Error('Retained session attachment is invalid.');
+  }
+  const inventory = await internals.command(['list']);
+  const matches = inventory?.browsers?.filter(item => (typeof item === 'string' ? item : item?.name) === session) ?? [];
+  if (matches.length !== 1) throw new Error('Exact retained browser session is not live.');
+  const result = await internals.executeRunCode(session, `async (page) => ({
+    pageId: page.__phase9EvidenceRecorder?.pageId,
+    navigationGeneration: page.__phase9EvidenceRecorder?.navigationGeneration,
+    url: page.url(), viewport: page.viewportSize(), marker: page.__phase9RetainedSessionMarker,
+  })`);
+  const exactLocation = requireAuthenticated ? String(result?.url).startsWith(STAGING_ORIGIN) : result?.url === 'about:blank';
+  if (!result?.pageId || result.marker !== marker || result.viewport?.width !== width || result.viewport?.height !== height
+    || !exactLocation) throw new Error('Retained session identity or viewport changed before attachment.');
+  internals.opened.add(session);
+  internals.currentTabs.set(session, 0);
+  internals.tabCounts.set(session, 1);
+  const key = `${session}:0`;
+  internals.nextPublicPageId(key);
+  internals.armedTabs.add(key);
+  internals.listenTargetStateByTab.set(key, { activeTargetIds: new Set(), generation: result.navigationGeneration ?? 0 });
+  internals.expectedViewportByTab.set(key, Object.freeze({ width, height }));
+  if (requireAuthenticated) internals.authenticatedStartByTab.add(key);
+  return Object.freeze({ session, viewport: `${width}x${height}` });
 }
 
 export async function closeAndVerifyBrowsers(client) {

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, readFile, realpath, rm, stat } from 'node:fs/promises';
+import { chmod, lstat, readFile, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -24,7 +24,19 @@ const childEntrypoint = join(moduleDirectory, 'child-runner.mjs');
 const childConfig = join(moduleDirectory, 'runner-config.json');
 const fixtureCli = join(repositoryRoot, 'scripts', 'qa-fixtures', 'cli.mjs');
 const evidenceDirectory = join(repositoryRoot, 'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities');
-const wrapperPath = '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh';
+const playwrightModule = join(repositoryRoot, 'node_modules', '@playwright', 'cli', 'playwright-cli.js');
+const playwrightPackage = join(repositoryRoot, 'node_modules', '@playwright', 'cli', 'package.json');
+const packageLock = join(repositoryRoot, 'package-lock.json');
+const PLAYWRIGHT_VERSION = '0.1.18';
+const PLAYWRIGHT_MODULE_SHA256 = '66ea6722d77e57ce1bc7e850cb990d14895d17d8584405ed54a8c72fab38eb75';
+const PLAYWRIGHT_PACKAGE_SHA256 = '184ed53662eadeeb6923f2890a87b3699ed5b09fc11ed5297ca7abd5356f3c09';
+const PLAYWRIGHT_LOCK_INTEGRITY = 'sha512-ggNfYYH+GsZTGUiBEL8f6N5j0seYEUE52v+fIWqK/A36QG36cL0EJ79qWTXYO2uZMUU7vm+jk3x0fKCPL6UuIw==';
+export const PHASE9_ARTIFACT_PINS = Object.freeze({
+  child: 'bf03fdae3850554db5f8d286b40b156fc338c53a21c1fa3eb71dd1307eb9b3b6',
+  config: '60956e4ac3b3341e55f4829fe520abe74130b8c6766854a8598075920562b268',
+  transport: PLAYWRIGHT_MODULE_SHA256,
+});
+export const phase9PlaywrightTransport = Object.freeze({ version: PLAYWRIGHT_VERSION, modulePath: playwrightModule });
 const githubRepository = 'thisearlyseason/studio-v2.1';
 
 function exactArgs(argv, flags) {
@@ -50,31 +62,41 @@ async function sha256(path) {
   return createHash('sha256').update(await readFile(path)).digest('hex');
 }
 
-async function validatePinnedConfig({ verifyWrapper = false } = {}) {
+async function validatePinnedTransport() {
+  const [moduleMetadata, packageMetadata, moduleHash, packageHash, packageJson, lock] = await Promise.all([
+    lstat(playwrightModule), lstat(playwrightPackage), sha256(playwrightModule), sha256(playwrightPackage),
+    readFile(playwrightPackage, 'utf8').then(JSON.parse), readFile(packageLock, 'utf8').then(JSON.parse),
+  ]);
+  const locked = lock?.packages?.['node_modules/@playwright/cli'];
+  if (moduleMetadata.isSymbolicLink() || !moduleMetadata.isFile() || packageMetadata.isSymbolicLink() || !packageMetadata.isFile()
+    || moduleHash !== PLAYWRIGHT_MODULE_SHA256 || packageHash !== PLAYWRIGHT_PACKAGE_SHA256
+    || packageJson.version !== PLAYWRIGHT_VERSION || packageJson.bin?.['playwright-cli'] !== 'playwright-cli.js'
+    || locked?.version !== PLAYWRIGHT_VERSION || locked?.integrity !== PLAYWRIGHT_LOCK_INTEGRITY) {
+    throw new Error('Pinned local Playwright CLI transport is invalid.');
+  }
+}
+
+async function validatePinnedConfig({ verifyTransport = false } = {}) {
   const config = JSON.parse(await readFile(childConfig, 'utf8'));
   if (
-    Object.keys(config).sort().join(',') !== 'origin,projectId,wrapperPath,wrapperSha256'
+    Object.keys(config).sort().join(',') !== 'origin,playwrightModule,playwrightModuleSha256,playwrightVersion,projectId'
     || config.projectId !== STAGING_PROJECT_ID || config.origin !== STAGING_ORIGIN
-    || config.wrapperPath !== wrapperPath || !/^[0-9a-f]{64}$/.test(config.wrapperSha256)
+    || config.playwrightModule !== playwrightModule || config.playwrightVersion !== PLAYWRIGHT_VERSION
+    || config.playwrightModuleSha256 !== PLAYWRIGHT_MODULE_SHA256
   ) throw new Error('Pinned child configuration is invalid.');
-  if (verifyWrapper) {
-    const wrapperMetadata = await lstat(wrapperPath);
-    if (
-      !wrapperMetadata.isFile() || wrapperMetadata.isSymbolicLink()
-      || (wrapperMetadata.mode & 0o111) === 0 || (wrapperMetadata.mode & 0o022) !== 0
-      || await realpath(wrapperPath) !== wrapperPath
-      || await sha256(wrapperPath) !== config.wrapperSha256
-    ) throw new Error('Pinned system Chrome wrapper is invalid.');
-  }
+  if (verifyTransport) await validatePinnedTransport();
   return config;
 }
 
 async function buildRunnerCommand() {
   await validatePinnedConfig();
+  if (await sha256(childEntrypoint) !== PHASE9_ARTIFACT_PINS.child || await sha256(childConfig) !== PHASE9_ARTIFACT_PINS.config) {
+    throw new Error('Committed runner bytes do not match the literal reviewed pins.');
+  }
   return Object.freeze({
     entrypoint: childEntrypoint,
-    entrypointSha256: await sha256(childEntrypoint),
-    configFiles: Object.freeze([Object.freeze({ path: childConfig, sha256: await sha256(childConfig) })]),
+    entrypointSha256: PHASE9_ARTIFACT_PINS.child,
+    configFiles: Object.freeze([Object.freeze({ path: childConfig, sha256: PHASE9_ARTIFACT_PINS.config })]),
   });
 }
 
@@ -100,8 +122,8 @@ async function dryRun(stdout) {
 }
 
 async function runWrapper(args) {
-  const { stdout } = await execFileAsync(wrapperPath, [...args, '--json'], {
-    cwd: repositoryRoot, env: process.env, timeout: 90_000, maxBuffer: 1_048_576,
+  const { stdout } = await execFileAsync(process.execPath, [playwrightModule, ...args, '--json'], {
+    cwd: repositoryRoot, env: { ...process.env, npm_config_offline: 'true' }, timeout: 90_000, maxBuffer: 1_048_576,
   });
   const result = JSON.parse(stdout);
   if (result?.isError === true) throw new Error('Playwright CLI reported an error.');
@@ -121,13 +143,13 @@ function guardianBrowserClient() {
 
 async function offlineSmoke(stdout) {
   validatePlan();
-  await validatePinnedConfig({ verifyWrapper: true });
+  await validatePinnedConfig({ verifyTransport: true });
   await buildRunnerCommand();
   const initial = await runWrapper(['list']);
   if (!initial || !Array.isArray(initial.browsers) || initial.browsers.length !== 0) {
     throw new Error('Offline smoke requires an empty initial browser inventory.');
   }
-  const client = createPlaywrightCliClient({ wrapperPath });
+  const client = createPlaywrightCliClient({ transportModule: playwrightModule, env: { ...process.env, npm_config_offline: 'true' } });
   try {
     const { stdout: smokeOutput } = await execFileAsync(process.execPath, [
       join(moduleDirectory, 'playwright-cli-client.mjs'), 'smoke', '--origin', 'about:blank',
@@ -199,18 +221,41 @@ async function githubPreconditionVerifier({ deployedSha, stagingRunId, pullReque
   };
 }
 
+async function requireCleanExactSha(deployedSha) {
+  const [{ stdout: head }, { stdout: statusOutput }] = await Promise.all([
+    execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, timeout: 10_000, maxBuffer: 65_536 }),
+    execFileAsync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: repositoryRoot, timeout: 10_000, maxBuffer: 262_144 }),
+  ]);
+  if (head.trim() !== deployedSha || statusOutput.trim() !== '') throw new Error('Hosted execution requires the exact clean deployed repository SHA.');
+}
+
+async function verifyAdmittedRunnerBlobs(deployedSha) {
+  for (const [relativePath, path, pin] of [
+    ['scripts/qa-evidence/phase9/child-runner.mjs', childEntrypoint, PHASE9_ARTIFACT_PINS.child],
+    ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
+  ]) {
+    const [{ stdout: blob }, worktree] = await Promise.all([
+      execFileAsync('git', ['cat-file', 'blob', `${deployedSha}:${relativePath}`], { cwd: repositoryRoot, encoding: 'buffer', timeout: 10_000, maxBuffer: 1_048_576 }),
+      readFile(path),
+    ]);
+    if (!Buffer.from(blob).equals(worktree) || createHash('sha256').update(blob).digest('hex') !== pin) {
+      throw new Error('Admitted runner bytes do not match the deployed Git blob and literal reviewed pin.');
+    }
+  }
+}
+
 async function hosted(argv, env, stdout) {
   if (argv[0] !== '--staging') throw new Error('Hosted execution requires the explicit staging flag --staging.');
   const values = exactArgs(argv.slice(1), [
     '--project', '--confirm-project', '--origin', '--deployed-sha', '--staging-run', '--pull-request',
-    '--workspace', '--manifest', '--credentials', '--expires-at', '--wrapper',
+    '--workspace', '--manifest', '--credentials', '--expires-at', '--transport',
   ]);
   if (
     values['--project'] !== STAGING_PROJECT_ID || values['--confirm-project'] !== STAGING_PROJECT_ID
-    || values['--origin'] !== STAGING_ORIGIN || values['--wrapper'] !== wrapperPath
+    || values['--origin'] !== STAGING_ORIGIN || values['--transport'] !== playwrightModule
     || env.ALLOW_STAGING_QA_FIXTURES !== 'true'
-  ) throw new Error('Hosted execution requires exact staging confirmation and system Chrome wrapper.');
-  await validatePinnedConfig({ verifyWrapper: true });
+  ) throw new Error('Hosted execution requires exact staging confirmation and pinned local Chrome transport.');
+  await validatePinnedConfig({ verifyTransport: true });
   if (!/^[0-9a-f]{40}$/.test(values['--deployed-sha']) || !/^[1-9][0-9]{5,20}$/.test(values['--staging-run'])) {
     throw new Error('Hosted deployment linkage is invalid.');
   }
@@ -221,13 +266,9 @@ async function hosted(argv, env, stdout) {
   const manifest = resolve(values['--manifest']);
   const credentials = resolve(values['--credentials']);
   await requireWorkspace(workspace, manifest, credentials);
-  const [{ stdout: localHead }, { stdout: localStatus }] = await Promise.all([
-    execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, timeout: 10_000, maxBuffer: 65_536 }),
-    execFileAsync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { cwd: repositoryRoot, timeout: 10_000, maxBuffer: 262_144 }),
-  ]);
-  if (localHead.trim() !== values['--deployed-sha'] || localStatus.trim() !== '') {
-    throw new Error('Hosted execution requires the exact clean deployed repository SHA.');
-  }
+  await requireCleanExactSha(values['--deployed-sha']);
+  await verifyAdmittedRunnerBlobs(values['--deployed-sha']);
+  await requireCleanExactSha(values['--deployed-sha']);
   validatePlan();
   const runnerCommand = await buildRunnerCommand();
   const [{ createFirebaseAdapter }, { removeCredentialFile }] = await Promise.all([
@@ -255,6 +296,7 @@ async function hosted(argv, env, stdout) {
     removeCredentialFile: path => removeCredentialFile(path, repositoryRoot),
     rm: (path, options) => rm(path, options),
   };
+  await requireCleanExactSha(values['--deployed-sha']);
   const lifecycle = await runGuardedLifecycle({
     fixtureCommand,
     browserClient: guardianBrowserClient(),

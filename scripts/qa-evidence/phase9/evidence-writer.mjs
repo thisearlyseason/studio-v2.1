@@ -1,5 +1,6 @@
-import { chmod, lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { chmod, lstat, open, readFile, rename, rm } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { types as utilTypes } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +24,7 @@ const FILES = Object.freeze([
 ]);
 const SENSITIVE = /(?:bearer\s+[a-z0-9._~-]+|(?:cookie|password|credential|storage[_ -]?state|private[_ -]?key|token)\s*[:=])/i;
 const PRIVATE_PATH = /(?:^|[\s`'"(])(?:\/tmp\/|\/Users\/|\/home\/|[A-Za-z]:\\)/;
+const DEFAULT_FILESYSTEM = Object.freeze({ chmod, lstat, open, readFile, rename, rm });
 
 function snapshotData(value, depth = 0) {
   if (depth > 12) throw new Error('Evidence input nesting is unsafe.');
@@ -95,6 +97,36 @@ function validateOutputDirectory(value, repositoryRoot) {
     throw new Error('Output must use the exact Phase 9 evidence directory.');
   }
   return value;
+}
+
+async function snapshotBoundary(repositoryRoot, outputDirectory, filesystem) {
+  const suffix = relative(repositoryRoot, outputDirectory);
+  if (!suffix || suffix.startsWith('..') || isAbsolute(suffix)) throw new Error('Evidence directory escapes its repository boundary.');
+  const paths = [repositoryRoot];
+  let cursor = repositoryRoot;
+  for (const component of suffix.split(sep)) { cursor = join(cursor, component); paths.push(cursor); }
+  const snapshots = [];
+  for (const path of paths) {
+    const metadata = await filesystem.lstat(path);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw new Error('Evidence directory boundary contains a symlink or non-directory component.');
+    snapshots.push(Object.freeze({ path, dev: metadata.dev, ino: metadata.ino }));
+  }
+  return Object.freeze(snapshots);
+}
+
+async function revalidateBoundary(snapshots, filesystem) {
+  for (const snapshot of snapshots) {
+    const metadata = await filesystem.lstat(snapshot.path);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory() || metadata.dev !== snapshot.dev || metadata.ino !== snapshot.ino) {
+      throw new Error('Evidence directory boundary identity changed.');
+    }
+  }
+}
+
+async function writeExclusiveNoFollow(path, contents, filesystem) {
+  const handle = await filesystem.open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(contents, { encoding: typeof contents === 'string' ? 'utf8' : undefined }); await handle.sync(); }
+  finally { await handle.close(); }
 }
 
 function rejectSensitive(value, label) {
@@ -186,25 +218,27 @@ No broad enumeration, recursive Firebase deletion, credential material, raw brow
 `;
 }
 
-async function writeAllAtomically(outputDirectory, documents) {
+async function writeAllAtomically(outputDirectory, documents, boundary, filesystem) {
   const transaction = `${process.pid}-${Date.now()}`;
   const temps = [];
   const backups = [];
   const promoted = [];
   try {
     for (const [name, contents] of documents) {
+      await revalidateBoundary(boundary, filesystem);
       const temp = join(outputDirectory, `.${basename(name)}.${transaction}.tmp`);
-      await writeFile(temp, contents, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-      await chmod(temp, 0o600);
+      await writeExclusiveNoFollow(temp, contents, filesystem);
+      await filesystem.chmod(temp, 0o600);
       temps.push(temp);
     }
     for (const [name] of documents) {
       const target = join(outputDirectory, name);
       try {
-        const metadata = await lstat(target);
+        const metadata = await filesystem.lstat(target);
         if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error('Evidence target is not a regular file.');
         const backup = join(outputDirectory, `.${basename(name)}.${transaction}.bak`);
-        await writeFile(backup, await readFile(target), { mode: 0o600, flag: 'wx' });
+        await revalidateBoundary(boundary, filesystem);
+        await writeExclusiveNoFollow(backup, await filesystem.readFile(target), filesystem);
         backups.push([target, backup, metadata.mode & 0o777]);
       } catch (error) {
         if (error?.code !== 'ENOENT') throw error;
@@ -212,31 +246,30 @@ async function writeAllAtomically(outputDirectory, documents) {
     }
     for (let index = 0; index < documents.length; index += 1) {
       const target = join(outputDirectory, documents[index][0]);
-      await rename(temps[index], target);
+      await revalidateBoundary(boundary, filesystem);
+      await filesystem.rename(temps[index], target);
       promoted.push(target);
-      await chmod(target, 0o644);
+      await filesystem.chmod(target, 0o644);
     }
-    for (const [, backup] of backups) await rm(backup, { force: true });
+    await revalidateBoundary(boundary, filesystem);
+    for (const [, backup] of backups) await filesystem.rm(backup, { force: true });
   } catch (error) {
-    for (const temp of temps) await rm(temp, { force: true }).catch(() => {});
-    for (const target of promoted) await rm(target, { force: true }).catch(() => {});
+    for (const temp of temps) await filesystem.rm(temp, { force: true }).catch(() => {});
+    for (const target of promoted) await filesystem.rm(target, { force: true }).catch(() => {});
     for (const [target, backup, mode] of backups) {
-      await rename(backup, target).catch(() => {});
-      await chmod(target, mode).catch(() => {});
+      await filesystem.rename(backup, target).catch(() => {});
+      await filesystem.chmod(target, mode).catch(() => {});
     }
     throw new Error('Evidence files were not written atomically.', { cause: error });
   }
 }
 
-async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = {}, repositoryRoot) {
+async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = {}, repositoryRoot, filesystem = DEFAULT_FILESYSTEM) {
   ({ lifecycle, rows, deployment, outputDirectory } = snapshotData({ lifecycle, rows, deployment, outputDirectory }));
   validateLifecycle(lifecycle);
   validateDeployment(deployment);
   const directory = validateOutputDirectory(outputDirectory, repositoryRoot);
-  const directoryMetadata = await lstat(directory);
-  if (!directoryMetadata.isDirectory() || directoryMetadata.isSymbolicLink()) {
-    throw new Error('Output must use a real Phase 9 evidence directory.');
-  }
+  const boundary = await snapshotBoundary(repositoryRoot, directory, filesystem);
   const ledger = validateLedger(rows, { groupCounts: SCENARIO_GROUP_COUNTS, totals: SCENARIO_TOTALS });
   if (ledger.totals.pass !== 44 || ledger.totals.fail !== 0 || ledger.totals.inconclusive !== 0) {
     throw new Error('Evidence result arithmetic is incomplete.');
@@ -249,7 +282,8 @@ async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = 
     ['04-cleanup.md', cleanupMarkdown()],
   ];
   for (const [, contents] of documents) rejectSensitive(contents, 'Rendered evidence');
-  await writeAllAtomically(directory, documents);
+  await revalidateBoundary(boundary, filesystem);
+  await writeAllAtomically(directory, documents, boundary, filesystem);
   return Object.freeze({ files: Object.freeze([...FILES]) });
 }
 
@@ -257,11 +291,14 @@ export async function writePhase9Evidence(options) {
   return writeEvidence(options, MODULE_REPOSITORY_ROOT);
 }
 
-export function createPhase9EvidenceWriter({ repositoryRoot } = {}) {
+export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAULT_FILESYSTEM } = {}) {
   if (typeof repositoryRoot !== 'string' || !isAbsolute(repositoryRoot) || resolve(repositoryRoot) !== repositoryRoot) {
     throw new Error('Evidence repository root is invalid.');
   }
-  return Object.freeze({ write: options => writeEvidence(options, repositoryRoot) });
+  if (!filesystem || ['chmod', 'lstat', 'open', 'readFile', 'rename', 'rm'].some(name => typeof filesystem[name] !== 'function')) {
+    throw new Error('Evidence filesystem boundary is invalid.');
+  }
+  return Object.freeze({ write: options => writeEvidence(options, repositoryRoot, filesystem) });
 }
 
 export { FILES as PHASE9_EVIDENCE_FILES };
