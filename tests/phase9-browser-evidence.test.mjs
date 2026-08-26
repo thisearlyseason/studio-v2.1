@@ -5229,3 +5229,252 @@ test('phase 9 lifecycle guardian preserves unsafe recovery drift without cleanup
   assert.equal(fixture.events.includes('fixture:cleanup'), false);
   assert.equal(fixture.events.includes('adapter:init'), false);
 });
+
+test('phase 9 lifecycle guardian rejects a self-consistent alternate manifest after identity pinning', async () => {
+  const alternateRunId = 'qa-phase7-20260826T120001Z-fedcba654321';
+  const alternate = buildFixtureDefinition({
+    runId: alternateRunId,
+    expiresAt: '2026-09-02T12:00:00Z',
+    manifestVersion: 3,
+  });
+  let reads = 0;
+  const fixture = lifecycleGuardianFixture({
+    manifestMutation: value => {
+      reads += 1;
+      if (reads === 1) return value;
+      return {
+        ...value,
+        runId: alternateRunId,
+        authUids: alternate.identities.map(identity => identity.uid),
+        firestorePaths: alternate.documents.map(document => document.path),
+        expectedAbsentFirestorePaths: alternate.expectedAbsentDocuments.map(document => document.path),
+      };
+    },
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'manifest-uncertain');
+  assert.equal(result.manifestPreservation, 'uncertain');
+  assert.equal(fixture.events.includes('scenario:after-transition'), false);
+  assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  assert.equal(fixture.workspaceExists, true);
+});
+
+test('phase 9 lifecycle guardian rejects rewriting an already pinned lifecycle checkpoint', async () => {
+  let reads = 0;
+  const fixture = lifecycleGuardianFixture({
+    manifestMutation: value => {
+      reads += 1;
+      if (reads < 3 || value.transitions['qa-pending-delete'].state !== 'pending_deletion') return value;
+      return {
+        ...value,
+        transitions: {
+          ...value.transitions,
+          'qa-pending-delete': {
+            ...value.transitions['qa-pending-delete'],
+            startedAt: '2026-08-26T12:00:01Z',
+            firestoreUpdatedAt: '2026-08-26T12:00:01Z',
+            revokedAt: '2026-08-26T12:00:01Z',
+            completedAt: '2026-08-26T12:00:01Z',
+          },
+        },
+      };
+    },
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'manifest-uncertain');
+  assert.equal(result.manifestPreservation, 'uncertain');
+  assert.equal(fixture.events.includes('fixture:cleanup'), false);
+});
+
+test('phase 9 lifecycle guardian snapshots hostile owned-runner schemas without invoking traps or accessors', async t => {
+  await t.test('handle proxy', async () => {
+    let traps = 0;
+    const proxy = new Proxy({}, {
+      ownKeys() { traps += 1; return []; },
+      getOwnPropertyDescriptor() { traps += 1; return undefined; },
+      get() { traps += 1; return undefined; },
+    });
+    const fixture = lifecycleGuardianFixture({ scenarioStart: () => proxy });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(traps, 0);
+  });
+
+  await t.test('handle accessor', async () => {
+    let getterCalls = 0;
+    const handle = {
+      browserSessions: [], terminate: async () => {}, join: async () => ({ closed: true }),
+    };
+    Object.defineProperty(handle, 'completion', {
+      enumerable: true,
+      get() { getterCalls += 1; return Promise.resolve({ ok: true }); },
+    });
+    const fixture = lifecycleGuardianFixture({ scenarioStart: () => handle });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(getterCalls, 0);
+  });
+
+  await t.test('completion accessor result', async () => {
+    let getterCalls = 0;
+    const completion = {};
+    Object.defineProperty(completion, 'ok', {
+      enumerable: true,
+      get() { getterCalls += 1; return true; },
+    });
+    const fixture = lifecycleGuardianFixture({
+      scenarioStart: ({ events }) => ({
+        browserSessions: [], completion: Promise.resolve(completion),
+        async terminate() {}, async join() { events.push('runner:joined'); return { closed: true }; },
+      }),
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(getterCalls, 0);
+  });
+
+  await t.test('join accessor result', async () => {
+    let getterCalls = 0;
+    const joined = {};
+    Object.defineProperty(joined, 'closed', {
+      enumerable: true,
+      get() { getterCalls += 1; return true; },
+    });
+    const fixture = lifecycleGuardianFixture({
+      scenarioJoinTimeoutMs: 5,
+      scenarioStart: () => ({
+        browserSessions: [], completion: Promise.resolve({ ok: true }),
+        async terminate() {}, async join() { return joined; },
+      }),
+    });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(getterCalls, 0);
+  });
+
+  await t.test('custom prototype and symbol fields', async () => {
+    for (const handle of [
+      Object.assign(Object.create({ inherited: true }), {
+        browserSessions: [], completion: Promise.resolve({ ok: true }), terminate: async () => {}, join: async () => ({ closed: true }),
+      }),
+      {
+        browserSessions: [], completion: Promise.resolve({ ok: true }), terminate: async () => {}, join: async () => ({ closed: true }),
+        [Symbol('hidden')]: true,
+      },
+    ]) {
+      const fixture = lifecycleGuardianFixture({ scenarioStart: () => handle });
+      const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+      assert.equal(result.ok, false);
+      assert.equal(result.category, 'scenario-closure-failed');
+    }
+  });
+
+  await t.test('hidden and unknown handle fields', async () => {
+    const hidden = {
+      browserSessions: [], completion: Promise.resolve({ ok: true }), terminate: async () => {}, join: async () => ({ closed: true }),
+    };
+    Object.defineProperty(hidden, 'hidden', { value: true, enumerable: false });
+    const unknown = {
+      browserSessions: [], completion: Promise.resolve({ ok: true }), terminate: async () => {}, join: async () => ({ closed: true }),
+      unknown: true,
+    };
+    let promiseGetterCalls = 0;
+    const taintedCompletion = Promise.resolve({ ok: true });
+    Object.defineProperty(taintedCompletion, 'then', {
+      configurable: true,
+      get() { promiseGetterCalls += 1; return Promise.prototype.then; },
+    });
+    for (const handle of [hidden, unknown]) {
+      const fixture = lifecycleGuardianFixture({ scenarioStart: () => handle });
+      const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+      assert.equal(result.ok, false);
+      assert.equal(result.category, 'scenario-closure-failed');
+      assert.equal(fixture.events.includes('fixture:cleanup'), false);
+    }
+    const safeFixture = lifecycleGuardianFixture({
+      scenarioStart: ({ request }) => request.phase === 'before-transition' ? {
+        browserSessions: [], completion: taintedCompletion,
+        terminate: async () => {}, join: async () => ({ closed: true }),
+      } : undefined,
+    });
+    assert.equal((await runGuardedLifecycle({ ...safeFixture.dependencies, options: safeFixture.options })).ok, true);
+    assert.equal(promiseGetterCalls, 0);
+  });
+
+  await t.test('completion and join closed-result schemas', async () => {
+    const invalidResults = field => {
+      let proxyTraps = 0;
+      const proxy = new Proxy({ [field]: true }, {
+        ownKeys(target) { proxyTraps += 1; return Reflect.ownKeys(target); },
+        getOwnPropertyDescriptor(target, key) { proxyTraps += 1; return Reflect.getOwnPropertyDescriptor(target, key); },
+        get(target, key) { return Reflect.get(target, key); },
+      });
+      const hidden = { [field]: true };
+      Object.defineProperty(hidden, 'hidden', { value: true, enumerable: false });
+      return {
+        values: [
+          proxy,
+          hidden,
+          { [field]: true, extra: true },
+          { [field]: true, [Symbol('hidden')]: true },
+          Object.assign(Object.create({ inherited: true }), { [field]: true }),
+        ],
+        get proxyTraps() { return proxyTraps; },
+      };
+    };
+    for (const resultKind of ['completion', 'join']) {
+      const invalid = invalidResults(resultKind === 'completion' ? 'ok' : 'closed');
+      for (const shaped of invalid.values) {
+        const fixture = lifecycleGuardianFixture({
+          scenarioJoinTimeoutMs: 5,
+          scenarioStart: () => ({
+            browserSessions: [],
+            completion: Promise.resolve(resultKind === 'completion' ? shaped : { ok: true }),
+            async terminate() {},
+            async join() { return resultKind === 'join' ? shaped : { closed: true }; },
+          }),
+        });
+        const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+        assert.equal(result.ok, false, resultKind);
+      }
+      assert.equal(invalid.proxyTraps, 0);
+    }
+  });
+});
+
+test('phase 9 lifecycle guardian binds one stable owned-runner handle snapshot', async () => {
+  let release;
+  let originalJoinCalls = 0;
+  let substitutedJoinCalls = 0;
+  let firstHandle;
+  const fixture = lifecycleGuardianFixture({
+    scenarioStart: ({ request }) => {
+      if (request.phase !== 'before-transition') return undefined;
+      const completion = new Promise(resolve => { release = resolve; });
+      firstHandle = {
+        browserSessions: [],
+        completion,
+        async terminate() {},
+        async join() { originalJoinCalls += 1; return { closed: true }; },
+      };
+      return firstHandle;
+    },
+  });
+  const running = runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  while (!release) await new Promise(resolve => setImmediate(resolve));
+  firstHandle.join = async () => { substitutedJoinCalls += 1; return { closed: false }; };
+  firstHandle.completion = Promise.reject(new Error('late replacement'));
+  firstHandle.completion.catch(() => {});
+  firstHandle.browserSessions.push('late-session');
+  release({ ok: true });
+  const result = await running;
+  assert.equal(result.ok, true);
+  assert.equal(originalJoinCalls, 1);
+  assert.equal(substitutedJoinCalls, 0);
+  assert.equal(fixture.events.some(event => event.includes('late-session')), false);
+});
