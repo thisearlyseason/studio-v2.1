@@ -28,7 +28,7 @@ const SENSITIVE = /(?:bearer\s+[a-z0-9._~-]+|(?:cookie|password|credential|stora
 const PRIVATE_PATH = /(?:^|[\s`'"(])(?:\/tmp\/|\/Users\/|\/home\/|[A-Za-z]:\\)/;
 const DEFAULT_FILESYSTEM = Object.freeze({ lstat, open, readFile, realpath });
 const HELPER_PATH = join(dirname(fileURLToPath(import.meta.url)), 'evidence-dirfd-helper.py');
-const HELPER_SHA256 = 'd2a9538af6301d36eddbff98ffb751327ac176446b473c0c8ac4c1644c0efa76';
+const HELPER_SHA256 = 'bf46a4f50f6bbdc81d4f76a30e56559c68937fb1f12a7407dbb8847e864e78fb';
 const PYTHON_RUNTIME = '/usr/bin/python3';
 const PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
 const CAPTURED_SET_TIMEOUT = globalThis.setTimeout;
@@ -310,12 +310,18 @@ async function runDescriptorTransaction(outputDirectory, documents, boundary, fi
       child.on('error', () => { CAPTURED_CLEAR_TIMEOUT(timer); resolvePromise({ ok: false }); });
       child.on('close', code => {
         CAPTURED_CLEAR_TIMEOUT(timer); if (killTimer) CAPTURED_CLEAR_TIMEOUT(killTimer);
-        resolvePromise({ ok: !timedOut && code === 0 && stdout === '{"ok":true}\n' });
+        resolvePromise({
+          ok: !timedOut && code === 0 && stdout === '{"ok":true}\n',
+          unsafeRecovery: !timedOut && code === 2 && stdout === '',
+        });
       });
       child.stdin.end(request);
     });
     await revalidateImmutableRuntime(filesystem, captured.runtimeBoundary);
     const after = await directory.stat();
+    if (result.unsafeRecovery && after.dev === expected.dev && after.ino === expected.ino) {
+      throw new Error('Evidence recovery is incomplete; transaction-owned public output was removed, evidence was not written atomically, and no atomicity is claimed.');
+    }
     if (!result.ok || after.dev !== expected.dev || after.ino !== expected.ino) {
       throw new Error('Evidence files were not written atomically.');
     }
@@ -362,6 +368,8 @@ export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAUL
       'PHASE9_WRITER_TEST_FAIL_PROMOTION', 'PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS',
       'PHASE9_WRITER_TEST_SIGKILL_AFTER_TEMP', 'PHASE9_WRITER_TEST_HANG',
       'PHASE9_WRITER_TEST_REPLACE_PROMOTION',
+      'PHASE9_WRITER_TEST_FAIL_ROLLBACK_PREPARATION', 'PHASE9_WRITER_TEST_FAIL_ROLLBACK_PROMOTION',
+      'PHASE9_WRITER_TEST_STEAL_PROMOTION',
     ].includes(key))) {
     throw new Error('Evidence helper environment is invalid.');
   }

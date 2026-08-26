@@ -5997,6 +5997,131 @@ test('phase 9 writer rolls back every promoted file after a mid-transaction rena
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('phase 9 writer restores from held backup bytes when a backup pathname is replaced', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-hostile-backup-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  mkdirSync(outputDirectory, { recursive: true });
+  for (const name of PHASE9_EVIDENCE_FILES) writeFileSync(join(outputDirectory, name), `original:${name}\n`);
+  let hostileBackupName;
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root,
+      helperEnvironment: {
+        PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS: '300', PHASE9_WRITER_TEST_FAIL_PROMOTION: '2',
+      },
+    });
+    const pending = writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    });
+    const deadline = Date.now() + 2_000;
+    while (!hostileBackupName && Date.now() < deadline) {
+      hostileBackupName = readdirSync(outputDirectory).find(name => name.endsWith('.bak'));
+      if (!hostileBackupName) await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    assert.ok(hostileBackupName, 'helper did not expose a backup pathname for the hostile replacement regression');
+    const hostileBackupPath = join(outputDirectory, hostileBackupName);
+    rmSync(hostileBackupPath);
+    writeFileSync(hostileBackupPath, 'attacker-backup-content\n', { flag: 'wx', mode: 0o640 });
+
+    await assert.rejects(pending, /recovery.*incomplete/i);
+
+    for (const name of PHASE9_EVIDENCE_FILES) {
+      assert.equal(readFileSync(join(outputDirectory, name), 'utf8'), `original:${name}\n`);
+    }
+    const privateArtifacts = readdirSync(outputDirectory).filter(name => name.startsWith('.'));
+    assert.deepEqual(privateArtifacts, [hostileBackupName]);
+    assert.equal(readFileSync(hostileBackupPath, 'utf8'), 'attacker-backup-content\n');
+    assert.equal(statSync(hostileBackupPath).mode & 0o777, 0o640);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 writer removes a stolen backup inode only after descriptor identity proof', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-stolen-backup-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  mkdirSync(outputDirectory, { recursive: true });
+  for (const name of PHASE9_EVIDENCE_FILES) writeFileSync(join(outputDirectory, name), `original:${name}\n`);
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root,
+      helperEnvironment: {
+        PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS: '300', PHASE9_WRITER_TEST_FAIL_PROMOTION: '2',
+      },
+    });
+    const pending = writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    });
+    let backupNames;
+    const deadline = Date.now() + 2_000;
+    while (!backupNames && Date.now() < deadline) {
+      const candidates = readdirSync(outputDirectory).filter(name => name.endsWith('.bak'));
+      if (candidates.length === PHASE9_EVIDENCE_FILES.length) backupNames = candidates;
+      else await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    assert.ok(backupNames, 'helper did not expose every backup pathname for the stolen-entry regression');
+    const [backupName] = backupNames;
+    renameSync(join(outputDirectory, backupName), join(outputDirectory, `${backupName}.stolen`));
+
+    await assert.rejects(pending, /atomically/i);
+
+    assert.deepEqual(readdirSync(outputDirectory).sort(), [...PHASE9_EVIDENCE_FILES].sort());
+    for (const name of PHASE9_EVIDENCE_FILES) {
+      assert.equal(readFileSync(join(outputDirectory, name), 'utf8'), `original:${name}\n`);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 writer removes transaction-owned public output when rollback preparation or promotion fails', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  for (const rollbackFailure of [
+    ['PHASE9_WRITER_TEST_FAIL_ROLLBACK_PREPARATION', '2'],
+    ['PHASE9_WRITER_TEST_FAIL_ROLLBACK_PROMOTION', '2'],
+  ]) {
+    const root = mkdtempSync('/tmp/phase9-writer-unsafe-recovery-');
+    const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+    mkdirSync(outputDirectory, { recursive: true });
+    for (const name of PHASE9_EVIDENCE_FILES) writeFileSync(join(outputDirectory, name), `original:${name}\n`);
+    try {
+      const writer = createPhase9EvidenceWriter({
+        repositoryRoot: root,
+        helperEnvironment: {
+          PHASE9_WRITER_TEST_FAIL_PROMOTION: '2', [rollbackFailure[0]]: rollbackFailure[1],
+        },
+      });
+      await assert.rejects(writer.write({
+        lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+      }), /recovery.*incomplete/i);
+
+      assert.equal(existsSync(join(outputDirectory, PHASE9_EVIDENCE_FILES[0])), false);
+      for (const name of PHASE9_EVIDENCE_FILES.slice(1)) {
+        assert.equal(readFileSync(join(outputDirectory, name), 'utf8'), `original:${name}\n`);
+      }
+      assert.equal(readdirSync(outputDirectory).some(name => name.startsWith('.')), false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
+test('phase 9 writer removes a stolen promoted inode after restoring the original set', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-stolen-promotion-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  mkdirSync(outputDirectory, { recursive: true });
+  for (const name of PHASE9_EVIDENCE_FILES) writeFileSync(join(outputDirectory, name), `original:${name}\n`);
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root, helperEnvironment: { PHASE9_WRITER_TEST_STEAL_PROMOTION: '1' },
+    });
+    await assert.rejects(writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    }), /atomically/i);
+    assert.deepEqual(readdirSync(outputDirectory).sort(), [...PHASE9_EVIDENCE_FILES].sort());
+    for (const name of PHASE9_EVIDENCE_FILES) {
+      assert.equal(readFileSync(join(outputDirectory, name), 'utf8'), `original:${name}\n`);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('phase 9 writer executes captured helper bytes after the verified helper path is replaced', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/private/tmp/phase9-writer-captured-helper-');

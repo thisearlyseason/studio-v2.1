@@ -36,7 +36,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   child: 'df74a373de399d0cc7aba84fbe22bd9625ac6be6164e422f1c0e9eac931b4937',
   config: '60956e4ac3b3341e55f4829fe520abe74130b8c6766854a8598075920562b268',
   transport: PLAYWRIGHT_MODULE_SHA256,
-  helper: 'd2a9538af6301d36eddbff98ffb751327ac176446b473c0c8ac4c1644c0efa76',
+  helper: 'bf46a4f50f6bbdc81d4f76a30e56559c68937fb1f12a7407dbb8847e864e78fb',
 });
 export const phase9PlaywrightTransport = Object.freeze({ version: PLAYWRIGHT_VERSION, modulePath: playwrightModule });
 const githubRepository = 'thisearlyseason/studio-v2.1';
