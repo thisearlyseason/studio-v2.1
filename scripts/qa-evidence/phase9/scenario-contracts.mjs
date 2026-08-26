@@ -1354,6 +1354,49 @@ export function validateLifecycleResult(kind, input, stage) {
   return result;
 }
 
+const validateLedgerRowSnapshot = (value, index = 0) => {
+  const row = requireRecord(value, `Ledger row ${index}`);
+  requireClosedOwnDataObject(row, {
+    name: `Ledger row ${index}`,
+    schemaName: 'ledger-row',
+    requiredKeys: REQUIRED_LEDGER_COLUMNS,
+  });
+  assertNoFixtureIdentifierLeakSnapshot(row, `Ledger row ${index}`);
+  for (const column of REQUIRED_LEDGER_COLUMNS) {
+    if (row[column] === undefined || row[column] === null || row[column] === '') {
+      throw new Error(`Ledger row ${index} is missing ${column}.`);
+    }
+  }
+  for (const column of ['contextId', 'alias', 'startState', 'startUrl', 'action', 'expectedResult', 'visibleState', 'relevantHttpDataResult']) {
+    requireString(row[column], `Ledger row ${index} ${column}`);
+  }
+  if (!Object.hasOwn(SCENARIO_GROUP_COUNTS, row.group)) throw new Error(`Ledger row ${index} group is unsupported.`);
+  if (!new Set(['390x844', '1440x900']).has(row.viewport)) throw new Error(`Ledger row ${index} viewport is not canonical.`);
+  requireBoolean(row.sessionPresent, `Ledger row ${index} sessionPresent`);
+  for (const column of ['protectedRequests', 'protectedListenerStarts', 'pageErrors', 'appConsoleErrors', 'unexpectedRequestFailures', 'overflow']) {
+    requireCount(row[column], `Ledger row ${index} ${column}`);
+  }
+  requireString(row.finalUrl, `Ledger row ${index} finalUrl`);
+  let finalUrl;
+  try {
+    finalUrl = new URL(row.finalUrl);
+  } catch {
+    throw new Error(`Ledger row ${index} must contain an absolute canonical finalUrl.`);
+  }
+  if (finalUrl.origin !== STAGING_ORIGIN || finalUrl.username || finalUrl.password || finalUrl.hash) {
+    throw new Error(`Ledger row ${index} finalUrl must use the canonical staging origin.`);
+  }
+  if (!new Set(['PASS', 'FAIL', 'INCONCLUSIVE-HARNESS']).has(row.result)) {
+    throw new Error(`Ledger row ${index} result is unsupported.`);
+  }
+  return deepFreeze(Object.fromEntries(REQUIRED_LEDGER_COLUMNS.map(column => [column, row[column]])));
+};
+
+export function validateLedgerRow(value) {
+  const snapshot = snapshotClosedDataGraph(value, 'Ledger row validation input');
+  return validateLedgerRowSnapshot(snapshot);
+}
+
 export function validateLedger(rows, expected) {
   const snapshot = snapshotClosedDataGraph({ rows, expected }, 'Ledger validation input');
   rows = snapshot.rows;
@@ -1375,36 +1418,8 @@ export function validateLedger(rows, expected) {
   const actualTotals = { total: rows.length, pass: 0, fail: 0, inconclusive: 0 };
   const viewports = new Set();
 
-  for (const [index, row] of rows.entries()) {
-    requireRecord(row, `Ledger row ${index}`);
-    assertNoFixtureIdentifierLeakSnapshot(row, `Ledger row ${index}`);
-    for (const column of REQUIRED_LEDGER_COLUMNS) {
-      if (!(column in row) || row[column] === undefined || row[column] === null || row[column] === '') {
-        throw new Error(`Ledger row ${index} is missing ${column}.`);
-      }
-    }
-    for (const column of ['contextId', 'alias', 'startState', 'startUrl', 'action', 'expectedResult', 'visibleState', 'relevantHttpDataResult']) {
-      requireString(row[column], `Ledger row ${index} ${column}`);
-    }
-    if (!Object.hasOwn(SCENARIO_GROUP_COUNTS, row.group)) throw new Error(`Ledger row ${index} group is unsupported.`);
-    if (!new Set(['390x844', '1440x900']).has(row.viewport)) throw new Error(`Ledger row ${index} viewport is not canonical.`);
-    requireBoolean(row.sessionPresent, `Ledger row ${index} sessionPresent`);
-    for (const column of ['protectedRequests', 'protectedListenerStarts', 'pageErrors', 'appConsoleErrors', 'unexpectedRequestFailures', 'overflow']) {
-      requireCount(row[column], `Ledger row ${index} ${column}`);
-    }
-    requireString(row.finalUrl, `Ledger row ${index} finalUrl`);
-    let finalUrl;
-    try {
-      finalUrl = new URL(row.finalUrl);
-    } catch {
-      throw new Error(`Ledger row ${index} must contain an absolute canonical finalUrl.`);
-    }
-    if (finalUrl.origin !== STAGING_ORIGIN || finalUrl.username || finalUrl.password || finalUrl.hash) {
-      throw new Error(`Ledger row ${index} finalUrl must use the canonical staging origin.`);
-    }
-    if (!new Set(['PASS', 'FAIL', 'INCONCLUSIVE-HARNESS']).has(row.result)) {
-      throw new Error(`Ledger row ${index} result is unsupported.`);
-    }
+  for (const [index, unvalidatedRow] of rows.entries()) {
+    const row = validateLedgerRowSnapshot(unvalidatedRow, index);
     if (ids.has(row.contextId)) throw new Error(`Ledger contains duplicate context ID ${row.contextId}.`);
     ids.add(row.contextId);
     viewports.add(row.viewport);

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHook } from 'node:async_hooks';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import {
+  chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -3926,7 +3930,7 @@ test('phase 9 client results action summaries and ledger rows never expose fixtu
   const groupCounts = { 'admission-route': 18, isolation: 10, logout: 10, 'pending-deletion': 6 };
   const rows = Object.entries(groupCounts).flatMap(([group, count], groupIndex) => Array.from({ length: count }, (_, index) => ({
     ...ledgerRow(`${group}-leak-${index}`, group, (groupIndex + index) % 2 === 0 ? '390x844' : '1440x900'),
-    ...(group === 'isolation' && index === 0 ? { actionSummaries: [{ target: `/api/teams/chat?teamId=${runId}-team-a` }] } : {}),
+    ...(group === 'isolation' && index === 0 ? { action: `/api/teams/chat?teamId=${runId}-team-a` } : {}),
   })));
   assert.throws(() => validateLedger(rows, {
     groupCounts,
@@ -4552,6 +4556,7 @@ function lifecycleGuardianFixture(overrides = {}) {
     }
     const result = command === 'inspect' ? inspectResult() : results[command];
     inspectCount += command === 'inspect' ? 1 : 0;
+    if (command === 'inspect' && inspectCount === 1) overrides.afterInitialInspect?.();
     const mutation = overrides.commandResult?.({ command, result: structuredClone(result), inspectCount });
     return mutation ?? { exitCode: 0, stdout: JSON.stringify(result) };
   };
@@ -4692,7 +4697,8 @@ function lifecycleGuardianFixture(overrides = {}) {
 test('phase 9 lifecycle guardian runs the exact ordered state machine and exact absence proof', async () => {
   const fixture = lifecycleGuardianFixture();
   const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
-  assert.deepEqual(result, {
+  const { rows, ...summary } = result;
+  assert.deepEqual(summary, {
     ok: true,
     state: 'disarmed',
     history: [
@@ -4703,6 +4709,7 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
     browserClosureCertified: true,
     closureCertified: true,
   });
+  assert.equal(rows.length, 44);
   assert.deepEqual(fixture.events.filter(event => event.startsWith('fixture:')), [
     'fixture:preflight', 'fixture:seed', 'fixture:inspect', 'fixture:transition',
     'fixture:inspect', 'fixture:cleanup', 'fixture:inspect',
@@ -5105,6 +5112,138 @@ test('phase 9 lifecycle guardian terminates and joins a surviving child process 
   rmSync(markerPath, { force: true });
 });
 
+test('phase 9 lifecycle guardian kills a detached marked descendant before cleanup certification', async () => {
+  const markerPath = `/tmp/phase9-guardian-child-detached-${process.pid}.json`;
+  rmSync(markerPath, { force: true });
+  let detachedPid = null;
+  const processAlive = pid => {
+    try { process.kill(pid, 0); return true; } catch (error) {
+      if (error?.code === 'ESRCH') return false;
+      throw error;
+    }
+  };
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'detached-rogue-process',
+    scenarioJoinTimeoutMs: 100,
+    beforeCleanup() {
+      detachedPid ??= JSON.parse(readFileSync(markerPath, 'utf8')).pid;
+      assert.equal(processAlive(detachedPid), false);
+    },
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    detachedPid ??= JSON.parse(readFileSync(markerPath, 'utf8')).pid;
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed', JSON.stringify(result));
+    assert.equal(result.closureCertified, true);
+    assert.equal(processAlive(detachedPid), false);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+  } finally {
+    if (detachedPid && processAlive(detachedPid)) {
+      try { process.kill(detachedPid, 'SIGKILL'); } catch {}
+    }
+    rmSync(markerPath, { force: true });
+  }
+});
+
+test('phase 9 lifecycle guardian cancels an in-progress startup generation before spawn', async () => {
+  const markerPath = `/tmp/phase9-guardian-child-start-${process.pid}`;
+  rmSync(markerPath, { force: true });
+  let fixture;
+  let interruptedVerification = false;
+  const hook = createHook({
+    init(_asyncId, type) {
+      if (interruptedVerification || !new Set(['FSREQPROMISE', 'PROCESSWRAP', 'Timeout']).has(type)) return;
+      interruptedVerification = true;
+      hook.disable();
+      void fixture.handlers.get('SIGTERM')?.();
+    },
+  });
+  fixture = lifecycleGuardianFixture({
+    runnerMode: 'start-marker-success',
+    afterInitialInspect: () => hook.enable(),
+    scenarioJoinTimeoutMs: 100,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(interruptedVerification, true);
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'interrupted');
+    assert.equal(result.interrupted, true);
+    assert.equal(existsSync(markerPath), false);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+  } finally {
+    hook.disable();
+    rmSync(markerPath, { force: true });
+  }
+});
+
+test('phase 9 lifecycle guardian returns only the validated canonical 44-row child handoff', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'row-protocol-success' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.rows.length, 44);
+  assert.equal(Object.isFrozen(result.rows), true);
+  assert.equal(new Set(result.rows.map(row => row.contextId)).size, 44);
+  assert.deepEqual(
+    result.rows.map(row => row.contextId),
+    buildCanonicalScenarioPlan().map(row => row.contextId),
+  );
+  assert.deepEqual(
+    result.rows.map(row => row.group).reduce((counts, group) => ({
+      ...counts, [group]: (counts[group] ?? 0) + 1,
+    }), {}),
+    { 'admission-route': 18, isolation: 10, logout: 10, 'pending-deletion': 6 },
+  );
+});
+
+test('phase 9 lifecycle guardian rejects malformed incomplete duplicate and out-of-order row handoffs', async t => {
+  for (const mode of [
+    'row-extra-field', 'row-duplicate', 'row-out-of-order', 'row-wrong-phase', 'row-early-completion',
+  ]) await t.test(mode, async () => {
+    const fixture = lifecycleGuardianFixture({ runnerMode: mode });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-runner-invalid');
+    assert.equal(Object.hasOwn(result, 'rows'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian executes the exact initially verified bytes after caller paths change', async () => {
+  const temporaryDirectory = mkdtempSync(join(testDirectory, 'fixtures', '.phase9-runner-snapshot-'));
+  const entrypoint = join(temporaryDirectory, 'runner.mjs');
+  const configPath = join(temporaryDirectory, 'runner.json');
+  const replacementMarker = `/tmp/phase9-guardian-replacement-${process.pid}`;
+  rmSync(replacementMarker, { force: true });
+  writeFileSync(entrypoint, readFileSync(guardianChildEntrypoint), { mode: 0o600 });
+  writeFileSync(configPath, '{"mode":"row-protocol-success"}\n', { mode: 0o600 });
+  chmodSync(entrypoint, 0o600);
+  chmodSync(configPath, 0o600);
+  const runnerCommand = {
+    entrypoint,
+    entrypointSha256: sha256File(entrypoint),
+    configFiles: [{ path: configPath, sha256: sha256File(configPath) }],
+  };
+  const fixture = lifecycleGuardianFixture({
+    runnerCommand,
+    preconditionResult: ({ result }) => {
+      writeFileSync(entrypoint, `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(replacementMarker)}, 'reopened');\nprocess.exit(70);\n`, { mode: 0o600 });
+      writeFileSync(configPath, '{"mode":"replacement"}\n', { mode: 0o600 });
+      return result;
+    },
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.rows.length, 44);
+    assert.equal(existsSync(replacementMarker), false);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+    rmSync(replacementMarker, { force: true });
+  }
+});
+
 test('phase 9 lifecycle guardian preservation proof validates exact filesystem object and journal', async t => {
   for (const [name, overrides, field] of [
     ['workspace symlink', { workspaceLstatType: 'symlink' }, 'workspacePreservation'],
@@ -5313,6 +5452,30 @@ test('phase 9 lifecycle guardian snapshots only inert closed runner command data
     assert.equal(fixture.events.includes('fixture:preflight'), false);
   });
 
+  await t.test('trusted child source cannot reference the guardian marker name', async () => {
+    const temporaryDirectory = mkdtempSync(join(testDirectory, 'fixtures', '.phase9-marker-reference-'));
+    const entrypoint = join(temporaryDirectory, 'runner.mjs');
+    writeFileSync(entrypoint, `${readFileSync(guardianChildEntrypoint, 'utf8')}\n// PHASE9_GUARDIAN_RUN_MARKER\n`, {
+      mode: 0o600,
+    });
+    const source = guardianChildCommand('success');
+    const fixture = lifecycleGuardianFixture({
+      runnerCommand: {
+        ...source,
+        entrypoint,
+        entrypointSha256: sha256File(entrypoint),
+      },
+    });
+    try {
+      const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+      assert.equal(result.ok, false);
+      assert.equal(result.category, 'scenario-runner-invalid');
+      assert.equal(fixture.events.includes('fixture:preflight'), false);
+    } finally {
+      rmSync(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
   await t.test('late descriptor replacement cannot change the captured child command', async () => {
     const source = guardianChildCommand('success');
     const command = {
@@ -5326,7 +5489,7 @@ test('phase 9 lifecycle guardian snapshots only inert closed runner command data
     command.entrypointSha256 = '0'.repeat(64);
     command.configFiles.length = 0;
     const result = await guardian.run(fixture.options);
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, true, JSON.stringify(result));
   });
 });
 
@@ -5477,18 +5640,34 @@ test('phase 9 lifecycle guardian launches only a verified repository-owned child
 
 test('phase 9 lifecycle guardian strips Node preload injection from the child environment', async () => {
   const markerPath = `/tmp/phase9-guardian-node-options-${process.pid}`;
+  const environmentMarkerPath = `/tmp/phase9-guardian-preload-env-${process.pid}`;
   const preloadPath = join(testDirectory, 'fixtures', 'phase9-lifecycle-node-options-preload.mjs');
-  const previousNodeOptions = process.env.NODE_OPTIONS;
   rmSync(markerPath, { force: true });
-  process.env.NODE_OPTIONS = `--import=${pathToFileURL(preloadPath).href}`;
-  try {
+  rmSync(environmentMarkerPath, { force: true });
+  if (process.env.PHASE9_PRELOAD_IMPORT_REGRESSION === '1') {
     const fixture = lifecycleGuardianFixture();
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
     assert.equal(result.ok, true);
     assert.equal(existsSync(markerPath), false);
-  } finally {
-    if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS;
-    else process.env.NODE_OPTIONS = previousNodeOptions;
-    rmSync(markerPath, { force: true });
+    assert.equal(existsSync(environmentMarkerPath), false);
+    return;
   }
+  const child = spawnSync(process.execPath, [
+    '--test',
+    '--test-name-pattern=phase 9 lifecycle guardian strips Node preload injection from the child environment',
+    fileURLToPath(import.meta.url),
+  ], {
+    cwd: dirname(testDirectory),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--import=${pathToFileURL(preloadPath).href}`,
+      NODE_PATH: '/tmp/phase9-untrusted-node-path',
+      PHASE9_PRELOAD_IMPORT_REGRESSION: '1',
+    },
+    timeout: 30_000,
+  });
+  assert.equal(child.status, 0, child.stderr || child.stdout);
+  rmSync(markerPath, { force: true });
+  rmSync(environmentMarkerPath, { force: true });
 });

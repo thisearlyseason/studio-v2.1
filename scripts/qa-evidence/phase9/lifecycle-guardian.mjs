@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { execFile, spawn } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 import { chmod, lstat, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual, types as utilTypes } from 'node:util';
@@ -10,8 +10,13 @@ import { assertExactFixtureJournal, validateManifest } from '../../qa-fixtures/m
 import {
   FIXTURE_MANIFEST_VERSION,
   FIXTURE_RESOURCE_COUNTS,
+  REQUIRED_LEDGER_COLUMNS,
+  SCENARIO_GROUP_COUNTS,
+  SCENARIO_TOTALS,
   STAGING_ORIGIN,
   STAGING_PROJECT_ID,
+  validateLedger,
+  validateLedgerRow,
   validateLifecycleResult,
 } from './scenario-contracts.mjs';
 
@@ -33,6 +38,8 @@ const INTRINSIC_GLOBAL_THIS = globalThis;
 const INTRINSIC_IS_PROMISE = utilTypes.isPromise;
 const INTRINSIC_IS_PROXY = utilTypes.isProxy;
 const INTRINSIC_CHILD_SPAWN = spawn;
+const INTRINSIC_CHILD_EXEC_FILE = execFile;
+const INTRINSIC_RANDOM_BYTES = randomBytes;
 const INTRINSIC_PROCESS_KILL = process.kill.bind(process);
 const INTRINSIC_PROCESS_EXEC_PATH = process.execPath;
 const INTRINSIC_PROCESS_PLATFORM = process.platform;
@@ -45,6 +52,11 @@ const RUNNER_STDOUT_LIMIT = 65_536;
 const RUNNER_STDERR_LIMIT = 16_384;
 const RUNNER_LINE_LIMIT = 8_192;
 const RUNNER_SESSION_LIMIT = 100;
+const RUNNER_ENTRYPOINT_LIMIT = 131_072;
+const RUNNER_CONFIG_LIMIT = 65_536;
+const RUNNER_CONFIG_TOTAL_LIMIT = 131_072;
+const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
+const RUN_MARKER_ENV = 'PHASE9_GUARDIAN_RUN_MARKER';
 const PROCESS_EVENTS = Object.freeze(['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']);
 const ORDERED_STATES = Object.freeze([
   'uninitialized',
@@ -61,6 +73,62 @@ const ORDERED_STATES = Object.freeze([
   'workspace-removed',
   'disarmed',
 ]);
+
+const ADMISSION_ALIASES = Object.freeze([
+  'qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-league-creator', 'qa-school-admin',
+  'qa-superadmin', 'qa-fake-superadmin', 'qa-missing-profile', 'qa-no-team',
+]);
+const ISOLATION_ALIASES = Object.freeze([
+  'qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-parent-b', 'qa-adult-player-b',
+]);
+const LOGOUT_ALIASES = Object.freeze([
+  'qa-parent-a', 'qa-adult-player-a', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin',
+]);
+const VIEWPORT_CONTEXTS = Object.freeze([
+  Object.freeze({ name: 'mobile', value: '390x844' }),
+  Object.freeze({ name: 'desktop', value: '1440x900' }),
+]);
+
+function buildCanonicalRowContracts() {
+  const all = [];
+  const before = [];
+  const after = [];
+  const add = (phase, contract) => {
+    const frozen = Object.freeze({ phase, ...contract });
+    all.push(frozen);
+    (phase === 'before-transition' ? before : after).push(frozen);
+  };
+  for (const viewport of VIEWPORT_CONTEXTS) {
+    for (const alias of ADMISSION_ALIASES) add('before-transition', {
+      contextId: `admission-route-${alias}-${viewport.name}`,
+      group: 'admission-route', alias, viewport: viewport.value, startState: 'fresh-context',
+    });
+    for (const alias of ISOLATION_ALIASES) add('before-transition', {
+      contextId: `isolation-${alias}-${viewport.name}`,
+      group: 'isolation', alias, viewport: viewport.value, startState: 'authenticated',
+    });
+    for (const alias of LOGOUT_ALIASES) add('before-transition', {
+      contextId: `logout-${alias}-${viewport.name}`,
+      group: 'logout', alias, viewport: viewport.value, startState: 'authenticated-two-tab',
+    });
+    add('before-transition', {
+      contextId: `pending-deletion-active-baseline-${viewport.name}`,
+      group: 'pending-deletion', alias: 'qa-pending-delete', viewport: viewport.value, startState: 'active',
+    });
+    for (const scenario of ['stale-session', 'fresh-login']) add('after-transition', {
+      contextId: `pending-deletion-${scenario}-${viewport.name}`,
+      group: 'pending-deletion', alias: 'qa-pending-delete', viewport: viewport.value,
+      startState: 'pending_deletion',
+    });
+  }
+  return Object.freeze({
+    all: Object.freeze(all),
+    'before-transition': Object.freeze(before),
+    'after-transition': Object.freeze(after),
+  });
+}
+
+const CANONICAL_ROW_CONTRACTS = buildCanonicalRowContracts();
 
 class GuardianFailure extends Error {
   constructor(category) {
@@ -731,6 +799,14 @@ function pathInside(root, candidate) {
     && !isAbsolute(candidateRelative);
 }
 
+function exactUtf8(contents, category) {
+  const text = contents.toString('utf8');
+  if (text.includes('\u0000') || !Buffer.from(text, 'utf8').equals(contents)) {
+    throw new GuardianFailure(category);
+  }
+  return text;
+}
+
 async function verifyRepositoryFile(root, file, expectedSha256, maximumBytes) {
   const category = 'scenario-runner-invalid';
   if (!pathInside(root, file)) throw new GuardianFailure(category);
@@ -744,6 +820,7 @@ async function verifyRepositoryFile(root, file, expectedSha256, maximumBytes) {
   } catch {
     throw new GuardianFailure(category);
   }
+  const actualSha256 = createHash('sha256').update(contents).digest('hex');
   if (
     canonical !== file
     || !pathInside(root, canonical)
@@ -755,8 +832,13 @@ async function verifyRepositoryFile(root, file, expectedSha256, maximumBytes) {
     || metadata.size > maximumBytes
     || !Buffer.isBuffer(contents)
     || contents.length !== metadata.size
-    || createHash('sha256').update(contents).digest('hex') !== expectedSha256
+    || actualSha256 !== expectedSha256
   ) throw new GuardianFailure(category);
+  return Object.freeze({
+    sha256: actualSha256,
+    byteLength: contents.length,
+    text: exactUtf8(contents, category),
+  });
 }
 
 async function verifyRunnerCommand(command, repositoryRoot) {
@@ -768,11 +850,39 @@ async function verifyRunnerCommand(command, repositoryRoot) {
     throw new GuardianFailure(category);
   }
   if (!isAbsolute(repositoryRoot) || root !== repositoryRoot) throw new GuardianFailure(category);
-  await verifyRepositoryFile(root, command.entrypoint, command.entrypointSha256, 524_288);
+  const entrypoint = await verifyRepositoryFile(
+    root, command.entrypoint, command.entrypointSha256, RUNNER_ENTRYPOINT_LIMIT,
+  );
+  if (entrypoint.text.includes(RUN_MARKER_ENV)) throw new GuardianFailure(category);
+  const configFiles = [];
+  let configBytes = 0;
   for (const config of command.configFiles) {
-    await verifyRepositoryFile(root, config.path, config.sha256, 65_536);
+    const verified = await verifyRepositoryFile(root, config.path, config.sha256, RUNNER_CONFIG_LIMIT);
+    if (verified.text.includes(RUN_MARKER_ENV)) throw new GuardianFailure(category);
+    configBytes += verified.byteLength;
+    if (configBytes > RUNNER_CONFIG_TOTAL_LIMIT) throw new GuardianFailure(category);
+    configFiles.push(Object.freeze({
+      contentsBase64: Buffer.from(verified.text, 'utf8').toString('base64'),
+      sha256: verified.sha256,
+    }));
   }
-  return root;
+  return Object.freeze({
+    repositoryRoot: root,
+    entrypointSource: entrypoint.text,
+    entrypointSha256: entrypoint.sha256,
+    configFiles: Object.freeze(configFiles),
+  });
+}
+
+function verifyRunnerSnapshot(snapshot) {
+  const category = 'scenario-runner-invalid';
+  if (
+    createHash('sha256').update(snapshot.entrypointSource, 'utf8').digest('hex') !== snapshot.entrypointSha256
+    || snapshot.configFiles.some(config => (
+      createHash('sha256').update(Buffer.from(config.contentsBase64, 'base64')).digest('hex') !== config.sha256
+    ))
+  ) throw new GuardianFailure(category);
+  return snapshot;
 }
 
 function requireRunnerMessage(value, expectedKeys) {
@@ -793,6 +903,142 @@ function requireRunnerSessions(value) {
     throw new GuardianFailure('scenario-runner-invalid');
   }
   return sessions;
+}
+
+function requirePhaseRow(value, phase, index) {
+  const expected = CANONICAL_ROW_CONTRACTS[phase]?.[index];
+  if (!expected) throw new GuardianFailure('scenario-runner-invalid');
+  let row;
+  try {
+    row = validateLedgerRow(value);
+  } catch {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  for (const field of ['contextId', 'group', 'alias', 'viewport', 'startState']) {
+    if (row[field] !== expected[field]) throw new GuardianFailure('scenario-runner-invalid');
+  }
+  return row;
+}
+
+function validateCompleteRows(rowsByContext) {
+  if (rowsByContext.size !== SCENARIO_TOTALS.total) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  const rows = CANONICAL_ROW_CONTRACTS.all.map(contract => rowsByContext.get(contract.contextId));
+  if (rows.some(row => !row)) throw new GuardianFailure('scenario-runner-invalid');
+  try {
+    validateLedger(rows, { groupCounts: SCENARIO_GROUP_COUNTS, totals: SCENARIO_TOTALS });
+  } catch {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  return Object.freeze(rows.map(row => Object.freeze(
+    Object.fromEntries(REQUIRED_LEDGER_COLUMNS.map(column => [column, row[column]])),
+  )));
+}
+
+function auditMarkedProcesses(runMarker) {
+  const category = 'scenario-closure-failed';
+  if (typeof runMarker !== 'string' || !/^[0-9a-f]{64}$/.test(runMarker)) {
+    return new INTRINSIC_PROMISE((_resolve, reject) => reject(new GuardianFailure(category)));
+  }
+  const token = `${RUN_MARKER_ENV}=${runMarker}`;
+  const args = INTRINSIC_PROCESS_PLATFORM === 'linux'
+    ? ['eww', '-eo', 'pid=,args=']
+    : ['eww', '-axo', 'pid=,command='];
+  return new INTRINSIC_PROMISE((resolveAudit, rejectAudit) => {
+    INTRINSIC_CHILD_EXEC_FILE('/bin/ps', args, {
+      encoding: 'utf8',
+      env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+      maxBuffer: PROCESS_AUDIT_OUTPUT_LIMIT,
+      timeout: 5_000,
+      windowsHide: true,
+    }, (error, stdout) => {
+      if (error || typeof stdout !== 'string') {
+        rejectAudit(new GuardianFailure(category));
+        return;
+      }
+      const pids = [];
+      for (const line of stdout.split('\n')) {
+        if (!line.split(/\s+/).includes(token)) continue;
+        const match = /^\s*([1-9][0-9]*)\s/.exec(line);
+        const pid = Number(match?.[1]);
+        if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) {
+          rejectAudit(new GuardianFailure(category));
+          return;
+        }
+        pids.push(pid);
+      }
+      const unique = [...new Set(pids)].sort((left, right) => left - right);
+      resolveAudit(Object.freeze(unique));
+    });
+  });
+}
+
+function signalMarkedProcesses(runMarker, signal) {
+  return new INTRINSIC_PROMISE((resolveSignal, rejectSignal) => {
+    consumeNativePromise(
+      auditMarkedProcesses(runMarker),
+      pids => {
+        let ok = true;
+        for (const pid of pids) {
+          try {
+            INTRINSIC_PROCESS_KILL(pid, signal);
+          } catch (error) {
+            if (error?.code !== 'ESRCH') ok = false;
+          }
+        }
+        resolveSignal(Object.freeze({ ok, pids }));
+      },
+      () => rejectSignal(new GuardianFailure('scenario-closure-failed')),
+      'scenario-closure-failed',
+    );
+  });
+}
+
+function waitForMarkedProcessesGone(runMarker, timeoutMs) {
+  return new INTRINSIC_PROMISE(resolveWait => {
+    const startedAt = Date.now();
+    const inspect = () => {
+      consumeNativePromise(
+        auditMarkedProcesses(runMarker),
+        pids => {
+          if (pids.length === 0) {
+            resolveWait(true);
+            return;
+          }
+          if (Date.now() - startedAt >= timeoutMs) {
+            resolveWait(false);
+            return;
+          }
+          INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_TIMEOUT, INTRINSIC_GLOBAL_THIS, [inspect, 10]);
+        },
+        () => resolveWait(false),
+        'scenario-closure-failed',
+      );
+    };
+    inspect();
+  });
+}
+
+async function terminateMarkedProcesses(runMarker, timeoutMs) {
+  let initial;
+  try {
+    initial = await auditMarkedProcesses(runMarker);
+  } catch {
+    return Object.freeze({ cleared: false, discovered: false });
+  }
+  if (initial.length === 0) return Object.freeze({ cleared: true, discovered: false });
+  const soft = await signalMarkedProcesses(runMarker, 'SIGTERM');
+  if (!soft.ok) return Object.freeze({ cleared: false, discovered: true });
+  if (await waitForMarkedProcessesGone(runMarker, timeoutMs)) {
+    return Object.freeze({ cleared: true, discovered: true });
+  }
+  const hard = await signalMarkedProcesses(runMarker, 'SIGKILL');
+  if (!hard.ok) return Object.freeze({ cleared: false, discovered: true });
+  return Object.freeze({
+    cleared: await waitForMarkedProcessesGone(runMarker, timeoutMs),
+    discovered: true,
+  });
 }
 
 function processGroupAlive(handle) {
@@ -818,22 +1064,24 @@ function signalProcessGroup(handle, signal) {
   }
 }
 
-function spawnRunnerChild({ command, phase, privateContext, repositoryRoot, onOwnership }) {
+function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRoot, runMarker, onOwnership }) {
   const detached = INTRINSIC_PROCESS_PLATFORM !== 'win32';
   const argv = [
-    command.entrypoint,
+    '--input-type=module',
+    '--eval', commandSnapshot.entrypointSource,
+    '--',
     '--phase', phase,
     '--workspace', privateContext.workspacePath,
     '--manifest', privateContext.manifestPath,
     '--credentials', privateContext.credentialPath,
-    ...command.configFiles.flatMap(config => ['--config', config.path]),
+    ...commandSnapshot.configFiles.flatMap(config => ['--config-base64', config.contentsBase64]),
   ];
   let child;
   try {
     child = INTRINSIC_CHILD_SPAWN(INTRINSIC_PROCESS_EXEC_PATH, argv, {
       cwd: repositoryRoot,
       detached,
-      env: INTRINSIC_CHILD_ENV,
+      env: { ...INTRINSIC_CHILD_ENV, [RUN_MARKER_ENV]: runMarker },
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -851,6 +1099,7 @@ function spawnRunnerChild({ command, phase, privateContext, repositoryRoot, onOw
   let stdoutBuffer = '';
   let ownership = null;
   let terminal = null;
+  const phaseRows = [];
   let protocolFailure = null;
   let settleCompletion;
   let rejectCompletion;
@@ -888,18 +1137,38 @@ function spawnRunnerChild({ command, phase, privateContext, repositoryRoot, onOw
       onOwnership(ownership);
       return;
     }
+    if (message?.type === 'row') {
+      requireRunnerMessage(message, ['index', 'phase', 'row', 'type', 'version']);
+      if (
+        !ownership
+        || terminal
+        || message.version !== 1
+        || message.phase !== phase
+        || message.index !== phaseRows.length
+      ) throw new GuardianFailure('scenario-runner-invalid');
+      phaseRows.push(requirePhaseRow(message.row, phase, message.index));
+      return;
+    }
     if (message?.type === 'completion') {
-      requireRunnerMessage(message, ['browserSessions', 'ok', 'phase', 'type', 'version']);
+      requireRunnerMessage(message, ['browserSessions', 'ok', 'phase', 'rowCount', 'type', 'version']);
+      const expectedRows = CANONICAL_ROW_CONTRACTS[phase];
       if (
         !ownership
         || terminal
         || message.version !== 1
         || message.phase !== phase
         || typeof message.ok !== 'boolean'
+        || !Number.isSafeInteger(message.rowCount)
+        || message.rowCount !== expectedRows.length
+        || phaseRows.length !== expectedRows.length
       ) throw new GuardianFailure('scenario-runner-invalid');
       const sessions = requireRunnerSessions(message.browserSessions);
       if (!isDeepStrictEqual(sessions, ownership)) throw new GuardianFailure('scenario-runner-invalid');
-      terminal = Object.freeze({ ok: message.ok, browserSessions: Object.freeze(sessions) });
+      terminal = Object.freeze({
+        ok: message.ok,
+        browserSessions: Object.freeze(sessions),
+        rows: Object.freeze([...phaseRows]),
+      });
       settleCompletion(terminal);
       return;
     }
@@ -911,9 +1180,6 @@ function spawnRunnerChild({ command, phase, privateContext, repositoryRoot, onOw
     stdoutBytes += chunk.length;
     if (stdoutBytes > RUNNER_STDOUT_LIMIT) return failProtocol(new GuardianFailure('scenario-runner-invalid'));
     stdoutBuffer += chunk.toString('utf8');
-    if (Buffer.byteLength(stdoutBuffer, 'utf8') > RUNNER_LINE_LIMIT) {
-      return failProtocol(new GuardianFailure('scenario-runner-invalid'));
-    }
     let newline = stdoutBuffer.indexOf('\n');
     while (newline !== -1) {
       const line = stdoutBuffer.slice(0, newline);
@@ -925,6 +1191,9 @@ function spawnRunnerChild({ command, phase, privateContext, repositoryRoot, onOw
         return;
       }
       newline = stdoutBuffer.indexOf('\n');
+    }
+    if (Buffer.byteLength(stdoutBuffer, 'utf8') > RUNNER_LINE_LIMIT) {
+      failProtocol(new GuardianFailure('scenario-runner-invalid'));
     }
   });
   child.stderr.on('data', chunk => {
@@ -948,6 +1217,7 @@ function spawnRunnerChild({ command, phase, privateContext, repositoryRoot, onOw
     get terminal() { return terminal; },
     phase,
     pid: child.pid,
+    runMarker,
   });
 }
 
@@ -1084,7 +1354,12 @@ export function createLifecycleGuardian({
   let closureCertified = false;
   const ownedBrowserSessions = new Set();
   let activeScenario = null;
+  let startupGeneration = null;
+  let nextStartupGeneration = 0;
   let verifiedRepositoryRoot = null;
+  let verifiedRunnerSnapshot = null;
+  const rowsByContext = new Map();
+  let validatedRows = null;
   const handlers = new Map();
   let operationTail = new INTRINSIC_PROMISE(resolveOperation => resolveOperation());
 
@@ -1289,18 +1564,57 @@ export function createLifecycleGuardian({
       || handle.protocolFailure
       || !handle.terminal
     ) return false;
-    return waitForGroupGone(handle);
+    if (!(await waitForGroupGone(handle))) return false;
+    const marked = await terminateMarkedProcesses(
+      handle.runMarker, Math.max(scenarioJoinTimeoutMs, 500),
+    );
+    return marked.cleared && !marked.discovered;
   };
 
   const requestScenarioTermination = async (handle, force) => {
     if (!signalProcessGroup(handle, force ? 'SIGKILL' : 'SIGTERM')) return false;
     let outcome;
     try { outcome = await bounded(handle.closed); } catch { return false; }
-    if (outcome.status !== 'fulfilled') return false;
-    return waitForGroupGone(handle);
+    if (outcome.status !== 'fulfilled' || !(await waitForGroupGone(handle))) return false;
+    const marked = await terminateMarkedProcesses(
+      handle.runMarker, Math.max(scenarioJoinTimeoutMs, 500),
+    );
+    return marked.cleared;
+  };
+
+  const beginStartupGeneration = phase => {
+    if (startupGeneration) throw new GuardianFailure('scenario-runner-invalid');
+    let settle;
+    const settled = new INTRINSIC_PROMISE(resolveSettled => { settle = resolveSettled; });
+    const generation = {
+      cancelled: false,
+      id: ++nextStartupGeneration,
+      phase,
+      settle,
+      settled,
+    };
+    startupGeneration = generation;
+    return generation;
+  };
+
+  const finishStartupGeneration = generation => {
+    generation.settle();
+    if (startupGeneration === generation) startupGeneration = null;
+  };
+
+  const cancelStartupGeneration = async () => {
+    const generation = startupGeneration;
+    if (!generation) return true;
+    generation.cancelled = true;
+    let outcome;
+    try { outcome = await bounded(generation.settled); } catch { return false; }
+    return outcome.status === 'fulfilled';
   };
 
   const stopActiveScenario = async () => {
+    if (!(await cancelStartupGeneration())) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
     const handle = activeScenario;
     if (!handle) return;
     if (await requestScenarioTermination(handle, false)) {
@@ -1458,15 +1772,27 @@ export function createLifecycleGuardian({
   };
 
   const runScenarioPhase = async (phase, privateContext) => {
-    if (activeScenario) throw new GuardianFailure('scenario-runner-invalid');
-    await verifyRunnerCommand(ownedRunnerCommand, verifiedRepositoryRoot);
+    if (activeScenario || startupGeneration || !verifiedRunnerSnapshot) {
+      throw new GuardianFailure('scenario-runner-invalid');
+    }
+    const generation = beginStartupGeneration(phase);
     let handle;
     try {
+      const runMarker = INTRINSIC_RANDOM_BYTES(32).toString('hex');
+      const collisions = await auditMarkedProcesses(runMarker);
+      if (collisions.length !== 0) throw new GuardianFailure('scenario-runner-invalid');
+      verifyRunnerSnapshot(verifiedRunnerSnapshot);
+      if (
+        interrupted
+        || generation.cancelled
+        || startupGeneration !== generation
+      ) throw new GuardianFailure('interrupted');
       handle = spawnRunnerChild({
-        command: ownedRunnerCommand,
+        commandSnapshot: verifiedRunnerSnapshot,
         phase,
         privateContext,
         repositoryRoot: verifiedRepositoryRoot,
+        runMarker,
         onOwnership(sessions) {
           for (const session of sessions) {
             if (ownedBrowserSessions.has(session)) {
@@ -1479,6 +1805,8 @@ export function createLifecycleGuardian({
     } catch (error) {
       if (error instanceof GuardianFailure) throw error;
       throw new GuardianFailure('scenario-runner-invalid');
+    } finally {
+      finishStartupGeneration(generation);
     }
     activeScenario = handle;
     const completed = await new INTRINSIC_PROMISE((resolveCompletion, rejectCompletion) => {
@@ -1499,9 +1827,11 @@ export function createLifecycleGuardian({
         rejectCompletion(error);
       }
     });
-    if (!completed || completed.ok !== true) throw new GuardianFailure('scenario-failed');
+    if (!completed) throw new GuardianFailure('scenario-failed');
     if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
     activeScenario = null;
+    if (completed.ok !== true) throw new GuardianFailure('scenario-failed');
+    return completed.rows;
   };
 
   let currentOptions = null;
@@ -1515,7 +1845,8 @@ export function createLifecycleGuardian({
     running = true;
     try {
       currentOptions = exactOptions(rawOptions);
-      verifiedRepositoryRoot = await verifyRunnerCommand(ownedRunnerCommand, repositoryRoot);
+      verifiedRunnerSnapshot = await verifyRunnerCommand(ownedRunnerCommand, repositoryRoot);
+      verifiedRepositoryRoot = verifiedRunnerSnapshot.repositoryRoot;
       registerHandlers();
       transition('guarded');
 
@@ -1580,14 +1911,23 @@ export function createLifecycleGuardian({
         manifestPath,
         credentialPath,
       });
-      await runScenarioPhase('before-transition', privateContext);
+      const beforeRows = await runScenarioPhase('before-transition', privateContext);
+      for (const row of beforeRows) {
+        if (rowsByContext.has(row.contextId)) throw new GuardianFailure('scenario-runner-invalid');
+        rowsByContext.set(row.contextId, row);
+      }
       checkInterrupted();
       pendingTransitionAuthorized = true;
       await runFixture('transition', currentOptions, 'pending-deletion');
       checkInterrupted();
       await loadExactManifest('pending_deletion');
       checkInterrupted();
-      await runScenarioPhase('after-transition', privateContext);
+      const afterRows = await runScenarioPhase('after-transition', privateContext);
+      for (const row of afterRows) {
+        if (rowsByContext.has(row.contextId)) throw new GuardianFailure('scenario-runner-invalid');
+        rowsByContext.set(row.contextId, row);
+      }
+      validatedRows = validateCompleteRows(rowsByContext);
       checkInterrupted();
 
       await closeOwnedBrowsers();
@@ -1640,6 +1980,7 @@ export function createLifecycleGuardian({
         history: [...history],
         browserClosureCertified: true,
         closureCertified: true,
+        rows: validatedRows,
       });
       return result;
     } catch (error) {
