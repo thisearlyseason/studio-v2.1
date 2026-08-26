@@ -307,6 +307,9 @@ export async function runLogoutScenario({ client, session, freshSession, context
   if (isolatedSession === sharedSession) throw new Error('freshSession must be distinct from the shared logout session.');
   const stages = [];
   for (const name of REQUIRED_LOGOUT_STAGES) {
+    if (actions?.selectStage !== undefined) {
+      await requireFunction(actions.selectStage, 'selectStage')(name);
+    }
     stages.push({
       name,
       window: await observe({

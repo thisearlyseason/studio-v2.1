@@ -3,7 +3,7 @@ import { createHook } from 'node:async_hooks';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -47,6 +47,10 @@ import {
   createLifecycleGuardian,
   runGuardedLifecycle,
 } from '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs';
+
+const phase9EvidenceDirectorySuffix = join(
+  'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities',
+);
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const guardianChildEntrypoint = join(testDirectory, 'fixtures', 'phase9-lifecycle-child.mjs');
@@ -5670,4 +5674,133 @@ test('phase 9 lifecycle guardian strips Node preload injection from the child en
   assert.equal(child.status, 0, child.stderr || child.stdout);
   rmSync(markerPath, { force: true });
   rmSync(environmentMarkerPath, { force: true });
+});
+
+function task5CanonicalRows() {
+  return buildCanonicalScenarioPlan().map(item => ({
+    contextId: item.contextId, group: item.group, alias: item.alias, viewport: item.viewport,
+    startState: item.startState, startUrl: 'about:blank', action: 'canonical audited action',
+    expectedResult: 'canonical expected result', finalUrl: `${STAGING_ORIGIN}/login`, visibleState: 'Sign In',
+    sessionPresent: false, protectedRequests: 0, protectedListenerStarts: 0,
+    relevantHttpDataResult: 'none', pageErrors: 0, appConsoleErrors: 0,
+    unexpectedRequestFailures: 0, overflow: 0, result: 'PASS',
+  }));
+}
+
+const task5Lifecycle = Object.freeze({
+  ok: true, state: 'disarmed',
+  history: Object.freeze([
+    'uninitialized', 'guarded', 'preflighted', 'seeded', 'inspected', 'browsers-closed',
+    'preclean-inspected', 'cleaned', 'clean-inspected', 'independently-absent',
+    'credential-removed', 'workspace-removed', 'disarmed',
+  ]),
+  browserClosureCertified: true, closureCertified: true,
+});
+const task5Deployment = Object.freeze({
+  projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN,
+  deployedSha: '0123456789abcdef0123456789abcdef01234567',
+  stagingRunId: '32856314233', pullRequestNumber: 41,
+});
+
+test('phase 9 evidence writer atomically writes only the four approved sanitized Markdown files', async () => {
+  const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-evidence-writer-test.');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
+  const { write } = createPhase9EvidenceWriter({ repositoryRoot: root });
+  try {
+    const result = await write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    });
+    assert.deepEqual(result.files, ['00-environment.md', '01-fixture-lifecycle.md', '03-browser-ledger.md', '04-cleanup.md']);
+    assert.deepEqual(readdirSync(outputDirectory), result.files);
+    assert.deepEqual(Array.from(new Set(result.files.map(name => statSync(join(outputDirectory, name)).mode & 0o777))), [0o644]);
+    assert.match(readFileSync(join(outputDirectory, '03-browser-ledger.md'), 'utf8'), /44\/44/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 evidence writer rejects incomplete, duplicate, unsafe, and inconsistent evidence before any write', async () => {
+  const { createPhase9EvidenceWriter, writePhase9Evidence } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-evidence-writer-reject.');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
+  const { write } = createPhase9EvidenceWriter({ repositoryRoot: root });
+  const base = { lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory };
+  try {
+    await assert.rejects(write({ ...base, rows: [base.rows[0], ...base.rows] }), /duplicate|arithmetic/i);
+    await assert.rejects(write({
+      ...base, rows: base.rows.map((row, index) => index ? row : { ...row, visibleState: 'token=raw-secret' }),
+    }), /unsafe|sensitive/i);
+    await assert.rejects(write({ ...base, deployment: { ...base.deployment, origin: 'https://example.invalid' } }), /deployment/i);
+    await assert.rejects(write({ ...base, outputDirectory: root }), /evidence directory/i);
+    await assert.rejects(writePhase9Evidence(base), /evidence directory/i);
+    assert.deepEqual(readdirSync(outputDirectory), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 evidence CLI dry-run builds the exact inert 44-row plan and pinned child descriptor', () => {
+  const cliPath = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'cli.mjs');
+  const result = spawnSync(process.execPath, [cliPath, 'dry-run'], { encoding: 'utf8', timeout: 30_000 });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual(output, {
+    ok: true, command: 'dry-run', network: false, firebase: false, browserNavigation: false,
+    projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN, rows: 44,
+    beforeTransition: 40, afterTransition: 4, childSha256: output.childSha256,
+  });
+  assert.match(output.childSha256, /^[0-9a-f]{64}$/);
+});
+
+test('phase 9 evidence CLI hosted admission rejects missing explicit staging proof without side effects', () => {
+  const cliPath = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'cli.mjs');
+  const result = spawnSync(process.execPath, [cliPath, 'hosted'], { encoding: 'utf8', timeout: 30_000 });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /explicit staging|--staging/i);
+});
+
+test('phase 9 evidence CLI pins the reviewed self-contained child and one exact config artifact', async () => {
+  const { buildRunnerCommand } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  const descriptor = await buildRunnerCommand();
+  assert.deepEqual(Object.keys(descriptor).sort(), ['configFiles', 'entrypoint', 'entrypointSha256']);
+  assert.equal(descriptor.entrypoint, join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs'));
+  assert.equal(descriptor.entrypointSha256, sha256File(descriptor.entrypoint));
+  assert.equal(readFileSync(descriptor.entrypoint).byteLength <= 131_072, true);
+  assert.equal(descriptor.configFiles.length, 1);
+  assert.equal(descriptor.configFiles[0].sha256, sha256File(descriptor.configFiles[0].path));
+  const source = readFileSync(descriptor.entrypoint, 'utf8');
+  const specifiers = [...source.matchAll(/(?:\bfrom\s+|\bimport\()\s*["']([^"']+)["']/g)].map(match => match[1]);
+  assert.equal(specifiers.every(specifier => specifier.startsWith('node:')), true);
+  assert.doesNotMatch(source, /PHASE9_GUARDIAN_RUN_MARKER|NODE_OPTIONS|NODE_PATH/);
+});
+
+test('phase 9 evidence child selects each logout tab before the action window mark', async () => {
+  const login = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const client = createScriptedScenarioClient([...REQUIRED_LOGOUT_STAGES.map(() => login), login]);
+  const events = [];
+  const capture = client.captureSignalWindow.bind(client);
+  client.captureSignalWindow = async request => {
+    events.push(`mark:${request.stage}`);
+    return capture({
+      ...request,
+      action: async () => { events.push(`action:${request.stage}`); await request.action(); },
+    });
+  };
+  const actions = Object.fromEntries(REQUIRED_LOGOUT_STAGES.map(name => [name, async () => {}]));
+  Object.assign(actions, {
+    selectStage: async name => events.push(`select:${name}`),
+    waitForLogin: async () => {}, freshUnauthenticated: async () => {}, waitForFreshLogin: async () => {},
+  });
+  await runLogoutScenario({
+    client, session: 'logout-shared', freshSession: 'logout-fresh',
+    context: scenarioContext({ contextId: 'logout-tab-order' }), actions,
+  });
+  assert.deepEqual(events.slice(0, 12), REQUIRED_LOGOUT_STAGES.flatMap(name => [
+    `select:${name}`, `mark:${name}`, `action:${name}`,
+  ]));
 });

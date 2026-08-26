@@ -22,6 +22,7 @@
     "qa:fixtures:seed": "node scripts/qa-fixtures/cli.mjs seed",
     "qa:fixtures:inspect": "node scripts/qa-fixtures/cli.mjs inspect",
     "qa:fixtures:cleanup": "node scripts/qa-fixtures/cli.mjs cleanup",
+    "qa:evidence:phase9": "node scripts/qa-evidence/phase9/cli.mjs",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:rules && npm run build && npm --prefix functions run build"
   },
   "dependencies": {
