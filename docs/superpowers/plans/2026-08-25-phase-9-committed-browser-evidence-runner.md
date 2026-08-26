@@ -247,10 +247,13 @@ git commit -m "feat: add phase 9 browser evidence scenarios"
 **Files:**
 - Create: `scripts/qa-evidence/phase9/lifecycle-guardian.mjs`
 - Modify: `tests/phase9-browser-evidence.test.mjs`
+- Create: `tests/fixtures/phase9-lifecycle-child.mjs`
+- Create: `tests/fixtures/phase9-lifecycle-child-*.json`
 
 **Interfaces:**
-- Produces: `createLifecycleGuardian({ fixtureCommand, browserClient, adapterFactory, filesystem, processHooks })`, `runGuardedLifecycle(options)`.
+- Produces: `createLifecycleGuardian({ fixtureCommand, browserClient, adapterFactory, filesystem, processHooks, runnerCommand })`, `runGuardedLifecycle(options)`.
 - Consumes: Task 1 lifecycle contracts, Task 2 browser closure, existing fixture CLI/lifecycle helpers.
+- `runnerCommand` is exact inert data only: a repository-owned absolute entrypoint plus pinned repository-owned config files. No runner callback/factory/handle, injected spawn, or same-process scenario code is accepted.
 
 - [ ] **Step 1: Write failing guardian state-machine tests**
 
@@ -264,6 +267,8 @@ credential-removed → workspace-removed → disarmed
 
 Test success and failure injection at every boundary. In particular, reject malformed JSON, command nonzero, `ok:false`, drift, retention/failure, incomplete expected-absence proof, browser close failure, nonempty browser list, and credential/workspace removal uncertainty. Require the manifest/workspace to remain available whenever closure is uncertain.
 
+Use actual repository test child entrypoints for the runner boundary. Require bounded closed NDJSON ownership/completion, exact exit and process-group absence, soft termination plus hard-kill escalation, and independent browser inventory. Prove child mutations of Promise/Object/Array/Reflect/timers/prototypes cannot change the guardian; forged closure, hidden browser state, a surviving descendant, hang/resume/late-write, malformed messages, and stdio overflow must fail closed.
+
 - [ ] **Step 2: Run Task 4 RED**
 
 ```bash
@@ -274,7 +279,7 @@ Expected: FAIL because the guardian does not exist.
 
 - [ ] **Step 3: Implement the guardian state machine**
 
-Register process handlers before mutation. Execute fixture commands through an argument-array adapter and parse their JSON with Task 1 validators. Keep cleanup idempotent and exact-manifest-only. Close browsers and prove the returned session list is empty before cleanup certification. Initialize a separate Firebase adapter for the complete 20 UID/82 path/expected-absence probe. Only certified closure may call credential and workspace removal, prove absence, and disarm.
+Register process handlers before mutation. Execute fixture commands through an argument-array adapter and parse their JSON with Task 1 validators. Snapshot and verify the inert runner descriptor, then use only the guardian's fixed internal Node spawn to run each scenario phase in its own OS process group. Preserve the module-initialization ADC/runtime environment but strip `NODE_OPTIONS` and `NODE_PATH` so unpinned preload/search paths cannot add child code. Bound and validate child stdio before parsing, derive closure from exact child exit plus group absence, and join/kill the group before browser or fixture cleanup. Keep cleanup idempotent and exact-manifest-only. Close only reported owned browser sessions and prove an independently returned browser list is empty before cleanup certification. Initialize a separate Firebase adapter for the complete 20 UID/82 path/expected-absence probe. Only certified closure may call credential and workspace removal, prove absence, and disarm.
 
 Errors must be fixed, sanitized categories. Do not include paths, IDs, provider error strings, or credentials.
 
@@ -300,14 +305,16 @@ git commit -m "feat: add fail-closed phase 9 lifecycle guardian"
 
 **Files:**
 - Create: `scripts/qa-evidence/phase9/evidence-writer.mjs`
+- Create: `scripts/qa-evidence/phase9/child-runner.mjs`
 - Create: `scripts/qa-evidence/phase9/cli.mjs`
 - Modify: `package.json`
 - Modify: `tests/phase9-browser-evidence.test.mjs`
 - Modify: `.superpowers/sdd/2026-08-25-phase-9-core-identity-authorization-verification/task-7-report.md`
 
 **Interfaces:**
-- Produces: `writePhase9Evidence({ lifecycle, rows, deployment, outputDirectory })`; command `npm run qa:evidence:phase9 -- ...`.
+- Produces: `writePhase9Evidence({ lifecycle, rows, deployment, outputDirectory })`; committed real child-process scenario entrypoint; command `npm run qa:evidence:phase9 -- ...`.
 - Consumes: Tasks 1-4 only; CLI contains wiring, not duplicate policy.
+- The CLI pins and supplies the real child entrypoint/config descriptor required by Task 4; it cannot restore the removed callback/factory/spawn seam.
 
 - [ ] **Step 1: Write failing evidence and CLI tests**
 

@@ -1,5 +1,7 @@
-import { chmod, lstat, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { chmod, lstat, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual, types as utilTypes } from 'node:util';
 
 import { removeCredentialFile } from '../../qa-fixtures/lifecycle.mjs';
@@ -25,14 +27,24 @@ const INTRINSIC_PROMISE_SPECIES_DESCRIPTOR = Object.getOwnPropertyDescriptor(
 const INTRINSIC_REFLECT_APPLY = Reflect.apply;
 const INTRINSIC_OBJECT_GET_PROTOTYPE_OF = Object.getPrototypeOf;
 const INTRINSIC_OBJECT_GET_OWN_PROPERTY_DESCRIPTOR = Object.getOwnPropertyDescriptor;
-const INTRINSIC_FUNCTION_BIND = Function.prototype.bind;
 const INTRINSIC_SET_TIMEOUT = globalThis.setTimeout;
 const INTRINSIC_CLEAR_TIMEOUT = globalThis.clearTimeout;
 const INTRINSIC_GLOBAL_THIS = globalThis;
 const INTRINSIC_IS_PROMISE = utilTypes.isPromise;
 const INTRINSIC_IS_PROXY = utilTypes.isProxy;
+const INTRINSIC_CHILD_SPAWN = spawn;
+const INTRINSIC_PROCESS_KILL = process.kill.bind(process);
+const INTRINSIC_PROCESS_EXEC_PATH = process.execPath;
+const INTRINSIC_PROCESS_PLATFORM = process.platform;
+const INTRINSIC_CHILD_ENV = Object.freeze(Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !new Set(['NODE_OPTIONS', 'NODE_PATH']).has(name)),
+));
 
 const WORKSPACE_PREFIX = '/tmp/phase9-core-identities.';
+const RUNNER_STDOUT_LIMIT = 65_536;
+const RUNNER_STDERR_LIMIT = 16_384;
+const RUNNER_LINE_LIMIT = 8_192;
+const RUNNER_SESSION_LIMIT = 100;
 const PROCESS_EVENTS = Object.freeze(['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']);
 const ORDERED_STATES = Object.freeze([
   'uninitialized',
@@ -77,7 +89,9 @@ function requireDependencies(value) {
   for (const name of ['fixtureCommand', 'adapterFactory', 'preconditionVerifier']) {
     if (typeof value[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
-  if (typeof value.scenarioRunner?.start !== 'function') throw new GuardianFailure('configuration-invalid');
+  if (!value.runnerCommand || typeof value.runnerCommand !== 'object') {
+    throw new GuardianFailure('configuration-invalid');
+  }
   for (const name of ['closeBrowser', 'listBrowsers']) {
     if (typeof value.browserClient?.[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
@@ -630,7 +644,7 @@ function closedDataDescriptors(value, expectedKeys, category) {
   return descriptors;
 }
 
-function snapshotSessionIds(value, category) {
+function snapshotArrayValues(value, maximum, category) {
   if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) {
     throw new GuardianFailure(category);
   }
@@ -643,50 +657,297 @@ function snapshotSessionIds(value, category) {
     || !Object.hasOwn(lengthDescriptor, 'value')
     || !Number.isSafeInteger(lengthDescriptor.value)
     || lengthDescriptor.value < 0
-    || lengthDescriptor.value > 100
+    || lengthDescriptor.value > maximum
+    || lengthDescriptor.enumerable !== false
+    || lengthDescriptor.configurable !== false
+    || typeof lengthDescriptor.writable !== 'boolean'
     || keys.length !== lengthDescriptor.value + 1
   ) throw new GuardianFailure(category);
-  const sessions = [];
+  const values = [];
   for (let index = 0; index < lengthDescriptor.value; index += 1) {
     const descriptor = descriptors[String(index)];
     if (
       !descriptor
       || !Object.hasOwn(descriptor, 'value')
       || descriptor.enumerable !== true
-      || typeof descriptor.value !== 'string'
     ) throw new GuardianFailure(category);
-    sessions.push(descriptor.value);
+    values[index] = descriptor.value;
   }
+  return values;
+}
+
+function snapshotSessionIds(value, category) {
+  const sessions = snapshotArrayValues(value, RUNNER_SESSION_LIMIT, category);
+  if (sessions.some(session => typeof session !== 'string')) throw new GuardianFailure(category);
   return browserSessionNames({ browsers: sessions });
 }
 
-function snapshotBooleanResult(value, field, category) {
-  const descriptors = closedDataDescriptors(value, [field], category);
-  if (typeof descriptors[field].value !== 'boolean') throw new GuardianFailure(category);
-  return Object.freeze({ [field]: descriptors[field].value });
+function snapshotRunnerCommand(value) {
+  const category = 'scenario-runner-invalid';
+  const descriptors = closedDataDescriptors(value, [
+    'configFiles', 'entrypoint', 'entrypointSha256',
+  ], category);
+  const entrypoint = descriptors.entrypoint.value;
+  const entrypointSha256 = descriptors.entrypointSha256.value;
+  if (
+    typeof entrypoint !== 'string'
+    || !isAbsolute(entrypoint)
+    || resolve(entrypoint) !== entrypoint
+    || !entrypoint.endsWith('.mjs')
+    || typeof entrypointSha256 !== 'string'
+    || !/^[0-9a-f]{64}$/.test(entrypointSha256)
+  ) throw new GuardianFailure(category);
+  const configFiles = snapshotArrayValues(descriptors.configFiles.value, 8, category);
+  if (configFiles.length < 1) throw new GuardianFailure(category);
+  const configs = configFiles.map(config => {
+    const configDescriptors = closedDataDescriptors(config, ['path', 'sha256'], category);
+    const path = configDescriptors.path.value;
+    const sha256 = configDescriptors.sha256.value;
+    if (
+      typeof path !== 'string'
+      || !isAbsolute(path)
+      || resolve(path) !== path
+      || !path.endsWith('.json')
+      || typeof sha256 !== 'string'
+      || !/^[0-9a-f]{64}$/.test(sha256)
+    ) throw new GuardianFailure(category);
+    return Object.freeze({ path, sha256 });
+  });
+  if (new Set(configs.map(config => config.path)).size !== configs.length) {
+    throw new GuardianFailure(category);
+  }
+  return Object.freeze({
+    entrypoint,
+    entrypointSha256,
+    configFiles: Object.freeze(configs),
+  });
 }
 
-function validateScenarioHandle(value) {
+function pathInside(root, candidate) {
+  const candidateRelative = relative(root, candidate);
+  return candidateRelative !== ''
+    && candidateRelative !== '..'
+    && !candidateRelative.startsWith(`..${sep}`)
+    && !isAbsolute(candidateRelative);
+}
+
+async function verifyRepositoryFile(root, file, expectedSha256, maximumBytes) {
   const category = 'scenario-runner-invalid';
-  const descriptors = closedDataDescriptors(
-    value, ['browserSessions', 'completion', 'terminate', 'join'], category,
-  );
-  const completion = descriptors.completion.value;
-  const terminate = descriptors.terminate.value;
-  const joinRunner = descriptors.join.value;
+  if (!pathInside(root, file)) throw new GuardianFailure(category);
+  let metadata;
+  let canonical;
+  let contents;
+  try {
+    metadata = await lstat(file);
+    canonical = await realpath(file);
+    contents = await readFile(file);
+  } catch {
+    throw new GuardianFailure(category);
+  }
   if (
-    !INTRINSIC_IS_PROMISE(completion)
-    || INTRINSIC_OBJECT_GET_PROTOTYPE_OF(completion) !== INTRINSIC_PROMISE_PROTOTYPE
-    || typeof terminate !== 'function'
-    || typeof joinRunner !== 'function'
-    || INTRINSIC_IS_PROXY(terminate)
-    || INTRINSIC_IS_PROXY(joinRunner)
+    canonical !== file
+    || !pathInside(root, canonical)
+    || !metadata.isFile()
+    || metadata.isSymbolicLink()
+    || (metadata.mode & 0o022) !== 0
+    || !Number.isSafeInteger(metadata.size)
+    || metadata.size < 1
+    || metadata.size > maximumBytes
+    || !Buffer.isBuffer(contents)
+    || contents.length !== metadata.size
+    || createHash('sha256').update(contents).digest('hex') !== expectedSha256
   ) throw new GuardianFailure(category);
+}
+
+async function verifyRunnerCommand(command, repositoryRoot) {
+  const category = 'scenario-runner-invalid';
+  let root;
+  try {
+    root = await realpath(repositoryRoot);
+  } catch {
+    throw new GuardianFailure(category);
+  }
+  if (!isAbsolute(repositoryRoot) || root !== repositoryRoot) throw new GuardianFailure(category);
+  await verifyRepositoryFile(root, command.entrypoint, command.entrypointSha256, 524_288);
+  for (const config of command.configFiles) {
+    await verifyRepositoryFile(root, config.path, config.sha256, 65_536);
+  }
+  return root;
+}
+
+function requireRunnerMessage(value, expectedKeys) {
+  const category = 'scenario-runner-invalid';
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new GuardianFailure(category);
+  const keys = Object.keys(value).sort();
+  const expected = [...expectedKeys].sort();
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+    throw new GuardianFailure(category);
+  }
+  return value;
+}
+
+function requireRunnerSessions(value) {
+  const sessions = snapshotSessionIds(value, 'scenario-runner-invalid');
+  if (sessions.length > RUNNER_SESSION_LIMIT) throw new GuardianFailure('scenario-runner-invalid');
+  if (sessions.some((session, index) => index > 0 && sessions[index - 1].localeCompare(session) >= 0)) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  return sessions;
+}
+
+function processGroupAlive(handle) {
+  const target = handle.detached ? -handle.pid : handle.pid;
+  try {
+    INTRINSIC_PROCESS_KILL(target, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    if (error?.code === 'EPERM') return true;
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+}
+
+function signalProcessGroup(handle, signal) {
+  const target = handle.detached ? -handle.pid : handle.pid;
+  try {
+    INTRINSIC_PROCESS_KILL(target, signal);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return true;
+    return false;
+  }
+}
+
+function spawnRunnerChild({ command, phase, privateContext, repositoryRoot, onOwnership }) {
+  const detached = INTRINSIC_PROCESS_PLATFORM !== 'win32';
+  const argv = [
+    command.entrypoint,
+    '--phase', phase,
+    '--workspace', privateContext.workspacePath,
+    '--manifest', privateContext.manifestPath,
+    '--credentials', privateContext.credentialPath,
+    ...command.configFiles.flatMap(config => ['--config', config.path]),
+  ];
+  let child;
+  try {
+    child = INTRINSIC_CHILD_SPAWN(INTRINSIC_PROCESS_EXEC_PATH, argv, {
+      cwd: repositoryRoot,
+      detached,
+      env: INTRINSIC_CHILD_ENV,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+  } catch {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  if (!Number.isSafeInteger(child.pid) || child.pid <= 0 || !child.stdout || !child.stderr) {
+    try { child.kill('SIGKILL'); } catch {}
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  let stdoutBuffer = '';
+  let ownership = null;
+  let terminal = null;
+  let protocolFailure = null;
+  let settleCompletion;
+  let rejectCompletion;
+  const completion = new INTRINSIC_PROMISE((resolveCompletion, reject) => {
+    settleCompletion = resolveCompletion;
+    rejectCompletion = reject;
+  });
+  let settleClosed;
+  const closed = new INTRINSIC_PROMISE(resolveClosed => { settleClosed = resolveClosed; });
+
+  const failProtocol = error => {
+    if (protocolFailure) return;
+    protocolFailure = error instanceof GuardianFailure
+      ? error
+      : new GuardianFailure('scenario-runner-invalid');
+    rejectCompletion(protocolFailure);
+  };
+
+  const acceptLine = line => {
+    if (line.length < 2 || line.length > RUNNER_LINE_LIMIT || /[^\x20-\x7e]/.test(line)) {
+      throw new GuardianFailure('scenario-runner-invalid');
+    }
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      throw new GuardianFailure('scenario-runner-invalid');
+    }
+    if (message?.type === 'ownership') {
+      requireRunnerMessage(message, ['browserSessions', 'phase', 'type', 'version']);
+      if (ownership || terminal || message.version !== 1 || message.phase !== phase) {
+        throw new GuardianFailure('scenario-runner-invalid');
+      }
+      ownership = Object.freeze(requireRunnerSessions(message.browserSessions));
+      onOwnership(ownership);
+      return;
+    }
+    if (message?.type === 'completion') {
+      requireRunnerMessage(message, ['browserSessions', 'ok', 'phase', 'type', 'version']);
+      if (
+        !ownership
+        || terminal
+        || message.version !== 1
+        || message.phase !== phase
+        || typeof message.ok !== 'boolean'
+      ) throw new GuardianFailure('scenario-runner-invalid');
+      const sessions = requireRunnerSessions(message.browserSessions);
+      if (!isDeepStrictEqual(sessions, ownership)) throw new GuardianFailure('scenario-runner-invalid');
+      terminal = Object.freeze({ ok: message.ok, browserSessions: Object.freeze(sessions) });
+      settleCompletion(terminal);
+      return;
+    }
+    throw new GuardianFailure('scenario-runner-invalid');
+  };
+
+  child.stdout.on('data', chunk => {
+    if (!Buffer.isBuffer(chunk)) return failProtocol(new GuardianFailure('scenario-runner-invalid'));
+    stdoutBytes += chunk.length;
+    if (stdoutBytes > RUNNER_STDOUT_LIMIT) return failProtocol(new GuardianFailure('scenario-runner-invalid'));
+    stdoutBuffer += chunk.toString('utf8');
+    if (Buffer.byteLength(stdoutBuffer, 'utf8') > RUNNER_LINE_LIMIT) {
+      return failProtocol(new GuardianFailure('scenario-runner-invalid'));
+    }
+    let newline = stdoutBuffer.indexOf('\n');
+    while (newline !== -1) {
+      const line = stdoutBuffer.slice(0, newline);
+      stdoutBuffer = stdoutBuffer.slice(newline + 1);
+      try {
+        acceptLine(line);
+      } catch (error) {
+        failProtocol(error);
+        return;
+      }
+      newline = stdoutBuffer.indexOf('\n');
+    }
+  });
+  child.stderr.on('data', chunk => {
+    stderrBytes += Buffer.isBuffer(chunk) ? chunk.length : RUNNER_STDERR_LIMIT + 1;
+    if (stderrBytes > RUNNER_STDERR_LIMIT) failProtocol(new GuardianFailure('scenario-runner-invalid'));
+  });
+  child.once('error', () => failProtocol(new GuardianFailure('scenario-runner-invalid')));
+  child.once('close', (code, signal) => {
+    if (stdoutBuffer.length !== 0) failProtocol(new GuardianFailure('scenario-runner-invalid'));
+    if (!terminal) failProtocol(new GuardianFailure('scenario-runner-invalid'));
+    settleClosed(Object.freeze({ code, signal }));
+  });
+
   return Object.freeze({
-    browserSessions: Object.freeze(snapshotSessionIds(descriptors.browserSessions.value, category)),
+    child,
+    closed,
     completion,
-    terminate: INTRINSIC_REFLECT_APPLY(INTRINSIC_FUNCTION_BIND, terminate, [undefined]),
-    join: INTRINSIC_REFLECT_APPLY(INTRINSIC_FUNCTION_BIND, joinRunner, [undefined]),
+    detached,
+    get ownership() { return ownership; },
+    get protocolFailure() { return protocolFailure; },
+    get terminal() { return terminal; },
+    phase,
+    pid: child.pid,
   });
 }
 
@@ -726,16 +987,6 @@ function consumeNativePromise(value, onFulfilled, onRejected, category) {
   } catch {
     throw new GuardianFailure(category);
   }
-}
-
-function validateScenarioCompletion(value) {
-  const snapshot = snapshotBooleanResult(value, 'ok', 'scenario-failed');
-  if (snapshot.ok !== true) throw new GuardianFailure('scenario-failed');
-}
-
-function validateScenarioJoin(value) {
-  const snapshot = snapshotBooleanResult(value, 'closed', 'scenario-closure-failed');
-  if (snapshot.closed !== true) throw new GuardianFailure('scenario-closure-failed');
 }
 
 async function exactIndependentProbe(adapterFactory, manifest) {
@@ -792,17 +1043,26 @@ export function createLifecycleGuardian({
   browserClient,
   adapterFactory,
   preconditionVerifier,
+  runnerCommand,
   scenarioRunner,
+  spawn: injectedSpawn,
   scenarioJoinTimeoutMs = 5_000,
   filesystem = defaultFilesystem,
   processHooks = defaultProcessHooks,
   repositoryRoot = process.cwd(),
 } = {}) {
+  if (scenarioRunner !== undefined || injectedSpawn !== undefined) {
+    throw new GuardianFailure('configuration-invalid');
+  }
   const dependencies = {
-    fixtureCommand, browserClient, adapterFactory, preconditionVerifier, scenarioRunner, filesystem, processHooks,
+    fixtureCommand, browserClient, adapterFactory, preconditionVerifier, runnerCommand, filesystem, processHooks,
   };
   requireDependencies(dependencies);
+  const ownedRunnerCommand = snapshotRunnerCommand(runnerCommand);
   if (!Number.isSafeInteger(scenarioJoinTimeoutMs) || scenarioJoinTimeoutMs < 1 || scenarioJoinTimeoutMs > 60_000) {
+    throw new GuardianFailure('configuration-invalid');
+  }
+  if (typeof repositoryRoot !== 'string' || !isAbsolute(repositoryRoot) || resolve(repositoryRoot) !== repositoryRoot) {
     throw new GuardianFailure('configuration-invalid');
   }
 
@@ -824,7 +1084,7 @@ export function createLifecycleGuardian({
   let closureCertified = false;
   const ownedBrowserSessions = new Set();
   let activeScenario = null;
-  let scenarioStartUncertain = false;
+  let verifiedRepositoryRoot = null;
   const handlers = new Map();
   let operationTail = new INTRINSIC_PROMISE(resolveOperation => resolveOperation());
 
@@ -990,43 +1250,66 @@ export function createLifecycleGuardian({
     }
   });
 
+  const waitForGroupGone = handle => new INTRINSIC_PROMISE(resolveWait => {
+    const startedAt = Date.now();
+    const inspect = () => {
+      let alive;
+      try {
+        alive = processGroupAlive(handle);
+      } catch {
+        resolveWait(false);
+        return;
+      }
+      if (!alive) {
+        resolveWait(true);
+        return;
+      }
+      if (Date.now() - startedAt >= scenarioJoinTimeoutMs) {
+        resolveWait(false);
+        return;
+      }
+      INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_TIMEOUT, INTRINSIC_GLOBAL_THIS, [
+        inspect, Math.min(10, scenarioJoinTimeoutMs),
+      ]);
+    };
+    inspect();
+  });
+
   const joinScenario = async handle => {
     let outcome;
     try {
-      outcome = await bounded(handle.join({ timeoutMs: scenarioJoinTimeoutMs }));
+      outcome = await bounded(handle.closed);
     } catch {
       return false;
     }
-    if (outcome.status !== 'fulfilled') return false;
-    try {
-      validateScenarioJoin(outcome.value);
-      return true;
-    } catch {
-      return false;
-    }
+    if (
+      outcome.status !== 'fulfilled'
+      || outcome.value.code !== 0
+      || outcome.value.signal !== null
+      || handle.protocolFailure
+      || !handle.terminal
+    ) return false;
+    return waitForGroupGone(handle);
   };
 
   const requestScenarioTermination = async (handle, force) => {
-    try {
-      const outcome = await bounded(handle.terminate({ force }));
-      return outcome.status === 'fulfilled';
-    } catch {
-      return false;
-    }
+    if (!signalProcessGroup(handle, force ? 'SIGKILL' : 'SIGTERM')) return false;
+    let outcome;
+    try { outcome = await bounded(handle.closed); } catch { return false; }
+    if (outcome.status !== 'fulfilled') return false;
+    return waitForGroupGone(handle);
   };
 
   const stopActiveScenario = async () => {
-    if (scenarioStartUncertain) throw new GuardianFailure('scenario-closure-failed');
     const handle = activeScenario;
     if (!handle) return;
-    const softTerminated = await requestScenarioTermination(handle, false);
-    if (softTerminated && await joinScenario(handle)) {
+    if (await requestScenarioTermination(handle, false)) {
       activeScenario = null;
       return;
     }
-    const hardTerminated = await requestScenarioTermination(handle, true);
-    if (!hardTerminated) throw new GuardianFailure('scenario-closure-failed');
-    if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
+    if (!(await requestScenarioTermination(handle, true))) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
     activeScenario = null;
   };
 
@@ -1125,7 +1408,7 @@ export function createLifecycleGuardian({
         });
       }
       try {
-        await filesystem.removeCredentialFile(credentialPath, repositoryRoot);
+        await filesystem.removeCredentialFile(credentialPath, verifiedRepositoryRoot);
         if (!(await proveAbsent(filesystem, credentialPath))) throw new GuardianFailure('credential-removal-failed');
       } catch {
         removeHandlers();
@@ -1175,21 +1458,29 @@ export function createLifecycleGuardian({
   };
 
   const runScenarioPhase = async (phase, privateContext) => {
+    if (activeScenario) throw new GuardianFailure('scenario-runner-invalid');
+    await verifyRunnerCommand(ownedRunnerCommand, verifiedRepositoryRoot);
     let handle;
-    scenarioStartUncertain = true;
     try {
-      handle = validateScenarioHandle(scenarioRunner.start(Object.freeze({ phase, ...privateContext })));
+      handle = spawnRunnerChild({
+        command: ownedRunnerCommand,
+        phase,
+        privateContext,
+        repositoryRoot: verifiedRepositoryRoot,
+        onOwnership(sessions) {
+          for (const session of sessions) {
+            if (ownedBrowserSessions.has(session)) {
+              throw new GuardianFailure('browser-ownership-invalid');
+            }
+          }
+          for (const session of sessions) ownedBrowserSessions.add(session);
+        },
+      });
     } catch (error) {
       if (error instanceof GuardianFailure) throw error;
       throw new GuardianFailure('scenario-runner-invalid');
     }
-    if (activeScenario) throw new GuardianFailure('scenario-runner-invalid');
-    for (const session of handle.browserSessions) {
-      if (ownedBrowserSessions.has(session)) throw new GuardianFailure('browser-ownership-invalid');
-      ownedBrowserSessions.add(session);
-    }
     activeScenario = handle;
-    scenarioStartUncertain = false;
     const completed = await new INTRINSIC_PROMISE((resolveCompletion, rejectCompletion) => {
       try {
         consumeNativePromise(
@@ -1208,7 +1499,7 @@ export function createLifecycleGuardian({
         rejectCompletion(error);
       }
     });
-    validateScenarioCompletion(completed);
+    if (!completed || completed.ok !== true) throw new GuardianFailure('scenario-failed');
     if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
     activeScenario = null;
   };
@@ -1224,6 +1515,7 @@ export function createLifecycleGuardian({
     running = true;
     try {
       currentOptions = exactOptions(rawOptions);
+      verifiedRepositoryRoot = await verifyRunnerCommand(ownedRunnerCommand, repositoryRoot);
       registerHandlers();
       transition('guarded');
 
@@ -1287,7 +1579,6 @@ export function createLifecycleGuardian({
         workspacePath,
         manifestPath,
         credentialPath,
-        runId: manifest.runId,
       });
       await runScenarioPhase('before-transition', privateContext);
       checkInterrupted();
@@ -1323,7 +1614,7 @@ export function createLifecycleGuardian({
       closureCertified = true;
 
       try {
-        const removed = await filesystem.removeCredentialFile(credentialPath, repositoryRoot);
+        const removed = await filesystem.removeCredentialFile(credentialPath, verifiedRepositoryRoot);
         if (removed !== true || !(await proveAbsent(filesystem, credentialPath))) throw new GuardianFailure('credential-removal-failed');
       } catch {
         throw new GuardianFailure('credential-removal-failed');

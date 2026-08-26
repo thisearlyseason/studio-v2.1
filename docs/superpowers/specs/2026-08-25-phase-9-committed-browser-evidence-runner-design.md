@@ -115,9 +115,13 @@ Executes only declarative scenarios from `scenario-contracts.mjs`.
 
 ### `lifecycle-guardian.mjs`
 
-A Node parent process owns the exact private workspace, fixture manifest, credential path, child browser runner, and cleanup state. It replaces behavioral shell logic.
+A Node parent process owns the exact private workspace, fixture manifest, credential path, child browser runner process, and cleanup state. It replaces behavioral shell logic. The runner is an OS-process trust boundary: scenario code is never imported, called, or injected into the guardian realm.
 
 - It validates the exact deployed SHA/run, open-unmerged PR, staging project, canonical origin, and empty browser-session list before mutation.
+- Its only scenario input is a closed inert `runnerCommand` descriptor containing one repository-confined absolute `.mjs` entrypoint, its SHA-256, and one to eight repository-confined absolute JSON config paths with their SHA-256 values. Descriptor objects and arrays are snapshotted from exact own data properties; Proxies, accessors, symbols, custom prototypes, unknown fields, duplicate configs, relative paths, symlinks, hash drift, oversized files, and group/world-writable files fail before fixture mutation.
+- The guardian uses its fixed lexical `node:child_process` spawn import and the fixed Node executable. Callers cannot inject a spawn function, runner factory, callback, Promise, process handle, termination function, or join function. Each scenario phase starts a separate detached process group with `shell:false`; the guardian constructs the complete argv from the phase enum, guardian-owned workspace/manifest/credential paths, and verified config paths. The child inherits the module-initialization environment needed for ADC/runtime access except Node code-injection paths (`NODE_OPTIONS` and `NODE_PATH`), which are removed before spawn.
+- Child stdout is an ASCII NDJSON protocol bounded before decoding and parsing; stderr and total/line sizes are also bounded and never returned. The only accepted messages are one exact ownership record followed by one exact completion record with the same canonically sorted, bounded browser-session IDs. Unknown/extra fields, duplicate or changed ownership, malformed JSON, overflow, `ok:false`, early/nonzero/signal exit, and any child-supplied `closed` claim fail closed.
+- Closure is parent-derived only. The guardian requires the child stdio `close` event with exit zero and no signal plus independent absence of the owned process group. Recovery sends `SIGTERM`, independently bounds exit/group join, escalates to `SIGKILL`, and does not close browsers or clean fixtures until the child and its group are joined. A completed child cannot hide a surviving descendant.
 - It creates one mode-0700 `/tmp/phase9-core-identities.*` workspace and registers `SIGINT`, `SIGTERM`, uncaught-exception, and unhandled-rejection handlers before seeding.
 - Every fixture command must return exit zero and parse to its complete typed producer contract. Commands that emit `ok` must require `ok:true`; preflight and seed instead require every canonical field their current CLI producer emits. Exit status alone is never sufficient.
 - It keeps the exact manifest until pre-clean inspect, cleanup, cleaned inspect, a separately initialized exact probe of all 20 UIDs, all 82 expected-present paths, and every expected-absence path, and a verified empty browser-session list all pass.
@@ -135,7 +139,7 @@ Accepts only validated scenario results and lifecycle summaries. It writes the f
 
 1. The guardian validates local/GitHub/staging read-only prerequisites and an empty browser list.
 2. The guardian creates the private workspace, seeds v3 fixtures, and validates a zero-drift 20/82 inspection.
-3. The scenario runner opens isolated system-Chrome sessions. The client receives the exact fixture run ID and arms listeners plus exhaustive set-valued resource parsing on `about:blank` before login navigation.
+3. The guardian verifies the committed runner entrypoint/config hashes and starts the phase in an owned OS child process. The child runner opens isolated system-Chrome sessions, reports ownership before use, receives the exact fixture run through guardian-owned files, and arms listeners plus exhaustive set-valued resource parsing on `about:blank` before login navigation.
 4. Each action is executed only through `observeAction()`. Pure validators decide PASS/FAIL from the complete action window and scenario contract.
 5. The pending-delete transition runs only after all pre-transition scenarios pass.
 6. All sessions close and the guardian verifies the browser list is empty.
@@ -170,6 +174,7 @@ The committed Node test must exercise real exported entrypoints and cover at lea
 - fresh unauthenticated and pending-delete rows fail on transient protected activity;
 - guardian rejects command nonzero, malformed JSON, `ok:false`, drift, retained/failure counts, incomplete expected-absence coverage, browser close failure, or nonempty post-close browser list;
 - guardian preserves the manifest/workspace on uncertain closure and removes them only after certified closure;
+- real child fixtures may mutate Promise/Object/Array/Reflect/timers and prototypes without changing the guardian realm; forged `ok`/`closed` output, bounded-output overflow, a hidden simulated browser, a surviving rogue descendant, and a SIGTERM-ignoring late writer all fail closed, with the exact process group joined before browser/fixture cleanup;
 - evidence writer rejects missing columns, duplicate context IDs, wrong group counts, missing viewport, and inconsistent arithmetic;
 - repository hygiene detects prohibited raw artifacts or session material in the committed evidence paths.
 
