@@ -109,6 +109,15 @@ export const LANDING_SENTINELS = deepFreeze([...new Set([
   ...Object.values(LANDING_SCENARIOS).flat(),
   ...Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels),
 ])]);
+export const PUBLIC_VISIBLE_SENTINELS = deepFreeze([
+  ...LANDING_SENTINELS,
+  PENDING_UNAVAILABLE_SENTINEL,
+]);
+export const PUBLIC_RENDER_PATHS = deepFreeze([
+  ...Object.keys(LANDING_SCENARIOS),
+  ...Object.keys(ROUTE_SCENARIOS),
+  'offline:',
+]);
 export const PROTECTED_PAGE_HEADINGS = deepFreeze([...new Set([
   'Dashboard',
   ...Object.values(ROUTE_SCENARIOS).flatMap(value => value.visibleSentinels),
@@ -329,22 +338,30 @@ const isExactPathOrSubtree = (pathname, root) => pathname === root || pathname.s
 const FIXTURE_IDENTIFIER_PATTERN = /qa-phase7-\d{8}T\d{6}Z-[a-z0-9]{12,32}(?:-[A-Za-z0-9][A-Za-z0-9_-]*)?/;
 const MAX_FIXTURE_SCAN_BYTES = 1_048_576;
 const MAX_PERCENT_DECODE_ROUNDS = 4;
+const CREDENTIAL_PATTERNS = [
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/,
+  /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
+  /\b(?:api[-_ ]?key|password|passwd|secret|access[-_ ]?token|refresh[-_ ]?token|authorization|cookie)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{8,}/i,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+];
 
-const containsFixtureIdentifier = input => {
-  if (typeof input !== 'string') return false;
+const inspectEvidenceString = input => {
+  if (typeof input !== 'string') return null;
   let value = input;
   for (let round = 0; round <= MAX_PERCENT_DECODE_ROUNDS; round += 1) {
-    if (FIXTURE_IDENTIFIER_PATTERN.test(value)) return true;
+    if (FIXTURE_IDENTIFIER_PATTERN.test(value)) return 'fixture';
+    if (CREDENTIAL_PATTERNS.some(pattern => pattern.test(value))) return 'credential';
+    if (/%(?![0-9a-f]{2})/i.test(value)) return 'percent';
     if (round === MAX_PERCENT_DECODE_ROUNDS || !/%[0-9a-f]{2}/i.test(value)) break;
     try {
       const decoded = decodeURIComponent(value);
       if (decoded === value) break;
       value = decoded;
     } catch {
-      break;
+      return 'percent';
     }
   }
-  return false;
+  return null;
 };
 
 export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
@@ -356,7 +373,10 @@ export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
       if (scannedBytes > MAX_FIXTURE_SCAN_BYTES) {
         throw new Error(`${name} exceeds the bounded fixture identifier scan.`);
       }
-      if (containsFixtureIdentifier(current)) throw new Error(`${name} contains a raw fixture identifier.`);
+      const violation = inspectEvidenceString(current);
+      if (violation === 'fixture') throw new Error(`${name} contains a raw fixture identifier.`);
+      if (violation === 'credential') throw new Error(`${name} contains credential-shaped evidence.`);
+      if (violation === 'percent') throw new Error(`${name} contains a malformed percent-encoding layer.`);
       return;
     }
     if (!current || typeof current !== 'object') return;
@@ -527,6 +547,9 @@ export function validateNoTeamResourceIsolation(value) {
 export function validateActionWindow(value, options = {}) {
   const window = requireRecord(value, 'Action window');
   assertNoFixtureIdentifierLeak(window, 'Action window');
+  if (Object.hasOwn(window, 'pageId') && !/^phase9-page-[1-9]\d*$/.test(window.pageId)) {
+    throw new Error('pageId must use the closed local page identifier format.');
+  }
   requireBoolean(window.terminalReached, 'terminalReached');
   requireBoolean(window.loadingVisible, 'loadingVisible');
   requireString(window.finalPath, 'finalPath');
@@ -534,12 +557,22 @@ export function validateActionWindow(value, options = {}) {
   if (!Array.isArray(window.visibleSentinels) || window.visibleSentinels.some(item => typeof item !== 'string')) {
     throw new Error('visibleSentinels must be an explicit string array.');
   }
+  if (window.visibleSentinels.some(item => !PUBLIC_VISIBLE_SENTINELS.includes(item))) {
+    throw new Error('visibleSentinels must use the closed source-backed sentinel enum.');
+  }
   if (!Array.isArray(window.renderSignals) || window.renderSignals.some(signal => (
     !isRecord(signal)
     || !['heading', 'status'].includes(signal.kind)
     || typeof signal.pathname !== 'string'
     || typeof signal.sentinel !== 'string'
   ))) throw new Error('renderSignals must contain typed heading or status signals.');
+  if (window.renderSignals.some(signal => (
+    !PUBLIC_RENDER_PATHS.includes(signal.pathname)
+    || (signal.kind === 'heading' && !LANDING_SENTINELS.includes(signal.sentinel))
+    || (signal.kind === 'status' && (
+      signal.pathname !== '/login' || signal.sentinel !== PENDING_UNAVAILABLE_SENTINEL
+    ))
+  ))) throw new Error('renderSignals must use closed source-backed paths and sentinels.');
   if (!['unavailable', 'none', 'other'].includes(window.redirectReason)) {
     throw new Error('redirectReason must use the fixed sanitized enum.');
   }

@@ -89,26 +89,40 @@ const FIRESTORE_TERMINATE_LISTEN_URL = `${FIRESTORE_LISTEN_BASE_URL}?${new URLSe
   TYPE: 'terminate',
   zx: 'phase9test',
 }).toString()}`;
+const BROWSER_PRODUCER_HEADERS = Object.freeze({
+  accept: '*/*',
+  origin: STAGING_ORIGIN,
+  referer: `${STAGING_ORIGIN}/`,
+  'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36',
+  'sec-ch-ua': '"Not=A?Brand";v="99", "Google Chrome";v="151", "Chromium";v="151"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"macOS"',
+});
 const FIRESTORE_PRODUCER_HEADERS = Object.freeze({
+  ...BROWSER_PRODUCER_HEADERS,
   authorization: 'Bearer phase9-test',
   'content-type': 'text/plain',
   'google-cloud-resource-prefix': FIRESTORE_DATABASE,
+  'x-firebase-gmpid': '1:61782012212:web:8913d2b40fd9843148f561',
   'x-goog-api-client': 'gl-js/ fire/10.14.1',
   'x-goog-request-params': 'project_id=the-squad-v2-staging',
 });
 const FIRESTORE_LISTEN_TRANSPORT_HEADERS = Object.freeze({
+  ...BROWSER_PRODUCER_HEADERS,
   'content-type': 'application/x-www-form-urlencoded',
 });
 const FIRESTORE_LISTEN_HEADER_BLOCK = [
   'authorization:Bearer phase9-test',
   'content-type:text/plain',
   `google-cloud-resource-prefix:${FIRESTORE_DATABASE}`,
+  'x-firebase-gmpid:1:61782012212:web:8913d2b40fd9843148f561',
   'x-goog-api-client:gl-js/ fire/10.14.1',
   'x-goog-request-params:project_id=the-squad-v2-staging',
   '',
 ].join('\r\n');
 const JOIN_ADMIN_PRODUCER_HEADERS = Object.freeze({
-  accept: '*/*',
+  ...BROWSER_PRODUCER_HEADERS,
+  referer: `${STAGING_ORIGIN}/teams/join`,
   authorization: 'Bearer phase9-test',
 });
 const RAW_STAGING_FRAME = `${STAGING_ORIGIN}/teams/join`;
@@ -144,7 +158,7 @@ const producerRaw = signal => {
   if (signal?.url?.startsWith(`${STAGING_ORIGIN}/api/schools/admins`)) return joinAdminRaw(signal);
   if (signal?.url?.startsWith(FIRESTORE_LISTEN_BASE_URL)) {
     return firestoreRaw({
-      headers: signal.method === 'GET' ? {} : FIRESTORE_LISTEN_TRANSPORT_HEADERS,
+      headers: signal.method === 'GET' ? BROWSER_PRODUCER_HEADERS : FIRESTORE_LISTEN_TRANSPORT_HEADERS,
       ...signal,
     });
   }
@@ -2305,8 +2319,8 @@ test('phase 9 Firestore scoping fails closed on malformed schemas and project mi
     body: initialListenForm(),
   });
   assert.deepEqual(classify({ url: listenUrl, method: 'POST', body: form({ database, removeTarget: 1 }) }), {
-    scopeEvidence: ['firestore-transport-control'],
-    resourceScopes: ['transport-control'],
+    scopeEvidence: ['unscoped-resource'],
+    resourceScopes: ['unscoped'],
   });
 });
 
@@ -2531,6 +2545,229 @@ test('phase 9 fixture leak guard detects percent and double-percent encoded fixt
   ]) assert.throws(() => assertNoFixtureIdentifierLeak(value), /fixture identifier/i);
 });
 
+test('phase 9 public render observations reject every string outside the closed source-backed enums', async () => {
+  assert.throws(() => validateActionWindow(safeWindow({
+    pageId: 'provider-controlled-page',
+  })), /page.?id|page identifier|closed/i);
+  assert.throws(() => validateActionWindow(safeWindow({
+    visibleSentinels: ['Family Overview', 'unknown terminal'],
+  })), /closed|sentinel/i);
+  assert.throws(() => validateActionWindow(safeWindow({
+    renderSignals: [{ kind: 'heading', pathname: '/private-secret', sentinel: 'Dashboard' }],
+    protectedRender: true,
+  })), /closed|render path/i);
+
+  const base = {
+    pageId: 'page-a',
+    terminalReached: true,
+    loadingVisible: false,
+    finalUrl: `${STAGING_ORIGIN}/teams/join`,
+    finalPath: '/teams/join',
+    visibleSentinels: ['Join & Invite'],
+    sessionPresent: true,
+    protectedRender: false,
+    rawRequests: [],
+    rawResponses: [],
+    rawTeamSelections: [],
+    pageErrors: [],
+    appConsoleErrors: [],
+    unexpectedRequestFailures: [],
+    overflow: 0,
+    renderPath: '/teams/join',
+    renderSentinel: 'Join & Invite',
+    redirectReason: 'none',
+    renderSignals: [],
+  };
+  const cases = [
+    sample => { sample.visibleSentinels = ['Bearer header.payload.signature']; },
+    sample => { sample.renderSentinel = 'unknown terminal'; },
+    sample => { sample.renderSignals = [{ kind: 'heading', pathname: '/teams/join', sentinel: 'unknown heading' }]; },
+    sample => { sample.renderSignals = [{ kind: 'status', pathname: '/login', sentinel: 'unknown status' }]; },
+    sample => { sample.renderSignals = [{ kind: 'heading', pathname: '/private-secret', sentinel: 'Dashboard' }]; },
+  ];
+
+  for (const [index, mutate] of cases.entries()) {
+    const raw = structuredClone(base);
+    mutate(raw);
+    const transport = createCliTransport(argv => {
+      const code = argv[argv.indexOf('run-code') + 1] ?? '';
+      if (code.includes('phase9:mark')) return cliResult({ pageId: raw.pageId, sequence: 1 });
+      if (code.includes('phase9:sample')) return cliResult(raw);
+      return blankAwareCliResult(argv);
+    });
+    const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+    await installSignalRecorder(client, `closed-render-${index}`);
+    await assert.rejects(observeAction({
+      client,
+      session: `closed-render-${index}`,
+      stage: `closed-render-${index}`,
+      terminal: async () => {},
+      action: async () => {},
+    }), /closed|sentinel|render path|credential/i, `case ${index}`);
+  }
+});
+
+test('phase 9 public evidence scanner rejects malformed percent layers and credential-shaped strings', () => {
+  const encodedRunId = 'qa%252Dphase7%252D20260825T140000Z%252Dab12cd34ef56';
+  for (const value of [
+    `prefix%GG${encodedRunId}`,
+    `prefix%${encodedRunId}`,
+    '%25GGqa%25252Dphase7%25252D20260825T140000Z%25252Dab12cd34ef56',
+  ]) assert.throws(() => assertNoFixtureIdentifierLeak(value), /percent|fixture identifier/i, value);
+
+  for (const value of [
+    'Bearer header.payload.signature',
+    'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlLWJ5dGVz',
+    'api_key=abcdefghijklmnopqrstuvwx',
+    'password:correct-horse-battery-staple',
+  ]) assert.throws(() => assertNoFixtureIdentifierLeak({ evidence: value }), /credential/i, value);
+});
+
+test('phase 9 protected producers require exact canonical frame origin and referrer provenance', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const selfUid = `${runId}-no-team`;
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const selfListen = firestoreRaw({
+    body: initialListenForm({
+      database: FIRESTORE_DATABASE,
+      addTarget: {
+        query: {
+          parent: databaseRoot,
+          structuredQuery: {
+            from: [{ collectionId: 'players' }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'parentId' }, op: 'EQUAL', value: { stringValue: selfUid },
+              },
+            },
+          },
+        },
+        targetId: 1,
+      },
+    }),
+  });
+  const classify = raw => classifyFixtureResourceScopes(raw, { runId, alias: 'qa-no-team' }).resourceScopes;
+
+  for (const raw of [
+    joinAdminRaw({ frameUrl: `${STAGING_ORIGIN}/family` }),
+    joinAdminRaw({ frameUrl: 'https://evil.invalid/teams/join' }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, origin: 'https://evil.invalid' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, referer: 'https://evil.invalid/teams/join' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, accept: 'application/json' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, 'x-extra': 'present' } }),
+    { ...selfListen, frameUrl: `${STAGING_ORIGIN}/family` },
+    { ...selfListen, frameUrl: 'https://evil.invalid/teams/join' },
+    { ...selfListen, headers: { ...selfListen.headers, origin: 'https://evil.invalid' } },
+    { ...selfListen, headers: { ...selfListen.headers, referer: 'https://evil.invalid/' } },
+    { ...selfListen, headers: Object.fromEntries(Object.entries(selfListen.headers).filter(([name]) => name !== 'accept')) },
+    { ...selfListen, headers: { ...selfListen.headers, 'x-extra': 'present' } },
+  ]) assert.deepEqual(classify(raw), ['unscoped'], JSON.stringify(raw));
+});
+
+test('phase 9 Listen target IDs are stateful, private, removable, and reusable within one producer body', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const selfTarget = targetId => ({
+    database: FIRESTORE_DATABASE,
+    addTarget: {
+      documents: { documents: [`${databaseRoot}/users/${runId}-no-team`] },
+      targetId,
+    },
+  });
+  const removeTarget = targetId => ({ database: FIRESTORE_DATABASE, removeTarget: targetId });
+  const classify = (...messages) => classifyFixtureResourceScopes(firestoreRaw({
+    body: initialListenForm(...messages),
+    listenState: { activeTargetIds: [999] },
+  }), { runId, alias: 'qa-no-team' });
+
+  assert.deepEqual(classify(removeTarget(999)).resourceScopes, ['unscoped']);
+  assert.deepEqual(classify(selfTarget(1), selfTarget(1)).resourceScopes, ['self-account', 'unscoped']);
+  assert.deepEqual(
+    classify(selfTarget(1), removeTarget(1), selfTarget(1)).resourceScopes,
+    ['self-account', 'transport-control'],
+  );
+});
+
+test('phase 9 client owns Listen target state across action windows and resets it on navigation', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const selfTarget = targetId => ({
+    database: FIRESTORE_DATABASE,
+    addTarget: {
+      documents: { documents: [`${databaseRoot}/users/${runId}-no-team`] },
+      targetId,
+    },
+  });
+  const removeTarget = targetId => ({ database: FIRESTORE_DATABASE, removeTarget: targetId });
+  const messages = [selfTarget(1), selfTarget(1), removeTarget(1), selfTarget(1), selfTarget(1)];
+  let sequence = 0;
+  let sampleIndex = 0;
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: ++sequence });
+    if (code.includes('phase9:sample')) {
+      const message = messages[sampleIndex++];
+      return cliResult({
+        pageId: 'page-a', terminalReached: true, loadingVisible: false,
+        finalUrl: `${STAGING_ORIGIN}/teams/join`, finalPath: '/teams/join',
+        visibleSentinels: ['Join & Invite'], sessionPresent: true, protectedRender: false,
+        rawRequests: [firestoreRaw({ body: initialListenForm(message), listenState: { activeTargetIds: [999] } })],
+        rawResponses: [], rawTeamSelections: [], pageErrors: [], appConsoleErrors: [],
+        unexpectedRequestFailures: [], overflow: 0, renderPath: '/teams/join', renderSentinel: 'Join & Invite',
+        redirectReason: 'none', renderSignals: [],
+      });
+    }
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({
+    execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh', fixtureRunId: runId,
+  });
+  await installSignalRecorder(client, 'stateful-listen');
+  const capture = () => observeAction({
+    client, session: 'stateful-listen', stage: 'stateful-listen', terminal: async () => {}, action: async () => {},
+  });
+
+  assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['self-account']);
+  assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['self-account', 'unscoped']);
+  assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['transport-control']);
+  assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['self-account']);
+  await client.goto('stateful-listen', 'about:blank');
+  assert.deepEqual((await capture()).protectedRequestSignals[0].resourceScopes, ['self-account']);
+});
+
+test('phase 9 Listen parser rejects enormous counts and integer fields without throwing or allocating', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const classify = raw => classifyFixtureResourceScopes(firestoreRaw(raw), { runId, alias: 'qa-no-team' });
+  const bodies = [
+    'headers=x&count=4294967295&ofs=0',
+    'headers=x&count=9007199254740991&ofs=0',
+    initialListenForm({
+      database: FIRESTORE_DATABASE,
+      addTarget: {
+        documents: { documents: [`${FIRESTORE_DATABASE}/documents/users/${runId}-no-team`] },
+        targetId: Number.MAX_SAFE_INTEGER,
+      },
+    }),
+    initialListenForm({
+      database: FIRESTORE_DATABASE,
+      addTarget: {
+        documents: { documents: [`${FIRESTORE_DATABASE}/documents/users/${runId}-no-team`] },
+        targetId: 1,
+        resumeToken: 'AQID',
+        expectedCount: Number.MAX_SAFE_INTEGER,
+      },
+    }),
+  ];
+  for (const body of bodies) {
+    let result;
+    assert.doesNotThrow(() => { result = classify({ body }); }, body.slice(0, 80));
+    assert.deepEqual(result.resourceScopes, ['unscoped']);
+  }
+});
+
 test('phase 9 client fails closed when claimed evidence lacks raw request material', async () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const transport = createCliTransport(argv => {
@@ -2680,8 +2917,8 @@ test('phase 9 real recorder returns raw request facts for local classification o
       method: 'POST',
       resourceType: 'fetch',
       initiatingFrameUrl: 'data:',
-      scopeEvidence: ['self-parent-players-query'],
-      resourceScopes: ['self-account'],
+      scopeEvidence: ['unscoped-resource'],
+      resourceScopes: ['unscoped'],
     });
     assert.deepEqual(result.listenerSignals[0], result.protectedRequestSignals[0]);
     const serialized = JSON.stringify(result);
@@ -2776,7 +3013,7 @@ test('phase 9 client closes or rejects every provider-controlled fixture literal
       const serialized = JSON.stringify(result);
       for (const literal of literals) assert.equal(serialized.includes(literal), false, `case ${index}: ${literal}`);
     } catch (error) {
-      assert.match(error.message, /fixture identifier/i, `case ${index}`);
+      assert.match(error.message, /fixture identifier|closed source-backed/i, `case ${index}`);
     }
   }
 });

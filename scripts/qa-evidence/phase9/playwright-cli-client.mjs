@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
   LANDING_SENTINELS, PENDING_UNAVAILABLE_SENTINEL, PROTECTED_PAGE_HEADINGS,
-  RESOURCE_TARGET_KINDS,
+  PUBLIC_RENDER_PATHS, PUBLIC_VISIBLE_SENTINELS, RESOURCE_TARGET_KINDS,
   SESSION_COOKIE_NAME, STAGING_ORIGIN, STAGING_PROJECT_ID, assertNoFixtureIdentifierLeak,
   validateResourceSignal,
 } from './scenario-contracts.mjs';
@@ -18,6 +18,11 @@ const MAX_RAW_BODY_BYTES = 262_144;
 const MAX_RAW_HEADERS = 64;
 const MAX_RAW_HEADER_BYTES = 32_768;
 const MAX_PERCENT_DECODE_ROUNDS = 4;
+const MAX_LISTEN_MESSAGES = 256;
+const MAX_ACTIVE_LISTEN_TARGETS = 256;
+const MAX_LISTEN_TARGET_ID = 2_147_483_647;
+const MAX_LISTEN_EXPECTED_COUNT = 1_000_000;
+const MAX_LISTEN_OFFSET = 2_147_483_647;
 const CLIENT_INTERNALS = new WeakMap();
 const HEADING_SENTINELS = Object.freeze([...new Set(LANDING_SENTINELS)]);
 const STATUS_SENTINELS = Object.freeze([PENDING_UNAVAILABLE_SENTINEL]);
@@ -67,47 +72,66 @@ const normalizeHeaders = value => {
   return headers;
 };
 
-const COMMON_BROWSER_HEADERS = new Set([
-  'accept', 'accept-language', 'origin', 'priority', 'referer', 'sec-ch-ua', 'sec-ch-ua-mobile',
-  'sec-ch-ua-platform', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'user-agent',
+const BROWSER_PRODUCER_HEADERS = new Set([
+  'accept', 'origin', 'referer', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'user-agent',
 ]);
 const FIRESTORE_AUTH_HEADERS = new Set([
   'authorization', 'content-type', 'google-cloud-resource-prefix', 'x-firebase-appcheck',
-  'x-firebase-gmpid', 'x-goog-api-client', 'x-goog-request-params', 'x-goog-user-project',
+  'x-firebase-gmpid', 'x-goog-api-client', 'x-goog-request-params',
 ]);
 const FIRESTORE_DATABASE = `projects/${STAGING_PROJECT_ID}/databases/(default)`;
 const FIRESTORE_REQUEST_PARAMS = `project_id=${STAGING_PROJECT_ID}`;
 
 const hasOnlyAllowedHeaders = (headers, allowed) => (
-  headers !== null && Object.keys(headers).every(name => COMMON_BROWSER_HEADERS.has(name) || allowed.has(name))
+  headers !== null && Object.keys(headers).every(name => BROWSER_PRODUCER_HEADERS.has(name) || allowed.has(name))
 );
 
 const validBearer = value => typeof value === 'string' && /^Bearer [A-Za-z0-9._~-]+$/.test(value);
+const validFirebaseAppId = value => typeof value === 'string' && /^1:\d{5,20}:web:[a-f0-9]{16,64}$/.test(value);
+const exactBrowserProducerHeaders = (headers, referer) => {
+  const required = [...BROWSER_PRODUCER_HEADERS];
+  if (required.some(name => !Object.hasOwn(headers ?? {}, name))) return false;
+  if (
+    headers.accept !== '*/*'
+    || headers.origin !== STAGING_ORIGIN
+    || headers.referer !== referer
+    || headers['sec-ch-ua-mobile'] !== '?0'
+    || headers['sec-ch-ua-platform'] !== '"macOS"'
+    || !/^Mozilla\/5\.0 \(Macintosh; Intel Mac OS X 10_15_7\) AppleWebKit\/537\.36 \(KHTML, like Gecko\) (?:HeadlessChrome|Chrome)\/\d+\.\d+\.\d+\.\d+ Safari\/537\.36$/.test(headers['user-agent'])
+  ) return false;
+  const brand = /^"[^"\r\n]{1,32}";v="\d{1,3}", "Google Chrome";v="(\d{1,3})", "Chromium";v="\1"$/;
+  return brand.test(headers['sec-ch-ua']);
+};
+
+const exactJoinFrame = value => value === `${STAGING_ORIGIN}/teams/join`;
 
 const exactFirestoreRestHeaders = value => {
   const headers = normalizeHeaders(value);
   return hasOnlyAllowedHeaders(headers, FIRESTORE_AUTH_HEADERS)
+    && exactBrowserProducerHeaders(headers, `${STAGING_ORIGIN}/`)
     && headers['content-type'] === 'text/plain'
     && headers['google-cloud-resource-prefix'] === FIRESTORE_DATABASE
     && headers['x-goog-request-params'] === FIRESTORE_REQUEST_PARAMS
     && typeof headers['x-goog-api-client'] === 'string'
     && headers['x-goog-api-client'] === 'gl-js/ fire/10.14.1'
+    && validFirebaseAppId(headers['x-firebase-gmpid'])
     && validBearer(headers.authorization)
-    && (!Object.hasOwn(headers, 'x-goog-user-project') || headers['x-goog-user-project'] === STAGING_PROJECT_ID);
+    && (!Object.hasOwn(headers, 'x-firebase-appcheck') || validBearer(`Bearer ${headers['x-firebase-appcheck']}`));
 };
 
 const exactJoinAdminHeaders = value => {
   const headers = normalizeHeaders(value);
   const allowed = new Set(['authorization']);
   return hasOnlyAllowedHeaders(headers, allowed)
+    && exactBrowserProducerHeaders(headers, `${STAGING_ORIGIN}/teams/join`)
     && validBearer(headers.authorization)
-    && (!Object.hasOwn(headers, 'accept') || headers.accept === '*/*');
+    && headers.accept === '*/*';
 };
 
 const exactListenTransportHeaders = (value, method) => {
   const headers = normalizeHeaders(value);
   const allowed = new Set(['content-type']);
-  if (!hasOnlyAllowedHeaders(headers, allowed)) return false;
+  if (!hasOnlyAllowedHeaders(headers, allowed) || !exactBrowserProducerHeaders(headers, `${STAGING_ORIGIN}/`)) return false;
   if (method === 'GET') return !Object.hasOwn(headers, 'content-type');
   return [
     'application/x-www-form-urlencoded',
@@ -154,7 +178,9 @@ const parseAbsoluteUrlValue = input => {
 };
 
 
-const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin, stagingProjectId) => {
+const classifyFixtureResourceScopesValue = (
+  signal, runId, alias, stagingOrigin, stagingProjectId, activeListenTargetIds = new Set(),
+) => {
   const evidenceToScope = {
     'self-user-document': 'self-account',
     'self-memberships-document': 'self-account',
@@ -213,6 +239,7 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
       && target.hash === ''
       && signal.body === ''
       && exactJoinAdminHeaders(signal.headers)
+      && exactJoinFrame(signal.frameUrl)
       && !rawContainsIdentifier([
         signal.url, signal.method, signal.resourceType, signal.headers, signal.body, signal.frameUrl,
       ], identifiers);
@@ -240,6 +267,13 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
   const database = `projects/${stagingProjectId}/databases/(default)`;
   const databaseRoot = `${database}/documents`;
   const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const boundedInteger = (value, maximum) => Number.isSafeInteger(value) && value >= 0 && value <= maximum;
+  const boundedPositiveInteger = (value, maximum) => boundedInteger(value, maximum) && value > 0;
+  const parseBoundedDecimal = (value, maximum) => {
+    if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)$/.test(value) || value.length > 10) return null;
+    const parsed = Number(value);
+    return boundedInteger(parsed, maximum) ? parsed : null;
+  };
   const exactKeys = (value, required, optional = []) => {
     if (!isRecord(value)) return false;
     const keys = Object.keys(value);
@@ -265,7 +299,7 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
     if (keys.some(key => !allowed.has(key))) return null;
     const value = key => entries.find(([candidate]) => candidate === key)?.[1];
     const present = key => keys.includes(key);
-    const digits = key => !present(key) || /^\d+$/.test(value(key));
+    const digits = key => !present(key) || parseBoundedDecimal(value(key), MAX_LISTEN_OFFSET) !== null;
     const token = key => !present(key) || /^[A-Za-z0-9_-]{1,512}$/.test(value(key));
     if (
       value('database') !== database
@@ -445,11 +479,11 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
   const classifyTarget = addTarget => {
     if (!exactKeys(addTarget, ['targetId'], ['documents', 'query', 'resumeToken', 'readTime', 'expectedCount'])) {
       unknown();
-      return;
+      return false;
     }
-    if (!Number.isInteger(addTarget.targetId) || addTarget.targetId <= 0) {
+    if (!boundedPositiveInteger(addTarget.targetId, MAX_LISTEN_TARGET_ID)) {
       unknown();
-      return;
+      return false;
     }
     const hasResumeToken = Object.hasOwn(addTarget, 'resumeToken');
     const hasReadTime = Object.hasOwn(addTarget, 'readTime');
@@ -459,32 +493,31 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
       || !/^[A-Za-z0-9+/_=-]+$/.test(addTarget.resumeToken)
     )) {
       unknown();
-      return;
+      return false;
     }
     if (hasReadTime && (
       typeof addTarget.readTime !== 'string'
       || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z$/.test(addTarget.readTime)
     )) {
       unknown();
-      return;
+      return false;
     }
     if (hasResumeToken && hasReadTime) {
       unknown();
-      return;
+      return false;
     }
     if (hasExpectedCount && (
-      !Number.isInteger(addTarget.expectedCount)
-      || addTarget.expectedCount < 0
+      !boundedInteger(addTarget.expectedCount, MAX_LISTEN_EXPECTED_COUNT)
       || (!hasResumeToken && !hasReadTime)
     )) {
       unknown();
-      return;
+      return false;
     }
     const hasDocuments = isRecord(addTarget.documents);
     const hasQuery = isRecord(addTarget.query);
     if (hasDocuments === hasQuery) {
       unknown();
-      return;
+      return false;
     }
     if (hasDocuments) {
       const documents = addTarget.documents;
@@ -493,6 +526,7 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
       } else classifyDocumentName(documents.documents[0]);
     }
     if (hasQuery) classifyQuery(addTarget.query);
+    return true;
   };
   const validLabels = value => (
     exactKeys(value, ['goog-listen-tags'])
@@ -511,19 +545,33 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
       return;
     }
     if (hasAddTarget) {
-      if (!exactKeys(message, ['database', 'addTarget'], ['labels'])) unknown();
-      if (Object.hasOwn(message, 'labels') && !validLabels(message.labels)) unknown();
-      classifyTarget(message.addTarget);
+      const exactMessage = exactKeys(message, ['database', 'addTarget'], ['labels']);
+      const exactLabels = !Object.hasOwn(message, 'labels') || validLabels(message.labels);
+      if (!exactMessage || !exactLabels) unknown();
+      const exactTarget = classifyTarget(message.addTarget);
+      if (!exactMessage || !exactLabels || !exactTarget) return;
+      const targetId = message.addTarget.targetId;
+      if (activeListenTargetIds.has(targetId) || activeListenTargetIds.size >= MAX_ACTIVE_LISTEN_TARGETS) {
+        unknown();
+        return;
+      }
+      activeListenTargetIds.add(targetId);
       return;
     }
-    if (!exactKeys(message, ['database', 'removeTarget']) || !Number.isInteger(message.removeTarget) || message.removeTarget <= 0) {
+    if (!exactKeys(message, ['database', 'removeTarget'])
+      || !boundedPositiveInteger(message.removeTarget, MAX_LISTEN_TARGET_ID)) {
       unknown();
       return;
     }
+    if (!activeListenTargetIds.has(message.removeTarget)) {
+      unknown();
+      return;
+    }
+    activeListenTargetIds.delete(message.removeTarget);
     add('firestore-transport-control');
   };
   const parseListenBody = body => {
-    if (typeof body !== 'string' || body.length === 0) return null;
+    if (typeof body !== 'string' || body.length === 0 || body.length > MAX_RAW_BODY_BYTES) return null;
     const entries = [];
     for (const part of body.split('&')) {
       const separator = part.indexOf('=');
@@ -540,23 +588,23 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
     if (entries.length !== new Set(entries.map(([key]) => key)).size) return null;
     const keys = entries.map(([key]) => key);
     const get = key => entries.find(([candidate]) => candidate === key)?.[1] ?? null;
-    if (!keys.includes('count') || !keys.includes('ofs') || !/^\d+$/.test(get('ofs') ?? '')) return null;
-    const countText = get('count');
-    if (!/^\d+$/.test(countText ?? '')) return null;
-    const count = Number(countText);
+    if (!keys.includes('count') || !keys.includes('ofs')) return null;
+    const count = parseBoundedDecimal(get('count'), MAX_LISTEN_MESSAGES);
+    const offset = parseBoundedDecimal(get('ofs'), MAX_LISTEN_OFFSET);
+    if (count === null || offset === null) return null;
     const hasHeaders = keys.includes('headers');
-    const expectedKeys = [
-      'count', 'ofs', ...(hasHeaders ? ['headers'] : []),
-      ...Array.from({ length: count }, (_, index) => `req${index}___data__`),
-    ];
-    if (keys.length !== expectedKeys.length || expectedKeys.some(key => !keys.includes(key))) return null;
+    const expectedKeyCount = 2 + (hasHeaders ? 1 : 0) + count;
+    if (keys.length !== expectedKeyCount) return null;
+    for (let index = 0; index < count; index += 1) {
+      if (!keys.includes(`req${index}___data__`)) return null;
+    }
     if (hasHeaders) {
       const headerBlock = get('headers');
       if (typeof headerBlock !== 'string' || headerBlock.length === 0 || headerBlock.length > 32_768
         || !headerBlock.endsWith('\r\n')) return null;
       const allowedHeaders = new Set([
         'authorization', 'content-type', 'google-cloud-resource-prefix', 'x-firebase-appcheck',
-        'x-firebase-gmpid', 'x-goog-api-client', 'x-goog-request-params', 'x-goog-user-project',
+        'x-firebase-gmpid', 'x-goog-api-client', 'x-goog-request-params',
       ]);
       const headerNames = [];
       const headerValues = {};
@@ -573,9 +621,10 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
         !validBearer(headerValues.authorization)
         || headerValues['content-type'] !== 'text/plain'
         || headerValues['google-cloud-resource-prefix'] !== database
+        || !validFirebaseAppId(headerValues['x-firebase-gmpid'])
         || headerValues['x-goog-request-params'] !== `project_id=${stagingProjectId}`
         || headerValues['x-goog-api-client'] !== 'gl-js/ fire/10.14.1'
-        || (Object.hasOwn(headerValues, 'x-goog-user-project') && headerValues['x-goog-user-project'] !== stagingProjectId)
+        || (Object.hasOwn(headerValues, 'x-firebase-appcheck') && !validBearer(`Bearer ${headerValues['x-firebase-appcheck']}`))
       ) return null;
     }
     if (count === 0) return { control: true, hasHeaders, messages: [] };
@@ -599,6 +648,10 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
   }
   if (path !== target.pathname) unknown();
   if (!['fetch', 'xhr', 'other'].includes(signal.resourceType)) {
+    unknown();
+    return result();
+  }
+  if (!exactJoinFrame(signal.frameUrl)) {
     unknown();
     return result();
   }
@@ -667,7 +720,7 @@ const classifyFixtureResourceScopesValue = (signal, runId, alias, stagingOrigin,
 export function classifyFixtureResourceScopes(signal, { runId, alias } = {}) {
   assertRunId(runId);
   if (alias !== 'qa-no-team') throw new Error('Fixture resource scoping currently requires qa-no-team.');
-  return classifyFixtureResourceScopesValue(signal, runId, alias, STAGING_ORIGIN, STAGING_PROJECT_ID);
+  return classifyFixtureResourceScopesValue(signal, runId, alias, STAGING_ORIGIN, STAGING_PROJECT_ID, new Set());
 }
 
 const installRecorderSource = () => String.raw`async (page) => {
@@ -957,6 +1010,19 @@ const cleanUrl = (value, fixtureRunId) => {
   }
 };
 
+const closeRenderPath = (value, finalUrl) => {
+  if (PUBLIC_RENDER_PATHS.includes(value)) return value;
+  if (typeof finalUrl === 'string') {
+    try {
+      const protocol = new URL(finalUrl).protocol;
+      if (['about:', 'data:', 'blob:', 'file:'].includes(protocol)) return 'offline:';
+    } catch {
+      // The caller below rejects any noncanonical hosted render path.
+    }
+  }
+  throw new Error('Recorder render path must use the closed source-backed enum.');
+};
+
 const NON_PROTECTED_API_PATHS = new Set([
   '/api/auth/session',
   '/api/contact',
@@ -1013,7 +1079,7 @@ const failClosedScopes = Object.freeze({
   resourceScopes: ['unscoped'],
 });
 
-const sanitizeResourceSignal = (item, fixtureRunId) => {
+const sanitizeResourceSignal = (item, fixtureRunId, activeListenTargetIds = new Set()) => {
   const raw = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
   const targetKind = targetKindFromRawUrl(raw.url);
   if (targetKind === null) return null;
@@ -1029,9 +1095,13 @@ const sanitizeResourceSignal = (item, fixtureRunId) => {
   const method = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(normalizedMethod) ? normalizedMethod : 'GET';
   const resourceType = ['fetch', 'xhr', 'other'].includes(raw.resourceType) ? raw.resourceType : 'other';
   const scopes = completeRaw && fixtureRunId
-    ? classifyFixtureResourceScopesValue(raw, fixtureRunId, 'qa-no-team', STAGING_ORIGIN, STAGING_PROJECT_ID)
+    ? classifyFixtureResourceScopesValue(
+      raw, fixtureRunId, 'qa-no-team', STAGING_ORIGIN, STAGING_PROJECT_ID, activeListenTargetIds,
+    )
     : completeRaw && targetKind === 'staging-join-admin-api'
-      ? classifyFixtureResourceScopesValue(raw, undefined, 'qa-no-team', STAGING_ORIGIN, STAGING_PROJECT_ID)
+      ? classifyFixtureResourceScopesValue(
+        raw, undefined, 'qa-no-team', STAGING_ORIGIN, STAGING_PROJECT_ID, activeListenTargetIds,
+      )
       : failClosedScopes;
   const signal = {
     targetKind,
@@ -1059,7 +1129,7 @@ const classifyTeamSelections = (values, fixtureRunId) => values.map(value => {
   return 'tenant-other';
 });
 
-const sanitizeWindow = (value, { fixtureRunId, publicPageId } = {}) => {
+const sanitizeWindow = (value, { fixtureRunId, publicPageId, activeListenTargetIds } = {}) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Signal sample must be an object.');
   const booleanFields = ['terminalReached', 'loadingVisible', 'sessionPresent', 'protectedRender'];
   const stringFields = ['pageId', 'finalUrl', 'finalPath', 'renderPath', 'renderSentinel'];
@@ -1077,10 +1147,19 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId } = {}) => {
     throw new Error('Client must assign a fixed local page identifier.');
   }
   if (value.visibleSentinels.some(item => typeof item !== 'string')) throw new Error('Recorder must return a complete signal sample.');
+  if (value.visibleSentinels.some(item => !PUBLIC_VISIBLE_SENTINELS.includes(item))) {
+    throw new Error('Recorder visible sentinels must use the closed source-backed enum.');
+  }
+  if (value.renderSentinel !== '' && !PUBLIC_VISIBLE_SENTINELS.includes(value.renderSentinel)) {
+    throw new Error('Recorder render sentinel must use the closed source-backed enum.');
+  }
   for (const field of ['rawRequests', 'rawResponses', 'rawTeamSelections']) {
     if (value[field].length > MAX_SIGNAL_COUNT) throw new Error(`Recorder ${field} exceeds the bounded signal history.`);
   }
-  const requests = value.rawRequests.map(item => sanitizeResourceSignal(item, fixtureRunId)).filter(Boolean);
+  if (!(activeListenTargetIds instanceof Set)) throw new Error('Client must own private Listen target state.');
+  const requests = value.rawRequests
+    .map(item => sanitizeResourceSignal(item, fixtureRunId, activeListenTargetIds))
+    .filter(Boolean);
   const http = value.rawResponses.map(sanitizeHttpResult).filter(Boolean);
   const teamSelectionSignals = classifyTeamSelections(value.rawTeamSelections, fixtureRunId);
   if (value.renderSignals.some(item => (
@@ -1088,9 +1167,16 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId } = {}) => {
     || !['heading', 'status'].includes(item.kind)
     || typeof item.pathname !== 'string' || typeof item.sentinel !== 'string'
   ))) throw new Error('Recorder must return typed render signals.');
-  const renderSignals = value.renderSignals.slice(0, MAX_SIGNAL_COUNT).map(item => ({
-    kind: item.kind, pathname: sanitizeFixturePath(item.pathname, fixtureRunId), sentinel: item.sentinel,
-  }));
+  const renderSignals = value.renderSignals.slice(0, MAX_SIGNAL_COUNT).map(item => {
+    const pathname = closeRenderPath(item.pathname, value.finalUrl);
+    if (
+      (item.kind === 'heading' && !LANDING_SENTINELS.includes(item.sentinel))
+      || (item.kind === 'status' && (
+        !['/login', 'offline:'].includes(pathname) || item.sentinel !== PENDING_UNAVAILABLE_SENTINEL
+      ))
+    ) throw new Error('Recorder render signals must use closed source-backed paths and sentinels.');
+    return { kind: item.kind, pathname, sentinel: item.sentinel };
+  });
   const protectedRequests = requests.filter(isProtectedResource);
   const protectedListeners = protectedRequests.filter(signal => signal.targetKind === 'firestore-listen');
   const sanitized = {
@@ -1115,8 +1201,6 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId } = {}) => {
     appConsoleErrors: count(value.appConsoleErrors),
     unexpectedRequestFailures: count(value.unexpectedRequestFailures),
     overflow: count(value.overflow),
-    renderPath: sanitizeFixturePath(value.renderPath, fixtureRunId),
-    renderSentinel: typeof value.renderSentinel === 'string' ? value.renderSentinel : '',
   };
   assertNoFixtureIdentifierLeak(sanitized, 'Client action window');
   return sanitized;
@@ -1157,6 +1241,7 @@ export function createPlaywrightCliClient({
   const tabCounts = new Map();
   const armedTabs = new Set();
   const publicPageIds = new Map();
+  const activeListenTargetsByTab = new Map();
   let publicPageSequence = 0;
   const tabKey = session => `${session}:${currentTabs.get(session) ?? 0}`;
 
@@ -1220,11 +1305,13 @@ export function createPlaywrightCliClient({
       publicPageSequence += 1;
       publicPageIds.set(key, `phase9-page-${publicPageSequence}`);
     }
+    activeListenTargetsByTab.set(key, new Set());
     armedTabs.add(key);
   };
   const client = {
     async goto(session, url) {
       if (!armedTabs.has(tabKey(session))) throw new Error('Signal recorder must be armed before navigation.');
+      activeListenTargetsByTab.set(tabKey(session), new Set());
       return command(['goto', url], session);
     },
     async runCode(session, source) {
@@ -1238,7 +1325,12 @@ export function createPlaywrightCliClient({
       await terminal();
       const result = await executeRunCode(session, sampleSource(mark));
       if (!result || result.pageId !== mark.pageId) throw new Error('Action window must sample the same page as its pre-action mark.');
-      const sample = sanitizeWindow(result, { fixtureRunId, publicPageId: publicPageIds.get(tabKey(session)) });
+      const key = tabKey(session);
+      const sample = sanitizeWindow(result, {
+        fixtureRunId,
+        publicPageId: publicPageIds.get(key),
+        activeListenTargetIds: activeListenTargetsByTab.get(key),
+      });
       return sample;
     },
     async tabNew(session, url = 'about:blank') {
