@@ -1,6 +1,8 @@
-import { chmod, lstat, open, readFile, rename, rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
+import { lstat, open, readFile, realpath } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { types as utilTypes } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
@@ -24,7 +26,11 @@ const FILES = Object.freeze([
 ]);
 const SENSITIVE = /(?:bearer\s+[a-z0-9._~-]+|(?:cookie|password|credential|storage[_ -]?state|private[_ -]?key|token)\s*[:=])/i;
 const PRIVATE_PATH = /(?:^|[\s`'"(])(?:\/tmp\/|\/Users\/|\/home\/|[A-Za-z]:\\)/;
-const DEFAULT_FILESYSTEM = Object.freeze({ chmod, lstat, open, readFile, rename, rm });
+const DEFAULT_FILESYSTEM = Object.freeze({ lstat, open, readFile, realpath });
+const HELPER_PATH = join(dirname(fileURLToPath(import.meta.url)), 'evidence-dirfd-helper.py');
+const HELPER_SHA256 = 'dc6852d3027dff6160f97bfa8a249f587787eab23369bd0550a9f7685e15bfef';
+const PYTHON_RUNTIME = '/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9';
+const PYTHON_SHA256 = 'fb49353c025e39b9253567759fc80f20ed0f6e8b0d0bc6c5fddb47dc235ce22a';
 
 function snapshotData(value, depth = 0) {
   if (depth > 12) throw new Error('Evidence input nesting is unsafe.');
@@ -109,7 +115,7 @@ async function snapshotBoundary(repositoryRoot, outputDirectory, filesystem) {
   for (const path of paths) {
     const metadata = await filesystem.lstat(path);
     if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw new Error('Evidence directory boundary contains a symlink or non-directory component.');
-    snapshots.push(Object.freeze({ path, dev: metadata.dev, ino: metadata.ino }));
+    snapshots.push(Object.freeze({ path, dev: metadata.dev, ino: metadata.ino, mode: metadata.mode & 0o777 }));
   }
   return Object.freeze(snapshots);
 }
@@ -117,16 +123,11 @@ async function snapshotBoundary(repositoryRoot, outputDirectory, filesystem) {
 async function revalidateBoundary(snapshots, filesystem) {
   for (const snapshot of snapshots) {
     const metadata = await filesystem.lstat(snapshot.path);
-    if (metadata.isSymbolicLink() || !metadata.isDirectory() || metadata.dev !== snapshot.dev || metadata.ino !== snapshot.ino) {
+    if (metadata.isSymbolicLink() || !metadata.isDirectory() || metadata.dev !== snapshot.dev || metadata.ino !== snapshot.ino
+      || (metadata.mode & 0o777) !== snapshot.mode) {
       throw new Error('Evidence directory boundary identity changed.');
     }
   }
-}
-
-async function writeExclusiveNoFollow(path, contents, filesystem) {
-  const handle = await filesystem.open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW, 0o600);
-  try { await handle.writeFile(contents, { encoding: typeof contents === 'string' ? 'utf8' : undefined }); await handle.sync(); }
-  finally { await handle.close(); }
 }
 
 function rejectSensitive(value, label) {
@@ -218,53 +219,68 @@ No broad enumeration, recursive Firebase deletion, credential material, raw brow
 `;
 }
 
-async function writeAllAtomically(outputDirectory, documents, boundary, filesystem) {
-  const transaction = `${process.pid}-${Date.now()}`;
-  const temps = [];
-  const backups = [];
-  const promoted = [];
-  try {
-    for (const [name, contents] of documents) {
-      await revalidateBoundary(boundary, filesystem);
-      const temp = join(outputDirectory, `.${basename(name)}.${transaction}.tmp`);
-      await writeExclusiveNoFollow(temp, contents, filesystem);
-      await filesystem.chmod(temp, 0o600);
-      temps.push(temp);
-    }
-    for (const [name] of documents) {
-      const target = join(outputDirectory, name);
-      try {
-        const metadata = await filesystem.lstat(target);
-        if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error('Evidence target is not a regular file.');
-        const backup = join(outputDirectory, `.${basename(name)}.${transaction}.bak`);
-        await revalidateBoundary(boundary, filesystem);
-        await writeExclusiveNoFollow(backup, await filesystem.readFile(target), filesystem);
-        backups.push([target, backup, metadata.mode & 0o777]);
-      } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
-      }
-    }
-    for (let index = 0; index < documents.length; index += 1) {
-      const target = join(outputDirectory, documents[index][0]);
-      await revalidateBoundary(boundary, filesystem);
-      await filesystem.rename(temps[index], target);
-      promoted.push(target);
-      await filesystem.chmod(target, 0o644);
-    }
-    await revalidateBoundary(boundary, filesystem);
-    for (const [, backup] of backups) await filesystem.rm(backup, { force: true });
-  } catch (error) {
-    for (const temp of temps) await filesystem.rm(temp, { force: true }).catch(() => {});
-    for (const target of promoted) await filesystem.rm(target, { force: true }).catch(() => {});
-    for (const [target, backup, mode] of backups) {
-      await filesystem.rename(backup, target).catch(() => {});
-      await filesystem.chmod(target, mode).catch(() => {});
-    }
-    throw new Error('Evidence files were not written atomically.', { cause: error });
+const sha256Bytes = bytes => createHash('sha256').update(bytes).digest('hex');
+
+async function verifyHelper(filesystem) {
+  const [helperMetadata, helperCanonical, helperBytes, runtimeMetadata, runtimeCanonical, runtimeBytes] = await Promise.all([
+    filesystem.lstat(HELPER_PATH), filesystem.realpath(HELPER_PATH), filesystem.readFile(HELPER_PATH),
+    filesystem.lstat(PYTHON_RUNTIME), filesystem.realpath(PYTHON_RUNTIME), filesystem.readFile(PYTHON_RUNTIME),
+  ]);
+  if (!helperMetadata.isFile() || helperMetadata.isSymbolicLink() || helperCanonical !== HELPER_PATH
+    || (helperMetadata.mode & 0o022) !== 0 || sha256Bytes(helperBytes) !== HELPER_SHA256
+    || !runtimeMetadata.isFile() || runtimeMetadata.isSymbolicLink() || runtimeCanonical !== PYTHON_RUNTIME
+    || (runtimeMetadata.mode & 0o022) !== 0 || sha256Bytes(runtimeBytes) !== PYTHON_SHA256) {
+    throw new Error('Descriptor-anchored evidence helper is not the reviewed local runtime.');
   }
 }
 
-async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = {}, repositoryRoot, filesystem = DEFAULT_FILESYSTEM) {
+async function runDescriptorTransaction(outputDirectory, documents, boundary, filesystem, helperEnvironment) {
+  await verifyHelper(filesystem);
+  await revalidateBoundary(boundary, filesystem);
+  const directory = await filesystem.open(
+    outputDirectory,
+    fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    const expected = boundary.at(-1);
+    const metadata = await directory.stat();
+    if (!metadata.isDirectory() || metadata.dev !== expected.dev || metadata.ino !== expected.ino
+      || (metadata.mode & 0o777) !== expected.mode) {
+      throw new Error('Evidence output descriptor identity does not match the reviewed boundary.');
+    }
+    const request = JSON.stringify({
+      version: 1,
+      transaction: `${process.pid}-${Date.now()}-${randomBytes(8).toString('hex')}`,
+      directory: { dev: metadata.dev, ino: metadata.ino, mode: metadata.mode & 0o777 },
+      documents: documents.map(([name, contents]) => ({ name, contents })),
+    });
+    const result = await new Promise(resolvePromise => {
+      const child = spawn(PYTHON_RUNTIME, [HELPER_PATH], {
+        cwd: '/',
+        env: {
+          LANG: 'C', LC_ALL: 'C', PYTHONHASHSEED: '0', PYTHONNOUSERSITE: '1',
+          ...helperEnvironment,
+        },
+        stdio: ['pipe', 'pipe', 'pipe', directory.fd],
+      });
+      let stdout = '';
+      let stderrBytes = 0;
+      child.stdout.on('data', chunk => { stdout += chunk.toString('utf8'); if (stdout.length > 65536) child.kill('SIGKILL'); });
+      child.stderr.on('data', chunk => { stderrBytes += chunk.length; if (stderrBytes > 65536) child.kill('SIGKILL'); });
+      child.on('error', () => resolvePromise({ ok: false }));
+      child.on('close', code => resolvePromise({ ok: code === 0 && stdout === '{"ok":true}\n' }));
+      child.stdin.end(request);
+    });
+    const after = await directory.stat();
+    if (!result.ok || after.dev !== expected.dev || after.ino !== expected.ino) {
+      throw new Error('Evidence files were not written atomically.');
+    }
+  } finally {
+    await directory.close();
+  }
+}
+
+async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = {}, repositoryRoot, filesystem = DEFAULT_FILESYSTEM, helperEnvironment = {}) {
   ({ lifecycle, rows, deployment, outputDirectory } = snapshotData({ lifecycle, rows, deployment, outputDirectory }));
   validateLifecycle(lifecycle);
   validateDeployment(deployment);
@@ -282,8 +298,7 @@ async function writeEvidence({ lifecycle, rows, deployment, outputDirectory } = 
     ['04-cleanup.md', cleanupMarkdown()],
   ];
   for (const [, contents] of documents) rejectSensitive(contents, 'Rendered evidence');
-  await revalidateBoundary(boundary, filesystem);
-  await writeAllAtomically(directory, documents, boundary, filesystem);
+  await runDescriptorTransaction(directory, documents, boundary, filesystem, helperEnvironment);
   return Object.freeze({ files: Object.freeze([...FILES]) });
 }
 
@@ -291,14 +306,18 @@ export async function writePhase9Evidence(options) {
   return writeEvidence(options, MODULE_REPOSITORY_ROOT);
 }
 
-export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAULT_FILESYSTEM } = {}) {
+export function createPhase9EvidenceWriter({ repositoryRoot, filesystem = DEFAULT_FILESYSTEM, helperEnvironment = {} } = {}) {
   if (typeof repositoryRoot !== 'string' || !isAbsolute(repositoryRoot) || resolve(repositoryRoot) !== repositoryRoot) {
     throw new Error('Evidence repository root is invalid.');
   }
-  if (!filesystem || ['chmod', 'lstat', 'open', 'readFile', 'rename', 'rm'].some(name => typeof filesystem[name] !== 'function')) {
+  if (!filesystem || ['lstat', 'open', 'readFile', 'realpath'].some(name => typeof filesystem[name] !== 'function')) {
     throw new Error('Evidence filesystem boundary is invalid.');
   }
-  return Object.freeze({ write: options => writeEvidence(options, repositoryRoot, filesystem) });
+  if (!helperEnvironment || typeof helperEnvironment !== 'object' || Array.isArray(helperEnvironment)
+    || Object.keys(helperEnvironment).some(key => !['PHASE9_WRITER_TEST_FAIL_PROMOTION', 'PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS'].includes(key))) {
+    throw new Error('Evidence helper environment is invalid.');
+  }
+  return Object.freeze({ write: options => writeEvidence(options, repositoryRoot, filesystem, helperEnvironment) });
 }
 
 export { FILES as PHASE9_EVIDENCE_FILES };

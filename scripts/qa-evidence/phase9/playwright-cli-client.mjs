@@ -1421,6 +1421,20 @@ export function createPlaywrightCliClient({
     });
     armedTabs.add(key);
   };
+  const applyViewport = async (session, viewport) => {
+    if (!viewport || !new Set(['390x844', '1440x900']).has(`${viewport.width}x${viewport.height}`)) {
+      throw new Error('Viewport must be an exact reviewed Phase 9 viewport.');
+    }
+    const result = await executeRunCode(session, `async (page) => {
+      await page.setViewportSize(${JSON.stringify(viewport)});
+      return page.viewportSize();
+    }`);
+    if (result?.width !== viewport.width || result?.height !== viewport.height) {
+      throw new Error('Playwright did not apply the exact context viewport.');
+    }
+    expectedViewportByTab.set(tabKey(session), Object.freeze({ ...viewport }));
+    return `${result.width}x${result.height}`;
+  };
   const client = {
     async goto(session, url) {
       if (!armedTabs.has(tabKey(session))) throw new Error('Signal recorder must be armed before navigation.');
@@ -1452,12 +1466,22 @@ export function createPlaywrightCliClient({
     async tabNew(session, url = 'about:blank') {
       if (url !== 'about:blank') throw new Error('A new tab must open on about:blank before recorder arming.');
       const previousKey = tabKey(session);
+      const viewport = expectedViewportByTab.get(previousKey);
+      if (!viewport) throw new Error('A new tab requires an exact verified source viewport.');
       const result = await command(['tab-new', url], session);
       const index = tabCounts.get(session) ?? 1;
       tabCounts.set(session, index + 1);
       currentTabs.set(session, index);
-      const viewport = expectedViewportByTab.get(previousKey);
-      if (viewport) expectedViewportByTab.set(`${session}:${index}`, viewport);
+      try {
+        await applyViewport(session, viewport);
+      } catch {
+        await command(['close'], session).catch(() => {});
+        opened.delete(session); currentTabs.delete(session); tabCounts.delete(session);
+        for (const collection of [armedTabs, publicPageIds, listenTargetStateByTab, expectedViewportByTab, authenticatedStartByTab]) {
+          for (const key of [...collection.keys()]) if (key.startsWith(`${session}:`)) collection.delete(key);
+        }
+        throw new Error('New tab viewport application failed and the browser was closed.');
+      }
       return result;
     },
     async tabSelect(session, index) {
@@ -1491,7 +1515,7 @@ export function createPlaywrightCliClient({
     closeAllBrowsers: async () => command(['close-all']),
   };
   CLIENT_INTERNALS.set(client, {
-    executeRunCode, installRecorder, openBlank, command, opened, currentTabs, tabCounts, armedTabs,
+    executeRunCode, installRecorder, applyViewport, openBlank, command, opened, currentTabs, tabCounts, armedTabs,
     publicPageIds, listenTargetStateByTab, expectedViewportByTab, authenticatedStartByTab,
     nextPublicPageId: key => {
       if (!publicPageIds.has(key)) { publicPageSequence += 1; publicPageIds.set(key, `phase9-page-${publicPageSequence}`); }
@@ -1514,17 +1538,8 @@ export async function installSignalRecorder(client, session) {
 
 export async function setAndVerifyViewport(client, session, viewport) {
   const internals = CLIENT_INTERNALS.get(client);
-  if (!internals || !viewport || ![390, 1440].includes(viewport.width) || ![844, 900].includes(viewport.height)
-    || !new Set(['390x844', '1440x900']).has(`${viewport.width}x${viewport.height}`)) {
-    throw new Error('Viewport must be an exact reviewed Phase 9 viewport.');
-  }
-  const result = await internals.executeRunCode(session, `async (page) => {
-    await page.setViewportSize(${JSON.stringify(viewport)});
-    return page.viewportSize();
-  }`);
-  if (result?.width !== viewport.width || result?.height !== viewport.height) throw new Error('Playwright did not apply the exact context viewport.');
-  internals.expectedViewportByTab.set(`${session}:${internals.currentTabs.get(session) ?? 0}`, Object.freeze({ ...viewport }));
-  return `${result.width}x${result.height}`;
+  if (!internals) throw new Error('Viewport requires a Playwright CLI client.');
+  return internals.applyViewport(session, viewport);
 }
 
 export async function attachExistingSignalRecorder(client, session, { width, height, marker, requireAuthenticated = false } = {}) {
@@ -1568,6 +1583,7 @@ async function smoke() {
   const { observeAction } = await import('./signal-window.mjs');
   try {
     await installSignalRecorder(client, 'phase9-offline-smoke');
+    await setAndVerifyViewport(client, 'phase9-offline-smoke', { width: 390, height: 844 });
     const order = [];
     const first = await observeAction({
       client,

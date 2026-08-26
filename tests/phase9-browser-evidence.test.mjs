@@ -33,6 +33,7 @@ import {
   createPlaywrightCliClient,
   installSignalRecorder,
   isProtectedResource,
+  setAndVerifyViewport,
 } from '../scripts/qa-evidence/phase9/playwright-cli-client.mjs';
 import { observeAction } from '../scripts/qa-evidence/phase9/signal-window.mjs';
 import {
@@ -256,7 +257,10 @@ const blankAwareCliResult = (argv, fallback = { ok: true }) => {
 };
 
 test('phase 9 playwright client arms about:blank before navigation and compiles run-code without evaluation', async () => {
-  const transport = createCliTransport(argv => blankAwareCliResult(argv));
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    return blankAwareCliResult(argv, code.includes('setViewportSize') ? { width: 390, height: 844 } : { ok: true });
+  });
   const client = createPlaywrightCliClient({
     execute: transport.execute,
     wrapperPath: '/safe/playwright_cli.sh',
@@ -268,6 +272,7 @@ test('phase 9 playwright client arms about:blank before navigation and compiles 
   assert.equal('openBlank' in client, false, 'raw browser opening must remain private');
 
   await installSignalRecorder(client, 'page-a');
+  await setAndVerifyViewport(client, 'page-a', { width: 390, height: 844 });
   await client.goto('page-a', 'about:blank');
 
   assert.deepEqual(transport.calls[0].slice(0, 6), [
@@ -275,7 +280,7 @@ test('phase 9 playwright client arms about:blank before navigation and compiles 
   ]);
   assert.equal((transport.calls[1][transport.calls[1].indexOf('run-code') + 1] ?? '').includes('phase9:verify-about-blank'), true);
   assert.equal((transport.calls[2][transport.calls[2].indexOf('run-code') + 1] ?? '').includes('phase9:install'), true);
-  assert.equal(transport.calls[3].includes('goto'), true);
+  assert.equal(transport.calls[4].includes('goto'), true);
   await assert.rejects(
     client.runCode('page-a', 'async (page) => {'),
     /compile/i,
@@ -5796,6 +5801,39 @@ test('phase 9 real Chrome applies both exact viewports and retains the same proc
   }
 });
 
+test('phase 9 real Chrome applies and reads back each exact viewport on every new tab before navigation', { timeout: 45_000 }, async () => {
+  const { setAndVerifyViewport } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const client = createPlaywrightCliClient({});
+  try {
+    for (const [session, viewport] of [
+      ['phase9-new-tab-mobile', { width: 390, height: 844 }],
+      ['phase9-new-tab-desktop', { width: 1440, height: 900 }],
+    ]) {
+      await installSignalRecorder(client, session);
+      await setAndVerifyViewport(client, session, viewport);
+      await client.tabNew(session, 'about:blank');
+      await installSignalRecorder(client, session);
+      assert.deepEqual(await client.runCode(session, 'async (page) => page.viewportSize()'), viewport);
+    }
+  } finally { await closeAndVerifyBrowsers(client); }
+});
+
+test('phase 9 client closes the owned browser when a new-tab viewport readback mismatches', async () => {
+  let viewportCalls = 0;
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:verify-about-blank')) return cliResult({ url: 'about:blank' });
+    if (code.includes('setViewportSize')) return cliResult(++viewportCalls === 1
+      ? { width: 390, height: 844 } : { width: 1280, height: 720 });
+    return cliResult({ pageId: 'raw', navigationGeneration: 0 });
+  });
+  const client = createPlaywrightCliClient({ execute: transport.execute, wrapperPath: '/safe/playwright_cli.sh' });
+  await installSignalRecorder(client, 'viewport-close');
+  await setAndVerifyViewport(client, 'viewport-close', { width: 390, height: 844 });
+  await assert.rejects(client.tabNew('viewport-close', 'about:blank'), /viewport.*closed/i);
+  assert.equal(transport.calls.some(argv => argv.includes('close')), true);
+});
+
 test('phase 9 committed runner uses a pinned local Playwright transport and literal artifact hashes', async () => {
   const { PHASE9_ARTIFACT_PINS, phase9PlaywrightTransport } = await import('../scripts/qa-evidence/phase9/cli.mjs');
   assert.match(PHASE9_ARTIFACT_PINS.child, /^[0-9a-f]{64}$/);
@@ -5853,22 +5891,76 @@ test('phase 9 writer detects an ancestor identity swap and writes no bytes outsi
   }
 });
 
+test('phase 9 writer anchors temp creation to the held directory descriptor during an ancestor swap', async () => {
+  const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-open-swap-');
+  const outside = mkdtempSync('/tmp/phase9-writer-open-outside-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  const ancestor = join(root, 'docs', 'qa', 'production-audit');
+  mkdirSync(outputDirectory, { recursive: true });
+  const outsideOutput = join(outside, 'runs', '2026-08-25-phase9-core-identities');
+  mkdirSync(outsideOutput, { recursive: true });
+  let swapped = false;
+  let outsideObserved = false;
+  const filesystem = {
+    ...fsPromises,
+    async open(path, ...args) {
+      if (!swapped && path === outputDirectory) {
+        swapped = true;
+        renameSync(ancestor, `${ancestor}.retained`);
+        symlinkSync(outside, ancestor);
+      }
+      const handle = await fsPromises.open(path, ...args);
+      outsideObserved ||= readdirSync(outsideOutput).length !== 0;
+      return handle;
+    },
+  };
+  try {
+    const writer = createPhase9EvidenceWriter({ repositoryRoot: root, filesystem });
+    await assert.rejects(writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    }), /boundary|atomically|identity/i);
+    assert.equal(outsideObserved, false);
+    assert.deepEqual(readdirSync(outsideOutput), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 writer keeps promotion on the held directory descriptor after its ancestor is replaced', async () => {
+  const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
+  const root = mkdtempSync('/tmp/phase9-writer-promote-swap-');
+  const outside = mkdtempSync('/tmp/phase9-writer-promote-outside-');
+  const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
+  const ancestor = join(root, 'docs', 'qa', 'production-audit');
+  const outsideOutput = join(outside, 'runs', '2026-08-25-phase9-core-identities');
+  mkdirSync(outputDirectory, { recursive: true }); mkdirSync(outsideOutput, { recursive: true });
+  try {
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root, helperEnvironment: { PHASE9_WRITER_TEST_BEFORE_PROMOTION_MS: '300' },
+    });
+    const pending = writer.write({
+      lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
+    });
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
+    renameSync(ancestor, `${ancestor}.retained`); symlinkSync(outside, ancestor);
+    await pending;
+    assert.deepEqual(readdirSync(outsideOutput), []);
+    const retainedOutput = join(`${ancestor}.retained`, 'runs', '2026-08-25-phase9-core-identities');
+    assert.deepEqual(readdirSync(retainedOutput).sort(), [...PHASE9_EVIDENCE_FILES].sort());
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+});
+
 test('phase 9 writer rolls back every promoted file after a mid-transaction rename failure', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-rollback-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
   mkdirSync(outputDirectory, { recursive: true });
   for (const name of PHASE9_EVIDENCE_FILES) writeFileSync(join(outputDirectory, name), `original:${name}\n`);
-  let promotions = 0;
-  const filesystem = {
-    ...fsPromises,
-    async rename(source, target) {
-      if (source.includes('.tmp') && ++promotions === 2) throw Object.assign(new Error('injected promotion failure'), { code: 'EIO' });
-      return fsPromises.rename(source, target);
-    },
-  };
   try {
-    const writer = createPhase9EvidenceWriter({ repositoryRoot: root, filesystem });
+    const writer = createPhase9EvidenceWriter({
+      repositoryRoot: root, helperEnvironment: { PHASE9_WRITER_TEST_FAIL_PROMOTION: '2' },
+    });
     await assert.rejects(writer.write({
       lifecycle: task5Lifecycle, rows: task5CanonicalRows(), deployment: task5Deployment, outputDirectory,
     }), /atomically/i);
