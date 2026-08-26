@@ -327,17 +327,52 @@ const requireCanonicalStagingAttribution = (value, name) => {
 
 const isExactPathOrSubtree = (pathname, root) => pathname === root || pathname.startsWith(`${root}/`);
 const FIXTURE_IDENTIFIER_PATTERN = /qa-phase7-\d{8}T\d{6}Z-[a-z0-9]{12,32}(?:-[A-Za-z0-9][A-Za-z0-9_-]*)?/;
+const MAX_FIXTURE_SCAN_BYTES = 1_048_576;
+const MAX_PERCENT_DECODE_ROUNDS = 4;
+
+const containsFixtureIdentifier = input => {
+  if (typeof input !== 'string') return false;
+  let value = input;
+  for (let round = 0; round <= MAX_PERCENT_DECODE_ROUNDS; round += 1) {
+    if (FIXTURE_IDENTIFIER_PATTERN.test(value)) return true;
+    if (round === MAX_PERCENT_DECODE_ROUNDS || !/%[0-9a-f]{2}/i.test(value)) break;
+    try {
+      const decoded = decodeURIComponent(value);
+      if (decoded === value) break;
+      value = decoded;
+    } catch {
+      break;
+    }
+  }
+  return false;
+};
 
 export function assertNoFixtureIdentifierLeak(value, name = 'Evidence') {
-  let serialized;
-  try {
-    serialized = JSON.stringify(value);
-  } catch {
-    throw new Error(`${name} must be serializable before fixture identifier validation.`);
-  }
-  if (FIXTURE_IDENTIFIER_PATTERN.test(serialized)) {
-    throw new Error(`${name} contains a raw fixture identifier.`);
-  }
+  const seen = new WeakSet();
+  let scannedBytes = 0;
+  const visit = current => {
+    if (typeof current === 'string') {
+      scannedBytes += current.length;
+      if (scannedBytes > MAX_FIXTURE_SCAN_BYTES) {
+        throw new Error(`${name} exceeds the bounded fixture identifier scan.`);
+      }
+      if (containsFixtureIdentifier(current)) throw new Error(`${name} contains a raw fixture identifier.`);
+      return;
+    }
+    if (!current || typeof current !== 'object') return;
+    if (seen.has(current)) throw new Error(`${name} must be serializable before fixture identifier validation.`);
+    seen.add(current);
+    if (Array.isArray(current)) {
+      for (const child of current) visit(child);
+    } else {
+      for (const [key, child] of Object.entries(current)) {
+        visit(key);
+        visit(child);
+      }
+    }
+    seen.delete(current);
+  };
+  visit(value);
   return value;
 }
 
@@ -392,8 +427,8 @@ const requireClosedResourceSignal = (value, name) => {
   if (evidence.has('join-admin-patch') && (
     signal.targetKind !== 'staging-join-admin-api' || signal.method !== 'PATCH'
   )) throw new Error(`${name} join-admin evidence is disconnected from its exact target.`);
-  if (signal.targetKind === 'staging-join-admin-api' && !evidence.has('join-admin-patch')) {
-    throw new Error(`${name} join-admin target is missing its exact evidence.`);
+  if (signal.targetKind === 'staging-join-admin-api' && !evidence.has('join-admin-patch') && !evidence.has('unscoped-resource')) {
+    throw new Error(`${name} join-admin target is missing exact or fail-closed evidence.`);
   }
   if (evidence.has('firestore-transport-control') && signal.targetKind !== 'firestore-listen') {
     throw new Error(`${name} transport-control evidence requires a Firestore listener target.`);
@@ -426,7 +461,7 @@ const requireClosedResourceSignal = (value, name) => {
     'firestore-run-query': queryEvidence,
     'firestore-listen': listenEvidence,
     'firestore-protected': new Set(['unscoped-resource']),
-    'staging-join-admin-api': new Set(['join-admin-patch']),
+    'staging-join-admin-api': new Set(['join-admin-patch', 'unscoped-resource']),
     'staging-protected-api': new Set(['unscoped-resource']),
   }[signal.targetKind];
   if (signal.scopeEvidence.some(item => !compatibleEvidence.has(item))) {
