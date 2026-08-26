@@ -959,7 +959,8 @@ function auditMarkedProcesses(runMarker) {
       }
       const pids = [];
       for (const line of stdout.split('\n')) {
-        if (!line.split(/\s+/).includes(token)) continue;
+        const words = line.split(/\s+/);
+        if (!words.includes(token) && !words.includes(`--${token}`)) continue;
         const match = /^\s*([1-9][0-9]*)\s/.exec(line);
         const pid = Number(match?.[1]);
         if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) {
@@ -1074,6 +1075,7 @@ function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRo
     '--workspace', privateContext.workspacePath,
     '--manifest', privateContext.manifestPath,
     '--credentials', privateContext.credentialPath,
+    '--guardian-marker-env', RUN_MARKER_ENV,
     ...commandSnapshot.configFiles.flatMap(config => ['--config-base64', config.contentsBase64]),
   ];
   let child;

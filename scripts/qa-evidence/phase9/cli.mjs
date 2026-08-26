@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, readFile, rm, stat } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { chmod, lstat, readFile, realpath, rm, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -34,18 +34,38 @@ const playwrightEntrySource = join(moduleDirectory, 'playwright-transport-entry.
 const playwrightModuleGuard = join(moduleDirectory, 'playwright-transport-module-guard.cjs');
 const playwrightBuilder = join(moduleDirectory, 'build-playwright-transport.mjs');
 const playwrightClient = join(moduleDirectory, 'playwright-cli-client.mjs');
+const childSource = join(moduleDirectory, 'child-runner-source.mjs');
+const childBuilder = join(moduleDirectory, 'build-child-runner.mjs');
+const playwrightWorkspaceBoundary = join(repositoryRoot, '.playwright', 'phase9-transport-boundary');
+const PLAYWRIGHT_ARTIFACT_RELATIVE_PATH = 'scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz';
 const PLAYWRIGHT_VERSION = '0.1.18';
 const PLAYWRIGHT_CORE_VERSION = '1.63.0-alpha-2026-08-05';
-const PLAYWRIGHT_ARTIFACT_SHA256 = 'e596203d478f04d3af855f8a27fb0e6500bc168ecbda67de544a49542616dc61';
+const PLAYWRIGHT_ARTIFACT_SHA256 = '6c021c5da601eaef5f6f10b8f910a0e4c870893cc150fa415ab52fc9afb124cd';
+const NODE_RUNTIME_POLICY = Object.freeze({
+  path: '/usr/local/bin/node',
+  sha256: '257c121b8efcb1932a92acac811b8d9a3940c956a295a74838a1443bf5be0d4c',
+  codesignIdentifier: 'node',
+  teamIdentifier: 'HX7739G8FX',
+});
+const CHROME_POLICY = Object.freeze({
+  appPath: '/Applications/Google Chrome.app',
+  binaryPath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  binarySha256: 'c62a6de1b6aecbcf91be770370abb7461e5a0718637962b6aa4b8d171f4de4f0',
+  codesignIdentifier: 'com.google.Chrome',
+  teamIdentifier: 'EQHXZ8M8AV',
+});
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: 'cd87026b0e50248e5cd21901374ff141afb83bae3878d585eeabc42574a27369',
-  config: 'a6b6b6737a1d75d100c8a73534c89b63cd50f0f89c8cdcda7f060f20ed786377',
+  child: '92a7ae7afedfee401c39f2f119b3002d9f8e529bc6a65b7b78abb08a2612ccd9',
+  childSource: '95ba3ef0942e9cef0ec95bcb866e608ecf94f74378ea8f4fb4f4a24de8809f56',
+  childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
+  workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
+  config: 'a90eda7513b912fb830b399a253a3b42897d6e641c46b3da79a63bb821c6e917',
   transport: PLAYWRIGHT_ARTIFACT_SHA256,
-  transportManifest: '7cda2ed7a3a470cc5fb43cddb845ff69e32cb7d60f14bd09d7801a592773e8ac',
+  transportManifest: '56ac68c3284ff680723ac7a215c3620f9d9961b7480f3218d0454cae402afaa2',
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
-  transportGuard: 'e9edd042a13eb09816a6c314e7a858bd8eca2dec7730cb77bee342fcc63ff1b6',
+  transportGuard: '839323d2c0c115940e0f1dfde4669e59cfca7fd253cb52898ddcd71a4b3fe778',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: 'd5bbe7663a210a3e524cf9d8c61046562e719b88dce1a80f79e50619900b1b58',
+  transportClient: 'decea67e27c6ceda44cb2e7ea4e73c08e42db0347d25cad3f01e0ca5b0e4e5a4',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
 });
 export const phase9PlaywrightTransport = Object.freeze({
@@ -77,6 +97,25 @@ async function sha256(path) {
   return createHash('sha256').update(await readFile(path)).digest('hex');
 }
 
+async function resolveRepositoryFile(relativePath) {
+  if (typeof relativePath !== 'string' || relativePath.length === 0 || isAbsolute(relativePath)
+    || normalize(relativePath) !== relativePath || relativePath.split(sep).some(component => (
+      component === '' || component === '.' || component === '..'
+    ))) throw new Error('Pinned child repository path is invalid.');
+  const canonicalRoot = await realpath(repositoryRoot);
+  const absolute = join(canonicalRoot, relativePath);
+  if (!absolute.startsWith(`${canonicalRoot}${sep}`) || await realpath(absolute) !== absolute) {
+    throw new Error('Pinned child repository path escaped its verified root.');
+  }
+  let component = canonicalRoot;
+  for (const name of relativePath.split(sep)) {
+    component = join(component, name);
+    const metadata = await lstat(component);
+    if (metadata.isSymbolicLink()) throw new Error('Pinned child repository path contains a symbolic link.');
+  }
+  return absolute;
+}
+
 async function validatePinnedTransport() {
   const [artifactMetadata, manifestMetadata, artifactHash, manifest] = await Promise.all([
     lstat(playwrightArtifact), lstat(playwrightManifest), sha256(playwrightArtifact),
@@ -94,12 +133,18 @@ async function validatePinnedTransport() {
 async function validatePinnedConfig({ verifyTransport = false } = {}) {
   const config = JSON.parse(await readFile(childConfig, 'utf8'));
   if (
-    Object.keys(config).sort().join(',') !== 'origin,playwrightArtifact,playwrightArtifactSha256,playwrightCoreVersion,playwrightVersion,projectId'
+    Object.keys(config).sort().join(',') !== 'chrome,nodeRuntime,origin,playwrightArtifact,playwrightArtifactSha256,playwrightCoreVersion,playwrightVersion,projectId'
     || config.projectId !== STAGING_PROJECT_ID || config.origin !== STAGING_ORIGIN
-    || config.playwrightArtifact !== playwrightArtifact || config.playwrightVersion !== PLAYWRIGHT_VERSION
+    || config.playwrightArtifact !== PLAYWRIGHT_ARTIFACT_RELATIVE_PATH || config.playwrightVersion !== PLAYWRIGHT_VERSION
     || config.playwrightCoreVersion !== PLAYWRIGHT_CORE_VERSION
     || config.playwrightArtifactSha256 !== PLAYWRIGHT_ARTIFACT_SHA256
+    || config.nodeRuntime?.path !== process.execPath
+    || JSON.stringify(config.nodeRuntime) !== JSON.stringify(NODE_RUNTIME_POLICY)
+    || JSON.stringify(config.chrome) !== JSON.stringify(CHROME_POLICY)
   ) throw new Error('Pinned child configuration is invalid.');
+  if (await resolveRepositoryFile(config.playwrightArtifact) !== playwrightArtifact) {
+    throw new Error('Pinned child configuration resolved an unexpected repository artifact.');
+  }
   if (verifyTransport) await validatePinnedTransport();
   return config;
 }
@@ -111,6 +156,9 @@ async function buildRunnerCommand() {
   }
   if (await sha256(evidenceHelper) !== PHASE9_ARTIFACT_PINS.helper) throw new Error('Committed evidence helper does not match its literal reviewed pin.');
   for (const [path, pin] of [
+    [childSource, PHASE9_ARTIFACT_PINS.childSource],
+    [childBuilder, PHASE9_ARTIFACT_PINS.childBuilder],
+    [playwrightWorkspaceBoundary, PHASE9_ARTIFACT_PINS.workspaceBoundary],
     [playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
     [playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
     [playwrightEntrySource, PHASE9_ARTIFACT_PINS.transportEntry],
@@ -254,6 +302,9 @@ async function requireCleanExactSha(deployedSha) {
 async function verifyAdmittedRunnerBlobs(deployedSha) {
   for (const [relativePath, path, pin] of [
     ['scripts/qa-evidence/phase9/child-runner.mjs', childEntrypoint, PHASE9_ARTIFACT_PINS.child],
+    ['scripts/qa-evidence/phase9/child-runner-source.mjs', childSource, PHASE9_ARTIFACT_PINS.childSource],
+    ['scripts/qa-evidence/phase9/build-child-runner.mjs', childBuilder, PHASE9_ARTIFACT_PINS.childBuilder],
+    ['.playwright/phase9-transport-boundary', playwrightWorkspaceBoundary, PHASE9_ARTIFACT_PINS.workspaceBoundary],
     ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
     ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],
     ['scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz', playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],

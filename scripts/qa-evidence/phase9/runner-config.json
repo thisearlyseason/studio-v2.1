@@ -1,8 +1,21 @@
 {
   "origin": "https://studio--the-squad-v2-staging.us-east4.hosted.app",
   "projectId": "the-squad-v2-staging",
-  "playwrightArtifact": "/Users/tylerans/Documents/The Squad V2 BRANCH/studio-v2.1/.worktrees/phase3-root-cause-repair/scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz",
-  "playwrightArtifactSha256": "e596203d478f04d3af855f8a27fb0e6500bc168ecbda67de544a49542616dc61",
+  "playwrightArtifact": "scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz",
+  "playwrightArtifactSha256": "6c021c5da601eaef5f6f10b8f910a0e4c870893cc150fa415ab52fc9afb124cd",
   "playwrightCoreVersion": "1.63.0-alpha-2026-08-05",
-  "playwrightVersion": "0.1.18"
+  "playwrightVersion": "0.1.18",
+  "nodeRuntime": {
+    "path": "/usr/local/bin/node",
+    "sha256": "257c121b8efcb1932a92acac811b8d9a3940c956a295a74838a1443bf5be0d4c",
+    "codesignIdentifier": "node",
+    "teamIdentifier": "HX7739G8FX"
+  },
+  "chrome": {
+    "appPath": "/Applications/Google Chrome.app",
+    "binaryPath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "binarySha256": "c62a6de1b6aecbcf91be770370abb7461e5a0718637962b6aa4b8d171f4de4f0",
+    "codesignIdentifier": "com.google.Chrome",
+    "teamIdentifier": "EQHXZ8M8AV"
+  }
 }

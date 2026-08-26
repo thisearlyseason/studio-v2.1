@@ -6396,3 +6396,162 @@ test('phase 9 evidence child selects each logout tab before the action window ma
     `select:${name}`, `mark:${name}`, `action:${name}`,
   ]));
 });
+
+test('phase 9 transport preserves only the exact guardian marker into a real descendant', { timeout: 45_000 }, async () => {
+  const {
+    buildPlaywrightTransportEnvironment,
+    createPlaywrightCliClient: createRuntimeClient,
+  } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const guardianMarkerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const guardianMarker = createHash('sha256').update(`phase9-marker-${process.pid}`).digest('hex');
+  const sourceEnvironment = {
+    HOME: process.env.HOME,
+    [guardianMarkerName]: guardianMarker,
+    PHASE9_UNTRUSTED_MARKER: 'must-not-propagate',
+    NODE_OPTIONS: '--require /attacker/preload.cjs',
+  };
+  const closed = buildPlaywrightTransportEnvironment(sourceEnvironment, { guardianMarkerName });
+  assert.equal(closed[guardianMarkerName], guardianMarker);
+  assert.equal(Object.hasOwn(closed, 'PHASE9_UNTRUSTED_MARKER'), false);
+  assert.equal(Object.hasOwn(closed, 'NODE_OPTIONS'), false);
+  assert.throws(
+    () => buildPlaywrightTransportEnvironment(sourceEnvironment, { guardianMarkerName: 'PHASE9_UNTRUSTED_MARKER' }),
+    /guardian marker/i,
+  );
+
+  let audited = false;
+  const client = createRuntimeClient({
+    guardianMarkerName,
+    sourceEnvironment,
+    executionHooks: {
+      async afterSpawn({ pid }) {
+        if (audited) return;
+        const result = spawnSync('/bin/ps', ['eww', '-axo', 'pid=,command='], { encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        const line = result.stdout.split('\n').find(candidate => new RegExp(`^\\s*${pid}\\s`).test(candidate));
+        assert.ok(line, `transport descendant ${pid} was absent from ps audit`);
+        assert.equal(line.includes(` ${process.execPath} `), true);
+        assert.equal(line.split(/\s+/).includes(`${guardianMarkerName}=${guardianMarker}`), true);
+        assert.equal(line.includes('PHASE9_UNTRUSTED_MARKER=must-not-propagate'), false);
+        audited = true;
+      },
+    },
+  });
+  try {
+    await installSignalRecorder(client, 'phase9-marker-descendant');
+    assert.equal(audited, true);
+    const result = spawnSync('/bin/ps', ['eww', '-axo', 'pid=,command='], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const markerToken = `${guardianMarkerName}=${guardianMarker}`;
+    const markedDescendants = result.stdout.split('\n').filter(line => {
+      const words = line.split(/\s+/);
+      return words.includes(markerToken) || words.includes(`--${markerToken}`);
+    });
+    assert.equal(markedDescendants.some(line => line.includes('cliDaemon.js')), true);
+    assert.equal(markedDescendants.some(line => line.includes('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')), true);
+    assert.equal(markedDescendants.every(line => !line.includes('PHASE9_UNTRUSTED_MARKER=must-not-propagate')), true);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
+test('phase 9 transport uses a fresh verified materialization for every explicit Node command', async () => {
+  const { executeCapturedPlaywrightTransportCommand } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const materializations = [];
+  await executeCapturedPlaywrightTransportCommand(['list'], {
+    sourceEnvironment: { HOME: process.env.HOME, PATH: '/path-that-does-not-contain-node' },
+    executionHooks: { beforeSpawn: value => materializations.push(value) },
+  });
+  assert.equal(materializations.length, 1);
+  const first = materializations[0];
+  assert.equal(existsSync(first.root), false, 'a completed transport command must remove its materialization');
+
+  mkdirSync(dirname(first.entrypoint), { mode: 0o700, recursive: true });
+  writeFileSync(first.entrypoint, 'process.exit(91)\n');
+  const priorTransitive = join(first.root, 'node_modules', 'playwright-core', 'lib', 'coreBundle.js');
+  mkdirSync(dirname(priorTransitive), { mode: 0o700, recursive: true });
+  writeFileSync(priorTransitive, 'throw new Error("prior-root-transitive")\n');
+  try {
+    await executeCapturedPlaywrightTransportCommand(['list'], {
+      sourceEnvironment: { HOME: process.env.HOME, PATH: '/path-that-does-not-contain-node' },
+      executionHooks: { beforeSpawn: value => materializations.push(value) },
+    });
+    assert.equal(materializations.length, 2);
+    assert.notEqual(materializations[1].root, first.root);
+    assert.equal(existsSync(materializations[1].root), false);
+    assert.equal(readFileSync(first.entrypoint, 'utf8'), 'process.exit(91)\n');
+    assert.equal(readFileSync(priorTransitive, 'utf8'), 'throw new Error("prior-root-transitive")\n');
+  } finally {
+    rmSync(first.root, { recursive: true, force: true });
+  }
+
+  let permissionAttackedRoot;
+  await assert.rejects(executeCapturedPlaywrightTransportCommand(['list'], {
+    sourceEnvironment: { HOME: process.env.HOME, PATH: '/path-that-does-not-contain-node' },
+    executionHooks: {
+      beforeSpawn({ root, entrypoint }) {
+        permissionAttackedRoot = root;
+        chmodSync(dirname(entrypoint), 0o755);
+      },
+    },
+  }), /materialized.*changed|transport.*integrity/i);
+  assert.equal(existsSync(permissionAttackedRoot), false, 'a directory permission race must leave no stale root');
+
+  let attackedRoot;
+  await assert.rejects(executeCapturedPlaywrightTransportCommand(['list'], {
+    sourceEnvironment: { HOME: process.env.HOME, PATH: '/path-that-does-not-contain-node' },
+    executionHooks: {
+      beforeSpawn({ root, entrypoint }) {
+        attackedRoot = root;
+        chmodSync(entrypoint, 0o600);
+        writeFileSync(entrypoint, 'process.exit(0)\n');
+      },
+    },
+  }), /materialized.*changed|transport.*integrity/i);
+  assert.equal(existsSync(attackedRoot), false, 'a rejected pre-spawn mutation must leave no stale root');
+});
+
+test('phase 9 client verifies Chrome immediately before every browser launch', async () => {
+  let checks = 0;
+  let launches = 0;
+  const transport = createCliTransport(argv => {
+    if (argv.includes('open')) launches += 1;
+    return blankAwareCliResult(argv, { pageId: 'raw', navigationGeneration: 0 });
+  });
+  const client = createPlaywrightCliClient({
+    execute: transport.execute,
+    wrapperPath: '/safe/playwright_cli.sh',
+    verifyChromeBeforeLaunch: async () => {
+      checks += 1;
+      if (checks === 2) throw new Error('External system Chrome identity changed.');
+    },
+  });
+  await installSignalRecorder(client, 'phase9-chrome-first');
+  await assert.rejects(
+    installSignalRecorder(client, 'phase9-chrome-second'),
+    /Chrome identity changed/i,
+  );
+  assert.equal(checks, 2);
+  assert.equal(launches, 1, 'the second launch must fail before transport execution');
+});
+
+test('phase 9 runner config contains only repository-relative repository paths', () => {
+  const configPath = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'runner-config.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  assert.equal(config.playwrightArtifact, 'scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz');
+  assert.equal(config.playwrightArtifact.startsWith('/'), false);
+  assert.equal(config.playwrightArtifact.split('/').includes('..'), false);
+  assert.deepEqual(config.nodeRuntime, {
+    path: process.execPath,
+    sha256: sha256File(process.execPath),
+    codesignIdentifier: 'node',
+    teamIdentifier: 'HX7739G8FX',
+  });
+  assert.deepEqual(config.chrome, {
+    appPath: '/Applications/Google Chrome.app',
+    binaryPath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    binarySha256: sha256File('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+    codesignIdentifier: 'com.google.Chrome',
+    teamIdentifier: 'EQHXZ8M8AV',
+  });
+});

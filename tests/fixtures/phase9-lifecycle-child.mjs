@@ -22,7 +22,7 @@ function parseArguments(argv) {
       values.set(name, value);
     }
   }
-  const required = ['--phase', '--workspace', '--manifest', '--credentials'];
+  const required = ['--phase', '--workspace', '--manifest', '--credentials', '--guardian-marker-env'];
   const hasPathConfig = values.has('--config');
   const hasInlineConfig = values.has('--config-base64');
   if (
