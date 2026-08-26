@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -97,35 +97,80 @@ function phaseRows(phase) {
   }));
 }
 
+const fakeLaunchReceipts = browserSessions => browserSessions.map((session, index) => ({
+  session, daemonPid: 900_001 + (index * 2), chromeMainPid: 900_002 + (index * 2),
+}));
+
 function finishWithRows(phase, mode, browserSessions = [], ok = true) {
   let rows = phaseRows(phase);
   if (mode === 'row-extra-field') rows[0] = { ...rows[0], raw: 'forbidden' };
   if (mode === 'row-duplicate') rows[1] = { ...rows[1], contextId: rows[0].contextId };
   if (mode === 'row-out-of-order') [rows[0], rows[1]] = [rows[1], rows[0]];
   if (mode === 'row-wrong-phase') rows = phaseRows(phase === 'before-transition' ? 'after-transition' : 'before-transition');
-  writeMessage({ version: 1, type: 'ownership', phase, browserSessions });
-  finishRowsAfterOwnership(phase, mode, browserSessions, ok, rows);
+  const launchReceipts = fakeLaunchReceipts(browserSessions);
+  writeMessage({
+    version: 2, type: 'ownership', phase, browserSessions,
+    attachedBrowserSessions: [], launchReceipts,
+  });
+  finishRowsAfterOwnership(phase, mode, browserSessions, ok, rows, launchReceipts);
 }
 
-function finishRowsAfterOwnership(phase, mode, browserSessions = [], ok = true, suppliedRows) {
+function finishRowsAfterOwnership(
+  phase, mode, browserSessions = [], ok = true, suppliedRows,
+  launchReceipts = fakeLaunchReceipts(browserSessions), attachedBrowserSessions = [],
+) {
   const rows = suppliedRows ?? phaseRows(phase);
   const emitted = mode === 'row-early-completion' ? rows.slice(0, 1) : rows;
   emitted.forEach((row, index) => writeMessage({ version: 1, type: 'row', phase, index, row }));
   writeMessage({
-    version: 1,
+    version: 2,
     type: 'completion',
     phase,
     ok,
     browserSessions,
+    attachedBrowserSessions,
+    launchReceipts,
     rowCount: rows.length,
   }, () => nativeExit(0));
+}
+
+function realLaunchReceipt(session, guardianMarkerName, marker) {
+  const output = execFileSync('/bin/ps', ['eww', '-axo', 'pid=,ppid=,command='], {
+    encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' }, maxBuffer: 16_777_216,
+  });
+  const token = `${guardianMarkerName}=${marker}`;
+  const records = output.split('\n').flatMap(line => {
+    const words = line.split(/\s+/);
+    if (!words.includes(token) && !words.includes(`--${token}`)) return [];
+    const match = /^\s*([1-9][0-9]*)\s+([0-9]+)\s+/.exec(line);
+    if (!match) return [];
+    const pid = Number(match[1]);
+    const command = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'command='], {
+      encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+    }).trim();
+    return [{ pid, ppid: Number(match[2]), command }];
+  });
+  const daemonPattern = new RegExp(
+    `^${process.execPath.replaceAll('.', '\\.')} /private/tmp/phase9-playwright-transport\\.[0-9a-f]{48}`
+      + `/node_modules/playwright-core/lib/entry/cliDaemon\\.js ${session} --browser=chrome$`,
+  );
+  const daemons = records.filter(record => daemonPattern.test(record.command));
+  if (daemons.length !== 1) throw new Error('fixture-launch-receipt-invalid');
+  const mains = records.filter(record => record.ppid === daemons[0].pid
+    && record.command.startsWith('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome ')
+    && !record.command.includes(' --type=')
+    && record.command.includes(` --${token}`));
+  if (mains.length !== 1) throw new Error('fixture-launch-receipt-invalid');
+  return { session, daemonPid: daemons[0].pid, chromeMainPid: mains[0].pid };
 }
 
 async function runRealRetainedBrowser(mode, phase, args) {
   const clientModule = await import(pathToFileURL(join(
     process.cwd(), 'scripts', 'qa-evidence', 'phase9', 'playwright-cli-client.mjs',
   )).href);
-  const session = 'phase9-real-guardian-retained';
+  const sessions = mode.includes('two-sessions')
+    ? ['phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b']
+    : ['phase9-real-guardian-retained'];
   const guardianMarkerName = args.get('--guardian-marker-env');
   const marker = process.env[guardianMarkerName];
   if (!/^[0-9a-f]{64}$/.test(marker ?? '')) nativeExit(66);
@@ -136,18 +181,26 @@ async function runRealRetainedBrowser(mode, phase, args) {
     sourceEnvironment: process.env,
     cwd: process.cwd(),
   });
-  const browserSessions = phase === 'before-transition' ? [session] : [];
-  writeMessage({ version: 1, type: 'ownership', phase, browserSessions });
+  const browserSessions = phase === 'before-transition' ? sessions : [];
+  const attachedBrowserSessions = phase === 'after-transition' ? sessions : [];
+  const launchReceipts = [];
   const infoPath = `/tmp/phase9-guardian-real-retained-${process.ppid}-${phase}.json`;
   if (phase === 'before-transition') {
     if (mode !== 'real-retained-browser-missing-session') {
-      await clientModule.installSignalRecorder(client, session);
-      await clientModule.setAndVerifyViewport(client, session, { width: 390, height: 844 });
-      await client.runCode(session, `async (page) => {
-        page.__phase9RetainedSessionMarker = ${nativeJsonStringify(session)};
-        return true;
-      }`);
+      for (const session of sessions) {
+        await clientModule.installSignalRecorder(client, session);
+        launchReceipts.push(realLaunchReceipt(session, guardianMarkerName, marker));
+        await clientModule.setAndVerifyViewport(client, session, { width: 390, height: 844 });
+        await client.runCode(session, `async (page) => {
+          page.__phase9RetainedSessionMarker = ${nativeJsonStringify(session)};
+          return true;
+        }`);
+      }
+      if (mode === 'real-retained-browser-two-sessions-missing-second-chrome') {
+        process.kill(launchReceipts[1].chromeMainPid, 'SIGKILL');
+      }
     }
+    if (launchReceipts.length === 0) launchReceipts.push(...fakeLaunchReceipts(browserSessions));
     let roguePid = null;
     if (mode === 'real-retained-browser-rogue') {
       const rogue = spawn(process.execPath, [
@@ -156,14 +209,55 @@ async function runRealRetainedBrowser(mode, phase, args) {
       rogue.unref();
       roguePid = rogue.pid;
     }
-    writeFileSync(infoPath, nativeJsonStringify({ marker, roguePid, session }), { mode: 0o600 });
+    if (mode === 'real-retained-browser-two-sessions-extra-direct-chrome') {
+      const extra = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
+        '--headless', '--no-sandbox', '--disable-gpu', '--remote-debugging-port=0',
+        `--user-data-dir=/tmp/phase9-extra-chrome-${process.ppid}`,
+        `--${guardianMarkerName}=${marker}`, 'about:blank',
+      ], { detached: true, env: process.env, stdio: 'ignore' });
+      extra.unref();
+      roguePid = extra.pid;
+    }
+    let lookalikePath = null;
+    let lookalikeRoot = null;
+    if (mode === 'real-retained-browser-two-sessions-lookalike-daemon') {
+      lookalikePath = `/tmp/phase9-lookalike-node-${process.ppid}`;
+      lookalikeRoot = `/private/tmp/phase9-playwright-transport.${marker.slice(0, 48)}`;
+      const fakeEntrypoint = `${lookalikeRoot}`
+        + '/node_modules/playwright-core/lib/entry/cliDaemon.js';
+      copyFileSync(process.execPath, lookalikePath);
+      chmodSync(lookalikePath, 0o700);
+      mkdirSync(join(fakeEntrypoint, '..'), { recursive: true, mode: 0o700 });
+      writeFileSync(fakeEntrypoint, 'setInterval(() => {}, 1000);\n', { mode: 0o600 });
+      const lookalike = spawn(lookalikePath, [
+        fakeEntrypoint, sessions[0], '--browser=chrome',
+      ], { argv0: process.execPath, detached: true, env: process.env, stdio: 'ignore' });
+      lookalike.unref();
+      roguePid = lookalike.pid;
+    }
+    writeMessage({
+      version: 2, type: 'ownership', phase, browserSessions,
+      attachedBrowserSessions, launchReceipts,
+    });
+    writeFileSync(infoPath, nativeJsonStringify({
+      marker, roguePid, sessions, launchReceipts,
+      lookalikePath, lookalikeRoot,
+    }), { mode: 0o600 });
   } else {
-    await clientModule.attachExistingSignalRecorder(client, session, {
+    for (const session of sessions) await clientModule.attachExistingSignalRecorder(client, session, {
       width: 390, height: 844, marker: session,
     });
-    writeFileSync(infoPath, nativeJsonStringify({ attached: true, marker, session }), { mode: 0o600 });
+    writeMessage({
+      version: 2, type: 'ownership', phase, browserSessions,
+      attachedBrowserSessions, launchReceipts,
+    });
+    writeFileSync(infoPath, nativeJsonStringify({
+      attached: true, marker, sessions,
+    }), { mode: 0o600 });
   }
-  finishRowsAfterOwnership(phase, mode, browserSessions);
+  finishRowsAfterOwnership(
+    phase, mode, browserSessions, true, undefined, launchReceipts, attachedBrowserSessions,
+  );
 }
 
 const args = parseArguments(process.argv.slice(process.argv[1]?.startsWith('--') ? 1 : 2));
@@ -191,7 +285,10 @@ if (mode === 'success') {
   finishWithRows(phase, mode, [], !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
 } else if (mode === 'mutate-globals') {
   const rows = phaseRows(phase);
-  writeMessage({ version: 1, type: 'ownership', phase, browserSessions: [] });
+  writeMessage({
+    version: 2, type: 'ownership', phase, browserSessions: [],
+    attachedBrowserSessions: [], launchReceipts: [],
+  });
   rows.forEach((row, index) => {
     writeMessage({ version: 1, type: 'row', phase, index, row });
   });
@@ -206,7 +303,8 @@ if (mode === 'success') {
   globalThis.setTimeout = () => 99;
   globalThis.clearTimeout = () => {};
   writeMessage({
-    version: 1, type: 'completion', phase, ok: true, browserSessions: [], rowCount: rows.length,
+    version: 2, type: 'completion', phase, ok: true, browserSessions: [],
+    attachedBrowserSessions: [], launchReceipts: [], rowCount: rows.length,
   }, () => nativeExit(0));
 } else if (mode === 'forged-claims') {
   writeMessage({ version: 1, type: 'ownership', phase, browserSessions: [] });
@@ -265,6 +363,10 @@ if (mode === 'success') {
 } else if (new Set([
   'real-retained-browser', 'real-retained-browser-rogue',
   'real-retained-browser-missing-session',
+  'real-retained-browser-two-sessions',
+  'real-retained-browser-two-sessions-missing-second-chrome',
+  'real-retained-browser-two-sessions-extra-direct-chrome',
+  'real-retained-browser-two-sessions-lookalike-daemon',
 ]).has(mode)) {
   await runRealRetainedBrowser(mode, phase, args);
 } else {

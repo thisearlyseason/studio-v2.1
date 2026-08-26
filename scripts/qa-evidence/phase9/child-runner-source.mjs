@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, normalize, sep } from 'node:path';
@@ -171,9 +172,44 @@ const ownedSessions = phase === 'before-transition'
     ? [sessionName(row.contextId), freshSessionName(row.contextId)]
     : [sessionName(row.contextId)])
   : rowsForPhase.filter(row => row.scenario === 'fresh-login').map(row => sessionName(row.contextId));
-process.stdout.write(`${JSON.stringify({
-  type: 'ownership', version: 1, phase, browserSessions: [...ownedSessions].sort(),
-})}\n`);
+
+const executeProcessAudit = args => new Promise((resolvePromise, reject) => execFile('/bin/ps', args, {
+  encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+  maxBuffer: 16_777_216, timeout: 5_000,
+}, (error, stdout) => error ? reject(new Error('runner-launch-receipt-invalid')) : resolvePromise(stdout)));
+const captureLaunchReceipt = async session => {
+  const marker = process.env[guardianMarkerName];
+  const token = `${guardianMarkerName}=${marker}`;
+  const output = await executeProcessAudit(['eww', '-axo', 'pid=,ppid=,command=']);
+  const records = [];
+  for (const line of output.split('\n')) {
+    const words = line.split(/\s+/);
+    if (!words.includes(token) && !words.includes(`--${token}`)) continue;
+    const match = /^\s*([1-9][0-9]*)\s+([0-9]+)\s+/.exec(line);
+    if (!match) throw new Error('runner-launch-receipt-invalid');
+    const pid = Number(match[1]);
+    const command = (await executeProcessAudit(['-p', String(pid), '-o', 'command='])).trim();
+    records.push({ pid, ppid: Number(match[2]), command });
+  }
+  const daemonPattern = new RegExp(
+    `^${process.execPath.replaceAll('.', '\\.')} /private/tmp/phase9-playwright-transport\\.[0-9a-f]{48}`
+      + `/node_modules/playwright-core/lib/entry/cliDaemon\\.js ${session} --browser=chrome$`,
+  );
+  const daemons = records.filter(record => daemonPattern.test(record.command));
+  if (daemons.length !== 1) throw new Error('runner-launch-receipt-invalid');
+  const mains = records.filter(record => record.ppid === daemons[0].pid
+    && record.command.startsWith(`${config.chrome.binaryPath} `)
+    && !record.command.includes(' --type=') && record.command.includes(` --${token}`));
+  if (mains.length !== 1) throw new Error('runner-launch-receipt-invalid');
+  return Object.freeze({ session, daemonPid: daemons[0].pid, chromeMainPid: mains[0].pid });
+};
+const launchReceipts = new Map();
+const attachedBrowserSessions = new Set();
+const openWithReceipt = async session => {
+  if (launchReceipts.has(session)) throw new Error('runner-launch-receipt-invalid');
+  await installSignalRecorder(client, session);
+  launchReceipts.set(session, await captureLaunchReceipt(session));
+};
 
 const waitForExactLocation = (session, path, sentinel) => client.runCode(session, `async (page) => {
   await page.waitForURL(url => url.origin === ${JSON.stringify(STAGING_ORIGIN)} && url.pathname === ${JSON.stringify(path)}, { timeout: 45000 });
@@ -229,7 +265,7 @@ try {
     const session = rowSession(row);
     const viewport = row.viewportName === 'mobile' ? { width: 390, height: 844 } : { width: 1440, height: 900 };
     if (phase === 'before-transition' || row.scenario === 'fresh-login') {
-      await installSignalRecorder(client, session);
+      await openWithReceipt(session);
       if (await setAndVerifyViewport(client, session, viewport) !== row.viewport) {
         throw new Error('runner-viewport-label-invalid');
       }
@@ -237,6 +273,7 @@ try {
       await attachExistingSignalRecorder(client, session, {
         ...viewport, marker: session, requireAuthenticated: true,
       });
+      attachedBrowserSessions.add(session);
     }
     if (row.group === 'admission-route') {
       rows.push(await runAdmissionScenario({ client, session, context: row, actions: actionsFor(session) }));
@@ -248,7 +285,7 @@ try {
       }));
     } else if (row.group === 'logout') {
       const freshSession = freshSessionName(row.contextId);
-      await installSignalRecorder(client, freshSession);
+      await openWithReceipt(freshSession);
       if (await setAndVerifyViewport(client, freshSession, viewport) !== row.viewport) {
         throw new Error('runner-viewport-label-invalid');
       }
@@ -305,12 +342,24 @@ try {
     rows.push(Object.freeze(Object.fromEntries(REQUIRED_LEDGER_COLUMNS.map(column => [column, result[column]]))));
     if (phase === 'before-transition' && row.group !== 'pending-deletion') await clearSession(session).catch(() => {});
   }
+  const browserSessions = [...ownedSessions].sort();
+  const receipts = [...launchReceipts.values()].sort((left, right) => left.session.localeCompare(right.session));
+  const attached = [...attachedBrowserSessions].sort();
+  if (new Set(browserSessions).size !== browserSessions.length
+    || receipts.length !== browserSessions.length
+    || receipts.some((receipt, index) => receipt.session !== browserSessions[index])) {
+    throw new Error('runner-launch-receipt-invalid');
+  }
+  process.stdout.write(`${JSON.stringify({
+    type: 'ownership', version: 2, phase, browserSessions,
+    attachedBrowserSessions: attached, launchReceipts: receipts,
+  })}\n`);
   for (const [index, row] of rows.entries()) process.stdout.write(`${JSON.stringify({
     type: 'row', version: 1, phase, index, row,
   })}\n`);
   process.stdout.write(`${JSON.stringify({
-    type: 'completion', version: 1, phase, ok: true, rowCount: rows.length,
-    browserSessions: [...ownedSessions].sort(),
+    type: 'completion', version: 2, phase, ok: true, rowCount: rows.length,
+    browserSessions, attachedBrowserSessions: attached, launchReceipts: receipts,
   })}\n`);
 } finally {
   identities.clear();

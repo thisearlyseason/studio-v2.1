@@ -4739,6 +4739,9 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
 });
 
 const realGuardianSession = 'phase9-real-guardian-retained';
+const realGuardianTwoSessions = Object.freeze([
+  'phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b',
+]);
 const realGuardianInfoPath = phase => `/tmp/phase9-guardian-real-retained-${process.pid}-${phase}.json`;
 const realGuardianBrowserClient = Object.freeze({
   closeBrowser: session => executeCapturedPlaywrightTransportCommand([`-s=${session}`, 'close'], { timeoutMs: 30_000 }),
@@ -4762,11 +4765,16 @@ const pidAlive = pid => {
   }
 };
 const cleanupRealGuardianIntegration = async () => {
-  await realGuardianBrowserClient.closeBrowser(realGuardianSession).catch(() => {});
+  for (const session of [realGuardianSession, ...realGuardianTwoSessions]) {
+    await realGuardianBrowserClient.closeBrowser(session).catch(() => {});
+  }
   const paths = ['before-transition', 'after-transition'].map(realGuardianInfoPath);
+  const fixturePaths = new Set([`/tmp/phase9-extra-chrome-${process.pid}`]);
   for (const path of paths) {
     if (!existsSync(path)) continue;
     const info = JSON.parse(readFileSync(path, 'utf8'));
+    if (typeof info.lookalikePath === 'string') fixturePaths.add(info.lookalikePath);
+    if (typeof info.lookalikeRoot === 'string') fixturePaths.add(info.lookalikeRoot);
     for (const line of markedProcessLines(info.marker)) {
       const pid = Number(/^\s*([1-9][0-9]*)\s/.exec(line)?.[1]);
       if (!Number.isSafeInteger(pid)) continue;
@@ -4784,6 +4792,7 @@ const cleanupRealGuardianIntegration = async () => {
     }
     rmSync(path, { force: true });
   }
+  for (const path of fixturePaths) rmSync(path, { recursive: true, force: true });
 };
 
 test('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: 120_000 }, async () => {
@@ -4873,6 +4882,99 @@ test('phase 9 guardian rejects a declared real retained browser missing from inv
     assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
     assert.deepEqual(markedProcessLines(info.marker), []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
+});
+
+test('phase 9 guardian binds two real retained sessions to distinct immutable launch receipts', { timeout: 120_000 }, async () => {
+  await cleanupRealGuardianIntegration();
+  let boundaryReceipts;
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser-two-sessions',
+    scenarioJoinTimeoutMs: 3_000,
+    browserClient: realGuardianBrowserClient,
+    async beforeTransition() {
+      const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+      assert.deepEqual(
+        (await realGuardianBrowserClient.listBrowsers()).browsers.map(item => item.name).sort(),
+        [...realGuardianTwoSessions],
+      );
+      assert.deepEqual(info.launchReceipts.map(receipt => receipt.session).sort(), [...realGuardianTwoSessions]);
+      assert.equal(new Set(info.launchReceipts.map(receipt => receipt.daemonPid)).size, 2);
+      assert.equal(new Set(info.launchReceipts.map(receipt => receipt.chromeMainPid)).size, 2);
+      boundaryReceipts = info.launchReceipts;
+    },
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.rows.length, 44);
+    assert.equal(result.rows.filter(row => row.startState === 'pending_deletion').length, 4);
+    assert.equal(JSON.parse(readFileSync(realGuardianInfoPath('after-transition'), 'utf8')).attached, true);
+    for (const receipt of boundaryReceipts) {
+      assert.equal(pidAlive(receipt.daemonPid), false);
+      assert.equal(pidAlive(receipt.chromeMainPid), false);
+    }
+    assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
+});
+
+test('phase 9 guardian rejects two declared sessions when the second Chrome main is missing', { timeout: 120_000 }, async () => {
+  await cleanupRealGuardianIntegration();
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser-two-sessions-missing-second-chrome',
+    scenarioJoinTimeoutMs: 3_000,
+    browserClient: realGuardianBrowserClient,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'browser-ownership-invalid');
+    assert.equal(result.closureCertified, true);
+    assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
+});
+
+test('phase 9 guardian rejects an extra marked direct Chrome main outside its two receipts', { timeout: 120_000 }, async () => {
+  await cleanupRealGuardianIntegration();
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser-two-sessions-extra-direct-chrome',
+    scenarioJoinTimeoutMs: 3_000,
+    browserClient: realGuardianBrowserClient,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.closureCertified, true);
+    assert.equal(pidAlive(info.roguePid), false);
+    assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
+});
+
+test('phase 9 guardian rejects a marked daemon command look-alike with the wrong executable', { timeout: 120_000 }, async () => {
+  await cleanupRealGuardianIntegration();
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser-two-sessions-lookalike-daemon',
+    scenarioJoinTimeoutMs: 3_000,
+    browserClient: realGuardianBrowserClient,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.closureCertified, true);
+    assert.equal(pidAlive(info.roguePid), false);
+    assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
   } finally {
     await cleanupRealGuardianIntegration();
   }

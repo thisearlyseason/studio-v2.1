@@ -21,6 +21,7 @@ import {
 } from './scenario-contracts.mjs';
 
 const INTRINSIC_PROMISE = Promise;
+const INTRINSIC_PROMISE_ALL = Promise.all;
 const INTRINSIC_PROMISE_PROTOTYPE = Promise.prototype;
 const INTRINSIC_PROMISE_THEN = Promise.prototype.then;
 const INTRINSIC_PROMISE_CONSTRUCTOR_DESCRIPTOR = Object.getOwnPropertyDescriptor(
@@ -59,7 +60,24 @@ const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
 const RUN_MARKER_ENV = 'PHASE9_GUARDIAN_RUN_MARKER';
 const PLAYWRIGHT_TRANSPORT_ROOT_PATTERN = '/private/tmp/phase9-playwright-transport.';
 const PLAYWRIGHT_DAEMON_SUFFIX = '/node_modules/playwright-core/lib/entry/cliDaemon.js';
-const SYSTEM_CHROME_BINARY = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const SYSTEM_CODESIGN = '/usr/bin/codesign';
+const SYSTEM_LSOF = '/usr/sbin/lsof';
+const CHROME_MAIN_ALLOWED_SWITCHES = new Set([
+  'allow-pre-commit-input', 'blink-settings', 'disable-background-networking',
+  'disable-background-timer-throttling', 'disable-backgrounding-occluded-windows',
+  'disable-back-forward-cache', 'disable-blink-features', 'disable-breakpad',
+  'disable-client-side-phishing-detection', 'disable-component-extensions-with-background-pages',
+  'disable-component-update', 'disable-default-apps', 'disable-dev-shm-usage',
+  'disable-edgeupdater', 'disable-extensions', 'disable-features', 'disable-field-trial-config',
+  'disable-hang-monitor', 'disable-infobars', 'disable-ipc-flooding-protection',
+  'disable-popup-blocking', 'disable-prompt-on-repost', 'disable-renderer-backgrounding',
+  'disable-search-engine-choice-screen', 'disable-sync', 'disable-updater-scheduler',
+  'edge-skip-compat-layer-relaunch', 'enable-features', 'enable-unsafe-swiftshader',
+  'export-tagged-pdf', 'force-color-profile', 'headless', 'hide-scrollbars',
+  'metrics-recording-only', 'mute-audio', 'no-default-browser-check', 'no-first-run',
+  'no-service-autorun', 'no-startup-window', 'password-store', 'remote-debugging-pipe',
+  'unsafely-disable-devtools-self-xss-warnings', 'use-mock-keychain', 'user-data-dir',
+]);
 const PROCESS_EVENTS = Object.freeze(['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']);
 const ORDERED_STATES = Object.freeze([
   'uninitialized',
@@ -794,6 +812,38 @@ function snapshotRunnerCommand(value) {
   });
 }
 
+function exactStringPolicy(value, keys) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])
+    || keys.some(key => typeof value[key] !== 'string' || value[key].length === 0)) return null;
+  return Object.freeze(Object.fromEntries(keys.map(key => [key, value[key]])));
+}
+
+function processPolicyFromVerifiedConfigs(configFiles) {
+  const candidates = configFiles.flatMap(config => {
+    let parsed;
+    try { parsed = JSON.parse(Buffer.from(config.contentsBase64, 'base64').toString('utf8')); } catch { return []; }
+    const runtime = exactStringPolicy(parsed?.nodeRuntime, [
+      'path', 'sha256', 'codesignIdentifier', 'teamIdentifier',
+    ]);
+    const chrome = exactStringPolicy(parsed?.chrome, [
+      'appPath', 'binaryPath', 'binarySha256', 'codesignIdentifier', 'teamIdentifier',
+    ]);
+    if (!runtime || !chrome || runtime.path !== INTRINSIC_PROCESS_EXEC_PATH
+      || !isAbsolute(runtime.path) || resolve(runtime.path) !== runtime.path
+      || !/^[0-9a-f]{64}$/.test(runtime.sha256)
+      || !isAbsolute(chrome.appPath) || resolve(chrome.appPath) !== chrome.appPath
+      || !isAbsolute(chrome.binaryPath) || resolve(chrome.binaryPath) !== chrome.binaryPath
+      || !chrome.binaryPath.startsWith(`${chrome.appPath}${sep}`)
+      || !/^[0-9a-f]{64}$/.test(chrome.binarySha256)) return [];
+    return [Object.freeze({ runtime, chrome })];
+  });
+  if (candidates.length > 1) throw new GuardianFailure('scenario-runner-invalid');
+  return candidates[0] ?? null;
+}
+
 function pathInside(root, candidate) {
   const candidateRelative = relative(root, candidate);
   return candidateRelative !== ''
@@ -874,6 +924,7 @@ async function verifyRunnerCommand(command, repositoryRoot) {
     entrypointSource: entrypoint.text,
     entrypointSha256: entrypoint.sha256,
     configFiles: Object.freeze(configFiles),
+    processPolicy: processPolicyFromVerifiedConfigs(configFiles),
   });
 }
 
@@ -908,6 +959,40 @@ function requireRunnerSessions(value) {
   return sessions;
 }
 
+function requireLaunchReceipts(value, browserSessions) {
+  const receipts = snapshotArrayValues(value, RUNNER_SESSION_LIMIT, 'scenario-runner-invalid').map(item => {
+    const descriptors = closedDataDescriptors(
+      item, ['chromeMainPid', 'daemonPid', 'session'], 'scenario-runner-invalid',
+    );
+    const session = descriptors.session.value;
+    const daemonPid = descriptors.daemonPid.value;
+    const chromeMainPid = descriptors.chromeMainPid.value;
+    if (typeof session !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)
+      || !Number.isSafeInteger(daemonPid) || daemonPid <= 1
+      || !Number.isSafeInteger(chromeMainPid) || chromeMainPid <= 1
+      || daemonPid === chromeMainPid) throw new GuardianFailure('scenario-runner-invalid');
+    return Object.freeze({ session, daemonPid, chromeMainPid });
+  });
+  receipts.sort((left, right) => left.session.localeCompare(right.session));
+  if (!isDeepStrictEqual(receipts.map(receipt => receipt.session), browserSessions)
+    || new Set(receipts.map(receipt => receipt.daemonPid)).size !== receipts.length
+    || new Set(receipts.map(receipt => receipt.chromeMainPid)).size !== receipts.length
+    || new Set(receipts.flatMap(receipt => [receipt.daemonPid, receipt.chromeMainPid])).size !== receipts.length * 2) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  return Object.freeze(receipts);
+}
+
+function requireOwnershipPayload(message) {
+  const browserSessions = Object.freeze(requireRunnerSessions(message.browserSessions));
+  const attachedBrowserSessions = Object.freeze(requireRunnerSessions(message.attachedBrowserSessions));
+  if (attachedBrowserSessions.some(session => browserSessions.includes(session))) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  const launchReceipts = requireLaunchReceipts(message.launchReceipts, browserSessions);
+  return Object.freeze({ browserSessions, attachedBrowserSessions, launchReceipts });
+}
+
 function requirePhaseRow(value, phase, index) {
   const expected = CANONICAL_ROW_CONTRACTS[phase]?.[index];
   if (!expected) throw new GuardianFailure('scenario-runner-invalid');
@@ -939,6 +1024,56 @@ function validateCompleteRows(rowsByContext) {
   )));
 }
 
+function executeProcessAudit(command, args, maxBuffer = PROCESS_AUDIT_OUTPUT_LIMIT) {
+  return new INTRINSIC_PROMISE((resolveAudit, rejectAudit) => {
+    INTRINSIC_CHILD_EXEC_FILE(command, args, {
+      encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' }, maxBuffer,
+      timeout: 30_000, windowsHide: true,
+    }, (error, stdout, stderr) => {
+      if (error || typeof stdout !== 'string' || typeof stderr !== 'string') {
+        rejectAudit(new GuardianFailure('scenario-closure-failed'));
+        return;
+      }
+      resolveAudit(Object.freeze({ stdout, stderr }));
+    });
+  });
+}
+
+async function enrichMarkedProcesses(processes) {
+  if (processes.length === 0) return Object.freeze([]);
+  const pids = processes.map(item => item.pid);
+  const [{ stdout: cleanOutput }, { stdout: lsofOutput }] = await INTRINSIC_REFLECT_APPLY(
+    INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[
+    executeProcessAudit('/bin/ps', ['-p', pids.join(','), '-o', 'pid=,command=']),
+    executeProcessAudit(SYSTEM_LSOF, ['-a', '-p', pids.join(','), '-d', 'txt', '-Fn']),
+    ]],
+  );
+  const cleanCommands = new Map();
+  for (const line of cleanOutput.split('\n')) {
+    const match = /^\s*([1-9][0-9]*)\s+(.+)$/.exec(line);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    if (cleanCommands.has(pid)) throw new GuardianFailure('scenario-closure-failed');
+    cleanCommands.set(pid, match[2]);
+  }
+  const executables = new Map();
+  let currentPid = null;
+  for (const line of lsofOutput.split('\n')) {
+    if (/^p[1-9][0-9]*$/.test(line)) {
+      currentPid = Number(line.slice(1));
+    } else if (currentPid && line.startsWith('n') && !executables.has(currentPid)) {
+      executables.set(currentPid, line.slice(1));
+    }
+  }
+  return Object.freeze(processes.map(item => {
+    const command = cleanCommands.get(item.pid);
+    const executable = executables.get(item.pid);
+    if (typeof command !== 'string' || command.length === 0 || typeof executable !== 'string'
+      || !isAbsolute(executable)) throw new GuardianFailure('scenario-closure-failed');
+    return Object.freeze({ ...item, command, executable });
+  }));
+}
+
 function auditMarkedProcesses(runMarker) {
   const category = 'scenario-closure-failed';
   if (typeof runMarker !== 'string' || !/^[0-9a-f]{64}$/.test(runMarker)) {
@@ -946,8 +1081,8 @@ function auditMarkedProcesses(runMarker) {
   }
   const token = `${RUN_MARKER_ENV}=${runMarker}`;
   const args = INTRINSIC_PROCESS_PLATFORM === 'linux'
-    ? ['eww', '-eo', 'pid=,ppid=,args=']
-    : ['eww', '-axo', 'pid=,ppid=,command='];
+    ? ['eww', '-eo', 'pid=,ppid=,pgid=,args=']
+    : ['eww', '-axo', 'pid=,ppid=,pgid=,command='];
   return new INTRINSIC_PROMISE((resolveAudit, rejectAudit) => {
     INTRINSIC_CHILD_EXEC_FILE('/bin/ps', args, {
       encoding: 'utf8',
@@ -964,23 +1099,32 @@ function auditMarkedProcesses(runMarker) {
       for (const line of stdout.split('\n')) {
         const words = line.split(/\s+/);
         if (!words.includes(token) && !words.includes(`--${token}`)) continue;
-        const match = /^\s*([1-9][0-9]*)\s+([0-9]+)\s+(.+)$/.exec(line);
+        const match = /^\s*([1-9][0-9]*)\s+([0-9]+)\s+([0-9]+)\s+(.+)$/.exec(line);
         const pid = Number(match?.[1]);
         const ppid = Number(match?.[2]);
-        const command = match?.[3];
+        const pgid = Number(match?.[3]);
         if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid
-          || !Number.isSafeInteger(ppid) || ppid < 0 || typeof command !== 'string') {
+          || !Number.isSafeInteger(ppid) || ppid < 0) {
           rejectAudit(new GuardianFailure(category));
           return;
         }
-        processes.push(Object.freeze({ pid, ppid, command }));
+        if (!Number.isSafeInteger(pgid) || pgid <= 0) {
+          rejectAudit(new GuardianFailure(category));
+          return;
+        }
+        processes.push(Object.freeze({ pid, ppid, pgid }));
       }
       processes.sort((left, right) => left.pid - right.pid);
       if (processes.some((item, index) => index > 0 && processes[index - 1].pid === item.pid)) {
         rejectAudit(new GuardianFailure(category));
         return;
       }
-      resolveAudit(Object.freeze(processes));
+      consumeNativePromise(
+        enrichMarkedProcesses(processes),
+        resolveAudit,
+        () => rejectAudit(new GuardianFailure(category)),
+        category,
+      );
     });
   });
 }
@@ -1052,31 +1196,152 @@ async function terminateMarkedProcesses(runMarker, timeoutMs) {
   });
 }
 
-function retainedBrowserProcessesAreExact(processes, browserSessions) {
-  if (!Array.isArray(processes) || processes.length < 2 || browserSessions.length === 0) return false;
-  const daemonPrefix = `${INTRINSIC_PROCESS_EXEC_PATH} ${PLAYWRIGHT_TRANSPORT_ROOT_PATTERN}`;
-  const daemonSessions = new Map(processes.flatMap(({ pid, command }) => {
-    if (!command.startsWith(daemonPrefix)) return [];
-    const suffix = command.slice(daemonPrefix.length);
-    const match = new RegExp(
-      `^[0-9a-f]{48}${PLAYWRIGHT_DAEMON_SUFFIX.replaceAll('.', '\\.')} `
-        + '([A-Za-z0-9][A-Za-z0-9_-]{0,63}) --browser=chrome(?:\\s|$)',
-    ).exec(suffix);
-    return match ? [[pid, match[1]]] : [];
-  }));
-  const daemonPids = new Set(daemonSessions.keys());
-  const expectedSessions = [...browserSessions].sort();
-  const actualSessions = [...daemonSessions.values()].sort();
-  if (daemonPids.size !== expectedSessions.length
-    || !isDeepStrictEqual(actualSessions, expectedSessions)) return false;
-  let chromeCount = 0;
-  for (const processRecord of processes) {
-    if (daemonPids.has(processRecord.pid)) continue;
-    if (!processRecord.command.startsWith(`${SYSTEM_CHROME_BINARY} `)
-      || !daemonPids.has(processRecord.ppid)) return false;
-    chromeCount += 1;
+async function verifySignedPath(path, policy) {
+  const codesign = await lstat(SYSTEM_CODESIGN);
+  if (!codesign.isFile() || codesign.isSymbolicLink() || await realpath(SYSTEM_CODESIGN) !== SYSTEM_CODESIGN
+    || codesign.uid !== 0 || (codesign.mode & 0o022) !== 0) {
+    throw new GuardianFailure('scenario-closure-failed');
   }
-  return chromeCount > 0;
+  await executeProcessAudit(SYSTEM_CODESIGN, [
+    '--verify', '--deep',
+    `-R=identifier "${policy.codesignIdentifier}" and anchor apple generic and certificate leaf[subject.OU] = "${policy.teamIdentifier}"`,
+    path,
+  ], 65_536);
+}
+
+async function verifyPinnedExecutable(path, sha256, policy, { rootOwned = false, signedPath = path } = {}) {
+  let before;
+  let canonical;
+  let bytes;
+  try {
+    [before, canonical, bytes] = await INTRINSIC_REFLECT_APPLY(
+      INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[lstat(path), realpath(path), readFile(path)]],
+    );
+  } catch {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  if (!before.isFile() || before.isSymbolicLink() || canonical !== path
+    || (before.mode & 0o111) === 0 || (rootOwned && before.uid !== 0)
+    || (rootOwned && (before.mode & 0o022) !== 0) || bytes.length !== before.size
+    || createHash('sha256').update(bytes).digest('hex') !== sha256) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  await verifySignedPath(signedPath, policy);
+  const after = await lstat(path);
+  if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size
+    || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs
+    || (after.mode & 0o777) !== (before.mode & 0o777)) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+}
+
+function daemonCommandIsExact(record, receipt, runtimePath) {
+  const prefix = `${runtimePath} ${PLAYWRIGHT_TRANSPORT_ROOT_PATTERN}`;
+  if (record.executable !== runtimePath || record.pgid !== record.pid || !record.command.startsWith(prefix)) return false;
+  const suffix = record.command.slice(prefix.length);
+  return new RegExp(
+    `^[0-9a-f]{48}${PLAYWRIGHT_DAEMON_SUFFIX.replaceAll('.', '\\.')} ${receipt.session} --browser=chrome$`,
+  ).test(suffix);
+}
+
+function chromeMainCommandIsExact(record, marker, binaryPath) {
+  if (record.executable !== binaryPath || record.pgid !== record.pid
+    || !record.command.startsWith(`${binaryPath} `) || record.command.includes(' --type=')) return false;
+  const args = record.command.slice(binaryPath.length + 1).split(' ');
+  const markerArgument = `--${RUN_MARKER_ENV}=${marker}`;
+  if (args.at(-1) !== markerArgument || !args.includes('--headless')
+    || !args.includes('--remote-debugging-pipe') || !args.includes('--no-startup-window')
+    || args.filter(arg => arg.startsWith('--user-data-dir=/')).length !== 1) return false;
+  return args.every(arg => {
+    if (arg === markerArgument) return true;
+    if (!arg.startsWith('--') || arg.includes('\n') || arg.includes('\r')) return false;
+    return CHROME_MAIN_ALLOWED_SWITCHES.has(arg.slice(2).split('=')[0]);
+  });
+}
+
+async function chromeHelperIsExact(record, mainPids, processByPid, policy) {
+  let ancestor = record.ppid;
+  const visited = new Set([record.pid]);
+  while (!mainPids.has(ancestor)) {
+    if (visited.has(ancestor)) return false;
+    visited.add(ancestor);
+    const parent = processByPid.get(ancestor);
+    if (!parent) return false;
+    ancestor = parent.ppid;
+  }
+  const helperRoot = `${policy.appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/`;
+  if (!record.executable.startsWith(helperRoot) || !record.executable.includes('/Helpers/')
+    || !record.command.startsWith(`${record.executable} `)) return false;
+  const type = / --type=(renderer|gpu-process|utility|zygote)(?:\s|$)/.exec(record.command)?.[1];
+  const crashpad = record.executable.endsWith('/chrome_crashpad_handler')
+    && record.command.includes(' --monitor-self');
+  if (!type && !crashpad) return false;
+  let metadata;
+  let canonical;
+  try {
+    [metadata, canonical] = await INTRINSIC_REFLECT_APPLY(
+      INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[lstat(record.executable), realpath(record.executable)]],
+    );
+  } catch {
+    return false;
+  }
+  if (!metadata.isFile() || metadata.isSymbolicLink() || canonical !== record.executable
+    || (metadata.mode & 0o111) === 0) return false;
+  const display = await executeProcessAudit(SYSTEM_CODESIGN, ['-dv', '--verbose=4', record.executable], 65_536)
+    .catch(() => null);
+  if (!display) return false;
+  const details = `${display.stdout}\n${display.stderr}`;
+  const identifier = /^Identifier=(com\.google\.Chrome[^\r\n]*)$/m.exec(details)?.[1];
+  const team = /^TeamIdentifier=([^\r\n]+)$/m.exec(details)?.[1];
+  if (!identifier || team !== policy.teamIdentifier) return false;
+  try {
+    await verifySignedPath(record.executable, {
+      codesignIdentifier: identifier, teamIdentifier: policy.teamIdentifier,
+    });
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+async function retainedBrowserProcessesAreExact(processes, browserSessions, receipts, processPolicy) {
+  if (!Array.isArray(processes) || processes.length < 2 || browserSessions.length === 0
+    || !processPolicy || receipts.length !== browserSessions.length) return false;
+  const processByPid = new Map(processes.map(item => [item.pid, item]));
+  if (processByPid.size !== processes.length) return false;
+  try {
+    await verifyPinnedExecutable(
+      processPolicy.runtime.path, processPolicy.runtime.sha256, processPolicy.runtime, { rootOwned: true },
+    );
+    await verifyPinnedExecutable(
+      processPolicy.chrome.binaryPath, processPolicy.chrome.binarySha256, processPolicy.chrome,
+      { signedPath: processPolicy.chrome.appPath },
+    );
+  } catch {
+    return false;
+  }
+  const classified = new Set();
+  const mainPids = new Set();
+  for (const receipt of receipts) {
+    const daemon = processByPid.get(receipt.daemonPid);
+    const main = processByPid.get(receipt.chromeMainPid);
+    if (!daemon || !main || daemon.marker !== receipt.marker || main.marker !== receipt.marker
+      || !daemonCommandIsExact(daemon, receipt, processPolicy.runtime.path)
+      || main.ppid !== daemon.pid
+      || !chromeMainCommandIsExact(main, receipt.marker, processPolicy.chrome.binaryPath)) return false;
+    const directMains = processes.filter(record => record.ppid === daemon.pid
+      && record.executable === processPolicy.chrome.binaryPath && !record.command.includes(' --type='));
+    if (directMains.length !== 1 || directMains[0].pid !== main.pid) return false;
+    classified.add(daemon.pid);
+    classified.add(main.pid);
+    mainPids.add(main.pid);
+  }
+  for (const record of processes) {
+    if (classified.has(record.pid)) continue;
+    if (!(await chromeHelperIsExact(record, mainPids, processByPid, processPolicy.chrome))) return false;
+    classified.add(record.pid);
+  }
+  return classified.size === processes.length;
 }
 
 function processGroupAlive(handle) {
@@ -1168,11 +1433,13 @@ function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRo
       throw new GuardianFailure('scenario-runner-invalid');
     }
     if (message?.type === 'ownership') {
-      requireRunnerMessage(message, ['browserSessions', 'phase', 'type', 'version']);
-      if (ownership || terminal || message.version !== 1 || message.phase !== phase) {
+      requireRunnerMessage(message, [
+        'attachedBrowserSessions', 'browserSessions', 'launchReceipts', 'phase', 'type', 'version',
+      ]);
+      if (ownership || terminal || message.version !== 2 || message.phase !== phase) {
         throw new GuardianFailure('scenario-runner-invalid');
       }
-      ownership = Object.freeze(requireRunnerSessions(message.browserSessions));
+      ownership = requireOwnershipPayload(message);
       onOwnership(ownership);
       return;
     }
@@ -1189,23 +1456,28 @@ function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRo
       return;
     }
     if (message?.type === 'completion') {
-      requireRunnerMessage(message, ['browserSessions', 'ok', 'phase', 'rowCount', 'type', 'version']);
+      requireRunnerMessage(message, [
+        'attachedBrowserSessions', 'browserSessions', 'launchReceipts', 'ok',
+        'phase', 'rowCount', 'type', 'version',
+      ]);
       const expectedRows = CANONICAL_ROW_CONTRACTS[phase];
       if (
         !ownership
         || terminal
-        || message.version !== 1
+        || message.version !== 2
         || message.phase !== phase
         || typeof message.ok !== 'boolean'
         || !Number.isSafeInteger(message.rowCount)
         || message.rowCount !== expectedRows.length
         || phaseRows.length !== expectedRows.length
       ) throw new GuardianFailure('scenario-runner-invalid');
-      const sessions = requireRunnerSessions(message.browserSessions);
-      if (!isDeepStrictEqual(sessions, ownership)) throw new GuardianFailure('scenario-runner-invalid');
+      const completedOwnership = requireOwnershipPayload(message);
+      if (!isDeepStrictEqual(completedOwnership, ownership)) {
+        throw new GuardianFailure('scenario-runner-invalid');
+      }
       terminal = Object.freeze({
         ok: message.ok,
-        browserSessions: Object.freeze(sessions),
+        ...ownership,
         rows: Object.freeze([...phaseRows]),
       });
       settleCompletion(terminal);
@@ -1392,6 +1664,7 @@ export function createLifecycleGuardian({
   let browserClosureCertified = false;
   let closureCertified = false;
   const ownedBrowserSessions = new Set();
+  const ownedBrowserReceipts = new Map();
   let activeScenario = null;
   const phaseMarkers = new Map();
   let startupGeneration = null;
@@ -1553,15 +1826,39 @@ export function createLifecycleGuardian({
       try { processes = await auditMarkedProcesses(marker); } catch {
         throw new GuardianFailure('scenario-closure-failed');
       }
-      markedByPhase.push(Object.freeze({ marker, phase, processes }));
+      markedByPhase.push(Object.freeze({
+        marker, phase,
+        processes: processes.map(processRecord => Object.freeze({ ...processRecord, marker })),
+      }));
     }
     const processes = markedByPhase.flatMap(item => item.processes);
     if (names.length === 0) {
-      if (processes.length !== 0) throw new GuardianFailure('scenario-closure-failed');
+      if (processes.length !== 0 || ownedBrowserReceipts.size !== 0) {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
       return;
     }
-    if (!retainedBrowserProcessesAreExact(processes, names)) {
+    const receipts = [...ownedBrowserReceipts.values()].sort((left, right) => (
+      left.session.localeCompare(right.session)
+    ));
+    if (!isDeepStrictEqual(receipts.map(receipt => receipt.session), names)
+      || !(await retainedBrowserProcessesAreExact(
+        processes, names, receipts, verifiedRunnerSnapshot.processPolicy,
+      ))) {
       throw new GuardianFailure('scenario-closure-failed');
+    }
+  };
+
+  const certifyReceiptProcessesAbsent = async () => {
+    for (const [marker] of phaseMarkers) {
+      const processes = await auditMarkedProcesses(marker);
+      const livePids = new Set(processes.map(item => item.pid));
+      for (const receipt of ownedBrowserReceipts.values()) {
+        if (receipt.marker === marker
+          && (livePids.has(receipt.daemonPid) || livePids.has(receipt.chromeMainPid))) {
+          throw new GuardianFailure('scenario-closure-failed');
+        }
+      }
     }
   };
 
@@ -1586,6 +1883,7 @@ export function createLifecycleGuardian({
     }
     if (names.length !== 0) throw new GuardianFailure('browser-closure-failed');
     ownedBrowserSessions.clear();
+    ownedBrowserReceipts.clear();
     validateLifecycleResult('browser-sessions', { sessions: [] }, 'browsers-closed');
     browserClosureCertified = true;
   };
@@ -1746,6 +2044,12 @@ export function createLifecycleGuardian({
       } catch {
         browserFailure = true;
       }
+      let receiptFailure = false;
+      try {
+        await certifyReceiptProcessesAbsent();
+      } catch {
+        receiptFailure = true;
+      }
       let markerFailure = false;
       try {
         await terminateStoredPhaseMarkers();
@@ -1760,7 +2064,7 @@ export function createLifecycleGuardian({
           ...await currentPreservationStates(),
         });
       }
-      if (markerFailure) {
+      if (receiptFailure || markerFailure) {
         removeHandlers();
         return failureSummary({
           category: 'scenario-closure-failed', state, history, interrupted: isInterruption,
@@ -1909,13 +2213,26 @@ export function createLifecycleGuardian({
         privateContext,
         repositoryRoot: verifiedRepositoryRoot,
         runMarker,
-        onOwnership(sessions) {
-          for (const session of sessions) {
+        onOwnership({ browserSessions, attachedBrowserSessions, launchReceipts }) {
+          for (const session of browserSessions) {
             if (ownedBrowserSessions.has(session)) {
               throw new GuardianFailure('browser-ownership-invalid');
             }
           }
-          for (const session of sessions) ownedBrowserSessions.add(session);
+          for (const session of attachedBrowserSessions) {
+            if (!ownedBrowserSessions.has(session) || !ownedBrowserReceipts.has(session)) {
+              throw new GuardianFailure('browser-ownership-invalid');
+            }
+          }
+          for (const receipt of launchReceipts) {
+            if (ownedBrowserReceipts.has(receipt.session)) {
+              throw new GuardianFailure('browser-ownership-invalid');
+            }
+            ownedBrowserReceipts.set(receipt.session, Object.freeze({
+              ...receipt, marker: runMarker, phase,
+            }));
+          }
+          for (const session of browserSessions) ownedBrowserSessions.add(session);
         },
       });
     } catch (error) {
@@ -2048,6 +2365,7 @@ export function createLifecycleGuardian({
       checkInterrupted();
 
       await closeOwnedBrowsers();
+      await certifyReceiptProcessesAbsent();
       await terminateStoredPhaseMarkers();
       await certifyEmptyBrowserInventory();
       checkInterrupted();
