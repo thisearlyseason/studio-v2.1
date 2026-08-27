@@ -68,7 +68,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
   transportClient: 'bc088823074bd648fe6304364e6d07a6b8ae475271b37e99287b7c664f396ae0',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
-  processInspector: '93313f535ddd4ac31670a7eb82ebeb67ac359e37f2981305ffd0a20f436f83f3',
+  processInspector: '25213a51a727ebb0598a12fdf708261f6d3e2c95f5bc31abf8570660944a95c5',
 });
 export const phase9PlaywrightTransport = Object.freeze({
   version: PLAYWRIGHT_VERSION, coreVersion: PLAYWRIGHT_CORE_VERSION,

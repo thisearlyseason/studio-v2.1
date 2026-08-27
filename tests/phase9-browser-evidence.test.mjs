@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { createHook } from 'node:async_hooks';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
+import fs, {
+  chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
 } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -4918,6 +4919,98 @@ test('phase 9 Darwin inspector preserves raw argv boundaries and precise marked 
   }
 });
 
+test('phase 9 Darwin inspector preserves empty argv elements in explicit and all-PID scans without marker leakage', { timeout: 30_000 }, async () => {
+  const { inspectDarwinMarkedProcesses } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  const markerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const marker = createHash('sha256').update(`phase9-empty-argv-${process.pid}`).digest('hex');
+  const child = spawn(process.execPath, [
+    '-e', 'process.on("SIGTERM",()=>process.exit(0));setInterval(()=>{},1000)',
+    '', `embedded-${markerName}-name`, `embedded-${marker}-value`, '--switch-looking=one element',
+  ], { env: { ...process.env, [markerName]: marker }, stdio: 'ignore' });
+  const stop = () => new Promise(resolvePromise => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolvePromise();
+    child.once('close', resolvePromise);
+    try { child.kill('SIGKILL'); } catch { resolvePromise(); }
+  });
+  try {
+    const explicit = await inspectDarwinMarkedProcesses(marker, [child.pid]);
+    const all = await inspectDarwinMarkedProcesses(marker);
+    assert.equal(explicit.length, 1);
+    assert.deepEqual(all, explicit);
+    assert.equal(explicit[0].argv.includes(''), true);
+    assert.equal(explicit[0].argv.includes('--switch-looking=one element'), true);
+    const publicOutput = JSON.stringify(explicit);
+    assert.equal(publicOutput.includes(markerName), false);
+    assert.equal(publicOutput.includes(marker), false);
+  } finally {
+    await stop();
+  }
+});
+
+test('phase 9 Darwin inspector bounds aggregate serialization before accumulating many large records', () => {
+  const inspectorPath = join(
+    testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'darwin-process-inspector.py',
+  );
+  const program = String.raw`
+import json, runpy, sys
+namespace = runpy.run_path(sys.argv[1], run_name='phase9_inspector_test')
+encode = namespace.get('encode_bounded_document')
+if not callable(encode):
+    raise RuntimeError('bounded-encoder-missing')
+iterations = 0
+def records():
+    global iterations
+    payload = 'x' * 16384
+    for pid in range(1, 10001):
+        iterations += 1
+        yield {'pid': pid, 'ppid': 1, 'pgid': 1, 'startSec': 1, 'startUsec': 1,
+               'argv': ['/bin/x', payload], 'executable': '/bin/x',
+               'markerPresent': True, 'inspectionError': False}
+try:
+    encode(records())
+except RuntimeError as error:
+    print(json.dumps({'error': str(error), 'iterations': iterations}))
+else:
+    raise RuntimeError('aggregate-limit-not-enforced')
+`;
+  const result = spawnSync('/usr/bin/python3', ['-c', program, inspectorPath], {
+    encoding: 'utf8', timeout: 5_000, maxBuffer: 65_536,
+    env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const observed = JSON.parse(result.stdout);
+  assert.equal(observed.error, 'aggregate-limit');
+  assert.ok(observed.iterations <= 257, `encoder consumed ${observed.iterations} records`);
+});
+
+test('phase 9 guardian rejects fixed marked-error inspector records instead of treating them as empty', async () => {
+  const { parseDarwinProcessInspectorOutput } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof parseDarwinProcessInspectorOutput, 'function');
+  const record = {
+    pid: 43101, ppid: 43100, pgid: 43101, startSec: 1_787_805_000, startUsec: 12,
+    argv: [], executable: '', markerPresent: true, inspectionError: true,
+  };
+  const output = JSON.stringify({ version: 2, status: 'ok', records: [record] });
+  assert.throws(
+    () => parseDarwinProcessInspectorOutput(output, [record.pid]),
+    /scenario-closure-failed/i,
+  );
+  assert.deepEqual(
+    parseDarwinProcessInspectorOutput(output, [record.pid], { allowInspectionErrors: true }),
+    [record],
+  );
+  assert.throws(
+    () => parseDarwinProcessInspectorOutput(
+      JSON.stringify({ version: 2, status: 'error', records: [] }), [],
+    ),
+    /scenario-closure-failed/i,
+  );
+});
+
 test('phase 9 guardian rejects oversized and changing marked executables without unbounded reads', { timeout: 60_000 }, async () => {
   const { auditMarkedProcesses } = await import('../scripts/qa-evidence/phase9/lifecycle-guardian.mjs');
   assert.equal(typeof auditMarkedProcesses, 'function');
@@ -4980,6 +5073,62 @@ test('phase 9 guardian rejects oversized and changing marked executables without
   }
 });
 
+test('phase 9 executable hashing rejects a delayed final read within the configured deadline', { timeout: 10_000 }, async () => {
+  const executable = realpathSync(
+    '/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python',
+  );
+  const originalOpen = fs.promises.open;
+  fs.promises.open = async (...args) => {
+    const handle = await originalOpen(...args);
+    if (args[0] !== executable) return handle;
+    const delay = () => new Promise(resolvePromise => setTimeout(resolvePromise, 100));
+    return {
+      stat: handle.stat.bind(handle),
+      close: handle.close.bind(handle),
+      read: handle.read.bind(handle),
+      createReadStream() {
+        let reads = 0;
+        return {
+          [Symbol.asyncIterator]() { return this; },
+          async next() {
+            if (reads > 0) {
+              await delay();
+              return { done: true, value: undefined };
+            }
+            reads += 1;
+            const metadata = await handle.stat();
+            const buffer = Buffer.alloc(metadata.size);
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+            return { done: false, value: buffer.subarray(0, bytesRead) };
+          },
+          destroy() {},
+        };
+      },
+    };
+  };
+  syncBuiltinESMExports();
+  const marker = createHash('sha256').update(`phase9-slow-final-read-${process.pid}`).digest('hex');
+  const child = spawn('/usr/bin/python3', ['-c', 'import time; time.sleep(5)'], {
+    env: { ...process.env, PHASE9_GUARDIAN_RUN_MARKER: marker }, stdio: 'ignore',
+  });
+  try {
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
+    const guardianModule = await import(
+      `../scripts/qa-evidence/phase9/lifecycle-guardian.mjs?slow-final-read=${Date.now()}`
+    );
+    const startedAt = Date.now();
+    await assert.rejects(
+      guardianModule.auditMarkedProcesses(marker, { executableHashTimeoutMs: 20 }),
+      /scenario-closure-failed/i,
+    );
+    assert.ok(Date.now() - startedAt < 1_000, 'deadline must not await the delayed read');
+  } finally {
+    fs.promises.open = originalOpen;
+    syncBuiltinESMExports();
+    try { child.kill('SIGKILL'); } catch {}
+  }
+});
+
 test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, positional extras, and unknown renderer switches', async () => {
   const { chromeProcessCommandIsExact } = await import(
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
@@ -5010,7 +5159,7 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
     '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
     '--disable-blink-features=AutomationControlled', `--user-data-dir=${profilePath}`,
     '--remote-debugging-pipe', '--no-startup-window',
-    '--PHASE9_GUARDIAN_RUN_MARKER=:present',
+    '--guardian-marker-present',
   ];
   const mainRecord = Object.freeze({
     executable: binaryPath,
@@ -5696,6 +5845,36 @@ test('phase 9 lifecycle guardian kills a detached marked descendant before clean
     assert.equal(result.closureCertified, true);
     assert.equal(processAlive(detachedPid), false);
     assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+  } finally {
+    if (detachedPid && processAlive(detachedPid)) {
+      try { process.kill(detachedPid, 'SIGKILL'); } catch {}
+    }
+    rmSync(markerPath, { force: true });
+  }
+});
+
+test('phase 9 lifecycle guardian finds and kills a marked descendant whose argv exceeds inspector bounds', async () => {
+  const markerPath = `/tmp/phase9-guardian-child-malformed-${process.pid}.json`;
+  rmSync(markerPath, { force: true });
+  let detachedPid = null;
+  const processAlive = pid => {
+    try { process.kill(pid, 0); return true; } catch (error) {
+      if (error?.code === 'ESRCH') return false;
+      throw error;
+    }
+  };
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'detached-malformed-argv-rogue',
+    scenarioJoinTimeoutMs: 100,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    detachedPid = JSON.parse(readFileSync(markerPath, 'utf8')).pid;
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed', JSON.stringify(result));
+    assert.equal(result.closureCertified, false);
+    assert.equal(processAlive(detachedPid), false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
   } finally {
     if (detachedPid && processAlive(detachedPid)) {
       try { process.kill(detachedPid, 'SIGKILL'); } catch {}

@@ -343,6 +343,19 @@ if (mode === 'success') {
     { mode: 0o600 },
   );
   finishWithRows(phase, mode);
+} else if (mode === 'detached-malformed-argv-rogue') {
+  const grandchild = spawn(process.execPath, [
+    '-e',
+    "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)",
+    'x'.repeat(20_000),
+  ], { detached: true, env: process.env, stdio: 'ignore' });
+  grandchild.unref();
+  writeFileSync(
+    `/tmp/phase9-guardian-child-malformed-${process.ppid}.json`,
+    nativeJsonStringify({ pid: grandchild.pid }),
+    { mode: 0o600 },
+  );
+  finishWithRows(phase, mode);
 } else if (mode === 'start-marker-success') {
   writeFileSync(`/tmp/phase9-guardian-child-start-${process.ppid}`, 'started', { mode: 0o600 });
   finishWithRows(phase, mode);

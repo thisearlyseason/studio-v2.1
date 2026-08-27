@@ -44,6 +44,8 @@ const INTRINSIC_CHILD_SPAWN = spawn;
 const INTRINSIC_CHILD_EXEC_FILE = execFile;
 const INTRINSIC_RANDOM_BYTES = randomBytes;
 const INTRINSIC_ABORT_CONTROLLER = AbortController;
+const INTRINSIC_EVENT_TARGET_ADD = EventTarget.prototype.addEventListener;
+const INTRINSIC_EVENT_TARGET_REMOVE = EventTarget.prototype.removeEventListener;
 const INTRINSIC_PROCESS_KILL = process.kill.bind(process);
 const INTRINSIC_PROCESS_EXEC_PATH = process.execPath;
 const INTRINSIC_PROCESS_PLATFORM = process.platform;
@@ -61,7 +63,7 @@ const RUNNER_CONFIG_LIMIT = 65_536;
 const RUNNER_CONFIG_TOTAL_LIMIT = 131_072;
 const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
 const PROCESS_INSPECTOR_PATH = fileURLToPath(new URL('./darwin-process-inspector.py', import.meta.url));
-const PROCESS_INSPECTOR_SHA256 = '93313f535ddd4ac31670a7eb82ebeb67ac359e37f2981305ffd0a20f436f83f3';
+const PROCESS_INSPECTOR_SHA256 = '25213a51a727ebb0598a12fdf708261f6d3e2c95f5bc31abf8570660944a95c5';
 const PROCESS_INSPECTOR_LIMIT = 65_536;
 const PROCESS_INSPECTOR_RUNTIME = '/usr/bin/python3';
 const PROCESS_INSPECTOR_RUNTIME_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
@@ -69,9 +71,11 @@ const PROCESS_INSPECTOR_RUNTIME_LIMIT = 4_194_304;
 const EXECUTABLE_MAX_BYTES = 536_870_912;
 const EXECUTABLE_HASH_CHUNK_BYTES = 1_048_576;
 const EXECUTABLE_HASH_TIMEOUT_MS = 30_000;
+const EXECUTABLE_CLOSE_TIMEOUT_MS = 1_000;
 const BEFORE_TRANSITION_DEADLINE_MAX_MS = 2_700_000;
 const AFTER_TRANSITION_DEADLINE_MAX_MS = 900_000;
 const RUN_MARKER_ENV = 'PHASE9_GUARDIAN_RUN_MARKER';
+const PUBLIC_RUN_MARKER_ARGUMENT = '--guardian-marker-present';
 const PLAYWRIGHT_TRANSPORT_ROOT_PATTERN = '/private/tmp/phase9-playwright-transport.';
 const PLAYWRIGHT_DAEMON_SUFFIX = '/node_modules/playwright-core/lib/entry/cliDaemon.js';
 const SYSTEM_CODESIGN = '/usr/bin/codesign';
@@ -1091,54 +1095,155 @@ function requireAuditActive(signal) {
   if (signal?.aborted) throw new GuardianFailure('scenario-closure-failed');
 }
 
+function requireAuditDeadline(deadline) {
+  if (!Number.isFinite(deadline) || Date.now() >= deadline) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+}
+
+function boundedAuditOperation(candidate, deadline, signal, cancel) {
+  return new INTRINSIC_PROMISE((resolveOperation, rejectOperation) => {
+    let settled = false;
+    let timer = null;
+    const abort = () => settle(rejectOperation, new GuardianFailure('scenario-closure-failed'), true);
+    const settle = (handler, value, shouldCancel = false) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) {
+        INTRINSIC_REFLECT_APPLY(INTRINSIC_CLEAR_TIMEOUT, INTRINSIC_GLOBAL_THIS, [timer]);
+      }
+      if (signal) {
+        INTRINSIC_REFLECT_APPLY(INTRINSIC_EVENT_TARGET_REMOVE, signal, ['abort', abort]);
+      }
+      if (shouldCancel) {
+        try { cancel?.(); } catch {}
+      }
+      handler(value);
+    };
+    const remaining = deadline - Date.now();
+    if (remaining <= 0 || signal?.aborted) {
+      abort();
+      return;
+    }
+    timer = INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_TIMEOUT, INTRINSIC_GLOBAL_THIS, [
+      abort, remaining,
+    ]);
+    if (signal) {
+      INTRINSIC_REFLECT_APPLY(INTRINSIC_EVENT_TARGET_ADD, signal, ['abort', abort, { once: true }]);
+    }
+    try {
+      consumeNativePromise(
+        candidate,
+        value => settle(resolveOperation, value),
+        () => settle(rejectOperation, new GuardianFailure('scenario-closure-failed')),
+        'scenario-closure-failed',
+      );
+    } catch {
+      settle(rejectOperation, new GuardianFailure('scenario-closure-failed'));
+    }
+  });
+}
+
 async function hashHeldRegularFile(
   path, maximumBytes, timeoutMs, { captureBytes = false, signal } = {},
 ) {
   signal = requireAuditSignal(signal);
   requireAuditActive(signal);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > EXECUTABLE_HASH_TIMEOUT_MS) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
   let handle;
   try {
     handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   } catch {
     throw new GuardianFailure('scenario-closure-failed');
   }
+  let stream = null;
+  let failed = false;
+  const deadline = Date.now() + timeoutMs;
+  const readController = new INTRINSIC_ABORT_CONTROLLER();
+  const cancelRead = () => {
+    if (!readController.signal.aborted) readController.abort();
+    try { stream?.destroy?.(); } catch {}
+  };
   try {
-    const beforeRaw = await handle.stat({ bigint: true });
+    const beforeRaw = await boundedAuditOperation(
+      handle.stat({ bigint: true }), deadline, signal, cancelRead,
+    );
+    requireAuditActive(signal);
+    requireAuditDeadline(deadline);
     const before = fileMetadataSnapshot(beforeRaw);
     if (!before || before.size < 1 || before.size > maximumBytes) {
       throw new GuardianFailure('scenario-closure-failed');
     }
     const hash = createHash('sha256');
     const chunks = captureBytes ? [] : null;
-    const buffer = Buffer.allocUnsafe(Math.min(EXECUTABLE_HASH_CHUNK_BYTES, before.size));
-    const deadline = Date.now() + timeoutMs;
+    stream = handle.createReadStream({
+      start: 0,
+      end: before.size - 1,
+      highWaterMark: EXECUTABLE_HASH_CHUNK_BYTES,
+      autoClose: false,
+      emitClose: false,
+      signal: readController.signal,
+    });
+    const iterator = stream[Symbol.asyncIterator]();
     let position = 0;
-    while (position < before.size) {
+    while (true) {
       requireAuditActive(signal);
-      if (Date.now() > deadline) throw new GuardianFailure('scenario-closure-failed');
-      const requested = Math.min(buffer.length, before.size - position);
-      const { bytesRead } = await handle.read(buffer, 0, requested, position);
-      if (bytesRead !== requested) throw new GuardianFailure('scenario-closure-failed');
-      hash.update(buffer.subarray(0, bytesRead));
-      if (chunks) chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
-      position += bytesRead;
+      requireAuditDeadline(deadline);
+      const next = await boundedAuditOperation(iterator.next(), deadline, signal, cancelRead);
+      requireAuditActive(signal);
+      requireAuditDeadline(deadline);
+      if (next.done) break;
+      const chunk = next.value;
+      if (!Buffer.isBuffer(chunk) || chunk.length < 1
+        || chunk.length > EXECUTABLE_HASH_CHUNK_BYTES
+        || position + chunk.length > before.size) {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+      hash.update(chunk);
+      if (chunks) chunks.push(Buffer.from(chunk));
+      position += chunk.length;
     }
+    if (position !== before.size) throw new GuardianFailure('scenario-closure-failed');
     requireAuditActive(signal);
-    const after = fileMetadataSnapshot(await handle.stat({ bigint: true }));
+    requireAuditDeadline(deadline);
+    const afterRaw = await boundedAuditOperation(
+      handle.stat({ bigint: true }), deadline, signal, cancelRead,
+    );
+    requireAuditActive(signal);
+    requireAuditDeadline(deadline);
+    const after = fileMetadataSnapshot(afterRaw);
     if (!executableMetadataStillMatches(before, after)) {
       throw new GuardianFailure('scenario-closure-failed');
     }
-    return Object.freeze({
+    const sha256 = hash.digest('hex');
+    requireAuditActive(signal);
+    requireAuditDeadline(deadline);
+    const result = Object.freeze({
       metadata: before,
-      sha256: hash.digest('hex'),
+      sha256,
       ...(chunks ? { bytes: Buffer.concat(chunks, before.size) } : {}),
     });
+    requireAuditDeadline(deadline);
+    return result;
+  } catch (error) {
+    failed = true;
+    if (error instanceof GuardianFailure) throw error;
+    throw new GuardianFailure('scenario-closure-failed');
   } finally {
-    await handle.close().catch(() => {});
+    cancelRead();
+    const closeDeadline = failed ? Date.now() + EXECUTABLE_CLOSE_TIMEOUT_MS : deadline;
+    try {
+      await boundedAuditOperation(handle.close(), closeDeadline, undefined, cancelRead);
+      if (!failed) requireAuditDeadline(deadline);
+    } catch {
+      if (!failed) throw new GuardianFailure('scenario-closure-failed');
+    }
   }
 }
 
-async function executableIdentity(path, signal) {
+async function executableIdentity(path, signal, timeoutMs = EXECUTABLE_HASH_TIMEOUT_MS) {
   requireAuditActive(signal);
   let canonical;
   try { canonical = await realpath(path); } catch {
@@ -1146,7 +1251,7 @@ async function executableIdentity(path, signal) {
   }
   if (canonical !== path) throw new GuardianFailure('scenario-closure-failed');
   const { metadata: before, sha256 } = await hashHeldRegularFile(
-    path, EXECUTABLE_MAX_BYTES, EXECUTABLE_HASH_TIMEOUT_MS, { signal },
+    path, EXECUTABLE_MAX_BYTES, timeoutMs, { signal },
   );
   requireAuditActive(signal);
   if ((before.mode & 0o111) === 0) throw new GuardianFailure('scenario-closure-failed');
@@ -1196,28 +1301,67 @@ function requireInspectorRecord(value, expectedPids) {
   const keys = Object.keys(value ?? {}).sort();
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || !isDeepStrictEqual(keys, [
-      'argv', 'executable', 'markerPresent', 'pgid', 'pid', 'ppid', 'startSec', 'startUsec',
+      'argv', 'executable', 'inspectionError', 'markerPresent', 'pgid', 'pid', 'ppid',
+      'startSec', 'startUsec',
     ])) throw new GuardianFailure('scenario-closure-failed');
   if (![value.pid, value.ppid, value.pgid, value.startSec, value.startUsec]
     .every(item => Number.isSafeInteger(item) && item >= 0)
     || value.pid <= 0 || value.pid === process.pid || value.pgid <= 0
     || value.startSec <= 0 || value.startUsec > 999_999 || value.markerPresent !== true
-    || typeof value.executable !== 'string' || !isAbsolute(value.executable)
-    || !Array.isArray(value.argv) || value.argv.length < 1 || value.argv.length > 256
+    || typeof value.inspectionError !== 'boolean'
+    || !Array.isArray(value.argv) || value.argv.length > 256
     || Object.keys(value.argv).length !== value.argv.length
-    || value.argv.some(argument => typeof argument !== 'string' || argument.length < 1 || argument.length > 16_384)
+    || value.argv.some(argument => typeof argument !== 'string' || argument.length > 16_384)
     || value.argv.reduce((total, argument) => total + Buffer.byteLength(argument), 0) > 262_144
     || (expectedPids && !expectedPids.has(value.pid))) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  if (value.inspectionError) {
+    if (value.argv.length !== 0 || value.executable !== '') {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+  } else if (value.argv.length < 1 || typeof value.executable !== 'string'
+    || !isAbsolute(value.executable)) {
     throw new GuardianFailure('scenario-closure-failed');
   }
   return Object.freeze({
     pid: value.pid, ppid: value.ppid, pgid: value.pgid,
     startSec: value.startSec, startUsec: value.startUsec,
-    argv: Object.freeze([...value.argv]), executable: value.executable, markerPresent: true,
+    argv: Object.freeze([...value.argv]), executable: value.executable,
+    markerPresent: true, inspectionError: value.inspectionError,
   });
 }
 
-export async function inspectDarwinMarkedProcesses(runMarker, pids, { signal } = {}) {
+export function parseDarwinProcessInspectorOutput(
+  stdout, pids, { allowInspectionErrors = false } = {},
+) {
+  const category = 'scenario-closure-failed';
+  const expectedPids = pids === undefined ? null : new Set(pids);
+  if (pids !== undefined && (!Array.isArray(pids) || expectedPids.size !== pids.length
+    || pids.length > 65_536 || pids.some(pid => !Number.isSafeInteger(pid) || pid <= 0))) {
+    throw new GuardianFailure(category);
+  }
+  let parsed;
+  try { parsed = JSON.parse(stdout); } catch { throw new GuardianFailure(category); }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+    || !isDeepStrictEqual(Object.keys(parsed).sort(), ['records', 'status', 'version'])
+    || parsed.version !== 2 || parsed.status !== 'ok' || !Array.isArray(parsed.records)
+    || parsed.records.length > 256 || Object.keys(parsed.records).length !== parsed.records.length) {
+    throw new GuardianFailure(category);
+  }
+  const records = parsed.records.map(value => requireInspectorRecord(value, expectedPids));
+  if (records.some((record, index) => index > 0 && records[index - 1].pid >= record.pid)) {
+    throw new GuardianFailure(category);
+  }
+  if (!allowInspectionErrors && records.some(record => record.inspectionError)) {
+    throw new GuardianFailure(category);
+  }
+  return Object.freeze(records);
+}
+
+async function runDarwinProcessInspector(
+  runMarker, pids, { signal, allowInspectionErrors = false } = {},
+) {
   const category = 'scenario-closure-failed';
   signal = requireAuditSignal(signal);
   requireAuditActive(signal);
@@ -1243,29 +1387,31 @@ export async function inspectDarwinMarkedProcesses(runMarker, pids, { signal } =
   requireAuditActive(signal);
   const runtimeAfter = await lstat(PROCESS_INSPECTOR_RUNTIME, { bigint: true }).catch(() => null);
   if (!executableRecordStillMatches(inspector.runtime, runtimeAfter)) throw new GuardianFailure(category);
-  let parsed;
-  try { parsed = JSON.parse(result.stdout); } catch { throw new GuardianFailure(category); }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
-    || !isDeepStrictEqual(Object.keys(parsed).sort(), ['records', 'version'])
-    || parsed.version !== 1 || !Array.isArray(parsed.records)
-    || parsed.records.length > 65_536 || Object.keys(parsed.records).length !== parsed.records.length) {
-    throw new GuardianFailure(category);
-  }
-  const records = parsed.records.map(value => requireInspectorRecord(value, expectedPids));
-  if (records.some((record, index) => index > 0 && records[index - 1].pid >= record.pid)) {
-    throw new GuardianFailure(category);
-  }
-  return Object.freeze(records);
+  return parseDarwinProcessInspectorOutput(result.stdout, pids, { allowInspectionErrors });
 }
 
-export async function auditMarkedProcesses(runMarker, { signal } = {}) {
+export function inspectDarwinMarkedProcesses(runMarker, pids, { signal } = {}) {
+  return runDarwinProcessInspector(runMarker, pids, { signal });
+}
+
+function inspectDarwinMarkedProcessesForTermination(runMarker, pids, { signal } = {}) {
+  return runDarwinProcessInspector(runMarker, pids, { signal, allowInspectionErrors: true });
+}
+
+export async function auditMarkedProcesses(
+  runMarker, { signal, executableHashTimeoutMs = EXECUTABLE_HASH_TIMEOUT_MS } = {},
+) {
   signal = requireAuditSignal(signal);
   requireAuditActive(signal);
+  if (!Number.isSafeInteger(executableHashTimeoutMs) || executableHashTimeoutMs < 1
+    || executableHashTimeoutMs > EXECUTABLE_HASH_TIMEOUT_MS) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
   const first = await inspectDarwinMarkedProcesses(runMarker, undefined, { signal });
   if (first.length === 0) return Object.freeze([]);
   const executableIdentities = new Map();
   for (const path of [...new Set(first.map(record => record.executable))].sort()) {
-    executableIdentities.set(path, await executableIdentity(path, signal));
+    executableIdentities.set(path, await executableIdentity(path, signal, executableHashTimeoutMs));
   }
   requireAuditActive(signal);
   const second = await inspectDarwinMarkedProcesses(
@@ -1283,7 +1429,7 @@ export async function auditMarkedProcesses(runMarker, { signal } = {}) {
 function signalMarkedProcesses(runMarker, signal) {
   return new INTRINSIC_PROMISE((resolveSignal, rejectSignal) => {
     consumeNativePromise(
-      auditMarkedProcesses(runMarker),
+      inspectDarwinMarkedProcessesForTermination(runMarker),
       processes => {
         let ok = true;
         for (const { pid } of processes) {
@@ -1306,7 +1452,7 @@ function waitForMarkedProcessesGone(runMarker, timeoutMs) {
     const startedAt = Date.now();
     const inspect = () => {
       consumeNativePromise(
-        auditMarkedProcesses(runMarker),
+        inspectDarwinMarkedProcessesForTermination(runMarker),
         pids => {
           if (pids.length === 0) {
             resolveWait(true);
@@ -1329,7 +1475,7 @@ function waitForMarkedProcessesGone(runMarker, timeoutMs) {
 async function terminateMarkedProcesses(runMarker, timeoutMs) {
   let initial;
   try {
-    initial = await auditMarkedProcesses(runMarker);
+    initial = await inspectDarwinMarkedProcessesForTermination(runMarker);
   } catch {
     return Object.freeze({ cleared: false, discovered: false });
   }
@@ -1512,7 +1658,7 @@ function mainChromeSchema() {
     ['blink-settings', exactValueSwitch(CHROME_BLINK_SETTINGS)],
     ['disable-blink-features', exactValueSwitch('AutomationControlled')],
     ['user-data-dir', patternValueSwitch(/^\/var\/folders\/[A-Za-z0-9_]+\/[A-Za-z0-9_]+\/T\/playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/)],
-    [RUN_MARKER_ENV, exactValueSwitch(':present')],
+    [PUBLIC_RUN_MARKER_ARGUMENT.slice(2), flagSwitch()],
   ];
 }
 
@@ -1586,7 +1732,7 @@ function chromeProcessDetails(record, { marker, policy, profilePath } = {}) {
   if (!parsed) return null;
   if (record.executable === policy.binaryPath) {
     if (!/^[0-9a-f]{64}$/.test(marker ?? '') || record.markerPresent !== true
-      || parsed.ordered.at(-1)?.name !== RUN_MARKER_ENV
+      || parsed.ordered.at(-1)?.name !== PUBLIC_RUN_MARKER_ARGUMENT.slice(2)
       || !switchSchemaIsExact(parsed, mainChromeSchema())) return null;
     const selectedProfile = parsed.switches.get('user-data-dir')?.[0];
     if (!chromeProfilePathIsExact(selectedProfile)) return null;

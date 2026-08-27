@@ -12,6 +12,10 @@ MAX_ARG_COUNT = 256
 MAX_ARG_BYTES = 16384
 MAX_ARGV_BYTES = 262144
 MAX_PATH_BYTES = 4096
+MAX_ENV_COUNT = 4096
+MAX_MARKED_RECORDS = 256
+MAX_MARKED_RAW_BYTES = 8 * 1024 * 1024
+MAX_SERIALIZED_BYTES = 8 * 1024 * 1024
 PROC_PIDTBSDINFO = 3
 CTL_KERN = 1
 KERN_PROCARGS2 = 49
@@ -77,7 +81,7 @@ def bsd_info(libproc, pid):
     )
 
 
-def procargs(libc, pid):
+def procargs_raw(libc, pid):
     mib = (ctypes.c_int * 3)(CTL_KERN, KERN_PROCARGS2, pid)
     size = ctypes.c_size_t(0)
     if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0:
@@ -90,14 +94,33 @@ def procargs(libc, pid):
         return None
     if actual.value < 5 or actual.value > size.value:
         return None
-    raw = buffer.raw[:actual.value]
-    argc = struct.unpack_from('=i', raw, 0)[0]
+    return buffer.raw[:actual.value]
+
+
+def exact_nul_field(raw, value):
+    return value in raw[4:].split(b'\0')
+
+
+def parse_procargs_bytes(raw, marker_name, marker_value):
+    marker = (marker_name + '=' + marker_value).encode('utf-8')
+    marker_argument = ('--' + marker_name + '=' + marker_value).encode('utf-8')
+    marker_in_raw = exact_nul_field(raw, marker) or exact_nul_field(raw, marker_argument)
+
+    def failed():
+        return {'argv': None, 'markerPresent': marker_in_raw, 'parseError': True}
+
+    if len(raw) < 5 or len(raw) > MAX_PROCARGS_BYTES:
+        return failed()
+    try:
+        argc = struct.unpack_from('=i', raw, 0)[0]
+    except struct.error:
+        return failed()
     if argc < 1 or argc > MAX_ARG_COUNT:
-        return None
+        return failed()
     cursor = 4
     executable_end = raw.find(b'\0', cursor)
     if executable_end <= cursor:
-        return None
+        return failed()
     cursor = executable_end + 1
     while cursor < len(raw) and raw[cursor] == 0:
         cursor += 1
@@ -106,16 +129,17 @@ def procargs(libc, pid):
     for _index in range(argc):
         end = raw.find(b'\0', cursor)
         if end < cursor:
-            return None
+            return failed()
         value = raw[cursor:end]
-        if not value or len(value) > MAX_ARG_BYTES:
-            return None
+        if len(value) > MAX_ARG_BYTES:
+            return failed()
         total += len(value)
         if total > MAX_ARGV_BYTES:
-            return None
+            return failed()
         argv_bytes.append(value)
         cursor = end + 1
-    environments = []
+    marker_in_environment = False
+    environment_count = 0
     while cursor < len(raw):
         while cursor < len(raw) and raw[cursor] == 0:
             cursor += 1
@@ -123,19 +147,34 @@ def procargs(libc, pid):
             break
         end = raw.find(b'\0', cursor)
         if end < cursor:
-            return None
+            return failed()
         value = raw[cursor:end]
         if len(value) > MAX_ARG_BYTES:
-            return None
-        environments.append(value)
-        if len(environments) > 4096:
-            return None
+            return failed()
+        environment_count += 1
+        if environment_count > MAX_ENV_COUNT:
+            return failed()
+        if value == marker:
+            marker_in_environment = True
         cursor = end + 1
     try:
         argv = [value.decode('utf-8', 'strict') for value in argv_bytes]
     except UnicodeDecodeError:
-        return None
-    return argv, environments
+        return failed()
+    return {
+        'argv': argv,
+        'markerPresent': marker_in_environment or marker_argument in argv_bytes,
+        'parseError': False,
+    }
+
+
+def sanitize_argument(value, marker_name, marker_value):
+    exact_marker_argument = '--' + marker_name + '=' + marker_value
+    if value == exact_marker_argument:
+        return '--guardian-marker-present'
+    return value.replace(marker_value, ':guardian-marker-value:').replace(
+        marker_name, ':guardian-marker-name:',
+    )
 
 
 def executable_path(libproc, pid):
@@ -167,20 +206,37 @@ def inspect_pid(libc, libproc, pid, marker_name, marker_value):
     before = bsd_info(libproc, pid)
     if before is None:
         return None
-    arguments = procargs(libc, pid)
+    raw = procargs_raw(libc, pid)
     path = executable_path(libproc, pid)
     after = bsd_info(libproc, pid)
-    if arguments is None or path is None or after is None or before != after:
-        return None
-    argv, environment = arguments
     marker = (marker_name + '=' + marker_value).encode('utf-8')
     marker_argument_bytes = ('--' + marker_name + '=' + marker_value).encode('utf-8')
-    if marker not in environment and marker_argument_bytes not in [value.encode('utf-8') for value in argv]:
+    raw_marker_present = raw is not None and (
+        exact_nul_field(raw, marker) or exact_nul_field(raw, marker_argument_bytes)
+    )
+    if after is None or before != after:
+        if raw_marker_present:
+            raise RuntimeError('marked-identity-unstable')
         return None
-    marker_argument = '--' + marker_name + '=' + marker_value
-    public_marker_argument = '--' + marker_name + '=:present'
-    argv = [public_marker_argument if value == marker_argument else value for value in argv]
-    return {
+    if raw is None:
+        raise RuntimeError('stable-procargs-unavailable')
+    parsed = parse_procargs_bytes(raw, marker_name, marker_value)
+    if not parsed['markerPresent']:
+        return None
+    if parsed['parseError'] or path is None:
+        return ({
+            'pid': before[0],
+            'ppid': before[1],
+            'pgid': before[2],
+            'startSec': before[3],
+            'startUsec': before[4],
+            'argv': [],
+            'executable': '',
+            'markerPresent': True,
+            'inspectionError': True,
+        }, len(raw))
+    argv = [sanitize_argument(value, marker_name, marker_value) for value in parsed['argv']]
+    return ({
         'pid': before[0],
         'ppid': before[1],
         'pgid': before[2],
@@ -189,7 +245,25 @@ def inspect_pid(libc, libproc, pid, marker_name, marker_value):
         'argv': argv,
         'executable': path,
         'markerPresent': True,
-    }
+        'inspectionError': False,
+    }, len(raw))
+
+
+def encode_bounded_document(records):
+    encoded_records = []
+    serialized_bytes = len('{"records":[],"status":"ok","version":2}\n')
+    for record in records:
+        if len(encoded_records) >= MAX_MARKED_RECORDS:
+            raise RuntimeError('aggregate-limit')
+        encoded = json.dumps(
+            record, ensure_ascii=True, separators=(',', ':'), sort_keys=True,
+        )
+        encoded_size = len(encoded.encode('ascii')) + (1 if encoded_records else 0)
+        if serialized_bytes + encoded_size > MAX_SERIALIZED_BYTES:
+            raise RuntimeError('aggregate-limit')
+        encoded_records.append(encoded)
+        serialized_bytes += encoded_size
+    return '{"records":[' + ','.join(encoded_records) + '],"status":"ok","version":2}\n'
 
 
 def parse_cli():
@@ -218,17 +292,19 @@ def main():
     libc, libproc = load_libraries()
     pids = list_pids(libproc) if requested is None else requested
     records = []
+    marked_raw_bytes = 0
     for pid in pids:
         if pid in (os.getpid(), os.getppid()):
             continue
-        record = inspect_pid(libc, libproc, pid, args.marker_name, args.marker_value)
-        if record is not None:
+        inspected = inspect_pid(libc, libproc, pid, args.marker_name, args.marker_value)
+        if inspected is not None:
+            record, raw_bytes = inspected
+            marked_raw_bytes += raw_bytes
+            if len(records) >= MAX_MARKED_RECORDS or marked_raw_bytes > MAX_MARKED_RAW_BYTES:
+                raise RuntimeError('aggregate-limit')
             records.append(record)
     records.sort(key=lambda value: value['pid'])
-    sys.stdout.write(json.dumps({
-        'version': 1,
-        'records': records,
-    }, ensure_ascii=True, separators=(',', ':'), sort_keys=True) + '\n')
+    sys.stdout.write(encode_bounded_document(records))
 
 
 if __name__ == '__main__':
