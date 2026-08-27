@@ -48,6 +48,9 @@ import {
   runRouteScenario,
 } from '../scripts/qa-evidence/phase9/scenarios.mjs';
 import {
+  buildPhase9ProductionSessionLifecyclePlan,
+} from '../scripts/qa-evidence/phase9/session-lifecycle.mjs';
+import {
   createLifecycleGuardian,
   runGuardedLifecycle,
 } from '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs';
@@ -5540,6 +5543,13 @@ test('phase 9 guardian retains only an exact real browser marker across both lif
     const beforeInfo = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
     const afterInfo = JSON.parse(readFileSync(realGuardianInfoPath('after-transition'), 'utf8'));
     assert.equal(afterInfo.attached, true);
+    const canonicalAfterRelease = buildPhase9ProductionSessionLifecyclePlan(
+      buildCanonicalScenarioPlan().filter(row => row.startState === 'pending_deletion'),
+      'after-transition',
+    ).releasedSessions;
+    assert.deepEqual(afterInfo.releasedBrowserSessions, [
+      ...canonicalAfterRelease, realGuardianSession,
+    ].sort());
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
     assert.deepEqual(markedProcessLines(beforeInfo.marker), []);
     assert.deepEqual(markedProcessLines(afterInfo.marker), []);
@@ -6137,6 +6147,30 @@ test('phase 9 lifecycle guardian keeps a transient nonempty browser inventory st
   assert.equal(fixture.workspaceExists, true);
   assert.equal(fixture.events.includes('fixture:cleanup'), false);
   assert.ok(inventoryCalls >= 5, `expected clean recovery inventory, saw ${inventoryCalls}`);
+});
+
+test('phase 9 lifecycle guardian keeps a released-but-live session recovery-owned and uncertified', async () => {
+  const fixture = lifecycleGuardianFixture();
+  const browserClient = fixture.dependencies.browserClient;
+  const releasedSession = 'p9-admission-route-qa-parent-a-mobile';
+  let inventoryCalls = 0;
+  fixture.dependencies.browserClient = {
+    closeBrowser: (session, context) => browserClient.closeBrowser(session, context),
+    async listBrowsers(context) {
+      inventoryCalls += 1;
+      if (inventoryCalls === 2) return { browsers: [{ name: releasedSession }] };
+      return browserClient.listBrowsers(context);
+    },
+  };
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.browserClosureCertified, false);
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.events.includes(`browser:close:${releasedSession}`), true);
+  assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  assert.equal(fixture.workspaceExists, true);
 });
 
 test('phase 9 lifecycle guardian immediately registers each streamed acquisition before child crash', async t => {
@@ -7119,6 +7153,47 @@ test('phase 9 production child reserves ownership before local acquisition and r
   const ownershipAttach = source.indexOf("type: 'ownership-attach', version: 4", attachStart);
   const attachAction = source.indexOf('await attachExistingSignalRecorder(client, session', ownershipAttach);
   assert.ok(attachStart >= 0 && attachStart < ownershipAttach && ownershipAttach < attachAction);
+});
+
+test('phase 9 production session plan releases completed rows and retains only pending baselines', () => {
+  const canonical = buildCanonicalScenarioPlan();
+  const before = buildPhase9ProductionSessionLifecyclePlan(
+    canonical.filter(row => row.startState !== 'pending_deletion'), 'before-transition',
+  );
+  const after = buildPhase9ProductionSessionLifecyclePlan(
+    canonical.filter(row => row.startState === 'pending_deletion'), 'after-transition',
+  );
+  assert.equal(before.rows.length, 40);
+  assert.equal(before.releasedSessions.length, 48);
+  assert.equal(before.rows.every(row => row.sessions.every(session => (
+    before.historySessions.includes(session)
+  ))), true);
+  assert.equal(before.rows.some(row => row.sessions.every(session => (
+    before.releasedSessions.includes(session)
+  ))), true);
+  assert.deepEqual(before.boundarySessions, [
+    'p9-pending-deletion-active-baseline-desktop',
+    'p9-pending-deletion-active-baseline-mobile',
+  ]);
+  assert.equal(before.maxBoundaryInventory, 2);
+  assert.equal(after.rows.length, 4);
+  assert.equal(after.releasedSessions.length, 4);
+  assert.deepEqual(after.boundarySessions, []);
+
+  const source = readFileSync(join(
+    testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner-source.mjs',
+  ), 'utf8');
+  const resultValidation = source.indexOf("if (result?.result !== 'PASS')");
+  const release = source.indexOf('await closeAndRelease(', resultValidation);
+  const ownershipComplete = source.indexOf("type: 'ownership-complete', version: 4", release);
+  assert.ok(resultValidation >= 0 && resultValidation < release && release < ownershipComplete);
+  const releaseStart = source.indexOf('const closeAndRelease = async sessions =>');
+  const exactClose = source.indexOf('await client.closeBrowser(session);', releaseStart);
+  const exactInventory = source.indexOf('await exactBrowserInventory(expected);', exactClose);
+  const processAbsence = source.indexOf('await waitForReceiptProcessesAbsent(receipt);', exactInventory);
+  const releaseRecord = source.indexOf("type: 'ownership-release', version: 4", processAbsence);
+  assert.ok(releaseStart >= 0 && releaseStart < exactClose && exactClose < exactInventory
+    && exactInventory < processAbsence && processAbsence < releaseRecord);
 });
 
 test('phase 9 committed transport is a self-contained reviewed artifact outside node_modules', async () => {

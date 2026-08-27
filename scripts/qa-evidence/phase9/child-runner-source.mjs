@@ -23,6 +23,14 @@ import {
   runLogoutScenario,
   runPendingDeletionScenario,
 } from './scenarios.mjs';
+import {
+  buildPhase9ProductionSessionLifecyclePlan,
+  phase9BrowserSessionsForRow,
+  phase9FreshSessionName,
+  phase9RetainsRowAcrossTransition,
+  phase9RowSession,
+  phase9SessionName,
+} from './session-lifecycle.mjs';
 
 const markerNameSha256 = '585c21d0652b1f1c5dd8168796ee2599745f8a1a9885e3178ac29b057f0044c3';
 const argv = process.argv.slice(1);
@@ -173,11 +181,10 @@ const isolationLanding = Object.freeze({
 const rowsForPhase = phase === 'before-transition'
   ? plan.filter(row => row.startState !== 'pending_deletion')
   : plan.filter(row => row.startState === 'pending_deletion');
-const sessionName = value => `p9-${value}`.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 64);
-const freshSessionName = value => `${sessionName(value).slice(0, 58)}-fresh`;
-const rowSession = row => row.scenario === 'stale-session'
-  ? sessionName(`pending-deletion-active-baseline-${row.viewportName}`)
-  : sessionName(row.contextId);
+const sessionLifecyclePlan = buildPhase9ProductionSessionLifecyclePlan(rowsForPhase, phase);
+const sessionName = phase9SessionName;
+const freshSessionName = phase9FreshSessionName;
+const rowSession = phase9RowSession;
 const plannedOwnedSessions = phase === 'before-transition'
   ? rowsForPhase.flatMap(row => row.group === 'logout'
     ? [sessionName(row.contextId), freshSessionName(row.contextId)]
@@ -188,18 +195,22 @@ const executeProcessAudit = args => new Promise((resolvePromise, reject) => exec
   encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' },
   maxBuffer: 16_777_216, timeout: 5_000,
 }, (error, stdout) => error ? reject(new Error('runner-launch-receipt-invalid')) : resolvePromise(stdout)));
-const captureLaunchReceipt = async session => {
+const captureLaunchReceipt = async (session, { requireCurrentMarker = true } = {}) => {
   const marker = process.env[guardianMarkerName];
   const token = `${guardianMarkerName}=${marker}`;
-  const output = await executeProcessAudit(['eww', '-axo', 'pid=,ppid=,command=']);
+  const output = await executeProcessAudit([
+    requireCurrentMarker ? 'eww' : 'ww', '-axo', 'pid=,ppid=,command=',
+  ]);
   const records = [];
   for (const line of output.split('\n')) {
     const words = line.split(/\s+/);
-    if (!words.includes(token) && !words.includes(`--${token}`)) continue;
-    const match = /^\s*([1-9][0-9]*)\s+([0-9]+)\s+/.exec(line);
+    if (requireCurrentMarker && !words.includes(token) && !words.includes(`--${token}`)) continue;
+    const match = /^\s*([1-9][0-9]*)\s+([0-9]+)\s+(.+)$/.exec(line);
     if (!match) throw new Error('runner-launch-receipt-invalid');
     const pid = Number(match[1]);
-    const command = (await executeProcessAudit(['-p', String(pid), '-o', 'command='])).trim();
+    const command = requireCurrentMarker
+      ? (await executeProcessAudit(['-p', String(pid), '-o', 'command='])).trim()
+      : match[3];
     records.push({ pid, ppid: Number(match[2]), command });
   }
   const daemonPattern = new RegExp(
@@ -210,13 +221,17 @@ const captureLaunchReceipt = async session => {
   if (daemons.length !== 1) throw new Error('runner-launch-receipt-invalid');
   const mains = records.filter(record => record.ppid === daemons[0].pid
     && record.command.startsWith(`${config.chrome.binaryPath} `)
-    && !record.command.includes(' --type=') && record.command.includes(` --${token}`));
+    && !record.command.includes(' --type=')
+    && (!requireCurrentMarker || record.command.includes(` --${token}`)));
   if (mains.length !== 1) throw new Error('runner-launch-receipt-invalid');
   return Object.freeze({ session, daemonPid: daemons[0].pid, chromeMainPid: mains[0].pid });
 };
 const ownedSessions = new Set();
 const launchReceipts = new Map();
 const attachedBrowserSessions = new Set();
+const activeAttachedBrowserSessions = new Set();
+const attachedLaunchReceipts = new Map();
+const releasedBrowserSessions = new Set();
 let ownershipSequence = 0;
 const emitProtocol = value => {
   if (!process.stdout.write(`${JSON.stringify(value)}\n`)) throw new Error('runner-protocol-backpressure');
@@ -282,6 +297,66 @@ const confirmAttachedOwnership = session => {
   });
   ownershipSequence += 1;
   attachedBrowserSessions.add(session);
+  activeAttachedBrowserSessions.add(session);
+};
+
+const exactBrowserInventory = async expectedSessions => {
+  const result = await client.listBrowsers();
+  if (!result || typeof result !== 'object' || Array.isArray(result)
+    || Object.keys(result).sort().join(',') !== 'browsers'
+    || !Array.isArray(result.browsers)) throw new Error('runner-browser-release-invalid');
+  const names = result.browsers.map(browser => {
+    if (!browser || typeof browser !== 'object' || Array.isArray(browser)
+      || typeof browser.name !== 'string' || browser.name.length === 0) {
+      throw new Error('runner-browser-release-invalid');
+    }
+    return browser.name;
+  }).sort();
+  if (new Set(names).size !== names.length
+    || names.length !== expectedSessions.length
+    || names.some((name, index) => name !== expectedSessions[index])) {
+    throw new Error('runner-browser-release-invalid');
+  }
+};
+
+const receiptProcessesAbsent = async receipt => {
+  const output = await executeProcessAudit(['-axo', 'pid=']);
+  const live = new Set(output.split('\n').map(value => value.trim()).filter(Boolean).map(value => {
+    if (!/^[1-9][0-9]*$/.test(value)) throw new Error('runner-browser-release-invalid');
+    return Number(value);
+  }));
+  return !live.has(receipt.daemonPid) && !live.has(receipt.chromeMainPid);
+};
+
+const waitForReceiptProcessesAbsent = async receipt => {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (await receiptProcessesAbsent(receipt)) return;
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
+  }
+  throw new Error('runner-browser-release-invalid');
+};
+
+const closeAndRelease = async sessions => {
+  for (const session of [...sessions].sort()) {
+    const receipt = launchReceipts.get(session) ?? attachedLaunchReceipts.get(session);
+    if (!receipt || releasedBrowserSessions.has(session)) {
+      throw new Error('runner-browser-release-invalid');
+    }
+    await client.closeBrowser(session);
+    const expected = [...ownedSessions, ...activeAttachedBrowserSessions]
+      .filter(candidate => candidate !== session).sort();
+    await exactBrowserInventory(expected);
+    await waitForReceiptProcessesAbsent(receipt);
+    emitProtocol({
+      type: 'ownership-release', version: 4, phase, sequence: ownershipSequence, session,
+    });
+    ownershipSequence += 1;
+    ownedSessions.delete(session);
+    launchReceipts.delete(session);
+    activeAttachedBrowserSessions.delete(session);
+    attachedLaunchReceipts.delete(session);
+    releasedBrowserSessions.add(session);
+  }
 };
 
 const waitForExactLocation = (session, path, sentinel) => client.runCode(session, `async (page) => {
@@ -304,11 +379,6 @@ const login = async (session, alias) => {
     return true;
   }`);
 };
-const clearSession = session => client.runCode(session, `async (page) => {
-  await page.context().clearCookies();
-  await page.goto('about:blank');
-  return true;
-}`);
 const actionsFor = session => ({
   loginAndLand: alias => login(session, alias),
   navigate: path => client.goto(session, `${STAGING_ORIGIN}${path}`),
@@ -343,6 +413,9 @@ try {
         throw new Error('runner-viewport-label-invalid');
       }
     } else if (row.scenario === 'stale-session') {
+      attachedLaunchReceipts.set(session, await captureLaunchReceipt(session, {
+        requireCurrentMarker: false,
+      }));
       confirmAttachedOwnership(session);
       await attachExistingSignalRecorder(client, session, {
         ...viewport, marker: session, requireAuthenticated: true,
@@ -413,26 +486,32 @@ try {
     const result = rows.pop();
     if (result?.result !== 'PASS') throw new Error('scenario-failed');
     rows.push(Object.freeze(Object.fromEntries(REQUIRED_LEDGER_COLUMNS.map(column => [column, result[column]]))));
-    if (phase === 'before-transition' && row.group !== 'pending-deletion') await clearSession(session).catch(() => {});
+    if (!phase9RetainsRowAcrossTransition(phase, row)) {
+      await closeAndRelease(phase9BrowserSessionsForRow(row));
+    }
   }
   const browserSessions = [...ownedSessions].sort();
   const receipts = [...launchReceipts.values()].sort((left, right) => left.session.localeCompare(right.session));
   const attached = [...attachedBrowserSessions].sort();
+  const released = [...releasedBrowserSessions].sort();
   if (new Set(browserSessions).size !== browserSessions.length
     || receipts.length !== browserSessions.length
-    || receipts.some((receipt, index) => receipt.session !== browserSessions[index])) {
+    || receipts.some((receipt, index) => receipt.session !== browserSessions[index])
+    || browserSessions.length !== sessionLifecyclePlan.boundarySessions.length
+    || browserSessions.some((session, index) => session !== sessionLifecyclePlan.boundarySessions[index])
+    || released.length !== sessionLifecyclePlan.releasedSessions.length
+    || released.some((session, index) => session !== sessionLifecyclePlan.releasedSessions[index])) {
     throw new Error('runner-launch-receipt-invalid');
   }
   emitProtocol({
     type: 'ownership-complete', version: 4, phase, sequence: ownershipSequence,
     browserSessions,
-    attachedBrowserSessions: attached, launchReceipts: receipts, releasedBrowserSessions: [],
+    attachedBrowserSessions: attached, launchReceipts: receipts, releasedBrowserSessions: released,
   });
   const sessionsForRow = row => {
     const planned = rowsForPhase.find(candidate => candidate.contextId === row.contextId);
     if (!planned) throw new Error('runner-row-session-invalid');
-    const session = rowSession(planned);
-    return (planned.group === 'logout' ? [session, freshSessionName(planned.contextId)] : [session]).sort();
+    return phase9BrowserSessionsForRow(planned);
   };
   for (const [index, row] of rows.entries()) process.stdout.write(`${JSON.stringify({
     type: 'row', version: 2, phase, index, sessions: sessionsForRow(row), row,
@@ -440,7 +519,7 @@ try {
   process.stdout.write(`${JSON.stringify({
     type: 'completion', version: 4, phase, ok: true, rowCount: rows.length,
     browserSessions, attachedBrowserSessions: attached, launchReceipts: receipts,
-    releasedBrowserSessions: [],
+    releasedBrowserSessions: released,
   })}\n`);
 } finally {
   identities.clear();

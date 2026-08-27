@@ -362,13 +362,35 @@ async function runRealRetainedBrowser(mode, phase, args) {
         ...viewports[session], marker: session,
       });
     }
-    const sequence = await announceCanonicalRowSessions(sessions.length);
+    let sequence = await announceCanonicalRowSessions(sessions.length);
+    const beforeInfo = JSON.parse(readFileSync(
+      `/tmp/phase9-guardian-real-retained-${process.ppid}-before-transition.json`, 'utf8',
+    ));
+    for (const session of sessions) {
+      const receipt = beforeInfo.launchReceipts.find(candidate => candidate.session === session);
+      if (!receipt) nativeExit(70);
+      await client.closeBrowser(session);
+      const inventory = await client.listBrowsers();
+      if (inventory.browsers.some(browser => browser.name === session)) nativeExit(70);
+      let processesRemain = true;
+      for (let attempt = 0; attempt < 50 && processesRemain; attempt += 1) {
+        processesRemain = [receipt.daemonPid, receipt.chromeMainPid].some(pid => {
+          try { process.kill(pid, 0); return true; } catch { return false; }
+        });
+        if (processesRemain) await new Promise(resolvePromise => nativeSetTimeout(resolvePromise, 100));
+      }
+      if (processesRemain) nativeExit(70);
+      writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
+      releasedBrowserSessions.push(session);
+      sequence += 1;
+    }
+    releasedBrowserSessions.sort();
     writeMessage({
       version: 4, type: 'ownership-complete', phase, sequence,
       browserSessions, attachedBrowserSessions, launchReceipts, releasedBrowserSessions,
     });
     writeFileSync(infoPath, nativeJsonStringify({
-      attached: true, marker, sessions, viewports,
+      attached: true, marker, sessions, releasedBrowserSessions, viewports,
     }), { mode: 0o600 });
   }
   finishRowsAfterOwnership(

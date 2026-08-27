@@ -2196,7 +2196,8 @@ function spawnRunnerChild({
       requireRunnerMessage(message, ['phase', 'sequence', 'session', 'type', 'version']);
       if (ownership || terminal || pendingOwnershipIntent || message.version !== 4
         || message.phase !== phase || message.sequence !== ownershipSequence
-        || !activeAnnouncedSessions.has(message.session) || releasedSessions.has(message.session)) {
+        || (!activeAnnouncedSessions.has(message.session) && !attachedSessions.has(message.session))
+        || releasedSessions.has(message.session)) {
         rejectOwnershipProtocol();
       }
       activeAnnouncedSessions.delete(message.session);

@@ -56,8 +56,8 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '0c1b82eecbc2c24cd2f795c19b5198e9fcb5909cf0f22ae1730ded0b58c64b8c',
-  childSource: 'eef1d3062eac03b16a672702f56cbea8da2ca679c1586e03dd42145d702b050e',
+  child: '5cce9bd84fe08489ea7efcdbd41ba83d34902122f59ebd27a02f66234e269f7d',
+  childSource: '54f1e56bc12624700713ab76854eda58b81a7be529ed60ec612a410631a49e3c',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
   config: '835f7b47e52f9bf2412936293a08e5bc1472a484402fd8fcaa62c1d03341a608',
