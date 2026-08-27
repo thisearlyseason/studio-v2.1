@@ -276,10 +276,23 @@ const verifyMaterializedPlaywrightTransport = materialized => {
   }
 };
 
-export function buildPlaywrightTransportEnvironment(source = process.env, { guardianMarkerName } = {}) {
+export function buildPlaywrightTransportEnvironment(
+  source = process.env, { guardianMarkerName, temporaryDirectory } = {},
+) {
   const allowed = ['HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'USER', 'LOGNAME', '__CF_USER_TEXT_ENCODING'];
   const env = {};
   for (const key of allowed) if (typeof source?.[key] === 'string' && source[key].length <= 4096) env[key] = source[key];
+  if (temporaryDirectory !== undefined) {
+    if (typeof temporaryDirectory !== 'string' || !temporaryDirectory.startsWith('/')
+      || resolve(temporaryDirectory) !== temporaryDirectory || source?.TMPDIR !== temporaryDirectory) {
+      throw new Error('Exact Playwright temporary directory is invalid.');
+    }
+    const metadata = lstatSync(temporaryDirectory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()
+      || (metadata.mode & 0o777) !== 0o700) {
+      throw new Error('Exact Playwright temporary directory is invalid.');
+    }
+  }
   if (guardianMarkerName !== undefined) {
     if (typeof guardianMarkerName !== 'string'
       || sha256Bytes(Buffer.from(guardianMarkerName, 'utf8')) !== GUARDIAN_MARKER_NAME_SHA256
@@ -1662,7 +1675,8 @@ const defaultExecute = async (argv, options) => {
 
 export async function executeCapturedPlaywrightTransportCommand(args, {
   transport = DEFAULT_CAPTURED_TRANSPORT, cwd = process.cwd(), timeoutMs = DEFAULT_TIMEOUT_MS,
-  sourceEnvironment = process.env, guardianMarkerName, executionHooks, runtimePolicy, chromePolicy,
+  sourceEnvironment = process.env, guardianMarkerName, temporaryDirectory,
+  executionHooks, runtimePolicy, chromePolicy,
 } = {}) {
   if (!Array.isArray(args) || !(
     (args.length === 1 && args[0] === 'list')
@@ -1671,7 +1685,9 @@ export async function executeCapturedPlaywrightTransportCommand(args, {
   const captured = TRANSPORT_TOKENS.get(transport);
   if (!captured) throw new Error('Captured Playwright transport is required.');
   const selectedRuntime = validateRuntimePolicy(runtimePolicy ?? captured.runtimePolicy);
-  const env = buildPlaywrightTransportEnvironment(sourceEnvironment, { guardianMarkerName });
+  const env = buildPlaywrightTransportEnvironment(sourceEnvironment, {
+    guardianMarkerName, temporaryDirectory,
+  });
   const result = await defaultExecute([selectedRuntime.path, 'captured-playwright-transport', ...args, '--json'], {
     cwd, env, timeoutMs, maxOutputBytes: MAX_OUTPUT_BYTES, transport, executionHooks, runtimePolicy: selectedRuntime,
     chromePolicy,
@@ -1694,6 +1710,7 @@ export function createPlaywrightCliClient({
   executionHooks,
   runtimePolicy,
   chromePolicy,
+  temporaryDirectory,
   verifyChromeBeforeLaunch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fixtureRunId,
@@ -1716,7 +1733,9 @@ export function createPlaywrightCliClient({
   const selectedRuntime = wrapperPath === undefined
     ? validateRuntimePolicy(runtimePolicy ?? captured.runtimePolicy)
     : runtimePolicy;
-  const closedEnvironment = buildPlaywrightTransportEnvironment(env ?? sourceEnvironment, { guardianMarkerName });
+  const closedEnvironment = buildPlaywrightTransportEnvironment(env ?? sourceEnvironment, {
+    guardianMarkerName, temporaryDirectory,
+  });
   const tabKey = session => `${session}:${currentTabs.get(session) ?? 0}`;
 
   const command = async (args, session, { parseNestedJson = false } = {}) => {
@@ -1962,7 +1981,9 @@ export async function closeAndVerifyBrowsers(client) {
 }
 
 async function smoke() {
-  const client = createPlaywrightCliClient({});
+  const client = createPlaywrightCliClient({
+    temporaryDirectory: process.env.PHASE9_PLAYWRIGHT_TMP_ROOT,
+  });
   const { observeAction } = await import('./signal-window.mjs');
   try {
     await installSignalRecorder(client, 'phase9-offline-smoke');

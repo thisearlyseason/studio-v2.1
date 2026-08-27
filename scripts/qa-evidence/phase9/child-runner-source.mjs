@@ -38,10 +38,17 @@ const manifestPath = exactArgument('--manifest');
 const credentialsPath = exactArgument('--credentials');
 const guardianMarkerName = exactArgument('--guardian-marker-env');
 const configBase64 = exactArgument('--config-base64');
+const playwrightTempRoot = join(workspace, 'playwright-tmp');
 if (argv.length !== 12 || !new Set(['before-transition', 'after-transition']).has(phase)
   || !workspace.startsWith('/tmp/phase9-core-identities.')
+  || process.env.TMPDIR !== playwrightTempRoot
   || createHash('sha256').update(guardianMarkerName).digest('hex') !== markerNameSha256
   || !/^[0-9a-f]{64}$/.test(process.env[guardianMarkerName] ?? '')) {
+  throw new Error('runner-configuration-invalid');
+}
+const playwrightTempMetadata = await lstat(playwrightTempRoot);
+if (!playwrightTempMetadata.isDirectory() || playwrightTempMetadata.isSymbolicLink()
+  || (playwrightTempMetadata.mode & 0o777) !== 0o700) {
   throw new Error('runner-configuration-invalid');
 }
 
@@ -148,6 +155,7 @@ const client = createPhase9ProductionCliClient({
   chromePolicy: config.chrome,
   guardianMarkerName,
   sourceEnvironment: process.env,
+  temporaryDirectory: playwrightTempRoot,
   cwd: repositoryRoot,
   fixtureRunId: manifest.runId,
 });

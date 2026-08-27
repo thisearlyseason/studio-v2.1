@@ -2,6 +2,7 @@ import argparse
 import ctypes
 import json
 import os
+import re
 import struct
 import sys
 
@@ -19,6 +20,7 @@ MAX_SERIALIZED_BYTES = 8 * 1024 * 1024
 PROC_PIDTBSDINFO = 3
 CTL_KERN = 1
 KERN_PROCARGS2 = 49
+PROC_FLAG_LP64 = 0x10
 
 
 class ProcBsdInfo(ctypes.Structure):
@@ -78,6 +80,7 @@ def bsd_info(libproc, pid):
     return (
         int(info.pbi_pid), int(info.pbi_ppid), int(info.pbi_pgid),
         int(info.pbi_start_tvsec), int(info.pbi_start_tvusec),
+        8 if int(info.pbi_flags) & PROC_FLAG_LP64 else 4,
     )
 
 
@@ -101,15 +104,19 @@ def exact_nul_field(raw, value):
     return value in raw[4:].split(b'\0')
 
 
-def parse_procargs_bytes(raw, marker_name, marker_value):
+def parse_procargs_bytes(raw, marker_name, marker_value, pointer_size):
     marker = (marker_name + '=' + marker_value).encode('utf-8')
     marker_argument = ('--' + marker_name + '=' + marker_value).encode('utf-8')
     marker_in_raw = exact_nul_field(raw, marker) or exact_nul_field(raw, marker_argument)
 
-    def failed():
-        return {'argv': None, 'markerPresent': marker_in_raw, 'parseError': True}
+    def failed(kind='parseFailure'):
+        return {
+            'argv': None, 'markerPresent': marker_in_raw,
+            'markerArgumentPresent': exact_nul_field(raw, marker_argument),
+            'parseError': True, 'inspectionErrorKind': kind,
+        }
 
-    if len(raw) < 5 or len(raw) > MAX_PROCARGS_BYTES:
+    if len(raw) < 5 or len(raw) > MAX_PROCARGS_BYTES or pointer_size not in (4, 8):
         return failed()
     try:
         argc = struct.unpack_from('=i', raw, 0)[0]
@@ -122,8 +129,13 @@ def parse_procargs_bytes(raw, marker_name, marker_value):
     if executable_end <= cursor:
         return failed()
     cursor = executable_end + 1
-    while cursor < len(raw) and raw[cursor] == 0:
-        cursor += 1
+    executable_field_bytes = executable_end - 4 + 1
+    structural_padding = (-executable_field_bytes) % pointer_size
+    if cursor + structural_padding > len(raw) or any(
+        value != 0 for value in raw[cursor:cursor + structural_padding]
+    ):
+        return failed()
+    cursor += structural_padding
     argv_bytes = []
     total = 0
     for _index in range(argc):
@@ -138,6 +150,8 @@ def parse_procargs_bytes(raw, marker_name, marker_value):
             return failed()
         argv_bytes.append(value)
         cursor = end + 1
+    if argv_bytes[0] == b'':
+        return failed('argv0Ambiguous')
     marker_in_environment = False
     environment_count = 0
     while cursor < len(raw):
@@ -164,17 +178,27 @@ def parse_procargs_bytes(raw, marker_name, marker_value):
     return {
         'argv': argv,
         'markerPresent': marker_in_environment or marker_argument in argv_bytes,
-        'parseError': False,
+        'markerArgumentPresent': marker_argument in argv_bytes,
+        'parseError': False, 'inspectionErrorKind': '',
     }
 
 
 def sanitize_argument(value, marker_name, marker_value):
     exact_marker_argument = '--' + marker_name + '=' + marker_value
     if value == exact_marker_argument:
-        return '--guardian-marker-present'
+        return None
     return value.replace(marker_value, ':guardian-marker-value:').replace(
         marker_name, ':guardian-marker-name:',
     )
+
+
+def executable_path_is_safe(value, marker_name, marker_value):
+    if marker_name in value or marker_value in value:
+        return False
+    return re.search(
+        r'(?:credential|fixture|qa-phase7-|bearer|password|passwd|secret|access[-_ ]?token|refresh[-_ ]?token|authorization|cookie)',
+        value, re.IGNORECASE,
+    ) is None
 
 
 def executable_path(libproc, pid):
@@ -220,10 +244,13 @@ def inspect_pid(libc, libproc, pid, marker_name, marker_value):
         return None
     if raw is None:
         raise RuntimeError('stable-procargs-unavailable')
-    parsed = parse_procargs_bytes(raw, marker_name, marker_value)
+    parsed = parse_procargs_bytes(raw, marker_name, marker_value, before[5])
     if not parsed['markerPresent']:
         return None
-    if parsed['parseError'] or path is None:
+    if parsed['parseError'] or path is None or not executable_path_is_safe(path, marker_name, marker_value):
+        error_kind = parsed['inspectionErrorKind'] if parsed['parseError'] else (
+            'inspectionUnavailable' if path is None else 'unsafeExecutablePath'
+        )
         return ({
             'pid': before[0],
             'ppid': before[1],
@@ -233,9 +260,14 @@ def inspect_pid(libc, libproc, pid, marker_name, marker_value):
             'argv': [],
             'executable': '',
             'markerPresent': True,
+            'markerArgumentPresent': bool(parsed.get('markerArgumentPresent', raw_marker_present)),
             'inspectionError': True,
+            'inspectionErrorKind': error_kind,
         }, len(raw))
-    argv = [sanitize_argument(value, marker_name, marker_value) for value in parsed['argv']]
+    argv = [
+        sanitized for value in parsed['argv']
+        if (sanitized := sanitize_argument(value, marker_name, marker_value)) is not None
+    ]
     return ({
         'pid': before[0],
         'ppid': before[1],
@@ -245,7 +277,9 @@ def inspect_pid(libc, libproc, pid, marker_name, marker_value):
         'argv': argv,
         'executable': path,
         'markerPresent': True,
+        'markerArgumentPresent': parsed['markerArgumentPresent'],
         'inspectionError': False,
+        'inspectionErrorKind': '',
     }, len(raw))
 
 

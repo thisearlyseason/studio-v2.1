@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, readFile, realpath, rm, stat } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -56,8 +56,8 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '059532dc99c8211ac65591bee92f446a0051030e09e3454399f1852627c352d3',
-  childSource: '185c877ec781dfdadb5585754795ddba85cf9159a8cc4a419536194d2c2216a5',
+  child: '424893cd4e23e48db6e6f8b276af36080eebf1e327199d163d18215e32e4d6e9',
+  childSource: 'c364164e8a5a29593b3bba1b1514ac66a0302e60ce0e6085814f103d2fb235e6',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
   config: '29ef8078ee99e4a1ea0eefce002ca4f70044918ad8275a5f3e4046db0246b97f',
@@ -66,9 +66,9 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
   transportGuard: '4a64c39de2beac00ec64ede64a440449690a30caa901b69c99e06c4be465b7fc',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: 'bc088823074bd648fe6304364e6d07a6b8ae475271b37e99287b7c664f396ae0',
+  transportClient: '5ffdf196a3f183b8d5a5d7e2cb26f4d72e524508bd0ced61bcee393cb3dc3700',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
-  processInspector: '25213a51a727ebb0598a12fdf708261f6d3e2c95f5bc31abf8570660944a95c5',
+  processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
 export const phase9PlaywrightTransport = Object.freeze({
   version: PLAYWRIGHT_VERSION, coreVersion: PLAYWRIGHT_CORE_VERSION,
@@ -197,45 +197,116 @@ async function dryRun(stdout) {
   return result;
 }
 
-async function runWrapper(args) {
+async function runWrapper(args, { sourceEnvironment, temporaryDirectory } = {}) {
   return executeCapturedPlaywrightTransportCommand(args, {
     transport: phase9CapturedPlaywrightTransport, cwd: repositoryRoot, timeoutMs: 90_000,
+    sourceEnvironment, temporaryDirectory,
   });
 }
 
 function guardianBrowserClient() {
+  const commandOptions = temporaryDirectory => temporaryDirectory === undefined
+    ? {}
+    : {
+      sourceEnvironment: { ...process.env, TMPDIR: temporaryDirectory },
+      temporaryDirectory,
+    };
   return Object.freeze({
-    closeBrowser: session => runWrapper([`-s=${session}`, 'close']),
-    listBrowsers: async () => {
-      const result = await runWrapper(['list']);
+    closeBrowser: (session, { temporaryDirectory } = {}) => runWrapper(
+      [`-s=${session}`, 'close'], commandOptions(temporaryDirectory),
+    ),
+    listBrowsers: async ({ temporaryDirectory } = {}) => {
+      const result = await runWrapper(['list'], commandOptions(temporaryDirectory));
       if (result && Array.isArray(result.browsers)) return result;
       throw new Error('Browser inventory is incomplete.');
     },
   });
 }
 
+async function auditOfflinePlaywrightTree(root) {
+  const stack = [{ path: root, depth: 0 }];
+  let count = 0;
+  let bytes = 0;
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const names = await readdir(current.path);
+    if (names.length > 4_096) throw new Error('Offline smoke profile cleanup is incomplete.');
+    for (const name of names) {
+      count += 1;
+      if (count > 8_192 || typeof name !== 'string' || name.length < 1 || name.length > 255
+        || name.includes('/') || name === '.' || name === '..'
+        || (current.depth === 0 && !(
+          /^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name)
+          || /^pw-[0-9a-f]{8}$/.test(name)
+        ))) throw new Error('Offline smoke profile cleanup is incomplete.');
+      const path = join(current.path, name);
+      const metadata = await lstat(path);
+      if (metadata.isSymbolicLink() || metadata.uid !== process.getuid()
+        || (metadata.mode & 0o022) !== 0) throw new Error('Offline smoke profile cleanup is incomplete.');
+      if (metadata.isDirectory()) {
+        if (current.depth >= 8) throw new Error('Offline smoke profile cleanup is incomplete.');
+        stack.push({ path, depth: current.depth + 1 });
+      } else {
+        if (!metadata.isFile() || metadata.nlink !== 1
+          || !Number.isSafeInteger(metadata.size) || metadata.size < 0) {
+          throw new Error('Offline smoke profile cleanup is incomplete.');
+        }
+        bytes += metadata.size;
+        if (bytes > 536_870_912) throw new Error('Offline smoke profile cleanup is incomplete.');
+      }
+    }
+  }
+}
+
 async function offlineSmoke(stdout) {
   validatePlan();
   await validatePinnedConfig({ verifyTransport: true });
   await buildRunnerCommand();
-  const initial = await runWrapper(['list']);
-  if (!initial || !Array.isArray(initial.browsers) || initial.browsers.length !== 0) {
-    throw new Error('Offline smoke requires an empty initial browser inventory.');
-  }
-  const client = createPlaywrightCliClient({ transport: phase9CapturedPlaywrightTransport });
+  const workspace = await mkdtemp('/tmp/phase9-offline-smoke.');
+  const temporaryDirectory = join(workspace, 'playwright-tmp');
+  let profileRootCreated = false;
+  let client = null;
+  let result;
   try {
+    await chmod(workspace, 0o700);
+    await mkdir(temporaryDirectory, { mode: 0o700 });
+    profileRootCreated = true;
+    await chmod(temporaryDirectory, 0o700);
+    const sourceEnvironment = { ...process.env, TMPDIR: temporaryDirectory };
+    const transportOptions = { sourceEnvironment, temporaryDirectory };
+    const initial = await runWrapper(['list'], transportOptions);
+    if (!initial || !Array.isArray(initial.browsers) || initial.browsers.length !== 0) {
+      throw new Error('Offline smoke requires an empty initial browser inventory.');
+    }
+    client = createPlaywrightCliClient({
+      transport: phase9CapturedPlaywrightTransport, sourceEnvironment, temporaryDirectory,
+    });
     const { stdout: smokeOutput } = await execFileAsync(process.execPath, [
       join(moduleDirectory, 'playwright-cli-client.mjs'), 'smoke', '--origin', 'about:blank',
-    ], { cwd: repositoryRoot, timeout: 120_000, maxBuffer: 1_048_576 });
+    ], {
+      cwd: repositoryRoot,
+      env: { ...sourceEnvironment, PHASE9_PLAYWRIGHT_TMP_ROOT: temporaryDirectory },
+      timeout: 120_000,
+      maxBuffer: 1_048_576,
+    });
     const smoke = JSON.parse(smokeOutput);
     if (smoke.ok !== true || smoke.origin !== 'about:blank' || smoke.browsers !== 0) throw new Error('Offline smoke failed.');
     await closeAndVerifyBrowsers(client);
-    const result = { ok: true, command: 'offline-smoke', origin: 'about:blank', browsers: 0, network: false, firebase: false };
-    stdout.write(`${JSON.stringify(result)}\n`);
-    return result;
+    result = { ok: true, command: 'offline-smoke', origin: 'about:blank', browsers: 0, network: false, firebase: false };
   } finally {
-    await closeAndVerifyBrowsers(client).catch(() => {});
+    if (client) await closeAndVerifyBrowsers(client).catch(() => {});
+    let profileAuditInvalid = false;
+    if (profileRootCreated) {
+      try { await auditOfflinePlaywrightTree(temporaryDirectory); } catch { profileAuditInvalid = true; }
+    }
+    await rm(workspace, { recursive: true, force: false });
+    try { await lstat(workspace); throw new Error('Offline smoke workspace removal failed.'); } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    if (profileAuditInvalid) throw new Error('Offline smoke profile cleanup is incomplete.');
   }
+  stdout.write(`${JSON.stringify(result)}\n`);
+  return result;
 }
 
 async function requireWorkspace(path, manifestPath, credentialPath) {
@@ -376,7 +447,7 @@ async function hosted(argv, env, stdout) {
       await requireWorkspace(workspace, manifest, credentials);
       return workspace;
     },
-    chmod, stat, lstat, readFile,
+    mkdir, chmod, stat, lstat, readFile, readdir,
     removeCredentialFile: path => removeCredentialFile(path, repositoryRoot),
     rm: (path, options) => rm(path, options),
   };

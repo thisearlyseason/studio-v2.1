@@ -183,6 +183,7 @@ async function runRealRetainedBrowser(mode, phase, args) {
     transport,
     guardianMarkerName,
     sourceEnvironment: process.env,
+    temporaryDirectory: process.env.TMPDIR,
     cwd: process.cwd(),
     timeoutMs: 90_000,
   });
@@ -267,6 +268,8 @@ async function runRealRetainedBrowser(mode, phase, args) {
 
 const args = parseArguments(process.argv.slice(process.argv[1]?.startsWith('--') ? 1 : 2));
 const phase = args.get('--phase');
+const workspace = args.get('--workspace');
+if (process.env.TMPDIR !== join(workspace, 'playwright-tmp')) nativeExit(64);
 const configText = args.has('--config')
   ? readFileSync(args.get('--config'), 'utf8')
   : Buffer.from(args.get('--config-base64')[0], 'base64').toString('utf8');

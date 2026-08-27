@@ -7,7 +7,7 @@ import fs, {
 } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -4496,6 +4496,9 @@ function lifecycleGuardianFixture(overrides = {}) {
   const workspace = '/tmp/phase9-core-identities.test';
   const manifestPath = `${workspace}/manifest.json`;
   const credentialPath = `${workspace}/credentials.json`;
+  const profileRootPath = `${workspace}/playwright-tmp`;
+  const realFilesystemProfile = String(overrides.runnerMode ?? '').startsWith('real-retained-browser');
+  const producerTempRoot = resolve(process.env.TMPDIR);
   const definition = buildFixtureDefinition({ runId, expiresAt: '2026-09-02T12:00:00Z', manifestVersion: 3 });
   const authUids = definition.identities.map(identity => identity.uid);
   const firestorePaths = definition.documents.map(document => document.path);
@@ -4503,6 +4506,8 @@ function lifecycleGuardianFixture(overrides = {}) {
   const events = [];
   const files = new Set();
   let workspaceExists = false;
+  let profileRootExists = false;
+  let producerInventoryCount = 0;
   let cleaned = false;
   let transitioned = false;
   let probeAuthChecks = 0;
@@ -4600,10 +4605,31 @@ function lifecycleGuardianFixture(overrides = {}) {
     },
   };
   const filesystem = {
-    async mkdtemp(prefix) { events.push('fs:mkdtemp'); assert.equal(prefix, '/tmp/phase9-core-identities.'); workspaceExists = true; return workspace; },
-    async chmod(path, mode) { events.push('fs:chmod'); assert.equal(path, workspace); assert.equal(mode, 0o700); },
+    async mkdtemp(prefix) {
+      events.push('fs:mkdtemp');
+      assert.equal(prefix, '/tmp/phase9-core-identities.');
+      if (realFilesystemProfile) {
+        if (existsSync(workspace)) rmSync(workspace, { recursive: true, force: true });
+        mkdirSync(workspace, { mode: 0o700 });
+      }
+      workspaceExists = true;
+      return workspace;
+    },
+    async mkdir(path, options) {
+      events.push('fs:mkdir-profile');
+      assert.equal(path, profileRootPath);
+      assert.equal(options.mode, 0o700);
+      if (realFilesystemProfile) mkdirSync(profileRootPath, { mode: 0o700 });
+      profileRootExists = true;
+    },
+    async chmod(path, mode) {
+      events.push(path === profileRootPath ? 'fs:chmod-profile' : 'fs:chmod');
+      assert.equal(new Set([workspace, profileRootPath]).has(path), true);
+      assert.equal(mode, 0o700);
+    },
     async stat(path) {
       if (path === workspace && workspaceExists) return { isDirectory: () => true, mode: overrides.workspaceMode ?? 0o40700 };
+      if (path === profileRootPath && profileRootExists) return { isDirectory: () => true, mode: 0o40700 };
       throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     },
     async lstat(path) {
@@ -4617,6 +4643,18 @@ function lifecycleGuardianFixture(overrides = {}) {
         isFile: () => overrides.workspaceLstatType === 'file',
         isSymbolicLink: () => overrides.workspaceLstatType === 'symlink',
         mode: overrides.workspaceLstatMode ?? overrides.workspaceMode ?? 0o40700,
+      };
+      if (path === producerTempRoot) return {
+        isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false,
+        mode: 0o40700, uid: process.getuid(),
+      };
+      if (path.startsWith(`${producerTempRoot}/playwright_chromiumdev_profile-`)) return {
+        isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false,
+        mode: 0o40700, uid: process.getuid(),
+      };
+      if (path === profileRootPath && profileRootExists) return {
+        isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false,
+        mode: 0o40700, uid: process.getuid(),
       };
       if (files.has(path)) return {
         isDirectory: () => path === manifestPath && overrides.manifestLstatType === 'directory',
@@ -4632,6 +4670,15 @@ function lifecycleGuardianFixture(overrides = {}) {
       if (!files.has(path)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
       return manifest();
     },
+    async readdir(path) {
+      events.push(path === producerTempRoot ? 'fs:profile-inventory' : 'fs:read-profile-root');
+      if (path === producerTempRoot) {
+        producerInventoryCount += 1;
+        return producerInventoryCount > 1 ? (overrides.globalProfilesAfter ?? []) : [];
+      }
+      if (path === profileRootPath && profileRootExists) return [];
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    },
     async removeCredentialFile(path) {
       events.push('fs:remove-credential');
       if (overrides.credentialRemovalFailure) throw new Error('raw credential failure');
@@ -4640,6 +4687,12 @@ function lifecycleGuardianFixture(overrides = {}) {
       return true;
     },
     async rm(path) {
+      if (path === profileRootPath) {
+        events.push('fs:remove-profile-root');
+        if (realFilesystemProfile) rmSync(profileRootPath, { recursive: true, force: false });
+        profileRootExists = false;
+        return;
+      }
       events.push('fs:remove-workspace');
       if (overrides.workspaceRemovalFailure) throw new Error('raw workspace failure');
       assert.equal(path, workspace);
@@ -4648,6 +4701,7 @@ function lifecycleGuardianFixture(overrides = {}) {
         return;
       }
       if (!overrides.workspaceRemovalLeavesDirectory) {
+        if (realFilesystemProfile) rmSync(workspace, { recursive: true, force: false });
         workspaceExists = false;
         files.clear();
       }
@@ -4739,6 +4793,10 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   ]);
   assert.equal(fixture.events.lastIndexOf('browser:list') < fixture.events.indexOf('fixture:cleanup'), true);
   assert.equal(fixture.events.indexOf('adapter:init') < fixture.events.indexOf('fs:remove-credential'), true);
+  assert.equal(fixture.events.indexOf('fs:mkdir-profile') < fixture.events.indexOf('fixture:transition'), true);
+  assert.equal(fixture.events.indexOf('browser:list') < fixture.events.indexOf('fs:remove-profile-root'), true);
+  assert.equal(fixture.events.indexOf('fs:remove-profile-root') < fixture.events.indexOf('fs:remove-workspace'), true);
+  assert.equal(fixture.events.filter(event => event === 'fs:profile-inventory').length, 2);
   assert.equal(fixture.events.filter(event => event.startsWith('hook:on:')).length, 4);
   assert.equal(fixture.events.indexOf('hook:on:SIGINT') < fixture.events.indexOf('fs:mkdtemp'), true);
   assert.equal(fixture.events.indexOf('fixture:preflight') < fixture.events.indexOf('fs:mkdtemp'), true);
@@ -4748,18 +4806,39 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   assert.equal(fixture.handlers.size, 0);
 });
 
+test('phase 9 lifecycle guardian rejects any new global Playwright producer profile after confined cleanup', async () => {
+  const fixture = lifecycleGuardianFixture({
+    globalProfilesAfter: ['playwright_chromiumdev_profile-unconfinedRogue'],
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-closure-failed');
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(fixture.workspaceExists, true);
+  assert.equal(fixture.events.includes('fs:remove-workspace'), false);
+});
+
 const realGuardianSession = 'phase9-real-guardian-retained';
 const realGuardianTwoSessions = Object.freeze([
   'phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b',
 ]);
 const REAL_GUARDIAN_JOIN_TIMEOUT_MS = 10_000;
 const realGuardianInfoPath = phase => `/tmp/phase9-guardian-real-retained-${process.pid}-${phase}.json`;
+const realGuardianProfileRoot = '/tmp/phase9-core-identities.test/playwright-tmp';
+const realGuardianCommandOptions = temporaryDirectory => temporaryDirectory === undefined
+  ? { timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS }
+  : {
+    timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+    sourceEnvironment: { ...process.env, TMPDIR: temporaryDirectory },
+    temporaryDirectory,
+  };
 const realGuardianBrowserClient = Object.freeze({
-  closeBrowser: session => executeCapturedPlaywrightTransportCommand(
-    [`-s=${session}`, 'close'], { timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS },
+  closeBrowser: (session, { temporaryDirectory } = {}) => executeCapturedPlaywrightTransportCommand(
+    [`-s=${session}`, 'close'], realGuardianCommandOptions(temporaryDirectory),
   ),
-  listBrowsers: () => executeCapturedPlaywrightTransportCommand(
-    ['list'], { timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS },
+  listBrowsers: ({ temporaryDirectory } = {}) => executeCapturedPlaywrightTransportCommand(
+    ['list'], realGuardianCommandOptions(temporaryDirectory),
   ),
 });
 const markedProcessLines = marker => {
@@ -4783,6 +4862,11 @@ const pidAlive = pid => {
 const cleanupRealGuardianIntegration = async () => {
   for (const session of [realGuardianSession, ...realGuardianTwoSessions]) {
     await realGuardianBrowserClient.closeBrowser(session).catch(() => {});
+    if (existsSync(realGuardianProfileRoot)) {
+      await realGuardianBrowserClient.closeBrowser(session, {
+        temporaryDirectory: realGuardianProfileRoot,
+      }).catch(() => {});
+    }
   }
   const paths = ['before-transition', 'after-transition'].map(realGuardianInfoPath);
   const fixturePaths = new Set([`/tmp/phase9-extra-chrome-${process.pid}`]);
@@ -4949,6 +5033,97 @@ test('phase 9 Darwin inspector preserves empty argv elements in explicit and all
   }
 });
 
+test('phase 9 Darwin inspector treats a real empty argv0 as a marked rogue without shifting environment into argv', { timeout: 30_000 }, async () => {
+  const {
+    inspectDarwinMarkedProcessesForTermination,
+    terminateMarkedProcesses,
+  } = await import('../scripts/qa-evidence/phase9/lifecycle-guardian.mjs');
+  assert.equal(typeof inspectDarwinMarkedProcessesForTermination, 'function');
+  assert.equal(typeof terminateMarkedProcesses, 'function');
+  const markerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const marker = createHash('sha256').update(`phase9-empty-argv0-${process.pid}`).digest('hex');
+  const child = spawn(process.execPath, [
+    '-e', 'process.on("SIGTERM",()=>process.exit(0));setInterval(()=>{},1000)',
+    '', '--later-empty-preserved',
+  ], {
+    argv0: '', env: { ...process.env, [markerName]: marker }, stdio: 'ignore',
+  });
+  try {
+    const records = await inspectDarwinMarkedProcessesForTermination(marker, [child.pid]);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].pid, child.pid);
+    assert.equal(records[0].inspectionError, true);
+    assert.deepEqual(records[0].argv, []);
+    const publicOutput = JSON.stringify(records);
+    assert.equal(publicOutput.includes(markerName), false);
+    assert.equal(publicOutput.includes(marker), false);
+    assert.equal(publicOutput.includes(`${markerName}=`), false);
+    let inspectionUncertain = false;
+    const terminated = await terminateMarkedProcesses(marker, 1_000, {
+      onInspectionError: () => { inspectionUncertain = true; },
+    });
+    assert.equal(terminated.cleared, true);
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise(resolvePromise => child.once('close', resolvePromise));
+    }
+    assert.equal(pidAlive(child.pid), false);
+    assert.equal(inspectionUncertain, true, 'termination inspection uncertainty must remain sticky after kill');
+    assert.deepEqual(await inspectDarwinMarkedProcessesForTermination(marker), []);
+    assert.equal(inspectionUncertain, true, 'a later empty audit cannot restore certification');
+  } finally {
+    try { child.kill('SIGKILL'); } catch {}
+  }
+});
+
+test('phase 9 Darwin inspector keeps marker representation injective and fails closed on unsafe executable paths', { timeout: 30_000 }, async () => {
+  const { inspectDarwinMarkedProcessesForTermination } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  const markerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const marker = createHash('sha256').update(`phase9-marker-injective-${process.pid}`).digest('hex');
+  const trueMarkerArgument = `--${markerName}=${marker}`;
+  const children = [];
+  const stop = child => new Promise(resolvePromise => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolvePromise();
+    child.once('close', resolvePromise);
+    try { child.kill('SIGKILL'); } catch { resolvePromise(); }
+  });
+  const unsafeRoot = mkdtempSync('/tmp/phase9-unsafe-executable-');
+  try {
+    const marked = spawn(process.execPath, [
+      '-e', 'setInterval(()=>{},1000)', 'literal-start', '--guardian-marker-present', trueMarkerArgument,
+    ], { env: { ...process.env, [markerName]: marker }, stdio: 'ignore' });
+    children.push(marked);
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 50));
+    const [record] = await inspectDarwinMarkedProcessesForTermination(marker, [marked.pid]);
+    assert.equal(record.markerPresent, true);
+    assert.equal(record.markerArgumentPresent, true);
+    assert.equal(record.argv.filter(value => value === '--guardian-marker-present').length, 1);
+    assert.equal(record.argv.includes(trueMarkerArgument), false);
+    assert.equal(JSON.stringify(record).includes(marker), false);
+
+    const unsafePath = join(unsafeRoot, `credential-fixture-${markerName}-node`);
+    copyFileSync(process.execPath, unsafePath);
+    chmodSync(unsafePath, 0o700);
+    const unsafe = spawn(unsafePath, ['-e', 'setInterval(()=>{},1000)'], {
+      env: { ...process.env, [markerName]: marker }, stdio: 'ignore',
+    });
+    children.push(unsafe);
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 50));
+    const [unsafeRecord] = await inspectDarwinMarkedProcessesForTermination(marker, [unsafe.pid]);
+    assert.equal(unsafeRecord.inspectionError, true);
+    assert.equal(unsafeRecord.inspectionErrorKind, 'unsafeExecutablePath');
+    assert.equal(unsafeRecord.executable, '');
+    const unsafeOutput = JSON.stringify(unsafeRecord);
+    assert.equal(unsafeOutput.includes(markerName), false);
+    assert.equal(unsafeOutput.includes(marker), false);
+    assert.equal(unsafeOutput.includes('credential-fixture'), false);
+  } finally {
+    await Promise.all(children.map(stop));
+    rmSync(unsafeRoot, { recursive: true, force: true });
+  }
+});
+
 test('phase 9 Darwin inspector bounds aggregate serialization before accumulating many large records', () => {
   const inspectorPath = join(
     testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'darwin-process-inspector.py',
@@ -4992,7 +5167,8 @@ test('phase 9 guardian rejects fixed marked-error inspector records instead of t
   assert.equal(typeof parseDarwinProcessInspectorOutput, 'function');
   const record = {
     pid: 43101, ppid: 43100, pgid: 43101, startSec: 1_787_805_000, startUsec: 12,
-    argv: [], executable: '', markerPresent: true, inspectionError: true,
+    argv: [], executable: '', markerPresent: true, markerArgumentPresent: false,
+    inspectionError: true, inspectionErrorKind: 'parseFailure',
   };
   const output = JSON.stringify({ version: 2, status: 'ok', records: [record] });
   assert.throws(
@@ -5137,7 +5313,8 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
   const marker = 'ab'.repeat(32);
   const binaryPath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const appPath = '/Applications/Google Chrome.app';
-  const profilePath = '/var/folders/7n/gzq9wl6n4m963yjtw8gxx9xh0000gq/T/playwright_chromiumdev_profile-a1B2_c3';
+  const profileRoot = '/tmp/phase9-core-identities.test/playwright-tmp';
+  const profilePath = `${profileRoot}/playwright_chromiumdev_profile-a1B2_c3`;
   const mainArguments = [
     '--disable-field-trial-config', '--disable-background-networking',
     '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
@@ -5159,26 +5336,28 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
     '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
     '--disable-blink-features=AutomationControlled', `--user-data-dir=${profilePath}`,
     '--remote-debugging-pipe', '--no-startup-window',
-    '--guardian-marker-present',
   ];
   const mainRecord = Object.freeze({
     executable: binaryPath,
     argv: [binaryPath, ...mainArguments],
-    markerPresent: true,
+    markerPresent: true, markerArgumentPresent: true,
   });
   const policy = Object.freeze({ appPath, binaryPath });
-  assert.equal(chromeProcessCommandIsExact(mainRecord, { marker, policy }), true);
+  assert.equal(chromeProcessCommandIsExact(mainRecord, { marker, policy, profileRoot }), true);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord, argv: [...mainRecord.argv, '--headless'],
-  }, { marker, policy }), false);
+  }, { marker, policy, profileRoot }), false);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord,
     argv: mainRecord.argv.map(argument => argument.startsWith('--disable-features=')
       ? '--disable-features=TotallyUnreviewed' : argument),
-  }, { marker, policy }), false);
+  }, { marker, policy, profileRoot }), false);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord, argv: [...mainRecord.argv, 'about:blank'],
-  }, { marker, policy }), false);
+  }, { marker, policy, profileRoot }), false);
+  assert.equal(chromeProcessCommandIsExact({
+    ...mainRecord, argv: [...mainRecord.argv, '--guardian-marker-present'],
+  }, { marker, policy, profileRoot }), false);
 
   const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.174/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
   const rendererArguments = [
@@ -5200,14 +5379,14 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
   const rendererRecord = Object.freeze({
     executable: rendererExecutable,
     argv: [rendererExecutable, ...rendererArguments],
-    markerPresent: true,
+    markerPresent: true, markerArgumentPresent: false,
   });
   assert.equal(chromeProcessCommandIsExact(
-    rendererRecord, { policy, profilePath },
+    rendererRecord, { policy, profilePath, profileRoot },
   ), true);
   assert.equal(chromeProcessCommandIsExact({
     ...rendererRecord, argv: [...rendererRecord.argv, '--totally-unreviewed'],
-  }, { policy, profilePath }), false);
+  }, { policy, profilePath, profileRoot }), false);
 });
 
 test('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
@@ -5220,7 +5399,9 @@ test('phase 9 guardian retains only an exact real browser marker across both lif
     async beforeTransition() {
       const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
       assert.deepEqual(
-        (await realGuardianBrowserClient.listBrowsers()).browsers.map(item => item.name).sort(),
+        (await realGuardianBrowserClient.listBrowsers({
+          temporaryDirectory: realGuardianProfileRoot,
+        })).browsers.map(item => item.name).sort(),
         [realGuardianSession],
       );
       const lines = markedProcessLines(info.marker);
@@ -5255,9 +5436,9 @@ test('phase 9 guardian closes its real browser before killing an extra marked ro
       const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
       assert.equal(pidAlive(info.roguePid), true);
       closeObservedLiveRogue = true;
-      return realGuardianBrowserClient.closeBrowser(session);
+      return realGuardianBrowserClient.closeBrowser(session, { temporaryDirectory: realGuardianProfileRoot });
     },
-    listBrowsers: () => realGuardianBrowserClient.listBrowsers(),
+    listBrowsers: options => realGuardianBrowserClient.listBrowsers(options),
   });
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-rogue',
@@ -5312,7 +5493,9 @@ test('phase 9 guardian binds two real retained sessions to distinct immutable la
     async beforeTransition() {
       const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
       assert.deepEqual(
-        (await realGuardianBrowserClient.listBrowsers()).browsers.map(item => item.name).sort(),
+        (await realGuardianBrowserClient.listBrowsers({
+          temporaryDirectory: realGuardianProfileRoot,
+        })).browsers.map(item => item.name).sort(),
         [...realGuardianTwoSessions],
       );
       assert.deepEqual(info.launchReceipts.map(receipt => receipt.session).sort(), [...realGuardianTwoSessions]);
@@ -6622,7 +6805,7 @@ test('phase 9 production child client factory enforces the 90000 millisecond com
   const generated = readFileSync(
     join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs'), 'utf8',
   );
-  assert.match(generated, /function \w+\(\w+=\{\}\)\{return \w+\(\{\.\.\.\w+,timeoutMs:9e4\}\)\}/);
+  assert.equal(generated.match(/timeoutMs:9e4/g)?.length, 1);
 });
 
 test('phase 9 committed transport is a self-contained reviewed artifact outside node_modules', async () => {
@@ -6675,7 +6858,70 @@ test('phase 9 transport closes its environment and controlled fetch audit observ
     npm_config_offline: 'true', NPM_CONFIG_OFFLINE: 'true',
     npm_config_update_notifier: 'false', NPM_CONFIG_UPDATE_NOTIFIER: 'false',
   });
+  const temporaryDirectory = mkdtempSync('/tmp/phase9-playwright-env-');
+  try {
+    assert.equal(buildPlaywrightTransportEnvironment(
+      { TMPDIR: temporaryDirectory }, { temporaryDirectory },
+    ).TMPDIR, temporaryDirectory);
+    assert.throws(() => buildPlaywrightTransportEnvironment(
+      { TMPDIR: '/tmp' }, { temporaryDirectory },
+    ), /temporary directory/i);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
   assert.deepEqual(await auditPlaywrightTransportFetches(), { fetchCalls: 0, browsers: 0 });
+});
+
+test('phase 9 offline browser transport confines disposable profiles and creates no global producer prefix', async () => {
+  const globalTempRoot = resolve(process.env.TMPDIR);
+  const inventory = () => readdirSync(globalTempRoot)
+    .filter(name => name.startsWith('playwright_chromiumdev_profile-')).sort();
+  const before = inventory();
+  const workspace = mkdtempSync('/tmp/phase9-core-identities.profile-test-');
+  const temporaryDirectory = join(workspace, 'playwright-tmp');
+  mkdirSync(temporaryDirectory, { mode: 0o700 });
+  const profile = join(temporaryDirectory, 'playwright_chromiumdev_profile-offlineTest');
+  let open = false;
+  const execute = async (argv, options) => {
+    assert.equal(options.env.TMPDIR, temporaryDirectory);
+    if (argv.includes('open')) {
+      mkdirSync(profile, { mode: 0o700 });
+      open = true;
+      return { exitCode: 0, stdout: JSON.stringify({ ok: true }) };
+    }
+    if (argv.includes('run-code')) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({ result: JSON.stringify({
+          url: 'about:blank', pageId: 'offline-page', navigationGeneration: 0,
+        }) }),
+      };
+    }
+    if (argv.includes('close')) {
+      rmSync(profile, { recursive: true, force: false });
+      open = false;
+      return { exitCode: 0, stdout: JSON.stringify({ ok: true }) };
+    }
+    if (argv.includes('list')) {
+      return { exitCode: 0, stdout: JSON.stringify({ browsers: open ? [{ name: 'offline-profile' }] : [] }) };
+    }
+    throw new Error('unexpected offline command');
+  };
+  try {
+    const client = createPlaywrightCliClient({
+      wrapperPath: '/safe/playwright_cli.sh', execute,
+      sourceEnvironment: { TMPDIR: temporaryDirectory }, temporaryDirectory,
+    });
+    await installSignalRecorder(client, 'offline-profile');
+    assert.deepEqual(readdirSync(temporaryDirectory), ['playwright_chromiumdev_profile-offlineTest']);
+    await client.closeBrowser('offline-profile');
+    assert.deepEqual(readdirSync(temporaryDirectory), []);
+    assert.deepEqual(inventory(), before);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+  assert.equal(existsSync(workspace), false);
+  assert.deepEqual(inventory(), before);
 });
 
 test('phase 9 writer rejects a symlinked evidence-directory ancestor before creating any file', async () => {

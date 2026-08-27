@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { chmod, lstat, mkdtemp, open, readFile, realpath, rm, stat } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, types as utilTypes } from 'node:util';
@@ -49,11 +49,14 @@ const INTRINSIC_EVENT_TARGET_REMOVE = EventTarget.prototype.removeEventListener;
 const INTRINSIC_PROCESS_KILL = process.kill.bind(process);
 const INTRINSIC_PROCESS_EXEC_PATH = process.execPath;
 const INTRINSIC_PROCESS_PLATFORM = process.platform;
+const INTRINSIC_PROCESS_UID = process.getuid?.();
 const INTRINSIC_CHILD_ENV = Object.freeze(Object.fromEntries(
   Object.entries(process.env).filter(([name]) => !new Set(['NODE_OPTIONS', 'NODE_PATH']).has(name)),
 ));
 
 const WORKSPACE_PREFIX = '/tmp/phase9-core-identities.';
+const PLAYWRIGHT_TMP_NAME = 'playwright-tmp';
+const PLAYWRIGHT_PROFILE_PREFIX = 'playwright_chromiumdev_profile-';
 const RUNNER_STDOUT_LIMIT = 65_536;
 const RUNNER_STDERR_LIMIT = 16_384;
 const RUNNER_LINE_LIMIT = 8_192;
@@ -63,7 +66,7 @@ const RUNNER_CONFIG_LIMIT = 65_536;
 const RUNNER_CONFIG_TOTAL_LIMIT = 131_072;
 const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
 const PROCESS_INSPECTOR_PATH = fileURLToPath(new URL('./darwin-process-inspector.py', import.meta.url));
-const PROCESS_INSPECTOR_SHA256 = '25213a51a727ebb0598a12fdf708261f6d3e2c95f5bc31abf8570660944a95c5';
+const PROCESS_INSPECTOR_SHA256 = '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463';
 const PROCESS_INSPECTOR_LIMIT = 65_536;
 const PROCESS_INSPECTOR_RUNTIME = '/usr/bin/python3';
 const PROCESS_INSPECTOR_RUNTIME_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
@@ -75,7 +78,6 @@ const EXECUTABLE_CLOSE_TIMEOUT_MS = 1_000;
 const BEFORE_TRANSITION_DEADLINE_MAX_MS = 2_700_000;
 const AFTER_TRANSITION_DEADLINE_MAX_MS = 900_000;
 const RUN_MARKER_ENV = 'PHASE9_GUARDIAN_RUN_MARKER';
-const PUBLIC_RUN_MARKER_ARGUMENT = '--guardian-marker-present';
 const PLAYWRIGHT_TRANSPORT_ROOT_PATTERN = '/private/tmp/phase9-playwright-transport.';
 const PLAYWRIGHT_DAEMON_SUFFIX = '/node_modules/playwright-core/lib/entry/cliDaemon.js';
 const SYSTEM_CODESIGN = '/usr/bin/codesign';
@@ -172,10 +174,12 @@ class GuardianFailure extends Error {
 
 const defaultFilesystem = Object.freeze({
   mkdtemp,
+  mkdir,
   chmod,
   stat,
   lstat,
   readFile,
+  readdir,
   removeCredentialFile: (path, repositoryRoot) => removeCredentialFile(path, repositoryRoot),
   rm: (path, options) => rm(path, options),
 });
@@ -196,7 +200,7 @@ function requireDependencies(value) {
   for (const name of ['closeBrowser', 'listBrowsers']) {
     if (typeof value.browserClient?.[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
-  for (const name of ['mkdtemp', 'chmod', 'stat', 'lstat', 'readFile', 'removeCredentialFile', 'rm']) {
+  for (const name of ['mkdtemp', 'mkdir', 'chmod', 'stat', 'lstat', 'readFile', 'readdir', 'removeCredentialFile', 'rm']) {
     if (typeof value.filesystem?.[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
   for (const name of ['on', 'off']) {
@@ -541,6 +545,80 @@ async function requirePrivateDirectory(filesystem, path, category) {
     || metadata.isSymbolicLink?.()
     || (metadata.mode & 0o777) !== 0o700
   ) throw new GuardianFailure(category);
+}
+
+async function producerProfileInventory(filesystem, tempRoot) {
+  const category = 'scenario-closure-failed';
+  if (typeof tempRoot !== 'string' || !isAbsolute(tempRoot)) throw new GuardianFailure(category);
+  const root = resolve(tempRoot);
+  let names;
+  try {
+    await requirePrivateDirectory(filesystem, root, category);
+    names = await filesystem.readdir(root);
+  } catch {
+    throw new GuardianFailure(category);
+  }
+  if (!Array.isArray(names) || names.length > 100_000
+    || names.some(name => typeof name !== 'string' || name.length > 255)) {
+    throw new GuardianFailure(category);
+  }
+  const profiles = [];
+  for (const name of names) {
+    if (!name.startsWith(PLAYWRIGHT_PROFILE_PREFIX)) continue;
+    if (!/^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name)) {
+      throw new GuardianFailure(category);
+    }
+    const path = join(root, name);
+    const metadata = await filesystem.lstat(path).catch(() => null);
+    if (!metadata?.isDirectory?.() || metadata.isSymbolicLink?.()
+      || (metadata.mode & 0o777) !== 0o700
+      || (Number.isSafeInteger(INTRINSIC_PROCESS_UID) && metadata.uid !== INTRINSIC_PROCESS_UID)) {
+      throw new GuardianFailure(category);
+    }
+    profiles.push(name);
+  }
+  return Object.freeze(profiles.sort());
+}
+
+async function auditConfinedPlaywrightTree(filesystem, root) {
+  const stack = [{ path: root, depth: 0 }];
+  let entriesSeen = 0;
+  let bytesSeen = 0;
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const names = await filesystem.readdir(current.path).catch(() => null);
+    if (!Array.isArray(names) || names.length > 4_096) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    for (const name of names) {
+      entriesSeen += 1;
+      if (entriesSeen > 8_192 || typeof name !== 'string' || name.length < 1 || name.length > 255
+        || name.includes('/') || name === '.' || name === '..') {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+      if (current.depth === 0 && !(
+        /^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name)
+        || /^pw-[0-9a-f]{8}$/.test(name)
+      )) throw new GuardianFailure('scenario-closure-failed');
+      const path = join(current.path, name);
+      const metadata = await filesystem.lstat(path).catch(() => null);
+      if (!metadata || metadata.isSymbolicLink?.()
+        || (Number.isSafeInteger(INTRINSIC_PROCESS_UID) && metadata.uid !== INTRINSIC_PROCESS_UID)
+        || (metadata.mode & 0o022) !== 0) throw new GuardianFailure('scenario-closure-failed');
+      if (metadata.isDirectory?.()) {
+        if (current.depth >= 8) throw new GuardianFailure('scenario-closure-failed');
+        stack.push({ path, depth: current.depth + 1 });
+      } else if (metadata.isFile?.()) {
+        if (metadata.nlink !== 1 || !Number.isSafeInteger(metadata.size) || metadata.size < 0) {
+          throw new GuardianFailure('scenario-closure-failed');
+        }
+        bytesSeen += metadata.size;
+        if (bytesSeen > 536_870_912) throw new GuardianFailure('scenario-closure-failed');
+      } else {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+    }
+  }
 }
 
 function failureSummary({
@@ -1056,7 +1134,11 @@ function processSnapshotsMatch(left, right) {
   return left?.pid === right?.pid && left?.ppid === right?.ppid && left?.pgid === right?.pgid
     && left?.startSec === right?.startSec && left?.startUsec === right?.startUsec
     && left?.executable === right?.executable && left?.markerPresent === true
-    && right?.markerPresent === true && isDeepStrictEqual(left?.argv, right?.argv);
+    && right?.markerPresent === true
+    && left?.markerArgumentPresent === right?.markerArgumentPresent
+    && left?.inspectionError === right?.inspectionError
+    && left?.inspectionErrorKind === right?.inspectionErrorKind
+    && isDeepStrictEqual(left?.argv, right?.argv);
 }
 
 function fileMetadataSnapshot(metadata) {
@@ -1301,14 +1383,17 @@ function requireInspectorRecord(value, expectedPids) {
   const keys = Object.keys(value ?? {}).sort();
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || !isDeepStrictEqual(keys, [
-      'argv', 'executable', 'inspectionError', 'markerPresent', 'pgid', 'pid', 'ppid',
-      'startSec', 'startUsec',
+      'argv', 'executable', 'inspectionError', 'inspectionErrorKind', 'markerArgumentPresent',
+      'markerPresent', 'pgid', 'pid', 'ppid', 'startSec', 'startUsec',
     ])) throw new GuardianFailure('scenario-closure-failed');
   if (![value.pid, value.ppid, value.pgid, value.startSec, value.startUsec]
     .every(item => Number.isSafeInteger(item) && item >= 0)
     || value.pid <= 0 || value.pid === process.pid || value.pgid <= 0
     || value.startSec <= 0 || value.startUsec > 999_999 || value.markerPresent !== true
+    || typeof value.markerArgumentPresent !== 'boolean'
     || typeof value.inspectionError !== 'boolean'
+    || !new Set(['', 'argv0Ambiguous', 'inspectionUnavailable', 'parseFailure', 'unsafeExecutablePath'])
+      .has(value.inspectionErrorKind)
     || !Array.isArray(value.argv) || value.argv.length > 256
     || Object.keys(value.argv).length !== value.argv.length
     || value.argv.some(argument => typeof argument !== 'string' || argument.length > 16_384)
@@ -1317,18 +1402,19 @@ function requireInspectorRecord(value, expectedPids) {
     throw new GuardianFailure('scenario-closure-failed');
   }
   if (value.inspectionError) {
-    if (value.argv.length !== 0 || value.executable !== '') {
+    if (value.argv.length !== 0 || value.executable !== '' || value.inspectionErrorKind === '') {
       throw new GuardianFailure('scenario-closure-failed');
     }
   } else if (value.argv.length < 1 || typeof value.executable !== 'string'
-    || !isAbsolute(value.executable)) {
+    || !isAbsolute(value.executable) || value.inspectionErrorKind !== '') {
     throw new GuardianFailure('scenario-closure-failed');
   }
   return Object.freeze({
     pid: value.pid, ppid: value.ppid, pgid: value.pgid,
     startSec: value.startSec, startUsec: value.startUsec,
     argv: Object.freeze([...value.argv]), executable: value.executable,
-    markerPresent: true, inspectionError: value.inspectionError,
+    markerPresent: true, markerArgumentPresent: value.markerArgumentPresent,
+    inspectionError: value.inspectionError, inspectionErrorKind: value.inspectionErrorKind,
   });
 }
 
@@ -1394,12 +1480,14 @@ export function inspectDarwinMarkedProcesses(runMarker, pids, { signal } = {}) {
   return runDarwinProcessInspector(runMarker, pids, { signal });
 }
 
-function inspectDarwinMarkedProcessesForTermination(runMarker, pids, { signal } = {}) {
+export function inspectDarwinMarkedProcessesForTermination(runMarker, pids, { signal } = {}) {
   return runDarwinProcessInspector(runMarker, pids, { signal, allowInspectionErrors: true });
 }
 
 export async function auditMarkedProcesses(
-  runMarker, { signal, executableHashTimeoutMs = EXECUTABLE_HASH_TIMEOUT_MS } = {},
+  runMarker, {
+    signal, executableHashTimeoutMs = EXECUTABLE_HASH_TIMEOUT_MS, onInspectionError,
+  } = {},
 ) {
   signal = requireAuditSignal(signal);
   requireAuditActive(signal);
@@ -1407,16 +1495,22 @@ export async function auditMarkedProcesses(
     || executableHashTimeoutMs > EXECUTABLE_HASH_TIMEOUT_MS) {
     throw new GuardianFailure('scenario-closure-failed');
   }
-  const first = await inspectDarwinMarkedProcesses(runMarker, undefined, { signal });
+  const inspect = async pids => {
+    const records = await inspectDarwinMarkedProcessesForTermination(runMarker, pids, { signal });
+    if (records.some(record => record.inspectionError)) {
+      onInspectionError?.();
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    return records;
+  };
+  const first = await inspect(undefined);
   if (first.length === 0) return Object.freeze([]);
   const executableIdentities = new Map();
   for (const path of [...new Set(first.map(record => record.executable))].sort()) {
     executableIdentities.set(path, await executableIdentity(path, signal, executableHashTimeoutMs));
   }
   requireAuditActive(signal);
-  const second = await inspectDarwinMarkedProcesses(
-    runMarker, first.map(record => record.pid), { signal },
-  );
+  const second = await inspect(first.map(record => record.pid));
   if (second.length !== first.length) throw new GuardianFailure('scenario-closure-failed');
   return Object.freeze(second.map((record, index) => {
     if (!processSnapshotsMatch(first[index], record)) throw new GuardianFailure('scenario-closure-failed');
@@ -1426,11 +1520,12 @@ export async function auditMarkedProcesses(
   }));
 }
 
-function signalMarkedProcesses(runMarker, signal) {
+function signalMarkedProcesses(runMarker, signal, onInspectionError) {
   return new INTRINSIC_PROMISE((resolveSignal, rejectSignal) => {
     consumeNativePromise(
       inspectDarwinMarkedProcessesForTermination(runMarker),
       processes => {
+        if (processes.some(record => record.inspectionError)) onInspectionError?.();
         let ok = true;
         for (const { pid } of processes) {
           try {
@@ -1447,13 +1542,14 @@ function signalMarkedProcesses(runMarker, signal) {
   });
 }
 
-function waitForMarkedProcessesGone(runMarker, timeoutMs) {
+function waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError) {
   return new INTRINSIC_PROMISE(resolveWait => {
     const startedAt = Date.now();
     const inspect = () => {
       consumeNativePromise(
         inspectDarwinMarkedProcessesForTermination(runMarker),
         pids => {
+          if (pids.some(record => record.inspectionError)) onInspectionError?.();
           if (pids.length === 0) {
             resolveWait(true);
             return;
@@ -1472,23 +1568,24 @@ function waitForMarkedProcessesGone(runMarker, timeoutMs) {
   });
 }
 
-async function terminateMarkedProcesses(runMarker, timeoutMs) {
+export async function terminateMarkedProcesses(runMarker, timeoutMs, { onInspectionError } = {}) {
   let initial;
   try {
     initial = await inspectDarwinMarkedProcessesForTermination(runMarker);
   } catch {
     return Object.freeze({ cleared: false, discovered: false });
   }
+  if (initial.some(record => record.inspectionError)) onInspectionError?.();
   if (initial.length === 0) return Object.freeze({ cleared: true, discovered: false });
-  const soft = await signalMarkedProcesses(runMarker, 'SIGTERM');
+  const soft = await signalMarkedProcesses(runMarker, 'SIGTERM', onInspectionError);
   if (!soft.ok) return Object.freeze({ cleared: false, discovered: true });
-  if (await waitForMarkedProcessesGone(runMarker, timeoutMs)) {
+  if (await waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError)) {
     return Object.freeze({ cleared: true, discovered: true });
   }
-  const hard = await signalMarkedProcesses(runMarker, 'SIGKILL');
+  const hard = await signalMarkedProcesses(runMarker, 'SIGKILL', onInspectionError);
   if (!hard.ok) return Object.freeze({ cleared: false, discovered: true });
   return Object.freeze({
-    cleared: await waitForMarkedProcessesGone(runMarker, timeoutMs),
+    cleared: await waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError),
     discovered: true,
   });
 }
@@ -1627,12 +1724,14 @@ function switchSchemaIsExact(parsed, entries) {
   return true;
 }
 
-function chromeProfilePathIsExact(value) {
-  return typeof value === 'string'
-    && /^\/var\/folders\/[A-Za-z0-9_]+\/[A-Za-z0-9_]+\/T\/playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(value);
+function chromeProfilePathIsExact(value, profileRoot) {
+  if (typeof value !== 'string' || typeof profileRoot !== 'string'
+    || !value.startsWith(`${profileRoot}/`)) return false;
+  const name = value.slice(profileRoot.length + 1);
+  return /^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name);
 }
 
-function mainChromeSchema() {
+function mainChromeSchema(profileRoot) {
   const flags = [
     'disable-field-trial-config', 'disable-background-networking',
     'disable-background-timer-throttling', 'disable-backgrounding-occluded-windows',
@@ -1657,14 +1756,13 @@ function mainChromeSchema() {
     ['password-store', exactValueSwitch('basic')],
     ['blink-settings', exactValueSwitch(CHROME_BLINK_SETTINGS)],
     ['disable-blink-features', exactValueSwitch('AutomationControlled')],
-    ['user-data-dir', patternValueSwitch(/^\/var\/folders\/[A-Za-z0-9_]+\/[A-Za-z0-9_]+\/T\/playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/)],
-    [PUBLIC_RUN_MARKER_ARGUMENT.slice(2), flagSwitch()],
+    ['user-data-dir', Object.freeze({ min: 1, max: 1, validate: value => chromeProfilePathIsExact(value, profileRoot) })],
   ];
 }
 
-const helperSharedSchema = () => [
+const helperSharedSchema = profileRoot => [
   ['noerrdialogs', flagSwitch()],
-  ['user-data-dir', patternValueSwitch(/^\/var\/folders\/[A-Za-z0-9_]+\/[A-Za-z0-9_]+\/T\/playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/)],
+  ['user-data-dir', Object.freeze({ min: 1, max: 1, validate: value => chromeProfilePathIsExact(value, profileRoot) })],
   ['shared-files', flagSwitch()],
   ['field-trial-handle', patternValueSwitch(/^[0-9]+,r,[0-9]+,[0-9]+,262144$/)],
   ['enable-features', exactValueSwitch(CHROME_ENABLE_FEATURES)],
@@ -1675,12 +1773,12 @@ const helperSharedSchema = () => [
   ['seatbelt-client', patternValueSwitch(/^[0-9]+$/)],
 ];
 
-function helperChromeSchema(type) {
+function helperChromeSchema(type, profileRoot) {
   if (type === 'gpu-process') return [
     ['type', exactValueSwitch(type)], ['disable-breakpad', flagSwitch()], ['headless', flagSwitch()],
     ['enable-unsafe-swiftshader', flagSwitch()],
     ['gpu-preferences', exactValueSwitch(CHROME_GPU_PREFERENCES)],
-    ...helperSharedSchema(),
+    ...helperSharedSchema(profileRoot),
   ];
   if (type === 'renderer') return [
     ['type', exactValueSwitch(type)], ['top-chrome-webui', flagSwitch(0, 1)],
@@ -1695,7 +1793,7 @@ function helperChromeSchema(type) {
     ['renderer-client-id', patternValueSwitch(/^[1-9][0-9]*$/)],
     ['time-ticks-at-unix-epoch', patternValueSwitch(/^-[0-9]+$/)],
     ['launch-time-ticks', patternValueSwitch(/^[0-9]+$/)],
-    ...helperSharedSchema(),
+    ...helperSharedSchema(profileRoot),
   ];
   if (type === 'utility') return [
     ['type', exactValueSwitch(type)],
@@ -1708,7 +1806,7 @@ function helperChromeSchema(type) {
       min: 1, max: 1, validate: value => new Set(['network', 'service']).has(value),
     })],
     ['mute-audio', flagSwitch()],
-    ...helperSharedSchema(),
+    ...helperSharedSchema(profileRoot),
   ];
   return null;
 }
@@ -1724,7 +1822,7 @@ function chromeHelperTypeForExecutable(executable, appPath) {
   return 'utility';
 }
 
-function chromeProcessDetails(record, { marker, policy, profilePath } = {}) {
+function chromeProcessDetails(record, { marker, policy, profilePath, profileRoot } = {}) {
   if (!record || typeof record !== 'object' || !policy || typeof policy !== 'object'
     || typeof policy.appPath !== 'string' || typeof policy.binaryPath !== 'string') return null;
   const parsed = Array.isArray(record.argv) && record.argv[0] === record.executable
@@ -1732,15 +1830,15 @@ function chromeProcessDetails(record, { marker, policy, profilePath } = {}) {
   if (!parsed) return null;
   if (record.executable === policy.binaryPath) {
     if (!/^[0-9a-f]{64}$/.test(marker ?? '') || record.markerPresent !== true
-      || parsed.ordered.at(-1)?.name !== PUBLIC_RUN_MARKER_ARGUMENT.slice(2)
-      || !switchSchemaIsExact(parsed, mainChromeSchema())) return null;
+      || record.markerArgumentPresent !== true
+      || !switchSchemaIsExact(parsed, mainChromeSchema(profileRoot))) return null;
     const selectedProfile = parsed.switches.get('user-data-dir')?.[0];
-    if (!chromeProfilePathIsExact(selectedProfile)) return null;
+    if (!chromeProfilePathIsExact(selectedProfile, profileRoot)) return null;
     return Object.freeze({ kind: 'main', profilePath: selectedProfile });
   }
   const type = chromeHelperTypeForExecutable(record.executable, policy.appPath);
-  const schema = helperChromeSchema(type);
-  if (!schema || !chromeProfilePathIsExact(profilePath)
+  const schema = helperChromeSchema(type, profileRoot);
+  if (!schema || !chromeProfilePathIsExact(profilePath, profileRoot)
     || !switchSchemaIsExact(parsed, schema)
     || parsed.switches.get('user-data-dir')?.[0] !== profilePath) return null;
   if (type === 'utility') {
@@ -1756,7 +1854,7 @@ export function chromeProcessCommandIsExact(record, options) {
   try { return chromeProcessDetails(record, options) !== null; } catch { return false; }
 }
 
-async function chromeHelperIsExact(record, mainProfiles, processByPid, policy) {
+async function chromeHelperIsExact(record, mainProfiles, processByPid, policy, profileRoot) {
   let ancestor = record.ppid;
   const visited = new Set([record.pid]);
   while (!mainProfiles.has(ancestor)) {
@@ -1767,7 +1865,7 @@ async function chromeHelperIsExact(record, mainProfiles, processByPid, policy) {
     ancestor = parent.ppid;
   }
   const commandDetails = chromeProcessDetails(record, {
-    policy, profilePath: mainProfiles.get(ancestor),
+    policy, profilePath: mainProfiles.get(ancestor), profileRoot,
   });
   if (record.pgid !== ancestor || !commandDetails) return false;
   let metadata;
@@ -1806,7 +1904,9 @@ async function chromeHelperIsExact(record, mainProfiles, processByPid, policy) {
   return executableRecordStillMatches(record, after);
 }
 
-async function retainedBrowserProcessesAreExact(processes, browserSessions, receipts, processPolicy) {
+async function retainedBrowserProcessesAreExact(
+  processes, browserSessions, receipts, processPolicy, profileRoot, onInspectionError,
+) {
   if (!Array.isArray(processes) || processes.length < 2 || browserSessions.length === 0
     || !processPolicy || receipts.length !== browserSessions.length) return null;
   const processByPid = new Map(processes.map(item => [item.pid, item]));
@@ -1820,7 +1920,7 @@ async function retainedBrowserProcessesAreExact(processes, browserSessions, rece
       const daemon = processByPid.get(receipt.daemonPid);
       const main = processByPid.get(receipt.chromeMainPid);
       const mainDetails = main && chromeProcessDetails(main, {
-        marker: receipt.marker, policy: processPolicy.chrome,
+        marker: receipt.marker, policy: processPolicy.chrome, profileRoot,
       });
       if (!daemon || !main || daemon.marker !== receipt.marker || main.marker !== receipt.marker
         || !daemonCommandIsExact(daemon, receipt, processPolicy.runtime.path)
@@ -1828,7 +1928,9 @@ async function retainedBrowserProcessesAreExact(processes, browserSessions, rece
         || profiles.has(mainDetails.profilePath)) return null;
       const directMains = processes.filter(record => record.ppid === daemon.pid
         && record.executable === processPolicy.chrome.binaryPath
-        && chromeProcessDetails(record, { marker: receipt.marker, policy: processPolicy.chrome })?.kind === 'main');
+        && chromeProcessDetails(record, {
+          marker: receipt.marker, policy: processPolicy.chrome, profileRoot,
+        })?.kind === 'main');
       if (directMains.length !== 1 || directMains[0].pid !== main.pid) return null;
       await verifyPinnedExecutable(
         daemon, processPolicy.runtime.path, processPolicy.runtime.sha256,
@@ -1850,7 +1952,9 @@ async function retainedBrowserProcessesAreExact(processes, browserSessions, rece
     }
     for (const record of processes) {
       if (classified.has(record.pid)) continue;
-      if (!(await chromeHelperIsExact(record, mainProfiles, processByPid, processPolicy.chrome))) return null;
+      if (!(await chromeHelperIsExact(
+        record, mainProfiles, processByPid, processPolicy.chrome, profileRoot,
+      ))) return null;
       classified.add(record.pid);
     }
     if (classified.size !== processes.length) return null;
@@ -1860,9 +1964,13 @@ async function retainedBrowserProcessesAreExact(processes, browserSessions, rece
       markerGroups.get(record.marker).push(record);
     }
     for (const [marker, records] of markerGroups) {
-      const finalSnapshot = await inspectDarwinMarkedProcesses(
+      const finalSnapshot = await inspectDarwinMarkedProcessesForTermination(
         marker, records.map(record => record.pid),
       );
+      if (finalSnapshot.some(record => record.inspectionError)) {
+        onInspectionError?.();
+        return null;
+      }
       if (finalSnapshot.length !== records.length
         || records.some((record, index) => !processSnapshotsMatch(record, finalSnapshot[index]))) return null;
     }
@@ -1913,7 +2021,11 @@ function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRo
     child = INTRINSIC_CHILD_SPAWN(INTRINSIC_PROCESS_EXEC_PATH, argv, {
       cwd: repositoryRoot,
       detached,
-      env: { ...INTRINSIC_CHILD_ENV, [RUN_MARKER_ENV]: runMarker },
+      env: {
+        ...INTRINSIC_CHILD_ENV,
+        TMPDIR: privateContext.profileRootPath,
+        [RUN_MARKER_ENV]: runMarker,
+      },
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -2193,6 +2305,10 @@ export function createLifecycleGuardian({
   let workspacePath = null;
   let manifestPath = null;
   let credentialPath = null;
+  let profileRootPath = null;
+  let globalProfileBaseline = null;
+  let inspectionUncertain = false;
+  let profileInventoryUncertain = false;
   let manifest = null;
   let manifestPin = null;
   let lastManifestSnapshot = null;
@@ -2318,17 +2434,26 @@ export function createLifecycleGuardian({
   };
 
   const closeOwnedBrowsers = async () => exclusive(async () => {
+    if (!profileRootPath) {
+      if (ownedBrowserSessions.size === 0 && ownedBrowserReceipts.size === 0
+        && phaseMarkers.size === 0 && !activeScenario) {
+        browserClosureCertified = true;
+        return;
+      }
+      throw new GuardianFailure('browser-closure-failed');
+    }
+    const browserContext = Object.freeze({ temporaryDirectory: profileRootPath });
     let closeFailed = false;
     for (const session of [...ownedBrowserSessions].sort()) {
       try {
-        await browserClient.closeBrowser(session);
+        await browserClient.closeBrowser(session, browserContext);
       } catch {
         closeFailed = true;
       }
     }
     let names;
     try {
-      names = browserSessionNames(await browserClient.listBrowsers());
+      names = browserSessionNames(await browserClient.listBrowsers(browserContext));
     } catch {
       browserClosureCertified = false;
       throw new GuardianFailure('browser-closure-failed');
@@ -2344,9 +2469,12 @@ export function createLifecycleGuardian({
   });
 
   const exactBrowserInventory = async () => {
+    if (!profileRootPath) throw new GuardianFailure('browser-ownership-invalid');
     let names;
     try {
-      names = browserSessionNames(await browserClient.listBrowsers()).sort();
+      names = browserSessionNames(await browserClient.listBrowsers({
+        temporaryDirectory: profileRootPath,
+      })).sort();
     } catch {
       throw new GuardianFailure('browser-ownership-invalid');
     }
@@ -2360,7 +2488,7 @@ export function createLifecycleGuardian({
     const markedByPhase = [];
     for (const [marker, phase] of phaseMarkers) {
       let processes;
-      try { processes = await auditMarkedProcesses(marker); } catch {
+      try { processes = await auditMarkedProcesses(marker, { onInspectionError: markInspectionUncertain }); } catch {
         throw new GuardianFailure('scenario-closure-failed');
       }
       markedByPhase.push(Object.freeze({
@@ -2380,7 +2508,8 @@ export function createLifecycleGuardian({
     ));
     const audit = isDeepStrictEqual(receipts.map(receipt => receipt.session), names)
       ? await retainedBrowserProcessesAreExact(
-        processes, names, receipts, verifiedRunnerSnapshot.processPolicy,
+        processes, names, receipts, verifiedRunnerSnapshot.processPolicy, profileRootPath,
+        markInspectionUncertain,
       ) : null;
     if (!audit) {
       throw new GuardianFailure('scenario-closure-failed');
@@ -2401,7 +2530,7 @@ export function createLifecycleGuardian({
 
   const certifyReceiptProcessesAbsent = async () => {
     for (const [marker] of phaseMarkers) {
-      const processes = await auditMarkedProcesses(marker);
+      const processes = await auditMarkedProcesses(marker, { onInspectionError: markInspectionUncertain });
       for (const receipt of ownedBrowserReceipts.values()) {
         if (receipt.marker !== marker) continue;
         const identities = ownedProcessIdentities.get(receipt.session);
@@ -2422,20 +2551,49 @@ export function createLifecycleGuardian({
   const terminateStoredPhaseMarkers = async () => {
     let cleared = true;
     for (const marker of phaseMarkers.keys()) {
-      const result = await terminateMarkedProcesses(marker, Math.max(scenarioJoinTimeoutMs, 500));
+      const result = await terminateMarkedProcesses(
+        marker, Math.max(scenarioJoinTimeoutMs, 500), { onInspectionError: markInspectionUncertain },
+      );
       if (!result.cleared) cleared = false;
     }
     if (!cleared) throw new GuardianFailure('scenario-closure-failed');
     for (const marker of phaseMarkers.keys()) {
-      const remaining = await auditMarkedProcesses(marker);
+      const remaining = await auditMarkedProcesses(marker, { onInspectionError: markInspectionUncertain });
       if (remaining.length !== 0) throw new GuardianFailure('scenario-closure-failed');
     }
     phaseMarkers.clear();
   };
 
+  const markInspectionUncertain = () => { inspectionUncertain = true; };
+
+  const removeOwnedProfileRoot = async () => {
+    if (!profileRootPath) return;
+    await requirePrivateDirectory(filesystem, profileRootPath, 'scenario-closure-failed');
+    await auditConfinedPlaywrightTree(filesystem, profileRootPath);
+    await filesystem.rm(profileRootPath, { recursive: true, force: false });
+    if (!(await proveAbsent(filesystem, profileRootPath))) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    profileRootPath = null;
+    const current = await producerProfileInventory(filesystem, INTRINSIC_CHILD_ENV.TMPDIR);
+    if (!isDeepStrictEqual(current, globalProfileBaseline)) {
+      profileInventoryUncertain = true;
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+  };
+
   const certifyEmptyBrowserInventory = async () => {
+    if (!profileRootPath) {
+      if (browserClosureCertified && ownedBrowserSessions.size === 0
+        && ownedBrowserReceipts.size === 0 && phaseMarkers.size === 0 && !activeScenario) return;
+      throw new GuardianFailure('browser-closure-failed');
+    }
     let names;
-    try { names = browserSessionNames(await browserClient.listBrowsers()); } catch {
+    try {
+      names = browserSessionNames(await browserClient.listBrowsers({
+        temporaryDirectory: profileRootPath,
+      }));
+    } catch {
       throw new GuardianFailure('browser-closure-failed');
     }
     if (names.length !== 0) throw new GuardianFailure('browser-closure-failed');
@@ -2616,7 +2774,21 @@ export function createLifecycleGuardian({
       } catch {
         markerFailure = true;
       }
-      if (browserFailure) {
+      if (inspectionUncertain || profileInventoryUncertain) markerFailure = true;
+      let emptyBrowserFailure = false;
+      try {
+        await certifyEmptyBrowserInventory();
+      } catch {
+        emptyBrowserFailure = true;
+      }
+      if (!browserFailure && !receiptFailure && !markerFailure && !emptyBrowserFailure) {
+        try {
+          await removeOwnedProfileRoot();
+        } catch {
+          markerFailure = true;
+        }
+      }
+      if (browserFailure || emptyBrowserFailure) {
         removeHandlers();
         return failureSummary({
           category: 'browser-closure-failed', state, history, interrupted: isInterruption,
@@ -2628,16 +2800,6 @@ export function createLifecycleGuardian({
         removeHandlers();
         return failureSummary({
           category: 'scenario-closure-failed', state, history, interrupted: isInterruption,
-          browserClosureCertified: false, closureCertified: false,
-          ...await currentPreservationStates(),
-        });
-      }
-      try {
-        await certifyEmptyBrowserInventory();
-      } catch {
-        removeHandlers();
-        return failureSummary({
-          category: 'browser-closure-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: false, closureCertified: false,
           ...await currentPreservationStates(),
         });
@@ -2759,7 +2921,9 @@ export function createLifecycleGuardian({
     try {
       const runMarker = INTRINSIC_RANDOM_BYTES(32).toString('hex');
       const collisions = await auditMarkedProcesses(
-        runMarker, { signal: generation.controller.signal },
+        runMarker, {
+          signal: generation.controller.signal, onInspectionError: markInspectionUncertain,
+        },
       );
       if (collisions.length !== 0) throw new GuardianFailure('scenario-runner-invalid');
       phaseMarkers.set(runMarker, phase);
@@ -2795,6 +2959,7 @@ export function createLifecycleGuardian({
             }));
           }
           for (const session of browserSessions) ownedBrowserSessions.add(session);
+          if (browserSessions.length > 0) browserClosureCertified = false;
         },
       });
     } catch (error) {
@@ -2870,6 +3035,8 @@ export function createLifecycleGuardian({
         removeHandlers();
         return failureSummary({ category: 'browser-precondition-failed', state, history });
       }
+      browserClosureCertified = true;
+      globalProfileBaseline = await producerProfileInventory(filesystem, INTRINSIC_CHILD_ENV.TMPDIR);
       try {
         const verified = await preconditionVerifier({
           deployedSha: currentOptions.deployedSha,
@@ -2903,6 +3070,11 @@ export function createLifecycleGuardian({
       if (!(await proveAbsent(filesystem, manifestPath)) || !(await proveAbsent(filesystem, credentialPath))) {
         throw new GuardianFailure('workspace-creation-failed');
       }
+      const candidateProfileRootPath = join(workspacePath, PLAYWRIGHT_TMP_NAME);
+      await filesystem.mkdir(candidateProfileRootPath, { mode: 0o700 });
+      profileRootPath = candidateProfileRootPath;
+      await filesystem.chmod(profileRootPath, 0o700);
+      await requirePrivateDirectory(filesystem, profileRootPath, 'workspace-creation-failed');
 
       await runFixture('seed', currentOptions, 'seeded');
       await loadExactManifest('active');
@@ -2919,6 +3091,7 @@ export function createLifecycleGuardian({
         workspacePath,
         manifestPath,
         credentialPath,
+        profileRootPath,
       });
       const beforeRows = await runScenarioPhase('before-transition', privateContext);
       for (const row of beforeRows) {
@@ -2942,7 +3115,9 @@ export function createLifecycleGuardian({
       await closeOwnedBrowsers();
       await certifyReceiptProcessesAbsent();
       await terminateStoredPhaseMarkers();
+      if (inspectionUncertain) throw new GuardianFailure('scenario-closure-failed');
       await certifyEmptyBrowserInventory();
+      await removeOwnedProfileRoot();
       checkInterrupted();
       transition('browsers-closed');
       await loadExactManifest('pending_deletion');
