@@ -202,3 +202,9 @@ The final Task 7 report may claim completion only when:
 - the final evidence-only commit is clearly distinguished from the reviewed/deployed application SHA that includes the bounded hydration fix.
 
 Until then, release status remains `NOT READY`.
+
+## Sticky process-identity outcome amendment
+
+This amendment begins at exact reviewed HEAD `70398193fba552362c12ec61207e481ac4df2871`. Process-inspection uncertainty is a property of the complete guardian run, not only of helper execution. Every lifecycle-reached rejection of a marked process identity—receipt/session mismatch, missing or duplicate PID, topology, marker, argv, executable, codesign, birth identity, frozen-identity continuity, helper ancestry, or final resnapshot—must irreversibly set the guardian's inspection-uncertain state before the validator returns or throws. A later valid identity, empty scan, or successful kill cannot restore either browser-closure or fixture-closure certification.
+
+Termination has the same monotonic contract. Discovery of any process carrying an owned phase marker, any unsuccessful signal, any wait timeout, any surviving process, any `cleared:false` result, and any retry failure irreversibly makes inspection uncertain. Browser-first recovery and bounded process termination still proceed to minimize live resources, but uncertain runs preserve the exact workspace and manifest and return `browserClosureCertified:false` and `closureCertified:false`; they cannot run fixture cleanup or remove private evidence. A child that remains wholly inside the guardian-owned process group and is joined without an inspector identity rejection retains the existing process-group closure behavior.

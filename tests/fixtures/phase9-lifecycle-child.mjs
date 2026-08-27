@@ -122,6 +122,11 @@ function finishRowsAfterOwnership(
   const rows = suppliedRows ?? phaseRows(phase);
   const emitted = mode === 'row-early-completion' ? rows.slice(0, 1) : rows;
   emitted.forEach((row, index) => writeMessage({ version: 1, type: 'row', phase, index, row }));
+  const completionReceipts = mode === 'receipt-mismatch'
+    ? launchReceipts.map((receipt, index) => index === 0
+      ? { ...receipt, chromeMainPid: receipt.chromeMainPid + 10 }
+      : receipt)
+    : launchReceipts;
   writeMessage({
     version: 2,
     type: 'completion',
@@ -129,7 +134,7 @@ function finishRowsAfterOwnership(
     ok,
     browserSessions,
     attachedBrowserSessions,
-    launchReceipts,
+    launchReceipts: completionReceipts,
     rowCount: rows.length,
   }, () => nativeExit(0));
 }
@@ -288,6 +293,8 @@ if (mode === 'success') {
 ]).has(mode)) {
   finishWithRows(phase, mode);
 } else if (mode === 'own-before') {
+  finishWithRows(phase, mode, phase === 'before-transition' ? ['phase9-guardian-owned'] : []);
+} else if (mode === 'receipt-mismatch') {
   finishWithRows(phase, mode, phase === 'before-transition' ? ['phase9-guardian-owned'] : []);
 } else if (mode === 'fail-before' || mode === 'fail-after') {
   finishWithRows(phase, mode, [], !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));

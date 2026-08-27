@@ -5131,6 +5131,58 @@ test('phase 9 Darwin inspector treats a real empty argv0 as a marked rogue witho
   }
 });
 
+test('phase 9 Darwin termination keeps a cleared-false result sticky after a clean retry', { timeout: 30_000 }, async () => {
+  const originalExecFile = childProcess.execFile;
+  let inspectorCalls = 0;
+  let liveInspectorOutput = null;
+  childProcess.execFile = function boundedSurvivorSnapshot(command, args, options, callback) {
+    if (command === '/usr/bin/python3' && Array.isArray(args)
+      && args[0] === '-c' && args.includes('--marker-name')) {
+      inspectorCalls += 1;
+      const callNumber = inspectorCalls;
+      if (callNumber === 5 && liveInspectorOutput !== null) {
+        queueMicrotask(() => callback(null, liveInspectorOutput, ''));
+        return undefined;
+      }
+      return originalExecFile.call(this, command, args, options, (error, stdout, stderr) => {
+        if (!error && callNumber === 1) liveInspectorOutput = stdout;
+        callback(error, stdout, stderr);
+      });
+    }
+    return originalExecFile.call(this, command, args, options, callback);
+  };
+  syncBuiltinESMExports();
+  const markerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const marker = createHash('sha256').update(`phase9-termination-retry-${process.pid}`).digest('hex');
+  const child = spawn(process.execPath, [
+    '-e', 'process.on("SIGTERM",()=>{});setInterval(()=>{},1000)',
+  ], { env: { ...process.env, [markerName]: marker }, stdio: 'ignore' });
+  let inspectionUncertain = false;
+  try {
+    const { terminateMarkedProcesses } = await import(
+      `../scripts/qa-evidence/phase9/lifecycle-guardian.mjs?cleared-false=${Date.now()}`
+    );
+    const first = await terminateMarkedProcesses(marker, 0, {
+      onInspectionError: () => { inspectionUncertain = true; },
+    });
+    assert.equal(first.discovered, true);
+    assert.equal(first.cleared, false);
+    assert.equal(inspectionUncertain, true, 'cleared:false must make process inspection uncertain');
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise(resolvePromise => child.once('close', resolvePromise));
+    }
+    const retry = await terminateMarkedProcesses(marker, 1_000, {
+      onInspectionError: () => { inspectionUncertain = true; },
+    });
+    assert.equal(retry.cleared, true);
+    assert.equal(inspectionUncertain, true, 'a clean retry cannot restore certification');
+  } finally {
+    try { child.kill('SIGKILL'); } catch {}
+    childProcess.execFile = originalExecFile;
+    syncBuiltinESMExports();
+  }
+});
+
 test('phase 9 Darwin inspector keeps marker representation injective and fails closed on unsafe executable paths', { timeout: 30_000 }, async () => {
   const { inspectDarwinMarkedProcessesForTermination } = await import(
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
@@ -5506,10 +5558,13 @@ test('phase 9 guardian closes its real browser before killing an extra marked ro
     const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
     assert.equal(result.ok, false);
     assert.equal(result.category, 'scenario-closure-failed');
-    assert.equal(result.closureCertified, true);
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
     assert.equal(closeObservedLiveRogue, true);
-    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
-    assert.equal(fixture.workspaceExists, false);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
+    assert.equal(fixture.workspaceExists, true);
     assert.equal(pidAlive(info.roguePid), false);
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
     assert.deepEqual(markedProcessLines(info.marker), []);
@@ -5529,9 +5584,12 @@ test('phase 9 guardian rejects a declared real retained browser missing from inv
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
     const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
     assert.equal(result.ok, false);
-    assert.equal(result.category, 'browser-ownership-invalid');
-    assert.equal(result.closureCertified, true);
-    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
     assert.deepEqual(markedProcessLines(info.marker), []);
   } finally {
@@ -5595,8 +5653,11 @@ test('phase 9 guardian rejects two declared sessions when the second Chrome main
   try {
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
     assert.equal(result.ok, false);
-    assert.equal(result.category, 'browser-ownership-invalid');
-    assert.equal(result.closureCertified, true);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
   } finally {
     await cleanupRealGuardianIntegration();
@@ -5615,7 +5676,10 @@ test('phase 9 guardian rejects an extra marked direct Chrome main outside its tw
     const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
     assert.equal(result.ok, false);
     assert.equal(result.category, 'scenario-closure-failed');
-    assert.equal(result.closureCertified, true);
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
     assert.equal(pidAlive(info.roguePid), false);
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
   } finally {
@@ -5635,7 +5699,10 @@ test('phase 9 guardian rejects a marked daemon command look-alike with the wrong
     const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
     assert.equal(result.ok, false);
     assert.equal(result.category, 'scenario-closure-failed');
-    assert.equal(result.closureCertified, true);
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
     assert.equal(pidAlive(info.roguePid), false);
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
   } finally {
@@ -5966,6 +6033,19 @@ test('phase 9 lifecycle guardian rejects forged child completion and closure cla
   assert.equal(fixture.events.indexOf('browser:list') < fixture.events.indexOf('fixture:cleanup'), true);
 });
 
+test('phase 9 lifecycle guardian keeps a frozen launch-receipt mismatch uncertified', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'receipt-mismatch' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-closure-failed');
+  assert.equal(result.browserClosureCertified, false);
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  assert.equal(fixture.workspaceExists, true);
+});
+
 test('phase 9 lifecycle guardian bounds child stdio before parsing protocol data', async () => {
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'stdio-overflow',
@@ -6081,9 +6161,12 @@ test('phase 9 lifecycle guardian kills a detached marked descendant before clean
     detachedPid ??= JSON.parse(readFileSync(markerPath, 'utf8')).pid;
     assert.equal(result.ok, false);
     assert.equal(result.category, 'scenario-closure-failed', JSON.stringify(result));
-    assert.equal(result.closureCertified, true);
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
     assert.equal(processAlive(detachedPid), false);
-    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    assert.equal(fixture.events.includes('fixture:cleanup'), false);
   } finally {
     if (detachedPid && processAlive(detachedPid)) {
       try { process.kill(detachedPid, 'SIGKILL'); } catch {}

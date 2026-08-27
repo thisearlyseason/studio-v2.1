@@ -1589,26 +1589,30 @@ function waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError) {
 }
 
 export async function terminateMarkedProcesses(runMarker, timeoutMs, { onInspectionError } = {}) {
+  const uncertainResult = result => {
+    onInspectionError?.();
+    return Object.freeze(result);
+  };
   let initial;
   try {
     initial = await inspectDarwinMarkedProcessesForTermination(runMarker);
   } catch {
-    onInspectionError?.();
-    return Object.freeze({ cleared: false, discovered: false });
+    return uncertainResult({ cleared: false, discovered: false });
   }
   if (initial.some(record => record.inspectionError)) onInspectionError?.();
   if (initial.length === 0) return Object.freeze({ cleared: true, discovered: false });
+  onInspectionError?.();
   const soft = await signalMarkedProcesses(runMarker, 'SIGTERM', onInspectionError);
-  if (!soft.ok) return Object.freeze({ cleared: false, discovered: true });
+  if (!soft.ok) return uncertainResult({ cleared: false, discovered: true });
   if (await waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError)) {
     return Object.freeze({ cleared: true, discovered: true });
   }
+  onInspectionError?.();
   const hard = await signalMarkedProcesses(runMarker, 'SIGKILL', onInspectionError);
-  if (!hard.ok) return Object.freeze({ cleared: false, discovered: true });
-  return Object.freeze({
-    cleared: await waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError),
-    discovered: true,
-  });
+  if (!hard.ok) return uncertainResult({ cleared: false, discovered: true });
+  const cleared = await waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError);
+  if (!cleared) return uncertainResult({ cleared: false, discovered: true });
+  return Object.freeze({ cleared: true, discovered: true });
 }
 
 async function verifySignedPath(path, policy) {
@@ -1929,10 +1933,14 @@ async function chromeHelperIsExact(record, mainProfiles, processByPid, policy, p
 async function retainedBrowserProcessesAreExact(
   processes, browserSessions, receipts, processPolicy, profileRoot, onInspectionError,
 ) {
+  const rejectIdentity = () => {
+    onInspectionError?.();
+    return null;
+  };
   if (!Array.isArray(processes) || processes.length < 2 || browserSessions.length === 0
-    || !processPolicy || receipts.length !== browserSessions.length) return null;
+    || !processPolicy || receipts.length !== browserSessions.length) return rejectIdentity();
   const processByPid = new Map(processes.map(item => [item.pid, item]));
-  if (processByPid.size !== processes.length) return null;
+  if (processByPid.size !== processes.length) return rejectIdentity();
   const classified = new Set();
   const mainProfiles = new Map();
   const profiles = new Set();
@@ -1947,13 +1955,13 @@ async function retainedBrowserProcessesAreExact(
       if (!daemon || !main || daemon.marker !== receipt.marker || main.marker !== receipt.marker
         || !daemonCommandIsExact(daemon, receipt, processPolicy.runtime.path)
         || main.ppid !== daemon.pid || main.pgid !== main.pid || mainDetails?.kind !== 'main'
-        || profiles.has(mainDetails.profilePath)) return null;
+        || profiles.has(mainDetails.profilePath)) return rejectIdentity();
       const directMains = processes.filter(record => record.ppid === daemon.pid
         && record.executable === processPolicy.chrome.binaryPath
         && chromeProcessDetails(record, {
           marker: receipt.marker, policy: processPolicy.chrome, profileRoot,
         })?.kind === 'main');
-      if (directMains.length !== 1 || directMains[0].pid !== main.pid) return null;
+      if (directMains.length !== 1 || directMains[0].pid !== main.pid) return rejectIdentity();
       await verifyPinnedExecutable(
         daemon, processPolicy.runtime.path, processPolicy.runtime.sha256,
         processPolicy.runtime, { rootOwned: true },
@@ -1976,10 +1984,10 @@ async function retainedBrowserProcessesAreExact(
       if (classified.has(record.pid)) continue;
       if (!(await chromeHelperIsExact(
         record, mainProfiles, processByPid, processPolicy.chrome, profileRoot,
-      ))) return null;
+      ))) return rejectIdentity();
       classified.add(record.pid);
     }
-    if (classified.size !== processes.length) return null;
+    if (classified.size !== processes.length) return rejectIdentity();
     const markerGroups = new Map();
     for (const record of processes) {
       if (!markerGroups.has(record.marker)) markerGroups.set(record.marker, []);
@@ -1990,18 +1998,15 @@ async function retainedBrowserProcessesAreExact(
         marker, records.map(record => record.pid),
       );
       if (finalSnapshot.some(record => record.inspectionError)) {
-        onInspectionError?.();
-        return null;
+        return rejectIdentity();
       }
       if (finalSnapshot.length !== records.length
         || records.some((record, index) => !processSnapshotsMatch(record, finalSnapshot[index]))) {
-        onInspectionError?.();
-        return null;
+        return rejectIdentity();
       }
     }
   } catch {
-    onInspectionError?.();
-    return null;
+    return rejectIdentity();
   }
   return Object.freeze({ identities: Object.freeze(identities) });
 }
@@ -2029,7 +2034,10 @@ function signalProcessGroup(handle, signal) {
   }
 }
 
-function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRoot, runMarker, onOwnership }) {
+function spawnRunnerChild({
+  commandSnapshot, phase, privateContext, repositoryRoot, runMarker,
+  onOwnership, onInspectionError,
+}) {
   const detached = INTRINSIC_PROCESS_PLATFORM !== 'win32';
   const argv = [
     '--input-type=module',
@@ -2088,6 +2096,15 @@ function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRo
     rejectCompletion(protocolFailure);
   };
 
+  const requireProcessOwnership = message => {
+    try {
+      return requireOwnershipPayload(message);
+    } catch (error) {
+      onInspectionError?.();
+      throw error;
+    }
+  };
+
   const acceptLine = line => {
     if (line.length < 2 || line.length > RUNNER_LINE_LIMIT || /[^\x20-\x7e]/.test(line)) {
       throw new GuardianFailure('scenario-runner-invalid');
@@ -2105,7 +2122,7 @@ function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRo
       if (ownership || terminal || message.version !== 2 || message.phase !== phase) {
         throw new GuardianFailure('scenario-runner-invalid');
       }
-      ownership = requireOwnershipPayload(message);
+      ownership = requireProcessOwnership(message);
       onOwnership(ownership);
       return;
     }
@@ -2137,8 +2154,9 @@ function spawnRunnerChild({ commandSnapshot, phase, privateContext, repositoryRo
         || message.rowCount !== expectedRows.length
         || phaseRows.length !== expectedRows.length
       ) throw new GuardianFailure('scenario-runner-invalid');
-      const completedOwnership = requireOwnershipPayload(message);
+      const completedOwnership = requireProcessOwnership(message);
       if (!isDeepStrictEqual(completedOwnership, ownership)) {
+        onInspectionError?.();
         throw new GuardianFailure('scenario-runner-invalid');
       }
       terminal = Object.freeze({
@@ -2357,6 +2375,19 @@ export function createLifecycleGuardian({
   let operationTail = new INTRINSIC_PROMISE(resolveOperation => resolveOperation());
 
   const markInspectionUncertain = () => { inspectionUncertain = true; };
+  const rejectInspectionIdentity = category => {
+    markInspectionUncertain();
+    throw new GuardianFailure(category);
+  };
+  const requireInspectionIdentity = (result, category = 'scenario-closure-failed') => {
+    if (!result) rejectInspectionIdentity(category);
+    return result;
+  };
+  const inspectionIdentityMatches = (expected, actual) => {
+    const matches = processInstanceIdentityMatches(expected, actual);
+    if (!matches) markInspectionUncertain();
+    return matches;
+  };
   const stickyInspectionOperation = async (operation, { intentionalCancellation } = {}) => {
     try {
       return await operation();
@@ -2536,7 +2567,7 @@ export function createLifecycleGuardian({
       throw new GuardianFailure('browser-ownership-invalid');
     }
     const expected = [...ownedBrowserSessions].sort();
-    if (!isDeepStrictEqual(names, expected)) throw new GuardianFailure('browser-ownership-invalid');
+    if (!isDeepStrictEqual(names, expected)) rejectInspectionIdentity('browser-ownership-invalid');
     return names;
   };
 
@@ -2556,25 +2587,26 @@ export function createLifecycleGuardian({
     const processes = markedByPhase.flatMap(item => item.processes);
     if (names.length === 0) {
       if (processes.length !== 0 || ownedBrowserReceipts.size !== 0) {
-        throw new GuardianFailure('scenario-closure-failed');
+        rejectInspectionIdentity('scenario-closure-failed');
       }
       return;
     }
     const receipts = [...ownedBrowserReceipts.values()].sort((left, right) => (
       left.session.localeCompare(right.session)
     ));
-    const audit = isDeepStrictEqual(receipts.map(receipt => receipt.session), names)
-      ? await stickyInspectionOperation(() => retainedBrowserProcessesAreExact(
+    if (!isDeepStrictEqual(receipts.map(receipt => receipt.session), names)) {
+      rejectInspectionIdentity('scenario-closure-failed');
+    }
+    const audit = requireInspectionIdentity(
+      await stickyInspectionOperation(() => retainedBrowserProcessesAreExact(
         processes, names, receipts, verifiedRunnerSnapshot.processPolicy, profileRootPath,
         markInspectionUncertain,
-      )) : null;
-    if (!audit) {
-      throw new GuardianFailure('scenario-closure-failed');
-    }
+      )),
+    );
     for (const identityReceipt of audit.identities) {
       const prior = ownedProcessIdentities.get(identityReceipt.session);
-      if (prior && (!processInstanceIdentityMatches(prior.daemon, identityReceipt.daemon)
-        || !processInstanceIdentityMatches(prior.chromeMain, identityReceipt.chromeMain))) {
+      if (prior && (!inspectionIdentityMatches(prior.daemon, identityReceipt.daemon)
+        || !inspectionIdentityMatches(prior.chromeMain, identityReceipt.chromeMain))) {
         throw new GuardianFailure('scenario-closure-failed');
       }
     }
@@ -2594,11 +2626,14 @@ export function createLifecycleGuardian({
         if (!identities) continue;
         const daemon = processes.find(item => item.pid === identities.daemon.pid);
         const main = processes.find(item => item.pid === identities.chromeMain.pid);
-        if ((daemon && processInstanceIdentityMatches(
+        const daemonMatches = daemon && inspectionIdentityMatches(
           identities.daemon, processInstanceIdentity(daemon, identities.daemon),
-        )) || (main && processInstanceIdentityMatches(
+        );
+        const mainMatches = main && inspectionIdentityMatches(
           identities.chromeMain, processInstanceIdentity(main, identities.chromeMain),
-        ))) {
+        );
+        if (daemonMatches || mainMatches) {
+          markInspectionUncertain();
           throw new GuardianFailure('scenario-closure-failed');
         }
       }
@@ -2611,12 +2646,15 @@ export function createLifecycleGuardian({
       const result = await terminateMarkedProcessesSticky(
         marker, Math.max(scenarioJoinTimeoutMs, 500),
       );
-      if (!result.cleared) cleared = false;
+      if (!result.cleared) {
+        markInspectionUncertain();
+        cleared = false;
+      }
     }
     if (!cleared) throw new GuardianFailure('scenario-closure-failed');
     for (const marker of phaseMarkers.keys()) {
       const remaining = await auditMarkedProcessesSticky(marker);
-      if (remaining.length !== 0) throw new GuardianFailure('scenario-closure-failed');
+      if (remaining.length !== 0) rejectInspectionIdentity('scenario-closure-failed');
     }
     phaseMarkers.clear();
   };
@@ -3006,20 +3044,21 @@ export function createLifecycleGuardian({
         privateContext,
         repositoryRoot: verifiedRepositoryRoot,
         runMarker,
+        onInspectionError: markInspectionUncertain,
         onOwnership({ browserSessions, attachedBrowserSessions, launchReceipts }) {
           for (const session of browserSessions) {
             if (ownedBrowserSessions.has(session)) {
-              throw new GuardianFailure('browser-ownership-invalid');
+              rejectInspectionIdentity('browser-ownership-invalid');
             }
           }
           for (const session of attachedBrowserSessions) {
             if (!ownedBrowserSessions.has(session) || !ownedBrowserReceipts.has(session)) {
-              throw new GuardianFailure('browser-ownership-invalid');
+              rejectInspectionIdentity('browser-ownership-invalid');
             }
           }
           for (const receipt of launchReceipts) {
             if (ownedBrowserReceipts.has(receipt.session)) {
-              throw new GuardianFailure('browser-ownership-invalid');
+              rejectInspectionIdentity('browser-ownership-invalid');
             }
             ownedBrowserReceipts.set(receipt.session, Object.freeze({
               ...receipt, marker: runMarker, phase,
