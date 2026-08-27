@@ -108,9 +108,13 @@ function finishWithRows(phase, mode, browserSessions = [], ok = true) {
   if (mode === 'row-out-of-order') [rows[0], rows[1]] = [rows[1], rows[0]];
   if (mode === 'row-wrong-phase') rows = phaseRows(phase === 'before-transition' ? 'after-transition' : 'before-transition');
   const launchReceipts = fakeLaunchReceipts(browserSessions);
+  browserSessions.forEach((session, sequence) => writeMessage({
+    version: 3, type: 'ownership-add', phase, sequence, session,
+    launchReceipt: launchReceipts[sequence],
+  }));
   writeMessage({
-    version: 2, type: 'ownership', phase, browserSessions,
-    attachedBrowserSessions: [], launchReceipts,
+    version: 3, type: 'ownership-complete', phase, sequence: browserSessions.length,
+    browserSessions, attachedBrowserSessions: [], launchReceipts,
   });
   finishRowsAfterOwnership(phase, mode, browserSessions, ok, rows, launchReceipts);
 }
@@ -128,7 +132,7 @@ function finishRowsAfterOwnership(
       : receipt)
     : launchReceipts;
   writeMessage({
-    version: 2,
+    version: 3,
     type: 'completion',
     phase,
     ok,
@@ -246,21 +250,28 @@ async function runRealRetainedBrowser(mode, phase, args) {
       lookalike.unref();
       roguePid = lookalike.pid;
     }
+    browserSessions.forEach((session, sequence) => writeMessage({
+      version: 3, type: 'ownership-add', phase, sequence, session,
+      launchReceipt: launchReceipts[sequence],
+    }));
     writeMessage({
-      version: 2, type: 'ownership', phase, browserSessions,
-      attachedBrowserSessions, launchReceipts,
+      version: 3, type: 'ownership-complete', phase, sequence: browserSessions.length,
+      browserSessions, attachedBrowserSessions, launchReceipts,
     });
     writeFileSync(infoPath, nativeJsonStringify({
       marker, roguePid, sessions, launchReceipts,
       lookalikePath, lookalikeRoot, viewports,
     }), { mode: 0o600 });
   } else {
-    for (const session of sessions) await clientModule.attachExistingSignalRecorder(client, session, {
-      ...viewports[session], marker: session,
-    });
+    for (const [sequence, session] of sessions.entries()) {
+      writeMessage({ version: 3, type: 'ownership-attach', phase, sequence, session });
+      await clientModule.attachExistingSignalRecorder(client, session, {
+        ...viewports[session], marker: session,
+      });
+    }
     writeMessage({
-      version: 2, type: 'ownership', phase, browserSessions,
-      attachedBrowserSessions, launchReceipts,
+      version: 3, type: 'ownership-complete', phase, sequence: sessions.length,
+      browserSessions, attachedBrowserSessions, launchReceipts,
     });
     writeFileSync(infoPath, nativeJsonStringify({
       attached: true, marker, sessions, viewports,
@@ -296,12 +307,60 @@ if (mode === 'success') {
   finishWithRows(phase, mode, phase === 'before-transition' ? ['phase9-guardian-owned'] : []);
 } else if (mode === 'receipt-mismatch') {
   finishWithRows(phase, mode, phase === 'before-transition' ? ['phase9-guardian-owned'] : []);
+} else if (mode === 'ownership-crash-first' || mode === 'ownership-crash-late') {
+  if (phase !== 'before-transition') nativeExit(70);
+  const sessions = mode === 'ownership-crash-first'
+    ? ['phase9-acquired-first']
+    : ['phase9-acquired-first', 'phase9-acquired-late'];
+  sessions.forEach((session, sequence) => writeMessage({
+    version: 3,
+    type: 'ownership-add',
+    phase,
+    sequence,
+    session,
+    launchReceipt: fakeLaunchReceipts(sessions)[sequence],
+  }));
+  nativeExit(70);
+} else if (new Set([
+  'ownership-duplicate', 'ownership-mutation', 'ownership-out-of-order', 'row-unowned-session',
+]).has(mode)) {
+  const session = 'phase9-owned-protocol';
+  const launchReceipt = fakeLaunchReceipts([session])[0];
+  if (mode === 'ownership-out-of-order') {
+    writeMessage({
+      version: 3, type: 'ownership-add', phase, sequence: 1, session, launchReceipt,
+    }, () => nativeExit(0));
+  } else if (mode === 'row-unowned-session') {
+    writeMessage({
+      version: 3, type: 'ownership-complete', phase, sequence: 0,
+      browserSessions: [], attachedBrowserSessions: [], launchReceipts: [],
+    });
+    writeMessage({
+      version: 2, type: 'row', phase, index: 0,
+      sessions: ['phase9-never-owned'], row: phaseRows(phase)[0],
+    }, () => nativeExit(0));
+  } else {
+    writeMessage({
+      version: 3, type: 'ownership-add', phase, sequence: 0, session, launchReceipt,
+    });
+    if (mode === 'ownership-duplicate') {
+      writeMessage({
+        version: 3, type: 'ownership-add', phase, sequence: 1, session, launchReceipt,
+      }, () => nativeExit(0));
+    } else {
+      writeMessage({
+        version: 3, type: 'ownership-complete', phase, sequence: 1,
+        browserSessions: [session], attachedBrowserSessions: [],
+        launchReceipts: [{ ...launchReceipt, chromeMainPid: launchReceipt.chromeMainPid + 10 }],
+      }, () => nativeExit(0));
+    }
+  }
 } else if (mode === 'fail-before' || mode === 'fail-after') {
   finishWithRows(phase, mode, [], !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
 } else if (mode === 'mutate-globals') {
   const rows = phaseRows(phase);
   writeMessage({
-    version: 2, type: 'ownership', phase, browserSessions: [],
+    version: 3, type: 'ownership-complete', phase, sequence: 0, browserSessions: [],
     attachedBrowserSessions: [], launchReceipts: [],
   });
   rows.forEach((row, index) => {
@@ -318,7 +377,7 @@ if (mode === 'success') {
   globalThis.setTimeout = () => 99;
   globalThis.clearTimeout = () => {};
   writeMessage({
-    version: 2, type: 'completion', phase, ok: true, browserSessions: [],
+    version: 3, type: 'completion', phase, ok: true, browserSessions: [],
     attachedBrowserSessions: [], launchReceipts: [], rowCount: rows.length,
   }, () => nativeExit(0));
 } else if (mode === 'forged-claims') {

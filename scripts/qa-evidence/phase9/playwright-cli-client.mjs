@@ -1926,16 +1926,26 @@ export function createPhase9ProductionCliClient(options = {}) {
   return createPlaywrightCliClient({ ...options, timeoutMs: 90_000 });
 }
 
-export async function installSignalRecorder(client, session) {
+export async function acquireBlankBrowser(client, session) {
+  const internals = CLIENT_INTERNALS.get(client);
+  if (!internals) throw new Error('Browser acquisition requires a Playwright CLI client.');
+  await internals.openBlank(session);
+}
+
+export async function armAcquiredSignalRecorder(client, session) {
   const internals = CLIENT_INTERNALS.get(client);
   if (!internals) throw new Error('Signal recorder requires a Playwright CLI client.');
-  await internals.openBlank(session);
   const current = await internals.executeRunCode(session, `async (page) => {
     // phase9:verify-about-blank
     return { url: page.url() };
   }`);
   if (current?.url !== 'about:blank') throw new Error('Signal recorder requires the exact current tab to be about:blank.');
   return internals.installRecorder(session);
+}
+
+export async function installSignalRecorder(client, session) {
+  await acquireBlankBrowser(client, session);
+  return armAcquiredSignalRecorder(client, session);
 }
 
 export async function setAndVerifyViewport(client, session, viewport) {

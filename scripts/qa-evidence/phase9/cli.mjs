@@ -56,17 +56,17 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '424893cd4e23e48db6e6f8b276af36080eebf1e327199d163d18215e32e4d6e9',
-  childSource: 'c364164e8a5a29593b3bba1b1514ac66a0302e60ce0e6085814f103d2fb235e6',
+  child: '4423fc412a1de766daf74a694321e9c3ba44a70f1cd8170a19f9fbe36a3a4234',
+  childSource: '301e47448565c815c32f025a21cb04f55c6132542475b09a754552f97382e7e4',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
-  config: '29ef8078ee99e4a1ea0eefce002ca4f70044918ad8275a5f3e4046db0246b97f',
+  config: '3bfb499d074e522674cd9de606b5496a72a8abbbd4d985306c030a248bfb768c',
   transport: PLAYWRIGHT_ARTIFACT_SHA256,
   transportManifest: 'c9d44c00a182a7e387d443ab6b0073913c5fb8f78a5b66f078e308607afa2dec',
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
   transportGuard: '4a64c39de2beac00ec64ede64a440449690a30caa901b69c99e06c4be465b7fc',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: '5ffdf196a3f183b8d5a5d7e2cb26f4d72e524508bd0ced61bcee393cb3dc3700',
+  transportClient: '810898284e1b4dd0f7a964a886313a588288e0792ebf6e7eade361d9868328e5',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
@@ -135,8 +135,9 @@ async function validatePinnedTransport() {
 async function validatePinnedConfig({ verifyTransport = false } = {}) {
   const config = JSON.parse(await readFile(childConfig, 'utf8'));
   if (
-    Object.keys(config).sort().join(',') !== 'chrome,nodeRuntime,origin,playwrightArtifact,playwrightArtifactSha256,playwrightCoreVersion,playwrightVersion,projectId'
+    Object.keys(config).sort().join(',') !== 'chrome,nodeRuntime,origin,playwrightArtifact,playwrightArtifactSha256,playwrightCoreVersion,playwrightVersion,projectId,protocolVersion'
     || config.projectId !== STAGING_PROJECT_ID || config.origin !== STAGING_ORIGIN
+    || config.protocolVersion !== '3'
     || config.playwrightArtifact !== PLAYWRIGHT_ARTIFACT_RELATIVE_PATH || config.playwrightVersion !== PLAYWRIGHT_VERSION
     || config.playwrightCoreVersion !== PLAYWRIGHT_CORE_VERSION
     || config.playwrightArtifactSha256 !== PLAYWRIGHT_ARTIFACT_SHA256

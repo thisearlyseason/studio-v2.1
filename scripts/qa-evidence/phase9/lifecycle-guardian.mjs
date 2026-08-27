@@ -2036,7 +2036,7 @@ function signalProcessGroup(handle, signal) {
 
 function spawnRunnerChild({
   commandSnapshot, phase, privateContext, repositoryRoot, runMarker,
-  onOwnership, onInspectionError,
+  onOwnershipAdd, onOwnershipAttach, onInspectionError,
 }) {
   const detached = INTRINSIC_PROCESS_PLATFORM !== 'win32';
   const argv = [
@@ -2076,6 +2076,10 @@ function spawnRunnerChild({
   let stderrBytes = 0;
   let stdoutBuffer = '';
   let ownership = null;
+  let ownershipSequence = 0;
+  const announcedSessions = new Set();
+  const attachedSessions = new Set();
+  const announcedReceipts = new Map();
   let terminal = null;
   const phaseRows = [];
   let protocolFailure = null;
@@ -2104,6 +2108,10 @@ function spawnRunnerChild({
       throw error;
     }
   };
+  const rejectOwnershipProtocol = () => {
+    onInspectionError?.();
+    throw new GuardianFailure('scenario-runner-invalid');
+  };
 
   const acceptLine = line => {
     if (line.length < 2 || line.length > RUNNER_LINE_LIMIT || /[^\x20-\x7e]/.test(line)) {
@@ -2115,25 +2123,74 @@ function spawnRunnerChild({
     } catch {
       throw new GuardianFailure('scenario-runner-invalid');
     }
-    if (message?.type === 'ownership') {
+    if (message?.type === 'ownership-add') {
       requireRunnerMessage(message, [
-        'attachedBrowserSessions', 'browserSessions', 'launchReceipts', 'phase', 'type', 'version',
+        'launchReceipt', 'phase', 'sequence', 'session', 'type', 'version',
       ]);
-      if (ownership || terminal || message.version !== 2 || message.phase !== phase) {
+      if (ownership || terminal || message.version !== 3 || message.phase !== phase
+        || message.sequence !== ownershipSequence || announcedSessions.has(message.session)
+        || attachedSessions.has(message.session)) {
+        rejectOwnershipProtocol();
+      }
+      const [launchReceipt] = requireLaunchReceipts([message.launchReceipt], [message.session]);
+      announcedSessions.add(message.session);
+      announcedReceipts.set(message.session, launchReceipt);
+      ownershipSequence += 1;
+      onOwnershipAdd({ session: message.session, launchReceipt });
+      return;
+    }
+    if (message?.type === 'ownership-attach') {
+      requireRunnerMessage(message, ['phase', 'sequence', 'session', 'type', 'version']);
+      if (ownership || terminal || message.version !== 3 || message.phase !== phase
+        || message.sequence !== ownershipSequence || announcedSessions.has(message.session)
+        || attachedSessions.has(message.session)
+        || requireRunnerSessions([message.session]).length !== 1) {
+        rejectOwnershipProtocol();
+      }
+      attachedSessions.add(message.session);
+      ownershipSequence += 1;
+      onOwnershipAttach({ session: message.session });
+      return;
+    }
+    if (message?.type === 'ownership-complete') {
+      requireRunnerMessage(message, [
+        'attachedBrowserSessions', 'browserSessions', 'launchReceipts',
+        'phase', 'sequence', 'type', 'version',
+      ]);
+      if (ownership || terminal || message.version !== 3 || message.phase !== phase
+        || message.sequence !== ownershipSequence) {
+        rejectOwnershipProtocol();
+      }
+      const completedOwnership = requireProcessOwnership(message);
+      const streamedOwnership = Object.freeze({
+        browserSessions: Object.freeze([...announcedSessions].sort()),
+        attachedBrowserSessions: Object.freeze([...attachedSessions].sort()),
+        launchReceipts: Object.freeze([...announcedReceipts.values()].sort((left, right) => (
+          left.session.localeCompare(right.session)
+        ))),
+      });
+      if (!isDeepStrictEqual(completedOwnership, streamedOwnership)) {
+        onInspectionError?.();
         throw new GuardianFailure('scenario-runner-invalid');
       }
-      ownership = requireProcessOwnership(message);
-      onOwnership(ownership);
+      ownership = streamedOwnership;
       return;
     }
     if (message?.type === 'row') {
-      requireRunnerMessage(message, ['index', 'phase', 'row', 'type', 'version']);
+      const rowSessions = message.version === 2
+        ? requireRunnerSessions(requireRunnerMessage(message, [
+          'index', 'phase', 'row', 'sessions', 'type', 'version',
+        ]).sessions)
+        : (requireRunnerMessage(message, ['index', 'phase', 'row', 'type', 'version']), []);
       if (
         !ownership
         || terminal
-        || message.version !== 1
+        || !new Set([1, 2]).has(message.version)
         || message.phase !== phase
         || message.index !== phaseRows.length
+        || rowSessions.some(session => (
+          !announcedSessions.has(session) && !attachedSessions.has(session)
+        ))
       ) throw new GuardianFailure('scenario-runner-invalid');
       phaseRows.push(requirePhaseRow(message.row, phase, message.index));
       return;
@@ -2147,7 +2204,7 @@ function spawnRunnerChild({
       if (
         !ownership
         || terminal
-        || message.version !== 2
+        || message.version !== 3
         || message.phase !== phase
         || typeof message.ok !== 'boolean'
         || !Number.isSafeInteger(message.rowCount)
@@ -2516,6 +2573,15 @@ export function createLifecycleGuardian({
     }
   };
 
+  const browserInventorySticky = async (context, category) => {
+    try {
+      return browserSessionNames(await browserClient.listBrowsers(context));
+    } catch {
+      markInspectionUncertain();
+      throw new GuardianFailure(category);
+    }
+  };
+
   const closeOwnedBrowsers = async () => exclusive(async () => {
     if (profileRootRemoved) {
       if (browserClosureCertified && ownedBrowserSessions.size === 0
@@ -2541,7 +2607,7 @@ export function createLifecycleGuardian({
     }
     let names;
     try {
-      names = browserSessionNames(await browserClient.listBrowsers(browserContext));
+      names = await browserInventorySticky(browserContext, 'browser-closure-failed');
     } catch {
       browserClosureCertified = false;
       throw new GuardianFailure('browser-closure-failed');
@@ -2558,14 +2624,9 @@ export function createLifecycleGuardian({
 
   const exactBrowserInventory = async () => {
     if (!profileRootPath || profileRootRemoved) throw new GuardianFailure('browser-ownership-invalid');
-    let names;
-    try {
-      names = browserSessionNames(await browserClient.listBrowsers({
-        temporaryDirectory: profileRootPath,
-      })).sort();
-    } catch {
-      throw new GuardianFailure('browser-ownership-invalid');
-    }
+    const names = (await browserInventorySticky({
+      temporaryDirectory: profileRootPath,
+    }, 'browser-ownership-invalid')).sort();
     const expected = [...ownedBrowserSessions].sort();
     if (!isDeepStrictEqual(names, expected)) rejectInspectionIdentity('browser-ownership-invalid');
     return names;
@@ -2695,14 +2756,9 @@ export function createLifecycleGuardian({
         && ownedBrowserReceipts.size === 0 && phaseMarkers.size === 0 && !activeScenario) return;
       throw new GuardianFailure('browser-closure-failed');
     }
-    let names;
-    try {
-      names = browserSessionNames(await browserClient.listBrowsers({
-        temporaryDirectory: profileRootPath,
-      }));
-    } catch {
-      throw new GuardianFailure('browser-closure-failed');
-    }
+    const names = await browserInventorySticky({
+      temporaryDirectory: profileRootPath,
+    }, 'browser-closure-failed');
     if (names.length !== 0) throw new GuardianFailure('browser-closure-failed');
     ownedBrowserSessions.clear();
     ownedBrowserReceipts.clear();
@@ -3045,27 +3101,21 @@ export function createLifecycleGuardian({
         repositoryRoot: verifiedRepositoryRoot,
         runMarker,
         onInspectionError: markInspectionUncertain,
-        onOwnership({ browserSessions, attachedBrowserSessions, launchReceipts }) {
-          for (const session of browserSessions) {
-            if (ownedBrowserSessions.has(session)) {
-              rejectInspectionIdentity('browser-ownership-invalid');
-            }
+        onOwnershipAdd({ session, launchReceipt }) {
+          if (ownedBrowserSessions.has(session) || ownedBrowserReceipts.has(session)
+            || launchReceipt.session !== session) {
+            rejectInspectionIdentity('browser-ownership-invalid');
           }
-          for (const session of attachedBrowserSessions) {
-            if (!ownedBrowserSessions.has(session) || !ownedBrowserReceipts.has(session)) {
-              rejectInspectionIdentity('browser-ownership-invalid');
-            }
+          ownedBrowserReceipts.set(session, Object.freeze({
+            ...launchReceipt, marker: runMarker, phase,
+          }));
+          ownedBrowserSessions.add(session);
+          browserClosureCertified = false;
+        },
+        onOwnershipAttach({ session }) {
+          if (!ownedBrowserSessions.has(session) || !ownedBrowserReceipts.has(session)) {
+            rejectInspectionIdentity('browser-ownership-invalid');
           }
-          for (const receipt of launchReceipts) {
-            if (ownedBrowserReceipts.has(receipt.session)) {
-              rejectInspectionIdentity('browser-ownership-invalid');
-            }
-            ownedBrowserReceipts.set(receipt.session, Object.freeze({
-              ...receipt, marker: runMarker, phase,
-            }));
-          }
-          for (const session of browserSessions) ownedBrowserSessions.add(session);
-          if (browserSessions.length > 0) browserClosureCertified = false;
         },
       });
     } catch (error) {
@@ -3132,10 +3182,13 @@ export function createLifecycleGuardian({
 
       let initialBrowserNames;
       try {
-        initialBrowserNames = browserSessionNames(await browserClient.listBrowsers());
+        initialBrowserNames = await browserInventorySticky(undefined, 'browser-precondition-failed');
       } catch {
         removeHandlers();
-        return failureSummary({ category: 'browser-precondition-failed', state, history });
+        return failureSummary({
+          category: 'browser-precondition-failed', state, history,
+          browserClosureCertified: false, closureCertified: false,
+        });
       }
       if (initialBrowserNames.length !== 0) {
         removeHandlers();

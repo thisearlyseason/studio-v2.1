@@ -3,7 +3,7 @@ import { createHook } from 'node:async_hooks';
 import childProcess, { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs, {
-  chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
+  chmodSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
 } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -4949,6 +4949,17 @@ const cleanupRealGuardianIntegration = async () => {
     rmSync(path, { force: true });
   }
   for (const path of fixturePaths) rmSync(path, { recursive: true, force: true });
+  const exactWorkspaceRoot = '/tmp/phase9-core-identities.test';
+  if (existsSync(exactWorkspaceRoot)) {
+    assert.equal(resolve(exactWorkspaceRoot), exactWorkspaceRoot);
+    const metadata = lstatSync(exactWorkspaceRoot);
+    assert.equal(metadata.isDirectory(), true);
+    assert.equal(metadata.isSymbolicLink(), false);
+    assert.equal(metadata.mode & 0o777, 0o700);
+    assert.equal(metadata.uid, process.getuid());
+    rmSync(exactWorkspaceRoot, { recursive: true, force: false });
+  }
+  assert.equal(existsSync(exactWorkspaceRoot), false);
 };
 
 test('phase 9 guardian process identity rejects PID reuse with a different birth identity', async () => {
@@ -6046,6 +6057,62 @@ test('phase 9 lifecycle guardian keeps a frozen launch-receipt mismatch uncertif
   assert.equal(fixture.workspaceExists, true);
 });
 
+test('phase 9 lifecycle guardian keeps a transient owned-browser inventory failure sticky', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'own-before' });
+  const browserClient = fixture.dependencies.browserClient;
+  let inventoryCalls = 0;
+  fixture.dependencies.browserClient = {
+    closeBrowser: (session, context) => browserClient.closeBrowser(session, context),
+    async listBrowsers(context) {
+      inventoryCalls += 1;
+      if (inventoryCalls === 2) throw new Error('transient owned inventory transport failure');
+      return browserClient.listBrowsers(context);
+    },
+  };
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.browserClosureCertified, false);
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.workspaceExists, true);
+  assert.equal(fixture.events.includes('fs:remove-workspace'), false);
+  assert.ok(inventoryCalls >= 3, `expected clean recovery inventory, saw ${inventoryCalls}`);
+});
+
+test('phase 9 lifecycle guardian immediately registers each streamed acquisition before child crash', async t => {
+  for (const [mode, sessions] of [
+    ['ownership-crash-first', ['phase9-acquired-first']],
+    ['ownership-crash-late', ['phase9-acquired-first', 'phase9-acquired-late']],
+  ]) await t.test(mode, async () => {
+    const fixture = lifecycleGuardianFixture({ runnerMode: mode });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    for (const session of sessions) {
+      assert.equal(fixture.events.includes(`browser:close:${session}`), true);
+    }
+    assert.equal(fixture.events.includes('browser:close-all'), false);
+  });
+});
+
+test('phase 9 lifecycle guardian rejects non-monotonic ownership and rows naming unowned sessions', async t => {
+  for (const mode of [
+    'ownership-duplicate', 'ownership-mutation', 'ownership-out-of-order', 'row-unowned-session',
+  ]) await t.test(mode, async () => {
+    const fixture = lifecycleGuardianFixture({ runnerMode: mode });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(
+      result.category,
+      mode === 'row-unowned-session' ? 'scenario-runner-invalid' : 'scenario-closure-failed',
+    );
+    if (mode !== 'row-unowned-session') {
+      assert.equal(result.closureCertified, false);
+      assert.equal(fixture.workspaceExists, true);
+    }
+  });
+});
+
 test('phase 9 lifecycle guardian bounds child stdio before parsing protocol data', async () => {
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'stdio-overflow',
@@ -6945,6 +7012,22 @@ test('phase 9 production child client factory enforces the 90000 millisecond com
     join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs'), 'utf8',
   );
   assert.equal(generated.match(/timeoutMs:9e4/g)?.length, 1);
+});
+
+test('phase 9 production child reports ownership directly after local acquisition and before browser action', () => {
+  const source = readFileSync(join(
+    testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner-source.mjs',
+  ), 'utf8');
+  const openStart = source.indexOf('const openWithReceipt = async session =>');
+  const acquired = source.indexOf('await acquireBlankBrowser(client, session);', openStart);
+  const receipt = source.indexOf('const launchReceipt = await captureLaunchReceipt(session);', acquired);
+  const ownershipAdd = source.indexOf("type: 'ownership-add', version: 3", receipt);
+  const arm = source.indexOf('await armAcquiredSignalRecorder(client, session);', ownershipAdd);
+  assert.ok(openStart >= 0 && openStart < acquired && acquired < receipt && receipt < ownershipAdd && ownershipAdd < arm);
+  const attachStart = source.indexOf('const confirmAttachedOwnership = session =>');
+  const ownershipAttach = source.indexOf("type: 'ownership-attach', version: 3", attachStart);
+  const attachAction = source.indexOf('await attachExistingSignalRecorder(client, session', ownershipAttach);
+  assert.ok(attachStart >= 0 && attachStart < ownershipAttach && ownershipAttach < attachAction);
 });
 
 test('phase 9 committed transport is a self-contained reviewed artifact outside node_modules', async () => {

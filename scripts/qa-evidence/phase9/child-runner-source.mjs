@@ -5,6 +5,8 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, normalize, sep } from 'node:path';
 
 import {
+  acquireBlankBrowser,
+  armAcquiredSignalRecorder,
   attachExistingSignalRecorder,
   capturePlaywrightTransport,
   createPhase9ProductionCliClient,
@@ -58,13 +60,14 @@ try { config = JSON.parse(Buffer.from(configBase64, 'base64').toString('utf8'));
 }
 const expectedConfigKeys = [
   'chrome', 'nodeRuntime', 'origin', 'playwrightArtifact', 'playwrightArtifactSha256',
-  'playwrightCoreVersion', 'playwrightVersion', 'projectId',
+  'playwrightCoreVersion', 'playwrightVersion', 'projectId', 'protocolVersion',
 ];
 const exactPolicy = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).sort().join(',') === [...keys].sort().join(',')
   && keys.every(key => typeof value[key] === 'string' && value[key].length > 0);
 if (!config || Object.keys(config).sort().join(',') !== expectedConfigKeys.sort().join(',')
   || config.projectId !== STAGING_PROJECT_ID || config.origin !== STAGING_ORIGIN
+  || config.protocolVersion !== '3'
   || config.playwrightArtifact !== 'scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz'
   || config.playwrightVersion !== '0.1.18'
   || config.playwrightCoreVersion !== '1.63.0-alpha-2026-08-05'
@@ -175,7 +178,7 @@ const freshSessionName = value => `${sessionName(value).slice(0, 58)}-fresh`;
 const rowSession = row => row.scenario === 'stale-session'
   ? sessionName(`pending-deletion-active-baseline-${row.viewportName}`)
   : sessionName(row.contextId);
-const ownedSessions = phase === 'before-transition'
+const plannedOwnedSessions = phase === 'before-transition'
   ? rowsForPhase.flatMap(row => row.group === 'logout'
     ? [sessionName(row.contextId), freshSessionName(row.contextId)]
     : [sessionName(row.contextId)])
@@ -211,12 +214,37 @@ const captureLaunchReceipt = async session => {
   if (mains.length !== 1) throw new Error('runner-launch-receipt-invalid');
   return Object.freeze({ session, daemonPid: daemons[0].pid, chromeMainPid: mains[0].pid });
 };
+const ownedSessions = new Set();
 const launchReceipts = new Map();
 const attachedBrowserSessions = new Set();
+let ownershipSequence = 0;
+const emitProtocol = value => {
+  if (!process.stdout.write(`${JSON.stringify(value)}\n`)) throw new Error('runner-protocol-backpressure');
+};
 const openWithReceipt = async session => {
-  if (launchReceipts.has(session)) throw new Error('runner-launch-receipt-invalid');
-  await installSignalRecorder(client, session);
-  launchReceipts.set(session, await captureLaunchReceipt(session));
+  if (!plannedOwnedSessions.includes(session) || launchReceipts.has(session)) {
+    throw new Error('runner-launch-receipt-invalid');
+  }
+  await acquireBlankBrowser(client, session);
+  const launchReceipt = await captureLaunchReceipt(session);
+  launchReceipts.set(session, launchReceipt);
+  ownedSessions.add(session);
+  emitProtocol({
+    type: 'ownership-add', version: 3, phase, sequence: ownershipSequence,
+    session, launchReceipt,
+  });
+  ownershipSequence += 1;
+  await armAcquiredSignalRecorder(client, session);
+};
+const confirmAttachedOwnership = session => {
+  if (ownedSessions.has(session) || attachedBrowserSessions.has(session)) {
+    throw new Error('runner-launch-receipt-invalid');
+  }
+  emitProtocol({
+    type: 'ownership-attach', version: 3, phase, sequence: ownershipSequence, session,
+  });
+  ownershipSequence += 1;
+  attachedBrowserSessions.add(session);
 };
 
 const waitForExactLocation = (session, path, sentinel) => client.runCode(session, `async (page) => {
@@ -278,10 +306,10 @@ try {
         throw new Error('runner-viewport-label-invalid');
       }
     } else if (row.scenario === 'stale-session') {
+      confirmAttachedOwnership(session);
       await attachExistingSignalRecorder(client, session, {
         ...viewport, marker: session, requireAuthenticated: true,
       });
-      attachedBrowserSessions.add(session);
     }
     if (row.group === 'admission-route') {
       rows.push(await runAdmissionScenario({ client, session, context: row, actions: actionsFor(session) }));
@@ -358,15 +386,22 @@ try {
     || receipts.some((receipt, index) => receipt.session !== browserSessions[index])) {
     throw new Error('runner-launch-receipt-invalid');
   }
-  process.stdout.write(`${JSON.stringify({
-    type: 'ownership', version: 2, phase, browserSessions,
+  emitProtocol({
+    type: 'ownership-complete', version: 3, phase, sequence: ownershipSequence,
+    browserSessions,
     attachedBrowserSessions: attached, launchReceipts: receipts,
-  })}\n`);
+  });
+  const sessionsForRow = row => {
+    const planned = rowsForPhase.find(candidate => candidate.contextId === row.contextId);
+    if (!planned) throw new Error('runner-row-session-invalid');
+    const session = rowSession(planned);
+    return (planned.group === 'logout' ? [session, freshSessionName(planned.contextId)] : [session]).sort();
+  };
   for (const [index, row] of rows.entries()) process.stdout.write(`${JSON.stringify({
-    type: 'row', version: 1, phase, index, row,
+    type: 'row', version: 2, phase, index, sessions: sessionsForRow(row), row,
   })}\n`);
   process.stdout.write(`${JSON.stringify({
-    type: 'completion', version: 2, phase, ok: true, rowCount: rows.length,
+    type: 'completion', version: 3, phase, ok: true, rowCount: rows.length,
     browserSessions, attachedBrowserSessions: attached, launchReceipts: receipts,
   })}\n`);
 } finally {

@@ -1,6 +1,7 @@
 {
   "origin": "https://studio--the-squad-v2-staging.us-east4.hosted.app",
   "projectId": "the-squad-v2-staging",
+  "protocolVersion": "3",
   "playwrightArtifact": "scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz",
   "playwrightArtifactSha256": "09eb87b9f81d8f491e7293e13cceb21e88edc33e63f99627939d0beab0113eab",
   "playwrightCoreVersion": "1.63.0-alpha-2026-08-05",
