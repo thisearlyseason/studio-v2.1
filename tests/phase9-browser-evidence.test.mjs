@@ -6067,28 +6067,40 @@ test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transit
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
 });
 
-test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', { timeout: 30_000 }, async () => {
+test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', { timeout: 90_000 }, async () => {
   const descendantInventory = () => spawnSync('/bin/ps', ['-axo', 'command='], {
     encoding: 'utf8', timeout: 10_000,
   }).stdout.split('\n').filter(line => line.includes('phase9-lifecycle-child.mjs')).sort();
   const initialDescendants = descendantInventory();
-  for (let iteration = 0; iteration < 20; iteration += 1) {
+  for (let iteration = 0; iteration < 50; iteration += 1) {
     const startedPath = `/tmp/phase9-guardian-child-hang-${process.pid}`;
+    const startedTempPath = `${startedPath}.tmp`;
     const latePath = `/tmp/phase9-guardian-child-late-${process.pid}`;
     rmSync(startedPath, { force: true });
+    rmSync(startedTempPath, { force: true });
     rmSync(latePath, { force: true });
     const fixture = lifecycleGuardianFixture({
       runnerMode: 'hang-resume-late-write',
       scenarioJoinTimeoutMs: 20,
     });
     const guardian = createLifecycleGuardian(fixture.dependencies);
-    const running = guardian.run(fixture.options);
+    let runningSettled = false;
+    const running = guardian.run(fixture.options).finally(() => { runningSettled = true; });
     try {
       const startupDeadline = Date.now() + 2_000;
       while (!existsSync(startedPath)) {
         assert.equal(Date.now() < startupDeadline, true, `iteration ${iteration} child startup exceeded deadline`);
         await new Promise(resolvePromise => setImmediate(resolvePromise));
       }
+      assert.deepEqual(JSON.parse(readFileSync(startedPath, 'utf8')), {
+        version: 4,
+        phase: 'before-transition',
+        sequence: 0,
+        session: 'phase9-hang-owned',
+        ownershipAuthorized: true,
+      });
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 50));
+      assert.equal(runningSettled, false, `iteration ${iteration} entered ordinary recovery before signal`);
       const reentry = guardian.run(fixture.options);
       const interrupt = fixture.handlers.get('SIGTERM');
       assert.equal(typeof interrupt, 'function');
@@ -6114,6 +6126,7 @@ test('phase 9 lifecycle guardian interruption is idempotent and reentry fails cl
       await fixture.handlers.get('SIGTERM')?.();
       await running;
       rmSync(startedPath, { force: true });
+      rmSync(startedTempPath, { force: true });
       rmSync(latePath, { force: true });
     }
   }

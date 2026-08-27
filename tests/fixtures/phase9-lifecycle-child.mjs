@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -574,11 +574,29 @@ if (mode === 'success') {
   process.on('SIGTERM', () => {});
   nativeSetInterval(() => {}, 1_000);
 } else if (mode === 'hang-resume-late-write') {
-  const latePath = `/tmp/phase9-guardian-child-late-${process.ppid}`;
-  writeFileSync(`/tmp/phase9-guardian-child-hang-${process.ppid}`, 'started', { mode: 0o600 });
-  writeMessage({
-    version: 1, type: 'ownership', phase, browserSessions: ['phase9-hang-owned'],
+  const session = 'phase9-hang-owned';
+  const sequence = 0;
+  writeMessage({ version: 4, type: 'ownership-intent', phase, sequence, session });
+  await waitForOwnershipAuthorization(phase, sequence, session);
+  await new Promise((resolvePromise, reject) => {
+    writeMessage({
+      version: 4,
+      type: 'ownership-add',
+      phase,
+      sequence,
+      session,
+      launchReceipt: fakeLaunchReceipts([session])[0],
+    }, error => error ? reject(error) : resolvePromise());
   });
+  const latePath = `/tmp/phase9-guardian-child-late-${process.ppid}`;
+  const startedPath = `/tmp/phase9-guardian-child-hang-${process.ppid}`;
+  const startedTempPath = `${startedPath}.tmp`;
+  writeFileSync(
+    startedTempPath,
+    nativeJsonStringify({ version: 4, phase, sequence, session, ownershipAuthorized: true }),
+    { mode: 0o600 },
+  );
+  renameSync(startedTempPath, startedPath);
   process.on('SIGTERM', () => {
     nativeSetTimeout(() => {
       writeFileSync(latePath, 'late child mutation', { mode: 0o600 });
