@@ -6067,38 +6067,57 @@ test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transit
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
 });
 
-test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', { timeout: 2_000 }, async () => {
-  const startedPath = `/tmp/phase9-guardian-child-hang-${process.pid}`;
-  const latePath = `/tmp/phase9-guardian-child-late-${process.pid}`;
-  rmSync(startedPath, { force: true });
-  rmSync(latePath, { force: true });
-  const fixture = lifecycleGuardianFixture({
-    runnerMode: 'hang-resume-late-write',
-    scenarioJoinTimeoutMs: 20,
-  });
-  const guardian = createLifecycleGuardian(fixture.dependencies);
-  const running = guardian.run(fixture.options);
-  while (!existsSync(startedPath)) await new Promise(resolve => setImmediate(resolve));
-  const second = await guardian.run(fixture.options);
-  assert.equal(second.ok, false);
-  assert.equal(second.category, 'reentry');
-  const interrupt = fixture.handlers.get('SIGTERM');
-  const firstEmergencyPromise = interrupt();
-  const secondEmergencyPromise = interrupt();
-  assert.equal(firstEmergencyPromise, secondEmergencyPromise);
-  const [firstEmergency, secondEmergency] = await Promise.all([firstEmergencyPromise, secondEmergencyPromise]);
-  assert.deepEqual(secondEmergency, firstEmergency);
-  assert.equal(firstEmergency.ok, false);
-  assert.equal(firstEmergency.interrupted, true);
-  assert.deepEqual(await running, firstEmergency);
-  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
-  assert.equal(fixture.events.filter(event => event === 'fs:remove-workspace').length, 1);
-  assert.equal(fixture.events.indexOf('browser:close:phase9-hang-owned') < fixture.events.indexOf('fixture:cleanup'), true);
-  assert.equal(fixture.events.includes('browser:close-all'), false);
-  await new Promise(resolve => setTimeout(resolve, 200));
-  assert.equal(existsSync(latePath), false);
-  rmSync(startedPath, { force: true });
-  rmSync(latePath, { force: true });
+test('phase 9 lifecycle guardian interruption is idempotent and reentry fails closed', { timeout: 30_000 }, async () => {
+  const descendantInventory = () => spawnSync('/bin/ps', ['-axo', 'command='], {
+    encoding: 'utf8', timeout: 10_000,
+  }).stdout.split('\n').filter(line => line.includes('phase9-lifecycle-child.mjs')).sort();
+  const initialDescendants = descendantInventory();
+  for (let iteration = 0; iteration < 20; iteration += 1) {
+    const startedPath = `/tmp/phase9-guardian-child-hang-${process.pid}`;
+    const latePath = `/tmp/phase9-guardian-child-late-${process.pid}`;
+    rmSync(startedPath, { force: true });
+    rmSync(latePath, { force: true });
+    const fixture = lifecycleGuardianFixture({
+      runnerMode: 'hang-resume-late-write',
+      scenarioJoinTimeoutMs: 20,
+    });
+    const guardian = createLifecycleGuardian(fixture.dependencies);
+    const running = guardian.run(fixture.options);
+    try {
+      const startupDeadline = Date.now() + 2_000;
+      while (!existsSync(startedPath)) {
+        assert.equal(Date.now() < startupDeadline, true, `iteration ${iteration} child startup exceeded deadline`);
+        await new Promise(resolvePromise => setImmediate(resolvePromise));
+      }
+      const reentry = guardian.run(fixture.options);
+      const interrupt = fixture.handlers.get('SIGTERM');
+      assert.equal(typeof interrupt, 'function');
+      const firstEmergencyPromise = interrupt();
+      const secondEmergencyPromise = interrupt();
+      assert.equal(firstEmergencyPromise, secondEmergencyPromise);
+      const [second, firstEmergency, secondEmergency] = await Promise.all([
+        reentry, firstEmergencyPromise, secondEmergencyPromise,
+      ]);
+      assert.equal(second.ok, false);
+      assert.equal(second.category, 'reentry');
+      assert.deepEqual(secondEmergency, firstEmergency);
+      assert.equal(firstEmergency.ok, false);
+      assert.equal(firstEmergency.interrupted, true);
+      assert.deepEqual(await running, firstEmergency);
+      assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+      assert.equal(fixture.events.filter(event => event === 'fs:remove-workspace').length, 1);
+      assert.equal(fixture.events.indexOf('browser:close:phase9-hang-owned') < fixture.events.indexOf('fixture:cleanup'), true);
+      assert.equal(fixture.events.includes('browser:close-all'), false);
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 200));
+      assert.equal(existsSync(latePath), false);
+    } finally {
+      await fixture.handlers.get('SIGTERM')?.();
+      await running;
+      rmSync(startedPath, { force: true });
+      rmSync(latePath, { force: true });
+    }
+  }
+  assert.deepEqual(descendantInventory(), initialDescendants);
 });
 
 test('phase 9 lifecycle guardian rejects arbitrary in-process scenario callbacks', async () => {
