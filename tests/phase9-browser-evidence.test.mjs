@@ -8,6 +8,7 @@ import fs, {
 import * as fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -64,6 +65,18 @@ const guardianChildEntrypoint = join(testDirectory, 'fixtures', 'phase9-lifecycl
 const LOCAL_REAL_CHROME_TEST_TIMEOUT_MS = 1_200_000;
 const LOCAL_REAL_CHROME_EXTENDED_TEST_TIMEOUT_MS = 1_800_000;
 const LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS = 90_000;
+const DARWIN_RUNTIME_SKIP_REASON = 'Darwin-only: executes or compares the exact pinned macOS Node, Python, Chrome, Playwright, evidence-helper, or process-inspector runtime.';
+const PHASE9_TEST_PLATFORM = process.env.PHASE9_TEST_PLATFORM ?? process.platform;
+const darwinRuntimeTests = [];
+const darwinRuntimeTest = (name, options, implementation) => {
+  const normalizedOptions = typeof options === 'function' ? {} : options;
+  const normalizedImplementation = typeof options === 'function' ? options : implementation;
+  darwinRuntimeTests.push(name);
+  return test(name, {
+    ...normalizedOptions,
+    skip: PHASE9_TEST_PLATFORM === 'darwin' ? false : DARWIN_RUNTIME_SKIP_REASON,
+  }, normalizedImplementation);
+};
 const sha256File = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 const guardianChildCommand = mode => {
   const configPath = join(testDirectory, 'fixtures', `phase9-lifecycle-child-${mode}.json`);
@@ -686,7 +699,7 @@ test('phase 9 playwright client accepts real wrapper top-level and nested JSON r
   assert.deepEqual(await client.runCode('page-a', 'async (page) => ({ pageId: "page-a" })'), { pageId: 'page-a' });
 });
 
-test('phase 9 action window real Chrome captures each independent transient visibility mechanism', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async t => {
+darwinRuntimeTest('phase 9 action window real Chrome captures each independent transient visibility mechanism', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async t => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     for (const mechanism of ['style', 'class', 'hidden', 'aria-hidden']) await t.test(mechanism, async () => {
@@ -748,7 +761,7 @@ test('phase 9 action window real Chrome captures each independent transient visi
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
-test('phase 9 action window real Chrome captures distinct CSS-animation-only protected flashes', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 action window real Chrome captures distinct CSS-animation-only protected flashes', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-animation-regression');
@@ -799,7 +812,7 @@ test('phase 9 action window real Chrome captures distinct CSS-animation-only pro
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
-test('phase 9 action window real Chrome refuses recorder installation on a nonblank tab', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 action window real Chrome refuses recorder installation on a nonblank tab', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-nonblank-regression');
@@ -3516,7 +3529,7 @@ test('phase 9 client binds Listen state to recorder navigation generation for ev
   }
 });
 
-test('phase 9 real recorder increments navigation generation for goto click reload and location changes', { timeout: LOCAL_REAL_CHROME_EXTENDED_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 real recorder increments navigation generation for goto click reload and location changes', { timeout: LOCAL_REAL_CHROME_EXTENDED_TEST_TIMEOUT_MS }, async () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
   const selfTarget = targetId => ({
@@ -3707,7 +3720,7 @@ test('phase 9 client fails closed when claimed evidence lacks raw request materi
   }), /transport.*listener|target.*evidence/i);
 });
 
-test('phase 9 real recorder returns raw request facts for local classification only', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 real recorder returns raw request facts for local classification only', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const selfUid = `${runId}-no-team`;
   const database = 'projects/the-squad-v2-staging/databases/(default)';
@@ -4028,7 +4041,7 @@ test('phase 9 browser scenarios heading contracts are backed by the real page h1
   assert.match(login, /else \{[\s\S]*router\.push\('\/dashboard'\)/);
 });
 
-test('phase 9 browser scenarios recorder requires an exact visible h1 instead of substring body text', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 browser scenarios recorder requires an exact visible h1 instead of substring body text', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-exact-heading');
@@ -4205,7 +4218,7 @@ test('phase 9 browser scenarios require a distinct logout context and navigate i
   assert.deepEqual(requested, ['/dashboard']);
 });
 
-test('phase 9 browser scenarios recorder observes an exact Radix status toast without classifying it as protected', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 browser scenarios recorder observes an exact Radix status toast without classifying it as protected', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-toast-terminal');
@@ -4271,7 +4284,7 @@ test('phase 9 browser scenarios split stale pending revocation from fresh unavai
   assert.equal(freshRow.visibleState, 'The email or password is incorrect, or this account is unavailable.');
 });
 
-test('phase 9 action window treats a real Dashboard h1 flash as protected activity', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 action window treats a real Dashboard h1 flash as protected activity', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-dashboard-flash');
@@ -4331,7 +4344,7 @@ test('phase 9 evidence contracts pending validation uses transient status histor
   }, { kind: 'pending-deletion-fresh' }), /redirect reason.*none/i);
 });
 
-test('phase 9 browser scenarios recorder types approved status history and never protects status text', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 browser scenarios recorder types approved status history and never protects status text', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-status-observation');
@@ -4387,7 +4400,7 @@ test('phase 9 action window exposes only the fixed redirect reason enum', async 
   }
 });
 
-test('phase 9 action window binds session evidence to exact staging __session cookie', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async t => {
+darwinRuntimeTest('phase 9 action window binds session evidence to exact staging __session cookie', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async t => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   const cases = [
     {
@@ -4501,7 +4514,7 @@ function lifecycleGuardianFixture(overrides = {}) {
   const credentialPath = `${workspace}/credentials.json`;
   const profileRootPath = `${workspace}/playwright-tmp`;
   const realFilesystemProfile = String(overrides.runnerMode ?? '').startsWith('real-retained-browser');
-  const producerTempRoot = resolve(process.env.TMPDIR);
+  const producerTempRoot = resolve(process.env.TMPDIR || tmpdir());
   const definition = buildFixtureDefinition({ runId, expiresAt: '2026-09-02T12:00:00Z', manifestVersion: 3 });
   const authUids = definition.identities.map(identity => identity.uid);
   const firestorePaths = definition.documents.map(document => document.path);
@@ -4761,6 +4774,7 @@ function lifecycleGuardianFixture(overrides = {}) {
       fixtureCommand, browserClient: overrides.browserClient ?? browserClient,
       adapterFactory: overrides.adapterFactory ?? adapterFactory,
       filesystem, processHooks, preconditionVerifier, runnerCommand,
+      producerTempRoot,
       scenarioJoinTimeoutMs: overrides.scenarioJoinTimeoutMs ?? 50,
       beforeTransitionDeadlineMs: overrides.beforeTransitionDeadlineMs,
       afterTransitionDeadlineMs: overrides.afterTransitionDeadlineMs,
@@ -5000,7 +5014,7 @@ test('phase 9 guardian process identity rejects PID reuse with a different birth
   }), false);
 });
 
-test('phase 9 Darwin inspector preserves raw argv boundaries and precise marked process birth identity', { timeout: 30_000 }, async () => {
+darwinRuntimeTest('phase 9 Darwin inspector preserves raw argv boundaries and precise marked process birth identity', { timeout: 30_000 }, async () => {
   const { inspectDarwinMarkedProcesses, processInstanceIdentityMatches } = await import(
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
   );
@@ -5074,7 +5088,7 @@ test('phase 9 Darwin inspector preserves raw argv boundaries and precise marked 
   }
 });
 
-test('phase 9 Darwin inspector preserves empty argv elements in explicit and all-PID scans without marker leakage', { timeout: 30_000 }, async () => {
+darwinRuntimeTest('phase 9 Darwin inspector preserves empty argv elements in explicit and all-PID scans without marker leakage', { timeout: 30_000 }, async () => {
   const { inspectDarwinMarkedProcesses } = await import(
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
   );
@@ -5104,7 +5118,7 @@ test('phase 9 Darwin inspector preserves empty argv elements in explicit and all
   }
 });
 
-test('phase 9 Darwin inspector treats a real empty argv0 as a marked rogue without shifting environment into argv', { timeout: 30_000 }, async () => {
+darwinRuntimeTest('phase 9 Darwin inspector treats a real empty argv0 as a marked rogue without shifting environment into argv', { timeout: 30_000 }, async () => {
   const {
     inspectDarwinMarkedProcessesForTermination,
     terminateMarkedProcesses,
@@ -5146,7 +5160,7 @@ test('phase 9 Darwin inspector treats a real empty argv0 as a marked rogue witho
   }
 });
 
-test('phase 9 Darwin termination keeps a cleared-false result sticky after a clean retry', { timeout: 30_000 }, async () => {
+darwinRuntimeTest('phase 9 Darwin termination keeps a cleared-false result sticky after a clean retry', { timeout: 30_000 }, async () => {
   const originalExecFile = childProcess.execFile;
   let inspectorCalls = 0;
   let liveInspectorOutput = null;
@@ -5198,7 +5212,7 @@ test('phase 9 Darwin termination keeps a cleared-false result sticky after a cle
   }
 });
 
-test('phase 9 Darwin inspector keeps marker representation injective and fails closed on unsafe executable paths', { timeout: 30_000 }, async () => {
+darwinRuntimeTest('phase 9 Darwin inspector keeps marker representation injective and fails closed on unsafe executable paths', { timeout: 30_000 }, async () => {
   const { inspectDarwinMarkedProcessesForTermination } = await import(
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
   );
@@ -5372,7 +5386,7 @@ test('phase 9 guardian rejects oversized and changing marked executables without
   }
 });
 
-test('phase 9 executable hashing rejects a delayed final read within the configured deadline', { timeout: 10_000 }, async () => {
+darwinRuntimeTest('phase 9 executable hashing rejects a delayed final read within the configured deadline', { timeout: 10_000 }, async () => {
   const executable = realpathSync(
     '/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python',
   );
@@ -5512,7 +5526,7 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
   }, { policy, profilePath, profileRoot }), false);
 });
 
-test('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let retainedBoundaryObserved = false;
   const fixture = lifecycleGuardianFixture({
@@ -5558,7 +5572,7 @@ test('phase 9 guardian retains only an exact real browser marker across both lif
   }
 });
 
-test('phase 9 guardian owns a real browser before an acquisition-audit crash can strand it', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian owns a real browser before an acquisition-audit crash can strand it', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let browserFirstCloseObserved = false;
   const orderedBrowserClient = {
@@ -5593,7 +5607,7 @@ test('phase 9 guardian owns a real browser before an acquisition-audit crash can
   }
 });
 
-test('phase 9 guardian closes its real browser before killing an extra marked rogue process', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian closes its real browser before killing an extra marked rogue process', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let closeObservedLiveRogue = false;
   const orderedBrowserClient = Object.freeze({
@@ -5630,7 +5644,7 @@ test('phase 9 guardian closes its real browser before killing an extra marked ro
   }
 });
 
-test('phase 9 guardian rejects a declared real retained browser missing from inventory', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian rejects a declared real retained browser missing from inventory', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-missing-session',
@@ -5654,7 +5668,7 @@ test('phase 9 guardian rejects a declared real retained browser missing from inv
   }
 });
 
-test('phase 9 guardian binds two real retained sessions to distinct immutable launch receipts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian binds two real retained sessions to distinct immutable launch receipts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let boundaryReceipts;
   const fixture = lifecycleGuardianFixture({
@@ -5700,7 +5714,7 @@ test('phase 9 guardian binds two real retained sessions to distinct immutable la
   }
 });
 
-test('phase 9 guardian rejects two declared sessions when the second Chrome main is missing', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian rejects two declared sessions when the second Chrome main is missing', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-two-sessions-missing-second-chrome',
@@ -5721,7 +5735,7 @@ test('phase 9 guardian rejects two declared sessions when the second Chrome main
   }
 });
 
-test('phase 9 guardian rejects an extra marked direct Chrome main outside its two receipts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian rejects an extra marked direct Chrome main outside its two receipts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-two-sessions-extra-direct-chrome',
@@ -5744,7 +5758,7 @@ test('phase 9 guardian rejects an extra marked direct Chrome main outside its tw
   }
 });
 
-test('phase 9 guardian rejects a marked daemon command look-alike with the wrong executable', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 guardian rejects a marked daemon command look-alike with the wrong executable', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-two-sessions-lookalike-daemon',
@@ -6946,7 +6960,7 @@ const task5Deployment = Object.freeze({
   stagingRunId: '32856314233', pullRequestNumber: 41,
 });
 
-test('phase 9 evidence writer atomically writes only the four approved sanitized Markdown files', async () => {
+darwinRuntimeTest('phase 9 evidence writer atomically writes only the four approved sanitized Markdown files', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-evidence-writer-test.');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7014,7 +7028,7 @@ test('phase 9 client attaches to an exact retained session without issuing open'
   assert.equal(calls.some(argv => argv.includes('open')), false);
 });
 
-test('phase 9 real Chrome applies both exact viewports and retains the same process set across attachment', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 real Chrome applies both exact viewports and retains the same process set across attachment', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const { attachExistingSignalRecorder, setAndVerifyViewport } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   const chromePids = () => spawnSync('ps', ['-axo', 'pid=,command='], {
     encoding: 'utf8', timeout: 30_000,
@@ -7041,7 +7055,7 @@ test('phase 9 real Chrome applies both exact viewports and retains the same proc
   }
 });
 
-test('phase 9 real Chrome applies and reads back each exact viewport on every new tab before navigation', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 real Chrome applies and reads back each exact viewport on every new tab before navigation', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const { setAndVerifyViewport } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
@@ -7213,7 +7227,7 @@ test('phase 9 committed transport is a self-contained reviewed artifact outside 
   assert.equal(manifest.files.every(file => /^[0-9a-f]{64}$/.test(file.sha256)), true);
 });
 
-test('phase 9 captured transport ignores later bundle-path and installed-transitive replacement', async () => {
+darwinRuntimeTest('phase 9 captured transport ignores later bundle-path and installed-transitive replacement', async () => {
   const { capturePlaywrightTransport } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   const { PHASE9_ARTIFACT_PINS, phase9PlaywrightTransport } = await import('../scripts/qa-evidence/phase9/cli.mjs');
   const root = mkdtempSync('/private/tmp/phase9-captured-transport-');
@@ -7236,7 +7250,7 @@ test('phase 9 captured transport ignores later bundle-path and installed-transit
   }
 });
 
-test('phase 9 transport closes its environment and controlled fetch audit observes exactly zero calls', async () => {
+darwinRuntimeTest('phase 9 transport closes its environment and controlled fetch audit observes exactly zero calls', async () => {
   const { auditPlaywrightTransportFetches, buildPlaywrightTransportEnvironment } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   assert.deepEqual(buildPlaywrightTransportEnvironment({
     HOME: '/safe-home', NODE_OPTIONS: '--require /attacker/preload.cjs', NODE_PATH: '/attacker/modules',
@@ -7260,7 +7274,7 @@ test('phase 9 transport closes its environment and controlled fetch audit observ
   assert.deepEqual(await auditPlaywrightTransportFetches(), { fetchCalls: 0, browsers: 0 });
 });
 
-test('phase 9 offline browser transport confines disposable profiles and creates no global producer prefix', async () => {
+darwinRuntimeTest('phase 9 offline browser transport confines disposable profiles and creates no global producer prefix', async () => {
   const globalTempRoot = resolve(process.env.TMPDIR);
   const inventory = () => readdirSync(globalTempRoot)
     .filter(name => name.startsWith('playwright_chromiumdev_profile-')).sort();
@@ -7331,7 +7345,7 @@ test('phase 9 writer rejects a symlinked evidence-directory ancestor before crea
   }
 });
 
-test('phase 9 writer detects an ancestor identity swap and writes no bytes outside', async () => {
+darwinRuntimeTest('phase 9 writer detects an ancestor identity swap and writes no bytes outside', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-swap-');
   const outside = mkdtempSync('/tmp/phase9-writer-swap-outside-');
@@ -7360,7 +7374,7 @@ test('phase 9 writer detects an ancestor identity swap and writes no bytes outsi
   }
 });
 
-test('phase 9 writer anchors temp creation to the held directory descriptor during an ancestor swap', async () => {
+darwinRuntimeTest('phase 9 writer anchors temp creation to the held directory descriptor during an ancestor swap', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-open-swap-');
   const outside = mkdtempSync('/tmp/phase9-writer-open-outside-');
@@ -7396,7 +7410,7 @@ test('phase 9 writer anchors temp creation to the held directory descriptor duri
   }
 });
 
-test('phase 9 writer keeps promotion on the held directory descriptor after its ancestor is replaced', async () => {
+darwinRuntimeTest('phase 9 writer keeps promotion on the held directory descriptor after its ancestor is replaced', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-promote-swap-');
   const outside = mkdtempSync('/tmp/phase9-writer-promote-outside-');
@@ -7420,7 +7434,7 @@ test('phase 9 writer keeps promotion on the held directory descriptor after its 
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer rolls back every promoted file after a mid-transaction rename failure', async () => {
+darwinRuntimeTest('phase 9 writer rolls back every promoted file after a mid-transaction rename failure', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-rollback-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7438,7 +7452,7 @@ test('phase 9 writer rolls back every promoted file after a mid-transaction rena
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer restores from held backup bytes when a backup pathname is replaced', async () => {
+darwinRuntimeTest('phase 9 writer restores from held backup bytes when a backup pathname is replaced', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-hostile-backup-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7477,7 +7491,7 @@ test('phase 9 writer restores from held backup bytes when a backup pathname is r
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer removes a stolen backup inode only after descriptor identity proof', async () => {
+darwinRuntimeTest('phase 9 writer removes a stolen backup inode only after descriptor identity proof', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-stolen-backup-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7513,7 +7527,7 @@ test('phase 9 writer removes a stolen backup inode only after descriptor identit
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer removes transaction-owned public output when rollback preparation or promotion fails', async () => {
+darwinRuntimeTest('phase 9 writer removes transaction-owned public output when rollback preparation or promotion fails', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   for (const rollbackFailure of [
     ['PHASE9_WRITER_TEST_FAIL_ROLLBACK_PREPARATION', '2'],
@@ -7543,7 +7557,7 @@ test('phase 9 writer removes transaction-owned public output when rollback prepa
   }
 });
 
-test('phase 9 writer never promotes a recovery pathname swapped immediately before rollback rename', async () => {
+darwinRuntimeTest('phase 9 writer never promotes a recovery pathname swapped immediately before rollback rename', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-rollback-swap-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7581,7 +7595,7 @@ test('phase 9 writer never promotes a recovery pathname swapped immediately befo
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer reports only the fixed uncertain result when bounded emergency inventory overflows', async () => {
+darwinRuntimeTest('phase 9 writer reports only the fixed uncertain result when bounded emergency inventory overflows', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-emergency-overflow-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7611,7 +7625,7 @@ test('phase 9 writer reports only the fixed uncertain result when bounded emerge
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer removes a stolen promoted inode after restoring the original set', async () => {
+darwinRuntimeTest('phase 9 writer removes a stolen promoted inode after restoring the original set', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-stolen-promotion-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7631,7 +7645,7 @@ test('phase 9 writer removes a stolen promoted inode after restoring the origina
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer executes captured helper bytes after the verified helper path is replaced', async () => {
+darwinRuntimeTest('phase 9 writer executes captured helper bytes after the verified helper path is replaced', async () => {
   const { createPhase9EvidenceWriter, PHASE9_EVIDENCE_FILES } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/private/tmp/phase9-writer-captured-helper-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix);
@@ -7654,7 +7668,7 @@ test('phase 9 writer executes captured helper bytes after the verified helper pa
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer rejects FIFO and hardlinked targets promptly without opening or modifying them', async () => {
+darwinRuntimeTest('phase 9 writer rejects FIFO and hardlinked targets promptly without opening or modifying them', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   for (const kind of ['fifo', 'hardlink']) {
     const root = mkdtempSync(`/tmp/phase9-writer-${kind}-`);
@@ -7674,7 +7688,7 @@ test('phase 9 writer rejects FIFO and hardlinked targets promptly without openin
   }
 });
 
-test('phase 9 writer rejects stale crash artifacts on the next run without writing anything', async () => {
+darwinRuntimeTest('phase 9 writer rejects stale crash artifacts on the next run without writing anything', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-crash-artifact-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix); mkdirSync(outputDirectory, { recursive: true });
@@ -7692,7 +7706,7 @@ test('phase 9 writer rejects stale crash artifacts on the next run without writi
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer detects a promoted path replacement and rolls back without changing an external inode', async () => {
+darwinRuntimeTest('phase 9 writer detects a promoted path replacement and rolls back without changing an external inode', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-replaced-promotion-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix); mkdirSync(outputDirectory, { recursive: true });
@@ -7707,7 +7721,7 @@ test('phase 9 writer detects a promoted path replacement and rolls back without 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 writer terminates and joins a hanging helper without creating files', async () => {
+darwinRuntimeTest('phase 9 writer terminates and joins a hanging helper without creating files', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-writer-hang-');
   const outputDirectory = join(root, phase9EvidenceDirectorySuffix); mkdirSync(outputDirectory, { recursive: true });
@@ -7722,7 +7736,7 @@ test('phase 9 writer terminates and joins a hanging helper without creating file
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 evidence CLI dry-run builds the exact inert 44-row plan and pinned child descriptor', () => {
+darwinRuntimeTest('phase 9 evidence CLI dry-run builds the exact inert 44-row plan and pinned child descriptor', () => {
   const cliPath = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'cli.mjs');
   const result = spawnSync(process.execPath, [cliPath, 'dry-run'], { encoding: 'utf8', timeout: 30_000 });
   assert.equal(result.status, 0, result.stderr);
@@ -7742,7 +7756,22 @@ test('phase 9 evidence CLI hosted admission rejects missing explicit staging pro
   assert.match(result.stderr, /explicit staging|--staging/i);
 });
 
-test('phase 9 evidence CLI pins the reviewed self-contained child and one exact config artifact', async () => {
+test('phase 9 hosted entrypoint rejects non-Darwin before any runtime mutation', async () => {
+  const { runPhase9Cli } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  let writes = 0;
+  await assert.rejects(
+    runPhase9Cli({
+      argv: ['hosted', '--staging'],
+      env: {},
+      platform: 'linux',
+      stdout: { write: () => { writes += 1; } },
+    }),
+    error => error?.message === 'Phase 9 hosted runtime requires Darwin.',
+  );
+  assert.equal(writes, 0);
+});
+
+darwinRuntimeTest('phase 9 evidence CLI pins the reviewed self-contained child and one exact config artifact', async () => {
   const { buildRunnerCommand } = await import('../scripts/qa-evidence/phase9/cli.mjs');
   const descriptor = await buildRunnerCommand();
   assert.deepEqual(Object.keys(descriptor).sort(), ['configFiles', 'entrypoint', 'entrypointSha256']);
@@ -7785,7 +7814,7 @@ test('phase 9 evidence child selects each logout tab before the action window ma
   ]));
 });
 
-test('phase 9 transport preserves only the exact guardian marker into a real descendant', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 transport preserves only the exact guardian marker into a real descendant', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const {
     buildPlaywrightTransportEnvironment,
     createPlaywrightCliClient: createRuntimeClient,
@@ -7846,7 +7875,7 @@ test('phase 9 transport preserves only the exact guardian marker into a real des
   }
 });
 
-test('phase 9 transport uses a fresh verified materialization for every explicit Node command', async () => {
+darwinRuntimeTest('phase 9 transport uses a fresh verified materialization for every explicit Node command', async () => {
   const { executeCapturedPlaywrightTransportCommand } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   const materializations = [];
   await executeCapturedPlaywrightTransportCommand(['list'], {
@@ -7932,6 +7961,11 @@ test('phase 9 runner config contains only repository-relative repository paths',
   assert.equal(config.playwrightArtifact, 'scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz');
   assert.equal(config.playwrightArtifact.startsWith('/'), false);
   assert.equal(config.playwrightArtifact.split('/').includes('..'), false);
+});
+
+darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node and Chrome runtime', () => {
+  const configPath = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'runner-config.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8'));
   assert.deepEqual(config.nodeRuntime, {
     path: process.execPath,
     sha256: sha256File(process.execPath),
@@ -7945,4 +7979,11 @@ test('phase 9 runner config contains only repository-relative repository paths',
     codesignIdentifier: 'com.google.Chrome',
     teamIdentifier: 'EQHXZ8M8AV',
   });
+});
+
+test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
+  assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
+  assert.equal(darwinRuntimeTests.length, 50);
+  assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
+  assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

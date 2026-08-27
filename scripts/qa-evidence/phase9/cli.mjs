@@ -400,8 +400,13 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
   }
 }
 
-async function hosted(argv, env, stdout) {
+export function assertPhase9HostedPlatform(platform = process.platform) {
+  if (platform !== 'darwin') throw new Error('Phase 9 hosted runtime requires Darwin.');
+}
+
+async function hosted(argv, env, stdout, platform) {
   if (argv[0] !== '--staging') throw new Error('Hosted execution requires the explicit staging flag --staging.');
+  assertPhase9HostedPlatform(platform);
   const values = exactArgs(argv.slice(1), [
     '--project', '--confirm-project', '--origin', '--deployed-sha', '--staging-run', '--pull-request',
     '--workspace', '--manifest', '--credentials', '--expires-at', '--transport',
@@ -482,11 +487,13 @@ async function hosted(argv, env, stdout) {
   return result;
 }
 
-export async function runPhase9Cli({ argv = process.argv.slice(2), env = process.env, stdout = process.stdout } = {}) {
+export async function runPhase9Cli({
+  argv = process.argv.slice(2), env = process.env, stdout = process.stdout, platform = process.platform,
+} = {}) {
   const command = argv[0];
   if (command === 'dry-run' && argv.length === 1) return dryRun(stdout);
   if (command === 'offline-smoke' && argv.length === 1) return offlineSmoke(stdout);
-  if (command === 'hosted') return hosted(argv.slice(1), env, stdout);
+  if (command === 'hosted') return hosted(argv.slice(1), env, stdout, platform);
   throw new Error('Command must be dry-run, offline-smoke, or hosted.');
 }
 

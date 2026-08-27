@@ -2453,6 +2453,7 @@ export function createLifecycleGuardian({
   filesystem = defaultFilesystem,
   processHooks = defaultProcessHooks,
   repositoryRoot = process.cwd(),
+  producerTempRoot = INTRINSIC_CHILD_ENV.TMPDIR,
 } = {}) {
   if (scenarioRunner !== undefined || injectedSpawn !== undefined) {
     throw new GuardianFailure('configuration-invalid');
@@ -2474,6 +2475,10 @@ export function createLifecycleGuardian({
   if (typeof repositoryRoot !== 'string' || !isAbsolute(repositoryRoot) || resolve(repositoryRoot) !== repositoryRoot) {
     throw new GuardianFailure('configuration-invalid');
   }
+  if (typeof producerTempRoot !== 'string' || !isAbsolute(producerTempRoot)) {
+    throw new GuardianFailure('configuration-invalid');
+  }
+  const producerProfileTempRoot = resolve(producerTempRoot);
 
   let state = 'uninitialized';
   const history = [state];
@@ -2829,7 +2834,7 @@ export function createLifecycleGuardian({
     }
     let current;
     try {
-      current = await producerProfileInventorySticky(INTRINSIC_CHILD_ENV.TMPDIR);
+      current = await producerProfileInventorySticky(producerProfileTempRoot);
       if (!isDeepStrictEqual(current, globalProfileBaseline)) {
         throw new GuardianFailure('scenario-closure-failed');
       }
@@ -3313,7 +3318,7 @@ export function createLifecycleGuardian({
         return failureSummary({ category: 'browser-precondition-failed', state, history });
       }
       browserClosureCertified = true;
-      globalProfileBaseline = await producerProfileInventorySticky(INTRINSIC_CHILD_ENV.TMPDIR);
+      globalProfileBaseline = await producerProfileInventorySticky(producerProfileTempRoot);
       try {
         const verified = await preconditionVerifier({
           deployedSha: currentOptions.deployedSha,
