@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHook } from 'node:async_hooks';
-import { spawn, spawnSync } from 'node:child_process';
+import childProcess, { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs, {
   chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
@@ -4674,6 +4674,9 @@ function lifecycleGuardianFixture(overrides = {}) {
       events.push(path === producerTempRoot ? 'fs:profile-inventory' : 'fs:read-profile-root');
       if (path === producerTempRoot) {
         producerInventoryCount += 1;
+        if (producerInventoryCount === overrides.globalProfileInventoryFailureAt) {
+          throw Object.assign(new Error('transient producer inventory failure'), { code: 'EIO' });
+        }
         return producerInventoryCount > 1 ? (overrides.globalProfilesAfter ?? []) : [];
       }
       if (path === profileRootPath && profileRootExists) return [];
@@ -4817,6 +4820,59 @@ test('phase 9 lifecycle guardian rejects any new global Playwright producer prof
   assert.equal(result.workspacePreservation, 'verified-present');
   assert.equal(fixture.workspaceExists, true);
   assert.equal(fixture.events.includes('fs:remove-workspace'), false);
+});
+
+test('phase 9 lifecycle guardian keeps a transient global profile inventory failure sticky after a clean retry', async () => {
+  const fixture = lifecycleGuardianFixture({ globalProfileInventoryFailureAt: 2 });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-closure-failed');
+  assert.equal(result.browserClosureCertified, false);
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.workspaceExists, true);
+  assert.equal(fixture.events.filter(event => event === 'fs:profile-inventory').length, 3);
+  assert.equal(fixture.events.filter(event => event === 'fs:remove-profile-root').length, 1);
+  assert.equal(fixture.events.includes('fs:remove-workspace'), false);
+});
+
+test('phase 9 lifecycle guardian keeps a transient inspector execution failure sticky after clean recovery scans', { timeout: 60_000 }, async () => {
+  const originalExecFile = childProcess.execFile;
+  let inspectorCalls = 0;
+  childProcess.execFile = function transientInspectorFailure(command, args, options, callback) {
+    if (command === '/usr/bin/python3' && Array.isArray(args)
+      && args[0] === '-c' && args.includes('--marker-name')) {
+      inspectorCalls += 1;
+      if (inspectorCalls === 2) {
+        queueMicrotask(() => callback(new Error('transient inspector execution failure'), '', ''));
+        return undefined;
+      }
+    }
+    return originalExecFile.call(this, command, args, options, callback);
+  };
+  syncBuiltinESMExports();
+  const fixture = lifecycleGuardianFixture();
+  try {
+    const guardianModule = await import(
+      `../scripts/qa-evidence/phase9/lifecycle-guardian.mjs?sticky-inspector=${Date.now()}`
+    );
+    const result = await guardianModule.runGuardedLifecycle({
+      ...fixture.dependencies, options: fixture.options,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
+    assert.equal(fixture.workspaceExists, true);
+    assert.ok(inspectorCalls >= 3, `expected clean recovery scan after call 2, saw ${inspectorCalls}`);
+    assert.equal(fixture.events.includes('fs:remove-workspace'), false);
+  } finally {
+    childProcess.execFile = originalExecFile;
+    syncBuiltinESMExports();
+  }
 });
 
 const realGuardianSession = 'phase9-real-guardian-retained';

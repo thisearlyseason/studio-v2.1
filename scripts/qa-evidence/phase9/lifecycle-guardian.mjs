@@ -1495,50 +1495,62 @@ export async function auditMarkedProcesses(
     || executableHashTimeoutMs > EXECUTABLE_HASH_TIMEOUT_MS) {
     throw new GuardianFailure('scenario-closure-failed');
   }
-  const inspect = async pids => {
-    const records = await inspectDarwinMarkedProcessesForTermination(runMarker, pids, { signal });
-    if (records.some(record => record.inspectionError)) {
-      onInspectionError?.();
-      throw new GuardianFailure('scenario-closure-failed');
+  try {
+    const inspect = async pids => {
+      const records = await inspectDarwinMarkedProcessesForTermination(runMarker, pids, { signal });
+      if (records.some(record => record.inspectionError)) {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+      return records;
+    };
+    const first = await inspect(undefined);
+    if (first.length === 0) return Object.freeze([]);
+    const executableIdentities = new Map();
+    for (const path of [...new Set(first.map(record => record.executable))].sort()) {
+      executableIdentities.set(path, await executableIdentity(path, signal, executableHashTimeoutMs));
     }
-    return records;
-  };
-  const first = await inspect(undefined);
-  if (first.length === 0) return Object.freeze([]);
-  const executableIdentities = new Map();
-  for (const path of [...new Set(first.map(record => record.executable))].sort()) {
-    executableIdentities.set(path, await executableIdentity(path, signal, executableHashTimeoutMs));
+    requireAuditActive(signal);
+    const second = await inspect(first.map(record => record.pid));
+    if (second.length !== first.length) throw new GuardianFailure('scenario-closure-failed');
+    return Object.freeze(second.map((record, index) => {
+      if (!processSnapshotsMatch(first[index], record)) throw new GuardianFailure('scenario-closure-failed');
+      const identity = executableIdentities.get(record.executable);
+      if (!identity) throw new GuardianFailure('scenario-closure-failed');
+      return Object.freeze({ ...record, ...identity });
+    }));
+  } catch (error) {
+    if (!signal?.aborted) onInspectionError?.();
+    throw error;
   }
-  requireAuditActive(signal);
-  const second = await inspect(first.map(record => record.pid));
-  if (second.length !== first.length) throw new GuardianFailure('scenario-closure-failed');
-  return Object.freeze(second.map((record, index) => {
-    if (!processSnapshotsMatch(first[index], record)) throw new GuardianFailure('scenario-closure-failed');
-    const identity = executableIdentities.get(record.executable);
-    if (!identity) throw new GuardianFailure('scenario-closure-failed');
-    return Object.freeze({ ...record, ...identity });
-  }));
 }
 
 function signalMarkedProcesses(runMarker, signal, onInspectionError) {
   return new INTRINSIC_PROMISE((resolveSignal, rejectSignal) => {
-    consumeNativePromise(
-      inspectDarwinMarkedProcessesForTermination(runMarker),
-      processes => {
-        if (processes.some(record => record.inspectionError)) onInspectionError?.();
-        let ok = true;
-        for (const { pid } of processes) {
-          try {
-            INTRINSIC_PROCESS_KILL(pid, signal);
-          } catch (error) {
-            if (error?.code !== 'ESRCH') ok = false;
+    try {
+      consumeNativePromise(
+        inspectDarwinMarkedProcessesForTermination(runMarker),
+        processes => {
+          if (processes.some(record => record.inspectionError)) onInspectionError?.();
+          let ok = true;
+          for (const { pid } of processes) {
+            try {
+              INTRINSIC_PROCESS_KILL(pid, signal);
+            } catch (error) {
+              if (error?.code !== 'ESRCH') ok = false;
+            }
           }
-        }
-        resolveSignal(Object.freeze({ ok, pids: processes.map(item => item.pid) }));
-      },
-      () => rejectSignal(new GuardianFailure('scenario-closure-failed')),
-      'scenario-closure-failed',
-    );
+          resolveSignal(Object.freeze({ ok, pids: processes.map(item => item.pid) }));
+        },
+        () => {
+          onInspectionError?.();
+          rejectSignal(new GuardianFailure('scenario-closure-failed'));
+        },
+        'scenario-closure-failed',
+      );
+    } catch {
+      onInspectionError?.();
+      rejectSignal(new GuardianFailure('scenario-closure-failed'));
+    }
   });
 }
 
@@ -1546,23 +1558,31 @@ function waitForMarkedProcessesGone(runMarker, timeoutMs, onInspectionError) {
   return new INTRINSIC_PROMISE(resolveWait => {
     const startedAt = Date.now();
     const inspect = () => {
-      consumeNativePromise(
-        inspectDarwinMarkedProcessesForTermination(runMarker),
-        pids => {
-          if (pids.some(record => record.inspectionError)) onInspectionError?.();
-          if (pids.length === 0) {
-            resolveWait(true);
-            return;
-          }
-          if (Date.now() - startedAt >= timeoutMs) {
+      try {
+        consumeNativePromise(
+          inspectDarwinMarkedProcessesForTermination(runMarker),
+          pids => {
+            if (pids.some(record => record.inspectionError)) onInspectionError?.();
+            if (pids.length === 0) {
+              resolveWait(true);
+              return;
+            }
+            if (Date.now() - startedAt >= timeoutMs) {
+              resolveWait(false);
+              return;
+            }
+            INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_TIMEOUT, INTRINSIC_GLOBAL_THIS, [inspect, 10]);
+          },
+          () => {
+            onInspectionError?.();
             resolveWait(false);
-            return;
-          }
-          INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_TIMEOUT, INTRINSIC_GLOBAL_THIS, [inspect, 10]);
-        },
-        () => resolveWait(false),
-        'scenario-closure-failed',
-      );
+          },
+          'scenario-closure-failed',
+        );
+      } catch {
+        onInspectionError?.();
+        resolveWait(false);
+      }
     };
     inspect();
   });
@@ -1573,6 +1593,7 @@ export async function terminateMarkedProcesses(runMarker, timeoutMs, { onInspect
   try {
     initial = await inspectDarwinMarkedProcessesForTermination(runMarker);
   } catch {
+    onInspectionError?.();
     return Object.freeze({ cleared: false, discovered: false });
   }
   if (initial.some(record => record.inspectionError)) onInspectionError?.();
@@ -1879,29 +1900,30 @@ async function chromeHelperIsExact(record, mainProfiles, processByPid, policy, p
       ]],
     );
   } catch {
-    return false;
+    throw new GuardianFailure('scenario-closure-failed');
   }
   if (!record.executable.startsWith(`${currentFrameworkRoot}/Helpers/`)
-    || canonical !== record.executable || !executableRecordStillMatches(record, metadata)
-    || (record.executableMode & 0o111) === 0) return false;
-  const display = await executeProcessAudit(SYSTEM_CODESIGN, ['-dv', '--verbose=4', record.executable], 65_536)
-    .catch(() => null);
-  if (!display) return false;
+    || canonical !== record.executable || (record.executableMode & 0o111) === 0) return false;
+  if (!executableRecordStillMatches(record, metadata)) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  const display = await executeProcessAudit(
+    SYSTEM_CODESIGN, ['-dv', '--verbose=4', record.executable], 65_536,
+  );
   const details = `${display.stdout}\n${display.stderr}`;
   const identifier = /^Identifier=(com\.google\.Chrome[^\r\n]*)$/m.exec(details)?.[1];
   const team = /^TeamIdentifier=([^\r\n]+)$/m.exec(details)?.[1];
   const expectedIdentifier = commandDetails.kind === 'renderer'
     ? 'com.google.Chrome.helper.renderer' : 'com.google.Chrome.helper';
   if (identifier !== expectedIdentifier || team !== policy.teamIdentifier) return false;
-  try {
-    await verifySignedPath(record.executable, {
-      codesignIdentifier: identifier, teamIdentifier: policy.teamIdentifier,
-    });
-  } catch {
-    return false;
+  await verifySignedPath(record.executable, {
+    codesignIdentifier: identifier, teamIdentifier: policy.teamIdentifier,
+  });
+  const after = await lstat(record.executable, { bigint: true });
+  if (!executableRecordStillMatches(record, after)) {
+    throw new GuardianFailure('scenario-closure-failed');
   }
-  const after = await lstat(record.executable, { bigint: true }).catch(() => null);
-  return executableRecordStillMatches(record, after);
+  return true;
 }
 
 async function retainedBrowserProcessesAreExact(
@@ -1972,9 +1994,13 @@ async function retainedBrowserProcessesAreExact(
         return null;
       }
       if (finalSnapshot.length !== records.length
-        || records.some((record, index) => !processSnapshotsMatch(record, finalSnapshot[index]))) return null;
+        || records.some((record, index) => !processSnapshotsMatch(record, finalSnapshot[index]))) {
+        onInspectionError?.();
+        return null;
+      }
     }
   } catch {
+    onInspectionError?.();
     return null;
   }
   return Object.freeze({ identities: Object.freeze(identities) });
@@ -2306,6 +2332,7 @@ export function createLifecycleGuardian({
   let manifestPath = null;
   let credentialPath = null;
   let profileRootPath = null;
+  let profileRootRemoved = false;
   let globalProfileBaseline = null;
   let inspectionUncertain = false;
   let profileInventoryUncertain = false;
@@ -2328,6 +2355,31 @@ export function createLifecycleGuardian({
   let validatedRows = null;
   const handlers = new Map();
   let operationTail = new INTRINSIC_PROMISE(resolveOperation => resolveOperation());
+
+  const markInspectionUncertain = () => { inspectionUncertain = true; };
+  const stickyInspectionOperation = async (operation, { intentionalCancellation } = {}) => {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!intentionalCancellation?.()) markInspectionUncertain();
+      throw error;
+    }
+  };
+  const auditMarkedProcessesSticky = (marker, options = {}) => stickyInspectionOperation(
+    () => auditMarkedProcesses(marker, { ...options, onInspectionError: markInspectionUncertain }),
+    { intentionalCancellation: () => options.signal?.aborted === true },
+  );
+  const terminateMarkedProcessesSticky = (marker, timeoutMs) => stickyInspectionOperation(
+    () => terminateMarkedProcesses(marker, timeoutMs, { onInspectionError: markInspectionUncertain }),
+  );
+  const producerProfileInventorySticky = async tempRoot => {
+    try {
+      return await producerProfileInventory(filesystem, tempRoot);
+    } catch (error) {
+      profileInventoryUncertain = true;
+      throw error;
+    }
+  };
 
   const currentPreservationStates = () => preservationStates(
     filesystem,
@@ -2434,6 +2486,11 @@ export function createLifecycleGuardian({
   };
 
   const closeOwnedBrowsers = async () => exclusive(async () => {
+    if (profileRootRemoved) {
+      if (browserClosureCertified && ownedBrowserSessions.size === 0
+        && ownedBrowserReceipts.size === 0 && phaseMarkers.size === 0 && !activeScenario) return;
+      throw new GuardianFailure('browser-closure-failed');
+    }
     if (!profileRootPath) {
       if (ownedBrowserSessions.size === 0 && ownedBrowserReceipts.size === 0
         && phaseMarkers.size === 0 && !activeScenario) {
@@ -2469,7 +2526,7 @@ export function createLifecycleGuardian({
   });
 
   const exactBrowserInventory = async () => {
-    if (!profileRootPath) throw new GuardianFailure('browser-ownership-invalid');
+    if (!profileRootPath || profileRootRemoved) throw new GuardianFailure('browser-ownership-invalid');
     let names;
     try {
       names = browserSessionNames(await browserClient.listBrowsers({
@@ -2488,7 +2545,7 @@ export function createLifecycleGuardian({
     const markedByPhase = [];
     for (const [marker, phase] of phaseMarkers) {
       let processes;
-      try { processes = await auditMarkedProcesses(marker, { onInspectionError: markInspectionUncertain }); } catch {
+      try { processes = await auditMarkedProcessesSticky(marker); } catch {
         throw new GuardianFailure('scenario-closure-failed');
       }
       markedByPhase.push(Object.freeze({
@@ -2507,10 +2564,10 @@ export function createLifecycleGuardian({
       left.session.localeCompare(right.session)
     ));
     const audit = isDeepStrictEqual(receipts.map(receipt => receipt.session), names)
-      ? await retainedBrowserProcessesAreExact(
+      ? await stickyInspectionOperation(() => retainedBrowserProcessesAreExact(
         processes, names, receipts, verifiedRunnerSnapshot.processPolicy, profileRootPath,
         markInspectionUncertain,
-      ) : null;
+      )) : null;
     if (!audit) {
       throw new GuardianFailure('scenario-closure-failed');
     }
@@ -2530,7 +2587,7 @@ export function createLifecycleGuardian({
 
   const certifyReceiptProcessesAbsent = async () => {
     for (const [marker] of phaseMarkers) {
-      const processes = await auditMarkedProcesses(marker, { onInspectionError: markInspectionUncertain });
+      const processes = await auditMarkedProcessesSticky(marker);
       for (const receipt of ownedBrowserReceipts.values()) {
         if (receipt.marker !== marker) continue;
         const identities = ownedProcessIdentities.get(receipt.session);
@@ -2551,38 +2608,50 @@ export function createLifecycleGuardian({
   const terminateStoredPhaseMarkers = async () => {
     let cleared = true;
     for (const marker of phaseMarkers.keys()) {
-      const result = await terminateMarkedProcesses(
-        marker, Math.max(scenarioJoinTimeoutMs, 500), { onInspectionError: markInspectionUncertain },
+      const result = await terminateMarkedProcessesSticky(
+        marker, Math.max(scenarioJoinTimeoutMs, 500),
       );
       if (!result.cleared) cleared = false;
     }
     if (!cleared) throw new GuardianFailure('scenario-closure-failed');
     for (const marker of phaseMarkers.keys()) {
-      const remaining = await auditMarkedProcesses(marker, { onInspectionError: markInspectionUncertain });
+      const remaining = await auditMarkedProcessesSticky(marker);
       if (remaining.length !== 0) throw new GuardianFailure('scenario-closure-failed');
     }
     phaseMarkers.clear();
   };
 
-  const markInspectionUncertain = () => { inspectionUncertain = true; };
-
   const removeOwnedProfileRoot = async () => {
     if (!profileRootPath) return;
-    await requirePrivateDirectory(filesystem, profileRootPath, 'scenario-closure-failed');
-    await auditConfinedPlaywrightTree(filesystem, profileRootPath);
-    await filesystem.rm(profileRootPath, { recursive: true, force: false });
-    if (!(await proveAbsent(filesystem, profileRootPath))) {
-      throw new GuardianFailure('scenario-closure-failed');
+    if (!profileRootRemoved) {
+      await requirePrivateDirectory(filesystem, profileRootPath, 'scenario-closure-failed');
+      await auditConfinedPlaywrightTree(filesystem, profileRootPath);
+      await filesystem.rm(profileRootPath, { recursive: true, force: false });
+      if (!(await proveAbsent(filesystem, profileRootPath))) {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+      profileRootRemoved = true;
+    }
+    let current;
+    try {
+      current = await producerProfileInventorySticky(INTRINSIC_CHILD_ENV.TMPDIR);
+      if (!isDeepStrictEqual(current, globalProfileBaseline)) {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+    } catch (error) {
+      profileInventoryUncertain = true;
+      throw error;
     }
     profileRootPath = null;
-    const current = await producerProfileInventory(filesystem, INTRINSIC_CHILD_ENV.TMPDIR);
-    if (!isDeepStrictEqual(current, globalProfileBaseline)) {
-      profileInventoryUncertain = true;
-      throw new GuardianFailure('scenario-closure-failed');
-    }
+    profileRootRemoved = false;
   };
 
   const certifyEmptyBrowserInventory = async () => {
+    if (profileRootRemoved) {
+      if (browserClosureCertified && ownedBrowserSessions.size === 0
+        && ownedBrowserReceipts.size === 0 && phaseMarkers.size === 0 && !activeScenario) return;
+      throw new GuardianFailure('browser-closure-failed');
+    }
     if (!profileRootPath) {
       if (browserClosureCertified && ownedBrowserSessions.size === 0
         && ownedBrowserReceipts.size === 0 && phaseMarkers.size === 0 && !activeScenario) return;
@@ -2774,7 +2843,6 @@ export function createLifecycleGuardian({
       } catch {
         markerFailure = true;
       }
-      if (inspectionUncertain || profileInventoryUncertain) markerFailure = true;
       let emptyBrowserFailure = false;
       try {
         await certifyEmptyBrowserInventory();
@@ -2788,6 +2856,7 @@ export function createLifecycleGuardian({
           markerFailure = true;
         }
       }
+      if (inspectionUncertain || profileInventoryUncertain) markerFailure = true;
       if (browserFailure || emptyBrowserFailure) {
         removeHandlers();
         return failureSummary({
@@ -2920,10 +2989,8 @@ export function createLifecycleGuardian({
     let handle;
     try {
       const runMarker = INTRINSIC_RANDOM_BYTES(32).toString('hex');
-      const collisions = await auditMarkedProcesses(
-        runMarker, {
-          signal: generation.controller.signal, onInspectionError: markInspectionUncertain,
-        },
+      const collisions = await auditMarkedProcessesSticky(
+        runMarker, { signal: generation.controller.signal },
       );
       if (collisions.length !== 0) throw new GuardianFailure('scenario-runner-invalid');
       phaseMarkers.set(runMarker, phase);
@@ -3036,7 +3103,7 @@ export function createLifecycleGuardian({
         return failureSummary({ category: 'browser-precondition-failed', state, history });
       }
       browserClosureCertified = true;
-      globalProfileBaseline = await producerProfileInventory(filesystem, INTRINSIC_CHILD_ENV.TMPDIR);
+      globalProfileBaseline = await producerProfileInventorySticky(INTRINSIC_CHILD_ENV.TMPDIR);
       try {
         const verified = await preconditionVerifier({
           deployedSha: currentOptions.deployedSha,
@@ -3115,7 +3182,9 @@ export function createLifecycleGuardian({
       await closeOwnedBrowsers();
       await certifyReceiptProcessesAbsent();
       await terminateStoredPhaseMarkers();
-      if (inspectionUncertain) throw new GuardianFailure('scenario-closure-failed');
+      if (inspectionUncertain || profileInventoryUncertain) {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
       await certifyEmptyBrowserInventory();
       await removeOwnedProfileRoot();
       checkInterrupted();

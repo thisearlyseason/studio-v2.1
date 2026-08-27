@@ -372,6 +372,8 @@ The final inspector/profile amendment parses only the XNU pointer-width alignmen
 
 The reviewed stale-profile remediation validated each source as an inactive, non-symlink directory owned by the current user with mode `0700`, then moved it recoverably (without broad deletion): `playwright_chromiumdev_profile-W5fasd` to `~/.Trash/phase9-review-playwright_chromiumdev_profile-W5fasd-20260827`, `playwright_chromiumdev_profile-fvFCIg` to `~/.Trash/phase9-review-playwright_chromiumdev_profile-fvFCIg-20260827`, and `playwright_chromiumdev_profile-tgVgm5` to `~/.Trash/phase9-review-playwright_chromiumdev_profile-tgVgm5-20260827`. All three original paths were beneath `/var/folders/7n/gzq9wl6n4m963yjtw8gxx9xh0000gq/T/`; the post-move audit verified the original paths absent and the destination inode/type/mode unchanged.
 
+The final sticky-state closure amendment routes every producer-profile inventory and every inspector/audit/enrichment/termination validation through one guardian-owned irreversible uncertainty boundary. A transient failure followed by a clean retry remains uncertified, keeps browser and lifecycle closure flags false, and preserves the exact workspace/manifest state; profile-root state is cleared only after both exact removal and a successful post-removal global inventory. Intentional guardian cancellation remains separately classified as interruption.
+
 ---
 
 ### Task 6: Independent review, exact staging execution, and Task 7 evidence closure
