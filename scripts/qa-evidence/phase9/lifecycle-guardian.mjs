@@ -62,21 +62,14 @@ const PLAYWRIGHT_TRANSPORT_ROOT_PATTERN = '/private/tmp/phase9-playwright-transp
 const PLAYWRIGHT_DAEMON_SUFFIX = '/node_modules/playwright-core/lib/entry/cliDaemon.js';
 const SYSTEM_CODESIGN = '/usr/bin/codesign';
 const SYSTEM_LSOF = '/usr/sbin/lsof';
-const CHROME_MAIN_ALLOWED_SWITCHES = new Set([
-  'allow-pre-commit-input', 'blink-settings', 'disable-background-networking',
-  'disable-background-timer-throttling', 'disable-backgrounding-occluded-windows',
-  'disable-back-forward-cache', 'disable-blink-features', 'disable-breakpad',
-  'disable-client-side-phishing-detection', 'disable-component-extensions-with-background-pages',
-  'disable-component-update', 'disable-default-apps', 'disable-dev-shm-usage',
-  'disable-edgeupdater', 'disable-extensions', 'disable-features', 'disable-field-trial-config',
-  'disable-hang-monitor', 'disable-infobars', 'disable-ipc-flooding-protection',
-  'disable-popup-blocking', 'disable-prompt-on-repost', 'disable-renderer-backgrounding',
-  'disable-search-engine-choice-screen', 'disable-sync', 'disable-updater-scheduler',
-  'edge-skip-compat-layer-relaunch', 'enable-features', 'enable-unsafe-swiftshader',
-  'export-tagged-pdf', 'force-color-profile', 'headless', 'hide-scrollbars',
-  'metrics-recording-only', 'mute-audio', 'no-default-browser-check', 'no-first-run',
-  'no-service-autorun', 'no-startup-window', 'password-store', 'remote-debugging-pipe',
-  'unsafely-disable-devtools-self-xss-warnings', 'use-mock-keychain', 'user-data-dir',
+const CHROME_MAIN_DISABLE_FEATURES = 'AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion';
+const CHROME_HELPER_DISABLE_FEATURES = 'AutoDeElevate,AvoidUnnecessaryBeforeUnloadCheckSync,BlockOriginHeaderModificationOnRedirect,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,OptimizationHints,PaintHolding,ThirdPartyStoragePartitioning,Translate,msEdgeUpdateLaunchServicesPreferredVersion,msForceBrowserSignIn';
+const CHROME_ENABLE_FEATURES = 'CDPScreenshotNewSurface';
+const CHROME_BLINK_SETTINGS = 'primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4';
+const CHROME_GPU_PREFERENCES = 'WAAAAAAAAAAgAAAEAAAAAAAAAAAAAGAAQAAAAAAAAAADAAAAAAAAADgAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAKAAAAAAAAAAoAAAAAAAAAAgAAAAAAAAADAAAAAEAAAAAAAAAAAAAAAgAAAAAAAAACAAAAAAAAAA=';
+const PROCESS_INSTANCE_IDENTITY_KEYS = Object.freeze([
+  'pid', 'ppid', 'pgid', 'startTime', 'command', 'executable', 'executableDev',
+  'executableIno', 'executableSha256', 'codesignIdentifier', 'teamIdentifier',
 ]);
 const PROCESS_EVENTS = Object.freeze(['SIGINT', 'SIGTERM', 'uncaughtException', 'unhandledRejection']);
 const ORDERED_STATES = Object.freeze([
@@ -1039,23 +1032,85 @@ function executeProcessAudit(command, args, maxBuffer = PROCESS_AUDIT_OUTPUT_LIM
   });
 }
 
+function parseProcessSnapshot(output, expectedPids) {
+  const records = new Map();
+  const startPattern = '(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) '
+    + '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +[0-9]{1,2} '
+    + '[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}';
+  const linePattern = new RegExp(`^\\s*([1-9][0-9]*)\\s+([0-9]+)\\s+([0-9]+)\\s+(${startPattern})\\s+(.+)$`);
+  for (const line of output.split('\n')) {
+    const match = linePattern.exec(line);
+    if (!match) continue;
+    const record = Object.freeze({
+      pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]),
+      startTime: match[4].replace(/  +/g, ' '), command: match[5],
+    });
+    if (!expectedPids.has(record.pid) || records.has(record.pid)
+      || !Number.isSafeInteger(record.ppid) || record.ppid < 0
+      || !Number.isSafeInteger(record.pgid) || record.pgid <= 0) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    records.set(record.pid, record);
+  }
+  if (records.size !== expectedPids.size) throw new GuardianFailure('scenario-closure-failed');
+  return records;
+}
+
+async function takeProcessSnapshot(pids) {
+  const expectedPids = new Set(pids);
+  if (expectedPids.size !== pids.length || pids.some(pid => !Number.isSafeInteger(pid) || pid <= 0)) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  const { stdout } = await executeProcessAudit('/bin/ps', [
+    'ww', '-p', pids.join(','), '-o', 'pid=,ppid=,pgid=,lstart=,command=',
+  ]);
+  return parseProcessSnapshot(stdout, expectedPids);
+}
+
+function processSnapshotsMatch(left, right) {
+  return left?.pid === right?.pid && left?.ppid === right?.ppid && left?.pgid === right?.pgid
+    && left?.startTime === right?.startTime && left?.command === right?.command;
+}
+
+async function executableIdentity(path) {
+  let before;
+  let canonical;
+  let bytes;
+  try {
+    [before, canonical, bytes] = await INTRINSIC_REFLECT_APPLY(
+      INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[lstat(path), realpath(path), readFile(path)]],
+    );
+  } catch {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const after = await lstat(path).catch(() => null);
+  if (!after || !before.isFile() || before.isSymbolicLink() || canonical !== path
+    || (before.mode & 0o111) === 0 || bytes.length !== before.size
+    || after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size
+    || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs
+    || (after.mode & 0o777) !== (before.mode & 0o777)) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  return Object.freeze({
+    executableDev: before.dev,
+    executableIno: before.ino,
+    executableSize: before.size,
+    executableMtimeMs: before.mtimeMs,
+    executableCtimeMs: before.ctimeMs,
+    executableMode: before.mode & 0o777,
+    executableUid: before.uid,
+    executableSha256: sha256,
+  });
+}
+
 async function enrichMarkedProcesses(processes) {
   if (processes.length === 0) return Object.freeze([]);
   const pids = processes.map(item => item.pid);
-  const [{ stdout: cleanOutput }, { stdout: lsofOutput }] = await INTRINSIC_REFLECT_APPLY(
-    INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[
-    executeProcessAudit('/bin/ps', ['-p', pids.join(','), '-o', 'pid=,command=']),
-    executeProcessAudit(SYSTEM_LSOF, ['-a', '-p', pids.join(','), '-d', 'txt', '-Fn']),
-    ]],
+  const firstSnapshot = await takeProcessSnapshot(pids);
+  const { stdout: lsofOutput } = await executeProcessAudit(
+    SYSTEM_LSOF, ['-a', '-p', pids.join(','), '-d', 'txt', '-Fn'],
   );
-  const cleanCommands = new Map();
-  for (const line of cleanOutput.split('\n')) {
-    const match = /^\s*([1-9][0-9]*)\s+(.+)$/.exec(line);
-    if (!match) continue;
-    const pid = Number(match[1]);
-    if (cleanCommands.has(pid)) throw new GuardianFailure('scenario-closure-failed');
-    cleanCommands.set(pid, match[2]);
-  }
   const executables = new Map();
   let currentPid = null;
   for (const line of lsofOutput.split('\n')) {
@@ -1065,12 +1120,20 @@ async function enrichMarkedProcesses(processes) {
       executables.set(currentPid, line.slice(1));
     }
   }
+  if (executables.size !== pids.length) throw new GuardianFailure('scenario-closure-failed');
+  const executableIdentities = new Map();
+  for (const path of [...new Set(executables.values())].sort()) {
+    executableIdentities.set(path, await executableIdentity(path));
+  }
+  const secondSnapshot = await takeProcessSnapshot(pids);
   return Object.freeze(processes.map(item => {
-    const command = cleanCommands.get(item.pid);
+    const first = firstSnapshot.get(item.pid);
+    const second = secondSnapshot.get(item.pid);
     const executable = executables.get(item.pid);
-    if (typeof command !== 'string' || command.length === 0 || typeof executable !== 'string'
-      || !isAbsolute(executable)) throw new GuardianFailure('scenario-closure-failed');
-    return Object.freeze({ ...item, command, executable });
+    const identity = executableIdentities.get(executable);
+    if (!processSnapshotsMatch(first, second) || typeof executable !== 'string'
+      || !isAbsolute(executable) || !identity) throw new GuardianFailure('scenario-closure-failed');
+    return Object.freeze({ ...second, executable, ...identity });
   }));
 }
 
@@ -1088,7 +1151,7 @@ function auditMarkedProcesses(runMarker) {
       encoding: 'utf8',
       env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' },
       maxBuffer: PROCESS_AUDIT_OUTPUT_LIMIT,
-      timeout: 5_000,
+      timeout: 30_000,
       windowsHide: true,
     }, (error, stdout) => {
       if (error || typeof stdout !== 'string') {
@@ -1209,30 +1272,60 @@ async function verifySignedPath(path, policy) {
   ], 65_536);
 }
 
-async function verifyPinnedExecutable(path, sha256, policy, { rootOwned = false, signedPath = path } = {}) {
-  let before;
+function executableRecordStillMatches(record, metadata) {
+  return metadata?.isFile?.() && !metadata.isSymbolicLink()
+    && metadata.dev === record.executableDev && metadata.ino === record.executableIno
+    && metadata.size === record.executableSize && metadata.mtimeMs === record.executableMtimeMs
+    && metadata.ctimeMs === record.executableCtimeMs
+    && (metadata.mode & 0o777) === record.executableMode;
+}
+
+async function verifyPinnedExecutable(record, path, sha256, policy, {
+  rootOwned = false, signedPath = path,
+} = {}) {
   let canonical;
-  let bytes;
-  try {
-    [before, canonical, bytes] = await INTRINSIC_REFLECT_APPLY(
-      INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[lstat(path), realpath(path), readFile(path)]],
-    );
-  } catch {
+  try { canonical = await realpath(path); } catch {
     throw new GuardianFailure('scenario-closure-failed');
   }
-  if (!before.isFile() || before.isSymbolicLink() || canonical !== path
-    || (before.mode & 0o111) === 0 || (rootOwned && before.uid !== 0)
-    || (rootOwned && (before.mode & 0o022) !== 0) || bytes.length !== before.size
-    || createHash('sha256').update(bytes).digest('hex') !== sha256) {
+  if (record.executable !== path || canonical !== path || record.executableSha256 !== sha256
+    || (record.executableMode & 0o111) === 0 || (rootOwned && record.executableUid !== 0)
+    || (rootOwned && (record.executableMode & 0o022) !== 0)) {
     throw new GuardianFailure('scenario-closure-failed');
   }
   await verifySignedPath(signedPath, policy);
   const after = await lstat(path);
-  if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size
-    || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs
-    || (after.mode & 0o777) !== (before.mode & 0o777)) {
+  if (!executableRecordStillMatches(record, after)) {
     throw new GuardianFailure('scenario-closure-failed');
   }
+}
+
+function validProcessInstanceIdentity(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join(',') === [...PROCESS_INSTANCE_IDENTITY_KEYS].sort().join(',')
+    && [value.pid, value.ppid, value.pgid, value.executableDev, value.executableIno]
+      .every(item => Number.isSafeInteger(item) && item >= 0)
+    && value.pid > 0 && value.pgid > 0
+    && typeof value.startTime === 'string' && value.startTime.length > 0
+    && typeof value.command === 'string' && value.command.length > 0
+    && typeof value.executable === 'string' && isAbsolute(value.executable)
+    && /^[0-9a-f]{64}$/.test(value.executableSha256)
+    && typeof value.codesignIdentifier === 'string' && value.codesignIdentifier.length > 0
+    && typeof value.teamIdentifier === 'string' && value.teamIdentifier.length > 0;
+}
+
+export function processInstanceIdentityMatches(expected, actual) {
+  return validProcessInstanceIdentity(expected) && validProcessInstanceIdentity(actual)
+    && PROCESS_INSTANCE_IDENTITY_KEYS.every(key => expected[key] === actual[key]);
+}
+
+function processInstanceIdentity(record, policy) {
+  return Object.freeze({
+    pid: record.pid, ppid: record.ppid, pgid: record.pgid, startTime: record.startTime,
+    command: record.command, executable: record.executable,
+    executableDev: record.executableDev, executableIno: record.executableIno,
+    executableSha256: record.executableSha256,
+    codesignIdentifier: policy.codesignIdentifier, teamIdentifier: policy.teamIdentifier,
+  });
 }
 
 function daemonCommandIsExact(record, receipt, runtimePath) {
@@ -1244,56 +1337,254 @@ function daemonCommandIsExact(record, receipt, runtimePath) {
   ).test(suffix);
 }
 
-function chromeMainCommandIsExact(record, marker, binaryPath) {
-  if (record.executable !== binaryPath || record.pgid !== record.pid
-    || !record.command.startsWith(`${binaryPath} `) || record.command.includes(' --type=')) return false;
-  const args = record.command.slice(binaryPath.length + 1).split(' ');
-  const markerArgument = `--${RUN_MARKER_ENV}=${marker}`;
-  if (args.at(-1) !== markerArgument || !args.includes('--headless')
-    || !args.includes('--remote-debugging-pipe') || !args.includes('--no-startup-window')
-    || args.filter(arg => arg.startsWith('--user-data-dir=/')).length !== 1) return false;
-  return args.every(arg => {
-    if (arg === markerArgument) return true;
-    if (!arg.startsWith('--') || arg.includes('\n') || arg.includes('\r')) return false;
-    return CHROME_MAIN_ALLOWED_SWITCHES.has(arg.slice(2).split('=')[0]);
-  });
+function tokenizeProcessCommand(command, executable) {
+  if (typeof command !== 'string' || typeof executable !== 'string'
+    || command.length > 16_384 || !command.startsWith(`${executable} `)) return null;
+  const source = command.slice(executable.length + 1);
+  const tokens = [];
+  let token = '';
+  let quote = null;
+  let escaped = false;
+  let started = false;
+  for (const character of source) {
+    if (character === '\0' || character === '\n' || character === '\r') return null;
+    if (escaped) {
+      token += character;
+      escaped = false;
+      started = true;
+    } else if (character === '\\') {
+      escaped = true;
+      started = true;
+    } else if (quote) {
+      if (character === quote) quote = null;
+      else token += character;
+      started = true;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+      started = true;
+    } else if (/\s/.test(character)) {
+      if (started) {
+        tokens.push(token);
+        token = '';
+        started = false;
+      }
+    } else {
+      token += character;
+      started = true;
+    }
+  }
+  if (escaped || quote || !started) return null;
+  tokens.push(token);
+  return tokens.length > 0 && tokens.length <= 128 && tokens.every(item => item.length > 0) ? tokens : null;
 }
 
-async function chromeHelperIsExact(record, mainPids, processByPid, policy) {
+function parseChromeSwitches(tokens) {
+  const switches = new Map();
+  const ordered = [];
+  for (const token of tokens) {
+    if (!token.startsWith('--')) return null;
+    const separator = token.indexOf('=', 2);
+    const name = separator === -1 ? token.slice(2) : token.slice(2, separator);
+    const value = separator === -1 ? null : token.slice(separator + 1);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name) || value === '') return null;
+    if (!switches.has(name)) switches.set(name, []);
+    switches.get(name).push(value);
+    ordered.push(Object.freeze({ name, value }));
+  }
+  return Object.freeze({ switches, ordered: Object.freeze(ordered) });
+}
+
+const flagSwitch = (min = 1, max = 1) => Object.freeze({
+  min, max, validate: value => value === null,
+});
+const exactValueSwitch = (expected, min = 1, max = 1) => Object.freeze({
+  min, max, validate: value => value === expected,
+});
+const patternValueSwitch = (pattern, min = 1, max = 1) => Object.freeze({
+  min, max, validate: value => typeof value === 'string' && pattern.test(value),
+});
+
+function switchSchemaIsExact(parsed, entries) {
+  const schema = new Map(entries);
+  for (const [name, values] of parsed.switches) {
+    const rule = schema.get(name);
+    if (!rule || values.length < rule.min || values.length > rule.max
+      || values.some(value => !rule.validate(value))) return false;
+  }
+  for (const [name, rule] of schema) {
+    const count = parsed.switches.get(name)?.length ?? 0;
+    if (count < rule.min || count > rule.max) return false;
+  }
+  return true;
+}
+
+function chromeProfilePathIsExact(value) {
+  return typeof value === 'string'
+    && /^\/var\/folders\/[A-Za-z0-9_]+\/[A-Za-z0-9_]+\/T\/playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(value);
+}
+
+function mainChromeSchema(marker) {
+  const flags = [
+    'disable-field-trial-config', 'disable-background-networking',
+    'disable-background-timer-throttling', 'disable-backgrounding-occluded-windows',
+    'disable-back-forward-cache', 'disable-breakpad', 'disable-client-side-phishing-detection',
+    'disable-component-extensions-with-background-pages', 'disable-component-update',
+    'no-default-browser-check', 'disable-default-apps', 'disable-dev-shm-usage',
+    'disable-edgeupdater', 'disable-extensions', 'allow-pre-commit-input',
+    'disable-hang-monitor', 'disable-ipc-flooding-protection', 'disable-popup-blocking',
+    'disable-prompt-on-repost', 'disable-renderer-backgrounding', 'disable-updater-scheduler',
+    'metrics-recording-only', 'no-first-run', 'use-mock-keychain', 'no-service-autorun',
+    'export-tagged-pdf', 'unsafely-disable-devtools-self-xss-warnings',
+    'edge-skip-compat-layer-relaunch', 'disable-infobars', 'disable-sync',
+    'enable-unsafe-swiftshader', 'headless', 'hide-scrollbars', 'mute-audio',
+    'remote-debugging-pipe', 'no-startup-window',
+  ];
+  return [
+    ...flags.map(name => [name, flagSwitch()]),
+    ['disable-search-engine-choice-screen', flagSwitch(2, 2)],
+    ['disable-features', exactValueSwitch(CHROME_MAIN_DISABLE_FEATURES)],
+    ['enable-features', exactValueSwitch(CHROME_ENABLE_FEATURES)],
+    ['force-color-profile', exactValueSwitch('srgb')],
+    ['password-store', exactValueSwitch('basic')],
+    ['blink-settings', exactValueSwitch(CHROME_BLINK_SETTINGS)],
+    ['disable-blink-features', exactValueSwitch('AutomationControlled')],
+    ['user-data-dir', patternValueSwitch(/^\/var\/folders\/[A-Za-z0-9_]+\/[A-Za-z0-9_]+\/T\/playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/)],
+    [RUN_MARKER_ENV, exactValueSwitch(marker)],
+  ];
+}
+
+const helperSharedSchema = () => [
+  ['noerrdialogs', flagSwitch()],
+  ['user-data-dir', patternValueSwitch(/^\/var\/folders\/[A-Za-z0-9_]+\/[A-Za-z0-9_]+\/T\/playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/)],
+  ['shared-files', flagSwitch()],
+  ['field-trial-handle', patternValueSwitch(/^[0-9]+,r,[0-9]+,[0-9]+,262144$/)],
+  ['enable-features', exactValueSwitch(CHROME_ENABLE_FEATURES)],
+  ['disable-features', exactValueSwitch(CHROME_HELPER_DISABLE_FEATURES)],
+  ['variations-seed-version', flagSwitch()],
+  ['pseudonymization-salt-handle', patternValueSwitch(/^[0-9]+,r,[0-9]+,[0-9]+,4$/)],
+  ['trace-process-track-uuid', patternValueSwitch(/^[0-9]+$/)],
+  ['seatbelt-client', patternValueSwitch(/^[0-9]+$/)],
+];
+
+function helperChromeSchema(type) {
+  if (type === 'gpu-process') return [
+    ['type', exactValueSwitch(type)], ['disable-breakpad', flagSwitch()], ['headless', flagSwitch()],
+    ['enable-unsafe-swiftshader', flagSwitch()],
+    ['gpu-preferences', exactValueSwitch(CHROME_GPU_PREFERENCES)],
+    ...helperSharedSchema(),
+  ];
+  if (type === 'renderer') return [
+    ['type', exactValueSwitch(type)], ['top-chrome-webui', flagSwitch(0, 1)],
+    ['disable-back-forward-cache', flagSwitch()], ['disable-background-timer-throttling', flagSwitch()],
+    ['disable-breakpad', flagSwitch()], ['force-color-profile', exactValueSwitch('srgb')],
+    ['remote-debugging-pipe', flagSwitch()], ['allow-pre-commit-input', flagSwitch()],
+    ['blink-settings', exactValueSwitch(CHROME_BLINK_SETTINGS)],
+    ['disable-blink-features', exactValueSwitch('AutomationControlled')],
+    ['lang', exactValueSwitch('en-US')], ['num-raster-threads', exactValueSwitch('4')],
+    ['enable-zero-copy', flagSwitch()], ['enable-gpu-memory-buffer-compositor-resources', flagSwitch()],
+    ['enable-main-frame-before-activation', flagSwitch()],
+    ['renderer-client-id', patternValueSwitch(/^[1-9][0-9]*$/)],
+    ['time-ticks-at-unix-epoch', patternValueSwitch(/^-[0-9]+$/)],
+    ['launch-time-ticks', patternValueSwitch(/^[0-9]+$/)],
+    ...helperSharedSchema(),
+  ];
+  if (type === 'utility') return [
+    ['type', exactValueSwitch(type)],
+    ['utility-sub-type', Object.freeze({
+      min: 1, max: 1,
+      validate: value => new Set(['network.mojom.NetworkService', 'storage.mojom.StorageService']).has(value),
+    })],
+    ['lang', exactValueSwitch('en-US')],
+    ['service-sandbox-type', Object.freeze({
+      min: 1, max: 1, validate: value => new Set(['network', 'service']).has(value),
+    })],
+    ['mute-audio', flagSwitch()],
+    ...helperSharedSchema(),
+  ];
+  return null;
+}
+
+function chromeHelperTypeForExecutable(executable, appPath) {
+  const root = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/`;
+  if (!executable.startsWith(root)) return null;
+  const relativePath = executable.slice(root.length);
+  const match = /^[0-9]+(?:\.[0-9]+){3}\/Helpers\/(Google Chrome Helper(?: \((GPU|Renderer)\))?)\.app\/Contents\/MacOS\/\1$/.exec(relativePath);
+  if (!match) return null;
+  if (match[2] === 'GPU') return 'gpu-process';
+  if (match[2] === 'Renderer') return 'renderer';
+  return 'utility';
+}
+
+function chromeProcessDetails(record, { marker, policy, profilePath } = {}) {
+  if (!record || typeof record !== 'object' || !policy || typeof policy !== 'object'
+    || typeof policy.appPath !== 'string' || typeof policy.binaryPath !== 'string') return null;
+  const tokens = tokenizeProcessCommand(record.command, record.executable);
+  const parsed = tokens && parseChromeSwitches(tokens);
+  if (!parsed) return null;
+  if (record.executable === policy.binaryPath) {
+    if (!/^[0-9a-f]{64}$/.test(marker ?? '') || parsed.ordered.at(-1)?.name !== RUN_MARKER_ENV
+      || !switchSchemaIsExact(parsed, mainChromeSchema(marker))) return null;
+    const selectedProfile = parsed.switches.get('user-data-dir')?.[0];
+    if (!chromeProfilePathIsExact(selectedProfile)) return null;
+    return Object.freeze({ kind: 'main', profilePath: selectedProfile });
+  }
+  const type = chromeHelperTypeForExecutable(record.executable, policy.appPath);
+  const schema = helperChromeSchema(type);
+  if (!schema || !chromeProfilePathIsExact(profilePath)
+    || !switchSchemaIsExact(parsed, schema)
+    || parsed.switches.get('user-data-dir')?.[0] !== profilePath) return null;
+  if (type === 'utility') {
+    const subtype = parsed.switches.get('utility-sub-type')?.[0];
+    const sandbox = parsed.switches.get('service-sandbox-type')?.[0];
+    if ((subtype === 'network.mojom.NetworkService' && sandbox !== 'network')
+      || (subtype === 'storage.mojom.StorageService' && sandbox !== 'service')) return null;
+  }
+  return Object.freeze({ kind: type, profilePath });
+}
+
+export function chromeProcessCommandIsExact(record, options) {
+  try { return chromeProcessDetails(record, options) !== null; } catch { return false; }
+}
+
+async function chromeHelperIsExact(record, mainProfiles, processByPid, policy) {
   let ancestor = record.ppid;
   const visited = new Set([record.pid]);
-  while (!mainPids.has(ancestor)) {
+  while (!mainProfiles.has(ancestor)) {
     if (visited.has(ancestor)) return false;
     visited.add(ancestor);
     const parent = processByPid.get(ancestor);
     if (!parent) return false;
     ancestor = parent.ppid;
   }
-  const helperRoot = `${policy.appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/`;
-  if (!record.executable.startsWith(helperRoot) || !record.executable.includes('/Helpers/')
-    || !record.command.startsWith(`${record.executable} `)) return false;
-  const type = / --type=(renderer|gpu-process|utility|zygote)(?:\s|$)/.exec(record.command)?.[1];
-  const crashpad = record.executable.endsWith('/chrome_crashpad_handler')
-    && record.command.includes(' --monitor-self');
-  if (!type && !crashpad) return false;
+  const commandDetails = chromeProcessDetails(record, {
+    policy, profilePath: mainProfiles.get(ancestor),
+  });
+  if (record.pgid !== ancestor || !commandDetails) return false;
   let metadata;
   let canonical;
+  let currentFrameworkRoot;
   try {
-    [metadata, canonical] = await INTRINSIC_REFLECT_APPLY(
-      INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[lstat(record.executable), realpath(record.executable)]],
+    [metadata, canonical, currentFrameworkRoot] = await INTRINSIC_REFLECT_APPLY(
+      INTRINSIC_PROMISE_ALL, INTRINSIC_PROMISE, [[
+        lstat(record.executable), realpath(record.executable),
+        realpath(`${policy.appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/Current`),
+      ]],
     );
   } catch {
     return false;
   }
-  if (!metadata.isFile() || metadata.isSymbolicLink() || canonical !== record.executable
-    || (metadata.mode & 0o111) === 0) return false;
+  if (!record.executable.startsWith(`${currentFrameworkRoot}/Helpers/`)
+    || canonical !== record.executable || !executableRecordStillMatches(record, metadata)
+    || (record.executableMode & 0o111) === 0) return false;
   const display = await executeProcessAudit(SYSTEM_CODESIGN, ['-dv', '--verbose=4', record.executable], 65_536)
     .catch(() => null);
   if (!display) return false;
   const details = `${display.stdout}\n${display.stderr}`;
   const identifier = /^Identifier=(com\.google\.Chrome[^\r\n]*)$/m.exec(details)?.[1];
   const team = /^TeamIdentifier=([^\r\n]+)$/m.exec(details)?.[1];
-  if (!identifier || team !== policy.teamIdentifier) return false;
+  const expectedIdentifier = commandDetails.kind === 'renderer'
+    ? 'com.google.Chrome.helper.renderer' : 'com.google.Chrome.helper';
+  if (identifier !== expectedIdentifier || team !== policy.teamIdentifier) return false;
   try {
     await verifySignedPath(record.executable, {
       codesignIdentifier: identifier, teamIdentifier: policy.teamIdentifier,
@@ -1301,47 +1592,64 @@ async function chromeHelperIsExact(record, mainPids, processByPid, policy) {
   } catch {
     return false;
   }
-  return true;
+  const after = await lstat(record.executable).catch(() => null);
+  return executableRecordStillMatches(record, after);
 }
 
 async function retainedBrowserProcessesAreExact(processes, browserSessions, receipts, processPolicy) {
   if (!Array.isArray(processes) || processes.length < 2 || browserSessions.length === 0
-    || !processPolicy || receipts.length !== browserSessions.length) return false;
+    || !processPolicy || receipts.length !== browserSessions.length) return null;
   const processByPid = new Map(processes.map(item => [item.pid, item]));
-  if (processByPid.size !== processes.length) return false;
-  try {
-    await verifyPinnedExecutable(
-      processPolicy.runtime.path, processPolicy.runtime.sha256, processPolicy.runtime, { rootOwned: true },
-    );
-    await verifyPinnedExecutable(
-      processPolicy.chrome.binaryPath, processPolicy.chrome.binarySha256, processPolicy.chrome,
-      { signedPath: processPolicy.chrome.appPath },
-    );
-  } catch {
-    return false;
-  }
+  if (processByPid.size !== processes.length) return null;
   const classified = new Set();
-  const mainPids = new Set();
-  for (const receipt of receipts) {
-    const daemon = processByPid.get(receipt.daemonPid);
-    const main = processByPid.get(receipt.chromeMainPid);
-    if (!daemon || !main || daemon.marker !== receipt.marker || main.marker !== receipt.marker
-      || !daemonCommandIsExact(daemon, receipt, processPolicy.runtime.path)
-      || main.ppid !== daemon.pid
-      || !chromeMainCommandIsExact(main, receipt.marker, processPolicy.chrome.binaryPath)) return false;
-    const directMains = processes.filter(record => record.ppid === daemon.pid
-      && record.executable === processPolicy.chrome.binaryPath && !record.command.includes(' --type='));
-    if (directMains.length !== 1 || directMains[0].pid !== main.pid) return false;
-    classified.add(daemon.pid);
-    classified.add(main.pid);
-    mainPids.add(main.pid);
+  const mainProfiles = new Map();
+  const profiles = new Set();
+  const identities = [];
+  try {
+    for (const receipt of receipts) {
+      const daemon = processByPid.get(receipt.daemonPid);
+      const main = processByPid.get(receipt.chromeMainPid);
+      const mainDetails = main && chromeProcessDetails(main, {
+        marker: receipt.marker, policy: processPolicy.chrome,
+      });
+      if (!daemon || !main || daemon.marker !== receipt.marker || main.marker !== receipt.marker
+        || !daemonCommandIsExact(daemon, receipt, processPolicy.runtime.path)
+        || main.ppid !== daemon.pid || main.pgid !== main.pid || mainDetails?.kind !== 'main'
+        || profiles.has(mainDetails.profilePath)) return null;
+      const directMains = processes.filter(record => record.ppid === daemon.pid
+        && record.executable === processPolicy.chrome.binaryPath
+        && chromeProcessDetails(record, { marker: receipt.marker, policy: processPolicy.chrome })?.kind === 'main');
+      if (directMains.length !== 1 || directMains[0].pid !== main.pid) return null;
+      await verifyPinnedExecutable(
+        daemon, processPolicy.runtime.path, processPolicy.runtime.sha256,
+        processPolicy.runtime, { rootOwned: true },
+      );
+      await verifyPinnedExecutable(
+        main, processPolicy.chrome.binaryPath, processPolicy.chrome.binarySha256,
+        processPolicy.chrome, { signedPath: processPolicy.chrome.appPath },
+      );
+      classified.add(daemon.pid);
+      classified.add(main.pid);
+      mainProfiles.set(main.pid, mainDetails.profilePath);
+      profiles.add(mainDetails.profilePath);
+      identities.push(Object.freeze({
+        session: receipt.session,
+        daemon: processInstanceIdentity(daemon, processPolicy.runtime),
+        chromeMain: processInstanceIdentity(main, processPolicy.chrome),
+      }));
+    }
+    for (const record of processes) {
+      if (classified.has(record.pid)) continue;
+      if (!(await chromeHelperIsExact(record, mainProfiles, processByPid, processPolicy.chrome))) return null;
+      classified.add(record.pid);
+    }
+    if (classified.size !== processes.length) return null;
+    const finalSnapshot = await takeProcessSnapshot(processes.map(record => record.pid));
+    if (processes.some(record => !processSnapshotsMatch(record, finalSnapshot.get(record.pid)))) return null;
+  } catch {
+    return null;
   }
-  for (const record of processes) {
-    if (classified.has(record.pid)) continue;
-    if (!(await chromeHelperIsExact(record, mainPids, processByPid, processPolicy.chrome))) return false;
-    classified.add(record.pid);
-  }
-  return classified.size === processes.length;
+  return Object.freeze({ identities: Object.freeze(identities) });
 }
 
 function processGroupAlive(handle) {
@@ -1665,6 +1973,7 @@ export function createLifecycleGuardian({
   let closureCertified = false;
   const ownedBrowserSessions = new Set();
   const ownedBrowserReceipts = new Map();
+  const ownedProcessIdentities = new Map();
   let activeScenario = null;
   const phaseMarkers = new Map();
   let startupGeneration = null;
@@ -1841,21 +2150,41 @@ export function createLifecycleGuardian({
     const receipts = [...ownedBrowserReceipts.values()].sort((left, right) => (
       left.session.localeCompare(right.session)
     ));
-    if (!isDeepStrictEqual(receipts.map(receipt => receipt.session), names)
-      || !(await retainedBrowserProcessesAreExact(
+    const audit = isDeepStrictEqual(receipts.map(receipt => receipt.session), names)
+      ? await retainedBrowserProcessesAreExact(
         processes, names, receipts, verifiedRunnerSnapshot.processPolicy,
-      ))) {
+      ) : null;
+    if (!audit) {
       throw new GuardianFailure('scenario-closure-failed');
+    }
+    for (const identityReceipt of audit.identities) {
+      const prior = ownedProcessIdentities.get(identityReceipt.session);
+      if (prior && (!processInstanceIdentityMatches(prior.daemon, identityReceipt.daemon)
+        || !processInstanceIdentityMatches(prior.chromeMain, identityReceipt.chromeMain))) {
+        throw new GuardianFailure('scenario-closure-failed');
+      }
+    }
+    for (const identityReceipt of audit.identities) {
+      if (!ownedProcessIdentities.has(identityReceipt.session)) {
+        ownedProcessIdentities.set(identityReceipt.session, identityReceipt);
+      }
     }
   };
 
   const certifyReceiptProcessesAbsent = async () => {
     for (const [marker] of phaseMarkers) {
       const processes = await auditMarkedProcesses(marker);
-      const livePids = new Set(processes.map(item => item.pid));
       for (const receipt of ownedBrowserReceipts.values()) {
-        if (receipt.marker === marker
-          && (livePids.has(receipt.daemonPid) || livePids.has(receipt.chromeMainPid))) {
+        if (receipt.marker !== marker) continue;
+        const identities = ownedProcessIdentities.get(receipt.session);
+        if (!identities) continue;
+        const daemon = processes.find(item => item.pid === identities.daemon.pid);
+        const main = processes.find(item => item.pid === identities.chromeMain.pid);
+        if ((daemon && processInstanceIdentityMatches(
+          identities.daemon, processInstanceIdentity(daemon, identities.daemon),
+        )) || (main && processInstanceIdentityMatches(
+          identities.chromeMain, processInstanceIdentity(main, identities.chromeMain),
+        ))) {
           throw new GuardianFailure('scenario-closure-failed');
         }
       }
@@ -1884,6 +2213,7 @@ export function createLifecycleGuardian({
     if (names.length !== 0) throw new GuardianFailure('browser-closure-failed');
     ownedBrowserSessions.clear();
     ownedBrowserReceipts.clear();
+    ownedProcessIdentities.clear();
     validateLifecycleResult('browser-sessions', { sessions: [] }, 'browsers-closed');
     browserClosureCertified = true;
   };

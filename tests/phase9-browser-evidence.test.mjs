@@ -57,6 +57,9 @@ const phase9EvidenceDirectorySuffix = join(
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const guardianChildEntrypoint = join(testDirectory, 'fixtures', 'phase9-lifecycle-child.mjs');
+const LOCAL_REAL_CHROME_TEST_TIMEOUT_MS = 1_200_000;
+const LOCAL_REAL_CHROME_EXTENDED_TEST_TIMEOUT_MS = 1_800_000;
+const LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS = 90_000;
 const sha256File = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 const guardianChildCommand = mode => {
   const configPath = join(testDirectory, 'fixtures', `phase9-lifecycle-child-${mode}.json`);
@@ -679,8 +682,8 @@ test('phase 9 playwright client accepts real wrapper top-level and nested JSON r
   assert.deepEqual(await client.runCode('page-a', 'async (page) => ({ pageId: "page-a" })'), { pageId: 'page-a' });
 });
 
-test('phase 9 action window real Chrome captures each independent transient visibility mechanism', { timeout: 90_000 }, async t => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 action window real Chrome captures each independent transient visibility mechanism', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async t => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     for (const mechanism of ['style', 'class', 'hidden', 'aria-hidden']) await t.test(mechanism, async () => {
       const session = `phase9-visibility-${mechanism}`;
@@ -741,8 +744,8 @@ test('phase 9 action window real Chrome captures each independent transient visi
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
-test('phase 9 action window real Chrome captures distinct CSS-animation-only protected flashes', { timeout: 30_000 }, async () => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 action window real Chrome captures distinct CSS-animation-only protected flashes', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-animation-regression');
     await client.goto('phase9-animation-regression', 'about:blank');
@@ -792,8 +795,8 @@ test('phase 9 action window real Chrome captures distinct CSS-animation-only pro
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
-test('phase 9 action window real Chrome refuses recorder installation on a nonblank tab', { timeout: 30_000 }, async () => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 action window real Chrome refuses recorder installation on a nonblank tab', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-nonblank-regression');
     await client.goto('phase9-nonblank-regression', 'data:text/html,nonblank');
@@ -3509,7 +3512,7 @@ test('phase 9 client binds Listen state to recorder navigation generation for ev
   }
 });
 
-test('phase 9 real recorder increments navigation generation for goto click reload and location changes', { timeout: 90_000 }, async () => {
+test('phase 9 real recorder increments navigation generation for goto click reload and location changes', { timeout: LOCAL_REAL_CHROME_EXTENDED_TEST_TIMEOUT_MS }, async () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
   const selfTarget = targetId => ({
@@ -3520,7 +3523,9 @@ test('phase 9 real recorder increments navigation generation for goto click relo
     },
   });
   const removeTarget = targetId => ({ database: FIRESTORE_DATABASE, removeTarget: targetId });
-  const client = createPlaywrightCliClient({ fixtureRunId: runId });
+  const client = createPlaywrightCliClient({
+    fixtureRunId: runId, timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+  });
   const request = async (session, message) => observeAction({
     client,
     session,
@@ -3698,7 +3703,7 @@ test('phase 9 client fails closed when claimed evidence lacks raw request materi
   }), /transport.*listener|target.*evidence/i);
 });
 
-test('phase 9 real recorder returns raw request facts for local classification only', { timeout: 30_000 }, async () => {
+test('phase 9 real recorder returns raw request facts for local classification only', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
   const selfUid = `${runId}-no-team`;
   const database = 'projects/the-squad-v2-staging/databases/(default)';
@@ -3728,7 +3733,9 @@ test('phase 9 real recorder returns raw request facts for local classification o
       },
     }),
   }).toString();
-  const client = createPlaywrightCliClient({ fixtureRunId: runId });
+  const client = createPlaywrightCliClient({
+    fixtureRunId: runId, timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+  });
   try {
     await installSignalRecorder(client, 'phase9-sealed-recorder');
     await client.goto('phase9-sealed-recorder', 'data:text/html,<title>sealed-recorder</title>');
@@ -4017,8 +4024,8 @@ test('phase 9 browser scenarios heading contracts are backed by the real page h1
   assert.match(login, /else \{[\s\S]*router\.push\('\/dashboard'\)/);
 });
 
-test('phase 9 browser scenarios recorder requires an exact visible h1 instead of substring body text', { timeout: 30_000 }, async () => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 browser scenarios recorder requires an exact visible h1 instead of substring body text', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-exact-heading');
     const nonHeading = await observeAction({
@@ -4194,8 +4201,8 @@ test('phase 9 browser scenarios require a distinct logout context and navigate i
   assert.deepEqual(requested, ['/dashboard']);
 });
 
-test('phase 9 browser scenarios recorder observes an exact Radix status toast without classifying it as protected', { timeout: 30_000 }, async () => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 browser scenarios recorder observes an exact Radix status toast without classifying it as protected', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-toast-terminal');
     const result = await observeAction({
@@ -4260,8 +4267,8 @@ test('phase 9 browser scenarios split stale pending revocation from fresh unavai
   assert.equal(freshRow.visibleState, 'The email or password is incorrect, or this account is unavailable.');
 });
 
-test('phase 9 action window treats a real Dashboard h1 flash as protected activity', { timeout: 30_000 }, async () => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 action window treats a real Dashboard h1 flash as protected activity', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-dashboard-flash');
     const result = await observeAction({
@@ -4320,8 +4327,8 @@ test('phase 9 evidence contracts pending validation uses transient status histor
   }, { kind: 'pending-deletion-fresh' }), /redirect reason.*none/i);
 });
 
-test('phase 9 browser scenarios recorder types approved status history and never protects status text', { timeout: 30_000 }, async () => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 browser scenarios recorder types approved status history and never protects status text', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(client, 'phase9-status-observation');
     const result = await observeAction({
@@ -4376,8 +4383,8 @@ test('phase 9 action window exposes only the fixed redirect reason enum', async 
   }
 });
 
-test('phase 9 action window binds session evidence to exact staging __session cookie', { timeout: 60_000 }, async t => {
-  const client = createPlaywrightCliClient({});
+test('phase 9 action window binds session evidence to exact staging __session cookie', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async t => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   const cases = [
     {
       name: 'wrong-origin exact-name cookie',
@@ -4742,14 +4749,20 @@ const realGuardianSession = 'phase9-real-guardian-retained';
 const realGuardianTwoSessions = Object.freeze([
   'phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b',
 ]);
+const REAL_GUARDIAN_JOIN_TIMEOUT_MS = 10_000;
 const realGuardianInfoPath = phase => `/tmp/phase9-guardian-real-retained-${process.pid}-${phase}.json`;
 const realGuardianBrowserClient = Object.freeze({
-  closeBrowser: session => executeCapturedPlaywrightTransportCommand([`-s=${session}`, 'close'], { timeoutMs: 30_000 }),
-  listBrowsers: () => executeCapturedPlaywrightTransportCommand(['list'], { timeoutMs: 30_000 }),
+  closeBrowser: session => executeCapturedPlaywrightTransportCommand(
+    [`-s=${session}`, 'close'], { timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS },
+  ),
+  listBrowsers: () => executeCapturedPlaywrightTransportCommand(
+    ['list'], { timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS },
+  ),
 });
 const markedProcessLines = marker => {
   const result = spawnSync('/bin/ps', ['eww', '-axo', 'pid=,command='], {
     encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' }, maxBuffer: 16_777_216,
+    timeout: 30_000,
   });
   assert.equal(result.status, 0);
   const token = `PHASE9_GUARDIAN_RUN_MARKER=${marker}`;
@@ -4795,12 +4808,120 @@ const cleanupRealGuardianIntegration = async () => {
   for (const path of fixturePaths) rmSync(path, { recursive: true, force: true });
 };
 
-test('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: 120_000 }, async () => {
+test('phase 9 guardian process identity rejects PID reuse with a different birth identity', async () => {
+  const { processInstanceIdentityMatches } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof processInstanceIdentityMatches, 'function');
+  const identity = Object.freeze({
+    pid: 41001,
+    ppid: 41000,
+    pgid: 41001,
+    startTime: 'Wed Aug 26 12:34:56 2026',
+    command: '/usr/local/bin/node /private/tmp/phase9-playwright-transport.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/node_modules/playwright-core/lib/entry/cliDaemon.js phase9-session --browser=chrome',
+    executable: '/usr/local/bin/node',
+    executableDev: 16777233,
+    executableIno: 1152921500,
+    executableSha256: '1'.repeat(64),
+    codesignIdentifier: 'node',
+    teamIdentifier: 'HX7739G8FX',
+  });
+  assert.equal(processInstanceIdentityMatches(identity, { ...identity }), true);
+  assert.equal(processInstanceIdentityMatches(identity, {
+    ...identity, startTime: 'Wed Aug 26 12:34:57 2026',
+  }), false);
+  assert.equal(processInstanceIdentityMatches(identity, {
+    ...identity, executableIno: identity.executableIno + 1,
+  }), false);
+});
+
+test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, positional extras, and unknown renderer switches', async () => {
+  const { chromeProcessCommandIsExact } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof chromeProcessCommandIsExact, 'function');
+  const marker = 'ab'.repeat(32);
+  const binaryPath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  const appPath = '/Applications/Google Chrome.app';
+  const profilePath = '/var/folders/7n/gzq9wl6n4m963yjtw8gxx9xh0000gq/T/playwright_chromiumdev_profile-a1B2_c3';
+  const mainArguments = [
+    '--disable-field-trial-config', '--disable-background-networking',
+    '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+    '--disable-back-forward-cache', '--disable-breakpad',
+    '--disable-client-side-phishing-detection',
+    '--disable-component-extensions-with-background-pages', '--disable-component-update',
+    '--no-default-browser-check', '--disable-default-apps', '--disable-dev-shm-usage',
+    '--disable-edgeupdater', '--disable-extensions',
+    '--disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion',
+    '--enable-features=CDPScreenshotNewSurface', '--allow-pre-commit-input',
+    '--disable-hang-monitor', '--disable-ipc-flooding-protection', '--disable-popup-blocking',
+    '--disable-prompt-on-repost', '--disable-renderer-backgrounding',
+    '--disable-updater-scheduler', '--force-color-profile=srgb', '--metrics-recording-only',
+    '--no-first-run', '--password-store=basic', '--use-mock-keychain',
+    '--no-service-autorun', '--export-tagged-pdf', '--disable-search-engine-choice-screen',
+    '--unsafely-disable-devtools-self-xss-warnings', '--edge-skip-compat-layer-relaunch',
+    '--disable-infobars', '--disable-search-engine-choice-screen', '--disable-sync',
+    '--enable-unsafe-swiftshader', '--headless', '--hide-scrollbars', '--mute-audio',
+    '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
+    '--disable-blink-features=AutomationControlled', `--user-data-dir=${profilePath}`,
+    '--remote-debugging-pipe', '--no-startup-window',
+    `--PHASE9_GUARDIAN_RUN_MARKER=${marker}`,
+  ];
+  const mainRecord = Object.freeze({
+    executable: binaryPath,
+    command: `${binaryPath} ${mainArguments.join(' ')}`,
+  });
+  const policy = Object.freeze({ appPath, binaryPath });
+  assert.equal(chromeProcessCommandIsExact(mainRecord, { marker, policy }), true);
+  assert.equal(chromeProcessCommandIsExact({
+    ...mainRecord, command: `${mainRecord.command} --headless`,
+  }, { marker, policy }), false);
+  assert.equal(chromeProcessCommandIsExact({
+    ...mainRecord,
+    command: mainRecord.command.replace(
+      /--disable-features=[^ ]+/,
+      '--disable-features=TotallyUnreviewed',
+    ),
+  }, { marker, policy }), false);
+  assert.equal(chromeProcessCommandIsExact({
+    ...mainRecord, command: `${mainRecord.command} about:blank`,
+  }, { marker, policy }), false);
+
+  const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.174/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
+  const rendererArguments = [
+    '--type=renderer', '--noerrdialogs', `--user-data-dir=${profilePath}`,
+    '--disable-back-forward-cache', '--disable-background-timer-throttling', '--disable-breakpad',
+    '--force-color-profile=srgb', '--remote-debugging-pipe', '--allow-pre-commit-input',
+    '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
+    '--disable-blink-features=AutomationControlled', '--lang=en-US', '--num-raster-threads=4',
+    '--enable-zero-copy', '--enable-gpu-memory-buffer-compositor-resources',
+    '--enable-main-frame-before-activation', '--renderer-client-id=7',
+    '--time-ticks-at-unix-epoch=-1787406128801877', '--launch-time-ticks=379887831643',
+    '--shared-files', '--field-trial-handle=1718379636,r,10259959953956197231,17625069593989021452,262144',
+    '--enable-features=CDPScreenshotNewSurface',
+    '--disable-features=AutoDeElevate,AvoidUnnecessaryBeforeUnloadCheckSync,BlockOriginHeaderModificationOnRedirect,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,OptimizationHints,PaintHolding,ThirdPartyStoragePartitioning,Translate,msEdgeUpdateLaunchServicesPreferredVersion,msForceBrowserSignIn',
+    '--variations-seed-version',
+    '--pseudonymization-salt-handle=1935764596,r,8868994880592869196,14761491163183821986,4',
+    '--trace-process-track-uuid=3190708992871164437', '--seatbelt-client=80',
+  ];
+  const rendererRecord = Object.freeze({
+    executable: rendererExecutable,
+    command: `${rendererExecutable} ${rendererArguments.join(' ')}`,
+  });
+  assert.equal(chromeProcessCommandIsExact(
+    rendererRecord, { policy, profilePath },
+  ), true);
+  assert.equal(chromeProcessCommandIsExact({
+    ...rendererRecord, command: `${rendererRecord.command} --totally-unreviewed`,
+  }, { policy, profilePath }), false);
+});
+
+test('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let retainedBoundaryObserved = false;
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser',
-    scenarioJoinTimeoutMs: 3_000,
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
     browserClient: realGuardianBrowserClient,
     async beforeTransition() {
       const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
@@ -4832,7 +4953,7 @@ test('phase 9 guardian retains only an exact real browser marker across both lif
   }
 });
 
-test('phase 9 guardian closes its real browser before killing an extra marked rogue process', { timeout: 120_000 }, async () => {
+test('phase 9 guardian closes its real browser before killing an extra marked rogue process', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let closeObservedLiveRogue = false;
   const orderedBrowserClient = Object.freeze({
@@ -4846,7 +4967,7 @@ test('phase 9 guardian closes its real browser before killing an extra marked ro
   });
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-rogue',
-    scenarioJoinTimeoutMs: 3_000,
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
     browserClient: orderedBrowserClient,
   });
   try {
@@ -4866,11 +4987,11 @@ test('phase 9 guardian closes its real browser before killing an extra marked ro
   }
 });
 
-test('phase 9 guardian rejects a declared real retained browser missing from inventory', { timeout: 120_000 }, async () => {
+test('phase 9 guardian rejects a declared real retained browser missing from inventory', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-missing-session',
-    scenarioJoinTimeoutMs: 3_000,
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
     browserClient: realGuardianBrowserClient,
   });
   try {
@@ -4887,12 +5008,12 @@ test('phase 9 guardian rejects a declared real retained browser missing from inv
   }
 });
 
-test('phase 9 guardian binds two real retained sessions to distinct immutable launch receipts', { timeout: 120_000 }, async () => {
+test('phase 9 guardian binds two real retained sessions to distinct immutable launch receipts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let boundaryReceipts;
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-two-sessions',
-    scenarioJoinTimeoutMs: 3_000,
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
     browserClient: realGuardianBrowserClient,
     async beforeTransition() {
       const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
@@ -4903,6 +5024,10 @@ test('phase 9 guardian binds two real retained sessions to distinct immutable la
       assert.deepEqual(info.launchReceipts.map(receipt => receipt.session).sort(), [...realGuardianTwoSessions]);
       assert.equal(new Set(info.launchReceipts.map(receipt => receipt.daemonPid)).size, 2);
       assert.equal(new Set(info.launchReceipts.map(receipt => receipt.chromeMainPid)).size, 2);
+      assert.deepEqual(info.viewports, {
+        [realGuardianTwoSessions[0]]: { width: 390, height: 844 },
+        [realGuardianTwoSessions[1]]: { width: 1440, height: 900 },
+      });
       boundaryReceipts = info.launchReceipts;
     },
   });
@@ -4911,7 +5036,12 @@ test('phase 9 guardian binds two real retained sessions to distinct immutable la
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.equal(result.rows.length, 44);
     assert.equal(result.rows.filter(row => row.startState === 'pending_deletion').length, 4);
-    assert.equal(JSON.parse(readFileSync(realGuardianInfoPath('after-transition'), 'utf8')).attached, true);
+    const afterInfo = JSON.parse(readFileSync(realGuardianInfoPath('after-transition'), 'utf8'));
+    assert.equal(afterInfo.attached, true);
+    assert.deepEqual(afterInfo.viewports, {
+      [realGuardianTwoSessions[0]]: { width: 390, height: 844 },
+      [realGuardianTwoSessions[1]]: { width: 1440, height: 900 },
+    });
     for (const receipt of boundaryReceipts) {
       assert.equal(pidAlive(receipt.daemonPid), false);
       assert.equal(pidAlive(receipt.chromeMainPid), false);
@@ -4922,11 +5052,11 @@ test('phase 9 guardian binds two real retained sessions to distinct immutable la
   }
 });
 
-test('phase 9 guardian rejects two declared sessions when the second Chrome main is missing', { timeout: 120_000 }, async () => {
+test('phase 9 guardian rejects two declared sessions when the second Chrome main is missing', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-two-sessions-missing-second-chrome',
-    scenarioJoinTimeoutMs: 3_000,
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
     browserClient: realGuardianBrowserClient,
   });
   try {
@@ -4940,11 +5070,11 @@ test('phase 9 guardian rejects two declared sessions when the second Chrome main
   }
 });
 
-test('phase 9 guardian rejects an extra marked direct Chrome main outside its two receipts', { timeout: 120_000 }, async () => {
+test('phase 9 guardian rejects an extra marked direct Chrome main outside its two receipts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-two-sessions-extra-direct-chrome',
-    scenarioJoinTimeoutMs: 3_000,
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
     browserClient: realGuardianBrowserClient,
   });
   try {
@@ -4960,11 +5090,11 @@ test('phase 9 guardian rejects an extra marked direct Chrome main outside its tw
   }
 });
 
-test('phase 9 guardian rejects a marked daemon command look-alike with the wrong executable', { timeout: 120_000 }, async () => {
+test('phase 9 guardian rejects a marked daemon command look-alike with the wrong executable', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   const fixture = lifecycleGuardianFixture({
     runnerMode: 'real-retained-browser-two-sessions-lookalike-daemon',
-    scenarioJoinTimeoutMs: 3_000,
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
     browserClient: realGuardianBrowserClient,
   });
   try {
@@ -6021,24 +6151,26 @@ test('phase 9 client attaches to an exact retained session without issuing open'
   assert.equal(calls.some(argv => argv.includes('open')), false);
 });
 
-test('phase 9 real Chrome applies both exact viewports and retains the same process set across attachment', { timeout: 45_000 }, async () => {
+test('phase 9 real Chrome applies both exact viewports and retains the same process set across attachment', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const { attachExistingSignalRecorder, setAndVerifyViewport } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
-  const chromePids = () => spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).stdout
+  const chromePids = () => spawnSync('ps', ['-axo', 'pid=,command='], {
+    encoding: 'utf8', timeout: 30_000,
+  }).stdout
     .split('\n').filter(line => /Google Chrome.*--remote-debugging-pipe/.test(line)).map(line => line.trim().split(/\s+/)[0]).sort();
-  const first = createPlaywrightCliClient({});
+  const first = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     await installSignalRecorder(first, 'phase9-real-retained');
     assert.equal(await setAndVerifyViewport(first, 'phase9-real-retained', { width: 390, height: 844 }), '390x844');
     await first.runCode('phase9-real-retained', "async (page) => { page.__phase9RetainedSessionMarker = 'phase9-real-retained'; return true; }");
     const beforeInventory = await first.listBrowsers();
     const beforePids = chromePids();
-    const attached = createPlaywrightCliClient({});
+    const attached = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
     assert.deepEqual(await attachExistingSignalRecorder(attached, 'phase9-real-retained', {
       width: 390, height: 844, marker: 'phase9-real-retained',
     }), { session: 'phase9-real-retained', viewport: '390x844' });
     assert.deepEqual(chromePids(), beforePids);
     assert.deepEqual(await attached.listBrowsers(), beforeInventory);
-    const desktop = createPlaywrightCliClient({});
+    const desktop = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
     await installSignalRecorder(desktop, 'phase9-real-desktop');
     assert.equal(await setAndVerifyViewport(desktop, 'phase9-real-desktop', { width: 1440, height: 900 }), '1440x900');
   } finally {
@@ -6046,9 +6178,9 @@ test('phase 9 real Chrome applies both exact viewports and retains the same proc
   }
 });
 
-test('phase 9 real Chrome applies and reads back each exact viewport on every new tab before navigation', { timeout: 45_000 }, async () => {
+test('phase 9 real Chrome applies and reads back each exact viewport on every new tab before navigation', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const { setAndVerifyViewport } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
-  const client = createPlaywrightCliClient({});
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
     for (const [session, viewport] of [
       ['phase9-new-tab-mobile', { width: 390, height: 844 }],
@@ -6641,7 +6773,7 @@ test('phase 9 evidence child selects each logout tab before the action window ma
   ]));
 });
 
-test('phase 9 transport preserves only the exact guardian marker into a real descendant', { timeout: 45_000 }, async () => {
+test('phase 9 transport preserves only the exact guardian marker into a real descendant', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const {
     buildPlaywrightTransportEnvironment,
     createPlaywrightCliClient: createRuntimeClient,
@@ -6667,10 +6799,13 @@ test('phase 9 transport preserves only the exact guardian marker into a real des
   const client = createRuntimeClient({
     guardianMarkerName,
     sourceEnvironment,
+    timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
     executionHooks: {
       async afterSpawn({ pid }) {
         if (audited) return;
-        const result = spawnSync('/bin/ps', ['eww', '-axo', 'pid=,command='], { encoding: 'utf8' });
+        const result = spawnSync('/bin/ps', ['eww', '-axo', 'pid=,command='], {
+          encoding: 'utf8', timeout: 30_000,
+        });
         assert.equal(result.status, 0, result.stderr);
         const line = result.stdout.split('\n').find(candidate => new RegExp(`^\\s*${pid}\\s`).test(candidate));
         assert.ok(line, `transport descendant ${pid} was absent from ps audit`);

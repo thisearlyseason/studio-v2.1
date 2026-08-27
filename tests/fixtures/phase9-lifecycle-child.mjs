@@ -137,6 +137,7 @@ function finishRowsAfterOwnership(
 function realLaunchReceipt(session, guardianMarkerName, marker) {
   const output = execFileSync('/bin/ps', ['eww', '-axo', 'pid=,ppid=,command='], {
     encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' }, maxBuffer: 16_777_216,
+    timeout: 30_000,
   });
   const token = `${guardianMarkerName}=${marker}`;
   const records = output.split('\n').flatMap(line => {
@@ -146,7 +147,7 @@ function realLaunchReceipt(session, guardianMarkerName, marker) {
     if (!match) return [];
     const pid = Number(match[1]);
     const command = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'command='], {
-      encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' },
+      encoding: 'utf8', env: { LC_ALL: 'C', PATH: '/usr/bin:/bin' }, timeout: 30_000,
     }).trim();
     return [{ pid, ppid: Number(match[2]), command }];
   });
@@ -171,6 +172,9 @@ async function runRealRetainedBrowser(mode, phase, args) {
   const sessions = mode.includes('two-sessions')
     ? ['phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b']
     : ['phase9-real-guardian-retained'];
+  const viewports = Object.fromEntries(sessions.map((session, index) => [
+    session, index === 0 ? { width: 390, height: 844 } : { width: 1440, height: 900 },
+  ]));
   const guardianMarkerName = args.get('--guardian-marker-env');
   const marker = process.env[guardianMarkerName];
   if (!/^[0-9a-f]{64}$/.test(marker ?? '')) nativeExit(66);
@@ -180,6 +184,7 @@ async function runRealRetainedBrowser(mode, phase, args) {
     guardianMarkerName,
     sourceEnvironment: process.env,
     cwd: process.cwd(),
+    timeoutMs: 90_000,
   });
   const browserSessions = phase === 'before-transition' ? sessions : [];
   const attachedBrowserSessions = phase === 'after-transition' ? sessions : [];
@@ -190,7 +195,7 @@ async function runRealRetainedBrowser(mode, phase, args) {
       for (const session of sessions) {
         await clientModule.installSignalRecorder(client, session);
         launchReceipts.push(realLaunchReceipt(session, guardianMarkerName, marker));
-        await clientModule.setAndVerifyViewport(client, session, { width: 390, height: 844 });
+        await clientModule.setAndVerifyViewport(client, session, viewports[session]);
         await client.runCode(session, `async (page) => {
           page.__phase9RetainedSessionMarker = ${nativeJsonStringify(session)};
           return true;
@@ -241,18 +246,18 @@ async function runRealRetainedBrowser(mode, phase, args) {
     });
     writeFileSync(infoPath, nativeJsonStringify({
       marker, roguePid, sessions, launchReceipts,
-      lookalikePath, lookalikeRoot,
+      lookalikePath, lookalikeRoot, viewports,
     }), { mode: 0o600 });
   } else {
     for (const session of sessions) await clientModule.attachExistingSignalRecorder(client, session, {
-      width: 390, height: 844, marker: session,
+      ...viewports[session], marker: session,
     });
     writeMessage({
       version: 2, type: 'ownership', phase, browserSessions,
       attachedBrowserSessions, launchReceipts,
     });
     writeFileSync(infoPath, nativeJsonStringify({
-      attached: true, marker, sessions,
+      attached: true, marker, sessions, viewports,
     }), { mode: 0o600 });
   }
   finishRowsAfterOwnership(
