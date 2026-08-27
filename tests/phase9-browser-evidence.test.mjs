@@ -4515,6 +4515,42 @@ function lifecycleGuardianFixture(overrides = {}) {
   const profileRootPath = `${workspace}/playwright-tmp`;
   const realFilesystemProfile = String(overrides.runnerMode ?? '').startsWith('real-retained-browser');
   const producerTempRoot = resolve(process.env.TMPDIR || tmpdir());
+  let processAuditCalls = 0;
+  const portableProcessMarkerPath = {
+    'rogue-process': `/tmp/phase9-guardian-child-rogue-${process.pid}.json`,
+    'detached-rogue-process': `/tmp/phase9-guardian-child-detached-${process.pid}.json`,
+    'detached-malformed-argv-rogue': `/tmp/phase9-guardian-child-malformed-${process.pid}.json`,
+  }[overrides.runnerMode];
+  const portableProcessPid = () => {
+    if (!portableProcessMarkerPath || !existsSync(portableProcessMarkerPath)) return null;
+    try {
+      const pid = JSON.parse(readFileSync(portableProcessMarkerPath, 'utf8')).pid;
+      if (!Number.isSafeInteger(pid) || pid <= 1) return null;
+      process.kill(pid, 0);
+      return pid;
+    } catch { return null; }
+  };
+  const portableProcessAuditor = async (_marker, { onInspectionError } = {}) => {
+    processAuditCalls += 1;
+    if (processAuditCalls === overrides.processAuditFailureAt) {
+      onInspectionError?.();
+      throw new Error('injected portable process audit failure');
+    }
+    const pid = portableProcessPid();
+    return pid === null ? [] : [{ pid }];
+  };
+  const portableProcessTerminator = async (_marker, _timeoutMs, { onInspectionError } = {}) => {
+    const pid = portableProcessPid();
+    if (pid === null) return { cleared: true, discovered: false };
+    onInspectionError?.();
+    try { process.kill(pid, 'SIGKILL'); } catch (error) {
+      if (error?.code !== 'ESRCH') return { cleared: false, discovered: true };
+    }
+    for (let attempt = 0; attempt < 100 && portableProcessPid() !== null; attempt += 1) {
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 10));
+    }
+    return { cleared: portableProcessPid() === null, discovered: true };
+  };
   const definition = buildFixtureDefinition({ runId, expiresAt: '2026-09-02T12:00:00Z', manifestVersion: 3 });
   const authUids = definition.identities.map(identity => identity.uid);
   const firestorePaths = definition.documents.map(document => document.path);
@@ -4775,6 +4811,10 @@ function lifecycleGuardianFixture(overrides = {}) {
       adapterFactory: overrides.adapterFactory ?? adapterFactory,
       filesystem, processHooks, preconditionVerifier, runnerCommand,
       producerTempRoot,
+      ...((PHASE9_TEST_PLATFORM !== 'darwin' || overrides.forcePortableProcessAudit) ? {
+        processAuditor: portableProcessAuditor,
+        processTerminator: portableProcessTerminator,
+      } : {}),
       scenarioJoinTimeoutMs: overrides.scenarioJoinTimeoutMs ?? 50,
       beforeTransitionDeadlineMs: overrides.beforeTransitionDeadlineMs,
       afterTransitionDeadlineMs: overrides.afterTransitionDeadlineMs,
@@ -4788,6 +4828,11 @@ function lifecycleGuardianFixture(overrides = {}) {
     get workspaceExists() { return workspaceExists; },
     get probeAuthChecks() { return probeAuthChecks; },
     get probeFirestoreChecks() { return probeFirestoreChecks; },
+    get processAuditCalls() { return processAuditCalls; },
+    get portableDescendantPids() {
+      const pid = portableProcessPid();
+      return pid === null ? [] : [pid];
+    },
   };
 }
 
@@ -4826,6 +4871,46 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   assert.equal(fixture.handlers.size, 0);
 });
 
+test('phase 9 portable guardian audit seam finishes bounded without a descendant', { timeout: 5_000 }, async () => {
+  const fixture = lifecycleGuardianFixture({ forcePortableProcessAudit: true });
+  assert.equal(typeof fixture.dependencies.processAuditor, 'function');
+  assert.equal(typeof fixture.dependencies.processTerminator, 'function');
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(fixture.processAuditCalls > 0, true);
+  assert.deepEqual(fixture.portableDescendantPids, []);
+});
+
+test('phase 9 non-Darwin portable guardian suite exits bounded with zero descendants', { timeout: 70_000 }, () => {
+  const processInventory = () => spawnSync('/bin/ps', ['-axo', 'command='], {
+    encoding: 'utf8', timeout: 10_000,
+  }).stdout.split('\n').filter(line => (
+    line.includes('phase9-lifecycle-child.mjs')
+    || line.includes('phase9-rogue-')
+    || line.includes('phase9-detached-rogue-')
+  )).sort();
+  const before = processInventory();
+  const childEnvironment = {
+    ...process.env, PHASE9_TEST_PLATFORM: 'linux', PHASE9_PORTABILITY_CHILD: '1',
+  };
+  delete childEnvironment.NODE_TEST_CONTEXT;
+  const child = spawnSync(process.execPath, [
+    '--test',
+    '--test-name-pattern=phase 9 lifecycle guardian|phase 9 portable guardian audit seam',
+    fileURLToPath(import.meta.url),
+  ], {
+    cwd: dirname(testDirectory),
+    encoding: 'utf8',
+    env: childEnvironment,
+    timeout: 60_000,
+  });
+  assert.equal(child.error?.code, undefined, child.error?.message);
+  assert.equal(child.signal, null, child.stderr || child.stdout);
+  assert.equal(child.status, 0, child.stderr || child.stdout);
+  assert.match(child.stdout, /tests 124[\s\S]*pass 124[\s\S]*fail 0/);
+  assert.deepEqual(processInventory(), before);
+});
+
 test('phase 9 lifecycle guardian rejects any new global Playwright producer profile after confined cleanup', async () => {
   const fixture = lifecycleGuardianFixture({
     globalProfilesAfter: ['playwright_chromiumdev_profile-unconfinedRogue'],
@@ -4855,41 +4940,20 @@ test('phase 9 lifecycle guardian keeps a transient global profile inventory fail
 });
 
 test('phase 9 lifecycle guardian keeps a transient inspector execution failure sticky after clean recovery scans', { timeout: 60_000 }, async () => {
-  const originalExecFile = childProcess.execFile;
-  let inspectorCalls = 0;
-  childProcess.execFile = function transientInspectorFailure(command, args, options, callback) {
-    if (command === '/usr/bin/python3' && Array.isArray(args)
-      && args[0] === '-c' && args.includes('--marker-name')) {
-      inspectorCalls += 1;
-      if (inspectorCalls === 2) {
-        queueMicrotask(() => callback(new Error('transient inspector execution failure'), '', ''));
-        return undefined;
-      }
-    }
-    return originalExecFile.call(this, command, args, options, callback);
-  };
-  syncBuiltinESMExports();
-  const fixture = lifecycleGuardianFixture();
-  try {
-    const guardianModule = await import(
-      `../scripts/qa-evidence/phase9/lifecycle-guardian.mjs?sticky-inspector=${Date.now()}`
-    );
-    const result = await guardianModule.runGuardedLifecycle({
-      ...fixture.dependencies, options: fixture.options,
-    });
-    assert.equal(result.ok, false);
-    assert.equal(result.category, 'scenario-closure-failed');
-    assert.equal(result.browserClosureCertified, false);
-    assert.equal(result.closureCertified, false);
-    assert.equal(result.workspacePreservation, 'verified-present');
-    assert.equal(result.manifestPreservation, 'verified-present');
-    assert.equal(fixture.workspaceExists, true);
-    assert.ok(inspectorCalls >= 3, `expected clean recovery scan after call 2, saw ${inspectorCalls}`);
-    assert.equal(fixture.events.includes('fs:remove-workspace'), false);
-  } finally {
-    childProcess.execFile = originalExecFile;
-    syncBuiltinESMExports();
-  }
+  const fixture = lifecycleGuardianFixture({
+    forcePortableProcessAudit: true,
+    processAuditFailureAt: 2,
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-closure-failed');
+  assert.equal(result.browserClosureCertified, false);
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.workspaceExists, true);
+  assert.ok(fixture.processAuditCalls >= 3, `expected clean recovery scan after call 2, saw ${fixture.processAuditCalls}`);
+  assert.equal(fixture.events.includes('fs:remove-workspace'), false);
 });
 
 const realGuardianSession = 'phase9-real-guardian-retained';
@@ -6331,14 +6395,20 @@ test('phase 9 lifecycle guardian terminates and joins a surviving child process 
       assert.equal(processAlive(roguePid), false);
     },
   });
-  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
-  roguePid ??= JSON.parse(readFileSync(markerPath, 'utf8')).pid;
-  assert.equal(result.ok, false);
-  assert.equal(result.category, 'scenario-closure-failed');
-  assert.equal(result.closureCertified, true);
-  assert.equal(processAlive(roguePid), false);
-  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
-  rmSync(markerPath, { force: true });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    roguePid ??= JSON.parse(readFileSync(markerPath, 'utf8')).pid;
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-closure-failed');
+    assert.equal(result.closureCertified, true);
+    assert.equal(processAlive(roguePid), false);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+  } finally {
+    if (roguePid && processAlive(roguePid)) {
+      try { process.kill(roguePid, 'SIGKILL'); } catch {}
+    }
+    rmSync(markerPath, { force: true });
+  }
 });
 
 test('phase 9 lifecycle guardian kills a detached marked descendant before cleanup certification', async () => {

@@ -2454,6 +2454,8 @@ export function createLifecycleGuardian({
   processHooks = defaultProcessHooks,
   repositoryRoot = process.cwd(),
   producerTempRoot = INTRINSIC_CHILD_ENV.TMPDIR,
+  processAuditor = auditMarkedProcesses,
+  processTerminator = terminateMarkedProcesses,
 } = {}) {
   if (scenarioRunner !== undefined || injectedSpawn !== undefined) {
     throw new GuardianFailure('configuration-invalid');
@@ -2476,6 +2478,9 @@ export function createLifecycleGuardian({
     throw new GuardianFailure('configuration-invalid');
   }
   if (typeof producerTempRoot !== 'string' || !isAbsolute(producerTempRoot)) {
+    throw new GuardianFailure('configuration-invalid');
+  }
+  if (typeof processAuditor !== 'function' || typeof processTerminator !== 'function') {
     throw new GuardianFailure('configuration-invalid');
   }
   const producerProfileTempRoot = resolve(producerTempRoot);
@@ -2540,11 +2545,11 @@ export function createLifecycleGuardian({
     }
   };
   const auditMarkedProcessesSticky = (marker, options = {}) => stickyInspectionOperation(
-    () => auditMarkedProcesses(marker, { ...options, onInspectionError: markInspectionUncertain }),
+    () => processAuditor(marker, { ...options, onInspectionError: markInspectionUncertain }),
     { intentionalCancellation: () => options.signal?.aborted === true },
   );
   const terminateMarkedProcessesSticky = (marker, timeoutMs) => stickyInspectionOperation(
-    () => terminateMarkedProcesses(marker, timeoutMs, { onInspectionError: markInspectionUncertain }),
+    () => processTerminator(marker, timeoutMs, { onInspectionError: markInspectionUncertain }),
   );
   const producerProfileInventorySticky = async tempRoot => {
     try {
