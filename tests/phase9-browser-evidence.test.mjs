@@ -4879,6 +4879,7 @@ const realGuardianSession = 'phase9-real-guardian-retained';
 const realGuardianTwoSessions = Object.freeze([
   'phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b',
 ]);
+const realGuardianCrashSession = 'phase9-real-acquisition-crash';
 const REAL_GUARDIAN_JOIN_TIMEOUT_MS = 10_000;
 const realGuardianInfoPath = phase => `/tmp/phase9-guardian-real-retained-${process.pid}-${phase}.json`;
 const realGuardianProfileRoot = '/tmp/phase9-core-identities.test/playwright-tmp';
@@ -4916,7 +4917,7 @@ const pidAlive = pid => {
   }
 };
 const cleanupRealGuardianIntegration = async () => {
-  for (const session of [realGuardianSession, ...realGuardianTwoSessions]) {
+  for (const session of [realGuardianSession, ...realGuardianTwoSessions, realGuardianCrashSession]) {
     await realGuardianBrowserClient.closeBrowser(session).catch(() => {});
     if (existsSync(realGuardianProfileRoot)) {
       await realGuardianBrowserClient.closeBrowser(session, {
@@ -5547,6 +5548,41 @@ test('phase 9 guardian retains only an exact real browser marker across both lif
   }
 });
 
+test('phase 9 guardian owns a real browser before an acquisition-audit crash can strand it', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  await cleanupRealGuardianIntegration();
+  let browserFirstCloseObserved = false;
+  const orderedBrowserClient = {
+    async closeBrowser(session, context) {
+      if (session === realGuardianCrashSession) {
+        const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+        assert.notDeepEqual(markedProcessLines(info.marker), []);
+        browserFirstCloseObserved = true;
+      }
+      return realGuardianBrowserClient.closeBrowser(session, context);
+    },
+    listBrowsers: context => realGuardianBrowserClient.listBrowsers(context),
+  };
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'real-retained-browser-acquisition-crash',
+    scenarioJoinTimeoutMs: REAL_GUARDIAN_JOIN_TIMEOUT_MS,
+    browserClient: orderedBrowserClient,
+  });
+  try {
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.browserClosureCertified, false);
+    assert.equal(result.closureCertified, false);
+    assert.equal(result.workspacePreservation, 'verified-present');
+    assert.equal(result.manifestPreservation, 'verified-present');
+    assert.equal(browserFirstCloseObserved, true);
+    assert.equal(existsSync(realGuardianProfileRoot), false);
+    const info = JSON.parse(readFileSync(realGuardianInfoPath('before-transition'), 'utf8'));
+    assert.deepEqual(markedProcessLines(info.marker), []);
+  } finally {
+    await cleanupRealGuardianIntegration();
+  }
+});
+
 test('phase 9 guardian closes its real browser before killing an extra marked rogue process', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   await cleanupRealGuardianIntegration();
   let closeObservedLiveRogue = false;
@@ -6080,6 +6116,29 @@ test('phase 9 lifecycle guardian keeps a transient owned-browser inventory failu
   assert.ok(inventoryCalls >= 3, `expected clean recovery inventory, saw ${inventoryCalls}`);
 });
 
+test('phase 9 lifecycle guardian keeps a transient nonempty browser inventory sticky after clean recovery', async () => {
+  const fixture = lifecycleGuardianFixture();
+  const browserClient = fixture.dependencies.browserClient;
+  let inventoryCalls = 0;
+  fixture.dependencies.browserClient = {
+    closeBrowser: (session, context) => browserClient.closeBrowser(session, context),
+    async listBrowsers(context) {
+      inventoryCalls += 1;
+      if (inventoryCalls === 4) return { browsers: [{ name: 'phase9-adversarial-unowned' }] };
+      return browserClient.listBrowsers(context);
+    },
+  };
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.browserClosureCertified, false);
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.workspaceExists, true);
+  assert.equal(fixture.events.includes('fixture:cleanup'), false);
+  assert.ok(inventoryCalls >= 5, `expected clean recovery inventory, saw ${inventoryCalls}`);
+});
+
 test('phase 9 lifecycle guardian immediately registers each streamed acquisition before child crash', async t => {
   for (const [mode, sessions] of [
     ['ownership-crash-first', ['phase9-acquired-first']],
@@ -6111,6 +6170,35 @@ test('phase 9 lifecycle guardian rejects non-monotonic ownership and rows naming
       assert.equal(fixture.workspaceExists, true);
     }
   });
+});
+
+test('phase 9 lifecycle guardian rejects legacy and empty-session row protocol records', async t => {
+  for (const mode of ['row-version-1', 'row-empty-sessions']) await t.test(mode, async () => {
+    const fixture = lifecycleGuardianFixture({ runnerMode: mode });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, 'scenario-runner-invalid');
+    assert.equal(Object.hasOwn(result, 'rows'), false);
+  });
+});
+
+test('phase 9 row ownership derives the exact canonical browser sessions', async () => {
+  const { canonicalBrowserSessionsForRow } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof canonicalBrowserSessionsForRow, 'function');
+  assert.deepEqual(canonicalBrowserSessionsForRow({
+    contextId: 'admission-route-qa-parent-a-mobile', group: 'admission-route',
+    viewport: '390x844', startState: 'fresh-context',
+  }), ['p9-admission-route-qa-parent-a-mobile']);
+  assert.deepEqual(canonicalBrowserSessionsForRow({
+    contextId: 'logout-qa-parent-a-mobile', group: 'logout',
+    viewport: '390x844', startState: 'authenticated-two-tab',
+  }), ['p9-logout-qa-parent-a-mobile', 'p9-logout-qa-parent-a-mobile-fresh']);
+  assert.deepEqual(canonicalBrowserSessionsForRow({
+    contextId: 'pending-deletion-stale-session-mobile', group: 'pending-deletion',
+    viewport: '390x844', startState: 'pending_deletion',
+  }), ['p9-pending-deletion-active-baseline-mobile']);
 });
 
 test('phase 9 lifecycle guardian bounds child stdio before parsing protocol data', async () => {
@@ -7014,18 +7102,21 @@ test('phase 9 production child client factory enforces the 90000 millisecond com
   assert.equal(generated.match(/timeoutMs:9e4/g)?.length, 1);
 });
 
-test('phase 9 production child reports ownership directly after local acquisition and before browser action', () => {
+test('phase 9 production child reserves ownership before local acquisition and reports its receipt before browser action', () => {
   const source = readFileSync(join(
     testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner-source.mjs',
   ), 'utf8');
   const openStart = source.indexOf('const openWithReceipt = async session =>');
-  const acquired = source.indexOf('await acquireBlankBrowser(client, session);', openStart);
+  const ownershipIntent = source.indexOf("type: 'ownership-intent', version: 4", openStart);
+  const authorization = source.indexOf('await requireOwnershipAuthorization(session, ownershipSequence);', ownershipIntent);
+  const acquired = source.indexOf('await acquireBlankBrowser(client, session);', authorization);
   const receipt = source.indexOf('const launchReceipt = await captureLaunchReceipt(session);', acquired);
-  const ownershipAdd = source.indexOf("type: 'ownership-add', version: 3", receipt);
+  const ownershipAdd = source.indexOf("type: 'ownership-add', version: 4", receipt);
   const arm = source.indexOf('await armAcquiredSignalRecorder(client, session);', ownershipAdd);
-  assert.ok(openStart >= 0 && openStart < acquired && acquired < receipt && receipt < ownershipAdd && ownershipAdd < arm);
+  assert.ok(openStart >= 0 && openStart < ownershipIntent && ownershipIntent < authorization
+    && authorization < acquired && acquired < receipt && receipt < ownershipAdd && ownershipAdd < arm);
   const attachStart = source.indexOf('const confirmAttachedOwnership = session =>');
-  const ownershipAttach = source.indexOf("type: 'ownership-attach', version: 3", attachStart);
+  const ownershipAttach = source.indexOf("type: 'ownership-attach', version: 4", attachStart);
   const attachAction = source.indexOf('await attachExistingSignalRecorder(client, session', ownershipAttach);
   assert.ok(attachStart >= 0 && attachStart < ownershipAttach && ownershipAttach < attachAction);
 });

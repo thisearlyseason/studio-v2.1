@@ -67,7 +67,7 @@ const exactPolicy = (value, keys) => value && typeof value === 'object' && !Arra
   && keys.every(key => typeof value[key] === 'string' && value[key].length > 0);
 if (!config || Object.keys(config).sort().join(',') !== expectedConfigKeys.sort().join(',')
   || config.projectId !== STAGING_PROJECT_ID || config.origin !== STAGING_ORIGIN
-  || config.protocolVersion !== '3'
+  || config.protocolVersion !== '4'
   || config.playwrightArtifact !== 'scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz'
   || config.playwrightVersion !== '0.1.18'
   || config.playwrightCoreVersion !== '1.63.0-alpha-2026-08-05'
@@ -221,16 +221,53 @@ let ownershipSequence = 0;
 const emitProtocol = value => {
   if (!process.stdout.write(`${JSON.stringify(value)}\n`)) throw new Error('runner-protocol-backpressure');
 };
+const requireOwnershipAuthorization = (session, sequence) => new Promise((resolvePromise, reject) => {
+  let bytes = 0;
+  let buffer = '';
+  const cleanup = () => {
+    process.stdin.off('data', onData);
+    process.stdin.off('end', onEnd);
+    process.stdin.off('error', onEnd);
+  };
+  const fail = () => {
+    cleanup();
+    reject(new Error('runner-ownership-authorization-invalid'));
+  };
+  const onEnd = () => fail();
+  const onData = chunk => {
+    if (!Buffer.isBuffer(chunk)) return fail();
+    bytes += chunk.length;
+    if (bytes > 1_024) return fail();
+    buffer += chunk.toString('utf8');
+    const newline = buffer.indexOf('\n');
+    if (newline === -1) return;
+    if (buffer.slice(newline + 1).length !== 0) return fail();
+    let message;
+    try { message = JSON.parse(buffer.slice(0, newline)); } catch { return fail(); }
+    if (!message || Object.keys(message).sort().join(',') !== 'phase,sequence,session,type,version'
+      || message.type !== 'ownership-authorized' || message.version !== 4
+      || message.phase !== phase || message.sequence !== sequence || message.session !== session) return fail();
+    cleanup();
+    resolvePromise();
+  };
+  process.stdin.on('data', onData);
+  process.stdin.once('end', onEnd);
+  process.stdin.once('error', onEnd);
+});
 const openWithReceipt = async session => {
   if (!plannedOwnedSessions.includes(session) || launchReceipts.has(session)) {
     throw new Error('runner-launch-receipt-invalid');
   }
+  emitProtocol({
+    type: 'ownership-intent', version: 4, phase, sequence: ownershipSequence, session,
+  });
+  await requireOwnershipAuthorization(session, ownershipSequence);
   await acquireBlankBrowser(client, session);
   const launchReceipt = await captureLaunchReceipt(session);
   launchReceipts.set(session, launchReceipt);
   ownedSessions.add(session);
   emitProtocol({
-    type: 'ownership-add', version: 3, phase, sequence: ownershipSequence,
+    type: 'ownership-add', version: 4, phase, sequence: ownershipSequence,
     session, launchReceipt,
   });
   ownershipSequence += 1;
@@ -241,7 +278,7 @@ const confirmAttachedOwnership = session => {
     throw new Error('runner-launch-receipt-invalid');
   }
   emitProtocol({
-    type: 'ownership-attach', version: 3, phase, sequence: ownershipSequence, session,
+    type: 'ownership-attach', version: 4, phase, sequence: ownershipSequence, session,
   });
   ownershipSequence += 1;
   attachedBrowserSessions.add(session);
@@ -387,9 +424,9 @@ try {
     throw new Error('runner-launch-receipt-invalid');
   }
   emitProtocol({
-    type: 'ownership-complete', version: 3, phase, sequence: ownershipSequence,
+    type: 'ownership-complete', version: 4, phase, sequence: ownershipSequence,
     browserSessions,
-    attachedBrowserSessions: attached, launchReceipts: receipts,
+    attachedBrowserSessions: attached, launchReceipts: receipts, releasedBrowserSessions: [],
   });
   const sessionsForRow = row => {
     const planned = rowsForPhase.find(candidate => candidate.contextId === row.contextId);
@@ -401,8 +438,9 @@ try {
     type: 'row', version: 2, phase, index, sessions: sessionsForRow(row), row,
   })}\n`);
   process.stdout.write(`${JSON.stringify({
-    type: 'completion', version: 3, phase, ok: true, rowCount: rows.length,
+    type: 'completion', version: 4, phase, ok: true, rowCount: rows.length,
     browserSessions, attachedBrowserSessions: attached, launchReceipts: receipts,
+    releasedBrowserSessions: [],
   })}\n`);
 } finally {
   identities.clear();

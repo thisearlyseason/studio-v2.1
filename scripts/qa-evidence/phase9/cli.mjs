@@ -56,11 +56,11 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '4423fc412a1de766daf74a694321e9c3ba44a70f1cd8170a19f9fbe36a3a4234',
-  childSource: '301e47448565c815c32f025a21cb04f55c6132542475b09a754552f97382e7e4',
+  child: '0c1b82eecbc2c24cd2f795c19b5198e9fcb5909cf0f22ae1730ded0b58c64b8c',
+  childSource: 'eef1d3062eac03b16a672702f56cbea8da2ca679c1586e03dd42145d702b050e',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
-  config: '3bfb499d074e522674cd9de606b5496a72a8abbbd4d985306c030a248bfb768c',
+  config: '835f7b47e52f9bf2412936293a08e5bc1472a484402fd8fcaa62c1d03341a608',
   transport: PLAYWRIGHT_ARTIFACT_SHA256,
   transportManifest: 'c9d44c00a182a7e387d443ab6b0073913c5fb8f78a5b66f078e308607afa2dec',
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
@@ -137,7 +137,7 @@ async function validatePinnedConfig({ verifyTransport = false } = {}) {
   if (
     Object.keys(config).sort().join(',') !== 'chrome,nodeRuntime,origin,playwrightArtifact,playwrightArtifactSha256,playwrightCoreVersion,playwrightVersion,projectId,protocolVersion'
     || config.projectId !== STAGING_PROJECT_ID || config.origin !== STAGING_ORIGIN
-    || config.protocolVersion !== '3'
+    || config.protocolVersion !== '4'
     || config.playwrightArtifact !== PLAYWRIGHT_ARTIFACT_RELATIVE_PATH || config.playwrightVersion !== PLAYWRIGHT_VERSION
     || config.playwrightCoreVersion !== PLAYWRIGHT_CORE_VERSION
     || config.playwrightArtifactSha256 !== PLAYWRIGHT_ARTIFACT_SHA256
