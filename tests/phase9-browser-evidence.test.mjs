@@ -5560,7 +5560,7 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
     ...mainRecord, argv: [...mainRecord.argv, '--guardian-marker-present'],
   }, { marker, policy, profileRoot }), false);
 
-  const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.174/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
+  const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.175/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
   const rendererArguments = [
     '--type=renderer', '--noerrdialogs', `--user-data-dir=${profilePath}`,
     '--disable-back-forward-cache', '--disable-background-timer-throttling', '--disable-breakpad',

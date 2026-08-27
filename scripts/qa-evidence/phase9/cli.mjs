@@ -51,22 +51,22 @@ const NODE_RUNTIME_POLICY = Object.freeze({
 const CHROME_POLICY = Object.freeze({
   appPath: '/Applications/Google Chrome.app',
   binaryPath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  binarySha256: 'c62a6de1b6aecbcf91be770370abb7461e5a0718637962b6aa4b8d171f4de4f0',
+  binarySha256: 'ecfca1b0d336bd1ffdc6835da89cbc25b06c508d72bfdad186b72535743042f4',
   codesignIdentifier: 'com.google.Chrome',
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '5cce9bd84fe08489ea7efcdbd41ba83d34902122f59ebd27a02f66234e269f7d',
+  child: 'a53743c4528e867ecaf66a3360fe92218616efe2746b1316033d39135f683cd1',
   childSource: '54f1e56bc12624700713ab76854eda58b81a7be529ed60ec612a410631a49e3c',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
-  config: '835f7b47e52f9bf2412936293a08e5bc1472a484402fd8fcaa62c1d03341a608',
+  config: 'e8609d81744e0e3d84b4989138a36224aeb0d34aeaac4930ed4047b39ec47cd2',
   transport: PLAYWRIGHT_ARTIFACT_SHA256,
   transportManifest: 'c9d44c00a182a7e387d443ab6b0073913c5fb8f78a5b66f078e308607afa2dec',
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
   transportGuard: '4a64c39de2beac00ec64ede64a440449690a30caa901b69c99e06c4be465b7fc',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: '810898284e1b4dd0f7a964a886313a588288e0792ebf6e7eade361d9868328e5',
+  transportClient: '9ed384bfc4bb2fba1e99b79a03080e36c89dc3965f52d0c5fa366c143eb54656',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });

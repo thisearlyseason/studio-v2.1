@@ -34,7 +34,7 @@ const DEFAULT_RUNTIME_POLICY = Object.freeze({
 const DEFAULT_CHROME_POLICY = Object.freeze({
   appPath: '/Applications/Google Chrome.app',
   binaryPath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  binarySha256: 'c62a6de1b6aecbcf91be770370abb7461e5a0718637962b6aa4b8d171f4de4f0',
+  binarySha256: 'ecfca1b0d336bd1ffdc6835da89cbc25b06c508d72bfdad186b72535743042f4',
   codesignIdentifier: 'com.google.Chrome',
   teamIdentifier: 'EQHXZ8M8AV',
 });
