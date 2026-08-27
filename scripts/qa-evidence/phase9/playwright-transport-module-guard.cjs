@@ -35,10 +35,13 @@ if (!globalThis.__phase9PlaywrightTransportModuleGuard) {
     }
     const originalSpawn = childProcess.spawn;
     childProcess.spawn = function phase9MarkedChromeSpawn(file, args, options) {
-      const markedArgs = file === chromeBinary
-        ? [...args, `--${guardianMarkerName}=${guardianMarker}`]
-        : args;
-      return originalSpawn.call(this, file, markedArgs, options);
+      const isChrome = file === chromeBinary;
+      const markedArgs = isChrome ? [...args, `--${guardianMarkerName}=${guardianMarker}`] : args;
+      const markedOptions = isChrome ? {
+        ...options,
+        env: { ...(options?.env ?? process.env), [guardianMarkerName]: guardianMarker },
+      } : options;
+      return originalSpawn.call(this, file, markedArgs, markedOptions);
     };
   }
   Object.defineProperty(globalThis, '__phase9PlaywrightTransportModuleGuard', {

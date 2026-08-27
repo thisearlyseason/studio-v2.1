@@ -360,6 +360,12 @@ git add package.json scripts/qa-evidence/phase9 tests/phase9-browser-evidence.te
 git commit -m "feat: add committed phase 9 evidence runner"
 ```
 
+- [x] **Final Darwin process-audit/runtime amendment**
+
+Write strict RED coverage for raw Darwin argv boundaries, two process births within one second, exited/unmarked/replacement rejection, oversized and concurrently changed executables, explicit hash cancellation, a child that hangs without a terminal signal, and the generated production client's `90,000ms` command timeout. Replace `ps`/`lsof` command-text identity with a captured and pinned self-contained `ctypes` inspector using `KERN_PROCARGS2`, `proc_pidinfo`, and `proc_pidpath`; require an unchanged before/after precise BSD identity and exact marker membership, return bounded closed JSON, and validate the raw argv array without tokenization. Admit the inspector through both a literal source SHA/runtime SHA and the exact deployed Git blob.
+
+Hash executables only through one held `O_NOFOLLOW` descriptor with pre-read maximum-size enforcement, bounded streaming chunks, finite deadline/cancellation, and exact post-read metadata equality. Set separate phase-completion maxima of `45m` before transition and `15m` after transition, with deadline expiry entering owned-child termination/join and browser-first recovery. Route production child construction through the fixed `90,000ms` client factory, rebuild the transport/child/config deterministically twice, update every literal pin, then run focused Darwin/runtime tests, real retained-browser attribution, the complete Phase 9 suite, fixture/hygiene suites, `npm run verify`, dry-run, stripped-PATH offline smoke, syntax/diff/secret scans, and zero browser/process/workspace/materialization audits. Do not navigate or mutate hosted/staging/product state during this amendment.
+
 ---
 
 ### Task 6: Independent review, exact staging execution, and Task 7 evidence closure

@@ -7,7 +7,7 @@ import { isAbsolute, join, normalize, sep } from 'node:path';
 import {
   attachExistingSignalRecorder,
   capturePlaywrightTransport,
-  createPlaywrightCliClient,
+  createPhase9ProductionCliClient,
   installSignalRecorder,
   setAndVerifyViewport,
 } from './playwright-cli-client.mjs';
@@ -142,7 +142,7 @@ const credentialGrant = alias => {
   return `http://127.0.0.1:${credentialBroker.address().port}/${token}`;
 };
 
-const client = createPlaywrightCliClient({
+const client = createPhase9ProductionCliClient({
   transport,
   runtimePolicy: config.nodeRuntime,
   chromePolicy: config.chrome,

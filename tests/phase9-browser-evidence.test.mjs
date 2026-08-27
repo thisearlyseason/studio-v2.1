@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHook } from 'node:async_hooks';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync,
+  chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
 } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -4701,6 +4701,8 @@ function lifecycleGuardianFixture(overrides = {}) {
       adapterFactory: overrides.adapterFactory ?? adapterFactory,
       filesystem, processHooks, preconditionVerifier, runnerCommand,
       scenarioJoinTimeoutMs: overrides.scenarioJoinTimeoutMs ?? 50,
+      beforeTransitionDeadlineMs: overrides.beforeTransitionDeadlineMs,
+      afterTransitionDeadlineMs: overrides.afterTransitionDeadlineMs,
     },
     options: {
       projectId: 'the-squad-v2-staging', origin: STAGING_ORIGIN,
@@ -4817,22 +4819,165 @@ test('phase 9 guardian process identity rejects PID reuse with a different birth
     pid: 41001,
     ppid: 41000,
     pgid: 41001,
-    startTime: 'Wed Aug 26 12:34:56 2026',
-    command: '/usr/local/bin/node /private/tmp/phase9-playwright-transport.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/node_modules/playwright-core/lib/entry/cliDaemon.js phase9-session --browser=chrome',
+    startSec: 1_787_742_896,
+    startUsec: 123_456,
+    argv: ['/usr/local/bin/node', '/private/tmp/phase9-playwright-transport.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/node_modules/playwright-core/lib/entry/cliDaemon.js', 'phase9-session', '--browser=chrome'],
     executable: '/usr/local/bin/node',
-    executableDev: 16777233,
-    executableIno: 1152921500,
+    executableDev: '16777233',
+    executableIno: '1152921500',
+    executableSize: 237619616,
+    executableMtimeNs: '1765364811000000000',
+    executableCtimeNs: '1781734921000000000',
+    executableMode: 0o755,
+    executableUid: 0,
+    executableNlink: 1,
     executableSha256: '1'.repeat(64),
     codesignIdentifier: 'node',
     teamIdentifier: 'HX7739G8FX',
   });
   assert.equal(processInstanceIdentityMatches(identity, { ...identity }), true);
   assert.equal(processInstanceIdentityMatches(identity, {
-    ...identity, startTime: 'Wed Aug 26 12:34:57 2026',
+    ...identity, startUsec: 123_457,
   }), false);
   assert.equal(processInstanceIdentityMatches(identity, {
-    ...identity, executableIno: identity.executableIno + 1,
+    ...identity, executableIno: '1152921501',
   }), false);
+});
+
+test('phase 9 Darwin inspector preserves raw argv boundaries and precise marked process birth identity', { timeout: 30_000 }, async () => {
+  const { inspectDarwinMarkedProcesses, processInstanceIdentityMatches } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof inspectDarwinMarkedProcesses, 'function');
+  const markerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const marker = createHash('sha256').update(`phase9-darwin-inspector-${process.pid}`).digest('hex');
+  const children = new Set();
+  const launch = (suffix, marked = true) => {
+    const child = spawn(process.execPath, [
+      '-e', 'process.on("SIGTERM",()=>process.exit(0));setInterval(()=>{},1000)',
+      `literal argument with spaces ${suffix}`,
+      `--switch-looking=value with spaces ${suffix}`,
+    ], {
+      env: marked ? { ...process.env, [markerName]: marker } : { ...process.env },
+      stdio: 'ignore',
+    });
+    children.add(child);
+    return child;
+  };
+  const stop = child => new Promise(resolvePromise => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolvePromise();
+    child.once('close', resolvePromise);
+    try { child.kill('SIGKILL'); } catch { resolvePromise(); }
+  });
+  try {
+    let pair;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const first = launch(`a${attempt}`);
+      const second = launch(`b${attempt}`);
+      const records = await inspectDarwinMarkedProcesses(marker, [first.pid, second.pid]);
+      if (records.length === 2 && records[0].startSec === records[1].startSec) {
+        pair = { first, second, records };
+        break;
+      }
+      await Promise.all([stop(first), stop(second)]);
+    }
+    assert.ok(pair, 'test must obtain two marked processes born in the same second');
+    const [firstRecord, secondRecord] = pair.records;
+    assert.deepEqual(pair.records.map(record => record.pid).sort((left, right) => left - right),
+      [pair.first.pid, pair.second.pid].sort((left, right) => left - right));
+    assert.equal(firstRecord.markerPresent, true);
+    assert.equal(secondRecord.markerPresent, true);
+    assert.equal(firstRecord.startSec, secondRecord.startSec);
+    assert.notEqual(firstRecord.startUsec, secondRecord.startUsec);
+    assert.equal(pair.records.some(record => record.argv.some(argument => (
+      argument.startsWith('literal argument with spaces ')
+    ))), true);
+    assert.equal(pair.records.some(record => record.argv.some(argument => (
+      argument.startsWith('--switch-looking=value with spaces ')
+    ))), true);
+    assert.equal(JSON.stringify(pair.records).includes(marker), false, 'inspector output must not expose marker bytes');
+
+    const identity = {
+      pid: firstRecord.pid, ppid: firstRecord.ppid, pgid: firstRecord.pgid,
+      startSec: firstRecord.startSec, startUsec: firstRecord.startUsec,
+      argv: firstRecord.argv, executable: firstRecord.executable,
+      executableDev: '1', executableIno: '2', executableSize: 3,
+      executableMtimeNs: '4', executableCtimeNs: '5', executableMode: 0o755,
+      executableUid: 0, executableNlink: 1, executableSha256: '1'.repeat(64),
+      codesignIdentifier: 'node', teamIdentifier: 'HX7739G8FX',
+    };
+    assert.equal(processInstanceIdentityMatches(identity, { ...identity, argv: [...identity.argv] }), true);
+    assert.equal(processInstanceIdentityMatches(identity, { ...identity, startUsec: identity.startUsec + 1 }), false);
+
+    const unmarked = launch('unmarked', false);
+    assert.deepEqual(await inspectDarwinMarkedProcesses(marker, [unmarked.pid]), []);
+    await stop(pair.first);
+    assert.deepEqual(await inspectDarwinMarkedProcesses(marker, [pair.first.pid]), []);
+  } finally {
+    await Promise.all([...children].map(stop));
+  }
+});
+
+test('phase 9 guardian rejects oversized and changing marked executables without unbounded reads', { timeout: 60_000 }, async () => {
+  const { auditMarkedProcesses } = await import('../scripts/qa-evidence/phase9/lifecycle-guardian.mjs');
+  assert.equal(typeof auditMarkedProcesses, 'function');
+  const root = mkdtempSync('/tmp/phase9-executable-audit-');
+  const children = [];
+  const launch = (path, marker) => {
+    const child = spawn(path, [
+      '-e', 'process.on("SIGTERM",()=>process.exit(0));setInterval(()=>{},1000)',
+    ], { env: { ...process.env, PHASE9_GUARDIAN_RUN_MARKER: marker }, stdio: 'ignore' });
+    children.push(child);
+    return child;
+  };
+  const stop = child => new Promise(resolvePromise => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolvePromise();
+    child.once('close', resolvePromise);
+    try { child.kill('SIGKILL'); } catch { resolvePromise(); }
+  });
+  try {
+    const cancelledMarker = createHash('sha256').update(`cancelled-${process.pid}`).digest('hex');
+    const cancelled = launch(process.execPath, cancelledMarker);
+    assert.ok(cancelled.pid > 1);
+    const cancellation = new AbortController();
+    cancellation.abort();
+    await assert.rejects(
+      auditMarkedProcesses(cancelledMarker, { signal: cancellation.signal }),
+      /scenario-closure-failed/i,
+    );
+    await stop(cancelled);
+
+    const oversizedPath = join(root, 'oversized-node');
+    copyFileSync(process.execPath, oversizedPath);
+    chmodSync(oversizedPath, 0o700);
+    truncateSync(oversizedPath, 536_870_913);
+    const oversizedMarker = createHash('sha256').update(`oversized-${process.pid}`).digest('hex');
+    const oversized = launch(oversizedPath, oversizedMarker);
+    assert.ok(oversized.pid > 1);
+    await assert.rejects(auditMarkedProcesses(oversizedMarker), /scenario-closure-failed/i);
+    await stop(oversized);
+
+    const changingPath = join(root, 'changing-node');
+    copyFileSync(process.execPath, changingPath);
+    chmodSync(changingPath, 0o700);
+    const changingMarker = createHash('sha256').update(`changing-${process.pid}`).digest('hex');
+    const changing = launch(changingPath, changingMarker);
+    assert.ok(changing.pid > 1);
+    let mode = 0o700;
+    const mutator = setInterval(() => {
+      mode = mode === 0o700 ? 0o500 : 0o700;
+      try { chmodSync(changingPath, mode); } catch {}
+    }, 1);
+    try {
+      await assert.rejects(auditMarkedProcesses(changingMarker), /scenario-closure-failed/i);
+    } finally {
+      clearInterval(mutator);
+      await stop(changing);
+    }
+  } finally {
+    await Promise.all(children.map(stop));
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, positional extras, and unknown renderer switches', async () => {
@@ -4865,26 +5010,25 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
     '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
     '--disable-blink-features=AutomationControlled', `--user-data-dir=${profilePath}`,
     '--remote-debugging-pipe', '--no-startup-window',
-    `--PHASE9_GUARDIAN_RUN_MARKER=${marker}`,
+    '--PHASE9_GUARDIAN_RUN_MARKER=:present',
   ];
   const mainRecord = Object.freeze({
     executable: binaryPath,
-    command: `${binaryPath} ${mainArguments.join(' ')}`,
+    argv: [binaryPath, ...mainArguments],
+    markerPresent: true,
   });
   const policy = Object.freeze({ appPath, binaryPath });
   assert.equal(chromeProcessCommandIsExact(mainRecord, { marker, policy }), true);
   assert.equal(chromeProcessCommandIsExact({
-    ...mainRecord, command: `${mainRecord.command} --headless`,
+    ...mainRecord, argv: [...mainRecord.argv, '--headless'],
   }, { marker, policy }), false);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord,
-    command: mainRecord.command.replace(
-      /--disable-features=[^ ]+/,
-      '--disable-features=TotallyUnreviewed',
-    ),
+    argv: mainRecord.argv.map(argument => argument.startsWith('--disable-features=')
+      ? '--disable-features=TotallyUnreviewed' : argument),
   }, { marker, policy }), false);
   assert.equal(chromeProcessCommandIsExact({
-    ...mainRecord, command: `${mainRecord.command} about:blank`,
+    ...mainRecord, argv: [...mainRecord.argv, 'about:blank'],
   }, { marker, policy }), false);
 
   const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.174/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
@@ -4906,13 +5050,14 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
   ];
   const rendererRecord = Object.freeze({
     executable: rendererExecutable,
-    command: `${rendererExecutable} ${rendererArguments.join(' ')}`,
+    argv: [rendererExecutable, ...rendererArguments],
+    markerPresent: true,
   });
   assert.equal(chromeProcessCommandIsExact(
     rendererRecord, { policy, profilePath },
   ), true);
   assert.equal(chromeProcessCommandIsExact({
-    ...rendererRecord, command: `${rendererRecord.command} --totally-unreviewed`,
+    ...rendererRecord, argv: [...rendererRecord.argv, '--totally-unreviewed'],
   }, { policy, profilePath }), false);
 });
 
@@ -5443,6 +5588,34 @@ test('phase 9 lifecycle guardian bounds child stdio before parsing protocol data
   assert.equal(result.category, 'scenario-runner-invalid');
   assert.equal(result.closureCertified, true);
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+});
+
+test('phase 9 lifecycle guardian applies a finite phase deadline and safely recovers a signal-resistant child', { timeout: 10_000 }, async () => {
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'hang-without-signal',
+    scenarioJoinTimeoutMs: 40,
+    beforeTransitionDeadlineMs: 60,
+    afterTransitionDeadlineMs: 60,
+  });
+  const running = runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  let watchdog;
+  const raced = await Promise.race([
+    running,
+    new Promise(resolvePromise => {
+      watchdog = setTimeout(() => resolvePromise({ category: 'test-timeout' }), 3_000);
+    }),
+  ]);
+  clearTimeout(watchdog);
+  if (raced.category === 'test-timeout') {
+    await fixture.handlers.get('SIGTERM')?.();
+    await running;
+  }
+  assert.equal(raced.ok, false);
+  assert.equal(raced.category, 'scenario-deadline-exceeded');
+  assert.equal(raced.browserClosureCertified, true);
+  assert.equal(raced.closureCertified, true);
+  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+  assert.equal(fixture.events.indexOf('browser:list') < fixture.events.indexOf('fixture:cleanup'), true);
 });
 
 test('phase 9 lifecycle guardian rejects a hidden child browser against independent inventory', async () => {
@@ -6242,9 +6415,35 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.match(PHASE9_ARTIFACT_PINS.child, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.config, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.helper, /^[0-9a-f]{64}$/);
+  assert.match(PHASE9_ARTIFACT_PINS.processInspector, /^[0-9a-f]{64}$/);
+  assert.equal(
+    sha256File(join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'darwin-process-inspector.py')),
+    PHASE9_ARTIFACT_PINS.processInspector,
+  );
   assert.equal(phase9PlaywrightTransport.version, '0.1.18');
   assert.equal(phase9PlaywrightTransport.coreVersion, '1.63.0-alpha-2026-08-05');
   assert.match(phase9PlaywrightTransport.artifactPath, /playwright-transport\.bundle\.json\.gz$/);
+});
+
+test('phase 9 production child client factory enforces the 90000 millisecond command deadline', async () => {
+  const { createPhase9ProductionCliClient } = await import(
+    '../scripts/qa-evidence/phase9/playwright-cli-client.mjs'
+  );
+  assert.equal(typeof createPhase9ProductionCliClient, 'function');
+  let observedTimeout = null;
+  const client = createPhase9ProductionCliClient({
+    wrapperPath: '/safe/playwright_cli.sh',
+    execute: async (_argv, options) => {
+      observedTimeout = options.timeoutMs;
+      return { stdout: JSON.stringify({ result: { browsers: [] } }), stderr: '', exitCode: 0 };
+    },
+  });
+  await client.listBrowsers();
+  assert.equal(observedTimeout, 90_000);
+  const generated = readFileSync(
+    join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs'), 'utf8',
+  );
+  assert.match(generated, /function \w+\(\w+=\{\}\)\{return \w+\(\{\.\.\.\w+,timeoutMs:9e4\}\)\}/);
 });
 
 test('phase 9 committed transport is a self-contained reviewed artifact outside node_modules', async () => {

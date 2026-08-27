@@ -353,6 +353,9 @@ if (mode === 'success') {
   nativeWrite('x'.repeat(70_000));
   process.on('SIGTERM', () => {});
   nativeSetInterval(() => {}, 1_000);
+} else if (mode === 'hang-without-signal') {
+  process.on('SIGTERM', () => {});
+  nativeSetInterval(() => {}, 1_000);
 } else if (mode === 'hang-resume-late-write') {
   const latePath = `/tmp/phase9-guardian-child-late-${process.ppid}`;
   writeFileSync(`/tmp/phase9-guardian-child-hang-${process.ppid}`, 'started', { mode: 0o600 });

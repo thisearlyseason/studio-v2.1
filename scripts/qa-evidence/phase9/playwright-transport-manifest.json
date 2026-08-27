@@ -3,13 +3,13 @@
   "format": "phase9-playwright-transport-v1",
   "playwrightCliVersion": "0.1.18",
   "playwrightCoreVersion": "1.63.0-alpha-2026-08-05",
-  "artifactSha256": "6c021c5da601eaef5f6f10b8f910a0e4c870893cc150fa415ab52fc9afb124cd",
+  "artifactSha256": "09eb87b9f81d8f491e7293e13cceb21e88edc33e63f99627939d0beab0113eab",
   "files": [
     {
       "path": "node_modules/@playwright/cli/playwright-cli.js",
       "mode": 365,
-      "size": 2988,
-      "sha256": "180541fbca244e0bda0dafd2a62de9266046c852546de2900b5929dba81a082a"
+      "size": 3180,
+      "sha256": "5b95ab06f7fa16f5e73cf76af5a6e9629232c8761c59663b08863e039c21d5a7"
     },
     {
       "path": "node_modules/playwright-core/browsers.json",
@@ -26,8 +26,8 @@
     {
       "path": "node_modules/playwright-core/lib/entry/cliDaemon.js",
       "mode": 292,
-      "size": 2407,
-      "sha256": "4a40d1ae90750dac5da326c5971523d799d502eb609501590036e6f6e62464fd"
+      "size": 2599,
+      "sha256": "2f81ead1c51a0796d8ac94588c0b52cf6ac6a27e5d5f5f133b38e0d7014005a9"
     },
     {
       "path": "node_modules/playwright-core/lib/package.js",

@@ -19,7 +19,7 @@ import { assertRunId } from '../../qa-fixtures/manifest.mjs';
 
 const MODULE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TRANSPORT_ARTIFACT = resolve(MODULE_DIRECTORY, 'playwright-transport.bundle.json.gz');
-const DEFAULT_TRANSPORT_SHA256 = '6c021c5da601eaef5f6f10b8f910a0e4c870893cc150fa415ab52fc9afb124cd';
+const DEFAULT_TRANSPORT_SHA256 = '09eb87b9f81d8f491e7293e13cceb21e88edc33e63f99627939d0beab0113eab';
 const TRANSPORT_FORMAT = 'phase9-playwright-transport-v1';
 const TRANSPORT_TOKENS = new WeakMap();
 const TRANSPORT_ROOT_PREFIX = `${realpathSync('/tmp')}/phase9-playwright-transport.`;
@@ -1901,6 +1901,10 @@ export function createPlaywrightCliClient({
     },
   });
   return client;
+}
+
+export function createPhase9ProductionCliClient(options = {}) {
+  return createPlaywrightCliClient({ ...options, timeoutMs: 90_000 });
 }
 
 export async function installSignalRecorder(client, session) {

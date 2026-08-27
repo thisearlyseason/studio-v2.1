@@ -26,6 +26,7 @@ const repositoryRoot = resolve(moduleDirectory, '../../..');
 const childEntrypoint = join(moduleDirectory, 'child-runner.mjs');
 const childConfig = join(moduleDirectory, 'runner-config.json');
 const evidenceHelper = join(moduleDirectory, 'evidence-dirfd-helper.py');
+const processInspector = join(moduleDirectory, 'darwin-process-inspector.py');
 const fixtureCli = join(repositoryRoot, 'scripts', 'qa-fixtures', 'cli.mjs');
 const evidenceDirectory = join(repositoryRoot, 'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities');
 const playwrightArtifact = join(moduleDirectory, 'playwright-transport.bundle.json.gz');
@@ -40,7 +41,7 @@ const playwrightWorkspaceBoundary = join(repositoryRoot, '.playwright', 'phase9-
 const PLAYWRIGHT_ARTIFACT_RELATIVE_PATH = 'scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz';
 const PLAYWRIGHT_VERSION = '0.1.18';
 const PLAYWRIGHT_CORE_VERSION = '1.63.0-alpha-2026-08-05';
-const PLAYWRIGHT_ARTIFACT_SHA256 = '6c021c5da601eaef5f6f10b8f910a0e4c870893cc150fa415ab52fc9afb124cd';
+const PLAYWRIGHT_ARTIFACT_SHA256 = '09eb87b9f81d8f491e7293e13cceb21e88edc33e63f99627939d0beab0113eab';
 const NODE_RUNTIME_POLICY = Object.freeze({
   path: '/usr/local/bin/node',
   sha256: '257c121b8efcb1932a92acac811b8d9a3940c956a295a74838a1443bf5be0d4c',
@@ -55,18 +56,19 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '47c635c4d266fc9e61d3ce06bb7e427f37eedf66d5eac51575217c1bfd1dc866',
-  childSource: '5a85d8b794a35a83498d0b152c5a37907cd6bcdbf4644aadc8f9ee0e1ac16cc8',
+  child: '059532dc99c8211ac65591bee92f446a0051030e09e3454399f1852627c352d3',
+  childSource: '185c877ec781dfdadb5585754795ddba85cf9159a8cc4a419536194d2c2216a5',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
-  config: 'a90eda7513b912fb830b399a253a3b42897d6e641c46b3da79a63bb821c6e917',
+  config: '29ef8078ee99e4a1ea0eefce002ca4f70044918ad8275a5f3e4046db0246b97f',
   transport: PLAYWRIGHT_ARTIFACT_SHA256,
-  transportManifest: '56ac68c3284ff680723ac7a215c3620f9d9961b7480f3218d0454cae402afaa2',
+  transportManifest: 'c9d44c00a182a7e387d443ab6b0073913c5fb8f78a5b66f078e308607afa2dec',
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
-  transportGuard: '839323d2c0c115940e0f1dfde4669e59cfca7fd253cb52898ddcd71a4b3fe778',
+  transportGuard: '4a64c39de2beac00ec64ede64a440449690a30caa901b69c99e06c4be465b7fc',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: 'decea67e27c6ceda44cb2e7ea4e73c08e42db0347d25cad3f01e0ca5b0e4e5a4',
+  transportClient: 'bc088823074bd648fe6304364e6d07a6b8ae475271b37e99287b7c664f396ae0',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
+  processInspector: '93313f535ddd4ac31670a7eb82ebeb67ac359e37f2981305ffd0a20f436f83f3',
 });
 export const phase9PlaywrightTransport = Object.freeze({
   version: PLAYWRIGHT_VERSION, coreVersion: PLAYWRIGHT_CORE_VERSION,
@@ -155,6 +157,7 @@ async function buildRunnerCommand() {
     throw new Error('Committed runner bytes do not match the literal reviewed pins.');
   }
   if (await sha256(evidenceHelper) !== PHASE9_ARTIFACT_PINS.helper) throw new Error('Committed evidence helper does not match its literal reviewed pin.');
+  if (await sha256(processInspector) !== PHASE9_ARTIFACT_PINS.processInspector) throw new Error('Committed Darwin process inspector does not match its literal reviewed pin.');
   for (const [path, pin] of [
     [childSource, PHASE9_ARTIFACT_PINS.childSource],
     [childBuilder, PHASE9_ARTIFACT_PINS.childBuilder],
@@ -307,6 +310,7 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ['.playwright/phase9-transport-boundary', playwrightWorkspaceBoundary, PHASE9_ARTIFACT_PINS.workspaceBoundary],
     ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
     ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],
+    ['scripts/qa-evidence/phase9/darwin-process-inspector.py', processInspector, PHASE9_ARTIFACT_PINS.processInspector],
     ['scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz', playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
     ['scripts/qa-evidence/phase9/playwright-transport-manifest.json', playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
     ['scripts/qa-evidence/phase9/playwright-transport-entry.cjs', playwrightEntrySource, PHASE9_ARTIFACT_PINS.transportEntry],
