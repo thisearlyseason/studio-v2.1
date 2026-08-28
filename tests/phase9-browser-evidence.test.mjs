@@ -7,7 +7,7 @@ import fs, {
 } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -4897,6 +4897,24 @@ test('phase 9 guardian preserves exact recovery state when the pre-removal certi
   assert.equal(fixture.events.includes('fs:remove-workspace'), false);
 });
 
+test('phase 9 guardian retains the primary lifecycle failure when terminal checkpoint handling also fails', async () => {
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'fail-before',
+    terminalCertificateFailureAt: 'closure-pending',
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'terminal-certificate-failed');
+  assert.equal(result.primaryCategory, 'scenario-failed');
+  assert.equal(result.primaryStage, 'inspected');
+  assert.deepEqual(result.history, [
+    'uninitialized', 'guarded', 'preflighted', 'seeded', 'inspected',
+  ]);
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.workspaceExists, true);
+  assert.equal(fixture.files.has(fixture.credentialPath), true);
+});
+
 test('phase 9 guardian writes no second checkpoint after terminal removal', async () => {
   const fixture = lifecycleGuardianFixture();
   const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
@@ -7102,11 +7120,13 @@ const task5Deployment = Object.freeze({
 
 function task5TerminalCertificate(status = 'closure-pending', overrides = {}) {
   return {
-    version: 1,
+    version: 2,
     command: 'hosted',
     status,
     exitCode: status === 'complete' ? 0 : 1,
     category: status === 'complete' ? 'none' : status === 'closure-pending' ? 'pending' : 'operation-failed',
+    primaryCategory: status === 'complete' || status === 'closure-pending' ? 'none' : 'operation-failed',
+    primaryStage: status === 'complete' ? 'disarmed' : 'independently-absent',
     deployment: {
       deployedSha: task5Deployment.deployedSha,
       stagingRunId: task5Deployment.stagingRunId,
@@ -7475,6 +7495,437 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
   );
   assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(base));
   assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(complete));
+  assert.throws(
+    () => canonicalPhase9TerminalCertificate({ ...base, primaryCategory: 'raw-secret-category' }),
+    /terminal certificate/i,
+  );
+  assert.throws(
+    () => canonicalPhase9TerminalCertificate({ ...base, primaryStage: 'raw-stage' }),
+    /terminal certificate/i,
+  );
+  const missingPrimary = structuredClone(base);
+  delete missingPrimary.primaryCategory;
+  assert.throws(() => canonicalPhase9TerminalCertificate(missingPrimary), /terminal certificate/i);
+  assert.doesNotThrow(() => canonicalPhase9TerminalCertificate({
+    ...base,
+    primaryCategory: 'scenario-failed',
+    primaryStage: 'inspected',
+    lifecycle: {
+      ...base.lifecycle,
+      state: 'inspected',
+      history: task5Lifecycle.history.slice(0, 5),
+    },
+  }));
+});
+
+test('phase 9 terminal recovery finalizer is a provider-free exported boundary', async () => {
+  const recovery = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  assert.equal(typeof recovery.finalizePhase9TerminalRecovery, 'function');
+  assert.equal(typeof recovery.executePhase9TerminalRecoveryRemoval, 'function');
+  assert.deepEqual(recovery.PHASE9_TERMINAL_RECOVERY_COMMAND, Object.freeze({
+    name: 'recover-terminal',
+    providerOperations: 0,
+    browserRows: 0,
+  }));
+});
+
+function phase9LegacyRecoveryCertificate() {
+  const legacy = task5TerminalCertificate('failed', { category: 'terminal-certificate-failed' });
+  delete legacy.primaryCategory;
+  delete legacy.primaryStage;
+  return {
+    ...legacy,
+    version: 1,
+    lifecycle: {
+      ...legacy.lifecycle,
+      state: 'inspected',
+      history: task5Lifecycle.history.slice(0, 5),
+      credentialRemoved: false,
+      workspaceRemoved: false,
+    },
+  };
+}
+
+function phase9CleanedRecoveryManifest() {
+  const runId = 'qa-phase7-20260828T043221Z-84d52a41117a';
+  const expiresAt = '2026-08-28T06:32:18Z';
+  const definition = buildFixtureDefinition({ runId, expiresAt, manifestVersion: 3 });
+  return {
+    version: 3,
+    runId,
+    projectId: 'the-squad-v2-staging',
+    authUids: definition.identities.map(identity => identity.uid),
+    firestorePaths: definition.documents.map(document => document.path),
+    expectedAbsentFirestorePaths: definition.expectedAbsentDocuments.map(document => document.path),
+    state: 'cleaned',
+    transitions: Object.fromEntries(['qa-suspended', 'qa-removed-member', 'qa-pending-delete'].map(alias => [
+      alias, { version: 1, state: 'active' },
+    ])),
+    createdAt: '2026-08-28T04:32:21.301Z',
+    updatedAt: '2026-08-28T04:34:22.470Z',
+    expiresAt,
+  };
+}
+
+function phase9MemoryRecoveryWriter(initial, failure = () => false) {
+  let document = structuredClone(initial);
+  const writes = [];
+  return {
+    writes,
+    get document() { return structuredClone(document); },
+    factory: async () => ({
+      get result() { return structuredClone(document); },
+      async write(next) {
+        if (failure(next, writes.length)) throw new Error('injected terminal promotion failure');
+        document = structuredClone(next);
+        writes.push(structuredClone(next));
+      },
+      async close() {},
+    }),
+  };
+}
+
+function phase9RecoveryWorkspace() {
+  const workspacePath = realpathSync(mkdtempSync('/private/tmp/phase9-core-identities.'));
+  const manifestPath = join(workspacePath, 'manifest.json');
+  const credentialPath = join(workspacePath, 'credentials.json');
+  writeFileSync(manifestPath, `${JSON.stringify(phase9CleanedRecoveryManifest())}\n`, { mode: 0o600 });
+  writeFileSync(credentialPath, 'synthetic-test-credential-bytes\n', { mode: 0o600 });
+  chmodSync(workspacePath, 0o700);
+  return { workspacePath, manifestPath, credentialPath };
+}
+
+test('phase 9 terminal recovery finalizes exact local closure as failed with zero provider operations', async () => {
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const paths = phase9RecoveryWorkspace();
+  const writer = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  let removals = 0;
+  try {
+    const result = await finalizePhase9TerminalRecovery({
+      ...paths,
+      resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+      repositoryRoot: resolve(testDirectory, '..'),
+      evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+      writerFactory: writer.factory,
+      removeCredentialFile: async path => {
+        removals += 1;
+        assert.equal(path, paths.credentialPath);
+        await fsPromises.unlink(path);
+        return true;
+      },
+    });
+    assert.deepEqual(result, {
+      ok: false, command: 'recover-terminal', status: 'failed',
+      category: 'terminal-certificate-failed',
+      primaryCategory: 'legacy-primary-unavailable', primaryStage: 'inspected',
+      rows: 0, providerOperations: 0,
+    });
+    assert.equal(removals, 1);
+    assert.equal(existsSync(paths.workspacePath), false);
+    assert.deepEqual(writer.writes.map(item => [
+      item.status, item.lifecycle.credentialRemoved, item.lifecycle.workspaceRemoved,
+    ]), [
+      ['closure-pending', false, false],
+      ['closure-pending', true, false],
+      ['failed', true, true],
+    ]);
+    assert.equal(writer.document.evidence.rows, 0);
+    assert.equal(writer.document.evidence.written, false);
+  } finally { rmSync(paths.workspacePath, { recursive: true, force: true }); }
+});
+
+test('phase 9 terminal recovery preserves resumable state across each injected removal or promotion failure', async () => {
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const common = paths => ({
+    ...paths,
+    resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+  });
+
+  const credentialFailure = phase9RecoveryWorkspace();
+  const credentialWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery({
+      ...common(credentialFailure), writerFactory: credentialWriter.factory,
+      removeCredentialFile: async () => { throw new Error('injected raw failure'); },
+    }), /terminal recovery failed/i);
+    assert.equal(existsSync(credentialFailure.credentialPath), true);
+    assert.equal(existsSync(credentialFailure.workspacePath), true);
+    assert.equal(credentialWriter.document.status, 'closure-pending');
+  } finally { rmSync(credentialFailure.workspacePath, { recursive: true, force: true }); }
+
+  const removedThenFailed = phase9RecoveryWorkspace();
+  const removedThenFailedWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery({
+      ...common(removedThenFailed), writerFactory: removedThenFailedWriter.factory,
+      removeCredentialFile: async path => {
+        await fsPromises.unlink(path);
+        throw new Error('injected post-unlink crash');
+      },
+    }), /terminal recovery failed/i);
+    assert.equal(existsSync(removedThenFailed.credentialPath), false);
+    const resumedAfterUnlink = await finalizePhase9TerminalRecovery({
+      ...common(removedThenFailed), writerFactory: removedThenFailedWriter.factory,
+      removeCredentialFile: async () => { throw new Error('must not remove an absent credential'); },
+    });
+    assert.equal(resumedAfterUnlink.status, 'failed');
+    assert.equal(existsSync(removedThenFailed.workspacePath), false);
+  } finally { rmSync(removedThenFailed.workspacePath, { recursive: true, force: true }); }
+
+  const workspaceFailure = phase9RecoveryWorkspace();
+  const workspaceWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery({
+      ...common(workspaceFailure), writerFactory: workspaceWriter.factory,
+      removeCredentialFile: async path => { await fsPromises.unlink(path); return true; },
+      filesystem: { ...fsPromises, rm: async () => { throw new Error('injected raw failure'); } },
+    }), /terminal recovery failed/i);
+    assert.equal(existsSync(workspaceFailure.credentialPath), false);
+    assert.equal(existsSync(workspaceFailure.workspacePath), true);
+    assert.equal(workspaceWriter.document.lifecycle.credentialRemoved, true);
+    assert.equal(workspaceWriter.document.lifecycle.workspaceRemoved, false);
+  } finally { rmSync(workspaceFailure.workspacePath, { recursive: true, force: true }); }
+
+  const promotionFailure = phase9RecoveryWorkspace();
+  const promotionWriter = phase9MemoryRecoveryWriter(
+    phase9LegacyRecoveryCertificate(),
+    next => next.status === 'failed',
+  );
+  await assert.rejects(finalizePhase9TerminalRecovery({
+    ...common(promotionFailure), writerFactory: promotionWriter.factory,
+    removeCredentialFile: async path => { await fsPromises.unlink(path); return true; },
+  }), /terminal recovery failed/i);
+  assert.equal(existsSync(promotionFailure.workspacePath), false);
+  assert.equal(promotionWriter.document.status, 'closure-pending');
+  assert.equal(promotionWriter.document.lifecycle.credentialRemoved, true);
+  const resumedWriter = phase9MemoryRecoveryWriter(promotionWriter.document);
+  const resumed = await finalizePhase9TerminalRecovery({
+    ...common(promotionFailure), writerFactory: resumedWriter.factory,
+    removeCredentialFile: async () => { throw new Error('must not remove twice'); },
+  });
+  assert.equal(resumed.status, 'failed');
+  assert.equal(resumedWriter.document.lifecycle.workspaceRemoved, true);
+  const replayed = await finalizePhase9TerminalRecovery({
+    ...common(promotionFailure), writerFactory: resumedWriter.factory,
+    removeCredentialFile: async () => { throw new Error('must not remove terminal result'); },
+  });
+  assert.deepEqual(replayed, resumed);
+
+  const removedWorkspace = realpathSync(mkdtempSync('/private/tmp/phase9-core-identities.'));
+  rmSync(removedWorkspace, { recursive: true, force: false });
+  const unsafeAbsentWriter = phase9MemoryRecoveryWriter(task5TerminalCertificate('closure-pending'));
+  await assert.rejects(finalizePhase9TerminalRecovery({
+    workspacePath: removedWorkspace,
+    manifestPath: join(removedWorkspace, 'manifest.json'),
+    credentialPath: join(removedWorkspace, 'credentials.json'),
+    resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+    writerFactory: unsafeAbsentWriter.factory,
+    removeCredentialFile: async () => { throw new Error('must not remove an absent credential'); },
+  }), /terminal recovery failed/i);
+  assert.equal(unsafeAbsentWriter.document.lifecycle.credentialRemoved, false);
+
+  const hostedCheckpoint = task5TerminalCertificate('closure-pending');
+  hostedCheckpoint.lifecycle.credentialRemoved = true;
+  const hostedPromotionWriter = phase9MemoryRecoveryWriter(hostedCheckpoint);
+  const hostedPromotionRecovery = await finalizePhase9TerminalRecovery({
+    workspacePath: removedWorkspace,
+    manifestPath: join(removedWorkspace, 'manifest.json'),
+    credentialPath: join(removedWorkspace, 'credentials.json'),
+    resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+    writerFactory: hostedPromotionWriter.factory,
+    removeCredentialFile: async () => { throw new Error('must not remove an absent credential'); },
+  });
+  assert.equal(hostedPromotionRecovery.status, 'failed');
+  assert.equal(hostedPromotionRecovery.primaryCategory, 'none');
+  assert.equal(hostedPromotionWriter.document.lifecycle.workspaceRemoved, true);
+});
+
+test('phase 9 terminal recovery maps native path failures to one sanitized boundary error', async () => {
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const paths = phase9RecoveryWorkspace();
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery({
+      ...paths,
+      resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+      repositoryRoot: resolve(testDirectory, '..'),
+      evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+      writerFactory: phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate()).factory,
+      filesystem: {
+        ...fsPromises,
+        async realpath() { throw new Error(`/private/raw-leak/${'secret'.repeat(10)}`); },
+      },
+    }), error => error instanceof Error && error.message === 'Terminal recovery failed.');
+  } finally { rmSync(paths.workspacePath, { recursive: true, force: true }); }
+});
+
+test('phase 9 terminal recovery rejects dirty journals and foreign child paths before removal', async () => {
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const paths = phase9RecoveryWorkspace();
+  const writer = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  let removals = 0;
+  const common = {
+    ...paths,
+    resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+    writerFactory: writer.factory,
+    removeCredentialFile: async () => { removals += 1; return true; },
+  };
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery({
+      ...common, credentialPath: join(dirname(paths.workspacePath), 'foreign-credentials.json'),
+    }), /terminal recovery failed/i);
+    const manifest = phase9CleanedRecoveryManifest();
+    manifest.state = 'seeded';
+    writeFileSync(paths.manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+    await assert.rejects(finalizePhase9TerminalRecovery(common), /terminal recovery failed/i);
+    manifest.state = 'cleaned';
+    writeFileSync(paths.manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+    chmodSync(paths.credentialPath, 0o644);
+    await assert.rejects(finalizePhase9TerminalRecovery(common), /terminal recovery failed/i);
+    assert.equal(removals, 0);
+    assert.equal(existsSync(paths.credentialPath), true);
+  } finally { rmSync(paths.workspacePath, { recursive: true, force: true }); }
+});
+
+test('phase 9 terminal recovery refuses credential and workspace identity swaps without removing the replacement', async () => {
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const common = (paths, writerFactory, filesystem, removeCredentialFile) => ({
+    ...paths,
+    resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+    writerFactory,
+    filesystem,
+    removeCredentialFile,
+  });
+
+  const credentialSwap = phase9RecoveryWorkspace();
+  const credentialWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  let credentialStats = 0;
+  let credentialRemovals = 0;
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery(common(
+      credentialSwap,
+      credentialWriter.factory,
+      {
+        ...fsPromises,
+        async lstat(path) {
+          const metadata = await fsPromises.lstat(path);
+          if (path === credentialSwap.credentialPath && ++credentialStats === 2) {
+            return new Proxy(metadata, { get(target, key) { return key === 'ino' ? target.ino + 1 : target[key]; } });
+          }
+          return metadata;
+        },
+      },
+      async () => { credentialRemovals += 1; return true; },
+    )), /terminal recovery failed/i);
+    assert.equal(credentialRemovals, 0);
+    assert.equal(existsSync(credentialSwap.credentialPath), true);
+  } finally { rmSync(credentialSwap.workspacePath, { recursive: true, force: true }); }
+
+  const workspaceSwap = phase9RecoveryWorkspace();
+  const workspaceWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  let workspaceStats = 0;
+  let workspaceRemovals = 0;
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery(common(
+      workspaceSwap,
+      workspaceWriter.factory,
+      {
+        ...fsPromises,
+        async lstat(path) {
+          const metadata = await fsPromises.lstat(path);
+          if (path === workspaceSwap.workspacePath && ++workspaceStats === 3) {
+            return new Proxy(metadata, { get(target, key) { return key === 'ino' ? target.ino + 1 : target[key]; } });
+          }
+          return metadata;
+        },
+        async rm() { workspaceRemovals += 1; },
+      },
+      async path => { await fsPromises.unlink(path); return true; },
+    )), /terminal recovery failed/i);
+    assert.equal(workspaceRemovals, 0);
+    assert.equal(existsSync(workspaceSwap.workspacePath), true);
+  } finally { rmSync(workspaceSwap.workspacePath, { recursive: true, force: true }); }
+});
+
+darwinRuntimeTest('phase 9 terminal recovery helper rejects destructive credential and workspace races without deleting replacements', async () => {
+  const { executePhase9TerminalRecoveryRemoval } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const metadataIdentity = metadata => ({
+    dev: metadata.dev, ino: metadata.ino, uid: metadata.uid, mode: metadata.mode & 0o777,
+    nlink: metadata.nlink, size: metadata.size,
+  });
+  const credentialRace = phase9RecoveryWorkspace();
+  const stolenCredential = `${credentialRace.workspacePath}.stolen-credential`;
+  const credentialWorkspaceHandle = await fsPromises.open(credentialRace.workspacePath, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  try {
+    const removing = assert.rejects(executePhase9TerminalRecoveryRemoval({
+      operation: 'remove-credential', directoryHandle: credentialWorkspaceHandle,
+      directoryIdentity: metadataIdentity(lstatSync(credentialRace.workspacePath)),
+      name: 'credentials.json', expectedIdentity: metadataIdentity(lstatSync(credentialRace.credentialPath)),
+      helperEnvironment: { PHASE9_RECOVERY_TEST_BEFORE_CREDENTIAL_UNLINK_MS: '500' },
+    }), /removal helper/i);
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
+    renameSync(credentialRace.credentialPath, stolenCredential);
+    writeFileSync(credentialRace.credentialPath, 'foreign-replacement\n', { mode: 0o600, flag: 'wx' });
+    await removing;
+    assert.equal(readFileSync(credentialRace.credentialPath, 'utf8'), 'foreign-replacement\n');
+    assert.equal(readFileSync(stolenCredential, 'utf8'), 'synthetic-test-credential-bytes\n');
+  } finally {
+    await credentialWorkspaceHandle.close();
+    rmSync(credentialRace.workspacePath, { recursive: true, force: true });
+    rmSync(stolenCredential, { force: true });
+  }
+
+  const workspaceRace = phase9RecoveryWorkspace();
+  rmSync(workspaceRace.credentialPath, { force: false });
+  const stolenWorkspace = `${workspaceRace.workspacePath}.stolen-workspace`;
+  const parentHandle = await fsPromises.open(dirname(workspaceRace.workspacePath), fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  const workspaceHandle = await fsPromises.open(workspaceRace.workspacePath, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  try {
+    const removalAttempt = executePhase9TerminalRecoveryRemoval({
+      operation: 'remove-workspace', directoryHandle: parentHandle,
+      directoryIdentity: metadataIdentity(lstatSync(dirname(workspaceRace.workspacePath))),
+      workspaceHandle, workspaceIdentity: metadataIdentity(lstatSync(workspaceRace.workspacePath)),
+      name: basename(workspaceRace.workspacePath), manifestIdentity: metadataIdentity(lstatSync(workspaceRace.manifestPath)),
+      helperEnvironment: { PHASE9_RECOVERY_TEST_BEFORE_WORKSPACE_RMDIR_MS: '500' },
+    });
+    const removing = assert.rejects(removalAttempt, /removal helper/i);
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 100));
+    renameSync(workspaceRace.workspacePath, stolenWorkspace);
+    mkdirSync(workspaceRace.workspacePath, { mode: 0o700 });
+    writeFileSync(join(workspaceRace.workspacePath, 'foreign.txt'), 'foreign-workspace\n', { mode: 0o600 });
+    await removing;
+    assert.equal(readFileSync(join(workspaceRace.workspacePath, 'foreign.txt'), 'utf8'), 'foreign-workspace\n');
+    assert.deepEqual(readdirSync(stolenWorkspace), ['manifest.json']);
+  } finally {
+    await workspaceHandle.close();
+    await parentHandle.close();
+    rmSync(workspaceRace.workspacePath, { recursive: true, force: true });
+    rmSync(stolenWorkspace, { recursive: true, force: true });
+  }
+
+  const exactRecovery = phase9RecoveryWorkspace();
+  const exactWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const exactResult = await finalizePhase9TerminalRecovery({
+    ...exactRecovery,
+    resultPath: '/private/tmp/phase9-terminal-result.test/result.json',
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+    writerFactory: exactWriter.factory,
+  });
+  assert.equal(exactResult.status, 'failed');
+  assert.equal(existsSync(exactRecovery.workspacePath), false);
+  assert.equal(exactWriter.document.lifecycle.credentialRemoved, true);
+  assert.equal(exactWriter.document.lifecycle.workspaceRemoved, true);
 });
 
 darwinRuntimeTest('phase 9 terminal certificate refuses a target swap without overwriting foreign bytes', async () => {
@@ -7675,6 +8126,41 @@ darwinRuntimeTest('phase 9 terminal certificate admits only absent or exact resu
     await writer.write(task5TerminalCertificate('complete'));
     await writer.close();
     await assert.rejects(createPhase9TerminalCertificateWriter({ ...common, resultPath: terminalPath }), /resumable/i);
+
+    const legacyParent = join(root, 'legacy-result'); mkdirSync(legacyParent, { mode: 0o700 });
+    const legacyPath = join(legacyParent, 'result.json');
+    const canonicalize = value => (Array.isArray(value)
+      ? value.map(canonicalize)
+      : value && typeof value === 'object'
+        ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalize(value[key])]))
+        : value);
+    writeFileSync(legacyPath, `${JSON.stringify(canonicalize(phase9LegacyRecoveryCertificate()))}\n`, { mode: 0o600 });
+    const legacyWriter = await createPhase9TerminalCertificateWriter({
+      ...common, resultPath: legacyPath, allowLegacyFailedRecovery: true, allowTerminalReplay: true,
+    });
+    assert.equal(legacyWriter.result.version, 1);
+    const migrated = {
+      ...phase9LegacyRecoveryCertificate(),
+      version: 2,
+      status: 'closure-pending',
+      category: 'pending',
+      primaryCategory: 'legacy-primary-unavailable',
+      primaryStage: 'inspected',
+    };
+    await legacyWriter.write(migrated);
+    await legacyWriter.write({
+      ...migrated,
+      status: 'failed',
+      category: 'terminal-certificate-failed',
+      lifecycle: { ...migrated.lifecycle, credentialRemoved: true, workspaceRemoved: true },
+    });
+    await legacyWriter.close();
+    const replayWriter = await createPhase9TerminalCertificateWriter({
+      ...common, resultPath: legacyPath, allowLegacyFailedRecovery: true, allowTerminalReplay: true,
+    });
+    assert.equal(replayWriter.result.status, 'failed');
+    assert.equal(replayWriter.result.primaryCategory, 'legacy-primary-unavailable');
+    await replayWriter.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -7860,6 +8346,7 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.match(PHASE9_ARTIFACT_PINS.config, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.helper, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.terminalHelper, /^[0-9a-f]{64}$/);
+  assert.match(PHASE9_ARTIFACT_PINS.recoveryHelper, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.processInspector, /^[0-9a-f]{64}$/);
   assert.equal(
     sha256File(join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'darwin-process-inspector.py')),
@@ -7868,6 +8355,10 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.equal(
     sha256File(join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'terminal-certificate-dirfd-helper.py')),
     PHASE9_ARTIFACT_PINS.terminalHelper,
+  );
+  assert.equal(
+    sha256File(join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'terminal-recovery-dirfd-helper.py')),
+    PHASE9_ARTIFACT_PINS.recoveryHelper,
   );
   assert.equal(phase9PlaywrightTransport.version, '0.1.18');
   assert.equal(phase9PlaywrightTransport.coreVersion, '1.63.0-alpha-2026-08-05');
@@ -8507,6 +8998,7 @@ test('phase 9 evidence CLI help requires the external durable terminal result pa
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--result <external-private-result\.json>/);
   assert.match(result.stdout, /mode-0700 directory outside the repository/i);
+  assert.match(result.stdout, /recover-terminal --result/);
 });
 
 test('phase 9 hosted entrypoint rejects non-Darwin before any runtime mutation', async () => {
@@ -8515,6 +9007,21 @@ test('phase 9 hosted entrypoint rejects non-Darwin before any runtime mutation',
   await assert.rejects(
     runPhase9Cli({
       argv: ['hosted', '--staging'],
+      env: {},
+      platform: 'linux',
+      stdout: { write: () => { writes += 1; } },
+    }),
+    error => error?.message === 'Phase 9 hosted runtime requires Darwin.',
+  );
+  assert.equal(writes, 0);
+});
+
+test('phase 9 terminal recovery entrypoint rejects non-Darwin before filesystem or provider construction', async () => {
+  const { runPhase9Cli } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  let writes = 0;
+  await assert.rejects(
+    runPhase9Cli({
+      argv: ['recover-terminal'],
       env: {},
       platform: 'linux',
       stdout: { write: () => { writes += 1; } },
@@ -8736,7 +9243,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 63);
+  assert.equal(darwinRuntimeTests.length, 64);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

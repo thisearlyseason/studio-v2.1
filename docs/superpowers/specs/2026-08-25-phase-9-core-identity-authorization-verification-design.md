@@ -196,6 +196,16 @@ Phase 9 updates:
 
 Unexecuted provider, mutation, youth-invite, family-aggregation, and feature-specific variants remain blocked. Phase 9 cannot change the overall release verdict from `NOT READY` unless every unrelated blocking contract is independently completed in later phases.
 
+## Terminal failure attribution and local recovery finalization
+
+The durable terminal certificate separates the outer certificate/wrapper outcome from the lifecycle outcome that preceded it. Version 2 records `category`, `primaryCategory`, and `primaryStage` as closed enums together with the exact guardian state/history. A checkpoint or promotion failure may set outer `category=terminal-certificate-failed`, but it cannot overwrite a known primary lifecycle category. A successful lifecycle whose terminal promotion fails records primary category `none`. Raw errors, run-owned identifiers, UIDs, paths, sessions, and secrets remain forbidden.
+
+Recovery cleanup can leave exact closure facts while the guardian history correctly stops at the earlier failure stage. A closure-pending certificate therefore requires the full exact `20/82/1` cleanup and independent-absence facts, closure booleans, and no workspace removal, while preserving any valid ordered history prefix. It does not fabricate forward state transitions.
+
+`recover-terminal` is a local, recovery-only command. It admits only an identity-bound canonical result, the exact private workspace and its `manifest.json`/`credentials.json` children, and an exact v3 `cleaned` fixture journal whose deterministic graph and `20/82/1` counts match the certificate. It constructs no provider adapter and performs no seed, browser, transition, or evidence-write operation. After publishing a resumable checkpoint, it removes the exact credential and workspace through a pinned descriptor-bound helper that revalidates held and named identities at the destructive boundary, proves absence after each operation, and promotes only to terminal `failed` with browser rows `0` and evidence `written=false`. A manifest-only workspace is admitted only as the exact post-credential-removal crash state and advances the durable removal checkpoint before workspace deletion; an absent workspace requires that checkpoint already to record credential removal. It can never produce PASS.
+
+Legacy `legacy-primary-unavailable` is permitted only when the recovery writer migrates a canonical version-1 checkpoint that contains no retained primary attribution. New hosted runs must provide primary attribution before every certificate write. Credential-removal, workspace-removal, publication, identity, or replay uncertainty fails closed behind one sanitized recovery error and retains any remaining recovery artifact. A terminal failed certificate is idempotently replayable only when both exact disposable paths are absent.
+
 ## Expected files
 
 The planned fixture and evidence work may change:
@@ -204,6 +214,8 @@ The planned fixture and evidence work may change:
 - `scripts/qa-fixtures/manifest.mjs`;
 - `scripts/qa-fixtures/lifecycle.mjs`;
 - `scripts/qa-fixtures/cli.mjs` only if version routing requires it;
+- `scripts/qa-evidence/phase9/terminal-certificate-writer.mjs` and `terminal-recovery-finalizer.mjs` for durable attribution and local recovery finalization;
+- `scripts/qa-evidence/phase9/cli.mjs` for the provider-free `recover-terminal` entrypoint;
 - `tests/qa-fixture-safety.test.mjs`;
 - new focused Phase 9 identity/session/route-policy tests;
 - `docs/qa/production-audit/05-coverage-matrix.md`;

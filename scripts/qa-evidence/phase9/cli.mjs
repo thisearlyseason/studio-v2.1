@@ -28,6 +28,7 @@ const childEntrypoint = join(moduleDirectory, 'child-runner.mjs');
 const childConfig = join(moduleDirectory, 'runner-config.json');
 const evidenceHelper = join(moduleDirectory, 'evidence-dirfd-helper.py');
 const terminalCertificateHelper = join(moduleDirectory, 'terminal-certificate-dirfd-helper.py');
+const terminalRecoveryHelper = join(moduleDirectory, 'terminal-recovery-dirfd-helper.py');
 const processInspector = join(moduleDirectory, 'darwin-process-inspector.py');
 const fixtureCli = join(repositoryRoot, 'scripts', 'qa-fixtures', 'cli.mjs');
 const evidenceDirectory = join(repositoryRoot, 'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities');
@@ -71,6 +72,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportClient: '9ed384bfc4bb2fba1e99b79a03080e36c89dc3965f52d0c5fa366c143eb54656',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
+  recoveryHelper: 'b9e09fa61d3b874202e9cde3bd23047d103f160c97487e41face121aeb38c917',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
 export const phase9PlaywrightTransport = Object.freeze({
@@ -319,6 +321,7 @@ function help(stdout) {
     '  npm run qa:evidence:phase9 -- dry-run',
     '  npm run qa:evidence:phase9 -- offline-smoke',
     '  npm run qa:evidence:phase9 -- hosted --staging --project <staging-project> --confirm-project <staging-project> --origin <staging-origin> --deployed-sha <sha> --staging-run <run> --pull-request <number> --workspace <external-private-workspace> --manifest <workspace-manifest> --credentials <workspace-credentials> --expires-at <iso-time> --transport <pinned-transport> --result <external-private-result.json>',
+    '  npm run qa:evidence:phase9 -- recover-terminal --result <external-private-result.json> --workspace <preserved-private-workspace> --manifest <workspace-manifest> --credentials <workspace-credentials>',
     '',
     'The hosted result parent must be an existing canonical current-user mode-0700 directory outside the repository, evidence tree, and disposable workspace.',
   ].join('\n');
@@ -399,6 +402,7 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
     ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],
     ['scripts/qa-evidence/phase9/terminal-certificate-dirfd-helper.py', terminalCertificateHelper, PHASE9_ARTIFACT_PINS.terminalHelper],
+    ['scripts/qa-evidence/phase9/terminal-recovery-dirfd-helper.py', terminalRecoveryHelper, PHASE9_ARTIFACT_PINS.recoveryHelper],
     ['scripts/qa-evidence/phase9/darwin-process-inspector.py', processInspector, PHASE9_ARTIFACT_PINS.processInspector],
     ['scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz', playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
     ['scripts/qa-evidence/phase9/playwright-transport-manifest.json', playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
@@ -426,6 +430,32 @@ export function resolvePhase9ResultPath(value) {
     throw new Error('Hosted terminal result path must be lexically absolute and normalized.');
   }
   return value;
+}
+
+function resolveRecoveryPath(value, name) {
+  if (typeof value !== 'string' || !isAbsolute(value) || resolve(value) !== value) {
+    throw new Error(`Terminal recovery ${name} path must be lexically absolute and normalized.`);
+  }
+  return value;
+}
+
+async function recoverTerminal(argv, stdout, platform) {
+  assertPhase9HostedPlatform(platform);
+  const values = exactArgs(argv, ['--result', '--workspace', '--manifest', '--credentials']);
+  const [{ finalizePhase9TerminalRecovery }] = await Promise.all([
+    import('./terminal-recovery-finalizer.mjs'),
+  ]);
+  const result = await finalizePhase9TerminalRecovery({
+    resultPath: resolveRecoveryPath(values['--result'], 'result'),
+    workspacePath: resolveRecoveryPath(values['--workspace'], 'workspace'),
+    manifestPath: resolveRecoveryPath(values['--manifest'], 'manifest'),
+    credentialPath: resolveRecoveryPath(values['--credentials'], 'credential'),
+    repositoryRoot,
+    evidenceDirectory,
+    platform,
+  });
+  stdout.write(`${JSON.stringify(result)}\n`);
+  return result;
 }
 
 async function hosted(argv, env, stdout, platform) {
@@ -494,19 +524,24 @@ async function hosted(argv, env, stdout, platform) {
   let lifecycle = null;
   let terminalPersisted = false;
   let finalPromotionAttempted = false;
-  const certificate = (status, category, lifecycleValue, evidence) => ({
-    version: 1, command: 'hosted', status,
+  const certificate = (status, category, primaryCategory, primaryStage, lifecycleValue, evidence) => ({
+    version: 2, command: 'hosted', status,
     exitCode: status === 'complete' ? 0 : 1,
     category,
+    primaryCategory,
+    primaryStage,
     deployment: deploymentCertificate,
     lifecycle: lifecycleValue,
     evidence,
   });
-  const terminalCertificateWriter = async ({ phase, lifecycle: lifecycleValue }) => {
+  const terminalCertificateWriter = async ({
+    phase, lifecycle: lifecycleValue, primaryCategory, primaryStage,
+  }) => {
     latestLifecycle = lifecycleValue;
     if (phase === 'closure-pending') {
       await terminalWriter.write(certificate(
-        'closure-pending', 'pending', lifecycleValue, { rows: 0, written: false },
+        'closure-pending', 'pending', primaryCategory, primaryStage,
+        lifecycleValue, { rows: 0, written: false },
       ));
     }
   };
@@ -534,7 +569,10 @@ async function hosted(argv, env, stdout, platform) {
   const persistFailure = async category => {
     if (terminalPersisted) return;
     await terminalWriter.write(certificate(
-      'failed', category, failureLifecycle(lifecycle),
+      'failed', category,
+      lifecycle?.primaryCategory ?? category,
+      lifecycle?.primaryStage ?? lifecycle?.state ?? 'uninitialized',
+      failureLifecycle(lifecycle),
       { rows: Array.isArray(lifecycle?.rows) ? lifecycle.rows.length : 0, written: false },
     ));
     terminalPersisted = true;
@@ -581,7 +619,7 @@ async function hosted(argv, env, stdout, platform) {
     latestLifecycle = failureLifecycle(lifecycle);
     finalPromotionAttempted = true;
     await terminalWriter.write(certificate(
-      'complete', 'none', latestLifecycle, { rows: 44, written: true },
+      'complete', 'none', 'none', 'disarmed', latestLifecycle, { rows: 44, written: true },
     ));
     terminalPersisted = true;
     const result = { ok: true, command: 'hosted', rows: 44, closureCertified: true, browsers: 0 };
@@ -605,7 +643,8 @@ export async function runPhase9Cli({
   if (command === 'dry-run' && argv.length === 1) return dryRun(stdout);
   if (command === 'offline-smoke' && argv.length === 1) return offlineSmoke(stdout);
   if (command === 'hosted') return hosted(argv.slice(1), env, stdout, platform);
-  throw new Error('Command must be help, dry-run, offline-smoke, or hosted.');
+  if (command === 'recover-terminal') return recoverTerminal(argv.slice(1), stdout, platform);
+  throw new Error('Command must be help, dry-run, offline-smoke, hosted, or recover-terminal.');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

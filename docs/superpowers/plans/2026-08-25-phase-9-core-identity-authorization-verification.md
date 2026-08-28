@@ -922,3 +922,28 @@ Expected: Phase 9 PR targets `agent/phase8-confirmed-defect-repair`, all checks 
 - [ ] **Step 7: Write the final local report and hand off**
 
 Record exact commits, test counts, workflow run, scenario arithmetic, defect outcomes, cleanup `0/0`, credential/workspace absence, PR URL/status, remaining blockers, and release `NOT READY`. Do not claim production readiness and do not merge.
+
+---
+
+### Task 10: Preserve terminal attribution and finalize an exact local recovery checkpoint
+
+**Files:**
+- Modify: `scripts/qa-evidence/phase9/lifecycle-guardian.mjs`
+- Modify: `scripts/qa-evidence/phase9/terminal-certificate-writer.mjs`
+- Create: `scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs`
+- Create: `scripts/qa-evidence/phase9/terminal-recovery-dirfd-helper.py`
+- Modify: `scripts/qa-evidence/phase9/cli.mjs`
+- Modify: `scripts/qa-fixtures/lifecycle.mjs`
+- Modify: `tests/phase9-browser-evidence.test.mjs`
+- Modify: `package.json`
+
+**Interfaces:**
+- Produces certificate v2 `primaryCategory`/`primaryStage` attribution and `finalizePhase9TerminalRecovery(...)`.
+- Consumes only an exact local terminal checkpoint and cleaned manifest; it has no provider/browser/seed/transition interface.
+
+- [x] **Step 1: Capture RED** for lost primary `scenario-failed` attribution and the absent recovery-finalizer export.
+- [x] **Step 2: Implement immutable closed primary attribution** and accept exact recovery closure facts with an earlier ordered guardian history.
+- [x] **Step 3: Implement provider-free local finalization** with exact path/identity/mode/ownership and deterministic cleaned-journal checks, credential/workspace absence proof, terminal `failed` promotion, rows `0`, and idempotent replay.
+- [x] **Step 4: Cover failure boundaries** for credential removal, workspace removal, checkpoint/final promotion, foreign identity swaps, dirty journals, legacy migration, and post-removal replay.
+- [ ] **Step 5: Complete full gates, commit, and independent review.** Do not apply recovery to the preserved checkpoint before review approval.
+- [ ] **Step 6: After review only, execute the exact local command and verify terminal failed certificate plus credential/workspace absence.** No provider call, hosted lifecycle, push, deployment, or merge.

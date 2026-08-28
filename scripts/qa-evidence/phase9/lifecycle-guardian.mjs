@@ -646,6 +646,8 @@ function failureSummary({
   category,
   state,
   history,
+  primaryCategory = category,
+  primaryStage = state,
   interrupted = false,
   browserClosureCertified = false,
   closureCertified = false,
@@ -655,6 +657,8 @@ function failureSummary({
   return Object.freeze({
     ok: false,
     category,
+    primaryCategory,
+    primaryStage,
     state,
     history: [...history],
     interrupted,
@@ -2614,9 +2618,17 @@ export function createLifecycleGuardian({
     workspaceRemoved,
   });
 
-  const persistCertificatePhase = async phase => {
+  const persistCertificatePhase = async (phase, attribution = {
+    primaryCategory: 'none',
+    primaryStage: state,
+  }) => {
     try {
-      await terminalCertificateWriter(Object.freeze({ phase, lifecycle: lifecycleCertificateSnapshot() }));
+      await terminalCertificateWriter(Object.freeze({
+        phase,
+        lifecycle: lifecycleCertificateSnapshot(),
+        primaryCategory: attribution.primaryCategory,
+        primaryStage: attribution.primaryStage,
+      }));
     } catch {
       throw new GuardianFailure('terminal-certificate-failed');
     }
@@ -3093,6 +3105,12 @@ export function createLifecycleGuardian({
   const recover = (category, isInterruption = false) => {
     if (emergencyPromise) return emergencyPromise;
     interrupted ||= isInterruption;
+    const primaryStage = state;
+    const recoveryFailureSummary = values => failureSummary({
+      primaryCategory: category,
+      primaryStage,
+      ...values,
+    });
     emergencyPromise = (async () => {
       let recoveryCategory = category;
       try {
@@ -3134,7 +3152,7 @@ export function createLifecycleGuardian({
       if (inspectionUncertain || profileInventoryUncertain) markerFailure = true;
       if (browserFailure || emptyBrowserFailure) {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: 'browser-closure-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: false, closureCertified: false,
           ...await currentPreservationStates(),
@@ -3142,7 +3160,7 @@ export function createLifecycleGuardian({
       }
       if (receiptFailure || markerFailure) {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: 'scenario-closure-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: false, closureCertified: false,
           ...await currentPreservationStates(),
@@ -3150,7 +3168,7 @@ export function createLifecycleGuardian({
       }
       if (recoveryCategory === 'terminal-certificate-failed' && workspacePath) {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: recoveryCategory, state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified,
           ...await currentPreservationStates(),
@@ -3158,7 +3176,7 @@ export function createLifecycleGuardian({
       }
       if (!workspacePath) {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: recoveryCategory, state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified,
         });
@@ -3170,7 +3188,7 @@ export function createLifecycleGuardian({
           if (!(await proveAbsent(filesystem, workspacePath))) throw new GuardianFailure('workspace-removal-failed');
         } catch {
           removeHandlers();
-          return failureSummary({
+          return recoveryFailureSummary({
             category: 'workspace-removal-failed', state, history, interrupted: isInterruption,
             browserClosureCertified: true, closureCertified: true,
             ...await currentPreservationStates(),
@@ -3181,7 +3199,7 @@ export function createLifecycleGuardian({
         manifestPath = null;
         credentialPath = null;
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: recoveryCategory, state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
         });
@@ -3190,7 +3208,7 @@ export function createLifecycleGuardian({
         await loadExactManifest();
       } catch {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: 'manifest-uncertain', state, history, interrupted: isInterruption,
           browserClosureCertified: true,
           ...await currentPreservationStates(),
@@ -3226,7 +3244,7 @@ export function createLifecycleGuardian({
         closureCertified = true;
       } catch (error) {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: error instanceof GuardianFailure ? error.category : category,
           state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: false,
@@ -3234,10 +3252,13 @@ export function createLifecycleGuardian({
         });
       }
       try {
-        await persistCertificatePhase('closure-pending');
+        await persistCertificatePhase('closure-pending', {
+          primaryCategory: category,
+          primaryStage,
+        });
       } catch {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: 'terminal-certificate-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
           ...await currentPreservationStates(),
@@ -3248,7 +3269,7 @@ export function createLifecycleGuardian({
         if (!(await proveAbsent(filesystem, credentialPath))) throw new GuardianFailure('credential-removal-failed');
       } catch {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: 'credential-removal-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
           ...await currentPreservationStates(),
@@ -3261,7 +3282,7 @@ export function createLifecycleGuardian({
         if (!(await proveAbsent(filesystem, workspacePath))) throw new GuardianFailure('workspace-removal-failed');
       } catch {
         removeHandlers();
-        return failureSummary({
+        return recoveryFailureSummary({
           category: 'workspace-removal-failed', state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: true,
           ...await currentPreservationStates(),
@@ -3272,7 +3293,7 @@ export function createLifecycleGuardian({
       manifestPath = null;
       credentialPath = null;
       removeHandlers();
-      return failureSummary({
+      return recoveryFailureSummary({
         category: recoveryCategory, state, history, interrupted: isInterruption,
         browserClosureCertified: true, closureCertified: true,
       });
