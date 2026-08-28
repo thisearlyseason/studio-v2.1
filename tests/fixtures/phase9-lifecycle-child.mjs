@@ -147,24 +147,39 @@ const fixtureRowSessions = row => {
 };
 
 async function finishWithRows(phase, mode, browserSessions = [], ok = true) {
-  let rows = phaseRows(phase);
+  const canonicalRows = phaseRows(phase);
+  let rows = [...canonicalRows];
   if (mode === 'row-extra-field') rows[0] = { ...rows[0], raw: 'forbidden' };
   if (mode === 'row-duplicate') rows[1] = { ...rows[1], contextId: rows[0].contextId };
   if (mode === 'row-out-of-order') [rows[0], rows[1]] = [rows[1], rows[0]];
   if (mode === 'row-wrong-phase') rows = phaseRows(phase === 'before-transition' ? 'after-transition' : 'before-transition');
-  const rowSessions = [...new Set(rows.flatMap(fixtureRowSessions))];
+  const rowSessions = [...new Set(canonicalRows.flatMap(fixtureRowSessions))];
   const allSessions = [...new Set([...browserSessions, ...rowSessions])].sort();
   const allReceipts = fakeLaunchReceipts(allSessions);
   const receiptBySession = new Map(allReceipts.map(receipt => [receipt.session, receipt]));
-  for (const [sequence, session] of allSessions.entries()) {
-    await writeOwnershipIntentAndAdd(phase, sequence, session, receiptBySession.get(session));
+  const announced = new Set();
+  const released = new Set();
+  let sequence = 0;
+  for (const [contextOrdinal, row] of canonicalRows.entries()) {
+    writeMessage({
+      version: 4, type: 'context-start', phase, contextOrdinal, contextId: row.contextId,
+    });
+    for (const session of fixtureRowSessions(row)) {
+      if (!announced.has(session)) {
+        await writeOwnershipIntentAndAdd(phase, sequence, session, receiptBySession.get(session));
+        announced.add(session);
+        sequence += 1;
+      }
+    }
+    for (const session of fixtureRowSessions(row)) {
+      if (!browserSessions.includes(session) && !released.has(session)) {
+        writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
+        released.add(session);
+        sequence += 1;
+      }
+    }
   }
-  const releasedBrowserSessions = rowSessions.filter(session => !browserSessions.includes(session)).sort();
-  let sequence = allSessions.length;
-  for (const session of releasedBrowserSessions) {
-    writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
-    sequence += 1;
-  }
+  const releasedBrowserSessions = [...released].sort();
   const launchReceipts = browserSessions.map(session => receiptBySession.get(session));
   writeMessage({
     version: 4, type: 'ownership-complete', phase, sequence,
@@ -182,9 +197,25 @@ function finishRowsAfterOwnership(
 ) {
   const rows = suppliedRows ?? phaseRows(phase);
   const emitted = mode === 'row-early-completion' ? rows.slice(0, 1) : rows;
-  emitted.forEach((row, index) => writeMessage({
-    version: 2, type: 'row', phase, index, sessions: fixtureRowSessions(row), row,
-  }));
+  emitted.forEach((row, index) => writeMessage(mode === 'row-version-1'
+    ? { version: 1, type: 'row', phase, index, row }
+    : {
+      version: 2, type: 'row', phase, index,
+      sessions: mode === 'row-empty-sessions' ? []
+        : mode === 'row-unowned-session' ? ['phase9-never-owned'] : fixtureRowSessions(row), row,
+    }));
+  if (mode === 'mutate-globals') {
+    Promise.prototype.then = () => ({ forged: true });
+    globalThis.Promise = function ForgedPromise() {};
+    Object.keys = () => [];
+    Object.prototype.phase9ChildMutation = true;
+    Array.isArray = () => false;
+    Array.prototype.push = () => 99;
+    Reflect.ownKeys = () => [];
+    Reflect.apply = () => ({ forged: true });
+    globalThis.setTimeout = () => 99;
+    globalThis.clearTimeout = () => {};
+  }
   const completionReceipts = mode === 'receipt-mismatch'
     ? launchReceipts.map((receipt, index) => index === 0
       ? { ...receipt, chromeMainPid: receipt.chromeMainPid + 10 }
@@ -238,11 +269,13 @@ async function runRealRetainedBrowser(mode, phase, args) {
   const clientModule = await import(pathToFileURL(join(
     process.cwd(), 'scripts', 'qa-evidence', 'phase9', 'playwright-cli-client.mjs',
   )).href);
-  const sessions = mode.includes('two-sessions')
-    ? ['phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b']
-    : ['phase9-real-guardian-retained'];
-  const viewports = Object.fromEntries(sessions.map((session, index) => [
-    session, index === 0 ? { width: 390, height: 844 } : { width: 1440, height: 900 },
+  const retainedSessions = [
+    fixtureSessionName('pending-deletion-active-baseline-mobile'),
+    fixtureSessionName('pending-deletion-active-baseline-desktop'),
+  ];
+  const sessions = retainedSessions.sort();
+  const viewports = Object.fromEntries(sessions.map(session => [
+    session, session.endsWith('-mobile') ? { width: 390, height: 844 } : { width: 1440, height: 900 },
   ]));
   const guardianMarkerName = args.get('--guardian-marker-env');
   const marker = process.env[guardianMarkerName];
@@ -263,7 +296,9 @@ async function runRealRetainedBrowser(mode, phase, args) {
   });
   if (mode === 'real-retained-browser-acquisition-crash') {
     if (phase !== 'before-transition') nativeExit(70);
-    const session = 'phase9-real-acquisition-crash';
+    const [row] = phaseRows(phase);
+    const [session] = fixtureRowSessions(row);
+    writeMessage({ version: 4, type: 'context-start', phase, contextOrdinal: 0, contextId: row.contextId });
     writeMessage({ version: 4, type: 'ownership-intent', phase, sequence: 0, session });
     await waitForOwnershipAuthorization(phase, 0, session);
     await clientModule.acquireBlankBrowser(client, session);
@@ -275,50 +310,45 @@ async function runRealRetainedBrowser(mode, phase, args) {
   const browserSessions = phase === 'before-transition' ? sessions : [];
   const attachedBrowserSessions = phase === 'after-transition' ? sessions : [];
   const launchReceipts = [];
-  const canonicalRowSessions = [...new Set(phaseRows(phase).flatMap(fixtureRowSessions))].sort();
   const releasedBrowserSessions = [];
-  const announceCanonicalRowSessions = async initialSequence => {
-    let sequence = initialSequence;
-    const receipts = fakeLaunchReceipts(canonicalRowSessions);
-    for (const [index, session] of canonicalRowSessions.entries()) {
-      await writeOwnershipIntentAndAdd(phase, sequence, session, receipts[index]);
-      sequence += 1;
-    }
-    for (const session of canonicalRowSessions) {
-      writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
-      releasedBrowserSessions.push(session);
-      sequence += 1;
-    }
-    return sequence;
-  };
+  let sequence = 0;
   const infoPath = `/tmp/phase9-guardian-real-retained-${process.ppid}-${phase}.json`;
   if (phase === 'before-transition') {
-    if (mode !== 'real-retained-browser-missing-session') {
-      for (const session of sessions) {
-        const sequence = launchReceipts.length;
-        writeMessage({ version: 4, type: 'ownership-intent', phase, sequence, session });
-        await waitForOwnershipAuthorization(phase, sequence, session);
-        await clientModule.installSignalRecorder(client, session);
-        const launchReceipt = realLaunchReceipt(session, guardianMarkerName, marker);
-        launchReceipts.push(launchReceipt);
-        writeMessage({
-          version: 4, type: 'ownership-add', phase, sequence, session, launchReceipt,
-        });
-        await clientModule.setAndVerifyViewport(client, session, viewports[session]);
-        await client.runCode(session, `async (page) => {
-          page.__phase9RetainedSessionMarker = ${nativeJsonStringify(session)};
-          return true;
-        }`);
-      }
-      if (mode === 'real-retained-browser-two-sessions-missing-second-chrome') {
-        process.kill(launchReceipts[1].chromeMainPid, 'SIGKILL');
+    for (const [contextOrdinal, row] of phaseRows(phase).entries()) {
+      writeMessage({
+        version: 4, type: 'context-start', phase, contextOrdinal, contextId: row.contextId,
+      });
+      for (const session of fixtureRowSessions(row)) {
+        const retain = sessions.includes(session);
+        let launchReceipt;
+        if (retain && mode !== 'real-retained-browser-missing-session') {
+          writeMessage({ version: 4, type: 'ownership-intent', phase, sequence, session });
+          await waitForOwnershipAuthorization(phase, sequence, session);
+          await clientModule.installSignalRecorder(client, session);
+          launchReceipt = realLaunchReceipt(session, guardianMarkerName, marker);
+          writeMessage({ version: 4, type: 'ownership-add', phase, sequence, session, launchReceipt });
+          await clientModule.setAndVerifyViewport(client, session, viewports[session]);
+          await client.runCode(session, `async (page) => {
+            page.__phase9RetainedSessionMarker = ${nativeJsonStringify(session)};
+            return true;
+          }`);
+        } else {
+          launchReceipt = {
+            session, daemonPid: 900_001 + (sequence * 2), chromeMainPid: 900_002 + (sequence * 2),
+          };
+          await writeOwnershipIntentAndAdd(phase, sequence, session, launchReceipt);
+        }
+        sequence += 1;
+        if (retain) launchReceipts.push(launchReceipt);
+        else {
+          writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
+          releasedBrowserSessions.push(session);
+          sequence += 1;
+        }
       }
     }
-    if (launchReceipts.length === 0) {
-      launchReceipts.push(...fakeLaunchReceipts(browserSessions));
-      for (const [sequence, session] of browserSessions.entries()) {
-        await writeOwnershipIntentAndAdd(phase, sequence, session, launchReceipts[sequence]);
-      }
+    if (mode === 'real-retained-browser-two-sessions-missing-second-chrome') {
+      process.kill(launchReceipts[1].chromeMainPid, 'SIGKILL');
     }
     let roguePid = null;
     if (mode === 'real-retained-browser-rogue') {
@@ -354,7 +384,7 @@ async function runRealRetainedBrowser(mode, phase, args) {
       lookalike.unref();
       roguePid = lookalike.pid;
     }
-    const sequence = await announceCanonicalRowSessions(browserSessions.length);
+    releasedBrowserSessions.sort();
     writeMessage({
       version: 4, type: 'ownership-complete', phase, sequence,
       browserSessions, attachedBrowserSessions, launchReceipts, releasedBrowserSessions,
@@ -364,33 +394,46 @@ async function runRealRetainedBrowser(mode, phase, args) {
       lookalikePath, lookalikeRoot, viewports,
     }), { mode: 0o600 });
   } else {
-    for (const [sequence, session] of sessions.entries()) {
-      writeMessage({ version: 4, type: 'ownership-attach', phase, sequence, session });
-      await clientModule.attachExistingSignalRecorder(client, session, {
-        ...viewports[session], marker: session,
-      });
-    }
-    let sequence = await announceCanonicalRowSessions(sessions.length);
     const beforeInfo = JSON.parse(readFileSync(
       `/tmp/phase9-guardian-real-retained-${process.ppid}-before-transition.json`, 'utf8',
     ));
-    for (const session of sessions) {
-      const receipt = beforeInfo.launchReceipts.find(candidate => candidate.session === session);
-      if (!receipt) nativeExit(70);
-      await client.closeBrowser(session);
-      const inventory = await client.listBrowsers();
-      if (inventory.browsers.some(browser => browser.name === session)) nativeExit(70);
-      let processesRemain = true;
-      for (let attempt = 0; attempt < 50 && processesRemain; attempt += 1) {
-        processesRemain = [receipt.daemonPid, receipt.chromeMainPid].some(pid => {
-          try { process.kill(pid, 0); return true; } catch { return false; }
-        });
-        if (processesRemain) await new Promise(resolvePromise => nativeSetTimeout(resolvePromise, 100));
+    for (const [contextOrdinal, row] of phaseRows(phase).entries()) {
+      writeMessage({
+        version: 4, type: 'context-start', phase, contextOrdinal, contextId: row.contextId,
+      });
+      for (const session of fixtureRowSessions(row)) {
+        const attach = sessions.includes(session) && row.contextId.includes('stale-session');
+        if (attach) {
+          writeMessage({ version: 4, type: 'ownership-attach', phase, sequence, session });
+          await clientModule.attachExistingSignalRecorder(client, session, {
+            ...viewports[session], marker: session,
+          });
+        } else {
+          const receipt = {
+            session, daemonPid: 900_001 + (sequence * 2), chromeMainPid: 900_002 + (sequence * 2),
+          };
+          await writeOwnershipIntentAndAdd(phase, sequence, session, receipt);
+        }
+        sequence += 1;
+        if (attach) {
+          const receipt = beforeInfo.launchReceipts.find(candidate => candidate.session === session);
+          if (!receipt) nativeExit(70);
+          await client.closeBrowser(session);
+          const inventory = await client.listBrowsers();
+          if (inventory.browsers.some(browser => browser.name === session)) nativeExit(70);
+          let processesRemain = true;
+          for (let attempt = 0; attempt < 50 && processesRemain; attempt += 1) {
+            processesRemain = [receipt.daemonPid, receipt.chromeMainPid].some(pid => {
+              try { process.kill(pid, 0); return true; } catch { return false; }
+            });
+            if (processesRemain) await new Promise(resolvePromise => nativeSetTimeout(resolvePromise, 100));
+          }
+          if (processesRemain) nativeExit(70);
+        }
+        writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
+        releasedBrowserSessions.push(session);
+        sequence += 1;
       }
-      if (processesRemain) nativeExit(70);
-      writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
-      releasedBrowserSessions.push(session);
-      sequence += 1;
     }
     releasedBrowserSessions.sort();
     writeMessage({
@@ -426,52 +469,45 @@ if (mode === 'success') {
   await finishWithRows(phase, mode);
 } else if (new Set([
   'row-protocol-success', 'row-extra-field', 'row-duplicate', 'row-out-of-order',
-  'row-wrong-phase', 'row-early-completion',
+  'row-wrong-phase', 'row-early-completion', 'row-unowned-session', 'mutate-globals',
 ]).has(mode)) {
   await finishWithRows(phase, mode);
 } else if (mode === 'row-version-1' || mode === 'row-empty-sessions') {
-  const rows = phaseRows(phase);
-  writeMessage({
-    version: 4, type: 'ownership-complete', phase, sequence: 0,
-    browserSessions: [], attachedBrowserSessions: [], launchReceipts: [], releasedBrowserSessions: [],
-  });
-  rows.forEach((row, index) => writeMessage(mode === 'row-version-1'
-    ? { version: 1, type: 'row', phase, index, row }
-    : { version: 2, type: 'row', phase, index, sessions: [], row }));
-  writeMessage({
-    version: 4, type: 'completion', phase, ok: true, rowCount: rows.length,
-    browserSessions: [], attachedBrowserSessions: [], launchReceipts: [], releasedBrowserSessions: [],
-  }, () => nativeExit(0));
+  await finishWithRows(phase, mode);
 } else if (mode === 'own-before') {
-  await finishWithRows(phase, mode, phase === 'before-transition' ? ['phase9-guardian-owned'] : []);
+  await finishWithRows(phase, mode, phase === 'before-transition'
+    ? ['p9-pending-deletion-active-baseline-desktop'] : []);
 } else if (mode === 'receipt-mismatch') {
-  await finishWithRows(phase, mode, phase === 'before-transition' ? ['phase9-guardian-owned'] : []);
+  await finishWithRows(phase, mode, phase === 'before-transition'
+    ? ['p9-pending-deletion-active-baseline-desktop'] : []);
 } else if (mode === 'ownership-crash-first' || mode === 'ownership-crash-late') {
   if (phase !== 'before-transition') nativeExit(70);
   const sessions = mode === 'ownership-crash-first'
-    ? ['phase9-acquired-first']
-    : ['phase9-acquired-first', 'phase9-acquired-late'];
-  for (const [sequence, session] of sessions.entries()) {
-    await writeOwnershipIntentAndAdd(phase, sequence, session, fakeLaunchReceipts(sessions)[sequence]);
+    ? ['p9-admission-route-qa-parent-a-mobile']
+    : ['p9-admission-route-qa-parent-a-mobile', 'p9-admission-route-qa-adult-player-a-mobile'];
+  const receipts = fakeLaunchReceipts(sessions);
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+  });
+  await writeOwnershipIntentAndAdd(phase, 0, sessions[0], receipts[0]);
+  if (mode === 'ownership-crash-late') {
+    writeMessage({ version: 4, type: 'ownership-release', phase, sequence: 1, session: sessions[0] });
+    writeMessage({
+      version: 4, type: 'context-start', phase,
+      contextOrdinal: 1, contextId: 'admission-route-qa-adult-player-a-mobile',
+    });
+    await writeOwnershipIntentAndAdd(phase, 2, sessions[1], receipts[1]);
   }
   nativeExit(70);
 } else if (new Set([
-  'ownership-duplicate', 'ownership-mutation', 'ownership-out-of-order', 'row-unowned-session',
+  'ownership-duplicate', 'ownership-mutation', 'ownership-out-of-order',
 ]).has(mode)) {
   const session = 'phase9-owned-protocol';
   const launchReceipt = fakeLaunchReceipts([session])[0];
   if (mode === 'ownership-out-of-order') {
     writeMessage({
       version: 4, type: 'ownership-intent', phase, sequence: 1, session,
-    }, () => nativeExit(0));
-  } else if (mode === 'row-unowned-session') {
-    writeMessage({
-      version: 4, type: 'ownership-complete', phase, sequence: 0,
-      browserSessions: [], attachedBrowserSessions: [], launchReceipts: [], releasedBrowserSessions: [],
-    });
-    writeMessage({
-      version: 2, type: 'row', phase, index: 0,
-      sessions: ['phase9-never-owned'], row: phaseRows(phase)[0],
     }, () => nativeExit(0));
   } else {
     await writeOwnershipIntentAndAdd(phase, 0, session, launchReceipt);
@@ -489,7 +525,7 @@ if (mode === 'success') {
     }
   }
 } else if (mode === 'fail-before' || mode === 'fail-after') {
-  await finishWithRows(phase, mode, [], !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
+  await finishWithRows(phase, mode, undefined, !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
 } else if (mode === 'failure-terminal-stale-context') {
   if (phase !== 'before-transition') nativeExit(70);
   const firstSession = 'p9-admission-route-qa-parent-a-mobile';
@@ -567,6 +603,76 @@ if (mode === 'success') {
     version: 4, type: 'ownership-intent', phase, sequence: 0,
     session: 'p9-admission-route-qa-youth-active-mobile',
   }, () => nativeExit(0));
+} else if (mode === 'ownership-before-context') {
+  writeMessage({
+    version: 4, type: 'ownership-intent', phase, sequence: 0,
+    session: fixtureRowSessions(phaseRows(phase)[0])[0],
+  }, () => nativeExit(0));
+} else if (mode === 'next-context-with-active-ownership') {
+  const [first, second] = phaseRows(phase);
+  const [session] = fixtureRowSessions(first);
+  writeMessage({
+    version: 4, type: 'context-start', phase, contextOrdinal: 0, contextId: first.contextId,
+  });
+  await writeOwnershipIntentAndAdd(phase, 0, session, fakeLaunchReceipts([session])[0]);
+  writeMessage({
+    version: 4, type: 'context-start', phase, contextOrdinal: 1, contextId: second.contextId,
+  }, () => nativeExit(0));
+} else if (mode === 'complete-without-context') {
+  const rows = phaseRows(phase);
+  writeMessage({
+    version: 4, type: 'ownership-complete', phase, sequence: 0,
+    browserSessions: [], attachedBrowserSessions: [], launchReceipts: [], releasedBrowserSessions: [],
+  });
+  rows.forEach((row, index) => writeMessage({
+    version: 2, type: 'row', phase, index, sessions: fixtureRowSessions(row), row,
+  }));
+  writeMessage({
+    version: 4, type: 'completion', phase, ok: true, rowCount: rows.length,
+    browserSessions: [], attachedBrowserSessions: [], launchReceipts: [], releasedBrowserSessions: [],
+  }, () => nativeExit(0));
+} else if (mode === 'failure-terminal-row-emission') {
+  if (phase !== 'before-transition') nativeExit(70);
+  const rows = phaseRows(phase);
+  const retained = [
+    fixtureSessionName('pending-deletion-active-baseline-mobile'),
+    fixtureSessionName('pending-deletion-active-baseline-desktop'),
+  ].sort();
+  const retainedReceipts = [];
+  const released = [];
+  let sequence = 0;
+  for (const [contextOrdinal, row] of rows.entries()) {
+    writeMessage({
+      version: 4, type: 'context-start', phase, contextOrdinal, contextId: row.contextId,
+    });
+    for (const session of fixtureRowSessions(row)) {
+      const receipt = {
+        session, daemonPid: 900_001 + (sequence * 2), chromeMainPid: 900_002 + (sequence * 2),
+      };
+      await writeOwnershipIntentAndAdd(phase, sequence, session, receipt);
+      sequence += 1;
+      if (retained.includes(session)) retainedReceipts.push(receipt);
+      else {
+        writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
+        released.push(session);
+        sequence += 1;
+      }
+    }
+  }
+  released.sort();
+  writeMessage({
+    version: 4, type: 'ownership-complete', phase, sequence,
+    browserSessions: retained, attachedBrowserSessions: [],
+    launchReceipts: retainedReceipts, releasedBrowserSessions: released,
+  });
+  writeMessage({
+    version: 4, type: 'failure', phase, sequence,
+    category: 'scenario-runner-invalid', stage: 'row-emission',
+    contextOrdinal: rows.length - 1, contextId: rows.at(-1).contextId,
+    checkpoint: 'row-emission', reason: 'row-invalid', pendingBrowserSession: null,
+    browserSessions: retained, attachedBrowserSessions: [],
+    launchReceipts: retainedReceipts, releasedBrowserSessions: released,
+  }, () => nativeExit(0));
 } else if (mode.startsWith('failure-terminal-')) {
   if (phase !== 'before-transition') nativeExit(70);
   const trailingOutput = mode.endsWith('-trailing');
@@ -591,11 +697,6 @@ if (mode === 'success') {
     writeMessage({ version: 4, type: 'ownership-add', phase, sequence: 0, session, launchReceipt });
     pendingBrowserSession = null;
   }
-  if (stage === 'row-emission') writeMessage({
-    version: 4, type: 'ownership-complete', phase, sequence: 1,
-    browserSessions: [session], attachedBrowserSessions: [],
-    launchReceipts: [launchReceipt], releasedBrowserSessions: [],
-  });
   writeMessage({
     version: 4,
     type: 'failure',
@@ -631,40 +732,6 @@ if (mode === 'success') {
     if (!trailingOutput) return nativeExit(0);
     writeMessage({ version: 4, type: 'trailing-output' }, () => nativeExit(0));
   });
-} else if (mode === 'mutate-globals') {
-  const rows = phaseRows(phase);
-  const sessions = [...new Set(rows.flatMap(fixtureRowSessions))].sort();
-  const receipts = fakeLaunchReceipts(sessions);
-  for (const [sequence, session] of sessions.entries()) {
-    await writeOwnershipIntentAndAdd(phase, sequence, session, receipts[sequence]);
-  }
-  let sequence = sessions.length;
-  for (const session of sessions) {
-    writeMessage({ version: 4, type: 'ownership-release', phase, sequence, session });
-    sequence += 1;
-  }
-  writeMessage({
-    version: 4, type: 'ownership-complete', phase, sequence, browserSessions: [],
-    attachedBrowserSessions: [], launchReceipts: [], releasedBrowserSessions: sessions,
-  });
-  rows.forEach((row, index) => {
-    writeMessage({ version: 2, type: 'row', phase, index, sessions: fixtureRowSessions(row), row });
-  });
-  Promise.prototype.then = () => ({ forged: true });
-  globalThis.Promise = function ForgedPromise() {};
-  Object.keys = () => [];
-  Object.prototype.phase9ChildMutation = true;
-  Array.isArray = () => false;
-  Array.prototype.push = () => 99;
-  Reflect.ownKeys = () => [];
-  Reflect.apply = () => ({ forged: true });
-  globalThis.setTimeout = () => 99;
-  globalThis.clearTimeout = () => {};
-  writeMessage({
-    version: 4, type: 'completion', phase, ok: true, browserSessions: [],
-    attachedBrowserSessions: [], launchReceipts: [], releasedBrowserSessions: sessions,
-    rowCount: rows.length,
-  }, () => nativeExit(0));
 } else if (mode === 'forged-claims') {
   writeMessage({ version: 1, type: 'ownership', phase, browserSessions: [] });
   writeMessage({
@@ -724,8 +791,10 @@ if (mode === 'success') {
   process.on('SIGTERM', () => {});
   nativeSetInterval(() => {}, 1_000);
 } else if (mode === 'hang-resume-late-write') {
-  const session = 'phase9-hang-owned';
+  const row = phaseRows(phase)[0];
+  const [session] = fixtureRowSessions(row);
   const sequence = 0;
+  writeMessage({ version: 4, type: 'context-start', phase, contextOrdinal: 0, contextId: row.contextId });
   writeMessage({ version: 4, type: 'ownership-intent', phase, sequence, session });
   await waitForOwnershipAuthorization(phase, sequence, session);
   await new Promise((resolvePromise, reject) => {

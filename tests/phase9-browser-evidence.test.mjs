@@ -5016,11 +5016,12 @@ test('phase 9 lifecycle guardian keeps a transient inspector execution failure s
   assert.equal(fixture.events.includes('fs:remove-workspace'), false);
 });
 
-const realGuardianSession = 'phase9-real-guardian-retained';
+const realGuardianSession = 'p9-pending-deletion-active-baseline-mobile';
 const realGuardianTwoSessions = Object.freeze([
-  'phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b',
+  'p9-pending-deletion-active-baseline-mobile',
+  'p9-pending-deletion-active-baseline-desktop',
 ]);
-const realGuardianCrashSession = 'phase9-real-acquisition-crash';
+const realGuardianCrashSession = 'p9-admission-route-qa-parent-a-mobile';
 const REAL_GUARDIAN_JOIN_TIMEOUT_MS = 60_000;
 const realGuardianInfoPath = phase => `/tmp/phase9-guardian-real-retained-${process.pid}-${phase}.json`;
 const realGuardianProfileRoot = '/tmp/phase9-core-identities.test/playwright-tmp';
@@ -5701,7 +5702,7 @@ darwinRuntimeTest('phase 9 guardian retains only an exact real browser marker ac
         (await realGuardianBrowserClient.listBrowsers({
           temporaryDirectory: realGuardianProfileRoot,
         })).browsers.map(item => item.name).sort(),
-        [realGuardianSession],
+        [...realGuardianTwoSessions].sort(),
       );
       const lines = markedProcessLines(info.marker);
       assert.equal(lines.some(line => line.includes('/node_modules/playwright-core/lib/entry/cliDaemon.js')), true);
@@ -5723,9 +5724,7 @@ darwinRuntimeTest('phase 9 guardian retains only an exact real browser marker ac
       buildCanonicalScenarioPlan().filter(row => row.startState === 'pending_deletion'),
       'after-transition',
     ).releasedSessions;
-    assert.deepEqual(afterInfo.releasedBrowserSessions, [
-      ...canonicalAfterRelease, realGuardianSession,
-    ].sort());
+    assert.deepEqual(afterInfo.releasedBrowserSessions, canonicalAfterRelease);
     assert.deepEqual((await realGuardianBrowserClient.listBrowsers()).browsers, []);
     assert.deepEqual(markedProcessLines(beforeInfo.marker), []);
     assert.deepEqual(markedProcessLines(afterInfo.marker), []);
@@ -5843,9 +5842,11 @@ darwinRuntimeTest('phase 9 guardian binds two real retained sessions to distinct
         (await realGuardianBrowserClient.listBrowsers({
           temporaryDirectory: realGuardianProfileRoot,
         })).browsers.map(item => item.name).sort(),
-        [...realGuardianTwoSessions],
+        [...realGuardianTwoSessions].sort(),
       );
-      assert.deepEqual(info.launchReceipts.map(receipt => receipt.session).sort(), [...realGuardianTwoSessions]);
+      assert.deepEqual(
+        info.launchReceipts.map(receipt => receipt.session).sort(), [...realGuardianTwoSessions].sort(),
+      );
       assert.equal(new Set(info.launchReceipts.map(receipt => receipt.daemonPid)).size, 2);
       assert.equal(new Set(info.launchReceipts.map(receipt => receipt.chromeMainPid)).size, 2);
       assert.deepEqual(info.viewports, {
@@ -6357,18 +6358,23 @@ test('phase 9 guardian preserves every validated child failure stage through exa
     assert.equal(result.category, category);
     assert.equal(result.primaryCategory, category);
     assert.equal(result.primaryStage, stage);
+    const expectedDiagnosticContext = stage === 'row-emission'
+      ? { contextOrdinal: 39, contextId: 'pending-deletion-active-baseline-desktop' }
+      : { contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile' };
     assert.deepEqual({
       contextOrdinal: result.diagnostic.contextOrdinal,
       contextId: result.diagnostic.contextId,
-    }, { contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile' });
+    }, expectedDiagnosticContext);
     assert.equal(typeof result.diagnostic.checkpoint, 'string');
     assert.equal(typeof result.diagnostic.reason, 'string');
     assert.equal(result.closureCertified, true);
-    assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true);
+    assert.equal(fixture.events.some(event => event.startsWith('browser:close:')), true);
     assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
     assert.equal(JSON.stringify(result).includes('secret'), false);
     assert.equal(JSON.stringify(fixture.terminalCheckpoints).includes('p9-admission-route-qa-parent-a-mobile'), false);
-    assert.equal(JSON.stringify(fixture.terminalCheckpoints).includes('admission-route-qa-parent-a-mobile'), true);
+    assert.equal(
+      JSON.stringify(fixture.terminalCheckpoints).includes(expectedDiagnosticContext.contextId), true,
+    );
   });
 });
 
@@ -6477,6 +6483,35 @@ test('phase 9 guardian rejects future-row ownership under the current canonical 
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 0);
 });
 
+test('phase 9 guardian rejects ownership before the first canonical context-start', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'ownership-before-context' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.equal(result.diagnostic, undefined);
+  assert.equal(result.closureCertified, false);
+});
+
+test('phase 9 guardian rejects advancing context while prior non-pending ownership is active', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'next-context-with-active-ownership' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.equal(result.diagnostic, undefined);
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true);
+});
+
+test('phase 9 guardian rejects a complete canonical row stream without context-start records', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'complete-without-context' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.equal(result.diagnostic, undefined);
+  assert.equal(result.closureCertified, false);
+  assert.equal(result.rows, undefined);
+});
+
 test('phase 9 guardian preserves a valid failure candidate across clean-protocol child closure failure', async () => {
   const fixture = lifecycleGuardianFixture({ runnerMode: 'failure-terminal-login-nonzero' });
   const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
@@ -6541,7 +6576,7 @@ test('phase 9 lifecycle guardian interruption is idempotent and reentry fails cl
         version: 4,
         phase: 'before-transition',
         sequence: 0,
-        session: 'phase9-hang-owned',
+        session: 'p9-admission-route-qa-parent-a-mobile',
         ownershipAuthorized: true,
       });
       await new Promise(resolvePromise => setTimeout(resolvePromise, 50));
@@ -6730,8 +6765,11 @@ test('phase 9 lifecycle guardian keeps a released-but-live session recovery-owne
 
 test('phase 9 lifecycle guardian immediately registers each streamed acquisition before child crash', async t => {
   for (const [mode, sessions] of [
-    ['ownership-crash-first', ['phase9-acquired-first']],
-    ['ownership-crash-late', ['phase9-acquired-first', 'phase9-acquired-late']],
+    ['ownership-crash-first', ['p9-admission-route-qa-parent-a-mobile']],
+    ['ownership-crash-late', [
+      'p9-admission-route-qa-parent-a-mobile',
+      'p9-admission-route-qa-adult-player-a-mobile',
+    ]],
   ]) await t.test(mode, async () => {
     const fixture = lifecycleGuardianFixture({ runnerMode: mode });
     const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });

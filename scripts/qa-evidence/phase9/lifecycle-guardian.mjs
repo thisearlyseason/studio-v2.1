@@ -2254,6 +2254,7 @@ function spawnRunnerChild({
   let ownership = null;
   let ownershipSequence = 0;
   let currentContext = null;
+  let currentContextAcceptedSessions = new Set();
   let pendingOwnershipIntent = null;
   const announcedSessions = new Set();
   const activeAnnouncedSessions = new Set();
@@ -2294,7 +2295,7 @@ function spawnRunnerChild({
     throw new GuardianFailure('scenario-runner-invalid');
   };
   const requireCurrentOwnershipContext = session => {
-    if (currentContext === null) return;
+    if (currentContext === null) rejectOwnershipProtocol();
     const matches = CANONICAL_ROW_CONTRACTS[phase].map((row, contextOrdinal) => ({
       contextOrdinal, contextId: row.contextId,
       sessions: canonicalBrowserSessionsForRow(row),
@@ -2305,6 +2306,19 @@ function spawnRunnerChild({
       contextId: matches[0].contextId,
     });
     if (currentContext !== null && !isDeepStrictEqual(next, currentContext)) rejectOwnershipProtocol();
+  };
+  const currentContextLifecycleComplete = () => {
+    if (currentContext === null || pendingOwnershipIntent !== null) return false;
+    const row = CANONICAL_ROW_CONTRACTS[phase][currentContext.contextOrdinal];
+    const required = canonicalBrowserSessionsForRow(row);
+    if (required.some(session => !currentContextAcceptedSessions.has(session))) return false;
+    const retainedBoundary = phase === 'before-transition'
+      && row.contextId.startsWith('pending-deletion-active-baseline-');
+    return retainedBoundary
+      ? required.every(session => (
+        activeAnnouncedSessions.has(session) || releasedSessions.has(session)
+      ))
+      : required.every(session => releasedSessions.has(session));
   };
 
   const acceptLine = line => {
@@ -2325,12 +2339,14 @@ function spawnRunnerChild({
       const expected = CANONICAL_ROW_CONTRACTS[phase][nextOrdinal];
       if (ownership || terminal || pendingOwnershipIntent || message.version !== 4
         || message.phase !== phase || !expected
+        || (currentContext !== null && !currentContextLifecycleComplete())
         || message.contextOrdinal !== nextOrdinal || message.contextId !== expected.contextId) {
         throw new GuardianFailure('scenario-runner-invalid');
       }
       currentContext = Object.freeze({
         contextOrdinal: message.contextOrdinal, contextId: message.contextId,
       });
+      currentContextAcceptedSessions = new Set();
       return;
     }
     if (message?.type === 'ownership-intent') {
@@ -2342,6 +2358,7 @@ function spawnRunnerChild({
         rejectOwnershipProtocol();
       }
       requireCurrentOwnershipContext(message.session);
+      currentContextAcceptedSessions.add(message.session);
       pendingOwnershipIntent = Object.freeze({
         sequence: message.sequence, session: message.session,
       });
@@ -2368,6 +2385,7 @@ function spawnRunnerChild({
         || attachedSessions.has(message.session)) {
         rejectOwnershipProtocol();
       }
+      requireCurrentOwnershipContext(message.session);
       const [launchReceipt] = requireLaunchReceipts([message.launchReceipt], [message.session]);
       announcedSessions.add(message.session);
       activeAnnouncedSessions.add(message.session);
@@ -2385,6 +2403,7 @@ function spawnRunnerChild({
         || releasedSessions.has(message.session)) {
         rejectOwnershipProtocol();
       }
+      requireCurrentOwnershipContext(message.session);
       activeAnnouncedSessions.delete(message.session);
       activeAnnouncedReceipts.delete(message.session);
       releasedSessions.add(message.session);
@@ -2401,6 +2420,7 @@ function spawnRunnerChild({
         rejectOwnershipProtocol();
       }
       requireCurrentOwnershipContext(message.session);
+      currentContextAcceptedSessions.add(message.session);
       attachedSessions.add(message.session);
       ownershipSequence += 1;
       onOwnershipAttach({ session: message.session });
@@ -2412,7 +2432,9 @@ function spawnRunnerChild({
         'phase', 'sequence', 'type', 'version',
       ]);
       if (ownership || terminal || pendingOwnershipIntent || message.version !== 4 || message.phase !== phase
-        || message.sequence !== ownershipSequence) {
+        || message.sequence !== ownershipSequence
+        || currentContext?.contextOrdinal !== CANONICAL_ROW_CONTRACTS[phase].length - 1
+        || !currentContextLifecycleComplete()) {
         rejectOwnershipProtocol();
       }
       const completedOwnership = requireProcessOwnership(message);
@@ -2457,6 +2479,7 @@ function spawnRunnerChild({
       if (
         !ownership
         || terminal
+        || currentContext?.contextOrdinal !== CANONICAL_ROW_CONTRACTS[phase].length - 1
         || message.version !== 2
         || message.phase !== phase
         || message.index !== phaseRows.length
@@ -2481,6 +2504,7 @@ function spawnRunnerChild({
       if (
         !ownership
         || terminal
+        || currentContext?.contextOrdinal !== CANONICAL_ROW_CONTRACTS[phase].length - 1
         || message.version !== 4
         || message.phase !== phase
         || typeof message.ok !== 'boolean'
