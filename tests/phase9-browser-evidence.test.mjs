@@ -6331,6 +6331,29 @@ test('phase 9 production child sanitizes initialization failure into one closed 
   assert.equal(JSON.stringify(lines).includes(workspace), false);
 });
 
+test('phase 9 guardian discards failure attribution when trailing protocol output invalidates the terminal', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'failure-terminal-login-trailing' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-runner-invalid');
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.notEqual(result.primaryStage, 'login');
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+});
+
+test('phase 9 guardian preserves a valid failure candidate across clean-protocol child closure failure', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'failure-terminal-login-nonzero' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-closure-failed');
+  assert.equal(result.primaryCategory, 'scenario-failed');
+  assert.equal(result.primaryStage, 'login');
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+});
+
 test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transition before cleanup', async () => {
   const fixture = lifecycleGuardianFixture({ transitionNotPersisted: true });
   const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });

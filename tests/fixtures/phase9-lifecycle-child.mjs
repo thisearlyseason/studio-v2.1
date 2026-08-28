@@ -492,7 +492,9 @@ if (mode === 'success') {
   await finishWithRows(phase, mode, [], !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
 } else if (mode.startsWith('failure-terminal-')) {
   if (phase !== 'before-transition') nativeExit(70);
-  const stage = mode.slice('failure-terminal-'.length);
+  const trailingOutput = mode.endsWith('-trailing');
+  const nonzeroExit = mode.endsWith('-nonzero');
+  const stage = mode.slice('failure-terminal-'.length).replace(/-(trailing|nonzero)$/, '');
   const category = new Set(['login', 'scenario-action']).has(stage)
     ? 'scenario-failed' : 'scenario-runner-invalid';
   const session = 'phase9-failure-terminal-owned';
@@ -524,7 +526,11 @@ if (mode === 'success') {
     attachedBrowserSessions: [],
     launchReceipts: activeStage ? [launchReceipt] : [],
     releasedBrowserSessions: [],
-  }, () => nativeExit(0));
+  }, () => {
+    if (nonzeroExit) return nativeExit(71);
+    if (!trailingOutput) return nativeExit(0);
+    writeMessage({ version: 4, type: 'trailing-output' }, () => nativeExit(0));
+  });
 } else if (mode === 'mutate-globals') {
   const rows = phaseRows(phase);
   const sessions = [...new Set(rows.flatMap(fixtureRowSessions))].sort();

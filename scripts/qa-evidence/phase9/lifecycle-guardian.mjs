@@ -3512,16 +3512,22 @@ export function createLifecycleGuardian({
         settle(rejectCompletion, error);
       }
     });
-    if (completed?.ok === false
+    const scenarioFailureCandidate = completed?.ok === false
       && RUNNER_FAILURE_CATEGORIES.has(completed.category)
-      && RUNNER_FAILURE_STAGES.has(completed.stage)) {
-      scenarioFailureAttribution = Object.freeze({
+      && RUNNER_FAILURE_STAGES.has(completed.stage)
+      ? Object.freeze({
         category: completed.category,
         stage: completed.stage,
-      });
-    }
+      }) : null;
     if (!completed) throw new GuardianFailure('scenario-failed');
-    if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
+    if (!(await joinScenario(handle))) {
+      if (scenarioFailureCandidate && !handle.protocolFailure) {
+        scenarioFailureAttribution = scenarioFailureCandidate;
+      }
+      if (handle.protocolFailure) throw handle.protocolFailure;
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    scenarioFailureAttribution = scenarioFailureCandidate;
     activeScenario = null;
     if (completed.ok !== true) throw new GuardianFailure(completed.category ?? 'scenario-failed');
     await validateRetainedBrowserBoundary();
