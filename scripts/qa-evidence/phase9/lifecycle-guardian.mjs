@@ -1133,9 +1133,13 @@ export function validateRunnerFailureTerminal(message, accepted) {
     || (accepted.ownershipComplete === true && message.stage !== 'row-emission')
     || accepted.terminal) throw new GuardianFailure('scenario-runner-invalid');
   const expectedPending = accepted.pendingOwnershipIntent?.session ?? null;
+  const activeCount = accepted.activeAnnouncedSessions.size + accepted.attachedSessions.size;
   if ((message.stage === 'acquisition' && expectedPending === null)
     || (expectedPending !== null
-      && !new Set(['authorization', 'acquisition', 'receipt']).has(message.stage))) {
+      && !new Set(['authorization', 'acquisition', 'receipt']).has(message.stage))
+    || (new Set(['recorder', 'viewport', 'login', 'scenario-action', 'release']).has(message.stage)
+      && activeCount === 0)
+    || (message.stage === 'row-emission' && accepted.ownershipComplete !== true)) {
     throw new GuardianFailure('scenario-runner-invalid');
   }
   if ((message.pendingBrowserSession !== null

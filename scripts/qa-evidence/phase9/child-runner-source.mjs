@@ -33,8 +33,67 @@ import {
 } from './session-lifecycle.mjs';
 import { openBoundPrivateInputs } from './private-input-reader.mjs';
 
+let failurePhase = null;
+let failureStage = 'authorization';
+let failureTerminalEmitted = false;
+let ownershipSequence = 0;
+let pendingBrowserSession = null;
+const ownedSessions = new Set();
+const launchReceipts = new Map();
+const attachedBrowserSessions = new Set();
+const activeAttachedBrowserSessions = new Set();
+const attachedLaunchReceipts = new Map();
+const releasedBrowserSessions = new Set();
+let cleanupPrivateInputs = null;
+let cleanupCredentialBroker = null;
+let cleanupIdentities = null;
+let cleanupGrants = null;
+const emitFailureTerminal = () => {
+  if (failureTerminalEmitted || !failurePhase) return;
+  const browserSessions = [...ownedSessions].sort();
+  const launchReceiptValues = browserSessions.map(session => launchReceipts.get(session));
+  if (launchReceiptValues.some(receipt => !receipt)) return;
+  const category = new Set(['login', 'scenario-action']).has(failureStage)
+    ? 'scenario-failed' : 'scenario-runner-invalid';
+  failureTerminalEmitted = true;
+  try {
+    process.stdout.write(`${JSON.stringify({
+      type: 'failure', version: 4, phase: failurePhase, sequence: ownershipSequence,
+      category, stage: failureStage, pendingBrowserSession,
+      browserSessions,
+      attachedBrowserSessions: [...attachedBrowserSessions].sort(),
+      launchReceipts: launchReceiptValues,
+      releasedBrowserSessions: [...releasedBrowserSessions].sort(),
+    })}\n`);
+  } catch {}
+};
+const closePrivateResources = async () => {
+  cleanupIdentities?.clear();
+  cleanupGrants?.clear();
+  let failed = false;
+  if (cleanupCredentialBroker?.listening) {
+    try {
+      await new Promise((resolvePromise, reject) => (
+        cleanupCredentialBroker.close(error => (error ? reject(error) : resolvePromise()))
+      ));
+      cleanupCredentialBroker = null;
+    } catch { failed = true; }
+  }
+  if (cleanupPrivateInputs) {
+    try {
+      await cleanupPrivateInputs.close();
+      cleanupPrivateInputs = null;
+    } catch { failed = true; }
+  }
+  if (failed) throw new Error('runner-private-resource-close-failed');
+};
+
+const run = async () => {
 const markerNameSha256 = '585c21d0652b1f1c5dd8168796ee2599745f8a1a9885e3178ac29b057f0044c3';
 const argv = process.argv.slice(1);
+const rawPhasePosition = argv.indexOf('--phase');
+const rawPhase = rawPhasePosition === -1 ? null : argv[rawPhasePosition + 1];
+if (new Set(['before-transition', 'after-transition']).has(rawPhase)) failurePhase = rawPhase;
 const exactArgument = name => {
   const positions = argv.flatMap((value, index) => value === name ? [index] : []);
   if (positions.length !== 1 || !argv[positions[0] + 1] || argv[positions[0] + 1].startsWith('--')) {
@@ -44,6 +103,7 @@ const exactArgument = name => {
 };
 
 const phase = exactArgument('--phase');
+failurePhase = phase;
 const workspace = exactArgument('--workspace');
 const manifestPath = exactArgument('--manifest');
 const credentialsPath = exactArgument('--credentials');
@@ -109,6 +169,7 @@ const transport = capturePlaywrightTransport({
 const privateInputs = await openBoundPrivateInputs({
   workspace, manifestPath, credentialsPath, profileRootPath: playwrightTempRoot,
 });
+cleanupPrivateInputs = privateInputs;
 const { manifest, credentials } = privateInputs;
 if (manifest?.version !== 3 || manifest.projectId !== STAGING_PROJECT_ID || typeof manifest.runId !== 'string'
   || credentials?.version !== 1 || credentials.runId !== manifest.runId
@@ -125,6 +186,8 @@ const identities = new Map(credentials.identities.map(value => [value.alias, {
   email: value.email, password: value.password,
 }]));
 const grants = new Map();
+cleanupIdentities = identities;
+cleanupGrants = grants;
 const credentialBroker = createServer((request, response) => {
   const token = String(request.url ?? '').slice(1);
   const alias = grants.get(token);
@@ -135,6 +198,7 @@ const credentialBroker = createServer((request, response) => {
   });
   response.end(credential ? JSON.stringify(credential) : '{}');
 });
+cleanupCredentialBroker = credentialBroker;
 await new Promise((resolvePromise, reject) => {
   credentialBroker.once('error', reject);
   credentialBroker.listen(0, '127.0.0.1', resolvePromise);
@@ -214,16 +278,6 @@ const captureLaunchReceipt = async (session, { requireCurrentMarker = true } = {
   if (mains.length !== 1) throw new Error('runner-launch-receipt-invalid');
   return Object.freeze({ session, daemonPid: daemons[0].pid, chromeMainPid: mains[0].pid });
 };
-const ownedSessions = new Set();
-const launchReceipts = new Map();
-const attachedBrowserSessions = new Set();
-const activeAttachedBrowserSessions = new Set();
-const attachedLaunchReceipts = new Map();
-const releasedBrowserSessions = new Set();
-let ownershipSequence = 0;
-let pendingBrowserSession = null;
-let failureStage = 'authorization';
-let failureTerminalEmitted = false;
 const emitProtocol = value => {
   if (!process.stdout.write(`${JSON.stringify(value)}\n`)) throw new Error('runner-protocol-backpressure');
 };
@@ -264,8 +318,8 @@ const openWithReceipt = async session => {
   if (!plannedOwnedSessions.includes(session) || launchReceipts.has(session)) {
     throw new Error('runner-launch-receipt-invalid');
   }
-  await privateInputs.revalidate();
   failureStage = 'authorization';
+  await privateInputs.revalidate();
   pendingBrowserSession = session;
   emitProtocol({
     type: 'ownership-intent', version: 4, phase, sequence: ownershipSequence, session,
@@ -404,23 +458,6 @@ const actionsFor = session => ({
 });
 
 const rows = [];
-const emitFailureTerminal = () => {
-  if (failureTerminalEmitted) return;
-  const browserSessions = [...ownedSessions].sort();
-  const launchReceiptValues = browserSessions.map(session => launchReceipts.get(session));
-  if (launchReceiptValues.some(receipt => !receipt)) return;
-  const category = new Set(['login', 'scenario-action']).has(failureStage)
-    ? 'scenario-failed' : 'scenario-runner-invalid';
-  failureTerminalEmitted = true;
-  process.stdout.write(`${JSON.stringify({
-    type: 'failure', version: 4, phase, sequence: ownershipSequence,
-    category, stage: failureStage, pendingBrowserSession,
-    browserSessions,
-    attachedBrowserSessions: [...attachedBrowserSessions].sort(),
-    launchReceipts: launchReceiptValues,
-    releasedBrowserSessions: [...releasedBrowserSessions].sort(),
-  })}\n`);
-};
 try {
   for (const row of rowsForPhase) {
     const session = rowSession(row);
@@ -454,12 +491,15 @@ try {
     } else if (row.group === 'logout') {
       const freshSession = freshSessionName(row.contextId);
       await openWithReceipt(freshSession);
+      failureStage = 'viewport';
       if (await setAndVerifyViewport(client, freshSession, viewport) !== row.viewport) {
         throw new Error('runner-viewport-label-invalid');
       }
       await login(session, row.alias);
       await client.tabNew(session, 'about:blank');
+      failureStage = 'recorder';
       await installSignalRecorder(client, session);
+      failureStage = 'scenario-action';
       await client.goto(session, `${STAGING_ORIGIN}/dashboard`);
       await client.tabSelect(session, 0);
       await client.goto(session, `${STAGING_ORIGIN}/settings`);
@@ -527,6 +567,7 @@ try {
     throw new Error('runner-launch-receipt-invalid');
   }
   failureStage = 'row-emission';
+  await closePrivateResources();
   emitProtocol({
     type: 'ownership-complete', version: 4, phase, sequence: ownershipSequence,
     browserSessions,
@@ -547,13 +588,12 @@ try {
   })}\n`);
 } catch {
   emitFailureTerminal();
-} finally {
-  identities.clear();
-  grants.clear();
-  try {
-    await new Promise(resolvePromise => credentialBroker.close(resolvePromise));
-    await privateInputs.close();
-  } catch {
-    emitFailureTerminal();
-  }
+  try { await closePrivateResources(); } catch {}
 }
+
+};
+
+await run().catch(async () => {
+  emitFailureTerminal();
+  try { await closePrivateResources(); } catch {}
+});

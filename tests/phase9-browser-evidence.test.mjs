@@ -6189,7 +6189,7 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       pendingOwnershipIntent: { sequence: 1, session: 'phase9-pending-failure' },
       activeAnnouncedSessions: new Set(),
       activeAnnouncedReceipts: new Map(),
-    } : accepted;
+    } : stage === 'row-emission' ? { ...accepted, ownershipComplete: true } : accepted;
     const terminal = validateRunnerFailureTerminal({
       version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
       category, stage,
@@ -6242,6 +6242,25 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
       ...accepted,
       pendingOwnershipIntent: { sequence: 1, session: 'phase9-pending-failure' },
     }],
+    ...['recorder', 'viewport', 'login', 'scenario-action', 'release'].map(stage => [
+      `empty ownership at ${stage}`,
+      {
+        ...valid,
+        category: new Set(['login', 'scenario-action']).has(stage)
+          ? 'scenario-failed' : 'scenario-runner-invalid',
+        stage,
+        browserSessions: [],
+        launchReceipts: [],
+      },
+      {
+        ...accepted,
+        activeAnnouncedSessions: new Set(),
+        activeAnnouncedReceipts: new Map(),
+      },
+    ]),
+    ['row emission before ownership completion', {
+      ...valid, category: 'scenario-runner-invalid', stage: 'row-emission',
+    }, accepted],
     ['non-row failure after ownership completion', valid, { ...accepted, ownershipComplete: true }],
     ['after terminal', valid, { ...accepted, terminal: { ok: true } }],
   ];
@@ -6274,6 +6293,42 @@ test('phase 9 guardian preserves every validated child failure stage through exa
     assert.equal(JSON.stringify(result).includes('secret'), false);
     assert.equal(JSON.stringify(fixture.terminalCheckpoints).includes('phase9-failure-terminal-owned'), false);
   });
+});
+
+test('phase 9 production child sanitizes initialization failure into one closed terminal', () => {
+  const repositoryRoot = join(testDirectory, '..');
+  const workspace = join(tmpdir(), 'phase9-synthetic-init-failure');
+  const markerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const result = spawnSync(process.execPath, [
+    '--input-type=module', '--eval', readFileSync(join(
+      repositoryRoot, 'scripts/qa-evidence/phase9/child-runner.mjs',
+    ), 'utf8'), '--',
+    '--phase', 'before-transition',
+    '--workspace', workspace,
+    '--manifest', join(workspace, 'manifest.json'),
+    '--credentials', join(workspace, 'credentials.json'),
+    '--guardian-marker-env', markerName,
+    '--config-base64', Buffer.from('{}').toString('base64'),
+  ], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      TMPDIR: join(workspace, 'playwright-tmp'),
+      [markerName]: 'a'.repeat(64),
+    },
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  assert.equal(result.stderr, '');
+  const lines = result.stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  assert.equal(lines.length, 1);
+  assert.deepEqual(lines[0], {
+    type: 'failure', version: 4, phase: 'before-transition', sequence: 0,
+    category: 'scenario-runner-invalid', stage: 'authorization',
+    pendingBrowserSession: null, browserSessions: [], attachedBrowserSessions: [],
+    launchReceipts: [], releasedBrowserSessions: [],
+  });
+  assert.equal(JSON.stringify(lines).includes(workspace), false);
 });
 
 test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transition before cleanup', async () => {
@@ -7695,6 +7750,16 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
       history: task5Lifecycle.history.slice(0, 5),
     },
   }));
+  assert.throws(() => canonicalPhase9TerminalCertificate({
+    ...base,
+    primaryCategory: 'scenario-failed',
+    primaryStage: 'release',
+  }), /primary attribution is invalid/);
+  assert.throws(() => canonicalPhase9TerminalCertificate({
+    ...base,
+    primaryCategory: 'command-failed',
+    primaryStage: 'login',
+  }), /primary attribution is invalid/);
   const recovery = {
     ...base,
     version: 3,
@@ -8897,6 +8962,7 @@ test('phase 9 production child reserves ownership before local acquisition and r
     testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner-source.mjs',
   ), 'utf8');
   const openStart = source.indexOf('const openWithReceipt = async session =>');
+  const authorizationStage = source.indexOf("failureStage = 'authorization';", openStart);
   const privateInputRevalidation = source.indexOf('await privateInputs.revalidate();', openStart);
   const ownershipIntent = source.indexOf("type: 'ownership-intent', version: 4", openStart);
   const authorization = source.indexOf('await requireOwnershipAuthorization(session, ownershipSequence);', ownershipIntent);
@@ -8904,9 +8970,23 @@ test('phase 9 production child reserves ownership before local acquisition and r
   const receipt = source.indexOf('const launchReceipt = await captureLaunchReceipt(session);', acquired);
   const ownershipAdd = source.indexOf("type: 'ownership-add', version: 4", receipt);
   const arm = source.indexOf('await armAcquiredSignalRecorder(client, session);', ownershipAdd);
-  assert.ok(openStart >= 0 && openStart < privateInputRevalidation
+  assert.ok(openStart >= 0 && openStart < authorizationStage
+    && authorizationStage < privateInputRevalidation
     && privateInputRevalidation < ownershipIntent && ownershipIntent < authorization
     && authorization < acquired && acquired < receipt && receipt < ownershipAdd && ownershipAdd < arm);
+  const logoutStart = source.indexOf("} else if (row.group === 'logout')");
+  const freshOpen = source.indexOf('await openWithReceipt(freshSession);', logoutStart);
+  const freshViewportStage = source.indexOf("failureStage = 'viewport';", freshOpen);
+  const freshViewport = source.indexOf('await setAndVerifyViewport(client, freshSession, viewport)', freshOpen);
+  const recorderStage = source.indexOf("failureStage = 'recorder';", freshViewport);
+  const recorderInstall = source.indexOf('await installSignalRecorder(client, session);', freshViewport);
+  assert.ok(logoutStart >= 0 && logoutStart < freshOpen && freshOpen < freshViewportStage
+    && freshViewportStage < freshViewport && freshViewport < recorderStage
+    && recorderStage < recorderInstall);
+  const finalization = source.indexOf('await closePrivateResources();', recorderInstall);
+  const ownershipComplete = source.indexOf("type: 'ownership-complete', version: 4", finalization);
+  const completion = source.indexOf("type: 'completion', version: 4", ownershipComplete);
+  assert.ok(finalization >= 0 && finalization < ownershipComplete && ownershipComplete < completion);
   const attachStart = source.indexOf('const confirmAttachedOwnership = session =>');
   const ownershipAttach = source.indexOf("type: 'ownership-attach', version: 4", attachStart);
   const attachAction = source.indexOf('await attachExistingSignalRecorder(client, session', ownershipAttach);

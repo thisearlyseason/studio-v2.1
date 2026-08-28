@@ -148,6 +148,13 @@ function validateCertificate(input, {
     || typeof value.primaryStage !== 'string' || !PRIMARY_STAGES.has(value.primaryStage)
     || (value.primaryCategory === 'legacy-primary-unavailable' && !allowLegacyPrimary)
   )) throw new Error('Terminal certificate primary attribution is invalid.');
+  if (!version1 && !STATES.includes(value.primaryStage)) {
+    const expectedCategory = new Set(['login', 'scenario-action']).has(value.primaryStage)
+      ? 'scenario-failed' : 'scenario-runner-invalid';
+    if (value.primaryCategory !== expectedCategory) {
+      throw new Error('Terminal certificate primary attribution is invalid.');
+    }
+  }
   if (version3) {
     exactKeys(value.recoveryDisposition, [
       'phase', 'credentialIdentity', 'workspaceIdentity', 'manifestSha256',
