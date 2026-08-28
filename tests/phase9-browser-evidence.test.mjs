@@ -31,6 +31,8 @@ import {
   validateRouteResult,
 } from '../scripts/qa-evidence/phase9/scenario-contracts.mjs';
 import {
+  acquireBlankBrowser,
+  armAcquiredSignalRecorder,
   closeAndVerifyBrowsers,
   createPlaywrightCliClient,
   createPhase9ProductionCliClient,
@@ -8893,6 +8895,37 @@ const privateInputRaceFixture = () => {
   return { workspace, manifestPath, credentialsPath, profileRootPath };
 };
 
+darwinRuntimeTest('phase 9 bound private profile remains valid across real about-blank browser materialization', { timeout: 30_000 }, async () => {
+  const fixture = privateInputRaceFixture();
+  const inputs = await openBoundPrivateInputs(fixture);
+  let cleanupClient;
+  try {
+    const client = createPhase9ProductionCliClient({
+      sourceEnvironment: { ...process.env, TMPDIR: fixture.profileRootPath },
+      temporaryDirectory: fixture.profileRootPath,
+      profileDirectoryDescriptor: inputs.profileDescriptor,
+      beforeCommand: inputs.revalidate,
+    });
+    cleanupClient = createPhase9ProductionCliClient({
+      sourceEnvironment: { ...process.env, TMPDIR: fixture.profileRootPath },
+      temporaryDirectory: fixture.profileRootPath,
+      profileDirectoryDescriptor: inputs.profileDescriptor,
+    });
+    const session = 'phase9-bound-profile-about-blank';
+    const beforeLinks = lstatSync(fixture.profileRootPath).nlink;
+    await acquireBlankBrowser(client, session);
+    const afterLinks = lstatSync(fixture.profileRootPath).nlink;
+    assert.ok(afterLinks >= beforeLinks, 'browser materialization must retain a linked profile directory');
+    await armAcquiredSignalRecorder(client, session);
+    assert.equal(await setAndVerifyViewport(client, session, { width: 390, height: 844 }), '390x844');
+    await closeAndVerifyBrowsers(cleanupClient);
+  } finally {
+    if (cleanupClient) await closeAndVerifyBrowsers(cleanupClient).catch(() => {});
+    await inputs.close();
+    rmSync(fixture.workspace, { recursive: true, force: true });
+  }
+});
+
 test('phase 9 production child rejects a private input replaced after descriptor open without reading foreign bytes', async () => {
   const fixture = privateInputRaceFixture();
   const stolen = `${fixture.manifestPath}.held`;
@@ -9958,7 +9991,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 67);
+  assert.equal(darwinRuntimeTests.length, 68);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

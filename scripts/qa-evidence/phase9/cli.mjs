@@ -61,10 +61,10 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '2271a37bea9edfcaf5eb647c6b0e461415380e8e01b1cb6b8a23eb85a23b7b64',
+  child: 'c7fe4023e7a61c1a613c419a90ae814712fbcd9c8f6e05ae5b2d218aa3774b8a',
   childSource: '1e4f0e42cc2728ec8b81c210b34087339b26fa26b232c9531a35cff0f0aeab76',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
-  childPrivateInputReader: '484b203d059bb96e99e41b97f4799947279391a028ed9d680b9faf1593a151fa',
+  childPrivateInputReader: 'c828285b3f5de1927efb32f11353c4ffed30250fe2e1337885a1c7a74f863be7',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
   config: 'e825e374c830b947b3243dc9bcf09572d006a1ea57020899ae2e5f59d1648a3f',
   transport: PLAYWRIGHT_ARTIFACT_SHA256,

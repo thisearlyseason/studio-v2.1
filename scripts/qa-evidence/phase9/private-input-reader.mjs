@@ -5,7 +5,8 @@ import { join, normalize } from 'node:path';
 const WORKSPACE_PATTERN = /^\/tmp\/phase9-core-identities\.[A-Za-z0-9_-]+$/;
 const MAX_PRIVATE_INPUT_BYTES = 262_144;
 
-const exactIdentity = stats => Object.freeze({
+const exactIdentity = (stats, type) => Object.freeze({
+  type,
   dev: stats.dev,
   ino: stats.ino,
   uid: stats.uid,
@@ -16,12 +17,16 @@ const exactIdentity = stats => Object.freeze({
   ctimeMs: stats.ctimeMs,
 });
 
-const sameIdentity = (left, right, { includeContentMetadata = false } = {}) => (
-  left.dev === right.dev
+const sameIdentity = (left, right, {
+  includeContentMetadata = false,
+  includeLinkCount = true,
+} = {}) => (
+  left.type === right.type
+  && left.dev === right.dev
   && left.ino === right.ino
   && left.uid === right.uid
   && left.mode === right.mode
-  && left.nlink === right.nlink
+  && (!includeLinkCount || (left.nlink === right.nlink))
   && (!includeContentMetadata || (
     left.size === right.size
     && left.mtimeMs === right.mtimeMs
@@ -32,7 +37,7 @@ const sameIdentity = (left, right, { includeContentMetadata = false } = {}) => (
 const requireDirectory = stats => {
   if (!stats.isDirectory() || stats.isSymbolicLink() || (stats.mode & 0o777) !== 0o700
     || stats.nlink < 1) throw new Error('runner-configuration-invalid');
-  return exactIdentity(stats);
+  return exactIdentity(stats, 'directory');
 };
 
 const requireRegularFile = stats => {
@@ -40,7 +45,7 @@ const requireRegularFile = stats => {
     || stats.nlink !== 1 || stats.size < 1 || stats.size > MAX_PRIVATE_INPUT_BYTES) {
     throw new Error('runner-private-input-invalid');
   }
-  return exactIdentity(stats);
+  return exactIdentity(stats, 'regular-file');
 };
 
 export async function openBoundPrivateInputs({
@@ -81,8 +86,8 @@ export async function openBoundPrivateInputs({
     profileHandle = await filesystem.open(profileRootPath, directoryFlags);
     const workspaceIdentity = requireDirectory(await workspaceHandle.stat());
     const profileIdentity = requireDirectory(await profileHandle.stat());
-    if (!sameIdentity(trustedWorkspace, workspaceIdentity)
-      || !sameIdentity(trustedProfile, profileIdentity)) {
+    if (!sameIdentity(trustedWorkspace, workspaceIdentity, { includeLinkCount: false })
+      || !sameIdentity(trustedProfile, profileIdentity, { includeLinkCount: false })) {
       throw new Error('runner-configuration-invalid');
     }
 
@@ -91,10 +96,10 @@ export async function openBoundPrivateInputs({
         workspaceHandle.stat(), filesystem.lstat(workspace),
         profileHandle.stat(), filesystem.lstat(profileRootPath),
       ]);
-      if (!sameIdentity(workspaceIdentity, requireDirectory(workspaceHeld))
-        || !sameIdentity(workspaceIdentity, requireDirectory(workspaceNamed))
-        || !sameIdentity(profileIdentity, requireDirectory(profileHeld))
-        || !sameIdentity(profileIdentity, requireDirectory(profileNamed))) {
+      if (!sameIdentity(workspaceIdentity, requireDirectory(workspaceHeld), { includeLinkCount: false })
+        || !sameIdentity(workspaceIdentity, requireDirectory(workspaceNamed), { includeLinkCount: false })
+        || !sameIdentity(profileIdentity, requireDirectory(profileHeld), { includeLinkCount: false })
+        || !sameIdentity(profileIdentity, requireDirectory(profileNamed), { includeLinkCount: false })) {
         throw new Error('runner-configuration-invalid');
       }
     };
