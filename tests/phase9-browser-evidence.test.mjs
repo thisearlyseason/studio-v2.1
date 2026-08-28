@@ -7134,7 +7134,7 @@ function task5TerminalCertificate(status = 'closure-pending', overrides = {}) {
   };
 }
 
-test('phase 9 terminal certificate survives discarded console output and exact workspace removal', async () => {
+darwinRuntimeTest('phase 9 terminal certificate survives discarded console output and exact workspace removal', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate.'));
   const parent = join(root, 'results');
@@ -7160,7 +7160,7 @@ test('phase 9 terminal certificate survives discarded console output and exact w
   }
 });
 
-test('phase 9 terminal certificate rejects a byte-identical symlink swap after helper success', async () => {
+darwinRuntimeTest('phase 9 terminal certificate rejects a byte-identical symlink swap after helper success', async () => {
   const {
     canonicalPhase9TerminalCertificate, createPhase9TerminalCertificateWriter,
   } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
@@ -7205,7 +7205,7 @@ test('phase 9 terminal certificate rejects a byte-identical symlink swap after h
   }
 });
 
-test('phase 9 terminal certificate binds checkpoint and complete acceptance to one held result identity', async () => {
+darwinRuntimeTest('phase 9 terminal certificate binds checkpoint and complete acceptance to one held result identity', async () => {
   const {
     canonicalPhase9TerminalCertificate, createPhase9TerminalCertificateWriter,
   } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
@@ -7274,7 +7274,7 @@ test('phase 9 terminal certificate binds checkpoint and complete acceptance to o
   }
 });
 
-test('phase 9 completed guardian cleanup retains its external terminal certificate when console output is discarded', async () => {
+darwinRuntimeTest('phase 9 completed guardian cleanup retains its external terminal certificate when console output is discarded', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-guardian.'));
   const parent = join(root, 'results');
@@ -7316,7 +7316,7 @@ test('phase 9 completed guardian cleanup retains its external terminal certifica
   }
 });
 
-test('phase 9 terminal certificate promotion failure preserves the exact prior checkpoint', async () => {
+darwinRuntimeTest('phase 9 terminal certificate promotion failure preserves the exact prior checkpoint', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-failure.'));
   const parent = join(root, 'results');
@@ -7347,7 +7347,7 @@ test('phase 9 terminal certificate promotion failure preserves the exact prior c
   }
 });
 
-test('phase 9 terminal certificate rejects unsafe paths, parent types, permissions, and sensitive payloads', async () => {
+darwinRuntimeTest('phase 9 terminal certificate rejects unsafe paths, parent types, permissions, and sensitive payloads', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-reject.'));
   const parent = join(root, 'results');
@@ -7372,10 +7372,12 @@ test('phase 9 terminal certificate rejects unsafe paths, parent types, permissio
   }
 });
 
-test('phase 9 terminal certificate confines result paths against canonical workspace aliases', async () => {
+darwinRuntimeTest('phase 9 terminal certificate confines result paths against canonical workspace aliases', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
-  const canonicalWorkspace = realpathSync(mkdtempSync('/private/tmp/phase9-terminal-canonical-workspace.'));
-  const lexicalWorkspace = canonicalWorkspace.replace(/^\/private\/tmp\//, '/tmp/');
+  const canonicalTemporaryRoot = realpathSync('/tmp');
+  const canonicalWorkspace = realpathSync(mkdtempSync(join(canonicalTemporaryRoot, 'phase9-terminal-canonical-workspace.')));
+  const lexicalWorkspace = join('/tmp', canonicalWorkspace.slice(canonicalTemporaryRoot.length + 1));
+  assert.notEqual(lexicalWorkspace, canonicalWorkspace, 'Darwin /tmp must exercise its canonical alias');
   const parent = join(canonicalWorkspace, 'results');
   mkdirSync(parent, { mode: 0o700 });
   const attempt = createPhase9TerminalCertificateWriter({
@@ -7396,17 +7398,40 @@ test('phase 9 hosted result admission rejects a lexically relative path before r
   assert.equal(resolvePhase9ResultPath('/private/tmp/phase9-result/result.json'), '/private/tmp/phase9-result/result.json');
 });
 
-test('phase 9 terminal checkpoint validator requires every exact certified closure fact', async () => {
-  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
-  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-facts.'));
-  const parent = join(root, 'results');
+test('phase 9 terminal result confinement rejects a portable symlinked workspace alias', async () => {
+  const { assertPhase9TerminalResultConfinement } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'phase9-terminal-portable-confinement.')));
   const workspace = join(root, 'workspace');
-  mkdirSync(parent, { mode: 0o700 });
-  mkdirSync(workspace, { mode: 0o700 });
-  const writer = await createPhase9TerminalCertificateWriter({
-    resultPath: join(parent, 'result.json'), repositoryRoot: dirname(testDirectory), workspacePath: workspace,
-    evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+  const alias = join(root, 'workspace-alias');
+  const parent = join(workspace, 'results');
+  mkdirSync(parent, { recursive: true, mode: 0o700 });
+  symlinkSync(workspace, alias);
+  try {
+    assert.throws(() => assertPhase9TerminalResultConfinement({
+      resultPath: join(parent, 'result.json'), parentPath: parent,
+      canonicalParent: realpathSync(parent), canonicalRepository: realpathSync(dirname(testDirectory)),
+      canonicalWorkspace: realpathSync(alias),
+      canonicalEvidence: realpathSync(join(dirname(testDirectory), phase9EvidenceDirectorySuffix)),
+    }), /external/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal writer rejects non-Darwin before filesystem access or mutation', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const filesystem = new Proxy({}, {
+    get() { throw new Error('filesystem-accessed'); },
   });
+  await assert.rejects(createPhase9TerminalCertificateWriter({
+    resultPath: '/tmp/phase9-result/result.json', repositoryRoot: '/tmp/repository',
+    workspacePath: '/tmp/workspace', evidenceDirectory: '/tmp/evidence',
+    filesystem, platform: 'linux',
+  }), /requires Darwin/);
+});
+
+test('phase 9 terminal checkpoint validator requires every exact certified closure fact', async () => {
+  const { canonicalPhase9TerminalCertificate } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const base = task5TerminalCertificate('closure-pending');
   const mutations = [
     ['null preflight', { preflight: null }],
@@ -7428,27 +7453,31 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     ['early credential removal', { credentialRemoved: true }],
     ['early workspace removal', { workspaceRemoved: true }],
   ];
-  try {
-    for (const [name, lifecycleMutation] of mutations) {
-      await assert.rejects(
-        writer.write({ ...base, lifecycle: { ...base.lifecycle, ...lifecycleMutation } }),
-        /terminal certificate/i,
-        name,
-      );
-    }
-    const complete = task5TerminalCertificate('complete');
-    await assert.rejects(
-      writer.write({ ...complete, lifecycle: { ...complete.lifecycle, preflight: null } }),
+  for (const [name, lifecycleMutation] of mutations) {
+    assert.throws(
+      () => canonicalPhase9TerminalCertificate({
+        ...base, lifecycle: { ...base.lifecycle, ...lifecycleMutation },
+      }),
       /terminal certificate/i,
+      name,
     );
-    assert.deepEqual(readdirSync(parent), []);
-  } finally {
-    await writer.close();
-    rmSync(root, { recursive: true, force: true });
   }
+  const complete = task5TerminalCertificate('complete');
+  assert.throws(
+    () => canonicalPhase9TerminalCertificate({
+      ...complete, lifecycle: { ...complete.lifecycle, preflight: null },
+    }),
+    /terminal certificate/i,
+  );
+  assert.throws(
+    () => canonicalPhase9TerminalCertificate(task5TerminalCertificate('failed', { category: 'password=raw-secret' })),
+    /terminal certificate/i,
+  );
+  assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(base));
+  assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(complete));
 });
 
-test('phase 9 terminal certificate refuses a target swap without overwriting foreign bytes', async () => {
+darwinRuntimeTest('phase 9 terminal certificate refuses a target swap without overwriting foreign bytes', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-swap.'));
   const parent = join(root, 'results');
@@ -7486,7 +7515,7 @@ test('phase 9 terminal certificate refuses a target swap without overwriting for
   }
 });
 
-test('phase 9 terminal certificate conditionally promotes only the held exact checkpoint identity', async () => {
+darwinRuntimeTest('phase 9 terminal certificate conditionally promotes only the held exact checkpoint identity', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-conditional-swap.'));
   const parent = join(root, 'results');
@@ -7535,7 +7564,7 @@ test('phase 9 terminal certificate conditionally promotes only the held exact ch
   }
 });
 
-test('phase 9 terminal certificate never publishes a swapped recovery companion during rollback', async () => {
+darwinRuntimeTest('phase 9 terminal certificate never publishes a swapped recovery companion during rollback', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-recovery-swap.'));
   const parent = join(root, 'results');
@@ -7593,7 +7622,7 @@ test('phase 9 terminal certificate never publishes a swapped recovery companion 
   }
 });
 
-test('phase 9 terminal certificate refuses an absent-target creation race without overwriting foreign bytes', async () => {
+darwinRuntimeTest('phase 9 terminal certificate refuses an absent-target creation race without overwriting foreign bytes', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-absent-race.'));
   const parent = join(root, 'results');
@@ -7623,7 +7652,7 @@ test('phase 9 terminal certificate refuses an absent-target creation race withou
   }
 });
 
-test('phase 9 terminal certificate admits only absent or exact resumable checkpoint targets', async () => {
+darwinRuntimeTest('phase 9 terminal certificate admits only absent or exact resumable checkpoint targets', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-resume.'));
   const workspace = join(root, 'workspace');
@@ -7649,7 +7678,7 @@ test('phase 9 terminal certificate admits only absent or exact resumable checkpo
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('phase 9 terminal certificate kills and joins a hung helper without creating output', async () => {
+darwinRuntimeTest('phase 9 terminal certificate kills and joins a hung helper without creating output', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-hang.'));
   const parent = join(root, 'results');
@@ -8707,7 +8736,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 50);
+  assert.equal(darwinRuntimeTests.length, 63);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

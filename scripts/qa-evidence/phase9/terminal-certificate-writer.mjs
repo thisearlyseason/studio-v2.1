@@ -174,6 +174,16 @@ function isWithin(path, boundary) {
   return child === '' || (!child.startsWith(`..${sep}`) && child !== '..' && !isAbsolute(child));
 }
 
+export function assertPhase9TerminalResultConfinement({
+  resultPath, parentPath, canonicalParent, canonicalRepository, canonicalWorkspace, canonicalEvidence,
+} = {}) {
+  const canonicalResultPath = join(canonicalParent, basename(resultPath));
+  if (canonicalParent !== parentPath || isWithin(canonicalResultPath, canonicalRepository)
+    || isWithin(canonicalResultPath, canonicalWorkspace) || isWithin(canonicalResultPath, canonicalEvidence)) {
+    throw new Error('Terminal certificate path must be canonical and external.');
+  }
+}
+
 async function readCheckpoint(filesystem, path, location = 'result') {
   const metadata = await filesystem.lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.uid !== process.getuid()
@@ -322,7 +332,9 @@ async function invokeHelper({ parentHandle, directoryIdentity, name, expected, d
 export async function createPhase9TerminalCertificateWriter({
   resultPath, repositoryRoot, workspacePath, evidenceDirectory,
   filesystem = DEFAULT_FILESYSTEM, helperEnvironment = {}, helperTimeoutMs = 10_000,
+  platform = process.platform,
 } = {}) {
+  if (platform !== 'darwin') throw new Error('Phase 9 terminal certificate writer requires Darwin.');
   if (typeof resultPath !== 'string' || !isAbsolute(resultPath) || resolve(resultPath) !== resultPath
     || typeof repositoryRoot !== 'string' || !isAbsolute(repositoryRoot) || resolve(repositoryRoot) !== repositoryRoot
     || typeof workspacePath !== 'string' || !isAbsolute(workspacePath) || resolve(workspacePath) !== workspacePath
@@ -354,11 +366,9 @@ export async function createPhase9TerminalCertificateWriter({
     || createHash('sha256').update(pythonBytes).digest('hex') !== PYTHON_SHA256) {
     throw new Error('Terminal certificate helper runtime is invalid.');
   }
-  const canonicalResultPath = join(canonicalParent, name);
-  if (canonicalParent !== parentPath || isWithin(canonicalResultPath, canonicalRepository)
-    || isWithin(canonicalResultPath, canonicalWorkspace) || isWithin(canonicalResultPath, canonicalEvidence)) {
-    throw new Error('Terminal certificate path must be canonical and external.');
-  }
+  assertPhase9TerminalResultConfinement({
+    resultPath, parentPath, canonicalParent, canonicalRepository, canonicalWorkspace, canonicalEvidence,
+  });
   const parentMetadata = await filesystem.lstat(parentPath);
   if (!parentMetadata.isDirectory() || parentMetadata.isSymbolicLink() || parentMetadata.uid !== process.getuid()
     || (parentMetadata.mode & 0o777) !== 0o700) {
