@@ -8983,10 +8983,10 @@ test('phase 9 production child reserves ownership before local acquisition and r
   assert.ok(logoutStart >= 0 && logoutStart < freshOpen && freshOpen < freshViewportStage
     && freshViewportStage < freshViewport && freshViewport < recorderStage
     && recorderStage < recorderInstall);
-  const finalization = source.indexOf('await closePrivateResources();', recorderInstall);
-  const ownershipComplete = source.indexOf("type: 'ownership-complete', version: 4", finalization);
+  const ownershipComplete = source.indexOf("type: 'ownership-complete', version: 4", recorderInstall);
+  const finalization = source.indexOf('await closePrivateResources();', ownershipComplete);
   const completion = source.indexOf("type: 'completion', version: 4", ownershipComplete);
-  assert.ok(finalization >= 0 && finalization < ownershipComplete && ownershipComplete < completion);
+  assert.ok(ownershipComplete >= 0 && ownershipComplete < finalization && finalization < completion);
   const attachStart = source.indexOf('const confirmAttachedOwnership = session =>');
   const ownershipAttach = source.indexOf("type: 'ownership-attach', version: 4", attachStart);
   const attachAction = source.indexOf('await attachExistingSignalRecorder(client, session', ownershipAttach);

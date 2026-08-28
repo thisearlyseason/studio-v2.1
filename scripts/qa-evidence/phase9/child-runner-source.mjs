@@ -567,12 +567,12 @@ try {
     throw new Error('runner-launch-receipt-invalid');
   }
   failureStage = 'row-emission';
-  await closePrivateResources();
   emitProtocol({
     type: 'ownership-complete', version: 4, phase, sequence: ownershipSequence,
     browserSessions,
     attachedBrowserSessions: attached, launchReceipts: receipts, releasedBrowserSessions: released,
   });
+  await closePrivateResources();
   const sessionsForRow = row => {
     const planned = rowsForPhase.find(candidate => candidate.contextId === row.contextId);
     if (!planned) throw new Error('runner-row-session-invalid');
