@@ -7623,8 +7623,11 @@ function phase9MemoryRecoveryWriter(initial, failure = () => false, revalidation
 }
 
 function phase9RecoveryWorkspace() {
-  const workspacePath = realpathSync(mkdtempSync('/private/tmp/phase9-core-identities.'));
-  const resultParent = realpathSync(mkdtempSync('/private/tmp/phase9-terminal-result.'));
+  const producerTempRoot = process.platform === 'darwin'
+    ? realpathSync('/private/tmp')
+    : realpathSync(process.env.TMPDIR || tmpdir());
+  const workspacePath = realpathSync(mkdtempSync(join(producerTempRoot, 'phase9-core-identities.')));
+  const resultParent = realpathSync(mkdtempSync(join(producerTempRoot, 'phase9-terminal-result.')));
   const resultPath = join(resultParent, 'result.json');
   const manifestPath = join(workspacePath, 'manifest.json');
   const credentialPath = join(workspacePath, 'credentials.json');
@@ -7632,8 +7635,50 @@ function phase9RecoveryWorkspace() {
   writeFileSync(credentialPath, 'synthetic-test-credential-bytes\n', { mode: 0o600 });
   chmodSync(workspacePath, 0o700);
   chmodSync(resultParent, 0o700);
-  return { workspacePath, manifestPath, credentialPath, resultParent, resultPath };
+  const recoveryWorkspacePath = join('/private/tmp', basename(workspacePath));
+  const recoveryResultParent = join('/private/tmp', basename(resultParent));
+  const recoveryResultPath = join(recoveryResultParent, 'result.json');
+  const recoveryManifestPath = join(recoveryWorkspacePath, 'manifest.json');
+  const recoveryCredentialPath = join(recoveryWorkspacePath, 'credentials.json');
+  const translate = path => {
+    if (path === recoveryWorkspacePath || path.startsWith(`${recoveryWorkspacePath}/`)) {
+      return `${workspacePath}${path.slice(recoveryWorkspacePath.length)}`;
+    }
+    if (path === recoveryResultParent || path.startsWith(`${recoveryResultParent}/`)) {
+      return `${resultParent}${path.slice(recoveryResultParent.length)}`;
+    }
+    return path;
+  };
+  const filesystem = {
+    async lstat(path) { return fsPromises.lstat(translate(path)); },
+    async open(path, flags, mode) { return fsPromises.open(translate(path), flags, mode); },
+    async readFile(path, ...args) { return fsPromises.readFile(translate(path), ...args); },
+    async readdir(path, ...args) { return fsPromises.readdir(translate(path), ...args); },
+    async realpath(path) {
+      const translated = translate(path);
+      const canonical = await fsPromises.realpath(translated);
+      if (translated === workspacePath || translated.startsWith(`${workspacePath}/`)) {
+        return `${recoveryWorkspacePath}${canonical.slice(workspacePath.length)}`;
+      }
+      if (translated === resultParent || translated.startsWith(`${resultParent}/`)) {
+        return `${recoveryResultParent}${canonical.slice(resultParent.length)}`;
+      }
+      return canonical;
+    },
+  };
+  return {
+    workspacePath, manifestPath, credentialPath, resultParent, resultPath,
+    recovery: {
+      resultPath: recoveryResultPath,
+      workspacePath: recoveryWorkspacePath,
+      manifestPath: recoveryManifestPath,
+      credentialPath: recoveryCredentialPath,
+      filesystem,
+    },
+  };
 }
+
+const phase9RecoveryOptions = paths => ({ ...paths.recovery });
 
 function mutatePhase9RecoveryManifestSameInode(path) {
   const before = lstatSync(path);
@@ -7662,7 +7707,7 @@ test('phase 9 terminal recovery finalizes exact local closure as failed with zer
   const writer = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
   try {
     const result = await finalizePhase9TerminalRecovery({
-      ...paths,
+      ...phase9RecoveryOptions(paths),
       repositoryRoot: resolve(testDirectory, '..'),
       evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
       writerFactory: writer.factory,
@@ -7696,7 +7741,7 @@ test('phase 9 terminal recovery finalizes exact local closure as failed with zer
 test('phase 9 terminal recovery preserves resumable in-place state across zeroization and promotion failures', async () => {
   const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
   const common = paths => ({
-    ...paths,
+    ...phase9RecoveryOptions(paths),
     repositoryRoot: resolve(testDirectory, '..'),
     evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
   });
@@ -7797,12 +7842,12 @@ test('phase 9 terminal recovery maps native path failures to one sanitized bound
   const paths = phase9RecoveryWorkspace();
   try {
     await assert.rejects(finalizePhase9TerminalRecovery({
-      ...paths,
+      ...phase9RecoveryOptions(paths),
       repositoryRoot: resolve(testDirectory, '..'),
       evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
       writerFactory: phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate()).factory,
       filesystem: {
-        ...fsPromises,
+        ...paths.recovery.filesystem,
         async realpath() { throw new Error(`/private/raw-leak/${'secret'.repeat(10)}`); },
       },
     }), error => error instanceof Error && error.message === 'Terminal recovery failed.');
@@ -7815,7 +7860,7 @@ test('phase 9 terminal recovery rejects dirty journals and foreign child paths b
   const writer = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
   let dispositions = 0;
   const common = {
-    ...paths,
+    ...phase9RecoveryOptions(paths),
     repositoryRoot: resolve(testDirectory, '..'),
     evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
     writerFactory: writer.factory,
@@ -7823,7 +7868,7 @@ test('phase 9 terminal recovery rejects dirty journals and foreign child paths b
   };
   try {
     await assert.rejects(finalizePhase9TerminalRecovery({
-      ...common, credentialPath: join(dirname(paths.workspacePath), 'foreign-credentials.json'),
+      ...common, credentialPath: join(dirname(common.workspacePath), 'foreign-credentials.json'),
     }), /terminal recovery failed/i);
     const manifest = phase9CleanedRecoveryManifest();
     manifest.state = 'seeded';
@@ -7841,7 +7886,7 @@ test('phase 9 terminal recovery rejects dirty journals and foreign child paths b
 test('phase 9 terminal recovery rejects inconsistent post-operation retained identity proofs', async () => {
   const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
   const common = (paths, writerFactory, filesystem, dispositionExecutor) => ({
-    ...paths,
+    ...phase9RecoveryOptions(paths),
     repositoryRoot: resolve(testDirectory, '..'),
     evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
     writerFactory,
@@ -7858,10 +7903,10 @@ test('phase 9 terminal recovery rejects inconsistent post-operation retained ide
       credentialSwap,
       credentialWriter.factory,
       {
-        ...fsPromises,
+        ...credentialSwap.recovery.filesystem,
         async lstat(path) {
-          const metadata = await fsPromises.lstat(path);
-          if (path === credentialSwap.credentialPath && ++credentialStats === 2) {
+          const metadata = await credentialSwap.recovery.filesystem.lstat(path);
+          if (path === credentialSwap.recovery.credentialPath && ++credentialStats === 2) {
             return new Proxy(metadata, { get(target, key) { return key === 'ino' ? target.ino + 1 : target[key]; } });
           }
           return metadata;
@@ -7886,10 +7931,10 @@ test('phase 9 terminal recovery rejects inconsistent post-operation retained ide
       workspaceSwap,
       workspaceWriter.factory,
       {
-        ...fsPromises,
+        ...workspaceSwap.recovery.filesystem,
         async lstat(path) {
-          const metadata = await fsPromises.lstat(path);
-          if (path === workspaceSwap.workspacePath && ++workspaceStats === 3) {
+          const metadata = await workspaceSwap.recovery.filesystem.lstat(path);
+          if (path === workspaceSwap.recovery.workspacePath && ++workspaceStats === 3) {
             return new Proxy(metadata, { get(target, key) { return key === 'ino' ? target.ino + 1 : target[key]; } });
           }
           return metadata;
@@ -7913,7 +7958,7 @@ test('phase 9 terminal recovery rejects inconsistent post-operation retained ide
     const originalBytes = readFileSync(childPath);
     try {
       await assert.rejects(finalizePhase9TerminalRecovery({
-        ...childSwap,
+        ...phase9RecoveryOptions(childSwap),
         repositoryRoot: resolve(testDirectory, '..'),
         evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
         writerFactory: childWriter.factory,
@@ -7941,7 +7986,7 @@ test('phase 9 terminal recovery rejects inconsistent post-operation retained ide
     let swapped = false;
     try {
       await assert.rejects(finalizePhase9TerminalRecovery({
-        ...manifestRace,
+        ...phase9RecoveryOptions(manifestRace),
         repositoryRoot: resolve(testDirectory, '..'),
         evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
         writerFactory: manifestWriter.factory,
@@ -7951,10 +7996,10 @@ test('phase 9 terminal recovery rejects inconsistent post-operation retained ide
           return true;
         },
         filesystem: {
-          ...fsPromises,
+          ...manifestRace.recovery.filesystem,
           async open(path, flags) {
-            const handle = await fsPromises.open(path, flags);
-            if (path !== manifestRace.manifestPath) return handle;
+            const handle = await manifestRace.recovery.filesystem.open(path, flags);
+            if (path !== manifestRace.recovery.manifestPath) return handle;
             return new Proxy(handle, {
               get(target, key) {
                 if (key === 'read') return async (...args) => {
@@ -8020,7 +8065,7 @@ darwinRuntimeTest('phase 9 terminal recovery resumes durable sync after a helper
 test('phase 9 terminal recovery binds every final manifest receipt to each checkpoint and replay', async () => {
   const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
   const common = (paths, writerFactory, filesystem) => ({
-    ...paths,
+    ...phase9RecoveryOptions(paths),
     repositoryRoot: resolve(testDirectory, '..'),
     evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
     writerFactory,
@@ -8042,10 +8087,10 @@ test('phase 9 terminal recovery binds every final manifest receipt to each check
     let reads = 0;
     let mutated = false;
     const filesystem = {
-      ...fsPromises,
+      ...paths.recovery.filesystem,
       async open(path, flags) {
-        const handle = await fsPromises.open(path, flags);
-        if (path !== paths.manifestPath) return handle;
+        const handle = await paths.recovery.filesystem.open(path, flags);
+        if (path !== paths.recovery.manifestPath) return handle;
         return new Proxy(handle, {
           get(target, key) {
             if (key === 'read') return async (...args) => {
@@ -8079,15 +8124,17 @@ test('phase 9 terminal recovery binds every final manifest receipt to each check
   const replayPaths = phase9RecoveryWorkspace();
   const initialWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
   try {
-    await finalizePhase9TerminalRecovery(common(replayPaths, initialWriter.factory, fsPromises));
+    await finalizePhase9TerminalRecovery(common(
+      replayPaths, initialWriter.factory, replayPaths.recovery.filesystem,
+    ));
     const replayWriter = phase9MemoryRecoveryWriter(initialWriter.document);
     let replayReads = 0;
     let replayMutated = false;
     const replayFilesystem = {
-      ...fsPromises,
+      ...replayPaths.recovery.filesystem,
       async open(path, flags) {
-        const handle = await fsPromises.open(path, flags);
-        if (path !== replayPaths.manifestPath) return handle;
+        const handle = await replayPaths.recovery.filesystem.open(path, flags);
+        if (path !== replayPaths.recovery.manifestPath) return handle;
         return new Proxy(handle, {
           get(target, key) {
             if (key === 'read') return async (...args) => {
