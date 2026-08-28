@@ -490,6 +490,23 @@ if (mode === 'success') {
   }
 } else if (mode === 'fail-before' || mode === 'fail-after') {
   await finishWithRows(phase, mode, [], !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
+} else if (mode === 'failure-terminal-stale-context') {
+  if (phase !== 'before-transition') nativeExit(70);
+  const firstSession = 'p9-admission-route-qa-parent-a-mobile';
+  const secondSession = 'p9-admission-route-qa-adult-player-a-mobile';
+  const [firstReceipt, secondReceipt] = fakeLaunchReceipts([firstSession, secondSession]);
+  await writeOwnershipIntentAndAdd(phase, 0, firstSession, firstReceipt);
+  writeMessage({ version: 4, type: 'ownership-release', phase, sequence: 1, session: firstSession });
+  await writeOwnershipIntentAndAdd(phase, 2, secondSession, secondReceipt);
+  writeMessage({
+    version: 4, type: 'failure', phase, sequence: 3,
+    category: 'scenario-failed', stage: 'scenario-action',
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+    checkpoint: 'scenario-action', reason: 'action-failed',
+    pendingBrowserSession: null,
+    browserSessions: [secondSession], attachedBrowserSessions: [],
+    launchReceipts: [secondReceipt], releasedBrowserSessions: [firstSession],
+  }, () => nativeExit(0));
 } else if (mode.startsWith('failure-terminal-')) {
   if (phase !== 'before-transition') nativeExit(70);
   const trailingOutput = mode.endsWith('-trailing');

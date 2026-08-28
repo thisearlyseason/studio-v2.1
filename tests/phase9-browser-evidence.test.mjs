@@ -6172,6 +6172,7 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
     releasedSessions: new Set(),
     ownershipComplete: false,
     terminal: null,
+    currentContext: { contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile' },
   };
   const diagnosticsByStage = {
     authorization: [
@@ -6216,6 +6217,9 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       activeAnnouncedReceipts: new Map(),
     } : stage === 'row-emission' ? { ...accepted, ownershipComplete: true } : accepted;
     for (const [checkpoint, reason] of diagnosticsByStage[stage]) {
+      const diagnosticAccepted = checkpoint === 'runner-initialization'
+        ? { ...stageAccepted, currentContext: null }
+        : stageAccepted;
       const terminal = validateRunnerFailureTerminal({
         version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
         category, stage,
@@ -6224,7 +6228,7 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
         pendingBrowserSession: stageAccepted.pendingOwnershipIntent?.session ?? null,
         browserSessions: [...stageAccepted.activeAnnouncedSessions], attachedBrowserSessions: [],
         launchReceipts: [...stageAccepted.activeAnnouncedReceipts.values()], releasedBrowserSessions: [],
-      }, stageAccepted);
+      }, diagnosticAccepted);
       assert.deepEqual({ ok: terminal.ok, category: terminal.category, stage: terminal.stage }, {
         ok: false, category, stage,
       }, checkpoint);
@@ -6244,6 +6248,7 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
     activeAnnouncedSessions: new Set([session]), attachedSessions: new Set(),
     activeAnnouncedReceipts: new Map([[session, receipt]]), releasedSessions: new Set(),
     ownershipComplete: false, terminal: null,
+    currentContext: { contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile' },
   };
   const valid = {
     version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
@@ -6272,6 +6277,26 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
     ['duplicate session', { ...valid, browserSessions: [session, session] }, accepted],
     ['forged receipt', { ...valid, launchReceipts: [{ ...receipt, chromeMainPid: 920003 }] }, accepted],
     ['stale release', { ...valid, releasedBrowserSessions: [session] }, accepted],
+    ['stale canonical context pair', {
+      ...valid,
+      browserSessions: ['p9-admission-route-qa-adult-player-a-mobile'],
+      launchReceipts: [{
+        session: 'p9-admission-route-qa-adult-player-a-mobile',
+        daemonPid: 920003,
+        chromeMainPid: 920004,
+      }],
+      releasedBrowserSessions: [session],
+    }, {
+      ...accepted,
+      activeAnnouncedSessions: new Set(['p9-admission-route-qa-adult-player-a-mobile']),
+      activeAnnouncedReceipts: new Map([['p9-admission-route-qa-adult-player-a-mobile', {
+        session: 'p9-admission-route-qa-adult-player-a-mobile',
+        daemonPid: 920003,
+        chromeMainPid: 920004,
+      }]]),
+      releasedSessions: new Set([session]),
+      currentContext: { contextOrdinal: 1, contextId: 'admission-route-qa-adult-player-a-mobile' },
+    }],
     ['acquisition without reservation', {
       ...valid, category: 'scenario-runner-invalid', stage: 'acquisition',
     }, accepted],
@@ -6388,6 +6413,18 @@ test('phase 9 guardian discards failure attribution when trailing protocol outpu
   assert.notEqual(result.primaryStage, 'login');
   assert.equal(result.closureCertified, true);
   assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true);
+  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+});
+
+test('phase 9 guardian rejects a valid but stale canonical failure context after the next row starts', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'failure-terminal-stale-context' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-runner-invalid');
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.notEqual(result.primaryStage, 'scenario-action');
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-adult-player-a-mobile'), true);
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
 });
 
