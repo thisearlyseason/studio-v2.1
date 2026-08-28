@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, realpath } from 'node:fs/promises';
 import { isAbsolute, join, normalize, sep } from 'node:path';
 
 import {
@@ -31,6 +31,7 @@ import {
   phase9RowSession,
   phase9SessionName,
 } from './session-lifecycle.mjs';
+import { openBoundPrivateInputs } from './private-input-reader.mjs';
 
 const markerNameSha256 = '585c21d0652b1f1c5dd8168796ee2599745f8a1a9885e3178ac29b057f0044c3';
 const argv = process.argv.slice(1);
@@ -50,15 +51,9 @@ const guardianMarkerName = exactArgument('--guardian-marker-env');
 const configBase64 = exactArgument('--config-base64');
 const playwrightTempRoot = join(workspace, 'playwright-tmp');
 if (argv.length !== 12 || !new Set(['before-transition', 'after-transition']).has(phase)
-  || !workspace.startsWith('/tmp/phase9-core-identities.')
   || process.env.TMPDIR !== playwrightTempRoot
   || createHash('sha256').update(guardianMarkerName).digest('hex') !== markerNameSha256
   || !/^[0-9a-f]{64}$/.test(process.env[guardianMarkerName] ?? '')) {
-  throw new Error('runner-configuration-invalid');
-}
-const playwrightTempMetadata = await lstat(playwrightTempRoot);
-if (!playwrightTempMetadata.isDirectory() || playwrightTempMetadata.isSymbolicLink()
-  || (playwrightTempMetadata.mode & 0o777) !== 0o700) {
   throw new Error('runner-configuration-invalid');
 }
 
@@ -111,19 +106,10 @@ const transport = capturePlaywrightTransport({
   chromePolicy: config.chrome,
 });
 
-const readPrivateJson = async path => {
-  if (!path.startsWith(`${workspace}/`)) throw new Error('runner-private-path-invalid');
-  const [metadata, canonical] = await Promise.all([lstat(path), realpath(path)]);
-  if (!metadata.isFile() || metadata.isSymbolicLink() || (metadata.mode & 0o777) !== 0o600 || canonical !== path) {
-    throw new Error('runner-private-input-invalid');
-  }
-  const text = await readFile(path, 'utf8');
-  if (text.length > 262_144) throw new Error('runner-private-input-invalid');
-  return JSON.parse(text);
-};
-
-const manifest = await readPrivateJson(manifestPath);
-const credentials = await readPrivateJson(credentialsPath);
+const privateInputs = await openBoundPrivateInputs({
+  workspace, manifestPath, credentialsPath, profileRootPath: playwrightTempRoot,
+});
+const { manifest, credentials } = privateInputs;
 if (manifest?.version !== 3 || manifest.projectId !== STAGING_PROJECT_ID || typeof manifest.runId !== 'string'
   || credentials?.version !== 1 || credentials.runId !== manifest.runId
   || Object.keys(credentials).sort().join(',') !== 'identities,runId,version'
@@ -169,6 +155,8 @@ const client = createPhase9ProductionCliClient({
   temporaryDirectory: playwrightTempRoot,
   cwd: repositoryRoot,
   fixtureRunId: manifest.runId,
+  beforeCommand: privateInputs.revalidate,
+  profileDirectoryDescriptor: privateInputs.profileDescriptor,
 });
 const plan = buildCanonicalScenarioPlan();
 const isolationLanding = Object.freeze({
@@ -273,6 +261,7 @@ const openWithReceipt = async session => {
   if (!plannedOwnedSessions.includes(session) || launchReceipts.has(session)) {
     throw new Error('runner-launch-receipt-invalid');
   }
+  await privateInputs.revalidate();
   emitProtocol({
     type: 'ownership-intent', version: 4, phase, sequence: ownershipSequence, session,
   });
@@ -525,4 +514,5 @@ try {
   identities.clear();
   grants.clear();
   await new Promise(resolvePromise => credentialBroker.close(resolvePromise));
+  await privateInputs.close();
 }

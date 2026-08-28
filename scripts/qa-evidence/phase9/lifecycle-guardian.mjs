@@ -1774,14 +1774,16 @@ function switchSchemaIsExact(parsed, entries) {
   return true;
 }
 
-function chromeProfilePathIsExact(value, profileRoot) {
-  if (typeof value !== 'string' || typeof profileRoot !== 'string'
-    || !value.startsWith(`${profileRoot}/`)) return false;
-  const name = value.slice(profileRoot.length + 1);
+function chromeProfilePathIsExact(value, profileRoot, profileMode) {
+  if (typeof value !== 'string' || typeof profileRoot !== 'string') return false;
+  const name = profileMode === 'descriptor-relative' ? value
+    : profileMode === 'absolute' && value.startsWith(`${profileRoot}/`)
+      ? value.slice(profileRoot.length + 1) : null;
+  if (name === null) return false;
   return /^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name);
 }
 
-function mainChromeSchema(profileRoot) {
+function mainChromeSchema(profileRoot, profileMode) {
   const flags = [
     'disable-field-trial-config', 'disable-background-networking',
     'disable-background-timer-throttling', 'disable-backgrounding-occluded-windows',
@@ -1806,13 +1808,13 @@ function mainChromeSchema(profileRoot) {
     ['password-store', exactValueSwitch('basic')],
     ['blink-settings', exactValueSwitch(CHROME_BLINK_SETTINGS)],
     ['disable-blink-features', exactValueSwitch('AutomationControlled')],
-    ['user-data-dir', Object.freeze({ min: 1, max: 1, validate: value => chromeProfilePathIsExact(value, profileRoot) })],
+    ['user-data-dir', Object.freeze({ min: 1, max: 1, validate: value => chromeProfilePathIsExact(value, profileRoot, profileMode) })],
   ];
 }
 
-const helperSharedSchema = profileRoot => [
+const helperSharedSchema = (profileRoot, profileMode) => [
   ['noerrdialogs', flagSwitch()],
-  ['user-data-dir', Object.freeze({ min: 1, max: 1, validate: value => chromeProfilePathIsExact(value, profileRoot) })],
+  ['user-data-dir', Object.freeze({ min: 1, max: 1, validate: value => chromeProfilePathIsExact(value, profileRoot, profileMode) })],
   ['shared-files', flagSwitch()],
   ['field-trial-handle', patternValueSwitch(/^[0-9]+,r,[0-9]+,[0-9]+,262144$/)],
   ['enable-features', exactValueSwitch(CHROME_ENABLE_FEATURES)],
@@ -1823,12 +1825,12 @@ const helperSharedSchema = profileRoot => [
   ['seatbelt-client', patternValueSwitch(/^[0-9]+$/)],
 ];
 
-function helperChromeSchema(type, profileRoot) {
+function helperChromeSchema(type, profileRoot, profileMode) {
   if (type === 'gpu-process') return [
     ['type', exactValueSwitch(type)], ['disable-breakpad', flagSwitch()], ['headless', flagSwitch()],
     ['enable-unsafe-swiftshader', flagSwitch()],
     ['gpu-preferences', exactValueSwitch(CHROME_GPU_PREFERENCES)],
-    ...helperSharedSchema(profileRoot),
+    ...helperSharedSchema(profileRoot, profileMode),
   ];
   if (type === 'renderer') return [
     ['type', exactValueSwitch(type)], ['top-chrome-webui', flagSwitch(0, 1)],
@@ -1843,7 +1845,7 @@ function helperChromeSchema(type, profileRoot) {
     ['renderer-client-id', patternValueSwitch(/^[1-9][0-9]*$/)],
     ['time-ticks-at-unix-epoch', patternValueSwitch(/^-[0-9]+$/)],
     ['launch-time-ticks', patternValueSwitch(/^[0-9]+$/)],
-    ...helperSharedSchema(profileRoot),
+    ...helperSharedSchema(profileRoot, profileMode),
   ];
   if (type === 'utility') return [
     ['type', exactValueSwitch(type)],
@@ -1856,7 +1858,7 @@ function helperChromeSchema(type, profileRoot) {
       min: 1, max: 1, validate: value => new Set(['network', 'service']).has(value),
     })],
     ['mute-audio', flagSwitch()],
-    ...helperSharedSchema(profileRoot),
+    ...helperSharedSchema(profileRoot, profileMode),
   ];
   return null;
 }
@@ -1872,7 +1874,9 @@ function chromeHelperTypeForExecutable(executable, appPath) {
   return 'utility';
 }
 
-function chromeProcessDetails(record, { marker, policy, profilePath, profileRoot } = {}) {
+function chromeProcessDetails(record, {
+  marker, policy, profilePath, profileRoot, profileMode,
+} = {}) {
   if (!record || typeof record !== 'object' || !policy || typeof policy !== 'object'
     || typeof policy.appPath !== 'string' || typeof policy.binaryPath !== 'string') return null;
   const parsed = Array.isArray(record.argv) && record.argv[0] === record.executable
@@ -1881,14 +1885,14 @@ function chromeProcessDetails(record, { marker, policy, profilePath, profileRoot
   if (record.executable === policy.binaryPath) {
     if (!/^[0-9a-f]{64}$/.test(marker ?? '') || record.markerPresent !== true
       || record.markerArgumentPresent !== true
-      || !switchSchemaIsExact(parsed, mainChromeSchema(profileRoot))) return null;
+      || !switchSchemaIsExact(parsed, mainChromeSchema(profileRoot, profileMode))) return null;
     const selectedProfile = parsed.switches.get('user-data-dir')?.[0];
-    if (!chromeProfilePathIsExact(selectedProfile, profileRoot)) return null;
+    if (!chromeProfilePathIsExact(selectedProfile, profileRoot, profileMode)) return null;
     return Object.freeze({ kind: 'main', profilePath: selectedProfile });
   }
   const type = chromeHelperTypeForExecutable(record.executable, policy.appPath);
-  const schema = helperChromeSchema(type, profileRoot);
-  if (!schema || !chromeProfilePathIsExact(profilePath, profileRoot)
+  const schema = helperChromeSchema(type, profileRoot, profileMode);
+  if (!schema || !chromeProfilePathIsExact(profilePath, profileRoot, profileMode)
     || !switchSchemaIsExact(parsed, schema)
     || parsed.switches.get('user-data-dir')?.[0] !== profilePath) return null;
   if (type === 'utility') {
@@ -1904,7 +1908,9 @@ export function chromeProcessCommandIsExact(record, options) {
   try { return chromeProcessDetails(record, options) !== null; } catch { return false; }
 }
 
-async function chromeHelperIsExact(record, mainProfiles, processByPid, policy, profileRoot) {
+async function chromeHelperIsExact(
+  record, mainProfiles, processByPid, policy, profileRoot, profileMode,
+) {
   let ancestor = record.ppid;
   const visited = new Set([record.pid]);
   while (!mainProfiles.has(ancestor)) {
@@ -1915,7 +1921,7 @@ async function chromeHelperIsExact(record, mainProfiles, processByPid, policy, p
     ancestor = parent.ppid;
   }
   const commandDetails = chromeProcessDetails(record, {
-    policy, profilePath: mainProfiles.get(ancestor), profileRoot,
+    policy, profilePath: mainProfiles.get(ancestor), profileRoot, profileMode,
   });
   if (record.pgid !== ancestor || !commandDetails) return false;
   let metadata;
@@ -1972,10 +1978,12 @@ async function retainedBrowserProcessesAreExact(
   const identities = [];
   try {
     for (const receipt of receipts) {
+      if (receipt.profileMode !== 'descriptor-relative') return rejectIdentity();
       const daemon = processByPid.get(receipt.daemonPid);
       const main = processByPid.get(receipt.chromeMainPid);
       const mainDetails = main && chromeProcessDetails(main, {
         marker: receipt.marker, policy: processPolicy.chrome, profileRoot,
+        profileMode: receipt.profileMode,
       });
       if (!daemon || !main || daemon.marker !== receipt.marker || main.marker !== receipt.marker
         || !daemonCommandIsExact(daemon, receipt, processPolicy.runtime.path)
@@ -1985,6 +1993,7 @@ async function retainedBrowserProcessesAreExact(
         && record.executable === processPolicy.chrome.binaryPath
         && chromeProcessDetails(record, {
           marker: receipt.marker, policy: processPolicy.chrome, profileRoot,
+          profileMode: receipt.profileMode,
         })?.kind === 'main');
       if (directMains.length !== 1 || directMains[0].pid !== main.pid) return rejectIdentity();
       await verifyPinnedExecutable(
@@ -2009,6 +2018,7 @@ async function retainedBrowserProcessesAreExact(
       if (classified.has(record.pid)) continue;
       if (!(await chromeHelperIsExact(
         record, mainProfiles, processByPid, processPolicy.chrome, profileRoot,
+        'descriptor-relative',
       ))) return rejectIdentity();
       classified.add(record.pid);
     }
@@ -3035,7 +3045,11 @@ export function createLifecycleGuardian({
   };
 
   const requestScenarioTermination = async (handle, force) => {
-    if (!signalProcessGroup(handle, force ? 'SIGKILL' : 'SIGTERM')) return false;
+    if (!signalProcessGroup(handle, force ? 'SIGKILL' : 'SIGTERM')) {
+      let alreadyClosed;
+      try { alreadyClosed = await bounded(handle.closed); } catch { return false; }
+      return alreadyClosed.status === 'fulfilled' && waitForGroupGone(handle);
+    }
     let outcome;
     try { outcome = await bounded(handle.closed); } catch { return false; }
     return outcome.status === 'fulfilled' && waitForGroupGone(handle);
@@ -3358,7 +3372,7 @@ export function createLifecycleGuardian({
             rejectInspectionIdentity('browser-ownership-invalid');
           }
           ownedBrowserReceipts.set(session, Object.freeze({
-            ...launchReceipt, marker: runMarker, phase,
+            ...launchReceipt, marker: runMarker, phase, profileMode: 'descriptor-relative',
           }));
         },
         onOwnershipRelease({ session }) {

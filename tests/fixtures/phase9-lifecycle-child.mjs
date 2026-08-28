@@ -1,5 +1,8 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync, closeSync, constants as fsConstants, copyFileSync, mkdirSync, openSync, readFileSync,
+  renameSync, writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -245,6 +248,10 @@ async function runRealRetainedBrowser(mode, phase, args) {
   const marker = process.env[guardianMarkerName];
   if (!/^[0-9a-f]{64}$/.test(marker ?? '')) nativeExit(66);
   const transport = clientModule.capturePlaywrightTransport();
+  const profileDirectoryDescriptor = openSync(
+    process.env.TMPDIR,
+    fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+  );
   const client = clientModule.createPlaywrightCliClient({
     transport,
     guardianMarkerName,
@@ -252,6 +259,7 @@ async function runRealRetainedBrowser(mode, phase, args) {
     temporaryDirectory: process.env.TMPDIR,
     cwd: process.cwd(),
     timeoutMs: 90_000,
+    profileDirectoryDescriptor,
   });
   if (mode === 'real-retained-browser-acquisition-crash') {
     if (phase !== 'before-transition') nativeExit(70);
@@ -397,6 +405,7 @@ async function runRealRetainedBrowser(mode, phase, args) {
     phase, mode, browserSessions, true, undefined, launchReceipts, attachedBrowserSessions,
     releasedBrowserSessions,
   );
+  closeSync(profileDirectoryDescriptor);
 }
 
 const args = parseArguments(process.argv.slice(process.argv[1]?.startsWith('--') ? 1 : 2));

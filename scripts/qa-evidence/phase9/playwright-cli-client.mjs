@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import {
   constants as fsConstants, existsSync, lstatSync, readFileSync, realpathSync, readdirSync, rmSync,
@@ -19,11 +19,14 @@ import { assertRunId } from '../../qa-fixtures/manifest.mjs';
 
 const MODULE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TRANSPORT_ARTIFACT = resolve(MODULE_DIRECTORY, 'playwright-transport.bundle.json.gz');
-const DEFAULT_TRANSPORT_SHA256 = '09eb87b9f81d8f491e7293e13cceb21e88edc33e63f99627939d0beab0113eab';
+const DEFAULT_TRANSPORT_SHA256 = '8a66b85498ad521f7354305ffb970591d7f66036adcf743165b0259302378f43';
 const TRANSPORT_FORMAT = 'phase9-playwright-transport-v1';
 const TRANSPORT_TOKENS = new WeakMap();
 const TRANSPORT_ROOT_PREFIX = `${realpathSync('/tmp')}/phase9-playwright-transport.`;
 const SYSTEM_CODESIGN = '/usr/bin/codesign';
+const PROFILE_DESCRIPTOR_RUNTIME = '/usr/bin/python3';
+const PROFILE_DESCRIPTOR_RUNTIME_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
+const PROFILE_DESCRIPTOR_RUNTIME_MAX_BYTES = 4_194_304;
 const GUARDIAN_MARKER_NAME_SHA256 = '585c21d0652b1f1c5dd8168796ee2599745f8a1a9885e3178ac29b057f0044c3';
 const DEFAULT_RUNTIME_POLICY = Object.freeze({
   path: '/usr/local/bin/node',
@@ -39,6 +42,22 @@ const DEFAULT_CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 const DEFAULT_TIMEOUT_MS = 15_000;
+const PROFILE_DESCRIPTOR_LAUNCHER = `
+'use strict';
+const [entrypoint, ...args] = process.argv.slice(1);
+if (!entrypoint || process.env.PHASE9_PROFILE_CWD !== 'descriptor') throw new Error('profile-descriptor-launch-invalid');
+process.argv = [process.execPath, entrypoint, ...args];
+require(entrypoint);
+`;
+const PROFILE_DESCRIPTOR_FCHDIR = `
+import os, sys
+if len(sys.argv) < 3 or os.environ.get("PHASE9_PROFILE_CWD") != "descriptor":
+    raise SystemExit("profile-descriptor-launch-invalid")
+os.fchdir(3)
+os.umask(0o077)
+os.environ["TMPDIR"] = "."
+os.execve(sys.argv[1], sys.argv[1:], os.environ)
+`;
 const MAX_OUTPUT_BYTES = 1_048_576;
 const MAX_SIGNAL_COUNT = 1000;
 const MAX_RAW_URL_BYTES = 16_384;
@@ -126,6 +145,26 @@ const verifyRuntime = async (policy, env) => {
     dev: after.dev, ino: after.ino, size: after.size, mtimeMs: after.mtimeMs, ctimeMs: after.ctimeMs,
     mode: after.mode & 0o777,
   });
+};
+
+const verifyProfileDescriptorRuntime = () => {
+  const metadata = lstatSync(PROFILE_DESCRIPTOR_RUNTIME);
+  if (!metadata.isFile() || metadata.isSymbolicLink()
+    || realpathSync(PROFILE_DESCRIPTOR_RUNTIME) !== PROFILE_DESCRIPTOR_RUNTIME
+    || metadata.uid !== 0 || (metadata.mode & 0o022) !== 0 || (metadata.mode & 0o111) === 0
+    || metadata.size <= 0 || metadata.size > PROFILE_DESCRIPTOR_RUNTIME_MAX_BYTES) {
+    throw new Error('Pinned profile descriptor runtime identity changed.');
+  }
+  const bytes = readFileSync(PROFILE_DESCRIPTOR_RUNTIME);
+  if (bytes.length !== metadata.size || sha256Bytes(bytes) !== PROFILE_DESCRIPTOR_RUNTIME_SHA256) {
+    throw new Error('Pinned profile descriptor runtime identity changed.');
+  }
+  const after = lstatSync(PROFILE_DESCRIPTOR_RUNTIME);
+  if (after.dev !== metadata.dev || after.ino !== metadata.ino || after.size !== metadata.size
+    || after.mtimeMs !== metadata.mtimeMs || after.ctimeMs !== metadata.ctimeMs
+    || (after.mode & 0o777) !== (metadata.mode & 0o777)) {
+    throw new Error('Pinned profile descriptor runtime identity changed.');
+  }
 };
 
 export function capturePlaywrightTransport({
@@ -1640,8 +1679,56 @@ const defaultExecute = async (argv, options) => {
     await verifyExternalChrome(args, options);
     verifyMaterializedPlaywrightTransport(materialized);
     let child;
-    const completion = new Promise(resolvePromise => {
-      child = execFile(runtimePolicy.path, [materialized.entrypoint, ...args], {
+    const descriptorLaunch = Number.isSafeInteger(options.profileDirectoryDescriptor)
+      && options.profileDirectoryDescriptor > 2;
+    if (descriptorLaunch) verifyProfileDescriptorRuntime();
+    await options.beforeSpawnCheck?.();
+    const childArguments = descriptorLaunch
+      ? ['-I', '-c', PROFILE_DESCRIPTOR_FCHDIR, runtimePolicy.path,
+        '--input-type=commonjs', '--eval', PROFILE_DESCRIPTOR_LAUNCHER,
+        '--', materialized.entrypoint, ...args]
+      : [materialized.entrypoint, ...args];
+    const completion = descriptorLaunch ? new Promise(resolvePromise => {
+      const stdout = [];
+      const stderr = [];
+      let outputBytes = 0;
+      let timedOut = false;
+      let settled = false;
+      const finish = result => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolvePromise({
+          stdout: Buffer.concat(stdout).toString('utf8'),
+          stderr: Buffer.concat(stderr).toString('utf8'),
+          exitCode: result,
+          timedOut,
+        });
+      };
+      child = spawn(PROFILE_DESCRIPTOR_RUNTIME, childArguments, {
+        argv0: PROFILE_DESCRIPTOR_RUNTIME,
+        cwd: options.cwd,
+        env: options.env,
+        stdio: ['ignore', 'pipe', 'pipe', options.profileDirectoryDescriptor],
+      });
+      const collect = target => chunk => {
+        outputBytes += chunk.length;
+        if (outputBytes > options.maxOutputBytes) {
+          child.kill('SIGKILL');
+          return;
+        }
+        target.push(chunk);
+      };
+      child.stdout.on('data', collect(stdout));
+      child.stderr.on('data', collect(stderr));
+      child.once('error', () => finish(null));
+      child.once('close', code => finish(Number.isInteger(code) ? code : null));
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, options.timeoutMs);
+    }) : new Promise(resolvePromise => {
+      child = execFile(runtimePolicy.path, childArguments, {
         argv0: runtimePolicy.path,
         cwd: options.cwd,
         env: options.env,
@@ -1676,7 +1763,7 @@ const defaultExecute = async (argv, options) => {
 export async function executeCapturedPlaywrightTransportCommand(args, {
   transport = DEFAULT_CAPTURED_TRANSPORT, cwd = process.cwd(), timeoutMs = DEFAULT_TIMEOUT_MS,
   sourceEnvironment = process.env, guardianMarkerName, temporaryDirectory,
-  executionHooks, runtimePolicy, chromePolicy,
+  executionHooks, runtimePolicy, chromePolicy, profileDirectoryDescriptor, beforeSpawnCheck,
 } = {}) {
   if (!Array.isArray(args) || !(
     (args.length === 1 && args[0] === 'list')
@@ -1684,13 +1771,19 @@ export async function executeCapturedPlaywrightTransportCommand(args, {
   )) throw new Error('Captured Playwright transport command is outside the closed guardian surface.');
   const captured = TRANSPORT_TOKENS.get(transport);
   if (!captured) throw new Error('Captured Playwright transport is required.');
+  if (beforeSpawnCheck !== undefined && typeof beforeSpawnCheck !== 'function') {
+    throw new Error('Playwright CLI spawn precondition must be a function.');
+  }
   const selectedRuntime = validateRuntimePolicy(runtimePolicy ?? captured.runtimePolicy);
-  const env = buildPlaywrightTransportEnvironment(sourceEnvironment, {
+  const baseEnvironment = buildPlaywrightTransportEnvironment(sourceEnvironment, {
     guardianMarkerName, temporaryDirectory,
+  });
+  const env = profileDirectoryDescriptor === undefined ? baseEnvironment : Object.freeze({
+    ...baseEnvironment, TMPDIR: '.', PHASE9_PROFILE_CWD: 'descriptor',
   });
   const result = await defaultExecute([selectedRuntime.path, 'captured-playwright-transport', ...args, '--json'], {
     cwd, env, timeoutMs, maxOutputBytes: MAX_OUTPUT_BYTES, transport, executionHooks, runtimePolicy: selectedRuntime,
-    chromePolicy,
+    chromePolicy, profileDirectoryDescriptor, beforeSpawnCheck,
   });
   if (result.timedOut || result.exitCode !== 0) throw new Error('Captured Playwright transport command failed.');
   let output;
@@ -1714,11 +1807,18 @@ export function createPlaywrightCliClient({
   verifyChromeBeforeLaunch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fixtureRunId,
+  beforeCommand,
+  profileDirectoryDescriptor,
 } = {}) {
   if (typeof execute !== 'function') throw new Error('Playwright CLI execute transport must be a function.');
   if (wrapperPath !== undefined && (typeof wrapperPath !== 'string' || wrapperPath.length === 0)) throw new Error('Playwright CLI wrapper path is invalid.');
   if (wrapperPath === undefined && !TRANSPORT_TOKENS.has(transport)) throw new Error('Captured Playwright transport is required.');
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('Playwright CLI timeout must be a positive integer.');
+  if (beforeCommand !== undefined && typeof beforeCommand !== 'function') throw new Error('Playwright CLI command precondition must be a function.');
+  if (profileDirectoryDescriptor !== undefined
+    && (!Number.isSafeInteger(profileDirectoryDescriptor) || profileDirectoryDescriptor <= 2)) {
+    throw new Error('Playwright CLI profile descriptor is invalid.');
+  }
   if (fixtureRunId !== undefined) assertRunId(fixtureRunId);
   const opened = new Set();
   const currentTabs = new Map();
@@ -1733,12 +1833,16 @@ export function createPlaywrightCliClient({
   const selectedRuntime = wrapperPath === undefined
     ? validateRuntimePolicy(runtimePolicy ?? captured.runtimePolicy)
     : runtimePolicy;
-  const closedEnvironment = buildPlaywrightTransportEnvironment(env ?? sourceEnvironment, {
+  const baseEnvironment = buildPlaywrightTransportEnvironment(env ?? sourceEnvironment, {
     guardianMarkerName, temporaryDirectory,
+  });
+  const closedEnvironment = profileDirectoryDescriptor === undefined ? baseEnvironment : Object.freeze({
+    ...baseEnvironment, TMPDIR: '.', PHASE9_PROFILE_CWD: 'descriptor',
   });
   const tabKey = session => `${session}:${currentTabs.get(session) ?? 0}`;
 
   const command = async (args, session, { parseNestedJson = false } = {}) => {
+    await beforeCommand?.();
     const sessionArgs = session ? [`-s=${session}`] : [];
     const argv = wrapperPath === undefined
       ? [selectedRuntime.path, 'captured-playwright-transport', ...sessionArgs, ...args, '--json']
@@ -1750,7 +1854,8 @@ export function createPlaywrightCliClient({
     try {
       output = await execute(argv, {
         cwd, env: closedEnvironment, timeoutMs, maxOutputBytes: MAX_OUTPUT_BYTES, transport,
-        executionHooks, runtimePolicy: selectedRuntime, chromePolicy,
+        executionHooks, runtimePolicy: selectedRuntime, chromePolicy, profileDirectoryDescriptor,
+        beforeSpawnCheck: beforeCommand,
       });
     } catch {
       throw new Error('Playwright CLI transport failed.');

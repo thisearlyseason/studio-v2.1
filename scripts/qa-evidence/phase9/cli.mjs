@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -40,11 +41,12 @@ const playwrightBuilder = join(moduleDirectory, 'build-playwright-transport.mjs'
 const playwrightClient = join(moduleDirectory, 'playwright-cli-client.mjs');
 const childSource = join(moduleDirectory, 'child-runner-source.mjs');
 const childBuilder = join(moduleDirectory, 'build-child-runner.mjs');
+const childPrivateInputReader = join(moduleDirectory, 'private-input-reader.mjs');
 const playwrightWorkspaceBoundary = join(repositoryRoot, '.playwright', 'phase9-transport-boundary');
 const PLAYWRIGHT_ARTIFACT_RELATIVE_PATH = 'scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz';
 const PLAYWRIGHT_VERSION = '0.1.18';
 const PLAYWRIGHT_CORE_VERSION = '1.63.0-alpha-2026-08-05';
-const PLAYWRIGHT_ARTIFACT_SHA256 = '09eb87b9f81d8f491e7293e13cceb21e88edc33e63f99627939d0beab0113eab';
+const PLAYWRIGHT_ARTIFACT_SHA256 = '8a66b85498ad521f7354305ffb970591d7f66036adcf743165b0259302378f43';
 const NODE_RUNTIME_POLICY = Object.freeze({
   path: '/usr/local/bin/node',
   sha256: '257c121b8efcb1932a92acac811b8d9a3940c956a295a74838a1443bf5be0d4c',
@@ -59,17 +61,18 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: 'a53743c4528e867ecaf66a3360fe92218616efe2746b1316033d39135f683cd1',
-  childSource: '54f1e56bc12624700713ab76854eda58b81a7be529ed60ec612a410631a49e3c',
+  child: '2271a37bea9edfcaf5eb647c6b0e461415380e8e01b1cb6b8a23eb85a23b7b64',
+  childSource: '1e4f0e42cc2728ec8b81c210b34087339b26fa26b232c9531a35cff0f0aeab76',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
+  childPrivateInputReader: '484b203d059bb96e99e41b97f4799947279391a028ed9d680b9faf1593a151fa',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
-  config: 'e8609d81744e0e3d84b4989138a36224aeb0d34aeaac4930ed4047b39ec47cd2',
+  config: 'e825e374c830b947b3243dc9bcf09572d006a1ea57020899ae2e5f59d1648a3f',
   transport: PLAYWRIGHT_ARTIFACT_SHA256,
-  transportManifest: 'c9d44c00a182a7e387d443ab6b0073913c5fb8f78a5b66f078e308607afa2dec',
+  transportManifest: '580a10271cff9a11569ddf65c167007640e662cae8cc028cc74aafc1a3b634d6',
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
-  transportGuard: '4a64c39de2beac00ec64ede64a440449690a30caa901b69c99e06c4be465b7fc',
+  transportGuard: '69bef38997f2766a0a9611582a363cb3174b2a96b12c10f8a65174fdbd78bc30',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: '9ed384bfc4bb2fba1e99b79a03080e36c89dc3965f52d0c5fa366c143eb54656',
+  transportClient: '4b9f7a60ef0141a2072eaa00421f60cd007affb527e5ae84310d3da947bbe399',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
   recoveryHelper: 'cf9cbb07cc80304e1607b3e7f26c48c0c5783b7ca4a207b7c551ef95a1f01b95',
@@ -167,6 +170,7 @@ async function buildRunnerCommand() {
   for (const [path, pin] of [
     [childSource, PHASE9_ARTIFACT_PINS.childSource],
     [childBuilder, PHASE9_ARTIFACT_PINS.childBuilder],
+    [childPrivateInputReader, PHASE9_ARTIFACT_PINS.childPrivateInputReader],
     [playwrightWorkspaceBoundary, PHASE9_ARTIFACT_PINS.workspaceBoundary],
     [playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
     [playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
@@ -204,10 +208,46 @@ async function dryRun(stdout) {
 }
 
 async function runWrapper(args, { sourceEnvironment, temporaryDirectory } = {}) {
-  return executeCapturedPlaywrightTransportCommand(args, {
-    transport: phase9CapturedPlaywrightTransport, cwd: repositoryRoot, timeoutMs: 90_000,
-    sourceEnvironment, temporaryDirectory,
-  });
+  let profileHandle;
+  try {
+    let revalidateProfile;
+    if (temporaryDirectory !== undefined) {
+      const before = await lstat(temporaryDirectory);
+      profileHandle = await open(
+        temporaryDirectory,
+        fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+      );
+      const held = await profileHandle.stat();
+      const after = await lstat(temporaryDirectory);
+      if (![before, held, after].every(metadata => metadata.isDirectory()
+        && !metadata.isSymbolicLink() && (metadata.mode & 0o777) === 0o700
+        && metadata.uid === process.getuid())
+        || held.dev !== before.dev || held.ino !== before.ino
+        || held.dev !== after.dev || held.ino !== after.ino) {
+        throw new Error('Guardian browser profile identity changed.');
+      }
+      revalidateProfile = async () => {
+        const [heldNow, namedNow] = await Promise.all([
+          profileHandle.stat(), lstat(temporaryDirectory),
+        ]);
+        if (![heldNow, namedNow].every(metadata => metadata.isDirectory()
+          && !metadata.isSymbolicLink() && (metadata.mode & 0o777) === 0o700
+          && metadata.uid === process.getuid())
+          || heldNow.dev !== held.dev || heldNow.ino !== held.ino
+          || namedNow.dev !== held.dev || namedNow.ino !== held.ino) {
+          throw new Error('Guardian browser profile identity changed.');
+        }
+      };
+    }
+    return await executeCapturedPlaywrightTransportCommand(args, {
+      transport: phase9CapturedPlaywrightTransport, cwd: repositoryRoot, timeoutMs: 90_000,
+      sourceEnvironment, temporaryDirectory,
+      ...(profileHandle ? { profileDirectoryDescriptor: profileHandle.fd } : {}),
+      ...(revalidateProfile ? { beforeSpawnCheck: revalidateProfile } : {}),
+    });
+  } finally {
+    await profileHandle?.close().catch(() => {});
+  }
 }
 
 function guardianBrowserClient() {
@@ -398,6 +438,7 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ['scripts/qa-evidence/phase9/child-runner.mjs', childEntrypoint, PHASE9_ARTIFACT_PINS.child],
     ['scripts/qa-evidence/phase9/child-runner-source.mjs', childSource, PHASE9_ARTIFACT_PINS.childSource],
     ['scripts/qa-evidence/phase9/build-child-runner.mjs', childBuilder, PHASE9_ARTIFACT_PINS.childBuilder],
+    ['scripts/qa-evidence/phase9/private-input-reader.mjs', childPrivateInputReader, PHASE9_ARTIFACT_PINS.childPrivateInputReader],
     ['.playwright/phase9-transport-boundary', playwrightWorkspaceBoundary, PHASE9_ARTIFACT_PINS.workspaceBoundary],
     ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
     ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],

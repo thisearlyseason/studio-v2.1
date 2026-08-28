@@ -3,7 +3,7 @@ import { createHook } from 'node:async_hooks';
 import childProcess, { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs, {
-  chmodSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
+  chmodSync, closeSync, constants as fsConstants, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync,
 } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -33,6 +33,7 @@ import {
 import {
   closeAndVerifyBrowsers,
   createPlaywrightCliClient,
+  createPhase9ProductionCliClient,
   executeCapturedPlaywrightTransportCommand,
   installSignalRecorder,
   isProtectedResource,
@@ -55,6 +56,7 @@ import {
   createLifecycleGuardian,
   runGuardedLifecycle,
 } from '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs';
+import { openBoundPrivateInputs } from '../scripts/qa-evidence/phase9/private-input-reader.mjs';
 
 const phase9EvidenceDirectorySuffix = join(
   'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities',
@@ -5017,7 +5019,7 @@ const realGuardianTwoSessions = Object.freeze([
   'phase9-real-guardian-retained-a', 'phase9-real-guardian-retained-b',
 ]);
 const realGuardianCrashSession = 'phase9-real-acquisition-crash';
-const REAL_GUARDIAN_JOIN_TIMEOUT_MS = 10_000;
+const REAL_GUARDIAN_JOIN_TIMEOUT_MS = 60_000;
 const realGuardianInfoPath = phase => `/tmp/phase9-guardian-real-retained-${process.pid}-${phase}.json`;
 const realGuardianProfileRoot = '/tmp/phase9-core-identities.test/playwright-tmp';
 const realGuardianCommandOptions = temporaryDirectory => temporaryDirectory === undefined
@@ -5027,12 +5029,28 @@ const realGuardianCommandOptions = temporaryDirectory => temporaryDirectory === 
     sourceEnvironment: { ...process.env, TMPDIR: temporaryDirectory },
     temporaryDirectory,
   };
+const executeRealGuardianCommand = async (args, temporaryDirectory) => {
+  if (temporaryDirectory === undefined) {
+    return executeCapturedPlaywrightTransportCommand(args, realGuardianCommandOptions());
+  }
+  const descriptor = openSync(
+    temporaryDirectory,
+    fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    return await executeCapturedPlaywrightTransportCommand(args, {
+      ...realGuardianCommandOptions(temporaryDirectory), profileDirectoryDescriptor: descriptor,
+    });
+  } finally {
+    closeSync(descriptor);
+  }
+};
 const realGuardianBrowserClient = Object.freeze({
-  closeBrowser: (session, { temporaryDirectory } = {}) => executeCapturedPlaywrightTransportCommand(
-    [`-s=${session}`, 'close'], realGuardianCommandOptions(temporaryDirectory),
+  closeBrowser: (session, { temporaryDirectory } = {}) => executeRealGuardianCommand(
+    [`-s=${session}`, 'close'], temporaryDirectory,
   ),
-  listBrowsers: ({ temporaryDirectory } = {}) => executeCapturedPlaywrightTransportCommand(
-    ['list'], realGuardianCommandOptions(temporaryDirectory),
+  listBrowsers: ({ temporaryDirectory } = {}) => executeRealGuardianCommand(
+    ['list'], temporaryDirectory,
   ),
 });
 const markedProcessLines = marker => {
@@ -5600,21 +5618,43 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
     markerPresent: true, markerArgumentPresent: true,
   });
   const policy = Object.freeze({ appPath, binaryPath });
-  assert.equal(chromeProcessCommandIsExact(mainRecord, { marker, policy, profileRoot }), true);
+  const absoluteProfileOptions = Object.freeze({
+    marker, policy, profileRoot, profileMode: 'absolute',
+  });
+  assert.equal(chromeProcessCommandIsExact(mainRecord, absoluteProfileOptions), true);
+  const relativeProfilePath = 'playwright_chromiumdev_profile-a1B2_c3';
+  const relativeMainRecord = Object.freeze({
+    ...mainRecord,
+    argv: mainRecord.argv.map(argument => argument === `--user-data-dir=${profilePath}`
+      ? `--user-data-dir=${relativeProfilePath}` : argument),
+  });
+  assert.equal(chromeProcessCommandIsExact(
+    relativeMainRecord, { marker, policy, profileRoot, profileMode: 'descriptor-relative' },
+  ), true, 'a descriptor-rooted launch must accept only the exact relative profile basename');
+  assert.equal(chromeProcessCommandIsExact(
+    mainRecord, { marker, policy, profileRoot, profileMode: 'descriptor-relative' },
+  ), false, 'descriptor mode must reject the former absolute profile spelling');
+  assert.equal(chromeProcessCommandIsExact(relativeMainRecord, absoluteProfileOptions), false,
+    'absolute compatibility mode must reject a relative profile spelling');
+  assert.equal(chromeProcessCommandIsExact({
+    ...relativeMainRecord,
+    argv: relativeMainRecord.argv.map(argument => argument.startsWith('--user-data-dir=')
+      ? '--user-data-dir=../playwright_chromiumdev_profile-a1B2_c3' : argument),
+  }, { marker, policy, profileRoot, profileMode: 'descriptor-relative' }), false);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord, argv: [...mainRecord.argv, '--headless'],
-  }, { marker, policy, profileRoot }), false);
+  }, absoluteProfileOptions), false);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord,
     argv: mainRecord.argv.map(argument => argument.startsWith('--disable-features=')
       ? '--disable-features=TotallyUnreviewed' : argument),
-  }, { marker, policy, profileRoot }), false);
+  }, absoluteProfileOptions), false);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord, argv: [...mainRecord.argv, 'about:blank'],
-  }, { marker, policy, profileRoot }), false);
+  }, absoluteProfileOptions), false);
   assert.equal(chromeProcessCommandIsExact({
     ...mainRecord, argv: [...mainRecord.argv, '--guardian-marker-present'],
-  }, { marker, policy, profileRoot }), false);
+  }, absoluteProfileOptions), false);
 
   const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.175/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
   const rendererArguments = [
@@ -5639,11 +5679,11 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
     markerPresent: true, markerArgumentPresent: false,
   });
   assert.equal(chromeProcessCommandIsExact(
-    rendererRecord, { policy, profilePath, profileRoot },
+    rendererRecord, { policy, profilePath, profileRoot, profileMode: 'absolute' },
   ), true);
   assert.equal(chromeProcessCommandIsExact({
     ...rendererRecord, argv: [...rendererRecord.argv, '--totally-unreviewed'],
-  }, { policy, profilePath, profileRoot }), false);
+  }, { policy, profilePath, profileRoot, profileMode: 'absolute' }), false);
 });
 
 darwinRuntimeTest('phase 9 guardian retains only an exact real browser marker across both lifecycle phases', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
@@ -8720,18 +8760,363 @@ test('phase 9 production child reserves ownership before local acquisition and r
     testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner-source.mjs',
   ), 'utf8');
   const openStart = source.indexOf('const openWithReceipt = async session =>');
+  const privateInputRevalidation = source.indexOf('await privateInputs.revalidate();', openStart);
   const ownershipIntent = source.indexOf("type: 'ownership-intent', version: 4", openStart);
   const authorization = source.indexOf('await requireOwnershipAuthorization(session, ownershipSequence);', ownershipIntent);
   const acquired = source.indexOf('await acquireBlankBrowser(client, session);', authorization);
   const receipt = source.indexOf('const launchReceipt = await captureLaunchReceipt(session);', acquired);
   const ownershipAdd = source.indexOf("type: 'ownership-add', version: 4", receipt);
   const arm = source.indexOf('await armAcquiredSignalRecorder(client, session);', ownershipAdd);
-  assert.ok(openStart >= 0 && openStart < ownershipIntent && ownershipIntent < authorization
+  assert.ok(openStart >= 0 && openStart < privateInputRevalidation
+    && privateInputRevalidation < ownershipIntent && ownershipIntent < authorization
     && authorization < acquired && acquired < receipt && receipt < ownershipAdd && ownershipAdd < arm);
   const attachStart = source.indexOf('const confirmAttachedOwnership = session =>');
   const ownershipAttach = source.indexOf("type: 'ownership-attach', version: 4", attachStart);
   const attachAction = source.indexOf('await attachExistingSignalRecorder(client, session', ownershipAttach);
   assert.ok(attachStart >= 0 && attachStart < ownershipAttach && ownershipAttach < attachAction);
+});
+
+darwinRuntimeTest('phase 9 exact production child emits protocol-v4 ownership intent before browser acquisition', { timeout: 30_000 }, async () => {
+  const repositoryRoot = join(testDirectory, '..');
+  const workspace = mkdtempSync('/tmp/phase9-core-identities.child-startup-');
+  const manifestPath = join(workspace, 'manifest.json');
+  const credentialsPath = join(workspace, 'credentials.json');
+  const profileRoot = join(workspace, 'playwright-tmp');
+  const runId = 'qa-phase7-20260828T120000Z-childstartup';
+  const definition = buildFixtureDefinition({
+    runId,
+    expiresAt: '2026-08-29T12:00:00.000Z',
+    manifestVersion: 3,
+  });
+  chmodSync(workspace, 0o700);
+  mkdirSync(profileRoot, { mode: 0o700 });
+  writeFileSync(manifestPath, `${JSON.stringify({
+    version: 3,
+    projectId: 'the-squad-v2-staging',
+    runId,
+  })}\n`, { mode: 0o600 });
+  writeFileSync(credentialsPath, `${JSON.stringify({
+    version: 1,
+    runId,
+    identities: definition.identities.map(({ alias }, index) => ({
+      alias,
+      email: `phase9-child-${index}@example.invalid`,
+      password: 'offline-only',
+    })),
+  })}\n`, { mode: 0o600 });
+  const markerName = 'PHASE9_GUARDIAN_RUN_MARKER';
+  const marker = 'a'.repeat(64);
+  const child = spawn(process.execPath, [
+    '--input-type=module',
+    '--eval', readFileSync(join(repositoryRoot, 'scripts/qa-evidence/phase9/child-runner.mjs'), 'utf8'),
+    '--',
+    '--phase', 'before-transition',
+    '--workspace', workspace,
+    '--manifest', manifestPath,
+    '--credentials', credentialsPath,
+    '--guardian-marker-env', markerName,
+    '--config-base64', readFileSync(
+      join(repositoryRoot, 'scripts/qa-evidence/phase9/runner-config.json'),
+    ).toString('base64'),
+  ], {
+    cwd: repositoryRoot,
+    env: { ...process.env, TMPDIR: profileRoot, [markerName]: marker },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', chunk => { stdout += chunk.toString('utf8'); });
+  child.stderr.on('data', chunk => { stderr += chunk.toString('utf8'); });
+  let startupTimeout;
+  try {
+    const firstLine = await Promise.race([
+      new Promise((resolvePromise, reject) => {
+        child.stdout.on('data', () => {
+          const newline = stdout.indexOf('\n');
+          if (newline !== -1) resolvePromise(stdout.slice(0, newline));
+        });
+        child.once('exit', code => reject(new Error(
+          `exact child exited ${code} before ownership intent: ${/Error: ([a-z-]+)/.exec(stderr)?.[1] ?? 'no-fixed-category'}`,
+        )));
+      }),
+      new Promise((_, reject) => {
+        startupTimeout = setTimeout(() => reject(new Error('exact child startup timed out')), 10_000);
+      }),
+    ]);
+    clearTimeout(startupTimeout);
+    assert.deepEqual(JSON.parse(firstLine), {
+      type: 'ownership-intent',
+      version: 4,
+      phase: 'before-transition',
+      sequence: 0,
+      session: 'p9-admission-route-qa-parent-a-mobile',
+    });
+  } finally {
+    clearTimeout(startupTimeout);
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await new Promise(resolvePromise => child.once('exit', resolvePromise));
+    }
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 production child private inputs reject every non-exact workspace spelling before filesystem access', async () => {
+  const filesystem = new Proxy({}, {
+    get() { throw new Error('filesystem-must-not-be-accessed'); },
+  });
+  for (const workspace of [
+    '/tmp/phase9-core-identities.safe/../foreign',
+    '/tmp/phase9-core-identities.safe/nested',
+    '/tmp//phase9-core-identities.safe',
+    '/tmp/phase9-core-identities.safe.',
+  ]) {
+    await assert.rejects(openBoundPrivateInputs({
+      workspace,
+      manifestPath: join(workspace, 'manifest.json'),
+      credentialsPath: join(workspace, 'credentials.json'),
+      profileRootPath: join(workspace, 'playwright-tmp'),
+      filesystem,
+    }), /runner-configuration-invalid/);
+  }
+});
+
+const privateInputRaceFixture = () => {
+  const workspace = mkdtempSync('/tmp/phase9-core-identities.private-input-');
+  const manifestPath = join(workspace, 'manifest.json');
+  const credentialsPath = join(workspace, 'credentials.json');
+  const profileRootPath = join(workspace, 'playwright-tmp');
+  chmodSync(workspace, 0o700);
+  mkdirSync(profileRootPath, { mode: 0o700 });
+  writeFileSync(manifestPath, '{"source":"held"}\n', { mode: 0o600 });
+  writeFileSync(credentialsPath, '{"source":"synthetic"}\n', { mode: 0o600 });
+  return { workspace, manifestPath, credentialsPath, profileRootPath };
+};
+
+test('phase 9 production child rejects a private input replaced after descriptor open without reading foreign bytes', async () => {
+  const fixture = privateInputRaceFixture();
+  const stolen = `${fixture.manifestPath}.held`;
+  let swapped = false;
+  let manifestLstats = 0;
+  try {
+    await assert.rejects(openBoundPrivateInputs({
+      ...fixture,
+      filesystem: {
+        ...fsPromises,
+        async lstat(path) {
+          if (path === fixture.manifestPath && ++manifestLstats === 2 && !swapped) {
+            swapped = true;
+            await fsPromises.rename(path, stolen);
+            await fsPromises.writeFile(path, '{"source":"foreign"}\n', { mode: 0o600 });
+          }
+          return fsPromises.lstat(path);
+        },
+      },
+    }), /runner-private-input-invalid/);
+    assert.equal(readFileSync(fixture.manifestPath, 'utf8'), '{"source":"foreign"}\n');
+    assert.equal(readFileSync(stolen, 'utf8'), '{"source":"held"}\n');
+  } finally {
+    rmSync(fixture.workspace, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 production child rejects a private input replaced immediately before no-follow open', async () => {
+  const fixture = privateInputRaceFixture();
+  const stolen = `${fixture.manifestPath}.held`;
+  let swapped = false;
+  try {
+    await assert.rejects(openBoundPrivateInputs({
+      ...fixture,
+      filesystem: {
+        ...fsPromises,
+        async open(path, flags) {
+          if (path === fixture.manifestPath && !swapped) {
+            swapped = true;
+            await fsPromises.rename(path, stolen);
+            await fsPromises.writeFile(path, '{"source":"foreign"}\n', { mode: 0o600 });
+          }
+          return fsPromises.open(path, flags);
+        },
+      },
+    }), /runner-private-input-invalid/);
+    assert.equal(readFileSync(fixture.manifestPath, 'utf8'), '{"source":"foreign"}\n');
+    assert.equal(readFileSync(stolen, 'utf8'), '{"source":"held"}\n');
+  } finally {
+    rmSync(fixture.workspace, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 production child rejects a private input name replaced during held-descriptor read', async () => {
+  const fixture = privateInputRaceFixture();
+  const stolen = `${fixture.manifestPath}.held`;
+  let swapped = false;
+  try {
+    await assert.rejects(openBoundPrivateInputs({
+      ...fixture,
+      filesystem: {
+        ...fsPromises,
+        async open(path, flags) {
+          const handle = await fsPromises.open(path, flags);
+          if (path !== fixture.manifestPath) return handle;
+          return {
+            stat: (...args) => handle.stat(...args),
+            close: () => handle.close(),
+            async readFile(...args) {
+              const bytes = await handle.readFile(...args);
+              if (!swapped) {
+                swapped = true;
+                await fsPromises.rename(path, stolen);
+                await fsPromises.writeFile(path, '{"source":"foreign"}\n', { mode: 0o600 });
+              }
+              return bytes;
+            },
+          };
+        },
+      },
+    }), /runner-private-input-invalid/);
+    assert.equal(readFileSync(fixture.manifestPath, 'utf8'), '{"source":"foreign"}\n');
+    assert.equal(readFileSync(stolen, 'utf8'), '{"source":"held"}\n');
+  } finally {
+    rmSync(fixture.workspace, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 production child binds held workspace and profile identities before private input reads', async () => {
+  const fixture = privateInputRaceFixture();
+  const stolenWorkspace = `${fixture.workspace}.held`;
+  let swapped = false;
+  try {
+    await assert.rejects(openBoundPrivateInputs({
+      ...fixture,
+      filesystem: {
+        ...fsPromises,
+        async open(path, flags) {
+          const handle = await fsPromises.open(path, flags);
+          if (path === fixture.profileRootPath && !swapped) {
+            swapped = true;
+            await fsPromises.rename(fixture.workspace, stolenWorkspace);
+            await fsPromises.mkdir(fixture.workspace, { mode: 0o700 });
+            await fsPromises.mkdir(fixture.profileRootPath, { mode: 0o700 });
+            await fsPromises.writeFile(
+              join(fixture.workspace, 'foreign.txt'), 'foreign-workspace\n', { mode: 0o600 },
+            );
+          }
+          return handle;
+        },
+      },
+    }), /runner-configuration-invalid/);
+    assert.equal(readFileSync(join(fixture.workspace, 'foreign.txt'), 'utf8'), 'foreign-workspace\n');
+    assert.equal(readFileSync(join(stolenWorkspace, 'manifest.json'), 'utf8'), '{"source":"held"}\n');
+  } finally {
+    rmSync(fixture.workspace, { recursive: true, force: true });
+    rmSync(stolenWorkspace, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 production child rejects a workspace replaced immediately before no-follow directory open', async () => {
+  const fixture = privateInputRaceFixture();
+  const heldWorkspace = `${fixture.workspace}.held`;
+  let swapped = false;
+  try {
+    await assert.rejects(openBoundPrivateInputs({
+      ...fixture,
+      filesystem: {
+        ...fsPromises,
+        async open(path, flags) {
+          if (path === fixture.workspace && !swapped) {
+            swapped = true;
+            await fsPromises.rename(path, heldWorkspace);
+            await fsPromises.mkdir(fixture.workspace, { mode: 0o700 });
+            await fsPromises.mkdir(fixture.profileRootPath, { mode: 0o700 });
+            await fsPromises.writeFile(
+              join(fixture.workspace, 'foreign.txt'), 'foreign-workspace\n', { mode: 0o600 },
+            );
+          }
+          return fsPromises.open(path, flags);
+        },
+      },
+    }), /runner-configuration-invalid/);
+    assert.equal(readFileSync(join(fixture.workspace, 'foreign.txt'), 'utf8'), 'foreign-workspace\n');
+    assert.equal(readFileSync(join(heldWorkspace, 'manifest.json'), 'utf8'), '{"source":"held"}\n');
+  } finally {
+    rmSync(fixture.workspace, { recursive: true, force: true });
+    rmSync(heldWorkspace, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 production child revalidates held workspace and profile identities before every transport command', async () => {
+  const fixture = privateInputRaceFixture();
+  const heldWorkspace = `${fixture.workspace}.held`;
+  const inputs = await openBoundPrivateInputs(fixture);
+  let executeCalls = 0;
+  try {
+    await fsPromises.rename(fixture.workspace, heldWorkspace);
+    await fsPromises.mkdir(fixture.workspace, { mode: 0o700 });
+    await fsPromises.mkdir(fixture.profileRootPath, { mode: 0o700 });
+    await fsPromises.writeFile(
+      join(fixture.workspace, 'foreign.txt'), 'foreign-workspace\n', { mode: 0o600 },
+    );
+    const client = createPlaywrightCliClient({
+      wrapperPath: '/safe/playwright_cli.sh',
+      beforeCommand: inputs.revalidate,
+      execute: async () => {
+        executeCalls += 1;
+        return cliResult({ browsers: [] });
+      },
+    });
+    await assert.rejects(client.listBrowsers(), /runner-configuration-invalid/);
+    assert.equal(executeCalls, 0);
+    assert.equal(readFileSync(join(fixture.workspace, 'foreign.txt'), 'utf8'), 'foreign-workspace\n');
+    assert.equal(readFileSync(join(heldWorkspace, 'manifest.json'), 'utf8'), '{"source":"held"}\n');
+  } finally {
+    await inputs.close();
+    rmSync(fixture.workspace, { recursive: true, force: true });
+    rmSync(heldWorkspace, { recursive: true, force: true });
+  }
+});
+
+darwinRuntimeTest('phase 9 production transport consumes the profile through its inherited descriptor after a pathname swap', { timeout: 30_000 }, async () => {
+  const fixture = privateInputRaceFixture();
+  const heldWorkspace = `${fixture.workspace}.held`;
+  const inputs = await openBoundPrivateInputs(fixture);
+  let swapped = false;
+  let client;
+  let cleanupClient;
+  try {
+    client = createPhase9ProductionCliClient({
+      sourceEnvironment: { ...process.env, TMPDIR: fixture.profileRootPath },
+      temporaryDirectory: fixture.profileRootPath,
+      profileDirectoryDescriptor: inputs.profileDescriptor,
+      beforeCommand: inputs.revalidate,
+      executionHooks: {
+        async beforeSpawn() {
+          if (swapped) return;
+          swapped = true;
+          await fsPromises.rename(fixture.workspace, heldWorkspace);
+          await fsPromises.mkdir(fixture.workspace, { mode: 0o700 });
+          await fsPromises.mkdir(fixture.profileRootPath, { mode: 0o700 });
+        },
+      },
+    });
+    await assert.rejects(
+      installSignalRecorder(client, 'phase9-descriptor-profile'),
+      /Playwright CLI transport failed/,
+      'the final named-identity check must fail before a descriptor-bound browser can start',
+    );
+    assert.deepEqual(readdirSync(fixture.profileRootPath), []);
+    assert.deepEqual(readdirSync(join(heldWorkspace, 'playwright-tmp')), []);
+    cleanupClient = createPhase9ProductionCliClient({
+      sourceEnvironment: { ...process.env, TMPDIR: fixture.profileRootPath },
+      temporaryDirectory: fixture.profileRootPath,
+      profileDirectoryDescriptor: inputs.profileDescriptor,
+    });
+    await closeAndVerifyBrowsers(cleanupClient);
+  } finally {
+    if (cleanupClient) await closeAndVerifyBrowsers(cleanupClient).catch(() => {});
+    await inputs.close();
+    rmSync(fixture.workspace, { recursive: true, force: true });
+    rmSync(heldWorkspace, { recursive: true, force: true });
+  }
 });
 
 test('phase 9 production session plan releases completed rows and retains only pending baselines', () => {
@@ -9573,7 +9958,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 65);
+  assert.equal(darwinRuntimeTests.length, 67);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });
