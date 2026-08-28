@@ -61,8 +61,8 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: 'e38abb79cbd015ebaf97f15e6151aa6c6922213197dd4100f87eeb4c1f84a2d2',
-  childSource: 'b373fe98adbc2aa430080d5ff927bee7cf2f907704290a50145ea0409a902cdf',
+  child: '340ece10eb4d784c3e36db17a605f2484152870df44ae163a5bd29e4bef07dac',
+  childSource: '835a8f4dce949120b50808322c08d5054bad4cd4279df22e3f365b61372e3928',
   childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
   childPrivateInputReader: 'c828285b3f5de1927efb32f11353c4ffed30250fe2e1337885a1c7a74f863be7',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
@@ -72,7 +72,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
   transportGuard: '69bef38997f2766a0a9611582a363cb3174b2a96b12c10f8a65174fdbd78bc30',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: '4b9f7a60ef0141a2072eaa00421f60cd007affb527e5ae84310d3da947bbe399',
+  transportClient: 'ea0cd195d89f3cbd3a920b72a5b27c44aa8063bfe5b5f1e8027aade9cca7303a',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
   recoveryHelper: 'cf9cbb07cc80304e1607b3e7f26c48c0c5783b7ca4a207b7c551ef95a1f01b95',
@@ -565,24 +565,25 @@ async function hosted(argv, env, stdout, platform) {
   let lifecycle = null;
   let terminalPersisted = false;
   let finalPromotionAttempted = false;
-  const certificate = (status, category, primaryCategory, primaryStage, lifecycleValue, evidence) => ({
+  const certificate = (status, category, primaryCategory, primaryStage, lifecycleValue, evidence, diagnostic = null) => ({
     version: 2, command: 'hosted', status,
     exitCode: status === 'complete' ? 0 : 1,
     category,
     primaryCategory,
     primaryStage,
+    ...(diagnostic ? { diagnostic } : {}),
     deployment: deploymentCertificate,
     lifecycle: lifecycleValue,
     evidence,
   });
   const terminalCertificateWriter = async ({
-    phase, lifecycle: lifecycleValue, primaryCategory, primaryStage,
+    phase, lifecycle: lifecycleValue, primaryCategory, primaryStage, diagnostic,
   }) => {
     latestLifecycle = lifecycleValue;
     if (phase === 'closure-pending') {
       await terminalWriter.write(certificate(
         'closure-pending', 'pending', primaryCategory, primaryStage,
-        lifecycleValue, { rows: 0, written: false },
+        lifecycleValue, { rows: 0, written: false }, diagnostic,
       ));
     }
   };
@@ -615,6 +616,7 @@ async function hosted(argv, env, stdout, platform) {
       lifecycle?.primaryStage ?? lifecycle?.state ?? 'uninitialized',
       failureLifecycle(lifecycle),
       { rows: Array.isArray(lifecycle?.rows) ? lifecycle.rows.length : 0, written: false },
+      lifecycle?.diagnostic ?? null,
     ));
     terminalPersisted = true;
   };

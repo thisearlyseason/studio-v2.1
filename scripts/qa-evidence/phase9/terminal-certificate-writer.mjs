@@ -4,6 +4,7 @@ import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildCanonicalScenarioPlan } from './scenarios.mjs';
 
 const HELPER_PATH = fileURLToPath(new URL('./terminal-certificate-dirfd-helper.py', import.meta.url));
 const PYTHON_RUNTIME = '/usr/bin/python3';
@@ -21,6 +22,31 @@ const PRIMARY_STAGES = new Set([
   'authorization', 'acquisition', 'receipt', 'recorder', 'viewport', 'login',
   'scenario-action', 'row-emission', 'release',
 ]);
+const DIAGNOSTIC_REASONS = Object.freeze({
+  'runner-initialization': 'runner-invalid', 'context-start': 'context-invalid',
+  'ownership-authorization': 'authorization-failed', 'browser-acquisition': 'acquisition-failed',
+  'launch-receipt': 'receipt-invalid', 'recorder-arm': 'recorder-failed',
+  'viewport-verify': 'viewport-mismatch', 'login-submit': 'login-failed',
+  'observation-arm': 'observation-failed', 'scenario-action': 'action-failed',
+  'terminal-wait': 'terminal-not-reached', 'observation-sample': 'observation-failed',
+  'window-validation': 'expectation-mismatch', 'row-validation': 'row-invalid',
+  'ownership-release': 'release-failed', 'row-emission': 'row-invalid',
+  'private-finalization': 'finalization-failed',
+});
+const DIAGNOSTIC_STAGES = Object.freeze({
+  'runner-initialization': 'authorization', 'context-start': 'authorization',
+  'ownership-authorization': 'authorization', 'browser-acquisition': 'acquisition',
+  'launch-receipt': 'receipt', 'recorder-arm': 'recorder', 'viewport-verify': 'viewport',
+  'login-submit': 'login', 'observation-arm': 'scenario-action', 'scenario-action': 'scenario-action',
+  'terminal-wait': 'scenario-action', 'observation-sample': 'scenario-action',
+  'window-validation': 'scenario-action', 'row-validation': 'scenario-action',
+  'ownership-release': 'release', 'row-emission': 'row-emission',
+  'private-finalization': 'row-emission',
+});
+const DIAGNOSTIC_CONTEXTS = Object.freeze({
+  before: buildCanonicalScenarioPlan().filter(row => row.startState !== 'pending_deletion'),
+  after: buildCanonicalScenarioPlan().filter(row => row.startState === 'pending_deletion'),
+});
 const CATEGORIES = new Set([
   'none', 'pending', 'operation-failed', 'terminal-certificate-failed', 'ledger-validation-failed',
   'evidence-write-failed', 'interrupted', 'reentry', 'configuration-invalid', 'guardian-registration-failed',
@@ -135,7 +161,9 @@ function validateCertificate(input, {
   const version3 = value?.version === 3;
   exactKeys(value, version1
     ? ['version', 'command', 'status', 'exitCode', 'category', 'deployment', 'lifecycle', 'evidence']
-    : ['version', 'command', 'status', 'exitCode', 'category', 'primaryCategory', 'primaryStage', 'deployment', 'lifecycle', 'evidence', ...(version3 ? ['recoveryDisposition'] : [])], 'document');
+    : ['version', 'command', 'status', 'exitCode', 'category', 'primaryCategory', 'primaryStage', 'deployment', 'lifecycle', 'evidence',
+      ...(Object.hasOwn(value ?? {}, 'diagnostic') ? ['diagnostic'] : []),
+      ...(version3 ? ['recoveryDisposition'] : [])], 'document');
   if ((!version1 && value.version !== 2 && value.version !== 3) || (version1 && !allowVersion1)
     || (version3 && !allowRecoveryDisposition) || value.command !== 'hosted'
     || !new Set(['closure-pending', 'complete', 'failed']).has(value.status)
@@ -153,6 +181,23 @@ function validateCertificate(input, {
       ? 'scenario-failed' : 'scenario-runner-invalid';
     if (value.primaryCategory !== expectedCategory) {
       throw new Error('Terminal certificate primary attribution is invalid.');
+    }
+  }
+  if (!version1 && (!STATES.includes(value.primaryStage)) !== Object.hasOwn(value, 'diagnostic')) {
+    throw new Error('Terminal certificate diagnostic presence is invalid.');
+  }
+  if (!version1 && Object.hasOwn(value, 'diagnostic')) {
+    exactKeys(value.diagnostic, ['checkpoint', 'contextId', 'contextOrdinal', 'reason'], 'diagnostic');
+    if (!Number.isSafeInteger(value.diagnostic.contextOrdinal) || value.diagnostic.contextOrdinal < 0
+      || value.diagnostic.contextOrdinal >= 40
+      || typeof value.diagnostic.contextId !== 'string'
+      || ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
+        contexts[value.diagnostic.contextOrdinal]?.contextId === value.diagnostic.contextId
+      ))
+      || !Object.hasOwn(DIAGNOSTIC_REASONS, value.diagnostic.checkpoint)
+      || value.diagnostic.reason !== DIAGNOSTIC_REASONS[value.diagnostic.checkpoint]
+      || value.primaryStage !== DIAGNOSTIC_STAGES[value.diagnostic.checkpoint]) {
+      throw new Error('Terminal certificate diagnostic is invalid.');
     }
   }
   if (version3) {

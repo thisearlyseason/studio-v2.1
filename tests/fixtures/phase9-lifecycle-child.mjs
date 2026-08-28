@@ -498,7 +498,7 @@ if (mode === 'success') {
   const stage = mode.slice('failure-terminal-'.length).replace(/-(hang-trailing|trailing|nonzero)$/, '');
   const category = new Set(['login', 'scenario-action']).has(stage)
     ? 'scenario-failed' : 'scenario-runner-invalid';
-  const session = 'phase9-failure-terminal-owned';
+  const session = 'p9-admission-route-qa-parent-a-mobile';
   const launchReceipt = fakeLaunchReceipts([session])[0];
   let pendingBrowserSession = session;
   writeMessage({ version: 4, type: 'ownership-intent', phase, sequence: 0, session });
@@ -522,6 +522,17 @@ if (mode === 'success') {
     sequence: activeStage ? 1 : 0,
     category,
     stage,
+    contextOrdinal: 0,
+    contextId: 'admission-route-qa-parent-a-mobile',
+    checkpoint: stage === 'login' ? 'login-submit' : stage === 'scenario-action'
+      ? 'scenario-action' : stage === 'authorization' ? 'ownership-authorization'
+        : stage === 'acquisition' ? 'browser-acquisition' : stage === 'receipt' ? 'launch-receipt'
+          : stage === 'recorder' ? 'recorder-arm' : stage === 'viewport' ? 'viewport-verify'
+            : stage === 'row-emission' ? 'row-emission' : 'ownership-release',
+    reason: stage === 'login' ? 'login-failed' : stage === 'scenario-action' ? 'action-failed'
+      : stage === 'authorization' ? 'authorization-failed' : stage === 'acquisition' ? 'acquisition-failed'
+        : stage === 'receipt' ? 'receipt-invalid' : stage === 'recorder' ? 'recorder-failed'
+          : stage === 'viewport' ? 'viewport-mismatch' : stage === 'row-emission' ? 'row-invalid' : 'release-failed',
     pendingBrowserSession,
     browserSessions: activeStage ? [session] : [],
     attachedBrowserSessions: [],

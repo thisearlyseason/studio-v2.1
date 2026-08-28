@@ -215,6 +215,12 @@ The final Task 7 report may claim completion only when:
 
 Until then, release status remains `NOT READY`.
 
+## Closed scenario-failure diagnostics
+
+A protocol-v4 failure terminal carries one bounded diagnostic tuple in addition to its existing fixed category, stage, and exact ownership snapshot: the canonical plan ordinal, the exact canonical context ID at that ordinal, a closed checkpoint, and that checkpoint's single closed reason. The child advances this tuple before runner initialization, context start, ownership authorization, acquisition, receipt capture, recorder arm, viewport verification, login submission, observation arm, scenario action, terminal wait, observation sampling, window validation, row validation, ownership release, row emission, and private finalization. It never emits raw errors, messages, stacks, URLs, fixture identifiers, browser session names, or provider-controlled text as diagnostic data.
+
+The guardian accepts a diagnostic only when its ordinal and context ID match the immutable plan for the active phase, its checkpoint/reason/stage combination is exact, and the current row's canonical browser sessions are already present in the accepted monotonic ownership stream (apart from the pre-acquisition initialization/context checkpoints). A candidate remains untrusted until child close/join proves the full protocol stream valid. The terminal certificate persists only the validated tuple and applies the same closed plan and checkpoint validation. Forged, mismatched, extra, stale, out-of-order, or sensitive diagnostic content is `scenario-runner-invalid`, while exact cleanup ownership remains unchanged.
+
 ## Sticky process-identity outcome amendment
 
 This amendment begins at exact reviewed HEAD `70398193fba552362c12ec61207e481ac4df2871`. Process-inspection uncertainty is a property of the complete guardian run, not only of helper execution. Every lifecycle-reached rejection of a marked process identity—receipt/session mismatch, missing or duplicate PID, topology, marker, argv, executable, codesign, birth identity, frozen-identity continuity, helper ancestry, or final resnapshot—must irreversibly set the guardian's inspection-uncertain state before the validator returns or throws. A later valid identity, empty scan, or successful kill cannot restore either browser-closure or fixture-closure certification.

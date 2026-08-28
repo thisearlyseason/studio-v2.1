@@ -6160,7 +6160,7 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
   );
   assert.equal(typeof validateRunnerFailureTerminal, 'function');
-  const session = 'phase9-owned-failure';
+  const session = 'p9-admission-route-qa-parent-a-mobile';
   const receipt = { session, daemonPid: 910001, chromeMainPid: 910002 };
   const accepted = {
     phase: 'before-transition',
@@ -6172,6 +6172,31 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
     releasedSessions: new Set(),
     ownershipComplete: false,
     terminal: null,
+  };
+  const diagnosticsByStage = {
+    authorization: [
+      ['runner-initialization', 'runner-invalid'],
+      ['context-start', 'context-invalid'],
+      ['ownership-authorization', 'authorization-failed'],
+    ],
+    acquisition: [['browser-acquisition', 'acquisition-failed']],
+    receipt: [['launch-receipt', 'receipt-invalid']],
+    recorder: [['recorder-arm', 'recorder-failed']],
+    viewport: [['viewport-verify', 'viewport-mismatch']],
+    login: [['login-submit', 'login-failed']],
+    'scenario-action': [
+      ['observation-arm', 'observation-failed'],
+      ['scenario-action', 'action-failed'],
+      ['terminal-wait', 'terminal-not-reached'],
+      ['observation-sample', 'observation-failed'],
+      ['window-validation', 'expectation-mismatch'],
+      ['row-validation', 'row-invalid'],
+    ],
+    'row-emission': [
+      ['row-emission', 'row-invalid'],
+      ['private-finalization', 'finalization-failed'],
+    ],
+    release: [['ownership-release', 'release-failed']],
   };
   for (const [stage, category] of [
     ['authorization', 'scenario-runner-invalid'],
@@ -6186,20 +6211,24 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
   ]) {
     const stageAccepted = stage === 'acquisition' ? {
       ...accepted,
-      pendingOwnershipIntent: { sequence: 1, session: 'phase9-pending-failure' },
+      pendingOwnershipIntent: { sequence: 1, session },
       activeAnnouncedSessions: new Set(),
       activeAnnouncedReceipts: new Map(),
     } : stage === 'row-emission' ? { ...accepted, ownershipComplete: true } : accepted;
-    const terminal = validateRunnerFailureTerminal({
-      version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
-      category, stage,
-      pendingBrowserSession: stageAccepted.pendingOwnershipIntent?.session ?? null,
-      browserSessions: [...stageAccepted.activeAnnouncedSessions], attachedBrowserSessions: [],
-      launchReceipts: [...stageAccepted.activeAnnouncedReceipts.values()], releasedBrowserSessions: [],
-    }, stageAccepted);
-    assert.deepEqual({ ok: terminal.ok, category: terminal.category, stage: terminal.stage }, {
-      ok: false, category, stage,
-    });
+    for (const [checkpoint, reason] of diagnosticsByStage[stage]) {
+      const terminal = validateRunnerFailureTerminal({
+        version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
+        category, stage,
+        contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+        checkpoint, reason,
+        pendingBrowserSession: stageAccepted.pendingOwnershipIntent?.session ?? null,
+        browserSessions: [...stageAccepted.activeAnnouncedSessions], attachedBrowserSessions: [],
+        launchReceipts: [...stageAccepted.activeAnnouncedReceipts.values()], releasedBrowserSessions: [],
+      }, stageAccepted);
+      assert.deepEqual({ ok: terminal.ok, category: terminal.category, stage: terminal.stage }, {
+        ok: false, category, stage,
+      }, checkpoint);
+    }
   }
 });
 
@@ -6208,7 +6237,7 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
   );
   assert.equal(typeof validateRunnerFailureTerminal, 'function');
-  const session = 'phase9-owned-failure';
+  const session = 'p9-admission-route-qa-parent-a-mobile';
   const receipt = { session, daemonPid: 920001, chromeMainPid: 920002 };
   const accepted = {
     phase: 'before-transition', ownershipSequence: 1, pendingOwnershipIntent: null,
@@ -6219,6 +6248,8 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
   const valid = {
     version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
     category: 'scenario-failed', stage: 'login', pendingBrowserSession: null,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+    checkpoint: 'login-submit', reason: 'login-failed',
     browserSessions: [session], attachedBrowserSessions: [], launchReceipts: [receipt],
     releasedBrowserSessions: [],
   };
@@ -6226,6 +6257,14 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
     ['extra key', { ...valid, rawError: 'secret-token-and-url' }, accepted],
     ['category', { ...valid, category: 'operation-failed' }, accepted],
     ['stage', { ...valid, stage: 'https://secret.invalid/path' }, accepted],
+    ['context ordinal', { ...valid, contextOrdinal: 1 }, accepted],
+    ['context id', { ...valid, contextId: 'isolation-qa-parent-a-mobile' }, accepted],
+    ['checkpoint', { ...valid, checkpoint: 'raw-checkpoint' }, accepted],
+    ['reason', { ...valid, reason: 'raw-secret-reason' }, accepted],
+    ['checkpoint reason mismatch', { ...valid, reason: 'action-failed' }, accepted],
+    ['checkpoint stage mismatch', {
+      ...valid, checkpoint: 'scenario-action', reason: 'action-failed',
+    }, accepted],
     ['phase', { ...valid, phase: 'after-transition' }, accepted],
     ['sequence', { ...valid, sequence: 2 }, accepted],
     ['pending', { ...valid, pendingBrowserSession: session }, accepted],
@@ -6287,11 +6326,18 @@ test('phase 9 guardian preserves every validated child failure stage through exa
     assert.equal(result.category, category);
     assert.equal(result.primaryCategory, category);
     assert.equal(result.primaryStage, stage);
+    assert.deepEqual({
+      contextOrdinal: result.diagnostic.contextOrdinal,
+      contextId: result.diagnostic.contextId,
+    }, { contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile' });
+    assert.equal(typeof result.diagnostic.checkpoint, 'string');
+    assert.equal(typeof result.diagnostic.reason, 'string');
     assert.equal(result.closureCertified, true);
-    assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+    assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true);
     assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
     assert.equal(JSON.stringify(result).includes('secret'), false);
-    assert.equal(JSON.stringify(fixture.terminalCheckpoints).includes('phase9-failure-terminal-owned'), false);
+    assert.equal(JSON.stringify(fixture.terminalCheckpoints).includes('p9-admission-route-qa-parent-a-mobile'), false);
+    assert.equal(JSON.stringify(fixture.terminalCheckpoints).includes('admission-route-qa-parent-a-mobile'), true);
   });
 });
 
@@ -6325,6 +6371,8 @@ test('phase 9 production child sanitizes initialization failure into one closed 
   assert.deepEqual(lines[0], {
     type: 'failure', version: 4, phase: 'before-transition', sequence: 0,
     category: 'scenario-runner-invalid', stage: 'authorization',
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+    checkpoint: 'runner-initialization', reason: 'runner-invalid',
     pendingBrowserSession: null, browserSessions: [], attachedBrowserSessions: [],
     launchReceipts: [], releasedBrowserSessions: [],
   });
@@ -6339,7 +6387,7 @@ test('phase 9 guardian discards failure attribution when trailing protocol outpu
   assert.equal(result.primaryCategory, 'scenario-runner-invalid');
   assert.notEqual(result.primaryStage, 'login');
   assert.equal(result.closureCertified, true);
-  assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+  assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true);
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
 });
 
@@ -6351,7 +6399,7 @@ test('phase 9 guardian preserves a valid failure candidate across clean-protocol
   assert.equal(result.primaryCategory, 'scenario-failed');
   assert.equal(result.primaryStage, 'login');
   assert.equal(result.closureCertified, true);
-  assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+  assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true);
 });
 
 test('phase 9 guardian waits for timed-out failure-terminal stdio closure before attribution', async () => {
@@ -6365,7 +6413,7 @@ test('phase 9 guardian waits for timed-out failure-terminal stdio closure before
   assert.equal(result.primaryCategory, 'scenario-runner-invalid');
   assert.notEqual(result.primaryStage, 'login');
   assert.equal(result.closureCertified, true);
-  assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+  assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true);
 });
 
 test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transition before cleanup', async () => {
@@ -7773,6 +7821,17 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
       history: task5Lifecycle.history.slice(0, 5),
     },
   }));
+  const certificateDiagnostics = {
+    authorization: ['ownership-authorization', 'authorization-failed'],
+    acquisition: ['browser-acquisition', 'acquisition-failed'],
+    receipt: ['launch-receipt', 'receipt-invalid'],
+    recorder: ['recorder-arm', 'recorder-failed'],
+    viewport: ['viewport-verify', 'viewport-mismatch'],
+    login: ['login-submit', 'login-failed'],
+    'scenario-action': ['scenario-action', 'action-failed'],
+    'row-emission': ['row-emission', 'row-invalid'],
+    release: ['ownership-release', 'release-failed'],
+  };
   for (const primaryStage of [
     'authorization', 'acquisition', 'receipt', 'recorder', 'viewport', 'login',
     'scenario-action', 'row-emission', 'release',
@@ -7781,12 +7840,50 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     primaryCategory: new Set(['login', 'scenario-action']).has(primaryStage)
       ? 'scenario-failed' : 'scenario-runner-invalid',
     primaryStage,
+    diagnostic: {
+      contextOrdinal: 0,
+      contextId: 'admission-route-qa-parent-a-mobile',
+      checkpoint: certificateDiagnostics[primaryStage][0],
+      reason: certificateDiagnostics[primaryStage][1],
+    },
     lifecycle: {
       ...base.lifecycle,
       state: 'inspected',
       history: task5Lifecycle.history.slice(0, 5),
     },
   }));
+  assert.throws(() => canonicalPhase9TerminalCertificate({
+    ...base,
+    primaryCategory: 'scenario-failed',
+    primaryStage: 'scenario-action',
+  }), /terminal certificate/i);
+  const diagnosticCertificate = {
+    ...base,
+    primaryCategory: 'scenario-failed',
+    primaryStage: 'scenario-action',
+    diagnostic: {
+      contextOrdinal: 0,
+      contextId: 'admission-route-qa-parent-a-mobile',
+      checkpoint: 'terminal-wait',
+      reason: 'terminal-not-reached',
+    },
+  };
+  assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(diagnosticCertificate));
+  for (const [name, diagnostic] of [
+    ['ordinal', { ...diagnosticCertificate.diagnostic, contextOrdinal: 40 }],
+    ['context', { ...diagnosticCertificate.diagnostic, contextId: 'raw-context' }],
+    ['checkpoint', { ...diagnosticCertificate.diagnostic, checkpoint: 'raw-checkpoint' }],
+    ['reason', { ...diagnosticCertificate.diagnostic, reason: 'raw-reason' }],
+    ['checkpoint/reason', { ...diagnosticCertificate.diagnostic, reason: 'action-failed' }],
+  ]) assert.throws(
+    () => canonicalPhase9TerminalCertificate({ ...diagnosticCertificate, diagnostic }),
+    /terminal certificate/i,
+    name,
+  );
+  assert.throws(() => canonicalPhase9TerminalCertificate({
+    ...diagnosticCertificate,
+    primaryStage: 'login',
+  }), /terminal certificate/i);
   assert.throws(() => canonicalPhase9TerminalCertificate({
     ...base,
     primaryCategory: 'scenario-failed',

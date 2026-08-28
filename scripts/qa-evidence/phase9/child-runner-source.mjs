@@ -36,6 +36,10 @@ import { openBoundPrivateInputs } from './private-input-reader.mjs';
 let failurePhase = null;
 let failureStage = 'authorization';
 let failureTerminalEmitted = false;
+let diagnosticContextOrdinal = 0;
+let diagnosticContextId = null;
+let diagnosticCheckpoint = 'runner-initialization';
+let diagnosticReason = 'runner-invalid';
 let ownershipSequence = 0;
 let pendingBrowserSession = null;
 const ownedSessions = new Set();
@@ -44,12 +48,16 @@ const attachedBrowserSessions = new Set();
 const activeAttachedBrowserSessions = new Set();
 const attachedLaunchReceipts = new Map();
 const releasedBrowserSessions = new Set();
+const setDiagnostic = (checkpoint, reason) => {
+  diagnosticCheckpoint = checkpoint;
+  diagnosticReason = reason;
+};
 let cleanupPrivateInputs = null;
 let cleanupCredentialBroker = null;
 let cleanupIdentities = null;
 let cleanupGrants = null;
 const emitFailureTerminal = () => {
-  if (failureTerminalEmitted || !failurePhase) return;
+  if (failureTerminalEmitted || !failurePhase || !diagnosticContextId) return;
   const browserSessions = [...ownedSessions].sort();
   const launchReceiptValues = browserSessions.map(session => launchReceipts.get(session));
   if (launchReceiptValues.some(receipt => !receipt)) return;
@@ -60,6 +68,8 @@ const emitFailureTerminal = () => {
     process.stdout.write(`${JSON.stringify({
       type: 'failure', version: 4, phase: failurePhase, sequence: ownershipSequence,
       category, stage: failureStage, pendingBrowserSession,
+      contextOrdinal: diagnosticContextOrdinal, contextId: diagnosticContextId,
+      checkpoint: diagnosticCheckpoint, reason: diagnosticReason,
       browserSessions,
       attachedBrowserSessions: [...attachedBrowserSessions].sort(),
       launchReceipts: launchReceiptValues,
@@ -104,6 +114,8 @@ const exactArgument = name => {
 
 const phase = exactArgument('--phase');
 failurePhase = phase;
+diagnosticContextId = phase === 'before-transition'
+  ? 'admission-route-qa-parent-a-mobile' : 'pending-deletion-stale-session-mobile';
 const workspace = exactArgument('--workspace');
 const manifestPath = exactArgument('--manifest');
 const credentialsPath = exactArgument('--credentials');
@@ -221,6 +233,7 @@ const client = createPhase9ProductionCliClient({
   fixtureRunId: manifest.runId,
   beforeCommand: privateInputs.revalidate,
   profileDirectoryDescriptor: privateInputs.profileDescriptor,
+  onDiagnosticCheckpoint: setDiagnostic,
 });
 const plan = buildCanonicalScenarioPlan();
 const isolationLanding = Object.freeze({
@@ -319,6 +332,7 @@ const openWithReceipt = async session => {
     throw new Error('runner-launch-receipt-invalid');
   }
   failureStage = 'authorization';
+  setDiagnostic('ownership-authorization', 'authorization-failed');
   await privateInputs.revalidate();
   pendingBrowserSession = session;
   emitProtocol({
@@ -326,8 +340,10 @@ const openWithReceipt = async session => {
   });
   await requireOwnershipAuthorization(session, ownershipSequence);
   failureStage = 'acquisition';
+  setDiagnostic('browser-acquisition', 'acquisition-failed');
   await acquireBlankBrowser(client, session);
   failureStage = 'receipt';
+  setDiagnostic('launch-receipt', 'receipt-invalid');
   const launchReceipt = await captureLaunchReceipt(session);
   launchReceipts.set(session, launchReceipt);
   ownedSessions.add(session);
@@ -338,6 +354,7 @@ const openWithReceipt = async session => {
   pendingBrowserSession = null;
   ownershipSequence += 1;
   failureStage = 'recorder';
+  setDiagnostic('recorder-arm', 'recorder-failed');
   await armAcquiredSignalRecorder(client, session);
 };
 const confirmAttachedOwnership = session => {
@@ -390,6 +407,7 @@ const waitForReceiptProcessesAbsent = async receipt => {
 
 const closeAndRelease = async sessions => {
   failureStage = 'release';
+  setDiagnostic('ownership-release', 'release-failed');
   for (const session of [...sessions].sort()) {
     const receipt = launchReceipts.get(session) ?? attachedLaunchReceipts.get(session);
     if (!receipt || releasedBrowserSessions.has(session)) {
@@ -420,6 +438,7 @@ const waitForExactLocation = (session, path, sentinel) => client.runCode(session
 }`);
 const login = async (session, alias) => {
   failureStage = 'login';
+  setDiagnostic('login-submit', 'login-failed');
   const grant = credentialGrant(alias);
   await client.goto(session, `${STAGING_ORIGIN}/login`);
   await client.runCode(session, `async (page) => {
@@ -433,6 +452,7 @@ const login = async (session, alias) => {
     return true;
   }`);
   failureStage = 'scenario-action';
+  setDiagnostic('scenario-action', 'action-failed');
 };
 const actionsFor = session => ({
   loginAndLand: alias => login(session, alias),
@@ -459,27 +479,34 @@ const actionsFor = session => ({
 
 const rows = [];
 try {
-  for (const row of rowsForPhase) {
+  for (const [rowOrdinal, row] of rowsForPhase.entries()) {
+    diagnosticContextOrdinal = rowOrdinal;
+    diagnosticContextId = row.contextId;
+    setDiagnostic('context-start', 'context-invalid');
     const session = rowSession(row);
     const viewport = row.viewportName === 'mobile' ? { width: 390, height: 844 } : { width: 1440, height: 900 };
     if (phase === 'before-transition' || row.scenario === 'fresh-login') {
       await openWithReceipt(session);
       failureStage = 'viewport';
+      setDiagnostic('viewport-verify', 'viewport-mismatch');
       if (await setAndVerifyViewport(client, session, viewport) !== row.viewport) {
         throw new Error('runner-viewport-label-invalid');
       }
     } else if (row.scenario === 'stale-session') {
       failureStage = 'receipt';
+      setDiagnostic('launch-receipt', 'receipt-invalid');
       attachedLaunchReceipts.set(session, await captureLaunchReceipt(session, {
         requireCurrentMarker: false,
       }));
       confirmAttachedOwnership(session);
       failureStage = 'recorder';
+      setDiagnostic('recorder-arm', 'recorder-failed');
       await attachExistingSignalRecorder(client, session, {
         ...viewport, marker: session, requireAuthenticated: true,
       });
     }
     failureStage = 'scenario-action';
+    setDiagnostic('scenario-action', 'action-failed');
     if (row.group === 'admission-route') {
       rows.push(await runAdmissionScenario({ client, session, context: row, actions: actionsFor(session) }));
     } else if (row.group === 'isolation') {
@@ -492,14 +519,17 @@ try {
       const freshSession = freshSessionName(row.contextId);
       await openWithReceipt(freshSession);
       failureStage = 'viewport';
+      setDiagnostic('viewport-verify', 'viewport-mismatch');
       if (await setAndVerifyViewport(client, freshSession, viewport) !== row.viewport) {
         throw new Error('runner-viewport-label-invalid');
       }
       await login(session, row.alias);
       await client.tabNew(session, 'about:blank');
       failureStage = 'recorder';
+      setDiagnostic('recorder-arm', 'recorder-failed');
       await installSignalRecorder(client, session);
       failureStage = 'scenario-action';
+      setDiagnostic('scenario-action', 'action-failed');
       await client.goto(session, `${STAGING_ORIGIN}/dashboard`);
       await client.tabSelect(session, 0);
       await client.goto(session, `${STAGING_ORIGIN}/settings`);
@@ -546,6 +576,7 @@ try {
       }));
     }
     const result = rows.pop();
+    setDiagnostic('row-validation', 'row-invalid');
     if (result?.result !== 'PASS') throw new Error('scenario-failed');
     rows.push(Object.freeze(Object.fromEntries(REQUIRED_LEDGER_COLUMNS.map(column => [column, result[column]]))));
     if (!phase9RetainsRowAcrossTransition(phase, row)) {
@@ -567,11 +598,13 @@ try {
     throw new Error('runner-launch-receipt-invalid');
   }
   failureStage = 'row-emission';
+  setDiagnostic('row-emission', 'row-invalid');
   emitProtocol({
     type: 'ownership-complete', version: 4, phase, sequence: ownershipSequence,
     browserSessions,
     attachedBrowserSessions: attached, launchReceipts: receipts, releasedBrowserSessions: released,
   });
+  setDiagnostic('private-finalization', 'finalization-failed');
   await closePrivateResources();
   const sessionsForRow = row => {
     const planned = rowsForPhase.find(candidate => candidate.contextId === row.contextId);

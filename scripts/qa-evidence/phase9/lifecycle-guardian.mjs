@@ -69,6 +69,44 @@ const RUNNER_FAILURE_STAGES = new Set([
   'authorization', 'acquisition', 'receipt', 'recorder', 'viewport', 'login',
   'scenario-action', 'row-emission', 'release',
 ]);
+const RUNNER_DIAGNOSTICS = Object.freeze({
+  'runner-initialization': 'runner-invalid',
+  'context-start': 'context-invalid',
+  'ownership-authorization': 'authorization-failed',
+  'browser-acquisition': 'acquisition-failed',
+  'launch-receipt': 'receipt-invalid',
+  'recorder-arm': 'recorder-failed',
+  'viewport-verify': 'viewport-mismatch',
+  'login-submit': 'login-failed',
+  'observation-arm': 'observation-failed',
+  'scenario-action': 'action-failed',
+  'terminal-wait': 'terminal-not-reached',
+  'observation-sample': 'observation-failed',
+  'window-validation': 'expectation-mismatch',
+  'row-validation': 'row-invalid',
+  'ownership-release': 'release-failed',
+  'row-emission': 'row-invalid',
+  'private-finalization': 'finalization-failed',
+});
+const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
+  'runner-initialization': 'authorization',
+  'context-start': 'authorization',
+  'ownership-authorization': 'authorization',
+  'browser-acquisition': 'acquisition',
+  'launch-receipt': 'receipt',
+  'recorder-arm': 'recorder',
+  'viewport-verify': 'viewport',
+  'login-submit': 'login',
+  'observation-arm': 'scenario-action',
+  'scenario-action': 'scenario-action',
+  'terminal-wait': 'scenario-action',
+  'observation-sample': 'scenario-action',
+  'window-validation': 'scenario-action',
+  'row-validation': 'scenario-action',
+  'ownership-release': 'release',
+  'row-emission': 'row-emission',
+  'private-finalization': 'row-emission',
+});
 const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
 const PROCESS_INSPECTOR_PATH = fileURLToPath(new URL('./darwin-process-inspector.py', import.meta.url));
 const PROCESS_INSPECTOR_SHA256 = '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463';
@@ -653,6 +691,7 @@ function failureSummary({
   history,
   primaryCategory = category,
   primaryStage = state,
+  diagnostic = null,
   interrupted = false,
   browserClosureCertified = false,
   closureCertified = false,
@@ -664,6 +703,7 @@ function failureSummary({
     category,
     primaryCategory,
     primaryStage,
+    ...(diagnostic ? { diagnostic } : {}),
     state,
     history: [...history],
     interrupted,
@@ -1120,8 +1160,9 @@ function requireOwnershipPayload(message) {
 
 export function validateRunnerFailureTerminal(message, accepted) {
   requireRunnerMessage(message, [
-    'attachedBrowserSessions', 'browserSessions', 'category', 'launchReceipts',
+    'attachedBrowserSessions', 'browserSessions', 'category', 'checkpoint', 'contextId', 'contextOrdinal', 'launchReceipts',
     'pendingBrowserSession', 'phase', 'releasedBrowserSessions', 'sequence', 'stage', 'type', 'version',
+    'reason',
   ]);
   if (!accepted || typeof accepted !== 'object' || Array.isArray(accepted)
     || message.type !== 'failure' || message.version !== 4
@@ -1132,6 +1173,16 @@ export function validateRunnerFailureTerminal(message, accepted) {
       : message.category !== 'scenario-runner-invalid')
     || (accepted.ownershipComplete === true && message.stage !== 'row-emission')
     || accepted.terminal) throw new GuardianFailure('scenario-runner-invalid');
+  const phaseContracts = CANONICAL_ROW_CONTRACTS[message.phase];
+  if (!Number.isSafeInteger(message.contextOrdinal) || message.contextOrdinal < 0
+    || message.contextOrdinal >= phaseContracts.length
+    || typeof message.contextId !== 'string'
+    || message.contextId !== phaseContracts[message.contextOrdinal].contextId
+    || !Object.hasOwn(RUNNER_DIAGNOSTICS, message.checkpoint)
+    || message.reason !== RUNNER_DIAGNOSTICS[message.checkpoint]
+    || message.stage !== RUNNER_DIAGNOSTIC_STAGES[message.checkpoint]) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
   const expectedPending = accepted.pendingOwnershipIntent?.session ?? null;
   const activeCount = accepted.activeAnnouncedSessions.size + accepted.attachedSessions.size;
   if ((message.stage === 'acquisition' && expectedPending === null)
@@ -1166,8 +1217,21 @@ export function validateRunnerFailureTerminal(message, accepted) {
     ))),
   });
   if (!isDeepStrictEqual(withReceipts, expected)) throw new GuardianFailure('scenario-runner-invalid');
+  const currentSessions = canonicalBrowserSessionsForRow(phaseContracts[message.contextOrdinal]);
+  const acceptedSessions = new Set([
+    ...expected.browserSessions, ...expected.attachedBrowserSessions, ...expected.releasedBrowserSessions,
+    ...(expectedPending ? [expectedPending] : []),
+  ]);
+  if (!new Set(['runner-initialization', 'context-start']).has(message.checkpoint)
+    && currentSessions.some(session => !acceptedSessions.has(session))) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
   return Object.freeze({
     ok: false, category: message.category, stage: message.stage,
+    diagnostic: Object.freeze({
+      contextOrdinal: message.contextOrdinal, contextId: message.contextId,
+      checkpoint: message.checkpoint, reason: message.reason,
+    }),
     pendingBrowserSession: message.pendingBrowserSession,
     ...withReceipts,
     rows: Object.freeze([]),
@@ -2720,6 +2784,7 @@ export function createLifecycleGuardian({
         lifecycle: lifecycleCertificateSnapshot(),
         primaryCategory: attribution.primaryCategory,
         primaryStage: attribution.primaryStage,
+        diagnostic: attribution.diagnostic ?? null,
       }));
     } catch {
       throw new GuardianFailure('terminal-certificate-failed');
@@ -3207,9 +3272,11 @@ export function createLifecycleGuardian({
     interrupted ||= isInterruption;
     const primaryCategory = scenarioFailureAttribution?.category ?? category;
     const primaryStage = scenarioFailureAttribution?.stage ?? state;
+    const diagnostic = scenarioFailureAttribution?.diagnostic ?? null;
     const recoveryFailureSummary = values => failureSummary({
       primaryCategory,
       primaryStage,
+      diagnostic,
       ...values,
     });
     emergencyPromise = (async () => {
@@ -3354,8 +3421,9 @@ export function createLifecycleGuardian({
       }
       try {
         await persistCertificatePhase('closure-pending', {
-          primaryCategory: category,
+          primaryCategory,
           primaryStage,
+          diagnostic,
         });
       } catch {
         removeHandlers();
@@ -3522,6 +3590,7 @@ export function createLifecycleGuardian({
       ? Object.freeze({
         category: completed.category,
         stage: completed.stage,
+        diagnostic: completed.diagnostic,
       }) : null;
     if (!completed) throw new GuardianFailure('scenario-failed');
     let joinResult = await joinScenario(handle);

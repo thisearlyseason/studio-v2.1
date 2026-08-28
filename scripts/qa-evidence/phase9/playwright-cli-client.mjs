@@ -1809,10 +1809,14 @@ export function createPlaywrightCliClient({
   fixtureRunId,
   beforeCommand,
   profileDirectoryDescriptor,
+  onDiagnosticCheckpoint,
 } = {}) {
   if (typeof execute !== 'function') throw new Error('Playwright CLI execute transport must be a function.');
   if (wrapperPath !== undefined && (typeof wrapperPath !== 'string' || wrapperPath.length === 0)) throw new Error('Playwright CLI wrapper path is invalid.');
   if (wrapperPath === undefined && !TRANSPORT_TOKENS.has(transport)) throw new Error('Captured Playwright transport is required.');
+  if (onDiagnosticCheckpoint !== undefined && typeof onDiagnosticCheckpoint !== 'function') {
+    throw new Error('Diagnostic checkpoint hook must be a function.');
+  }
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('Playwright CLI timeout must be a positive integer.');
   if (beforeCommand !== undefined && typeof beforeCommand !== 'function') throw new Error('Playwright CLI command precondition must be a function.');
   if (profileDirectoryDescriptor !== undefined
@@ -1950,14 +1954,19 @@ export function createPlaywrightCliClient({
     },
     async captureSignalWindow({ session, action, terminal }) {
       if (!armedTabs.has(tabKey(session))) throw new Error('Signal recorder must be armed before an action window.');
+      onDiagnosticCheckpoint?.('observation-arm', 'observation-failed');
       const mark = await executeRunCode(session, MARK_SOURCE);
       const key = tabKey(session);
       const listenTargetState = listenTargetStateByTab.get(key);
       bindFinalRecorderGeneration(mark, listenTargetState);
+      onDiagnosticCheckpoint?.('scenario-action', 'action-failed');
       await action();
+      onDiagnosticCheckpoint?.('terminal-wait', 'terminal-not-reached');
       await terminal();
+      onDiagnosticCheckpoint?.('observation-sample', 'observation-failed');
       const result = await executeRunCode(session, sampleSource(mark));
       if (!result || result.pageId !== mark.pageId) throw new Error('Action window must sample the same page as its pre-action mark.');
+      onDiagnosticCheckpoint?.('window-validation', 'expectation-mismatch');
       const sample = sanitizeWindow(result, {
         fixtureRunId,
         publicPageId: publicPageIds.get(key),
