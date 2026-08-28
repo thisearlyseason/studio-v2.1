@@ -212,7 +212,7 @@ const defaultProcessHooks = Object.freeze({
 
 function requireDependencies(value) {
   if (!value || typeof value !== 'object') throw new GuardianFailure('configuration-invalid');
-  for (const name of ['fixtureCommand', 'adapterFactory', 'preconditionVerifier']) {
+  for (const name of ['fixtureCommand', 'adapterFactory', 'preconditionVerifier', 'terminalCertificateWriter']) {
     if (typeof value[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
   if (!value.runnerCommand || typeof value.runnerCommand !== 'object') {
@@ -2428,15 +2428,19 @@ async function exactIndependentProbe(adapterFactory, manifest) {
   };
   for (const path of manifest.firestorePaths) await probePath(path, false);
   for (const path of manifest.expectedAbsentFirestorePaths) await probePath(path, true);
-  return validateLifecycleResult('probe', {
-    projectId: STAGING_PROJECT_ID,
+  const summary = Object.freeze({
     checkedAuth: manifest.authUids.length,
     checkedFirestore: manifest.firestorePaths.length,
     checkedExpectedAbsent: manifest.expectedAbsentFirestorePaths.length,
     authPresent,
     firestorePresent,
     expectedAbsentPresent,
+  });
+  validateLifecycleResult('probe', {
+    projectId: STAGING_PROJECT_ID,
+    ...summary,
   }, 'independently-absent');
+  return summary;
 }
 
 export function createLifecycleGuardian({
@@ -2456,12 +2460,14 @@ export function createLifecycleGuardian({
   producerTempRoot = INTRINSIC_CHILD_ENV.TMPDIR,
   processAuditor = auditMarkedProcesses,
   processTerminator = terminateMarkedProcesses,
+  terminalCertificateWriter,
 } = {}) {
   if (scenarioRunner !== undefined || injectedSpawn !== undefined) {
     throw new GuardianFailure('configuration-invalid');
   }
   const dependencies = {
     fixtureCommand, browserClient, adapterFactory, preconditionVerifier, runnerCommand, filesystem, processHooks,
+    terminalCertificateWriter,
   };
   requireDependencies(dependencies);
   const ownedRunnerCommand = snapshotRunnerCommand(runnerCommand);
@@ -2506,6 +2512,17 @@ export function createLifecycleGuardian({
   let pendingTransitionAuthorized = false;
   let browserClosureCertified = false;
   let closureCertified = false;
+  let credentialRemoved = false;
+  let workspaceRemoved = false;
+  const lifecycleStages = {
+    preflight: null,
+    seed: null,
+    initialInspect: null,
+    precleanInspect: null,
+    cleanup: null,
+    cleanInspect: null,
+    independentProbe: null,
+  };
   const ownedBrowserSessions = new Set();
   const ownedBrowserReceipts = new Map();
   const provisionallyReleasedBrowserSessions = new Set();
@@ -2579,6 +2596,32 @@ export function createLifecycleGuardian({
     history.push(next);
   };
 
+  const lifecycleCertificateSnapshot = () => Object.freeze({
+    state,
+    history: Object.freeze([...history]),
+    preflight: lifecycleStages.preflight,
+    seed: lifecycleStages.seed,
+    initialInspect: lifecycleStages.initialInspect,
+    precleanInspect: lifecycleStages.precleanInspect,
+    cleanup: lifecycleStages.cleanup,
+    cleanInspect: lifecycleStages.cleanInspect,
+    independentProbe: lifecycleStages.independentProbe,
+    browserClosureCertified,
+    processClosureCertified: !inspectionUncertain && phaseMarkers.size === 0 && !activeScenario,
+    profileClosureCertified: !profileInventoryUncertain && profileRootPath === null,
+    fixtureClosureCertified: closureCertified,
+    credentialRemoved,
+    workspaceRemoved,
+  });
+
+  const persistCertificatePhase = async phase => {
+    try {
+      await terminalCertificateWriter(Object.freeze({ phase, lifecycle: lifecycleCertificateSnapshot() }));
+    } catch {
+      throw new GuardianFailure('terminal-certificate-failed');
+    }
+  };
+
   const exclusive = operation => {
     const pending = new INTRINSIC_PROMISE((resolveOperation, rejectOperation) => {
       const invoke = () => {
@@ -2627,6 +2670,32 @@ export function createLifecycleGuardian({
     } catch {
       throw new GuardianFailure('invalid-result');
     }
+    if (command === 'preflight') lifecycleStages.preflight = Object.freeze({
+        plannedAliases: parsed.plannedAliases, plannedTeams: parsed.plannedTeams,
+    });
+    if (command === 'seed') lifecycleStages.seed = Object.freeze({
+        auth: parsed.counts.auth, firestore: parsed.counts.firestore,
+    });
+    if (command === 'inspect') {
+      const summary = Object.freeze({
+        expectedAuth: parsed.counts.expected.auth,
+        expectedFirestore: parsed.counts.expected.firestore,
+        actualAuth: parsed.counts.actualPresent.auth,
+        actualFirestore: parsed.counts.actualPresent.firestore,
+      });
+      if (stage === 'cleaned-absent') lifecycleStages.cleanInspect = summary;
+      else if (lifecycleStages.initialInspect === null) lifecycleStages.initialInspect = summary;
+      else lifecycleStages.precleanInspect = summary;
+    }
+    if (command === 'cleanup') lifecycleStages.cleanup = Object.freeze({
+      deletedAuth: parsed.deleted.auth,
+      deletedFirestore: parsed.deleted.firestore,
+      retainedAuth: parsed.followUp.retained.auth.count,
+      retainedFirestore: parsed.followUp.retained.firestore.count,
+      failedAuth: parsed.followUp.failures.auth.count,
+      failedFirestore: parsed.followUp.failures.firestore.count,
+    });
+    if (!recovery) await persistCertificatePhase('progress');
     return validated;
   };
 
@@ -3079,10 +3148,19 @@ export function createLifecycleGuardian({
           ...await currentPreservationStates(),
         });
       }
+      if (recoveryCategory === 'terminal-certificate-failed' && workspacePath) {
+        removeHandlers();
+        return failureSummary({
+          category: recoveryCategory, state, history, interrupted: isInterruption,
+          browserClosureCertified: true, closureCertified,
+          ...await currentPreservationStates(),
+        });
+      }
       if (!workspacePath) {
         removeHandlers();
         return failureSummary({
-          category: recoveryCategory, state, history, interrupted: isInterruption, browserClosureCertified: true,
+          category: recoveryCategory, state, history, interrupted: isInterruption,
+          browserClosureCertified: true, closureCertified,
         });
       }
       if (closureCertified && state === 'credential-removed') {
@@ -3098,6 +3176,10 @@ export function createLifecycleGuardian({
             ...await currentPreservationStates(),
           });
         }
+        workspaceRemoved = true;
+        workspacePath = null;
+        manifestPath = null;
+        credentialPath = null;
         removeHandlers();
         return failureSummary({
           category: recoveryCategory, state, history, interrupted: isInterruption,
@@ -3120,13 +3202,27 @@ export function createLifecycleGuardian({
         } else {
           const recoveryInspect = await runFixtureRaw('inspect', currentOptions, { recovery: true });
           const expectedDeleted = validateRecoveryInspect(recoveryInspect, manifest);
+          lifecycleStages.precleanInspect = Object.freeze({
+            expectedAuth: recoveryInspect.counts.expected.auth,
+            expectedFirestore: recoveryInspect.counts.expected.firestore,
+            actualAuth: recoveryInspect.counts.actualPresent.auth,
+            actualFirestore: recoveryInspect.counts.actualPresent.firestore,
+          });
           const recoveryCleanup = await runFixtureRaw('cleanup', currentOptions, { recovery: true });
           validateRecoveryCleanup(recoveryCleanup, expectedDeleted);
+          lifecycleStages.cleanup = Object.freeze({
+            deletedAuth: recoveryCleanup.deleted.auth,
+            deletedFirestore: recoveryCleanup.deleted.firestore,
+            retainedAuth: recoveryCleanup.followUp.retained.auth.count,
+            retainedFirestore: recoveryCleanup.followUp.retained.firestore.count,
+            failedAuth: recoveryCleanup.followUp.failures.auth.count,
+            failedFirestore: recoveryCleanup.followUp.failures.firestore.count,
+          });
         }
         await runFixture('inspect', currentOptions, 'cleaned-absent', { recovery: true });
         await loadExactManifest();
         if (manifest.state !== 'cleaned') throw new GuardianFailure('manifest-uncertain');
-        await exactIndependentProbe(adapterFactory, manifest);
+        lifecycleStages.independentProbe = await exactIndependentProbe(adapterFactory, manifest);
         closureCertified = true;
       } catch (error) {
         removeHandlers();
@@ -3134,6 +3230,16 @@ export function createLifecycleGuardian({
           category: error instanceof GuardianFailure ? error.category : category,
           state, history, interrupted: isInterruption,
           browserClosureCertified: true, closureCertified: false,
+          ...await currentPreservationStates(),
+        });
+      }
+      try {
+        await persistCertificatePhase('closure-pending');
+      } catch {
+        removeHandlers();
+        return failureSummary({
+          category: 'terminal-certificate-failed', state, history, interrupted: isInterruption,
+          browserClosureCertified: true, closureCertified: true,
           ...await currentPreservationStates(),
         });
       }
@@ -3148,6 +3254,7 @@ export function createLifecycleGuardian({
           ...await currentPreservationStates(),
         });
       }
+      credentialRemoved = true;
       try {
         await requirePrivateDirectory(filesystem, workspacePath, 'workspace-removal-failed');
         await filesystem.rm(workspacePath, { recursive: true, force: false });
@@ -3160,6 +3267,10 @@ export function createLifecycleGuardian({
           ...await currentPreservationStates(),
         });
       }
+      workspaceRemoved = true;
+      workspacePath = null;
+      manifestPath = null;
+      credentialPath = null;
       removeHandlers();
       return failureSummary({
         category: recoveryCategory, state, history, interrupted: isInterruption,
@@ -3421,13 +3532,14 @@ export function createLifecycleGuardian({
       if (manifest.state !== 'cleaned') throw new GuardianFailure('manifest-uncertain');
       checkInterrupted();
       try {
-        await exactIndependentProbe(adapterFactory, manifest);
+        lifecycleStages.independentProbe = await exactIndependentProbe(adapterFactory, manifest);
       } catch {
         throw new GuardianFailure('independent-probe-failed');
       }
       checkInterrupted();
       transition('independently-absent');
       closureCertified = true;
+      await persistCertificatePhase('closure-pending');
 
       try {
         const removed = await filesystem.removeCredentialFile(credentialPath, verifiedRepositoryRoot);
@@ -3437,6 +3549,7 @@ export function createLifecycleGuardian({
       }
       checkInterrupted();
       transition('credential-removed');
+      credentialRemoved = true;
       try {
         await requirePrivateDirectory(filesystem, workspacePath, 'workspace-removal-failed');
         await filesystem.rm(workspacePath, { recursive: true, force: false });
@@ -3445,6 +3558,7 @@ export function createLifecycleGuardian({
         throw new GuardianFailure('workspace-removal-failed');
       }
       transition('workspace-removed');
+      workspaceRemoved = true;
       workspacePath = null;
       manifestPath = null;
       credentialPath = null;

@@ -4556,6 +4556,7 @@ function lifecycleGuardianFixture(overrides = {}) {
   const firestorePaths = definition.documents.map(document => document.path);
   const expectedAbsentFirestorePaths = definition.expectedAbsentDocuments.map(document => document.path);
   const events = [];
+  const terminalCheckpoints = [];
   const files = new Set();
   let workspaceExists = false;
   let profileRootExists = false;
@@ -4804,12 +4805,19 @@ function lifecycleGuardianFixture(overrides = {}) {
     };
     return overrides.preconditionResult?.({ request, result: structuredClone(result) }) ?? result;
   };
+  const terminalCertificateWriter = async value => {
+    events.push(`certificate:${value?.phase ?? 'invalid'}`);
+    terminalCheckpoints.push(structuredClone(value));
+    if (value?.phase === overrides.terminalCertificateFailureAt) {
+      throw new Error('injected terminal certificate failure');
+    }
+  };
   const runnerCommand = overrides.runnerCommand ?? guardianChildCommand(overrides.runnerMode ?? 'success');
   return {
     dependencies: {
       fixtureCommand, browserClient: overrides.browserClient ?? browserClient,
       adapterFactory: overrides.adapterFactory ?? adapterFactory,
-      filesystem, processHooks, preconditionVerifier, runnerCommand,
+      filesystem, processHooks, preconditionVerifier, runnerCommand, terminalCertificateWriter,
       producerTempRoot,
       ...((PHASE9_TEST_PLATFORM !== 'darwin' || overrides.forcePortableProcessAudit) ? {
         processAuditor: portableProcessAuditor,
@@ -4824,7 +4832,7 @@ function lifecycleGuardianFixture(overrides = {}) {
       expiresAt: '2026-09-02T12:00:00Z',
       deployedSha, stagingRunId, pullRequestNumber,
     },
-    events, handlers, files, browserSessions, workspace, manifestPath, credentialPath,
+    events, handlers, files, browserSessions, workspace, manifestPath, credentialPath, terminalCheckpoints,
     get workspaceExists() { return workspaceExists; },
     get probeAuthChecks() { return probeAuthChecks; },
     get probeFirestoreChecks() { return probeFirestoreChecks; },
@@ -4869,6 +4877,36 @@ test('phase 9 lifecycle guardian runs the exact ordered state machine and exact 
   assert.equal(fixture.probeFirestoreChecks, 83);
   assert.equal(fixture.workspaceExists, false);
   assert.equal(fixture.handlers.size, 0);
+  assert.deepEqual(fixture.events.filter(event => event.startsWith('certificate:') && event !== 'certificate:progress'), [
+    'certificate:closure-pending',
+  ]);
+  assert.equal(fixture.events.indexOf('certificate:closure-pending') < fixture.events.indexOf('fs:remove-credential'), true);
+});
+
+test('phase 9 guardian preserves exact recovery state when the pre-removal certificate checkpoint fails', async () => {
+  const fixture = lifecycleGuardianFixture({ terminalCertificateFailureAt: 'closure-pending' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'terminal-certificate-failed');
+  assert.equal(result.closureCertified, true);
+  assert.equal(result.workspacePreservation, 'verified-present');
+  assert.equal(result.manifestPreservation, 'verified-present');
+  assert.equal(fixture.workspaceExists, true);
+  assert.equal(fixture.files.has(fixture.credentialPath), true);
+  assert.equal(fixture.events.includes('fs:remove-credential'), false);
+  assert.equal(fixture.events.includes('fs:remove-workspace'), false);
+});
+
+test('phase 9 guardian writes no second checkpoint after terminal removal', async () => {
+  const fixture = lifecycleGuardianFixture();
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.workspaceExists, false);
+  assert.deepEqual(
+    fixture.terminalCheckpoints.map(value => value.phase).filter(phase => phase !== 'progress'),
+    ['closure-pending'],
+  );
 });
 
 test('phase 9 portable guardian audit seam finishes bounded without a descendant', { timeout: 5_000 }, async () => {
@@ -7062,6 +7100,278 @@ const task5Deployment = Object.freeze({
   stagingRunId: '32856314233', pullRequestNumber: 41,
 });
 
+function task5TerminalCertificate(status = 'closure-pending', overrides = {}) {
+  return {
+    version: 1,
+    command: 'hosted',
+    status,
+    exitCode: status === 'complete' ? 0 : 1,
+    category: status === 'complete' ? 'none' : status === 'closure-pending' ? 'pending' : 'operation-failed',
+    deployment: {
+      deployedSha: task5Deployment.deployedSha,
+      stagingRunId: task5Deployment.stagingRunId,
+      pullRequestNumber: task5Deployment.pullRequestNumber,
+    },
+    lifecycle: {
+      state: status === 'complete' ? 'disarmed' : 'independently-absent',
+      history: status === 'complete' ? [...task5Lifecycle.history] : task5Lifecycle.history.slice(0, 10),
+      preflight: { plannedAliases: 20, plannedTeams: 3 },
+      seed: { auth: 20, firestore: 82 },
+      initialInspect: { expectedAuth: 20, expectedFirestore: 82, actualAuth: 20, actualFirestore: 82 },
+      precleanInspect: { expectedAuth: 20, expectedFirestore: 82, actualAuth: 20, actualFirestore: 82 },
+      cleanup: { deletedAuth: 20, deletedFirestore: 82, retainedAuth: 0, retainedFirestore: 0, failedAuth: 0, failedFirestore: 0 },
+      cleanInspect: { expectedAuth: 20, expectedFirestore: 82, actualAuth: 0, actualFirestore: 0 },
+      independentProbe: { checkedAuth: 20, checkedFirestore: 82, checkedExpectedAbsent: 1, authPresent: 0, firestorePresent: 0, expectedAbsentPresent: 0 },
+      browserClosureCertified: true,
+      processClosureCertified: true,
+      profileClosureCertified: true,
+      fixtureClosureCertified: true,
+      credentialRemoved: status === 'complete',
+      workspaceRemoved: status === 'complete',
+    },
+    evidence: { rows: status === 'complete' ? 44 : 0, written: status === 'complete' },
+    ...overrides,
+  };
+}
+
+test('phase 9 terminal certificate survives discarded console output and exact workspace removal', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const resultPath = join(parent, 'hosted-result.json');
+  let writer = null;
+  try {
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+    });
+    await writer.write(task5TerminalCertificate('closure-pending'));
+    rmSync(workspace, { recursive: true, force: false });
+    await writer.write(task5TerminalCertificate('complete'));
+    assert.deepEqual(JSON.parse(readFileSync(resultPath, 'utf8')), task5TerminalCertificate('complete'));
+    assert.equal(statSync(resultPath).mode & 0o777, 0o600);
+    assert.deepEqual(readdirSync(parent), ['hosted-result.json']);
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 completed guardian cleanup retains its external terminal certificate when console output is discarded', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-guardian.'));
+  const parent = join(root, 'results');
+  mkdirSync(parent, { mode: 0o700 });
+  const resultPath = join(parent, 'hosted-result.json');
+  const fixture = lifecycleGuardianFixture();
+  let latest = null;
+  const writer = await createPhase9TerminalCertificateWriter({
+    resultPath, repositoryRoot: dirname(testDirectory), workspacePath: fixture.workspace,
+    evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+  });
+  fixture.dependencies.terminalCertificateWriter = async ({ phase, lifecycle }) => {
+    latest = lifecycle;
+    if (phase === 'closure-pending') {
+      await writer.write(task5TerminalCertificate('closure-pending', { lifecycle }));
+    }
+  };
+  try {
+    const lifecycle = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(lifecycle.ok, true, JSON.stringify(lifecycle));
+    await writer.write(task5TerminalCertificate('complete', {
+      lifecycle: {
+        ...latest, state: lifecycle.state, history: lifecycle.history,
+        credentialRemoved: true, workspaceRemoved: true,
+      },
+    }));
+    const retained = JSON.parse(readFileSync(resultPath, 'utf8'));
+    assert.equal(retained.status, 'complete');
+    assert.equal(retained.lifecycle.workspaceRemoved, true);
+    assert.equal(retained.lifecycle.independentProbe.checkedAuth, 20);
+    assert.equal(retained.lifecycle.independentProbe.checkedFirestore, 82);
+    assert.equal(retained.lifecycle.independentProbe.checkedExpectedAbsent, 1);
+    assert.equal(JSON.stringify(retained).includes('qa-phase7-'), false);
+  } finally {
+    await writer.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate promotion failure preserves the exact prior checkpoint', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-failure.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const resultPath = join(parent, 'hosted-result.json');
+  let failing = null;
+  try {
+    const initial = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+    });
+    const checkpoint = task5TerminalCertificate('closure-pending');
+    await initial.write(checkpoint);
+    await initial.close();
+    failing = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+      helperEnvironment: { PHASE9_CERTIFICATE_TEST_FAIL_PROMOTION: '1' },
+    });
+    await assert.rejects(failing.write(task5TerminalCertificate('complete')), /terminal certificate/i);
+    assert.deepEqual(JSON.parse(readFileSync(resultPath, 'utf8')), checkpoint);
+    assert.deepEqual(readdirSync(parent), ['hosted-result.json']);
+  } finally {
+    await failing?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate rejects unsafe paths, parent types, permissions, and sensitive payloads', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-reject.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const common = { repositoryRoot: dirname(testDirectory), workspacePath: workspace, evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix) };
+  let writer = null;
+  try {
+    await assert.rejects(createPhase9TerminalCertificateWriter({ ...common, resultPath: join(workspace, 'result.json') }), /external/i);
+    chmodSync(parent, 0o755);
+    await assert.rejects(createPhase9TerminalCertificateWriter({ ...common, resultPath: join(parent, 'result.json') }), /private|0700/i);
+    chmodSync(parent, 0o700);
+    symlinkSync(parent, join(root, 'result-link'));
+    await assert.rejects(createPhase9TerminalCertificateWriter({ ...common, resultPath: join(root, 'result-link', 'result.json') }), /symlink|canonical/i);
+    writer = await createPhase9TerminalCertificateWriter({ ...common, resultPath: join(parent, 'result.json') });
+    await assert.rejects(writer.write(task5TerminalCertificate('failed', { category: 'password=raw-secret' })), /sensitive|category/i);
+    assert.deepEqual(readdirSync(parent), []);
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate refuses a target swap without overwriting foreign bytes', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-swap.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const resultPath = join(parent, 'hosted-result.json');
+  let writer = null;
+  try {
+    const initial = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+    });
+    await initial.write(task5TerminalCertificate('closure-pending'));
+    await initial.close();
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+      helperEnvironment: { PHASE9_CERTIFICATE_TEST_BEFORE_PROMOTION_MS: '500' },
+    });
+    const writing = writer.write(task5TerminalCertificate('complete'));
+    const deadline = Date.now() + 2_000;
+    while (!readdirSync(parent).some(name => name.endsWith('.tmp'))) {
+      assert.equal(Date.now() < deadline, true, 'certificate helper did not reach the promotion rendezvous');
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    renameSync(resultPath, join(parent, 'stolen-checkpoint.json'));
+    writeFileSync(resultPath, 'foreign\n', { mode: 0o600 });
+    await assert.rejects(writing, /terminal certificate/i);
+    assert.equal(readFileSync(resultPath, 'utf8'), 'foreign\n');
+    assert.equal(JSON.parse(readFileSync(join(parent, 'stolen-checkpoint.json'), 'utf8')).status, 'closure-pending');
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate refuses an absent-target creation race without overwriting foreign bytes', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-absent-race.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const resultPath = join(parent, 'hosted-result.json');
+  let writer = null;
+  try {
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+      helperEnvironment: { PHASE9_CERTIFICATE_TEST_BEFORE_PROMOTION_MS: '500' },
+    });
+    const writing = writer.write(task5TerminalCertificate('closure-pending'));
+    const deadline = Date.now() + 2_000;
+    while (!readdirSync(parent).some(name => name.endsWith('.tmp'))) {
+      assert.equal(Date.now() < deadline, true, 'certificate helper did not reach the initial promotion rendezvous');
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    writeFileSync(resultPath, 'foreign\n', { mode: 0o600, flag: 'wx' });
+    await assert.rejects(writing, /terminal certificate/i);
+    assert.equal(readFileSync(resultPath, 'utf8'), 'foreign\n');
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate admits only absent or exact resumable checkpoint targets', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-resume.'));
+  const workspace = join(root, 'workspace');
+  mkdirSync(workspace, { mode: 0o700 });
+  const common = { repositoryRoot: dirname(testDirectory), workspacePath: workspace, evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix) };
+  try {
+    const symlinkParent = join(root, 'symlink-result'); mkdirSync(symlinkParent, { mode: 0o700 });
+    const outside = join(root, 'outside'); writeFileSync(outside, 'foreign\n', { mode: 0o600 });
+    symlinkSync(outside, join(symlinkParent, 'result.json'));
+    await assert.rejects(createPhase9TerminalCertificateWriter({ ...common, resultPath: join(symlinkParent, 'result.json') }), /checkpoint/i);
+
+    const oversizeParent = join(root, 'oversize-result'); mkdirSync(oversizeParent, { mode: 0o700 });
+    writeFileSync(join(oversizeParent, 'result.json'), 'x'.repeat(32_769), { mode: 0o600 });
+    await assert.rejects(createPhase9TerminalCertificateWriter({ ...common, resultPath: join(oversizeParent, 'result.json') }), /checkpoint/i);
+
+    const terminalParent = join(root, 'terminal-result'); mkdirSync(terminalParent, { mode: 0o700 });
+    const terminalPath = join(terminalParent, 'result.json');
+    const writer = await createPhase9TerminalCertificateWriter({ ...common, resultPath: terminalPath });
+    await writer.write(task5TerminalCertificate('closure-pending'));
+    await writer.write(task5TerminalCertificate('complete'));
+    await writer.close();
+    await assert.rejects(createPhase9TerminalCertificateWriter({ ...common, resultPath: terminalPath }), /resumable/i);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('phase 9 terminal certificate kills and joins a hung helper without creating output', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-hang.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  let writer = null;
+  try {
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath: join(parent, 'result.json'), repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+      helperEnvironment: { PHASE9_CERTIFICATE_TEST_HANG: '1' }, helperTimeoutMs: 200,
+    });
+    await assert.rejects(writer.write(task5TerminalCertificate('closure-pending')), /timed out/i);
+    assert.deepEqual(readdirSync(parent), []);
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 darwinRuntimeTest('phase 9 evidence writer atomically writes only the four approved sanitized Markdown files', async () => {
   const { createPhase9EvidenceWriter } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-evidence-writer-test.');
@@ -7221,10 +7531,15 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.match(PHASE9_ARTIFACT_PINS.child, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.config, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.helper, /^[0-9a-f]{64}$/);
+  assert.match(PHASE9_ARTIFACT_PINS.terminalHelper, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.processInspector, /^[0-9a-f]{64}$/);
   assert.equal(
     sha256File(join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'darwin-process-inspector.py')),
     PHASE9_ARTIFACT_PINS.processInspector,
+  );
+  assert.equal(
+    sha256File(join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'terminal-certificate-dirfd-helper.py')),
+    PHASE9_ARTIFACT_PINS.terminalHelper,
   );
   assert.equal(phase9PlaywrightTransport.version, '0.1.18');
   assert.equal(phase9PlaywrightTransport.coreVersion, '1.63.0-alpha-2026-08-05');
@@ -7856,6 +8171,14 @@ test('phase 9 evidence CLI hosted admission rejects missing explicit staging pro
   const result = spawnSync(process.execPath, [cliPath, 'hosted'], { encoding: 'utf8', timeout: 30_000 });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /explicit staging|--staging/i);
+});
+
+test('phase 9 evidence CLI help requires the external durable terminal result path for hosted operation', () => {
+  const cliPath = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'cli.mjs');
+  const result = spawnSync(process.execPath, [cliPath, 'help'], { encoding: 'utf8', timeout: 30_000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /--result <external-private-result\.json>/);
+  assert.match(result.stdout, /mode-0700 directory outside the repository/i);
 });
 
 test('phase 9 hosted entrypoint rejects non-Darwin before any runtime mutation', async () => {

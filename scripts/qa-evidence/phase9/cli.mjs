@@ -19,6 +19,7 @@ import {
 } from './scenario-contracts.mjs';
 import { buildCanonicalScenarioPlan } from './scenarios.mjs';
 import { writePhase9Evidence } from './evidence-writer.mjs';
+import { createPhase9TerminalCertificateWriter } from './terminal-certificate-writer.mjs';
 
 const execFileAsync = promisify(execFile);
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ const repositoryRoot = resolve(moduleDirectory, '../../..');
 const childEntrypoint = join(moduleDirectory, 'child-runner.mjs');
 const childConfig = join(moduleDirectory, 'runner-config.json');
 const evidenceHelper = join(moduleDirectory, 'evidence-dirfd-helper.py');
+const terminalCertificateHelper = join(moduleDirectory, 'terminal-certificate-dirfd-helper.py');
 const processInspector = join(moduleDirectory, 'darwin-process-inspector.py');
 const fixtureCli = join(repositoryRoot, 'scripts', 'qa-fixtures', 'cli.mjs');
 const evidenceDirectory = join(repositoryRoot, 'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities');
@@ -68,6 +70,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
   transportClient: '9ed384bfc4bb2fba1e99b79a03080e36c89dc3965f52d0c5fa366c143eb54656',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
+  terminalHelper: '99003006d0a264c1115c7e622c06210c6356610f89748f24cf520ca4f4bd2b1a',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
 export const phase9PlaywrightTransport = Object.freeze({
@@ -310,6 +313,19 @@ async function offlineSmoke(stdout) {
   return result;
 }
 
+function help(stdout) {
+  const usage = [
+    'Usage:',
+    '  npm run qa:evidence:phase9 -- dry-run',
+    '  npm run qa:evidence:phase9 -- offline-smoke',
+    '  npm run qa:evidence:phase9 -- hosted --staging --project <staging-project> --confirm-project <staging-project> --origin <staging-origin> --deployed-sha <sha> --staging-run <run> --pull-request <number> --workspace <external-private-workspace> --manifest <workspace-manifest> --credentials <workspace-credentials> --expires-at <iso-time> --transport <pinned-transport> --result <external-private-result.json>',
+    '',
+    'The hosted result parent must be an existing canonical current-user mode-0700 directory outside the repository, evidence tree, and disposable workspace.',
+  ].join('\n');
+  stdout.write(`${usage}\n`);
+  return Object.freeze({ ok: true, command: 'help' });
+}
+
 async function requireWorkspace(path, manifestPath, credentialPath) {
   if (!/^\/tmp\/phase9-core-identities\.[A-Za-z0-9_-]+$/.test(path)) throw new Error('Workspace must be an exact external Phase 9 path.');
   if (manifestPath !== join(path, 'manifest.json') || credentialPath !== join(path, 'credentials.json')) {
@@ -382,6 +398,7 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ['.playwright/phase9-transport-boundary', playwrightWorkspaceBoundary, PHASE9_ARTIFACT_PINS.workspaceBoundary],
     ['scripts/qa-evidence/phase9/runner-config.json', childConfig, PHASE9_ARTIFACT_PINS.config],
     ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],
+    ['scripts/qa-evidence/phase9/terminal-certificate-dirfd-helper.py', terminalCertificateHelper, PHASE9_ARTIFACT_PINS.terminalHelper],
     ['scripts/qa-evidence/phase9/darwin-process-inspector.py', processInspector, PHASE9_ARTIFACT_PINS.processInspector],
     ['scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz', playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
     ['scripts/qa-evidence/phase9/playwright-transport-manifest.json', playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
@@ -410,6 +427,7 @@ async function hosted(argv, env, stdout, platform) {
   const values = exactArgs(argv.slice(1), [
     '--project', '--confirm-project', '--origin', '--deployed-sha', '--staging-run', '--pull-request',
     '--workspace', '--manifest', '--credentials', '--expires-at', '--transport',
+    '--result',
   ]);
   if (
     values['--project'] !== STAGING_PROJECT_ID || values['--confirm-project'] !== STAGING_PROJECT_ID
@@ -426,7 +444,11 @@ async function hosted(argv, env, stdout, platform) {
   const workspace = resolve(values['--workspace']);
   const manifest = resolve(values['--manifest']);
   const credentials = resolve(values['--credentials']);
+  const resultPath = resolve(values['--result']);
   await requireWorkspace(workspace, manifest, credentials);
+  const terminalWriter = await createPhase9TerminalCertificateWriter({
+    resultPath, repositoryRoot, workspacePath: workspace, evidenceDirectory,
+  });
   await requireCleanExactSha(values['--deployed-sha']);
   await verifyAdmittedRunnerBlobs(values['--deployed-sha']);
   await requireCleanExactSha(values['--deployed-sha']);
@@ -458,43 +480,125 @@ async function hosted(argv, env, stdout, platform) {
     rm: (path, options) => rm(path, options),
   };
   await requireCleanExactSha(values['--deployed-sha']);
-  const lifecycle = await runGuardedLifecycle({
-    fixtureCommand,
-    browserClient: guardianBrowserClient(),
-    adapterFactory: options => createFirebaseAdapter({ ...options, env: fixtureEnvironment }),
-    preconditionVerifier: githubPreconditionVerifier,
-    runnerCommand,
-    filesystem,
-    repositoryRoot,
-    scenarioJoinTimeoutMs: 60_000,
-    options: {
-      projectId: STAGING_PROJECT_ID, origin: STAGING_ORIGIN, expiresAt: values['--expires-at'],
-      deployedSha: values['--deployed-sha'], stagingRunId: values['--staging-run'], pullRequestNumber,
-    },
+  const deploymentCertificate = Object.freeze({
+    deployedSha: values['--deployed-sha'], stagingRunId: values['--staging-run'], pullRequestNumber,
   });
-  if (lifecycle.ok !== true) throw new Error(`Guarded lifecycle failed safely: ${lifecycle.category}.`);
-  validateLedger(lifecycle.rows, { groupCounts: SCENARIO_GROUP_COUNTS, totals: SCENARIO_TOTALS });
-  await writePhase9Evidence({
-    lifecycle, rows: lifecycle.rows,
-    deployment: {
-      projectId: STAGING_PROJECT_ID, origin: STAGING_ORIGIN, deployedSha: values['--deployed-sha'],
-      stagingRunId: values['--staging-run'], pullRequestNumber,
-    },
-    outputDirectory: evidenceDirectory,
+  let latestLifecycle = null;
+  let lifecycle = null;
+  let terminalPersisted = false;
+  let finalPromotionAttempted = false;
+  const certificate = (status, category, lifecycleValue, evidence) => ({
+    version: 1, command: 'hosted', status,
+    exitCode: status === 'complete' ? 0 : 1,
+    category,
+    deployment: deploymentCertificate,
+    lifecycle: lifecycleValue,
+    evidence,
   });
-  const result = { ok: true, command: 'hosted', rows: 44, closureCertified: true, browsers: 0 };
-  stdout.write(`${JSON.stringify(result)}\n`);
-  return result;
+  const terminalCertificateWriter = async ({ phase, lifecycle: lifecycleValue }) => {
+    latestLifecycle = lifecycleValue;
+    if (phase === 'closure-pending') {
+      await terminalWriter.write(certificate(
+        'closure-pending', 'pending', lifecycleValue, { rows: 0, written: false },
+      ));
+    }
+  };
+  const failureLifecycle = result => {
+    if (latestLifecycle) return {
+      ...latestLifecycle,
+      state: result?.state ?? latestLifecycle.state,
+      history: Array.isArray(result?.history) ? result.history : latestLifecycle.history,
+      browserClosureCertified: result?.browserClosureCertified ?? latestLifecycle.browserClosureCertified,
+      credentialRemoved: latestLifecycle.credentialRemoved || new Set(['credential-removed', 'workspace-removed', 'disarmed']).has(result?.state),
+      workspaceRemoved: latestLifecycle.workspaceRemoved || new Set(['workspace-removed', 'disarmed']).has(result?.state),
+    };
+    const resultHistory = Array.isArray(result?.history) && result.history.length > 0 ? result.history : ['uninitialized'];
+    return {
+      state: result?.state ?? resultHistory.at(-1), history: resultHistory,
+      preflight: null, seed: null, initialInspect: null, precleanInspect: null, cleanup: null,
+      cleanInspect: null, independentProbe: null,
+      browserClosureCertified: result?.browserClosureCertified === true,
+      processClosureCertified: false, profileClosureCertified: false,
+      fixtureClosureCertified: result?.closureCertified === true,
+      credentialRemoved: new Set(['credential-removed', 'workspace-removed', 'disarmed']).has(result?.state),
+      workspaceRemoved: new Set(['workspace-removed', 'disarmed']).has(result?.state),
+    };
+  };
+  const persistFailure = async category => {
+    if (terminalPersisted) return;
+    await terminalWriter.write(certificate(
+      'failed', category, failureLifecycle(lifecycle),
+      { rows: Array.isArray(lifecycle?.rows) ? lifecycle.rows.length : 0, written: false },
+    ));
+    terminalPersisted = true;
+  };
+  try {
+    lifecycle = await runGuardedLifecycle({
+      fixtureCommand,
+      browserClient: guardianBrowserClient(),
+      adapterFactory: options => createFirebaseAdapter({ ...options, env: fixtureEnvironment }),
+      preconditionVerifier: githubPreconditionVerifier,
+      terminalCertificateWriter,
+      runnerCommand,
+      filesystem,
+      repositoryRoot,
+      scenarioJoinTimeoutMs: 60_000,
+      options: {
+        projectId: STAGING_PROJECT_ID, origin: STAGING_ORIGIN, expiresAt: values['--expires-at'],
+        deployedSha: values['--deployed-sha'], stagingRunId: values['--staging-run'], pullRequestNumber,
+      },
+    });
+    if (lifecycle.ok !== true) {
+      await persistFailure(lifecycle.category);
+      throw new Error(`Guarded lifecycle failed safely: ${lifecycle.category}.`);
+    }
+    try {
+      validateLedger(lifecycle.rows, { groupCounts: SCENARIO_GROUP_COUNTS, totals: SCENARIO_TOTALS });
+    } catch {
+      await persistFailure('ledger-validation-failed');
+      throw new Error('Guarded lifecycle ledger validation failed safely.');
+    }
+    try {
+      await writePhase9Evidence({
+        lifecycle, rows: lifecycle.rows,
+        deployment: {
+          projectId: STAGING_PROJECT_ID, origin: STAGING_ORIGIN, deployedSha: values['--deployed-sha'],
+          stagingRunId: values['--staging-run'], pullRequestNumber,
+        },
+        outputDirectory: evidenceDirectory,
+      });
+    } catch {
+      await persistFailure('evidence-write-failed');
+      throw new Error('Guarded lifecycle evidence write failed safely.');
+    }
+    latestLifecycle = failureLifecycle(lifecycle);
+    finalPromotionAttempted = true;
+    await terminalWriter.write(certificate(
+      'complete', 'none', latestLifecycle, { rows: 44, written: true },
+    ));
+    terminalPersisted = true;
+    const result = { ok: true, command: 'hosted', rows: 44, closureCertified: true, browsers: 0 };
+    stdout.write(`${JSON.stringify(result)}\n`);
+    return result;
+  } catch (error) {
+    if (!terminalPersisted && lifecycle && !finalPromotionAttempted) {
+      try { await persistFailure(/terminal certificate/i.test(error?.message ?? '') ? 'terminal-certificate-failed' : 'operation-failed'); } catch {}
+    }
+    throw error;
+  } finally {
+    await terminalWriter.close();
+  }
 }
 
 export async function runPhase9Cli({
   argv = process.argv.slice(2), env = process.env, stdout = process.stdout, platform = process.platform,
 } = {}) {
   const command = argv[0];
+  if (command === 'help' && argv.length === 1) return help(stdout);
   if (command === 'dry-run' && argv.length === 1) return dryRun(stdout);
   if (command === 'offline-smoke' && argv.length === 1) return offlineSmoke(stdout);
   if (command === 'hosted') return hosted(argv.slice(1), env, stdout, platform);
-  throw new Error('Command must be dry-run, offline-smoke, or hosted.');
+  throw new Error('Command must be help, dry-run, offline-smoke, or hosted.');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

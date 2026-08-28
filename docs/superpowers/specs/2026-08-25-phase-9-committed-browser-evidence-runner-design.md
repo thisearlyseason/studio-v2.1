@@ -139,6 +139,16 @@ A Node parent process owns the exact private workspace, fixture manifest, creden
 
 The unavoidable `SIGKILL`/machine-loss case is documented; no in-process guardian can execute after the process is forcibly terminated. Recovery remains exact because the external manifest is atomically persisted before resource creation.
 
+### Durable terminal certificate amendment
+
+Hosted execution requires an operator-supplied absolute terminal-result path outside the repository, the disposable lifecycle workspace, and the approved evidence tree. Its existing parent must be a real current-user mode-`0700` directory with an unchanged descriptor identity; the final path must be absent for a new attempt or contain only the exact resumable checkpoint accepted by the writer. No result path is inferred, generated, printed, or stored in committed evidence.
+
+The terminal certificate is bounded canonical JSON containing only a fixed schema version, lifecycle outcome/category/state/history, deployed SHA and staging deployment run, fixed stage counts, and parent-derived browser/process/profile/credential/workspace closure booleans. It must never contain the fixture run ID, UIDs, Firestore paths, browser session names, credential/workspace/result paths, provider errors, raw command output, or secrets. Every fixture stage contributes only after its complete producer result passes the existing closed validator.
+
+Before credential or workspace removal, the guardian atomically persists a `closure-pending` checkpoint after exact cleanup, clean inspection, independent absence, and browser/process/profile closure. A checkpoint failure returns the fixed `terminal-certificate-failed` category while preserving the exact manifest, credential, and workspace for recovery. After credential and workspace removal are independently proved, the writer atomically replaces that checkpoint with a terminal certificate. Failure of the final promotion leaves the prior checkpoint intact and can never create or preserve a false `complete` certificate. Post-lifecycle ledger or evidence failure atomically records a fixed failed terminal category while retaining the lifecycle closure facts.
+
+The writer holds the result parent through `O_DIRECTORY | O_NOFOLLOW`, rejects symlinks, unexpected owner/mode/link/type/size, path swaps, unsupported checkpoint bytes, and existing terminal results, and revalidates parent and descriptor identity around every operation. It creates a bounded mode-`0600` same-directory transaction file exclusively, writes canonical bytes, syncs the file, atomically renames without following links, syncs the directory, and reopens/revalidates exact committed bytes. Tests must cover discarded console output, normal and recovery completion, crash after checkpoint, injected checkpoint and final-promotion failure, parent/path swaps, symlinks, permissions, resume rules, secret/identifier rejection, and repository hygiene.
+
 ### `evidence-writer.mjs`
 
 Accepts only validated scenario results and lifecycle summaries. It writes the four approved Markdown evidence files through atomic replacement. It cannot read credential files, raw browser state, or arbitrary traces. It verifies context IDs are unique, every required column is present, group counts match the plan, both viewports are covered, and result arithmetic is exact.
