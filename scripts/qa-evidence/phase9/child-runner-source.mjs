@@ -483,6 +483,10 @@ try {
     diagnosticContextOrdinal = rowOrdinal;
     diagnosticContextId = row.contextId;
     setDiagnostic('context-start', 'context-invalid');
+    emitProtocol({
+      type: 'context-start', version: 4, phase,
+      contextOrdinal: rowOrdinal, contextId: row.contextId,
+    });
     const session = rowSession(row);
     const viewport = row.viewportName === 'mobile' ? { width: 390, height: 844 } : { width: 1440, height: 900 };
     if (phase === 'before-transition' || row.scenario === 'fresh-login') {

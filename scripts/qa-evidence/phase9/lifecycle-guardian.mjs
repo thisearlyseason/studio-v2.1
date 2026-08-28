@@ -1186,11 +1186,11 @@ export function validateRunnerFailureTerminal(message, accepted) {
   const diagnosticContext = Object.freeze({
     contextOrdinal: message.contextOrdinal, contextId: message.contextId,
   });
-  const initializationCheckpoint = new Set(['runner-initialization', 'context-start']).has(message.checkpoint);
   if ((message.checkpoint === 'runner-initialization' && accepted.currentContext !== null)
-    || (accepted.currentContext === null
-      ? (!initializationCheckpoint || message.contextOrdinal !== 0)
-      : !isDeepStrictEqual(diagnosticContext, accepted.currentContext))) {
+    || (message.checkpoint === 'runner-initialization'
+      ? message.contextOrdinal !== 0
+      : accepted.currentContext === null
+        || !isDeepStrictEqual(diagnosticContext, accepted.currentContext))) {
     throw new GuardianFailure('scenario-runner-invalid');
   }
   const expectedPending = accepted.pendingOwnershipIntent?.session ?? null;
@@ -2293,7 +2293,8 @@ function spawnRunnerChild({
     onInspectionError?.();
     throw new GuardianFailure('scenario-runner-invalid');
   };
-  const acceptOwnershipContext = session => {
+  const requireCurrentOwnershipContext = session => {
+    if (currentContext === null) return;
     const matches = CANONICAL_ROW_CONTRACTS[phase].map((row, contextOrdinal) => ({
       contextOrdinal, contextId: row.contextId,
       sessions: canonicalBrowserSessionsForRow(row),
@@ -2303,7 +2304,7 @@ function spawnRunnerChild({
       contextOrdinal: matches[0].contextOrdinal,
       contextId: matches[0].contextId,
     });
-    currentContext = next;
+    if (currentContext !== null && !isDeepStrictEqual(next, currentContext)) rejectOwnershipProtocol();
   };
 
   const acceptLine = line => {
@@ -2316,6 +2317,22 @@ function spawnRunnerChild({
     } catch {
       throw new GuardianFailure('scenario-runner-invalid');
     }
+    if (message?.type === 'context-start') {
+      requireRunnerMessage(message, [
+        'contextId', 'contextOrdinal', 'phase', 'type', 'version',
+      ]);
+      const nextOrdinal = currentContext === null ? 0 : currentContext.contextOrdinal + 1;
+      const expected = CANONICAL_ROW_CONTRACTS[phase][nextOrdinal];
+      if (ownership || terminal || pendingOwnershipIntent || message.version !== 4
+        || message.phase !== phase || !expected
+        || message.contextOrdinal !== nextOrdinal || message.contextId !== expected.contextId) {
+        throw new GuardianFailure('scenario-runner-invalid');
+      }
+      currentContext = Object.freeze({
+        contextOrdinal: message.contextOrdinal, contextId: message.contextId,
+      });
+      return;
+    }
     if (message?.type === 'ownership-intent') {
       requireRunnerMessage(message, ['phase', 'sequence', 'session', 'type', 'version']);
       if (ownership || terminal || pendingOwnershipIntent || message.version !== 4
@@ -2324,7 +2341,7 @@ function spawnRunnerChild({
         || requireRunnerSessions([message.session]).length !== 1) {
         rejectOwnershipProtocol();
       }
-      acceptOwnershipContext(message.session);
+      requireCurrentOwnershipContext(message.session);
       pendingOwnershipIntent = Object.freeze({
         sequence: message.sequence, session: message.session,
       });
@@ -2383,7 +2400,7 @@ function spawnRunnerChild({
         || requireRunnerSessions([message.session]).length !== 1) {
         rejectOwnershipProtocol();
       }
-      acceptOwnershipContext(message.session);
+      requireCurrentOwnershipContext(message.session);
       attachedSessions.add(message.session);
       ownershipSequence += 1;
       onOwnershipAttach({ session: message.session });

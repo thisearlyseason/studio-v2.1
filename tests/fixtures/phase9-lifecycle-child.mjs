@@ -495,8 +495,16 @@ if (mode === 'success') {
   const firstSession = 'p9-admission-route-qa-parent-a-mobile';
   const secondSession = 'p9-admission-route-qa-adult-player-a-mobile';
   const [firstReceipt, secondReceipt] = fakeLaunchReceipts([firstSession, secondSession]);
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+  });
   await writeOwnershipIntentAndAdd(phase, 0, firstSession, firstReceipt);
   writeMessage({ version: 4, type: 'ownership-release', phase, sequence: 1, session: firstSession });
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 1, contextId: 'admission-route-qa-adult-player-a-mobile',
+  });
   await writeOwnershipIntentAndAdd(phase, 2, secondSession, secondReceipt);
   writeMessage({
     version: 4, type: 'failure', phase, sequence: 3,
@@ -506,6 +514,58 @@ if (mode === 'success') {
     pendingBrowserSession: null,
     browserSessions: [secondSession], attachedBrowserSessions: [],
     launchReceipts: [secondReceipt], releasedBrowserSessions: [firstSession],
+  }, () => nativeExit(0));
+} else if (mode === 'failure-terminal-context-start-later') {
+  if (phase !== 'before-transition') nativeExit(70);
+  const firstSession = 'p9-admission-route-qa-parent-a-mobile';
+  const [firstReceipt] = fakeLaunchReceipts([firstSession]);
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+  });
+  await writeOwnershipIntentAndAdd(phase, 0, firstSession, firstReceipt);
+  writeMessage({ version: 4, type: 'ownership-release', phase, sequence: 1, session: firstSession });
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 1, contextId: 'admission-route-qa-adult-player-a-mobile',
+  });
+  writeMessage({
+    version: 4, type: 'failure', phase, sequence: 2,
+    category: 'scenario-runner-invalid', stage: 'authorization',
+    contextOrdinal: 1, contextId: 'admission-route-qa-adult-player-a-mobile',
+    checkpoint: 'context-start', reason: 'context-invalid',
+    pendingBrowserSession: null, browserSessions: [], attachedBrowserSessions: [],
+    launchReceipts: [], releasedBrowserSessions: [firstSession],
+  }, () => nativeExit(0));
+} else if (new Set([
+  'failure-terminal-context-skip',
+  'failure-terminal-context-backward',
+  'failure-terminal-context-duplicate',
+]).has(mode)) {
+  if (phase !== 'before-transition') nativeExit(70);
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+  });
+  if (mode === 'failure-terminal-context-backward') writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 1, contextId: 'admission-route-qa-adult-player-a-mobile',
+  });
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: mode === 'failure-terminal-context-skip' ? 2 : 0,
+    contextId: mode === 'failure-terminal-context-skip'
+      ? 'admission-route-qa-youth-active-mobile' : 'admission-route-qa-parent-a-mobile',
+  }, () => nativeExit(0));
+} else if (mode === 'failure-terminal-future-ownership') {
+  if (phase !== 'before-transition') nativeExit(70);
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+  });
+  writeMessage({
+    version: 4, type: 'ownership-intent', phase, sequence: 0,
+    session: 'p9-admission-route-qa-youth-active-mobile',
   }, () => nativeExit(0));
 } else if (mode.startsWith('failure-terminal-')) {
   if (phase !== 'before-transition') nativeExit(70);
@@ -518,6 +578,10 @@ if (mode === 'success') {
   const session = 'p9-admission-route-qa-parent-a-mobile';
   const launchReceipt = fakeLaunchReceipts([session])[0];
   let pendingBrowserSession = session;
+  writeMessage({
+    version: 4, type: 'context-start', phase,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+  });
   writeMessage({ version: 4, type: 'ownership-intent', phase, sequence: 0, session });
   await waitForOwnershipAuthorization(phase, 0, session);
   const activeStage = new Set([

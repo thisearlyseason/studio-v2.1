@@ -6264,6 +6264,12 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
     ['stage', { ...valid, stage: 'https://secret.invalid/path' }, accepted],
     ['context ordinal', { ...valid, contextOrdinal: 1 }, accepted],
     ['context id', { ...valid, contextId: 'isolation-qa-parent-a-mobile' }, accepted],
+    ['future canonical context pair', {
+      ...valid,
+      category: 'scenario-runner-invalid', stage: 'authorization',
+      contextOrdinal: 1, contextId: 'admission-route-qa-adult-player-a-mobile',
+      checkpoint: 'context-start', reason: 'context-invalid',
+    }, accepted],
     ['checkpoint', { ...valid, checkpoint: 'raw-checkpoint' }, accepted],
     ['reason', { ...valid, reason: 'raw-secret-reason' }, accepted],
     ['checkpoint reason mismatch', { ...valid, reason: 'action-failed' }, accepted],
@@ -6426,6 +6432,49 @@ test('phase 9 guardian rejects a valid but stale canonical failure context after
   assert.equal(result.closureCertified, true);
   assert.equal(fixture.events.includes('browser:close:p9-admission-route-qa-adult-player-a-mobile'), true);
   assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+});
+
+test('phase 9 guardian accepts an exact later-row context-start failure after prior release', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'failure-terminal-context-start-later' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.equal(result.primaryStage, 'authorization');
+  assert.deepEqual(result.diagnostic, {
+    contextOrdinal: 1,
+    contextId: 'admission-route-qa-adult-player-a-mobile',
+    checkpoint: 'context-start',
+    reason: 'context-invalid',
+  });
+  assert.equal(result.closureCertified, true);
+});
+
+test('phase 9 guardian rejects duplicate, skipped, and backward canonical context progress', async t => {
+  for (const mode of [
+    'failure-terminal-context-duplicate',
+    'failure-terminal-context-skip',
+    'failure-terminal-context-backward',
+  ]) {
+    await t.test(mode, async () => {
+      const fixture = lifecycleGuardianFixture({ runnerMode: mode });
+      const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+      assert.equal(result.ok, false);
+      assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+      assert.equal(result.diagnostic, undefined);
+      assert.equal(result.closureCertified, true);
+      assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    });
+  }
+});
+
+test('phase 9 guardian rejects future-row ownership under the current canonical context', async () => {
+  const fixture = lifecycleGuardianFixture({ runnerMode: 'failure-terminal-future-ownership' });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.equal(result.diagnostic, undefined);
+  assert.equal(result.closureCertified, false);
+  assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 0);
 });
 
 test('phase 9 guardian preserves a valid failure candidate across clean-protocol child closure failure', async () => {
@@ -9217,11 +9266,11 @@ darwinRuntimeTest('phase 9 exact production child emits protocol-v4 ownership in
   child.stderr.on('data', chunk => { stderr += chunk.toString('utf8'); });
   let startupTimeout;
   try {
-    const firstLine = await Promise.race([
+    const firstLines = await Promise.race([
       new Promise((resolvePromise, reject) => {
         child.stdout.on('data', () => {
-          const newline = stdout.indexOf('\n');
-          if (newline !== -1) resolvePromise(stdout.slice(0, newline));
+          const lines = stdout.split('\n').filter(Boolean);
+          if (lines.length >= 2) resolvePromise(lines.slice(0, 2));
         });
         child.once('exit', code => reject(new Error(
           `exact child exited ${code} before ownership intent: ${/Error: ([a-z-]+)/.exec(stderr)?.[1] ?? 'no-fixed-category'}`,
@@ -9232,13 +9281,19 @@ darwinRuntimeTest('phase 9 exact production child emits protocol-v4 ownership in
       }),
     ]);
     clearTimeout(startupTimeout);
-    assert.deepEqual(JSON.parse(firstLine), {
+    assert.deepEqual(firstLines.map(line => JSON.parse(line)), [{
+      type: 'context-start',
+      version: 4,
+      phase: 'before-transition',
+      contextOrdinal: 0,
+      contextId: 'admission-route-qa-parent-a-mobile',
+    }, {
       type: 'ownership-intent',
       version: 4,
       phase: 'before-transition',
       sequence: 0,
       session: 'p9-admission-route-qa-parent-a-mobile',
-    });
+    }]);
   } finally {
     clearTimeout(startupTimeout);
     if (child.exitCode === null && child.signalCode === null) {
