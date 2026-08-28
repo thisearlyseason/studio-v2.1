@@ -7635,6 +7635,22 @@ function phase9RecoveryWorkspace() {
   return { workspacePath, manifestPath, credentialPath, resultParent, resultPath };
 }
 
+function mutatePhase9RecoveryManifestSameInode(path) {
+  const before = lstatSync(path);
+  const original = readFileSync(path, 'utf8');
+  const manifest = JSON.parse(original);
+  manifest.updatedAt = manifest.updatedAt === '2026-08-28T04:34:22.470Z'
+    ? '2026-08-28T04:34:23.470Z'
+    : '2026-08-28T04:34:22.470Z';
+  const replacement = `${JSON.stringify(manifest)}\n`;
+  assert.equal(Buffer.byteLength(replacement), Buffer.byteLength(original));
+  writeFileSync(path, replacement, { flag: 'r+' });
+  const after = lstatSync(path);
+  assert.equal(after.dev, before.dev);
+  assert.equal(after.ino, before.ino);
+  assert.equal(after.size, before.size);
+}
+
 function cleanupPhase9RecoveryWorkspace(paths) {
   rmSync(paths.workspacePath, { recursive: true, force: true });
   rmSync(paths.resultParent, { recursive: true, force: true });
@@ -7998,6 +8014,104 @@ darwinRuntimeTest('phase 9 terminal recovery resumes durable sync after a helper
     assert.equal(statSync(paths.credentialPath).size, 0);
   } finally {
     cleanupPhase9RecoveryWorkspace(paths);
+  }
+});
+
+test('phase 9 terminal recovery binds every final manifest receipt to each checkpoint and replay', async () => {
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const common = (paths, writerFactory, filesystem) => ({
+    ...paths,
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+    writerFactory,
+    filesystem,
+    dispositionExecutor: async request => {
+      assert.equal(request.operation, 'zeroize-credential');
+      await fsPromises.truncate(paths.credentialPath, 0);
+      return true;
+    },
+  });
+  const mutationCases = [
+    { name: 'validated-checkpoint', triggerRead: 3, expectedWrites: 0 },
+    { name: 'zeroized-checkpoint', triggerRead: 7, expectedWrites: 1 },
+    { name: 'terminal-promotion', triggerRead: 9, expectedWrites: 2 },
+  ];
+  for (const mutationCase of mutationCases) {
+    const paths = phase9RecoveryWorkspace();
+    const writer = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+    let reads = 0;
+    let mutated = false;
+    const filesystem = {
+      ...fsPromises,
+      async open(path, flags) {
+        const handle = await fsPromises.open(path, flags);
+        if (path !== paths.manifestPath) return handle;
+        return new Proxy(handle, {
+          get(target, key) {
+            if (key === 'read') return async (...args) => {
+              reads += 1;
+              if (!mutated && reads === mutationCase.triggerRead) {
+                mutatePhase9RecoveryManifestSameInode(paths.manifestPath);
+                mutated = true;
+              }
+              return target.read(...args);
+            };
+            const value = target[key];
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      },
+    };
+    try {
+      await assert.rejects(
+        finalizePhase9TerminalRecovery(common(paths, writer.factory, filesystem)),
+        /terminal recovery failed/i,
+        mutationCase.name,
+      );
+      assert.equal(mutated, true, mutationCase.name);
+      assert.equal(writer.writes.length, mutationCase.expectedWrites, mutationCase.name);
+      assert.equal(lstatSync(paths.manifestPath).nlink, 1);
+    } finally {
+      cleanupPhase9RecoveryWorkspace(paths);
+    }
+  }
+
+  const replayPaths = phase9RecoveryWorkspace();
+  const initialWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  try {
+    await finalizePhase9TerminalRecovery(common(replayPaths, initialWriter.factory, fsPromises));
+    const replayWriter = phase9MemoryRecoveryWriter(initialWriter.document);
+    let replayReads = 0;
+    let replayMutated = false;
+    const replayFilesystem = {
+      ...fsPromises,
+      async open(path, flags) {
+        const handle = await fsPromises.open(path, flags);
+        if (path !== replayPaths.manifestPath) return handle;
+        return new Proxy(handle, {
+          get(target, key) {
+            if (key === 'read') return async (...args) => {
+              replayReads += 1;
+              if (!replayMutated && replayReads === 5) {
+                mutatePhase9RecoveryManifestSameInode(replayPaths.manifestPath);
+                replayMutated = true;
+              }
+              return target.read(...args);
+            };
+            const value = target[key];
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      },
+    };
+    await assert.rejects(finalizePhase9TerminalRecovery({
+      ...common(replayPaths, replayWriter.factory, replayFilesystem),
+      dispositionExecutor: async () => { throw new Error('terminal replay must not mutate'); },
+    }), /terminal recovery failed/i);
+    assert.equal(replayMutated, true);
+    assert.equal(replayWriter.writes.length, 0);
+  } finally {
+    cleanupPhase9RecoveryWorkspace(replayPaths);
   }
 });
 

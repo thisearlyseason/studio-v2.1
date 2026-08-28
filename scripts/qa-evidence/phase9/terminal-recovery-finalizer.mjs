@@ -353,6 +353,13 @@ async function finalizePhase9TerminalRecoveryUnsafe({
         }
         return second;
       };
+      const validateManifestCommitment = async (requireZeroized, expectedSha256) => {
+        const receipt = await validateRetained(requireZeroized);
+        if (receipt.sha256 !== expectedSha256) {
+          throw new Error('Terminal recovery retained manifest commitment changed.');
+        }
+        return receipt;
+      };
       let manifestReceipt = await validateRetained(credentialMetadata.size === 0);
       const durableZeroizationCheckpoint = admitted.version === 3
         && admitted.recoveryDisposition.phase === 'zeroized';
@@ -366,7 +373,10 @@ async function finalizePhase9TerminalRecoveryUnsafe({
       assertCertificateManifestConsistency(checkpoint, manifestReceipt.manifest);
 
       if (admitted.version === 1 || admitted.version === 2) {
-        manifestReceipt = await validateRetained(credentialMetadata.size === 0);
+        manifestReceipt = await validateManifestCommitment(
+          credentialMetadata.size === 0,
+          checkpoint.recoveryDisposition.manifestSha256,
+        );
         try { await writer.write(checkpoint); } catch { throw new Error('Terminal recovery checkpoint publication failed.'); }
       }
       let didZeroize = false;
@@ -381,21 +391,28 @@ async function finalizePhase9TerminalRecoveryUnsafe({
         didZeroize = true;
       }
       manifestReceipt = await validateRetained(true);
+      if (durableZeroizationCheckpoint
+        && manifestReceipt.sha256 !== admitted.recoveryDisposition.manifestSha256) {
+        throw new Error('Terminal recovery retained manifest commitment changed.');
+      }
       checkpoint = Object.freeze({
         ...checkpoint,
         recoveryDisposition: disposition('zeroized', credentialIdentity, workspaceIdentity, manifestReceipt.sha256),
       });
       if (!terminalReplay && (didZeroize
         || (admitted.version === 3 && admitted.recoveryDisposition.phase === 'validated'))) {
-        manifestReceipt = await validateRetained(true);
+        manifestReceipt = await validateManifestCommitment(
+          true,
+          checkpoint.recoveryDisposition.manifestSha256,
+        );
         try { await writer.write(checkpoint); } catch { throw new Error('Terminal recovery zeroization checkpoint failed.'); }
       }
       if (terminalReplay) {
-        await validateRetained(true);
+        await validateManifestCommitment(true, admitted.recoveryDisposition.manifestSha256);
         await writer.revalidate();
         return summary(admitted);
       }
-      await validateRetained(true);
+      await validateManifestCommitment(true, checkpoint.recoveryDisposition.manifestSha256);
       const terminal = terminalFailure(checkpoint);
       try { await writer.write(terminal); } catch { throw new Error('Terminal recovery final promotion failed.'); }
       return summary(terminal);
