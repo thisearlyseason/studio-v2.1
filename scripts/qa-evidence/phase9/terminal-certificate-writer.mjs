@@ -2,12 +2,12 @@ import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readFile, readdir, realpath, stat } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HELPER_PATH = fileURLToPath(new URL('./terminal-certificate-dirfd-helper.py', import.meta.url));
 const PYTHON_RUNTIME = '/usr/bin/python3';
-const HELPER_SHA256 = '99003006d0a264c1115c7e622c06210c6356610f89748f24cf520ca4f4bd2b1a';
+const HELPER_SHA256 = 'ef734df1d220bd19b0e444816f489ba99da5c5150e49ebb62cde53d902611a1e';
 const PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
 const MAX_CERTIFICATE_BYTES = 32_768;
 const MAX_HELPER_OUTPUT = 4_096;
@@ -56,6 +56,12 @@ function nullableSummary(value, keys, name) {
   return value;
 }
 
+function requireExactSummary(value, expected, name) {
+  if (value === null || Object.keys(expected).some(key => value[key] !== expected[key])) {
+    throw new Error(`Terminal certificate ${name} is not certified.`);
+  }
+}
+
 function validateLifecycle(value, status) {
   exactKeys(value, [
     'state', 'history', 'preflight', 'seed', 'initialInspect', 'precleanInspect', 'cleanup',
@@ -82,14 +88,32 @@ function validateLifecycle(value, status) {
     'browserClosureCertified', 'processClosureCertified', 'profileClosureCertified',
     'fixtureClosureCertified', 'credentialRemoved', 'workspaceRemoved',
   ]) boolean(value[key], key);
-  if (status === 'complete' && (
-    value.state !== 'disarmed' || value.history.length !== STATES.length
-    || !value.browserClosureCertified || !value.processClosureCertified || !value.profileClosureCertified
-    || !value.fixtureClosureCertified || !value.credentialRemoved || !value.workspaceRemoved
-  )) throw new Error('Terminal certificate complete lifecycle is invalid.');
-  if (status === 'closure-pending') {
-    const beforeRemoval = value.fixtureClosureCertified && !value.credentialRemoved && !value.workspaceRemoved;
-    if (!beforeRemoval) throw new Error('Terminal certificate checkpoint lifecycle is invalid.');
+  if (status === 'closure-pending' || status === 'complete') {
+    const requiredHistoryLength = status === 'complete' ? STATES.length : 10;
+    const removalRequired = status === 'complete';
+    if (value.history.length !== requiredHistoryLength
+      || value.state !== STATES[requiredHistoryLength - 1]
+      || !value.browserClosureCertified || !value.processClosureCertified || !value.profileClosureCertified
+      || !value.fixtureClosureCertified
+      || value.credentialRemoved !== removalRequired || value.workspaceRemoved !== removalRequired) {
+      throw new Error('Terminal certificate certified lifecycle is invalid.');
+    }
+    requireExactSummary(value.preflight, { plannedAliases: 20, plannedTeams: 3 }, 'preflight');
+    requireExactSummary(value.seed, { auth: 20, firestore: 82 }, 'seed');
+    const presentInspect = { expectedAuth: 20, expectedFirestore: 82, actualAuth: 20, actualFirestore: 82 };
+    requireExactSummary(value.initialInspect, presentInspect, 'initialInspect');
+    requireExactSummary(value.precleanInspect, presentInspect, 'precleanInspect');
+    requireExactSummary(value.cleanup, {
+      deletedAuth: 20, deletedFirestore: 82, retainedAuth: 0, retainedFirestore: 0,
+      failedAuth: 0, failedFirestore: 0,
+    }, 'cleanup');
+    requireExactSummary(value.cleanInspect, {
+      expectedAuth: 20, expectedFirestore: 82, actualAuth: 0, actualFirestore: 0,
+    }, 'cleanInspect');
+    requireExactSummary(value.independentProbe, {
+      checkedAuth: 20, checkedFirestore: 82, checkedExpectedAbsent: 1,
+      authPresent: 0, firestorePresent: 0, expectedAbsentPresent: 0,
+    }, 'independentProbe');
   }
   return value;
 }
@@ -109,6 +133,9 @@ function validateCertificate(input) {
   if (value.status === 'closure-pending' && value.category !== 'pending') {
     throw new Error('Terminal certificate checkpoint category is invalid.');
   }
+  if (value.status === 'failed' && new Set(['none', 'pending']).has(value.category)) {
+    throw new Error('Terminal certificate failure category is invalid.');
+  }
   exactKeys(value.deployment, ['deployedSha', 'stagingRunId', 'pullRequestNumber'], 'deployment');
   if (typeof value.deployment.deployedSha !== 'string' || !/^[a-f0-9]{40}$/.test(value.deployment.deployedSha)
     || typeof value.deployment.stagingRunId !== 'string' || !/^[1-9][0-9]{5,20}$/.test(value.deployment.stagingRunId)
@@ -121,6 +148,9 @@ function validateCertificate(input) {
   boolean(value.evidence.written, 'evidence.written');
   if (value.status === 'complete' && (value.evidence.rows !== 44 || value.evidence.written !== true)) {
     throw new Error('Terminal certificate complete evidence is invalid.');
+  }
+  if (value.status === 'closure-pending' && (value.evidence.rows !== 0 || value.evidence.written !== false)) {
+    throw new Error('Terminal certificate checkpoint evidence is invalid.');
   }
   return Object.freeze(value);
 }
@@ -144,7 +174,7 @@ function isWithin(path, boundary) {
   return child === '' || (!child.startsWith(`..${sep}`) && child !== '..' && !isAbsolute(child));
 }
 
-async function readCheckpoint(filesystem, path) {
+async function readCheckpoint(filesystem, path, location = 'result') {
   const metadata = await filesystem.lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.uid !== process.getuid()
     || metadata.nlink !== 1 || (metadata.mode & 0o777) !== 0o600
@@ -163,7 +193,7 @@ async function readCheckpoint(filesystem, path) {
       throw new Error('Terminal certificate checkpoint is not resumable.');
     }
     return Object.freeze({
-      state: 'checkpoint', size: Buffer.byteLength(text),
+      state: 'checkpoint', location, size: Buffer.byteLength(text),
       sha256: createHash('sha256').update(text).digest('hex'), document: parsed,
     });
   } finally { await handle.close(); }
@@ -176,7 +206,7 @@ async function invokeHelper({ parentHandle, directoryIdentity, name, expected, d
     directory: directoryIdentity, name,
     expected: expected.state === 'absent'
       ? { state: 'absent' }
-      : { state: 'checkpoint', size: expected.size, sha256: expected.sha256 },
+      : { state: 'checkpoint', location: expected.location, size: expected.size, sha256: expected.sha256 },
     document,
   });
   return new Promise((resolvePromise, rejectPromise) => {
@@ -239,7 +269,7 @@ export async function createPhase9TerminalCertificateWriter({
     || !helperEnvironment || typeof helperEnvironment !== 'object' || Array.isArray(helperEnvironment)
     || Object.keys(helperEnvironment).some(key => !new Set([
       'PHASE9_CERTIFICATE_TEST_FAIL_PROMOTION', 'PHASE9_CERTIFICATE_TEST_BEFORE_PROMOTION_MS',
-      'PHASE9_CERTIFICATE_TEST_HANG',
+      'PHASE9_CERTIFICATE_TEST_AFTER_CHECKPOINT_VALIDATION_MS', 'PHASE9_CERTIFICATE_TEST_HANG',
     ]).has(key))
     || !Number.isSafeInteger(helperTimeoutMs) || helperTimeoutMs < 100 || helperTimeoutMs > 30_000) {
     throw new Error('Terminal certificate configuration is invalid.');
@@ -247,8 +277,11 @@ export async function createPhase9TerminalCertificateWriter({
   const name = basename(resultPath);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,126}\.json$/.test(name)) throw new Error('Terminal certificate filename is invalid.');
   const parentPath = dirname(resultPath);
-  const [canonicalParent, canonicalRepository, helperMetadata, helperCanonical, helperSource, pythonMetadata, pythonCanonical, pythonBytes] = await Promise.all([
-    filesystem.realpath(parentPath), filesystem.realpath(repositoryRoot),
+  const recoveryName = `.${name}.checkpoint`;
+  const recoveryPath = join(parentPath, recoveryName);
+  const [canonicalParent, canonicalRepository, canonicalWorkspace, canonicalEvidence, helperMetadata, helperCanonical, helperSource, pythonMetadata, pythonCanonical, pythonBytes] = await Promise.all([
+    filesystem.realpath(parentPath), filesystem.realpath(repositoryRoot), filesystem.realpath(workspacePath),
+    filesystem.realpath(evidenceDirectory),
     filesystem.lstat(HELPER_PATH), filesystem.realpath(HELPER_PATH), filesystem.readFile(HELPER_PATH, 'utf8'),
     filesystem.lstat(PYTHON_RUNTIME), filesystem.realpath(PYTHON_RUNTIME), filesystem.readFile(PYTHON_RUNTIME),
   ]);
@@ -260,8 +293,9 @@ export async function createPhase9TerminalCertificateWriter({
     || createHash('sha256').update(pythonBytes).digest('hex') !== PYTHON_SHA256) {
     throw new Error('Terminal certificate helper runtime is invalid.');
   }
-  if (canonicalParent !== parentPath || isWithin(resultPath, canonicalRepository)
-    || isWithin(resultPath, workspacePath) || isWithin(resultPath, evidenceDirectory)) {
+  const canonicalResultPath = join(canonicalParent, name);
+  if (canonicalParent !== parentPath || isWithin(canonicalResultPath, canonicalRepository)
+    || isWithin(canonicalResultPath, canonicalWorkspace) || isWithin(canonicalResultPath, canonicalEvidence)) {
     throw new Error('Terminal certificate path must be canonical and external.');
   }
   const parentMetadata = await filesystem.lstat(parentPath);
@@ -270,9 +304,13 @@ export async function createPhase9TerminalCertificateWriter({
     throw new Error('Terminal certificate parent must be a private mode-0700 directory.');
   }
   const names = await filesystem.readdir(parentPath);
-  if (names.some(entry => entry !== name)) throw new Error('Terminal certificate parent contains unexpected entries.');
+  if (names.some(entry => entry !== name && entry !== recoveryName)
+    || (names.includes(name) && names.includes(recoveryName))) {
+    throw new Error('Terminal certificate parent contains unexpected entries or a result collision.');
+  }
   let expected;
-  if (names.includes(name)) expected = await readCheckpoint(filesystem, resultPath);
+  if (names.includes(name)) expected = await readCheckpoint(filesystem, resultPath, 'result');
+  else if (names.includes(recoveryName)) expected = await readCheckpoint(filesystem, recoveryPath, 'recovery');
   else expected = Object.freeze({ state: 'absent' });
   const parentHandle = await filesystem.open(parentPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
   const heldParent = await parentHandle.stat();

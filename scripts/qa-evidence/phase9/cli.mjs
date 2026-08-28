@@ -70,7 +70,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
   transportClient: '9ed384bfc4bb2fba1e99b79a03080e36c89dc3965f52d0c5fa366c143eb54656',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
-  terminalHelper: '99003006d0a264c1115c7e622c06210c6356610f89748f24cf520ca4f4bd2b1a',
+  terminalHelper: 'ef734df1d220bd19b0e444816f489ba99da5c5150e49ebb62cde53d902611a1e',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
 export const phase9PlaywrightTransport = Object.freeze({
@@ -421,6 +421,13 @@ export function assertPhase9HostedPlatform(platform = process.platform) {
   if (platform !== 'darwin') throw new Error('Phase 9 hosted runtime requires Darwin.');
 }
 
+export function resolvePhase9ResultPath(value) {
+  if (typeof value !== 'string' || !isAbsolute(value) || resolve(value) !== value) {
+    throw new Error('Hosted terminal result path must be lexically absolute and normalized.');
+  }
+  return value;
+}
+
 async function hosted(argv, env, stdout, platform) {
   if (argv[0] !== '--staging') throw new Error('Hosted execution requires the explicit staging flag --staging.');
   assertPhase9HostedPlatform(platform);
@@ -444,7 +451,7 @@ async function hosted(argv, env, stdout, platform) {
   const workspace = resolve(values['--workspace']);
   const manifest = resolve(values['--manifest']);
   const credentials = resolve(values['--credentials']);
-  const resultPath = resolve(values['--result']);
+  const resultPath = resolvePhase9ResultPath(values['--result']);
   await requireWorkspace(workspace, manifest, credentials);
   const terminalWriter = await createPhase9TerminalCertificateWriter({
     resultPath, repositoryRoot, workspacePath: workspace, evidenceDirectory,

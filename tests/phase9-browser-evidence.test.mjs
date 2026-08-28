@@ -7164,12 +7164,14 @@ test('phase 9 completed guardian cleanup retains its external terminal certifica
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-guardian.'));
   const parent = join(root, 'results');
+  const writerWorkspace = join(root, 'workspace');
   mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(writerWorkspace, { mode: 0o700 });
   const resultPath = join(parent, 'hosted-result.json');
   const fixture = lifecycleGuardianFixture();
   let latest = null;
   const writer = await createPhase9TerminalCertificateWriter({
-    resultPath, repositoryRoot: dirname(testDirectory), workspacePath: fixture.workspace,
+    resultPath, repositoryRoot: dirname(testDirectory), workspacePath: writerWorkspace,
     evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
   });
   fixture.dependencies.terminalCertificateWriter = async ({ phase, lifecycle }) => {
@@ -7256,6 +7258,82 @@ test('phase 9 terminal certificate rejects unsafe paths, parent types, permissio
   }
 });
 
+test('phase 9 terminal certificate confines result paths against canonical workspace aliases', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const canonicalWorkspace = realpathSync(mkdtempSync('/private/tmp/phase9-terminal-canonical-workspace.'));
+  const lexicalWorkspace = canonicalWorkspace.replace(/^\/private\/tmp\//, '/tmp/');
+  const parent = join(canonicalWorkspace, 'results');
+  mkdirSync(parent, { mode: 0o700 });
+  const attempt = createPhase9TerminalCertificateWriter({
+    resultPath: join(parent, 'result.json'), repositoryRoot: dirname(testDirectory),
+    workspacePath: lexicalWorkspace,
+    evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+  }).then(async writer => { await writer.close(); return writer; });
+  try {
+    await assert.rejects(attempt, /canonical|external|workspace/i);
+  } finally {
+    rmSync(canonicalWorkspace, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 hosted result admission rejects a lexically relative path before resolution', async () => {
+  const { resolvePhase9ResultPath } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  assert.throws(() => resolvePhase9ResultPath('relative/result.json'), /absolute/i);
+  assert.equal(resolvePhase9ResultPath('/private/tmp/phase9-result/result.json'), '/private/tmp/phase9-result/result.json');
+});
+
+test('phase 9 terminal checkpoint validator requires every exact certified closure fact', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-facts.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const writer = await createPhase9TerminalCertificateWriter({
+    resultPath: join(parent, 'result.json'), repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+    evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+  });
+  const base = task5TerminalCertificate('closure-pending');
+  const mutations = [
+    ['null preflight', { preflight: null }],
+    ['wrong preflight aliases', { preflight: { plannedAliases: 19, plannedTeams: 3 } }],
+    ['wrong preflight teams', { preflight: { plannedAliases: 20, plannedTeams: 2 } }],
+    ['null seed', { seed: null }],
+    ['wrong seed', { seed: { auth: 20, firestore: 81 } }],
+    ['drifted initial inspect', { initialInspect: { expectedAuth: 20, expectedFirestore: 82, actualAuth: 19, actualFirestore: 82 } }],
+    ['drifted preclean inspect', { precleanInspect: { expectedAuth: 20, expectedFirestore: 82, actualAuth: 20, actualFirestore: 81 } }],
+    ['incomplete cleanup', { cleanup: { deletedAuth: 19, deletedFirestore: 82, retainedAuth: 0, retainedFirestore: 0, failedAuth: 0, failedFirestore: 0 } }],
+    ['retained cleanup resource', { cleanup: { deletedAuth: 20, deletedFirestore: 82, retainedAuth: 1, retainedFirestore: 0, failedAuth: 0, failedFirestore: 0 } }],
+    ['nonempty clean inspect', { cleanInspect: { expectedAuth: 20, expectedFirestore: 82, actualAuth: 0, actualFirestore: 1 } }],
+    ['incomplete independent probe', { independentProbe: { checkedAuth: 20, checkedFirestore: 81, checkedExpectedAbsent: 1, authPresent: 0, firestorePresent: 0, expectedAbsentPresent: 0 } }],
+    ['present independent resource', { independentProbe: { checkedAuth: 20, checkedFirestore: 82, checkedExpectedAbsent: 1, authPresent: 1, firestorePresent: 0, expectedAbsentPresent: 0 } }],
+    ['uncertified browser closure', { browserClosureCertified: false }],
+    ['uncertified process closure', { processClosureCertified: false }],
+    ['uncertified profile closure', { profileClosureCertified: false }],
+    ['uncertified fixture closure', { fixtureClosureCertified: false }],
+    ['early credential removal', { credentialRemoved: true }],
+    ['early workspace removal', { workspaceRemoved: true }],
+  ];
+  try {
+    for (const [name, lifecycleMutation] of mutations) {
+      await assert.rejects(
+        writer.write({ ...base, lifecycle: { ...base.lifecycle, ...lifecycleMutation } }),
+        /terminal certificate/i,
+        name,
+      );
+    }
+    const complete = task5TerminalCertificate('complete');
+    await assert.rejects(
+      writer.write({ ...complete, lifecycle: { ...complete.lifecycle, preflight: null } }),
+      /terminal certificate/i,
+    );
+    assert.deepEqual(readdirSync(parent), []);
+  } finally {
+    await writer.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('phase 9 terminal certificate refuses a target swap without overwriting foreign bytes', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-swap.'));
@@ -7288,6 +7366,113 @@ test('phase 9 terminal certificate refuses a target swap without overwriting for
     await assert.rejects(writing, /terminal certificate/i);
     assert.equal(readFileSync(resultPath, 'utf8'), 'foreign\n');
     assert.equal(JSON.parse(readFileSync(join(parent, 'stolen-checkpoint.json'), 'utf8')).status, 'closure-pending');
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate conditionally promotes only the held exact checkpoint identity', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-conditional-swap.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const resultPath = join(parent, 'hosted-result.json');
+  let writer = null;
+  try {
+    const initial = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+    });
+    const checkpoint = task5TerminalCertificate('closure-pending');
+    await initial.write(checkpoint);
+    await initial.close();
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+      helperEnvironment: { PHASE9_CERTIFICATE_TEST_AFTER_CHECKPOINT_VALIDATION_MS: '500' },
+    });
+    const writing = writer.write(task5TerminalCertificate('complete'));
+    const deadline = Date.now() + 2_000;
+    while (!readdirSync(parent).includes('.hosted-result.json.checkpoint') || existsSync(resultPath)) {
+      assert.equal(Date.now() < deadline, true, 'certificate helper did not reach the post-validation rendezvous');
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    writeFileSync(resultPath, 'foreign\n', { mode: 0o600, flag: 'wx' });
+    await assert.rejects(writing, /terminal certificate/i);
+    assert.equal(readFileSync(resultPath, 'utf8'), 'foreign\n');
+    const recoveryName = '.hosted-result.json.checkpoint';
+    assert.deepEqual(JSON.parse(readFileSync(join(parent, recoveryName), 'utf8')), checkpoint);
+    renameSync(resultPath, join(root, 'foreign-result.json'));
+    await writer.close();
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+    });
+    assert.deepEqual(writer.checkpoint, checkpoint);
+    await writer.write(task5TerminalCertificate('complete'));
+    assert.equal(JSON.parse(readFileSync(resultPath, 'utf8')).status, 'complete');
+    assert.deepEqual(readdirSync(parent), ['hosted-result.json']);
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate never publishes a swapped recovery companion during rollback', async () => {
+  const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate-recovery-swap.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const resultPath = join(parent, 'hosted-result.json');
+  const recoveryPath = join(parent, '.hosted-result.json.checkpoint');
+  const stolenRecoveryPath = join(root, 'stolen-checkpoint.json');
+  const checkpoint = task5TerminalCertificate('closure-pending');
+  let writer = null;
+  try {
+    const initial = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+    });
+    await initial.write(checkpoint);
+    await initial.close();
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+      helperEnvironment: { PHASE9_CERTIFICATE_TEST_AFTER_CHECKPOINT_VALIDATION_MS: '500' },
+    });
+    const firstPromotion = writer.write(task5TerminalCertificate('complete'));
+    const collisionDeadline = Date.now() + 2_000;
+    while (!existsSync(recoveryPath) || existsSync(resultPath)) {
+      assert.equal(Date.now() < collisionDeadline, true, 'certificate helper did not detach the checkpoint');
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    writeFileSync(resultPath, 'first-foreign\n', { mode: 0o600, flag: 'wx' });
+    await assert.rejects(firstPromotion, /terminal certificate/i);
+    renameSync(resultPath, join(root, 'first-foreign.json'));
+    await writer.close();
+
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
+      helperEnvironment: { PHASE9_CERTIFICATE_TEST_AFTER_CHECKPOINT_VALIDATION_MS: '500' },
+    });
+    const resumedPromotion = writer.write(task5TerminalCertificate('complete'));
+    const resumeDeadline = Date.now() + 2_000;
+    while (!readdirSync(parent).some(name => name.endsWith('.tmp'))) {
+      assert.equal(Date.now() < resumeDeadline, true, 'recovery helper did not reach its validation rendezvous');
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 5));
+    }
+    renameSync(recoveryPath, stolenRecoveryPath);
+    writeFileSync(recoveryPath, 'recovery-foreign\n', { mode: 0o600, flag: 'wx' });
+    await assert.rejects(resumedPromotion, /terminal certificate/i);
+    assert.equal(existsSync(resultPath), false);
+    assert.equal(readFileSync(recoveryPath, 'utf8'), 'recovery-foreign\n');
+    assert.deepEqual(JSON.parse(readFileSync(stolenRecoveryPath, 'utf8')), checkpoint);
   } finally {
     await writer?.close();
     rmSync(root, { recursive: true, force: true });
