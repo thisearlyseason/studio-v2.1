@@ -290,6 +290,11 @@ def main():
     sys.stdout.write(json.dumps({
         "ok": True,
         "status": "committed",
+        "dev": committed_metadata.st_dev,
+        "ino": committed_metadata.st_ino,
+        "uid": committed_metadata.st_uid,
+        "mode": stat.S_IMODE(committed_metadata.st_mode),
+        "nlink": committed_metadata.st_nlink,
         "size": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
     }, sort_keys=True, separators=(",", ":")) + "\n")

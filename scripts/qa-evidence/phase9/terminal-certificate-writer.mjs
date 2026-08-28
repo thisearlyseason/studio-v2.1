@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const HELPER_PATH = fileURLToPath(new URL('./terminal-certificate-dirfd-helper.py', import.meta.url));
 const PYTHON_RUNTIME = '/usr/bin/python3';
-const HELPER_SHA256 = 'ef734df1d220bd19b0e444816f489ba99da5c5150e49ebb62cde53d902611a1e';
+const HELPER_SHA256 = '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b';
 const PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
 const MAX_CERTIFICATE_BYTES = 32_768;
 const MAX_HELPER_OUTPUT = 4_096;
@@ -199,6 +199,61 @@ async function readCheckpoint(filesystem, path, location = 'result') {
   } finally { await handle.close(); }
 }
 
+function metadataMatchesReceipt(metadata, receipt) {
+  return metadata.isFile() && !metadata.isSymbolicLink() && metadata.uid === receipt.uid
+    && metadata.dev === receipt.dev && metadata.ino === receipt.ino
+    && metadata.nlink === receipt.nlink && (metadata.mode & 0o777) === receipt.mode
+    && metadata.size === receipt.size;
+}
+
+async function readCommittedResult({
+  filesystem, path, receipt, document, validated, revalidateParent,
+}) {
+  await revalidateParent();
+  let handle;
+  try {
+    handle = await filesystem.open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    const before = await handle.stat();
+    if (!metadataMatchesReceipt(before, receipt)) {
+      throw new Error('Terminal certificate committed identity changed.');
+    }
+    const buffer = Buffer.alloc(receipt.size + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset !== receipt.size) throw new Error('Terminal certificate committed size changed.');
+    const text = buffer.subarray(0, offset).toString('utf8');
+    const after = await handle.stat();
+    if (!metadataMatchesReceipt(after, receipt)
+      || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs
+      || text !== document || createHash('sha256').update(text).digest('hex') !== receipt.sha256) {
+      throw new Error('Terminal certificate committed bytes changed.');
+    }
+    const parsed = validateCertificate(JSON.parse(text));
+    if (parsed.status !== validated.status || canonicalDocument(parsed) !== text) {
+      throw new Error('Terminal certificate committed document changed.');
+    }
+    await revalidateParent();
+    const named = await filesystem.lstat(path);
+    const finalHeld = await handle.stat();
+    if (!metadataMatchesReceipt(named, receipt) || !metadataMatchesReceipt(finalHeld, receipt)
+      || finalHeld.mtimeMs !== before.mtimeMs || finalHeld.ctimeMs !== before.ctimeMs) {
+      throw new Error('Terminal certificate committed pathname changed.');
+    }
+    return Object.freeze({
+      state: validated.status === 'closure-pending' ? 'checkpoint' : 'terminal',
+      location: 'result', size: receipt.size, sha256: receipt.sha256, document: parsed,
+    });
+  } catch {
+    throw new Error('Terminal certificate committed result is invalid.');
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
 async function invokeHelper({ parentHandle, directoryIdentity, name, expected, document, helperEnvironment, helperTimeoutMs, helperSource }) {
   const request = JSON.stringify({
     version: 1, operation: 'write',
@@ -247,7 +302,13 @@ async function invokeHelper({ parentHandle, directoryIdentity, name, expected, d
       }
       let result;
       try { result = JSON.parse(stdout); } catch { result = null; }
-      if (code !== 0 || result?.ok !== true || result.status !== 'committed'
+      if (code !== 0 || !result || Object.keys(result).sort().join(',') !== [
+        'dev', 'ino', 'mode', 'nlink', 'ok', 'sha256', 'size', 'status', 'uid',
+      ].sort().join(',')
+        || result.ok !== true || result.status !== 'committed'
+        || !Number.isSafeInteger(result.dev) || result.dev < 0
+        || !Number.isSafeInteger(result.ino) || result.ino < 1
+        || result.uid !== process.getuid() || result.mode !== 0o600 || result.nlink !== 1
         || result.size !== Buffer.byteLength(document)
         || result.sha256 !== createHash('sha256').update(document).digest('hex')) {
         finish(new Error('Terminal certificate was not written atomically.'));
@@ -345,25 +406,12 @@ export async function createPhase9TerminalCertificateWriter({
       await revalidateParent();
       const document = canonicalDocument(validated);
       const prior = expected;
-      await invokeHelper({
+      const receipt = await invokeHelper({
         parentHandle, directoryIdentity, name, expected: prior, document, helperEnvironment, helperTimeoutMs,
         helperSource,
       });
-      await revalidateParent();
-      const committed = await readCheckpoint(filesystem, resultPath).catch(async error => {
-        if (validated.status !== 'closure-pending') {
-          const metadata = await filesystem.lstat(resultPath);
-          if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.uid !== process.getuid()
-            || metadata.nlink !== 1 || (metadata.mode & 0o777) !== 0o600
-            || metadata.size !== Buffer.byteLength(document)) throw error;
-          const text = await filesystem.readFile(resultPath, 'utf8');
-          if (text !== document) throw error;
-          return Object.freeze({
-            state: 'terminal', size: Buffer.byteLength(text),
-            sha256: createHash('sha256').update(text).digest('hex'), document: validated,
-          });
-        }
-        throw error;
+      const committed = await readCommittedResult({
+        filesystem, path: resultPath, receipt, document, validated, revalidateParent,
       });
       expected = committed;
       return validated;

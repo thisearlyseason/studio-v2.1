@@ -7160,6 +7160,120 @@ test('phase 9 terminal certificate survives discarded console output and exact w
   }
 });
 
+test('phase 9 terminal certificate rejects a byte-identical symlink swap after helper success', async () => {
+  const {
+    canonicalPhase9TerminalCertificate, createPhase9TerminalCertificateWriter,
+  } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-post-helper-swap.'));
+  const parent = join(root, 'results');
+  const workspace = join(root, 'workspace');
+  const resultPath = join(parent, 'hosted-result.json');
+  const stolenPath = join(root, 'stolen-result.json');
+  const foreignPath = join(root, 'foreign-result.json');
+  mkdirSync(parent, { mode: 0o700 });
+  mkdirSync(workspace, { mode: 0o700 });
+  const complete = task5TerminalCertificate('complete');
+  writeFileSync(foreignPath, canonicalPhase9TerminalCertificate(complete), { mode: 0o600 });
+  let swapBeforeOpen = false;
+  let swapped = false;
+  const filesystem = {
+    ...fsPromises,
+    async open(path, ...args) {
+      if (swapBeforeOpen && !swapped && path === resultPath) {
+        swapped = true;
+        renameSync(resultPath, stolenPath);
+        symlinkSync(foreignPath, resultPath);
+      }
+      return fsPromises.open(path, ...args);
+    },
+  };
+  let writer = null;
+  try {
+    writer = await createPhase9TerminalCertificateWriter({
+      resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+      evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix), filesystem,
+    });
+    await writer.write(task5TerminalCertificate('closure-pending'));
+    swapBeforeOpen = true;
+    await assert.rejects(writer.write(complete), /terminal certificate/i);
+    assert.equal(swapped, true, 'the post-helper pre-open seam must be exercised');
+    assert.equal(lstatSync(resultPath).isSymbolicLink(), true);
+    assert.equal(readFileSync(foreignPath, 'utf8'), canonicalPhase9TerminalCertificate(complete));
+  } finally {
+    await writer?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('phase 9 terminal certificate binds checkpoint and complete acceptance to one held result identity', async () => {
+  const {
+    canonicalPhase9TerminalCertificate, createPhase9TerminalCertificateWriter,
+  } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
+  for (const status of ['closure-pending', 'complete']) {
+    for (const seam of ['pre-open', 'during-read', 'post-read']) {
+      const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-held-result.'));
+      const parent = join(root, 'results');
+      const workspace = join(root, 'workspace');
+      const resultPath = join(parent, 'hosted-result.json');
+      const stolenPath = join(root, 'stolen-result.json');
+      const foreignPath = join(root, 'foreign-result.json');
+      mkdirSync(parent, { mode: 0o700 });
+      mkdirSync(workspace, { mode: 0o700 });
+      const certificate = task5TerminalCertificate(status);
+      const document = canonicalPhase9TerminalCertificate(certificate);
+      writeFileSync(foreignPath, document, { mode: 0o600 });
+      let armed = false;
+      let swapped = false;
+      const swap = () => {
+        if (swapped) return;
+        swapped = true;
+        renameSync(resultPath, stolenPath);
+        symlinkSync(foreignPath, resultPath);
+      };
+      const filesystem = {
+        ...fsPromises,
+        async open(path, ...args) {
+          if (armed && path === resultPath && seam === 'pre-open') swap();
+          const handle = await fsPromises.open(path, ...args);
+          if (!armed || path !== resultPath || seam === 'pre-open') return handle;
+          let statCalls = 0;
+          return {
+            async stat(...statArgs) {
+              const metadata = await handle.stat(...statArgs);
+              statCalls += 1;
+              if (seam === 'post-read' && statCalls === 2) swap();
+              return metadata;
+            },
+            async read(...readArgs) {
+              const result = await handle.read(...readArgs);
+              if (seam === 'during-read') swap();
+              return result;
+            },
+            close: (...closeArgs) => handle.close(...closeArgs),
+          };
+        },
+      };
+      let writer = null;
+      try {
+        writer = await createPhase9TerminalCertificateWriter({
+          resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
+          evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix), filesystem,
+        });
+        if (status === 'complete') await writer.write(task5TerminalCertificate('closure-pending'));
+        armed = true;
+        await assert.rejects(writer.write(certificate), /terminal certificate/i, `${status} ${seam}`);
+        assert.equal(swapped, true, `${status} ${seam} must exercise its swap seam`);
+        assert.equal(lstatSync(resultPath).isSymbolicLink(), true, `${status} ${seam}`);
+        assert.equal(readFileSync(foreignPath, 'utf8'), document, `${status} ${seam}`);
+        assert.equal(readFileSync(stolenPath, 'utf8'), document, `${status} ${seam}`);
+      } finally {
+        await writer?.close();
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  }
+});
+
 test('phase 9 completed guardian cleanup retains its external terminal certificate when console output is discarded', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-guardian.'));
