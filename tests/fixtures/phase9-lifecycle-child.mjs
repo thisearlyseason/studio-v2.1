@@ -494,7 +494,8 @@ if (mode === 'success') {
   if (phase !== 'before-transition') nativeExit(70);
   const trailingOutput = mode.endsWith('-trailing');
   const nonzeroExit = mode.endsWith('-nonzero');
-  const stage = mode.slice('failure-terminal-'.length).replace(/-(trailing|nonzero)$/, '');
+  const hangTrailingOutput = mode.endsWith('-hang-trailing');
+  const stage = mode.slice('failure-terminal-'.length).replace(/-(hang-trailing|trailing|nonzero)$/, '');
   const category = new Set(['login', 'scenario-action']).has(stage)
     ? 'scenario-failed' : 'scenario-runner-invalid';
   const session = 'phase9-failure-terminal-owned';
@@ -528,6 +529,13 @@ if (mode === 'success') {
     releasedBrowserSessions: [],
   }, () => {
     if (nonzeroExit) return nativeExit(71);
+    if (hangTrailingOutput) {
+      process.once('SIGTERM', () => writeMessage(
+        { version: 4, type: 'trailing-output' }, () => nativeExit(0),
+      ));
+      nativeSetInterval(() => {}, 1_000);
+      return;
+    }
     if (!trailingOutput) return nativeExit(0);
     writeMessage({ version: 4, type: 'trailing-output' }, () => nativeExit(0));
   });

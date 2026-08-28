@@ -6354,6 +6354,20 @@ test('phase 9 guardian preserves a valid failure candidate across clean-protocol
   assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
 });
 
+test('phase 9 guardian waits for timed-out failure-terminal stdio closure before attribution', async () => {
+  const fixture = lifecycleGuardianFixture({
+    runnerMode: 'failure-terminal-login-hang-trailing',
+    scenarioJoinTimeoutMs: 20,
+  });
+  const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+  assert.equal(result.ok, false);
+  assert.equal(result.category, 'scenario-runner-invalid');
+  assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+  assert.notEqual(result.primaryStage, 'login');
+  assert.equal(result.closureCertified, true);
+  assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+});
+
 test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transition before cleanup', async () => {
   const fixture = lifecycleGuardianFixture({ transitionNotPersisted: true });
   const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });

@@ -3114,16 +3114,20 @@ export function createLifecycleGuardian({
     try {
       outcome = await bounded(handle.closed);
     } catch {
-      return false;
+      return Object.freeze({ clean: false, streamClosed: false });
     }
-    if (
-      outcome.status !== 'fulfilled'
-      || outcome.value.code !== 0
-      || outcome.value.signal !== null
-      || handle.protocolFailure
-      || !handle.terminal
-    ) return false;
-    return waitForGroupGone(handle);
+    if (outcome.status !== 'fulfilled') {
+      return Object.freeze({ clean: false, streamClosed: false });
+    }
+    const groupGone = await waitForGroupGone(handle);
+    return Object.freeze({
+      clean: outcome.value.code === 0
+        && outcome.value.signal === null
+        && !handle.protocolFailure
+        && Boolean(handle.terminal)
+        && groupGone,
+      streamClosed: true,
+    });
   };
 
   const requestScenarioTermination = async (handle, force) => {
@@ -3520,8 +3524,13 @@ export function createLifecycleGuardian({
         stage: completed.stage,
       }) : null;
     if (!completed) throw new GuardianFailure('scenario-failed');
-    if (!(await joinScenario(handle))) {
-      if (scenarioFailureCandidate && !handle.protocolFailure) {
+    let joinResult = await joinScenario(handle);
+    if (!joinResult.clean) {
+      if (!joinResult.streamClosed) {
+        await requestScenarioTermination(handle, false);
+        joinResult = await joinScenario(handle);
+      }
+      if (scenarioFailureCandidate && joinResult.streamClosed && !handle.protocolFailure) {
         scenarioFailureAttribution = scenarioFailureCandidate;
       }
       if (handle.protocolFailure) throw handle.protocolFailure;
