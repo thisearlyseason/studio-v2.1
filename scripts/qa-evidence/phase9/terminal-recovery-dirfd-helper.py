@@ -1,20 +1,13 @@
-"""Descriptor-bound zeroization and atomic no-clobber quarantine for Phase 9."""
-import ctypes
+"""Descriptor-bound in-place credential zeroization for Phase 9 recovery."""
 import json
 import os
 import stat
 import sys
 import time
 
-DIRECTORY_FD = 3
-WORKSPACE_FD = 4
+WORKSPACE_FD = 3
 CREDENTIAL_FD = 5
 MAX_INPUT = 16_384
-RENAME_EXCL = 0x00000004
-LIBC = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
-RENAMEATX = LIBC.renameatx_np
-RENAMEATX.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-RENAMEATX.restype = ctypes.c_int
 
 
 def exact(value, keys):
@@ -47,84 +40,39 @@ def require_named(descriptor, name, expected, kind, size=True):
         raise ValueError("entry-identity-mismatch")
 
 
-def pause(name):
-    raw = os.environ.get(name)
-    if raw is not None:
-        milliseconds = int(raw)
-        if milliseconds < 1 or milliseconds > 2_000:
-            raise ValueError("invalid-test-pause")
-        time.sleep(milliseconds / 1000)
-
-
-def rename_exclusive(source_fd, source, destination_fd, destination):
-    if RENAMEATX(source_fd, source.encode(), destination_fd, destination.encode(), RENAME_EXCL) != 0:
-        raise OSError(ctypes.get_errno(), "rename-exclusive-failed")
-
-
 def main():
     raw = sys.stdin.buffer.read(MAX_INPUT + 1)
     if len(raw) > MAX_INPUT:
         raise ValueError("invalid-protocol")
     request = json.loads(raw)
-    if not isinstance(request, dict) or request.get("version") != 2:
+    exact(request, ("version", "operation", "workspace", "name", "credential"))
+    if request.get("version") != 3 or request.get("operation") != "zeroize-credential":
         raise ValueError("invalid-protocol")
-    operation = request.get("operation")
-    if operation == "zeroize-credential":
-        exact(request, ("version", "operation", "workspace", "name", "credential"))
-        workspace = identity(request["workspace"])
-        credential = identity(request["credential"])
-        if (request["name"] != "credentials.json" or workspace["uid"] != os.getuid()
-                or workspace["mode"] != 0o700 or credential["uid"] != os.getuid()
-                or credential["mode"] != 0o600 or credential["nlink"] != 1):
-            raise ValueError("invalid-boundary")
-        require_fd(DIRECTORY_FD, workspace, "directory")
-        require_fd(CREDENTIAL_FD, credential, "file")
-        require_named(DIRECTORY_FD, "credentials.json", credential, "file")
-        pause("PHASE9_RECOVERY_TEST_BEFORE_CREDENTIAL_ZEROIZE_MS")
-        require_fd(DIRECTORY_FD, workspace, "directory")
-        require_fd(CREDENTIAL_FD, credential, "file")
-        require_named(DIRECTORY_FD, "credentials.json", credential, "file")
-        os.ftruncate(CREDENTIAL_FD, 0)
-        if hasattr(os, "fdatasync"):
-            os.fdatasync(CREDENTIAL_FD)
-        os.fsync(CREDENTIAL_FD)
-        require_fd(CREDENTIAL_FD, credential, "file", size=False)
-        if os.fstat(CREDENTIAL_FD).st_size != 0:
-            raise ValueError("zeroization-failed")
-    elif operation == "quarantine-workspace":
-        exact(request, ("version", "operation", "directory", "workspaceName", "quarantineName", "workspace"))
-        directory = identity(request["directory"])
-        workspace = identity(request["workspace"])
-        source = request["workspaceName"]
-        destination = request["quarantineName"]
-        if (not isinstance(source, str) or not source.startswith("phase9-core-identities.")
-                or not isinstance(destination, str) or not destination.startswith("phase9-terminal-quarantine.")
-                or directory["uid"] != 0 or directory["mode"] != 0o777
-                or workspace["uid"] != os.getuid() or workspace["mode"] != 0o700):
-            raise ValueError("invalid-boundary")
-        require_fd(DIRECTORY_FD, directory, "directory")
-        require_fd(WORKSPACE_FD, workspace, "directory")
-        require_named(DIRECTORY_FD, source, workspace, "directory")
-        try:
-            os.stat(destination, dir_fd=DIRECTORY_FD, follow_symlinks=False)
-            raise ValueError("quarantine-collision")
-        except FileNotFoundError:
-            pass
-        pause("PHASE9_RECOVERY_TEST_BEFORE_WORKSPACE_QUARANTINE_MS")
-        require_fd(DIRECTORY_FD, directory, "directory")
-        require_fd(WORKSPACE_FD, workspace, "directory")
-        require_named(DIRECTORY_FD, source, workspace, "directory")
-        rename_exclusive(DIRECTORY_FD, source, DIRECTORY_FD, destination)
-        os.fsync(DIRECTORY_FD)
-        require_fd(WORKSPACE_FD, workspace, "directory")
-        require_named(DIRECTORY_FD, destination, workspace, "directory")
-        try:
-            os.stat(source, dir_fd=DIRECTORY_FD, follow_symlinks=False)
-            raise ValueError("source-still-present")
-        except FileNotFoundError:
-            pass
-    else:
-        raise ValueError("invalid-operation")
+    workspace = identity(request["workspace"])
+    credential = identity(request["credential"])
+    if (request["name"] != "credentials.json" or workspace["uid"] != os.getuid()
+            or workspace["mode"] != 0o700 or credential["uid"] != os.getuid()
+            or credential["mode"] != 0o600 or credential["nlink"] != 1):
+        raise ValueError("invalid-boundary")
+    require_fd(WORKSPACE_FD, workspace, "directory")
+    require_fd(CREDENTIAL_FD, credential, "file")
+    require_named(WORKSPACE_FD, "credentials.json", credential, "file")
+    raw_pause = os.environ.get("PHASE9_RECOVERY_TEST_BEFORE_CREDENTIAL_ZEROIZE_MS")
+    if raw_pause is not None:
+        milliseconds = int(raw_pause)
+        if milliseconds < 1 or milliseconds > 2_000:
+            raise ValueError("invalid-test-pause")
+        time.sleep(milliseconds / 1000)
+    require_fd(WORKSPACE_FD, workspace, "directory")
+    require_fd(CREDENTIAL_FD, credential, "file")
+    require_named(WORKSPACE_FD, "credentials.json", credential, "file")
+    os.ftruncate(CREDENTIAL_FD, 0)
+    if hasattr(os, "fdatasync"):
+        os.fdatasync(CREDENTIAL_FD)
+    os.fsync(CREDENTIAL_FD)
+    require_fd(CREDENTIAL_FD, credential, "file", size=False)
+    if os.fstat(CREDENTIAL_FD).st_size != 0:
+        raise ValueError("zeroization-failed")
     print(json.dumps({"ok": True, "status": "committed"}, separators=(",", ":")))
 
 

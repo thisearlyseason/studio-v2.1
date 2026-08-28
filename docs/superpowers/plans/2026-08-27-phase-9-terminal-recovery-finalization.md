@@ -4,7 +4,7 @@
 
 **Goal:** Preserve the original sanitized lifecycle failure when terminal-certificate handling also fails, and safely finalize one exact locally cleaned closure checkpoint without rerunning hosted browser or fixture mutations.
 
-**Architecture:** Version the terminal certificate so its wrapper category is separate from immutable closed-enum primary failure attribution. Add a recovery-only module and CLI command that validates a held exact checkpoint plus a private cleaned manifest before removing only the exact credential and workspace, then promotes the result to terminal `failed`; it constructs no provider adapter and cannot seed, browse, or transition.
+**Architecture:** Version the terminal certificate so its wrapper category is separate from immutable closed-enum primary failure attribution. Add a recovery-only module and CLI command that validates a held exact checkpoint plus a private cleaned manifest, zeroizes only the held credential inode, retains the exact workspace in place as the recovery quarantine, then promotes the result to terminal `failed`; it constructs no provider adapter and cannot seed, browse, transition, rename, or delete.
 
 **Tech Stack:** Node.js ESM, descriptor-bound filesystem APIs, the existing Python dirfd certificate helper, Node test runner, Markdown audit records.
 
@@ -17,7 +17,7 @@
 - The result remains browser-inconclusive: terminal status is `failed`, evidence is `{ rows: 0, written: false }`, and it can never become evidence PASS.
 - New hosted runs always capture a closed-enum `primaryCategory` and `primaryStage` before any certificate write.
 - `legacy-primary-unavailable` is accepted only while migrating a valid version-1 closure checkpoint that has no primary attribution.
-- Any identity, schema, removal, or publication uncertainty fails closed without removing a foreign path or falsely promoting the certificate.
+- Any identity, schema, zeroization, or publication uncertainty fails closed without renaming, unlinking, removing, or modifying a foreign path or falsely promoting the certificate.
 - No hosted lifecycle, provider mutation, staging navigation, push, deployment, merge, or production operation is permitted.
 
 ---
@@ -49,13 +49,13 @@
 - Test: `tests/phase9-browser-evidence.test.mjs`
 
 **Interfaces:**
-- Consumes: `createPhase9TerminalCertificateWriter`, `validateManifest`, and `removeCredentialFile`.
-- Produces: `finalizePhase9TerminalRecovery({ resultPath, workspacePath, manifestPath, credentialPath, repositoryRoot, evidenceDirectory, filesystem, removeCredentialFile })` returning a sanitized `{ ok, command, status, category, primaryCategory, primaryStage, rows }`.
+- Consumes: `createPhase9TerminalCertificateWriter`, exact manifest validation, and the pinned descriptor-bound zeroization helper.
+- Produces: `finalizePhase9TerminalRecovery({ resultPath, workspacePath, manifestPath, credentialPath, repositoryRoot, evidenceDirectory, filesystem })` returning a sanitized `{ ok, command, status, category, primaryCategory, primaryStage, rows }`.
 
-- [x] **Step 1: Write RED tests** for a valid cleaned 20/82/1 checkpoint, dirty/forged manifest rejection, wrong child paths, symlinks/modes/ownership, foreign path swaps, credential removal failure, workspace removal failure, final promotion failure, and idempotent replay of a terminal failed result. Assert the adapter/provider construction sentinel remains zero in every case.
+- [x] **Step 1: Write RED tests** for a valid cleaned 20/82/1 checkpoint, dirty/forged manifest rejection, wrong child paths, symlinks/modes/ownership, foreign child/workspace swaps, credential zeroization failure, final promotion failure, and idempotent identity-bound replay of a terminal failed result. Assert the adapter/provider construction sentinel remains zero in every case.
 - [x] **Step 2: Run focused tests** with `node --import tsx --test --test-name-pattern="terminal recovery" tests/phase9-browser-evidence.test.mjs`; expect missing export/command failures.
 - [x] **Step 3: Implement held-identity admission** for the result parent/checkpoint and workspace/manifest/credential. Parse the manifest through `validateManifest`, require v3, staging project, state `cleaned`, exact unique counts 20/82/1, and consistency with the certificate's exact closure facts.
-- [x] **Step 4: Implement removal and promotion**: publish a v2 closure-pending recovery checkpoint first; use the pinned descriptor-bound recovery helper to revalidate and remove the exact credential/workspace at the destructive boundary; prove absence after each removal; durably admit the manifest-only post-unlink crash state; require credential removal already checkpointed before absent-workspace promotion; promote to terminal `failed` with rows zero and retained deployment/primary attribution. Return one sanitized failure on uncertainty and retain any still-recoverable artifact.
+- [x] **Step 4: Implement in-place zeroization and promotion**: publish a v3 closure-pending identity commitment first; use the pinned descriptor-bound helper to zeroize only the held exact credential inode with truncate/data-sync/full-sync; retain the exact manifest and workspace in place; revalidate named and held identities, exact two-entry inventory, manifest bytes, and zero-length credential immediately before every checkpoint; promote to terminal `failed` with rows zero and retained deployment/primary attribution. Removal flags and original-path absence remain false. Return one sanitized failure on uncertainty.
 - [x] **Step 5: Wire CLI/help/package** as `recover-terminal` with exact flags `--result`, `--workspace`, `--manifest`, and `--credentials`; reject unsupported flags before filesystem mutation and do not import/construct the Firebase adapter.
 - [x] **Step 6: Run focused GREEN**, including injected failures and idempotent replay.
 
@@ -74,4 +74,4 @@
 - [x] **Step 1: Update the spec and main Phase 9 plan** with the primary/outer category distinction, terminal-failed recovery semantics, pre-adapter rule, exact cleaned-manifest admission, and no-PASS invariant.
 - [x] **Step 2: Run full verification**: focused recovery tests, full Phase 9, fixture/identity/hygiene, `npm run verify`, deterministic builds twice, dry-run `44 = 40 + 4`, stripped-environment offline smoke, exact zero browser/process/profile scans, and secret/path hygiene scans.
 - [ ] **Step 3: Commit bounded changes** and request independent review of the exact commit; do not recover the preserved workspace yet.
-- [ ] **Step 4: After review approval only**, invoke `recover-terminal` against `/private/tmp/phase9-terminal-result.HCvd7inM/result.json`, `/private/tmp/phase9-core-identities.wUGO9w7f`, and its exact two children. Verify credential/workspace absence and a terminal `failed`, rows-zero, retained-deployment certificate. Do not call the provider.
+- [ ] **Step 4: After review approval only**, invoke `recover-terminal` against `/private/tmp/phase9-terminal-result.HCvd7inM/result.json`, `/private/tmp/phase9-core-identities.wUGO9w7f`, and its exact two children. Verify the workspace and manifest remain exact, the held/named credential inode is zero length, and the certificate is terminal `failed`, rows-zero, identity-bound, and truthful about non-removal. Do not call the provider.

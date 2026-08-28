@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readFile, readdir, realpath } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildFixtureDefinition } from '../../qa-fixtures/definition.mjs';
@@ -12,7 +12,7 @@ import { createPhase9TerminalCertificateWriter } from './terminal-certificate-wr
 const MAX_MANIFEST_BYTES = 32_768;
 const DEFAULT_FILESYSTEM = Object.freeze({ lstat, open, readFile, readdir, realpath });
 const RECOVERY_HELPER_PATH = fileURLToPath(new URL('./terminal-recovery-dirfd-helper.py', import.meta.url));
-const RECOVERY_HELPER_SHA256 = 'f6864df64a778c9f365fa31678acde3b0bcabb7292fb0ce2cabee2d71f5de3a1';
+const RECOVERY_HELPER_SHA256 = 'ba47ea4c3ec1c3642134bc6a0647ead7ed44f4a0a2ef2452717f392911ebdb3a';
 const PYTHON_RUNTIME = '/usr/bin/python3';
 const PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
 const MAX_HELPER_OUTPUT = 1_024;
@@ -24,21 +24,16 @@ export const PHASE9_TERMINAL_RECOVERY_COMMAND = Object.freeze({
 });
 
 export async function executePhase9TerminalRecoveryDisposition({
-  operation, directoryHandle, directoryIdentity, workspaceHandle, workspaceIdentity,
-  credentialHandle, credentialIdentity, name, quarantineName,
+  operation, directoryHandle, directoryIdentity, credentialHandle, credentialIdentity, name,
   helperEnvironment = {}, helperTimeoutMs = 10_000,
 } = {}) {
   if (process.platform !== 'darwin'
-    || !new Set(['zeroize-credential', 'quarantine-workspace']).has(operation)
+    || operation !== 'zeroize-credential'
     || !directoryHandle || !directoryIdentity || typeof name !== 'string'
     || (operation === 'zeroize-credential' && (!credentialHandle || !credentialIdentity || name !== 'credentials.json'))
-    || (operation === 'quarantine-workspace' && (
-      !workspaceHandle || !workspaceIdentity || typeof quarantineName !== 'string'
-    ))
     || typeof helperEnvironment !== 'object' || helperEnvironment === null || Array.isArray(helperEnvironment)
     || Object.keys(helperEnvironment).some(key => !new Set([
       'PHASE9_RECOVERY_TEST_BEFORE_CREDENTIAL_ZEROIZE_MS',
-      'PHASE9_RECOVERY_TEST_BEFORE_WORKSPACE_QUARANTINE_MS',
     ]).has(key))
     || !Number.isSafeInteger(helperTimeoutMs) || helperTimeoutMs < 100 || helperTimeoutMs > 30_000) {
     throw new Error('Terminal recovery disposition helper configuration is invalid.');
@@ -55,16 +50,11 @@ export async function executePhase9TerminalRecoveryDisposition({
     || createHash('sha256').update(pythonBytes).digest('hex') !== PYTHON_SHA256) {
     throw new Error('Terminal recovery disposition helper runtime is invalid.');
   }
-  const request = operation === 'zeroize-credential' ? {
-    version: 2, operation, workspace: directoryIdentity, name, credential: credentialIdentity,
-  } : {
-    version: 2, operation, directory: directoryIdentity, workspaceName: name,
-    quarantineName, workspace: workspaceIdentity,
+  const request = {
+    version: 3, operation, workspace: directoryIdentity, name, credential: credentialIdentity,
   };
   return new Promise((resolvePromise, rejectPromise) => {
-    const stdio = operation === 'quarantine-workspace'
-      ? ['pipe', 'pipe', 'pipe', directoryHandle.fd, workspaceHandle.fd]
-      : ['pipe', 'pipe', 'pipe', directoryHandle.fd, 'ignore', credentialHandle.fd];
+    const stdio = ['pipe', 'pipe', 'pipe', directoryHandle.fd, 'ignore', credentialHandle.fd];
     const child = spawn(PYTHON_RUNTIME, ['-I', '-c', helperSource], {
       env: { LANG: 'C', LC_ALL: 'C', PYTHONHASHSEED: '0', PYTHONNOUSERSITE: '1', ...helperEnvironment },
       detached: true, stdio,
@@ -113,11 +103,6 @@ function exactAbsolutePath(value, name) {
   return value;
 }
 
-function isWithin(path, boundary) {
-  const child = relative(boundary, path);
-  return child === '' || (!child.startsWith(`..${sep}`) && child !== '..' && !isAbsolute(child));
-}
-
 function identity(metadata) {
   return Object.freeze({
     dev: metadata.dev,
@@ -140,16 +125,6 @@ function matches(metadata, expected, type) {
     && (type === 'directory' || (metadata.nlink === expected.nlink && metadata.size === expected.size));
 }
 
-async function absent(filesystem, path) {
-  try {
-    await filesystem.lstat(path);
-    return false;
-  } catch (error) {
-    if (error?.code === 'ENOENT') return true;
-    throw new Error('Terminal recovery absence proof failed.');
-  }
-}
-
 function identityCommitment(value) {
   return createHash('sha256').update(JSON.stringify({
     dev: value.dev, ino: value.ino, uid: value.uid, mode: value.mode, nlink: value.nlink,
@@ -162,10 +137,10 @@ function disposition(phase, credentialIdentity, workspaceIdentity, manifestSha25
     credentialIdentity: identityCommitment(credentialIdentity),
     workspaceIdentity: identityCommitment(workspaceIdentity),
     manifestSha256,
-    originalPathsAbsent: phase === 'quarantined',
+    originalPathsAbsent: false,
     credentialZeroized: phase !== 'validated',
-    workspaceQuarantined: phase === 'quarantined',
-    quarantineRetained: phase === 'quarantined',
+    workspaceQuarantinedInPlace: phase === 'zeroized',
+    workspaceRetained: true,
   });
 }
 
@@ -213,7 +188,10 @@ async function readManifestThroughHandle(handle, expected) {
   if (!matches(before, expected, 'file') || before.size < 1 || before.size > MAX_MANIFEST_BYTES) {
     throw new Error('Terminal recovery manifest identity is invalid.');
   }
-  const text = await handle.readFile('utf8');
+  const buffer = Buffer.alloc(before.size);
+  const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+  if (bytesRead !== buffer.length) throw new Error('Terminal recovery manifest identity changed.');
+  const text = buffer.toString('utf8');
   const after = await handle.stat();
   if (!matches(after, expected, 'file') || text.length < 1) {
     throw new Error('Terminal recovery manifest identity changed.');
@@ -262,7 +240,6 @@ async function finalizePhase9TerminalRecoveryUnsafe({
   workspacePath,
   manifestPath,
   credentialPath,
-  quarantinePath,
   repositoryRoot,
   evidenceDirectory,
   filesystem = DEFAULT_FILESYSTEM,
@@ -273,19 +250,14 @@ async function finalizePhase9TerminalRecoveryUnsafe({
 } = {}) {
   for (const [value, name] of [
     [resultPath, 'result'], [workspacePath, 'workspace'], [manifestPath, 'manifest'],
-    [credentialPath, 'credential'], [quarantinePath, 'quarantine'],
-    [repositoryRoot, 'repository'], [evidenceDirectory, 'evidence'],
+    [credentialPath, 'credential'], [repositoryRoot, 'repository'], [evidenceDirectory, 'evidence'],
   ]) exactAbsolutePath(value, name);
   if (!/^\/private\/tmp\/phase9-core-identities\.[A-Za-z0-9_-]+$/.test(workspacePath)
     || manifestPath !== join(workspacePath, 'manifest.json')
-    || credentialPath !== join(workspacePath, 'credentials.json')
-    || quarantinePath !== workspacePath.replace('/phase9-core-identities.', '/phase9-terminal-quarantine.')
-    || dirname(quarantinePath) !== dirname(workspacePath) || quarantinePath === workspacePath) {
+    || credentialPath !== join(workspacePath, 'credentials.json')) {
     throw new Error('Terminal recovery workspace children are invalid.');
   }
 
-  const workspaceMissing = await absent(filesystem, workspacePath);
-  const quarantineMissing = await absent(filesystem, quarantinePath);
   const writer = await writerFactory({
     resultPath,
     repositoryRoot,
@@ -294,42 +266,18 @@ async function finalizePhase9TerminalRecoveryUnsafe({
     platform,
     allowLegacyFailedRecovery: true,
     allowTerminalReplay: true,
-    allowAbsentWorkspaceRecovery: workspaceMissing,
   });
   try {
     const admitted = writer.result;
     if (!admitted) throw new Error('Terminal recovery requires an exact retained checkpoint.');
     const terminalReplay = admitted.version === 3 && admitted.status === 'failed'
-      && admitted.recoveryDisposition.phase === 'quarantined';
-    if (terminalReplay) {
-      if (!workspaceMissing || quarantineMissing || !(await absent(filesystem, credentialPath))) {
-        throw new Error('Terminal recovery terminal replay conflicts with retained resources.');
-      }
-    }
-    if (admitted.version === 3 && admitted.recoveryDisposition.phase === 'quarantined'
-      && (!workspaceMissing || quarantineMissing)) {
-      throw new Error('Terminal recovery quarantined checkpoint conflicts with retained resources.');
-    }
-    if (workspaceMissing && (quarantineMissing || admitted.version !== 3
-      || !new Set(['zeroized', 'quarantined']).has(admitted.recoveryDisposition.phase))) {
-      throw new Error('Terminal recovery quarantine resume requires exact retained identity validation.');
-    }
-    if (!workspaceMissing && !quarantineMissing) throw new Error('Terminal recovery quarantine path must be absent.');
-    const activeWorkspacePath = workspaceMissing ? quarantinePath : workspacePath;
-    const activeManifestPath = join(activeWorkspacePath, 'manifest.json');
-    const activeCredentialPath = join(activeWorkspacePath, 'credentials.json');
+      && admitted.recoveryDisposition.phase === 'zeroized';
+    const activeWorkspacePath = workspacePath;
+    const activeManifestPath = manifestPath;
+    const activeCredentialPath = credentialPath;
 
     const canonicalWorkspace = await filesystem.realpath(activeWorkspacePath);
     if (canonicalWorkspace !== activeWorkspacePath) throw new Error('Terminal recovery workspace must be canonical.');
-    const [canonicalRepository, canonicalEvidence, canonicalQuarantineParent, canonicalResultParent] = await Promise.all([
-      filesystem.realpath(repositoryRoot), filesystem.realpath(evidenceDirectory),
-      filesystem.realpath(dirname(quarantinePath)), filesystem.realpath(dirname(resultPath)),
-    ]);
-    const canonicalQuarantine = join(canonicalQuarantineParent, basename(quarantinePath));
-    if (canonicalQuarantine !== quarantinePath || isWithin(canonicalQuarantine, canonicalRepository)
-      || isWithin(canonicalQuarantine, canonicalEvidence) || isWithin(canonicalQuarantine, canonicalResultParent)) {
-      throw new Error('Terminal recovery quarantine must be canonical and external.');
-    }
     const workspaceMetadata = await filesystem.lstat(activeWorkspacePath);
     if (!workspaceMetadata.isDirectory?.() || workspaceMetadata.isSymbolicLink?.()
       || workspaceMetadata.uid !== process.getuid() || (workspaceMetadata.mode & 0o777) !== 0o700) {
@@ -359,17 +307,34 @@ async function finalizePhase9TerminalRecoveryUnsafe({
     }
     const manifestHandle = await filesystem.open(activeManifestPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
     const workspaceHandle = await filesystem.open(activeWorkspacePath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
-    const parentPath = dirname(workspacePath);
-    const parentMetadata = await filesystem.lstat(parentPath);
-    const parentIdentity = identity(parentMetadata);
-    if (!matches(parentMetadata, parentIdentity, 'directory') || parentIdentity.uid !== 0
-      || parentIdentity.mode !== 0o777) throw new Error('Terminal recovery parent identity is invalid.');
-    const parentHandle = await filesystem.open(parentPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
     const executeDisposition = dispositionExecutor ?? executePhase9TerminalRecoveryDisposition;
     let credentialHandle = null;
     try {
       credentialHandle = await filesystem.open(activeCredentialPath, fsConstants.O_RDWR | fsConstants.O_NOFOLLOW);
-      const manifestReceipt = await readManifestThroughHandle(manifestHandle, manifestIdentity);
+      const validateRetained = async requireZeroized => {
+        const [namedWorkspace, heldWorkspace, namedManifest, namedCredential, heldCredential, retainedEntries] = await Promise.all([
+          filesystem.lstat(activeWorkspacePath), workspaceHandle.stat(), filesystem.lstat(activeManifestPath),
+          filesystem.lstat(activeCredentialPath), credentialHandle.stat(), filesystem.readdir(activeWorkspacePath),
+        ]);
+        if (!matches(namedWorkspace, workspaceIdentity, 'directory')
+          || !matches(heldWorkspace, workspaceIdentity, 'directory')
+          || !matches(namedManifest, manifestIdentity, 'file')
+          || namedCredential.dev !== credentialIdentity.dev || namedCredential.ino !== credentialIdentity.ino
+          || heldCredential.dev !== credentialIdentity.dev || heldCredential.ino !== credentialIdentity.ino
+          || !namedCredential.isFile?.() || namedCredential.isSymbolicLink?.()
+          || !heldCredential.isFile?.() || heldCredential.isSymbolicLink?.()
+          || namedCredential.uid !== credentialIdentity.uid || heldCredential.uid !== credentialIdentity.uid
+          || (namedCredential.mode & 0o777) !== credentialIdentity.mode
+          || (heldCredential.mode & 0o777) !== credentialIdentity.mode
+          || namedCredential.nlink !== 1 || heldCredential.nlink !== 1
+          || namedCredential.size !== heldCredential.size
+          || (requireZeroized ? namedCredential.size !== 0 : namedCredential.size !== credentialIdentity.size)
+          || retainedEntries.sort().join(',') !== 'credentials.json,manifest.json') {
+          throw new Error('Terminal recovery retained workspace identity changed.');
+        }
+        return readManifestThroughHandle(manifestHandle, manifestIdentity);
+      };
+      let manifestReceipt = await validateRetained(credentialMetadata.size === 0);
       const recoveredDisposition = disposition(credentialMetadata.size === 0 ? 'zeroized' : 'validated', credentialIdentity, workspaceIdentity, manifestReceipt.sha256);
       let checkpoint = migratedCheckpoint(admitted, recoveredDisposition);
       if (admitted.version === 3 && (
@@ -378,15 +343,12 @@ async function finalizePhase9TerminalRecoveryUnsafe({
         || admitted.recoveryDisposition.manifestSha256 !== recoveredDisposition.manifestSha256
       )) throw new Error('Terminal recovery retained identity commitment changed.');
       assertCertificateManifestConsistency(checkpoint, manifestReceipt.manifest);
-      const heldWorkspace = await workspaceHandle.stat();
-      if (!matches(heldWorkspace, workspaceIdentity, 'directory')) throw new Error('Terminal recovery workspace identity changed.');
-      if (!matches(await credentialHandle.stat(), credentialIdentity, 'file')) {
-        throw new Error('Terminal recovery credential identity changed.');
-      }
 
       if (admitted.version === 1 || admitted.version === 2) {
+        manifestReceipt = await validateRetained(credentialMetadata.size === 0);
         try { await writer.write(checkpoint); } catch { throw new Error('Terminal recovery checkpoint publication failed.'); }
       }
+      let didZeroize = false;
       if (credentialMetadata.size !== 0) {
         let zeroized;
         try { zeroized = await executeDisposition({
@@ -395,51 +357,24 @@ async function finalizePhase9TerminalRecoveryUnsafe({
           name: basename(credentialPath), helperEnvironment: dispositionHelperEnvironment,
         }); } catch { throw new Error('Terminal recovery credential zeroization failed.'); }
         if (zeroized !== true) throw new Error('Terminal recovery credential zeroization failed.');
+        didZeroize = true;
       }
-      const zeroizedHeld = await credentialHandle.stat();
-      const zeroizedNamed = await filesystem.lstat(activeCredentialPath);
-      if (!zeroizedHeld.isFile?.() || zeroizedHeld.isSymbolicLink?.() || !zeroizedNamed.isFile?.()
-        || zeroizedNamed.isSymbolicLink?.() || zeroizedHeld.dev !== credentialIdentity.dev
-        || zeroizedHeld.ino !== credentialIdentity.ino || zeroizedNamed.dev !== credentialIdentity.dev
-        || zeroizedNamed.ino !== credentialIdentity.ino || zeroizedHeld.size !== 0 || zeroizedNamed.size !== 0) {
-        throw new Error('Terminal recovery credential zeroization is uncertain.');
-      }
+      manifestReceipt = await validateRetained(true);
       checkpoint = Object.freeze({
         ...checkpoint,
         recoveryDisposition: disposition('zeroized', credentialIdentity, workspaceIdentity, manifestReceipt.sha256),
       });
-      if (!terminalReplay && admitted.recoveryDisposition?.phase !== 'quarantined') {
+      if (!terminalReplay && (didZeroize
+        || (admitted.version === 3 && admitted.recoveryDisposition.phase === 'validated'))) {
+        manifestReceipt = await validateRetained(true);
         try { await writer.write(checkpoint); } catch { throw new Error('Terminal recovery zeroization checkpoint failed.'); }
       }
-      const namedWorkspace = await filesystem.lstat(activeWorkspacePath);
-      if (!matches(namedWorkspace, workspaceIdentity, 'directory')) {
-        throw new Error('Terminal recovery workspace pathname changed.');
-      }
-      if (!workspaceMissing) {
-        try { await executeDisposition({
-          operation: 'quarantine-workspace', directoryHandle: parentHandle, directoryIdentity: parentIdentity,
-          workspaceHandle, workspaceIdentity, name: basename(workspacePath), quarantineName: basename(quarantinePath),
-          helperEnvironment: dispositionHelperEnvironment,
-        }); } catch { throw new Error('Terminal recovery workspace quarantine failed.'); }
-        if (!(await absent(filesystem, workspacePath)) || !(await absent(filesystem, credentialPath))
-          || await absent(filesystem, quarantinePath)) {
-          throw new Error('Terminal recovery workspace quarantine failed.');
-        }
-      }
-      if (!(await absent(filesystem, workspacePath)) || !(await absent(filesystem, credentialPath))) {
-        throw new Error('Terminal recovery original path absence is uncertain.');
-      }
-      const quarantined = await filesystem.lstat(quarantinePath);
-      if (!matches(quarantined, workspaceIdentity, 'directory')) throw new Error('Terminal recovery quarantine identity changed.');
       if (terminalReplay) {
+        await validateRetained(true);
         await writer.revalidate();
         return summary(admitted);
       }
-      checkpoint = Object.freeze({
-        ...checkpoint,
-        recoveryDisposition: disposition('quarantined', credentialIdentity, workspaceIdentity, manifestReceipt.sha256),
-      });
-      try { await writer.write(checkpoint); } catch { throw new Error('Terminal recovery quarantine checkpoint failed.'); }
+      await validateRetained(true);
       const terminal = terminalFailure(checkpoint);
       try { await writer.write(terminal); } catch { throw new Error('Terminal recovery final promotion failed.'); }
       return summary(terminal);
@@ -447,7 +382,6 @@ async function finalizePhase9TerminalRecoveryUnsafe({
       await credentialHandle?.close().catch(() => {});
       await manifestHandle.close().catch(() => {});
       await workspaceHandle.close().catch(() => {});
-      await parentHandle.close().catch(() => {});
     }
   } finally {
     await writer.close();

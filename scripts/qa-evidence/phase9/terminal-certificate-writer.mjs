@@ -146,21 +146,19 @@ function validateCertificate(input, {
   if (version3) {
     exactKeys(value.recoveryDisposition, [
       'phase', 'credentialIdentity', 'workspaceIdentity', 'manifestSha256',
-      'originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantined', 'quarantineRetained',
+      'originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantinedInPlace', 'workspaceRetained',
     ], 'recoveryDisposition');
-    if (!new Set(['validated', 'zeroized', 'quarantined']).has(value.recoveryDisposition.phase)
+    if (!new Set(['validated', 'zeroized']).has(value.recoveryDisposition.phase)
       || ['credentialIdentity', 'workspaceIdentity', 'manifestSha256'].some(key => (
         typeof value.recoveryDisposition[key] !== 'string' || !/^[a-f0-9]{64}$/.test(value.recoveryDisposition[key])
       ))
-      || ['originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantined', 'quarantineRetained'].some(key => (
+      || ['originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantinedInPlace', 'workspaceRetained'].some(key => (
         typeof value.recoveryDisposition[key] !== 'boolean'
       ))) throw new Error('Terminal certificate recovery disposition is invalid.');
     const expected = value.recoveryDisposition.phase === 'validated'
-      ? [false, false, false, false]
-      : value.recoveryDisposition.phase === 'zeroized'
-        ? [false, true, false, false]
-        : [true, true, true, true];
-    if (['originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantined', 'quarantineRetained']
+      ? [false, false, false, true]
+      : [false, true, true, true];
+    if (['originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantinedInPlace', 'workspaceRetained']
       .some((key, index) => value.recoveryDisposition[key] !== expected[index])
       || value.lifecycle.credentialRemoved !== false || value.lifecycle.workspaceRemoved !== false
       || value.evidence.rows !== 0 || value.evidence.written !== false) {
@@ -268,7 +266,7 @@ async function readCheckpoint(filesystem, path, location = 'result', {
     const isLegacyRecovery = allowLegacyFailedRecovery && parsed.version === 1 && parsed.status === 'failed';
     const isTerminalReplay = allowTerminalReplay && parsed.status === 'failed' && (
       (parsed.version === 2 && parsed.lifecycle.credentialRemoved === true && parsed.lifecycle.workspaceRemoved === true)
-      || (parsed.version === 3 && parsed.recoveryDisposition.phase === 'quarantined')
+      || (parsed.version === 3 && parsed.recoveryDisposition.phase === 'zeroized')
     );
     if (!isCheckpoint && !isLegacyRecovery && !isTerminalReplay) {
       throw new Error('Terminal certificate checkpoint is not resumable.');
@@ -281,9 +279,21 @@ async function readCheckpoint(filesystem, path, location = 'result', {
       allowLegacyPrimary: allowLegacyFailedRecovery && parsed.primaryCategory === 'legacy-primary-unavailable',
       allowRecoveryDisposition: allowLegacyFailedRecovery,
     }) !== text) throw new Error('Terminal certificate checkpoint is not canonical.');
+    const [afterHeld, named] = await Promise.all([handle.stat(), filesystem.lstat(path)]);
+    for (const current of [afterHeld, named]) {
+      if (!current.isFile() || current.isSymbolicLink() || current.dev !== metadata.dev
+        || current.ino !== metadata.ino || current.uid !== metadata.uid
+        || current.nlink !== metadata.nlink || (current.mode & 0o777) !== (metadata.mode & 0o777)
+        || current.size !== metadata.size) {
+        throw new Error('Terminal certificate checkpoint identity changed.');
+      }
+    }
     return Object.freeze({
       state: isTerminalReplay ? 'terminal' : 'checkpoint', location, size: Buffer.byteLength(text),
-      sha256: createHash('sha256').update(text).digest('hex'), document: parsed,
+      sha256: createHash('sha256').update(text).digest('hex'),
+      dev: metadata.dev, ino: metadata.ino, uid: metadata.uid,
+      mode: metadata.mode & 0o777, nlink: metadata.nlink,
+      document: parsed,
     });
   } finally { await handle.close(); }
 }
@@ -341,7 +351,9 @@ async function readCommittedResult({
     }
     return Object.freeze({
       state: validated.status === 'closure-pending' ? 'checkpoint' : 'terminal',
-      location: 'result', size: receipt.size, sha256: receipt.sha256, document: parsed,
+      location: 'result', size: receipt.size, sha256: receipt.sha256,
+      dev: receipt.dev, ino: receipt.ino, uid: receipt.uid, mode: receipt.mode, nlink: receipt.nlink,
+      document: parsed,
     });
   } catch {
     throw new Error('Terminal certificate committed result is invalid.');
@@ -506,9 +518,13 @@ export async function createPhase9TerminalCertificateWriter({
     get result() { return expected.document ?? null; },
     async revalidate() {
       await revalidateParent();
-      const current = await readCheckpoint(filesystem, resultPath, 'result', recoveryAdmission);
+      const currentPath = expected.location === 'recovery' ? recoveryPath : resultPath;
+      const current = await readCheckpoint(filesystem, currentPath, expected.location, recoveryAdmission);
       if (current.state !== expected.state || current.sha256 !== expected.sha256
-        || current.size !== expected.size) throw new Error('Terminal certificate replay identity changed.');
+        || current.size !== expected.size || current.dev !== expected.dev || current.ino !== expected.ino
+        || current.uid !== expected.uid || current.mode !== expected.mode || current.nlink !== expected.nlink) {
+        throw new Error('Terminal certificate replay identity changed.');
+      }
       return current.document;
     },
     async write(certificate) {
