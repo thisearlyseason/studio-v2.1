@@ -67,6 +67,11 @@ def main():
     require_fd(CREDENTIAL_FD, credential, "file")
     require_named(WORKSPACE_FD, "credentials.json", credential, "file")
     os.ftruncate(CREDENTIAL_FD, 0)
+    fail_after_truncate = os.environ.get("PHASE9_RECOVERY_TEST_FAIL_AFTER_CREDENTIAL_TRUNCATE")
+    if fail_after_truncate is not None:
+        if fail_after_truncate != "1":
+            raise ValueError("invalid-test-failure")
+        raise ValueError("injected-post-truncate-failure")
     if hasattr(os, "fdatasync"):
         os.fdatasync(CREDENTIAL_FD)
     os.fsync(CREDENTIAL_FD)

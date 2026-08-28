@@ -7704,11 +7704,13 @@ test('phase 9 terminal recovery preserves resumable in-place state across zeroiz
 
   const zeroizedThenFailed = phase9RecoveryWorkspace();
   const zeroizedThenFailedWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  let zeroizationAttempts = 0;
   try {
     await assert.rejects(finalizePhase9TerminalRecovery({
       ...common(zeroizedThenFailed), writerFactory: zeroizedThenFailedWriter.factory,
       dispositionExecutor: async request => {
         assert.equal(request.operation, 'zeroize-credential');
+        zeroizationAttempts += 1;
         await fsPromises.truncate(zeroizedThenFailed.credentialPath, 0);
         throw new Error('injected post-zeroization crash');
       },
@@ -7716,9 +7718,15 @@ test('phase 9 terminal recovery preserves resumable in-place state across zeroiz
     assert.equal(statSync(zeroizedThenFailed.credentialPath).size, 0);
     const resumedAfterZeroization = await finalizePhase9TerminalRecovery({
       ...common(zeroizedThenFailed), writerFactory: zeroizedThenFailedWriter.factory,
-      dispositionExecutor: async () => { throw new Error('must not repeat completed zeroization'); },
+      dispositionExecutor: async request => {
+        assert.equal(request.operation, 'zeroize-credential');
+        assert.equal(statSync(zeroizedThenFailed.credentialPath).size, 0);
+        zeroizationAttempts += 1;
+        return true;
+      },
     });
     assert.equal(resumedAfterZeroization.status, 'failed');
+    assert.equal(zeroizationAttempts, 2);
     assert.equal(existsSync(zeroizedThenFailed.workspacePath), true);
   } finally {
     cleanupPhase9RecoveryWorkspace(zeroizedThenFailed);
@@ -7908,6 +7916,88 @@ test('phase 9 terminal recovery rejects inconsistent post-operation retained ide
       cleanupPhase9RecoveryWorkspace(childSwap);
       rmSync(stolenPath, { force: true });
     }
+  }
+
+  for (const swapTiming of ['before-held-read', 'after-held-read']) {
+    const manifestRace = phase9RecoveryWorkspace();
+    const manifestWriter = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+    const stolenManifest = `${manifestRace.manifestPath}.${swapTiming}.stolen`;
+    let swapped = false;
+    try {
+      await assert.rejects(finalizePhase9TerminalRecovery({
+        ...manifestRace,
+        repositoryRoot: resolve(testDirectory, '..'),
+        evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+        writerFactory: manifestWriter.factory,
+        dispositionExecutor: async request => {
+          assert.equal(request.operation, 'zeroize-credential');
+          await fsPromises.truncate(manifestRace.credentialPath, 0);
+          return true;
+        },
+        filesystem: {
+          ...fsPromises,
+          async open(path, flags) {
+            const handle = await fsPromises.open(path, flags);
+            if (path !== manifestRace.manifestPath) return handle;
+            return new Proxy(handle, {
+              get(target, key) {
+                if (key === 'read') return async (...args) => {
+                  const shouldSwap = !swapped && manifestWriter.writes.length === 2;
+                  if (shouldSwap && swapTiming === 'before-held-read') {
+                    renameSync(manifestRace.manifestPath, stolenManifest);
+                    writeFileSync(manifestRace.manifestPath, 'foreign-manifest\n', { mode: 0o600, flag: 'wx' });
+                    swapped = true;
+                  }
+                  const result = await target.read(...args);
+                  if (shouldSwap && swapTiming === 'after-held-read') {
+                    renameSync(manifestRace.manifestPath, stolenManifest);
+                    writeFileSync(manifestRace.manifestPath, 'foreign-manifest\n', { mode: 0o600, flag: 'wx' });
+                    swapped = true;
+                  }
+                  return result;
+                };
+                const value = target[key];
+                return typeof value === 'function' ? value.bind(target) : value;
+              },
+            });
+          },
+        },
+      }), /terminal recovery failed/i);
+      assert.equal(swapped, true);
+      assert.equal(readFileSync(manifestRace.manifestPath, 'utf8'), 'foreign-manifest\n');
+      assert.equal(manifestWriter.document.status, 'closure-pending');
+      assert.equal(manifestWriter.document.recoveryDisposition.phase, 'zeroized');
+    } finally {
+      cleanupPhase9RecoveryWorkspace(manifestRace);
+      rmSync(stolenManifest, { force: true });
+    }
+  }
+});
+
+darwinRuntimeTest('phase 9 terminal recovery resumes durable sync after a helper crash immediately after truncate', async () => {
+  const { finalizePhase9TerminalRecovery } = await import('../scripts/qa-evidence/phase9/terminal-recovery-finalizer.mjs');
+  const paths = phase9RecoveryWorkspace();
+  const writer = phase9MemoryRecoveryWriter(phase9LegacyRecoveryCertificate());
+  const common = {
+    ...paths,
+    repositoryRoot: resolve(testDirectory, '..'),
+    evidenceDirectory: resolve(testDirectory, '..', phase9EvidenceDirectorySuffix),
+    writerFactory: writer.factory,
+  };
+  try {
+    await assert.rejects(finalizePhase9TerminalRecovery({
+      ...common,
+      dispositionHelperEnvironment: { PHASE9_RECOVERY_TEST_FAIL_AFTER_CREDENTIAL_TRUNCATE: '1' },
+    }), /terminal recovery failed/i);
+    assert.equal(statSync(paths.credentialPath).size, 0);
+    assert.equal(writer.document.status, 'closure-pending');
+    assert.equal(writer.document.recoveryDisposition.phase, 'validated');
+    const resumed = await finalizePhase9TerminalRecovery(common);
+    assert.equal(resumed.status, 'failed');
+    assert.equal(writer.document.recoveryDisposition.phase, 'zeroized');
+    assert.equal(statSync(paths.credentialPath).size, 0);
+  } finally {
+    cleanupPhase9RecoveryWorkspace(paths);
   }
 });
 
@@ -9322,7 +9412,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 64);
+  assert.equal(darwinRuntimeTests.length, 65);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

@@ -12,7 +12,7 @@ import { createPhase9TerminalCertificateWriter } from './terminal-certificate-wr
 const MAX_MANIFEST_BYTES = 32_768;
 const DEFAULT_FILESYSTEM = Object.freeze({ lstat, open, readFile, readdir, realpath });
 const RECOVERY_HELPER_PATH = fileURLToPath(new URL('./terminal-recovery-dirfd-helper.py', import.meta.url));
-const RECOVERY_HELPER_SHA256 = 'ba47ea4c3ec1c3642134bc6a0647ead7ed44f4a0a2ef2452717f392911ebdb3a';
+const RECOVERY_HELPER_SHA256 = 'cf9cbb07cc80304e1607b3e7f26c48c0c5783b7ca4a207b7c551ef95a1f01b95';
 const PYTHON_RUNTIME = '/usr/bin/python3';
 const PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
 const MAX_HELPER_OUTPUT = 1_024;
@@ -34,6 +34,7 @@ export async function executePhase9TerminalRecoveryDisposition({
     || typeof helperEnvironment !== 'object' || helperEnvironment === null || Array.isArray(helperEnvironment)
     || Object.keys(helperEnvironment).some(key => !new Set([
       'PHASE9_RECOVERY_TEST_BEFORE_CREDENTIAL_ZEROIZE_MS',
+      'PHASE9_RECOVERY_TEST_FAIL_AFTER_CREDENTIAL_TRUNCATE',
     ]).has(key))
     || !Number.isSafeInteger(helperTimeoutMs) || helperTimeoutMs < 100 || helperTimeoutMs > 30_000) {
     throw new Error('Terminal recovery disposition helper configuration is invalid.');
@@ -311,14 +312,20 @@ async function finalizePhase9TerminalRecoveryUnsafe({
     let credentialHandle = null;
     try {
       credentialHandle = await filesystem.open(activeCredentialPath, fsConstants.O_RDWR | fsConstants.O_NOFOLLOW);
-      const validateRetained = async requireZeroized => {
-        const [namedWorkspace, heldWorkspace, namedManifest, namedCredential, heldCredential, retainedEntries] = await Promise.all([
+      const inspectRetained = async requireZeroized => {
+        const snapshot = async () => Promise.all([
           filesystem.lstat(activeWorkspacePath), workspaceHandle.stat(), filesystem.lstat(activeManifestPath),
-          filesystem.lstat(activeCredentialPath), credentialHandle.stat(), filesystem.readdir(activeWorkspacePath),
+          manifestHandle.stat(), filesystem.lstat(activeCredentialPath), credentialHandle.stat(),
+          filesystem.readdir(activeWorkspacePath),
         ]);
+        const validateSnapshot = ([
+          namedWorkspace, heldWorkspace, namedManifest, heldManifest,
+          namedCredential, heldCredential, retainedEntries,
+        ]) => {
         if (!matches(namedWorkspace, workspaceIdentity, 'directory')
           || !matches(heldWorkspace, workspaceIdentity, 'directory')
           || !matches(namedManifest, manifestIdentity, 'file')
+          || !matches(heldManifest, manifestIdentity, 'file')
           || namedCredential.dev !== credentialIdentity.dev || namedCredential.ino !== credentialIdentity.ino
           || heldCredential.dev !== credentialIdentity.dev || heldCredential.ino !== credentialIdentity.ino
           || !namedCredential.isFile?.() || namedCredential.isSymbolicLink?.()
@@ -332,10 +339,24 @@ async function finalizePhase9TerminalRecoveryUnsafe({
           || retainedEntries.sort().join(',') !== 'credentials.json,manifest.json') {
           throw new Error('Terminal recovery retained workspace identity changed.');
         }
-        return readManifestThroughHandle(manifestHandle, manifestIdentity);
+        };
+        validateSnapshot(await snapshot());
+        const receipt = await readManifestThroughHandle(manifestHandle, manifestIdentity);
+        validateSnapshot(await snapshot());
+        return receipt;
+      };
+      const validateRetained = async requireZeroized => {
+        const first = await inspectRetained(requireZeroized);
+        const second = await inspectRetained(requireZeroized);
+        if (first.sha256 !== second.sha256) {
+          throw new Error('Terminal recovery retained manifest changed.');
+        }
+        return second;
       };
       let manifestReceipt = await validateRetained(credentialMetadata.size === 0);
-      const recoveredDisposition = disposition(credentialMetadata.size === 0 ? 'zeroized' : 'validated', credentialIdentity, workspaceIdentity, manifestReceipt.sha256);
+      const durableZeroizationCheckpoint = admitted.version === 3
+        && admitted.recoveryDisposition.phase === 'zeroized';
+      const recoveredDisposition = disposition(durableZeroizationCheckpoint ? 'zeroized' : 'validated', credentialIdentity, workspaceIdentity, manifestReceipt.sha256);
       let checkpoint = migratedCheckpoint(admitted, recoveredDisposition);
       if (admitted.version === 3 && (
         admitted.recoveryDisposition.credentialIdentity !== recoveredDisposition.credentialIdentity
@@ -349,7 +370,7 @@ async function finalizePhase9TerminalRecoveryUnsafe({
         try { await writer.write(checkpoint); } catch { throw new Error('Terminal recovery checkpoint publication failed.'); }
       }
       let didZeroize = false;
-      if (credentialMetadata.size !== 0) {
+      if (!durableZeroizationCheckpoint) {
         let zeroized;
         try { zeroized = await executeDisposition({
           operation: 'zeroize-credential', directoryHandle: workspaceHandle,
