@@ -64,6 +64,11 @@ const RUNNER_SESSION_LIMIT = 100;
 const RUNNER_ENTRYPOINT_LIMIT = 131_072;
 const RUNNER_CONFIG_LIMIT = 65_536;
 const RUNNER_CONFIG_TOTAL_LIMIT = 131_072;
+const RUNNER_FAILURE_CATEGORIES = new Set(['scenario-runner-invalid', 'scenario-failed']);
+const RUNNER_FAILURE_STAGES = new Set([
+  'authorization', 'acquisition', 'receipt', 'recorder', 'viewport', 'login',
+  'scenario-action', 'row-emission', 'release',
+]);
 const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
 const PROCESS_INSPECTOR_PATH = fileURLToPath(new URL('./darwin-process-inspector.py', import.meta.url));
 const PROCESS_INSPECTOR_SHA256 = '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463';
@@ -1066,7 +1071,12 @@ function requireRunnerMessage(value, expectedKeys) {
 }
 
 function requireRunnerSessions(value) {
-  const sessions = snapshotSessionIds(value, 'scenario-runner-invalid');
+  let sessions;
+  try {
+    sessions = snapshotSessionIds(value, 'scenario-runner-invalid');
+  } catch {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
   if (sessions.length > RUNNER_SESSION_LIMIT) throw new GuardianFailure('scenario-runner-invalid');
   if (sessions.some((session, index) => index > 0 && sessions[index - 1].localeCompare(session) >= 0)) {
     throw new GuardianFailure('scenario-runner-invalid');
@@ -1106,6 +1116,58 @@ function requireOwnershipPayload(message) {
   }
   const launchReceipts = requireLaunchReceipts(message.launchReceipts, browserSessions);
   return Object.freeze({ browserSessions, attachedBrowserSessions, launchReceipts });
+}
+
+export function validateRunnerFailureTerminal(message, accepted) {
+  requireRunnerMessage(message, [
+    'attachedBrowserSessions', 'browserSessions', 'category', 'launchReceipts',
+    'pendingBrowserSession', 'phase', 'releasedBrowserSessions', 'sequence', 'stage', 'type', 'version',
+  ]);
+  if (!accepted || typeof accepted !== 'object' || Array.isArray(accepted)
+    || message.type !== 'failure' || message.version !== 4
+    || message.phase !== accepted.phase || message.sequence !== accepted.ownershipSequence
+    || !RUNNER_FAILURE_CATEGORIES.has(message.category) || !RUNNER_FAILURE_STAGES.has(message.stage)
+    || (new Set(['login', 'scenario-action']).has(message.stage)
+      ? message.category !== 'scenario-failed'
+      : message.category !== 'scenario-runner-invalid')
+    || (accepted.ownershipComplete === true && message.stage !== 'row-emission')
+    || accepted.terminal) throw new GuardianFailure('scenario-runner-invalid');
+  const expectedPending = accepted.pendingOwnershipIntent?.session ?? null;
+  if ((message.stage === 'acquisition' && expectedPending === null)
+    || (expectedPending !== null
+      && !new Set(['authorization', 'acquisition', 'receipt']).has(message.stage))) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  if ((message.pendingBrowserSession !== null
+      && (typeof message.pendingBrowserSession !== 'string'
+        || requireRunnerSessions([message.pendingBrowserSession]).length !== 1))
+    || message.pendingBrowserSession !== expectedPending) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  const actual = Object.freeze({
+    browserSessions: Object.freeze(requireRunnerSessions(message.browserSessions)),
+    attachedBrowserSessions: Object.freeze(requireRunnerSessions(message.attachedBrowserSessions)),
+    releasedBrowserSessions: Object.freeze(requireRunnerSessions(message.releasedBrowserSessions)),
+  });
+  const withReceipts = Object.freeze({
+    ...actual,
+    launchReceipts: requireLaunchReceipts(message.launchReceipts, actual.browserSessions),
+  });
+  const expected = Object.freeze({
+    browserSessions: Object.freeze([...accepted.activeAnnouncedSessions].sort()),
+    attachedBrowserSessions: Object.freeze([...accepted.attachedSessions].sort()),
+    releasedBrowserSessions: Object.freeze([...accepted.releasedSessions].sort()),
+    launchReceipts: Object.freeze([...accepted.activeAnnouncedReceipts.values()].sort((left, right) => (
+      left.session.localeCompare(right.session)
+    ))),
+  });
+  if (!isDeepStrictEqual(withReceipts, expected)) throw new GuardianFailure('scenario-runner-invalid');
+  return Object.freeze({
+    ok: false, category: message.category, stage: message.stage,
+    pendingBrowserSession: message.pendingBrowserSession,
+    ...withReceipts,
+    rows: Object.freeze([]),
+  });
 }
 
 function requirePhaseRow(value, phase, index) {
@@ -2261,6 +2323,21 @@ function spawnRunnerChild({
       ownership = streamedOwnership;
       return;
     }
+    if (message?.type === 'failure') {
+      terminal = validateRunnerFailureTerminal(message, {
+        phase,
+        ownershipSequence,
+        pendingOwnershipIntent,
+        activeAnnouncedSessions,
+        attachedSessions,
+        activeAnnouncedReceipts,
+        releasedSessions,
+        ownershipComplete: ownership !== null,
+        terminal,
+      });
+      settleCompletion(terminal);
+      return;
+    }
     if (message?.type === 'row') {
       requireRunnerMessage(message, [
         'index', 'phase', 'row', 'sessions', 'type', 'version',
@@ -2509,6 +2586,7 @@ export function createLifecycleGuardian({
   const history = [state];
   let running = false;
   let interrupted = false;
+  let scenarioFailureAttribution = null;
   let emergencyPromise = null;
   let releaseAbortGate = null;
   const abortGate = new INTRINSIC_PROMISE(resolve => { releaseAbortGate = resolve; });
@@ -3119,9 +3197,10 @@ export function createLifecycleGuardian({
   const recover = (category, isInterruption = false) => {
     if (emergencyPromise) return emergencyPromise;
     interrupted ||= isInterruption;
-    const primaryStage = state;
+    const primaryCategory = scenarioFailureAttribution?.category ?? category;
+    const primaryStage = scenarioFailureAttribution?.stage ?? state;
     const recoveryFailureSummary = values => failureSummary({
-      primaryCategory: category,
+      primaryCategory,
       primaryStage,
       ...values,
     });
@@ -3429,10 +3508,18 @@ export function createLifecycleGuardian({
         settle(rejectCompletion, error);
       }
     });
+    if (completed?.ok === false
+      && RUNNER_FAILURE_CATEGORIES.has(completed.category)
+      && RUNNER_FAILURE_STAGES.has(completed.stage)) {
+      scenarioFailureAttribution = Object.freeze({
+        category: completed.category,
+        stage: completed.stage,
+      });
+    }
     if (!completed) throw new GuardianFailure('scenario-failed');
     if (!(await joinScenario(handle))) throw new GuardianFailure('scenario-closure-failed');
     activeScenario = null;
-    if (completed.ok !== true) throw new GuardianFailure('scenario-failed');
+    if (completed.ok !== true) throw new GuardianFailure(completed.category ?? 'scenario-failed');
     await validateRetainedBrowserBoundary();
     return completed.rows;
   };

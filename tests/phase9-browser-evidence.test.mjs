@@ -6155,6 +6155,127 @@ test('phase 9 lifecycle guardian cleans exact resources when either scenario pha
   });
 });
 
+test('phase 9 protocol-v4 failure terminal validates every closed stage against exact ownership', async () => {
+  const { validateRunnerFailureTerminal } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof validateRunnerFailureTerminal, 'function');
+  const session = 'phase9-owned-failure';
+  const receipt = { session, daemonPid: 910001, chromeMainPid: 910002 };
+  const accepted = {
+    phase: 'before-transition',
+    ownershipSequence: 1,
+    pendingOwnershipIntent: null,
+    activeAnnouncedSessions: new Set([session]),
+    attachedSessions: new Set(),
+    activeAnnouncedReceipts: new Map([[session, receipt]]),
+    releasedSessions: new Set(),
+    ownershipComplete: false,
+    terminal: null,
+  };
+  for (const [stage, category] of [
+    ['authorization', 'scenario-runner-invalid'],
+    ['acquisition', 'scenario-runner-invalid'],
+    ['receipt', 'scenario-runner-invalid'],
+    ['recorder', 'scenario-runner-invalid'],
+    ['viewport', 'scenario-runner-invalid'],
+    ['login', 'scenario-failed'],
+    ['scenario-action', 'scenario-failed'],
+    ['row-emission', 'scenario-runner-invalid'],
+    ['release', 'scenario-runner-invalid'],
+  ]) {
+    const stageAccepted = stage === 'acquisition' ? {
+      ...accepted,
+      pendingOwnershipIntent: { sequence: 1, session: 'phase9-pending-failure' },
+      activeAnnouncedSessions: new Set(),
+      activeAnnouncedReceipts: new Map(),
+    } : accepted;
+    const terminal = validateRunnerFailureTerminal({
+      version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
+      category, stage,
+      pendingBrowserSession: stageAccepted.pendingOwnershipIntent?.session ?? null,
+      browserSessions: [...stageAccepted.activeAnnouncedSessions], attachedBrowserSessions: [],
+      launchReceipts: [...stageAccepted.activeAnnouncedReceipts.values()], releasedBrowserSessions: [],
+    }, stageAccepted);
+    assert.deepEqual({ ok: terminal.ok, category: terminal.category, stage: terminal.stage }, {
+      ok: false, category, stage,
+    });
+  }
+});
+
+test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and sensitive payloads', async t => {
+  const { validateRunnerFailureTerminal } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof validateRunnerFailureTerminal, 'function');
+  const session = 'phase9-owned-failure';
+  const receipt = { session, daemonPid: 920001, chromeMainPid: 920002 };
+  const accepted = {
+    phase: 'before-transition', ownershipSequence: 1, pendingOwnershipIntent: null,
+    activeAnnouncedSessions: new Set([session]), attachedSessions: new Set(),
+    activeAnnouncedReceipts: new Map([[session, receipt]]), releasedSessions: new Set(),
+    ownershipComplete: false, terminal: null,
+  };
+  const valid = {
+    version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
+    category: 'scenario-failed', stage: 'login', pendingBrowserSession: null,
+    browserSessions: [session], attachedBrowserSessions: [], launchReceipts: [receipt],
+    releasedBrowserSessions: [],
+  };
+  const cases = [
+    ['extra key', { ...valid, rawError: 'secret-token-and-url' }, accepted],
+    ['category', { ...valid, category: 'operation-failed' }, accepted],
+    ['stage', { ...valid, stage: 'https://secret.invalid/path' }, accepted],
+    ['phase', { ...valid, phase: 'after-transition' }, accepted],
+    ['sequence', { ...valid, sequence: 2 }, accepted],
+    ['pending', { ...valid, pendingBrowserSession: session }, accepted],
+    ['missing session', { ...valid, browserSessions: [] }, accepted],
+    ['duplicate session', { ...valid, browserSessions: [session, session] }, accepted],
+    ['forged receipt', { ...valid, launchReceipts: [{ ...receipt, chromeMainPid: 920003 }] }, accepted],
+    ['stale release', { ...valid, releasedBrowserSessions: [session] }, accepted],
+    ['acquisition without reservation', {
+      ...valid, category: 'scenario-runner-invalid', stage: 'acquisition',
+    }, accepted],
+    ['post-acquisition stage with reservation', {
+      ...valid, pendingBrowserSession: 'phase9-pending-failure',
+    }, {
+      ...accepted,
+      pendingOwnershipIntent: { sequence: 1, session: 'phase9-pending-failure' },
+    }],
+    ['non-row failure after ownership completion', valid, { ...accepted, ownershipComplete: true }],
+    ['after terminal', valid, { ...accepted, terminal: { ok: true } }],
+  ];
+  for (const [name, message, state] of cases) await t.test(name, () => {
+    assert.throws(() => validateRunnerFailureTerminal(message, state), /scenario-runner-invalid/);
+  });
+});
+
+test('phase 9 guardian preserves every validated child failure stage through exact cleanup', async t => {
+  for (const [stage, category] of [
+    ['authorization', 'scenario-runner-invalid'],
+    ['acquisition', 'scenario-runner-invalid'],
+    ['receipt', 'scenario-runner-invalid'],
+    ['recorder', 'scenario-runner-invalid'],
+    ['viewport', 'scenario-runner-invalid'],
+    ['login', 'scenario-failed'],
+    ['scenario-action', 'scenario-failed'],
+    ['row-emission', 'scenario-runner-invalid'],
+    ['release', 'scenario-runner-invalid'],
+  ]) await t.test(stage, async () => {
+    const fixture = lifecycleGuardianFixture({ runnerMode: `failure-terminal-${stage}` });
+    const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+    assert.equal(result.ok, false);
+    assert.equal(result.category, category);
+    assert.equal(result.primaryCategory, category);
+    assert.equal(result.primaryStage, stage);
+    assert.equal(result.closureCertified, true);
+    assert.equal(fixture.events.includes('browser:close:phase9-failure-terminal-owned'), true);
+    assert.equal(fixture.events.filter(event => event === 'fixture:cleanup').length, 1);
+    assert.equal(JSON.stringify(result).includes('secret'), false);
+    assert.equal(JSON.stringify(fixture.terminalCheckpoints).includes('phase9-failure-terminal-owned'), false);
+  });
+});
+
 test('phase 9 lifecycle guardian rejects an unpersisted planned-boundary transition before cleanup', async () => {
   const fixture = lifecycleGuardianFixture({ transitionNotPersisted: true });
   const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
@@ -7554,6 +7675,20 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     ...base,
     primaryCategory: 'scenario-failed',
     primaryStage: 'inspected',
+    lifecycle: {
+      ...base.lifecycle,
+      state: 'inspected',
+      history: task5Lifecycle.history.slice(0, 5),
+    },
+  }));
+  for (const primaryStage of [
+    'authorization', 'acquisition', 'receipt', 'recorder', 'viewport', 'login',
+    'scenario-action', 'row-emission', 'release',
+  ]) assert.doesNotThrow(() => canonicalPhase9TerminalCertificate({
+    ...base,
+    primaryCategory: new Set(['login', 'scenario-action']).has(primaryStage)
+      ? 'scenario-failed' : 'scenario-runner-invalid',
+    primaryStage,
     lifecycle: {
       ...base.lifecycle,
       state: 'inspected',

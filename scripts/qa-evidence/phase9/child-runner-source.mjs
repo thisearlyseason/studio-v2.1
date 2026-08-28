@@ -221,6 +221,9 @@ const activeAttachedBrowserSessions = new Set();
 const attachedLaunchReceipts = new Map();
 const releasedBrowserSessions = new Set();
 let ownershipSequence = 0;
+let pendingBrowserSession = null;
+let failureStage = 'authorization';
+let failureTerminalEmitted = false;
 const emitProtocol = value => {
   if (!process.stdout.write(`${JSON.stringify(value)}\n`)) throw new Error('runner-protocol-backpressure');
 };
@@ -262,11 +265,15 @@ const openWithReceipt = async session => {
     throw new Error('runner-launch-receipt-invalid');
   }
   await privateInputs.revalidate();
+  failureStage = 'authorization';
+  pendingBrowserSession = session;
   emitProtocol({
     type: 'ownership-intent', version: 4, phase, sequence: ownershipSequence, session,
   });
   await requireOwnershipAuthorization(session, ownershipSequence);
+  failureStage = 'acquisition';
   await acquireBlankBrowser(client, session);
+  failureStage = 'receipt';
   const launchReceipt = await captureLaunchReceipt(session);
   launchReceipts.set(session, launchReceipt);
   ownedSessions.add(session);
@@ -274,7 +281,9 @@ const openWithReceipt = async session => {
     type: 'ownership-add', version: 4, phase, sequence: ownershipSequence,
     session, launchReceipt,
   });
+  pendingBrowserSession = null;
   ownershipSequence += 1;
+  failureStage = 'recorder';
   await armAcquiredSignalRecorder(client, session);
 };
 const confirmAttachedOwnership = session => {
@@ -326,6 +335,7 @@ const waitForReceiptProcessesAbsent = async receipt => {
 };
 
 const closeAndRelease = async sessions => {
+  failureStage = 'release';
   for (const session of [...sessions].sort()) {
     const receipt = launchReceipts.get(session) ?? attachedLaunchReceipts.get(session);
     if (!receipt || releasedBrowserSessions.has(session)) {
@@ -355,6 +365,7 @@ const waitForExactLocation = (session, path, sentinel) => client.runCode(session
   return true;
 }`);
 const login = async (session, alias) => {
+  failureStage = 'login';
   const grant = credentialGrant(alias);
   await client.goto(session, `${STAGING_ORIGIN}/login`);
   await client.runCode(session, `async (page) => {
@@ -367,6 +378,7 @@ const login = async (session, alias) => {
     await page.locator('button[type="submit"]').click();
     return true;
   }`);
+  failureStage = 'scenario-action';
 };
 const actionsFor = session => ({
   loginAndLand: alias => login(session, alias),
@@ -392,24 +404,45 @@ const actionsFor = session => ({
 });
 
 const rows = [];
+const emitFailureTerminal = () => {
+  if (failureTerminalEmitted) return;
+  const browserSessions = [...ownedSessions].sort();
+  const launchReceiptValues = browserSessions.map(session => launchReceipts.get(session));
+  if (launchReceiptValues.some(receipt => !receipt)) return;
+  const category = new Set(['login', 'scenario-action']).has(failureStage)
+    ? 'scenario-failed' : 'scenario-runner-invalid';
+  failureTerminalEmitted = true;
+  process.stdout.write(`${JSON.stringify({
+    type: 'failure', version: 4, phase, sequence: ownershipSequence,
+    category, stage: failureStage, pendingBrowserSession,
+    browserSessions,
+    attachedBrowserSessions: [...attachedBrowserSessions].sort(),
+    launchReceipts: launchReceiptValues,
+    releasedBrowserSessions: [...releasedBrowserSessions].sort(),
+  })}\n`);
+};
 try {
   for (const row of rowsForPhase) {
     const session = rowSession(row);
     const viewport = row.viewportName === 'mobile' ? { width: 390, height: 844 } : { width: 1440, height: 900 };
     if (phase === 'before-transition' || row.scenario === 'fresh-login') {
       await openWithReceipt(session);
+      failureStage = 'viewport';
       if (await setAndVerifyViewport(client, session, viewport) !== row.viewport) {
         throw new Error('runner-viewport-label-invalid');
       }
     } else if (row.scenario === 'stale-session') {
+      failureStage = 'receipt';
       attachedLaunchReceipts.set(session, await captureLaunchReceipt(session, {
         requireCurrentMarker: false,
       }));
       confirmAttachedOwnership(session);
+      failureStage = 'recorder';
       await attachExistingSignalRecorder(client, session, {
         ...viewport, marker: session, requireAuthenticated: true,
       });
     }
+    failureStage = 'scenario-action';
     if (row.group === 'admission-route') {
       rows.push(await runAdmissionScenario({ client, session, context: row, actions: actionsFor(session) }));
     } else if (row.group === 'isolation') {
@@ -476,6 +509,7 @@ try {
     if (result?.result !== 'PASS') throw new Error('scenario-failed');
     rows.push(Object.freeze(Object.fromEntries(REQUIRED_LEDGER_COLUMNS.map(column => [column, result[column]]))));
     if (!phase9RetainsRowAcrossTransition(phase, row)) {
+      failureStage = 'release';
       await closeAndRelease(phase9BrowserSessionsForRow(row));
     }
   }
@@ -492,6 +526,7 @@ try {
     || released.some((session, index) => session !== sessionLifecyclePlan.releasedSessions[index])) {
     throw new Error('runner-launch-receipt-invalid');
   }
+  failureStage = 'row-emission';
   emitProtocol({
     type: 'ownership-complete', version: 4, phase, sequence: ownershipSequence,
     browserSessions,
@@ -510,9 +545,15 @@ try {
     browserSessions, attachedBrowserSessions: attached, launchReceipts: receipts,
     releasedBrowserSessions: released,
   })}\n`);
+} catch {
+  emitFailureTerminal();
 } finally {
   identities.clear();
   grants.clear();
-  await new Promise(resolvePromise => credentialBroker.close(resolvePromise));
-  await privateInputs.close();
+  try {
+    await new Promise(resolvePromise => credentialBroker.close(resolvePromise));
+    await privateInputs.close();
+  } catch {
+    emitFailureTerminal();
+  }
 }

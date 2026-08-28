@@ -16,6 +16,11 @@ const STATES = Object.freeze([
   'preclean-inspected', 'cleaned', 'clean-inspected', 'independently-absent',
   'credential-removed', 'workspace-removed', 'disarmed',
 ]);
+const PRIMARY_STAGES = new Set([
+  ...STATES,
+  'authorization', 'acquisition', 'receipt', 'recorder', 'viewport', 'login',
+  'scenario-action', 'row-emission', 'release',
+]);
 const CATEGORIES = new Set([
   'none', 'pending', 'operation-failed', 'terminal-certificate-failed', 'ledger-validation-failed',
   'evidence-write-failed', 'interrupted', 'reentry', 'configuration-invalid', 'guardian-registration-failed',
@@ -140,7 +145,7 @@ function validateCertificate(input, {
   }
   if (!version1 && (
     typeof value.primaryCategory !== 'string' || !PRIMARY_CATEGORIES.has(value.primaryCategory)
-    || typeof value.primaryStage !== 'string' || !STATES.includes(value.primaryStage)
+    || typeof value.primaryStage !== 'string' || !PRIMARY_STAGES.has(value.primaryStage)
     || (value.primaryCategory === 'legacy-primary-unavailable' && !allowLegacyPrimary)
   )) throw new Error('Terminal certificate primary attribution is invalid.');
   if (version3) {

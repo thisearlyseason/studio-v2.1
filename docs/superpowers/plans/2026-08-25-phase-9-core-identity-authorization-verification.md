@@ -23,6 +23,32 @@
 - Do not promote a coverage row from partial evidence. Release remains `NOT READY`.
 - Do not merge any pull request or deploy to production.
 
+### Task 10: Closed protocol-v4 child failure terminal
+
+**Files:**
+- Modify: `scripts/qa-evidence/phase9/child-runner-source.mjs`
+- Modify: `scripts/qa-evidence/phase9/lifecycle-guardian.mjs`
+- Modify: `scripts/qa-evidence/phase9/terminal-certificate-writer.mjs`
+- Modify: `tests/fixtures/phase9-lifecycle-child.mjs`
+- Modify: `tests/phase9-browser-evidence.test.mjs`
+- Regenerate: `scripts/qa-evidence/phase9/child-runner.mjs`
+- Modify generated pins only as required by deterministic output.
+
+**Interfaces:**
+- Consumes: protocol-v4 ownership intent/add/attach/release streams and guardian-owned recovery sets.
+- Produces: one exact `failure` terminal with fixed category/stage and an independently validated ownership snapshot; validated primary attribution is returned through the existing lifecycle failure summary and durable certificate.
+
+- [x] **Step 1: Add fixture-driven RED tests** for valid failures at authorization, acquisition, receipt, recorder, viewport, login, scenario action, row emission, and release. Assert exact primary category/stage, retained cleanup ownership, no success rows, and no raw injected value in output or certificate.
+- [x] **Step 2: Add adversarial RED tests** for extra keys, unsupported category/stage, wrong phase/sequence, wrong pending reservation, missing/extra/duplicate sessions, forged/mismatched receipts, stale released sessions, failure after ownership completion, a second terminal, and output after failure.
+- [x] **Step 3: Verify RED** with the focused Phase 9 Node test pattern. Every new valid-terminal test must fail because `failure` is not accepted; malformed tests must demonstrate the desired fail-closed distinction rather than pass through the old child-close fallback.
+- [x] **Step 4: Implement the minimal child emitter** with closed category/stage mappings, canonical bounded snapshots, one terminal, and a top-level catch that emits no raw exception material. Keep the success protocol unchanged.
+- [x] **Step 5: Implement guardian validation and propagation** against the independently accepted monotonic stream. Preserve pending and active ownership for recovery, join the child, retain validated attribution across later closure failure, and keep malformed terminals classified as runner-invalid.
+- [x] **Step 6: Extend terminal-certificate validation** so only the nine fixed child stages are admitted as `primaryStage`; lifecycle state/history validation remains unchanged.
+- [x] **Step 7: Verify GREEN and mutation resistance** by rerunning focused tests, then deliberately confirm wrong category, stage, sequence, pending reservation, and receipt mutations fail.
+- [x] **Step 8: Regenerate deterministic artifacts twice** and update only exact child/config/source pins required by byte changes.
+- [x] **Step 9: Run full Phase 9, simulated non-Darwin portability, fixture/hygiene, repository verification, dry `44=40+4`, stripped-environment offline smoke, and exact zero-resource scans.
+- [ ] **Step 10: Commit the bounded change and obtain independent exact-commit review** before any push, deployment, hosted lifecycle, production action, or merge.
+
 ## File and interface map
 
 - `scripts/qa-fixtures/definition.mjs`: owns versioned deterministic identity/resource graphs. It will export `buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 })` and `fixturePlanSummary({ manifestVersion = 3 })`.

@@ -490,6 +490,41 @@ if (mode === 'success') {
   }
 } else if (mode === 'fail-before' || mode === 'fail-after') {
   await finishWithRows(phase, mode, [], !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
+} else if (mode.startsWith('failure-terminal-')) {
+  if (phase !== 'before-transition') nativeExit(70);
+  const stage = mode.slice('failure-terminal-'.length);
+  const category = new Set(['login', 'scenario-action']).has(stage)
+    ? 'scenario-failed' : 'scenario-runner-invalid';
+  const session = 'phase9-failure-terminal-owned';
+  const launchReceipt = fakeLaunchReceipts([session])[0];
+  let pendingBrowserSession = session;
+  writeMessage({ version: 4, type: 'ownership-intent', phase, sequence: 0, session });
+  await waitForOwnershipAuthorization(phase, 0, session);
+  const activeStage = new Set([
+    'recorder', 'viewport', 'login', 'scenario-action', 'row-emission', 'release',
+  ]).has(stage);
+  if (activeStage) {
+    writeMessage({ version: 4, type: 'ownership-add', phase, sequence: 0, session, launchReceipt });
+    pendingBrowserSession = null;
+  }
+  if (stage === 'row-emission') writeMessage({
+    version: 4, type: 'ownership-complete', phase, sequence: 1,
+    browserSessions: [session], attachedBrowserSessions: [],
+    launchReceipts: [launchReceipt], releasedBrowserSessions: [],
+  });
+  writeMessage({
+    version: 4,
+    type: 'failure',
+    phase,
+    sequence: activeStage ? 1 : 0,
+    category,
+    stage,
+    pendingBrowserSession,
+    browserSessions: activeStage ? [session] : [],
+    attachedBrowserSessions: [],
+    launchReceipts: activeStage ? [launchReceipt] : [],
+    releasedBrowserSessions: [],
+  }, () => nativeExit(0));
 } else if (mode === 'mutate-globals') {
   const rows = phaseRows(phase);
   const sessions = [...new Set(rows.flatMap(fixtureRowSessions))].sort();
