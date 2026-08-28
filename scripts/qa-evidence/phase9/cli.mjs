@@ -72,7 +72,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportClient: '9ed384bfc4bb2fba1e99b79a03080e36c89dc3965f52d0c5fa366c143eb54656',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
-  recoveryHelper: 'b9e09fa61d3b874202e9cde3bd23047d103f160c97487e41face121aeb38c917',
+  recoveryHelper: 'f6864df64a778c9f365fa31678acde3b0bcabb7292fb0ce2cabee2d71f5de3a1',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
 export const phase9PlaywrightTransport = Object.freeze({
@@ -321,7 +321,7 @@ function help(stdout) {
     '  npm run qa:evidence:phase9 -- dry-run',
     '  npm run qa:evidence:phase9 -- offline-smoke',
     '  npm run qa:evidence:phase9 -- hosted --staging --project <staging-project> --confirm-project <staging-project> --origin <staging-origin> --deployed-sha <sha> --staging-run <run> --pull-request <number> --workspace <external-private-workspace> --manifest <workspace-manifest> --credentials <workspace-credentials> --expires-at <iso-time> --transport <pinned-transport> --result <external-private-result.json>',
-    '  npm run qa:evidence:phase9 -- recover-terminal --result <external-private-result.json> --workspace <preserved-private-workspace> --manifest <workspace-manifest> --credentials <workspace-credentials>',
+    '  npm run qa:evidence:phase9 -- recover-terminal --result <external-private-result.json> --workspace <preserved-private-workspace> --manifest <workspace-manifest> --credentials <workspace-credentials> --quarantine <retained-private-quarantine>',
     '',
     'The hosted result parent must be an existing canonical current-user mode-0700 directory outside the repository, evidence tree, and disposable workspace.',
   ].join('\n');
@@ -441,7 +441,7 @@ function resolveRecoveryPath(value, name) {
 
 async function recoverTerminal(argv, stdout, platform) {
   assertPhase9HostedPlatform(platform);
-  const values = exactArgs(argv, ['--result', '--workspace', '--manifest', '--credentials']);
+  const values = exactArgs(argv, ['--result', '--workspace', '--manifest', '--credentials', '--quarantine']);
   const [{ finalizePhase9TerminalRecovery }] = await Promise.all([
     import('./terminal-recovery-finalizer.mjs'),
   ]);
@@ -450,6 +450,7 @@ async function recoverTerminal(argv, stdout, platform) {
     workspacePath: resolveRecoveryPath(values['--workspace'], 'workspace'),
     manifestPath: resolveRecoveryPath(values['--manifest'], 'manifest'),
     credentialPath: resolveRecoveryPath(values['--credentials'], 'credential'),
+    quarantinePath: resolveRecoveryPath(values['--quarantine'], 'quarantine'),
     repositoryRoot,
     evidenceDirectory,
     platform,

@@ -122,13 +122,17 @@ function validateLifecycle(value, status) {
   return value;
 }
 
-function validateCertificate(input, { allowVersion1 = false, allowLegacyPrimary = false } = {}) {
+function validateCertificate(input, {
+  allowVersion1 = false, allowLegacyPrimary = false, allowRecoveryDisposition = false,
+} = {}) {
   const value = structuredClone(input);
   const version1 = value?.version === 1;
+  const version3 = value?.version === 3;
   exactKeys(value, version1
     ? ['version', 'command', 'status', 'exitCode', 'category', 'deployment', 'lifecycle', 'evidence']
-    : ['version', 'command', 'status', 'exitCode', 'category', 'primaryCategory', 'primaryStage', 'deployment', 'lifecycle', 'evidence'], 'document');
-  if ((!version1 && value.version !== 2) || (version1 && !allowVersion1) || value.command !== 'hosted'
+    : ['version', 'command', 'status', 'exitCode', 'category', 'primaryCategory', 'primaryStage', 'deployment', 'lifecycle', 'evidence', ...(version3 ? ['recoveryDisposition'] : [])], 'document');
+  if ((!version1 && value.version !== 2 && value.version !== 3) || (version1 && !allowVersion1)
+    || (version3 && !allowRecoveryDisposition) || value.command !== 'hosted'
     || !new Set(['closure-pending', 'complete', 'failed']).has(value.status)
     || !Number.isSafeInteger(value.exitCode) || !new Set([0, 1]).has(value.exitCode)
     || typeof value.category !== 'string' || !CATEGORIES.has(value.category)) {
@@ -139,6 +143,30 @@ function validateCertificate(input, { allowVersion1 = false, allowLegacyPrimary 
     || typeof value.primaryStage !== 'string' || !STATES.includes(value.primaryStage)
     || (value.primaryCategory === 'legacy-primary-unavailable' && !allowLegacyPrimary)
   )) throw new Error('Terminal certificate primary attribution is invalid.');
+  if (version3) {
+    exactKeys(value.recoveryDisposition, [
+      'phase', 'credentialIdentity', 'workspaceIdentity', 'manifestSha256',
+      'originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantined', 'quarantineRetained',
+    ], 'recoveryDisposition');
+    if (!new Set(['validated', 'zeroized', 'quarantined']).has(value.recoveryDisposition.phase)
+      || ['credentialIdentity', 'workspaceIdentity', 'manifestSha256'].some(key => (
+        typeof value.recoveryDisposition[key] !== 'string' || !/^[a-f0-9]{64}$/.test(value.recoveryDisposition[key])
+      ))
+      || ['originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantined', 'quarantineRetained'].some(key => (
+        typeof value.recoveryDisposition[key] !== 'boolean'
+      ))) throw new Error('Terminal certificate recovery disposition is invalid.');
+    const expected = value.recoveryDisposition.phase === 'validated'
+      ? [false, false, false, false]
+      : value.recoveryDisposition.phase === 'zeroized'
+        ? [false, true, false, false]
+        : [true, true, true, true];
+    if (['originalPathsAbsent', 'credentialZeroized', 'workspaceQuarantined', 'quarantineRetained']
+      .some((key, index) => value.recoveryDisposition[key] !== expected[index])
+      || value.lifecycle.credentialRemoved !== false || value.lifecycle.workspaceRemoved !== false
+      || value.evidence.rows !== 0 || value.evidence.written !== false) {
+      throw new Error('Terminal certificate recovery disposition arithmetic is invalid.');
+    }
+  }
   if ((value.status === 'complete') !== (value.exitCode === 0) || (value.status === 'complete') !== (value.category === 'none')) {
     throw new Error('Terminal certificate exit/category arithmetic is invalid.');
   }
@@ -234,19 +262,24 @@ async function readCheckpoint(filesystem, path, location = 'result', {
     const parsed = validateCertificate(JSON.parse(text), {
       allowVersion1: allowLegacyFailedRecovery,
       allowLegacyPrimary: allowLegacyFailedRecovery,
+      allowRecoveryDisposition: allowLegacyFailedRecovery,
     });
     const isCheckpoint = parsed.status === 'closure-pending';
     const isLegacyRecovery = allowLegacyFailedRecovery && parsed.version === 1 && parsed.status === 'failed';
-    const isTerminalReplay = allowTerminalReplay && parsed.version === 2 && parsed.status === 'failed'
-      && parsed.lifecycle.credentialRemoved === true && parsed.lifecycle.workspaceRemoved === true;
+    const isTerminalReplay = allowTerminalReplay && parsed.status === 'failed' && (
+      (parsed.version === 2 && parsed.lifecycle.credentialRemoved === true && parsed.lifecycle.workspaceRemoved === true)
+      || (parsed.version === 3 && parsed.recoveryDisposition.phase === 'quarantined')
+    );
     if (!isCheckpoint && !isLegacyRecovery && !isTerminalReplay) {
       throw new Error('Terminal certificate checkpoint is not resumable.');
     }
     if (isLegacyRecovery) validateRecoveryClosure(parsed, false);
-    if (isTerminalReplay) validateRecoveryClosure(parsed, true);
+    if (isTerminalReplay && parsed.version === 2) validateRecoveryClosure(parsed, true);
+    if (isTerminalReplay && parsed.version === 3) validateRecoveryClosure(parsed, false);
     if (canonicalDocument(parsed, {
       allowVersion1: true,
       allowLegacyPrimary: allowLegacyFailedRecovery && parsed.primaryCategory === 'legacy-primary-unavailable',
+      allowRecoveryDisposition: allowLegacyFailedRecovery,
     }) !== text) throw new Error('Terminal certificate checkpoint is not canonical.');
     return Object.freeze({
       state: isTerminalReplay ? 'terminal' : 'checkpoint', location, size: Buffer.byteLength(text),
@@ -288,9 +321,15 @@ async function readCommittedResult({
       || text !== document || createHash('sha256').update(text).digest('hex') !== receipt.sha256) {
       throw new Error('Terminal certificate committed bytes changed.');
     }
-    const parsed = validateCertificate(JSON.parse(text), { allowLegacyPrimary: validated.primaryCategory === 'legacy-primary-unavailable' });
+    const parsed = validateCertificate(JSON.parse(text), {
+      allowLegacyPrimary: validated.primaryCategory === 'legacy-primary-unavailable',
+      allowRecoveryDisposition: validated.version === 3,
+    });
     if (parsed.status !== validated.status
-      || canonicalDocument(parsed, { allowLegacyPrimary: validated.primaryCategory === 'legacy-primary-unavailable' }) !== text) {
+      || canonicalDocument(parsed, {
+        allowLegacyPrimary: validated.primaryCategory === 'legacy-primary-unavailable',
+        allowRecoveryDisposition: validated.version === 3,
+      }) !== text) {
       throw new Error('Terminal certificate committed document changed.');
     }
     await revalidateParent();
@@ -465,17 +504,28 @@ export async function createPhase9TerminalCertificateWriter({
   return Object.freeze({
     get checkpoint() { return expected.state === 'checkpoint' ? expected.document : null; },
     get result() { return expected.document ?? null; },
+    async revalidate() {
+      await revalidateParent();
+      const current = await readCheckpoint(filesystem, resultPath, 'result', recoveryAdmission);
+      if (current.state !== expected.state || current.sha256 !== expected.sha256
+        || current.size !== expected.size) throw new Error('Terminal certificate replay identity changed.');
+      return current.document;
+    },
     async write(certificate) {
       if (closed) throw new Error('Terminal certificate writer is closed.');
       if (expected.state === 'terminal') throw new Error('Terminal certificate is already terminal.');
       const allowLegacyPrimary = expected.state === 'checkpoint'
         && (expected.document.version === 1 || expected.document.primaryCategory === 'legacy-primary-unavailable');
-      const validated = validateCertificate(certificate, { allowLegacyPrimary });
+      const validated = validateCertificate(certificate, {
+        allowLegacyPrimary, allowRecoveryDisposition: allowLegacyFailedRecovery,
+      });
       if (expected.state === 'absent' && validated.status === 'complete') {
         throw new Error('Terminal certificate completion requires a checkpoint.');
       }
       await revalidateParent();
-      const document = canonicalDocument(validated, { allowLegacyPrimary });
+      const document = canonicalDocument(validated, {
+        allowLegacyPrimary, allowRecoveryDisposition: allowLegacyFailedRecovery,
+      });
       const prior = expected;
       const receipt = await invokeHelper({
         parentHandle, directoryIdentity, name, expected: prior, document, helperEnvironment, helperTimeoutMs,
@@ -495,4 +545,10 @@ export async function createPhase9TerminalCertificateWriter({
   });
 }
 
-export { canonicalDocument as canonicalPhase9TerminalCertificate };
+export function canonicalPhase9TerminalCertificate(value) {
+  return canonicalDocument(value);
+}
+
+export function canonicalPhase9TerminalRecoveryCertificate(value) {
+  return canonicalDocument(value, { allowRecoveryDisposition: true });
+}

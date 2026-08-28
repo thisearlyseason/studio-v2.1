@@ -938,12 +938,12 @@ Record exact commits, test counts, workflow run, scenario arithmetic, defect out
 - Modify: `package.json`
 
 **Interfaces:**
-- Produces certificate v2 `primaryCategory`/`primaryStage` attribution and `finalizePhase9TerminalRecovery(...)`.
+- Produces certificate v2 `primaryCategory`/`primaryStage` attribution, recovery-only certificate v3 disposition commitments, and `finalizePhase9TerminalRecovery(...)`.
 - Consumes only an exact local terminal checkpoint and cleaned manifest; it has no provider/browser/seed/transition interface.
 
 - [x] **Step 1: Capture RED** for lost primary `scenario-failed` attribution and the absent recovery-finalizer export.
 - [x] **Step 2: Implement immutable closed primary attribution** and accept exact recovery closure facts with an earlier ordered guardian history.
-- [x] **Step 3: Implement provider-free local finalization** with exact path/identity/mode/ownership and deterministic cleaned-journal checks, credential/workspace absence proof, terminal `failed` promotion, rows `0`, and idempotent replay.
-- [x] **Step 4: Cover failure boundaries** for credential removal, workspace removal, checkpoint/final promotion, foreign identity swaps, dirty journals, legacy migration, and post-removal replay.
+- [x] **Step 3: Implement provider-free local finalization** with exact path/identity/mode/ownership and deterministic cleaned-journal checks, held-inode credential zeroization, exclusive atomic workspace quarantine, truthful original-path absence without physical-deletion claims, terminal `failed` promotion, rows `0`, and idempotent replay.
+- [x] **Step 4: Cover failure boundaries** for zeroization, quarantine, every checkpoint/final promotion boundary, foreign identity swaps, dirty journals, legacy migration, post-rename crash recovery, and terminal replay revalidation.
 - [ ] **Step 5: Complete full gates, commit, and independent review.** Do not apply recovery to the preserved checkpoint before review approval.
-- [ ] **Step 6: After review only, execute the exact local command and verify terminal failed certificate plus credential/workspace absence.** No provider call, hosted lifecycle, push, deployment, or merge.
+- [ ] **Step 6: After review only, execute the exact local command and verify the terminal failed certificate, zeroized credential, exact retained quarantine, and original credential/workspace path absence.** No provider call, hosted lifecycle, push, deployment, or merge.
