@@ -6795,6 +6795,20 @@ test('phase 9 lifecycle guardian rejects non-monotonic ownership and rows naming
     if (mode !== 'row-unowned-session') {
       assert.equal(result.closureCertified, false);
       assert.equal(fixture.workspaceExists, true);
+      if (mode === 'ownership-duplicate') {
+        assert.equal(
+          fixture.events.includes('browser:close:p9-admission-route-qa-parent-a-mobile'), true,
+        );
+      } else if (mode === 'ownership-mutation') {
+        assert.equal(
+          fixture.events.includes('browser:close:p9-pending-deletion-active-baseline-mobile'), true,
+        );
+        assert.equal(
+          fixture.events.includes('browser:close:p9-pending-deletion-active-baseline-desktop'), true,
+        );
+      } else {
+        assert.equal(fixture.events.some(event => event.startsWith('browser:close:')), false);
+      }
     }
   });
 });

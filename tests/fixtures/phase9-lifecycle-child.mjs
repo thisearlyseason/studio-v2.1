@@ -503,8 +503,12 @@ if (mode === 'success') {
 } else if (new Set([
   'ownership-duplicate', 'ownership-mutation', 'ownership-out-of-order',
 ]).has(mode)) {
-  const session = 'phase9-owned-protocol';
+  const [firstRow] = phaseRows(phase);
+  const [session] = fixtureRowSessions(firstRow);
   const launchReceipt = fakeLaunchReceipts([session])[0];
+  writeMessage({
+    version: 4, type: 'context-start', phase, contextOrdinal: 0, contextId: firstRow.contextId,
+  });
   if (mode === 'ownership-out-of-order') {
     writeMessage({
       version: 4, type: 'ownership-intent', phase, sequence: 1, session,
@@ -515,14 +519,48 @@ if (mode === 'success') {
       writeMessage({
         version: 4, type: 'ownership-intent', phase, sequence: 1, session,
       }, () => nativeExit(0));
-    } else {
+    } else if (phase === 'before-transition') {
+      writeMessage({ version: 4, type: 'ownership-release', phase, sequence: 1, session });
+      const rows = phaseRows(phase);
+      const retained = [
+        fixtureSessionName('pending-deletion-active-baseline-mobile'),
+        fixtureSessionName('pending-deletion-active-baseline-desktop'),
+      ].sort();
+      const retainedReceipts = [];
+      const released = [session];
+      let sequence = 2;
+      for (const [contextOrdinal, row] of rows.entries()) {
+        if (contextOrdinal === 0) continue;
+        writeMessage({
+          version: 4, type: 'context-start', phase, contextOrdinal, contextId: row.contextId,
+        });
+        for (const rowSession of fixtureRowSessions(row)) {
+          const receipt = {
+            session: rowSession,
+            daemonPid: 900_001 + (sequence * 2), chromeMainPid: 900_002 + (sequence * 2),
+          };
+          await writeOwnershipIntentAndAdd(phase, sequence, rowSession, receipt);
+          sequence += 1;
+          if (retained.includes(rowSession)) retainedReceipts.push(receipt);
+          else {
+            writeMessage({
+              version: 4, type: 'ownership-release', phase, sequence, session: rowSession,
+            });
+            released.push(rowSession);
+            sequence += 1;
+          }
+        }
+      }
+      released.sort();
       writeMessage({
-        version: 4, type: 'ownership-complete', phase, sequence: 1,
-        browserSessions: [session], attachedBrowserSessions: [],
-        launchReceipts: [{ ...launchReceipt, chromeMainPid: launchReceipt.chromeMainPid + 10 }],
-        releasedBrowserSessions: [],
+        version: 4, type: 'ownership-complete', phase, sequence,
+        browserSessions: retained, attachedBrowserSessions: [],
+        launchReceipts: retainedReceipts.map((receipt, index) => index === 0
+          ? { ...receipt, chromeMainPid: receipt.chromeMainPid + 10 }
+          : receipt),
+        releasedBrowserSessions: released,
       }, () => nativeExit(0));
-    }
+    } else nativeExit(70);
   }
 } else if (mode === 'fail-before' || mode === 'fail-after') {
   await finishWithRows(phase, mode, undefined, !mode.endsWith(phase === 'before-transition' ? 'before' : 'after'));
