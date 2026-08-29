@@ -8,6 +8,13 @@
 
 **Tech Stack:** Node.js ESM, TypeScript, Next.js, Firebase Admin/Auth/Firestore, Firebase Rules emulator, Node test runner, Vitest, bundled Playwright CLI with system Chrome, GitHub Actions, Markdown audit evidence.
 
+## Descriptor-rooted Playwright output cleanup amendment
+
+- [x] Reproduce the retained `.playwright-cli` rejection with a real descriptor-rooted about:blank lifecycle.
+- [x] Add a shared descriptor-bound cleanup contract for guardian and offline smoke that admits only the deterministic private CLI output grammar and exact existing `pw-*`/browser-profile roots.
+- [x] Reject and preserve symlinks, foreign names, wrong mode/owner/link/type, byte/count overflow, same-inode mutation, child replacement, and parent replacement before recursive removal.
+- [x] Require exact browser/process closure before guardian cleanup and preserve profile/fixture recovery state on every audit uncertainty.
+
 **Spec:** `docs/superpowers/specs/2026-08-25-phase-9-core-identity-authorization-verification-design.md`
 
 ## Global Constraints

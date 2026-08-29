@@ -4700,6 +4700,7 @@ function lifecycleGuardianFixture(overrides = {}) {
         isFile: () => overrides.workspaceLstatType === 'file',
         isSymbolicLink: () => overrides.workspaceLstatType === 'symlink',
         mode: overrides.workspaceLstatMode ?? overrides.workspaceMode ?? 0o40700,
+        uid: process.getuid(), dev: 1, ino: 1, nlink: 2, size: 0, mtimeMs: 0, ctimeMs: 0,
       };
       if (path === producerTempRoot) return {
         isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false,
@@ -4712,6 +4713,7 @@ function lifecycleGuardianFixture(overrides = {}) {
       if (path === profileRootPath && profileRootExists) return {
         isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false,
         mode: 0o40700, uid: process.getuid(),
+        dev: 1, ino: 2, nlink: 2, size: 0, mtimeMs: 0, ctimeMs: 0,
       };
       if (files.has(path)) return {
         isDirectory: () => path === manifestPath && overrides.manifestLstatType === 'directory',
@@ -4720,6 +4722,12 @@ function lifecycleGuardianFixture(overrides = {}) {
         mode: path === credentialPath ? (overrides.credentialMode ?? 0o100600) : (overrides.manifestMode ?? 0o100600),
       };
       throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    },
+    async open(path) {
+      return {
+        stat: () => filesystem.lstat(path),
+        close: async () => {},
+      };
     },
     async readFile(path) {
       events.push('fs:read-manifest');
@@ -9208,6 +9216,192 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.match(phase9PlaywrightTransport.artifactPath, /playwright-transport\.bundle\.json\.gz$/);
 });
 
+test('phase 9 confined cleanup removes deterministic private Playwright CLI output', async () => {
+  const { removeConfinedPlaywrightTree } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  assert.equal(typeof removeConfinedPlaywrightTree, 'function');
+  const workspace = mkdtempSync('/tmp/phase9-core-identities.profile-output-');
+  const profileRoot = join(workspace, 'playwright-tmp');
+  try {
+    mkdirSync(profileRoot, { mode: 0o700 });
+    mkdirSync(join(profileRoot, 'pw-1234abcd'), { mode: 0o755 });
+    mkdirSync(join(profileRoot, '.playwright-cli'), { mode: 0o700 });
+    writeFileSync(
+      join(profileRoot, '.playwright-cli', 'console-2026-08-29T00-16-08-874Z.log'),
+      'synthetic console output\n', { mode: 0o600 },
+    );
+    writeFileSync(
+      join(profileRoot, '.playwright-cli', 'page-2026-08-29T00-16-10-726Z.yml'),
+      'synthetic page output\n', { mode: 0o600 },
+    );
+    await removeConfinedPlaywrightTree(fsPromises, profileRoot);
+    assert.equal(existsSync(profileRoot), false);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+const confinedPlaywrightFixture = () => {
+  const workspace = mkdtempSync('/tmp/phase9-core-identities.profile-adversarial-');
+  const profileRoot = join(workspace, 'playwright-tmp');
+  const cliRoot = join(profileRoot, '.playwright-cli');
+  const cliFile = join(cliRoot, 'page-2026-08-29T00-16-10-726Z.yml');
+  mkdirSync(profileRoot, { mode: 0o700 });
+  mkdirSync(join(profileRoot, 'pw-1234abcd'), { mode: 0o700 });
+  mkdirSync(cliRoot, { mode: 0o700 });
+  writeFileSync(cliFile, 'synthetic page output\n', { mode: 0o600 });
+  return { workspace, profileRoot, cliRoot, cliFile };
+};
+
+test('phase 9 confined cleanup preserves every malformed private Playwright tree', async t => {
+  const { removeConfinedPlaywrightTree } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  const cases = [
+    ['symlink', fixture => symlinkSync('/private/tmp', join(fixture.cliRoot, 'page-2026-08-29T00-16-11-726Z.yml'))],
+    ['foreign filename', fixture => writeFileSync(join(fixture.cliRoot, 'foreign.txt'), 'foreign\n', { mode: 0o600 })],
+    ['file mode', fixture => chmodSync(fixture.cliFile, 0o640)],
+    ['hard link', fixture => linkSync(fixture.cliFile, join(fixture.cliRoot, 'page-2026-08-29T00-16-11-726Z.yml'))],
+    ['directory type', fixture => mkdirSync(join(fixture.cliRoot, 'page-2026-08-29T00-16-11-726Z.yml'), { mode: 0o700 })],
+    ['oversize file', fixture => truncateSync(fixture.cliFile, 1_048_577)],
+    ['excess file count', fixture => {
+      for (let index = 0; index < 256; index += 1) writeFileSync(
+        join(fixture.cliRoot, `page-2026-08-29T00-16-${String(index % 60).padStart(2, '0')}-${String(index).padStart(3, '0')}Z.yml`),
+        '', { mode: 0o600 },
+      );
+    }],
+  ];
+  for (const [name, mutate] of cases) await t.test(name, async () => {
+    const fixture = confinedPlaywrightFixture();
+    try {
+      mutate(fixture);
+      await assert.rejects(
+        removeConfinedPlaywrightTree(fsPromises, fixture.profileRoot),
+        /scenario-closure-failed/,
+      );
+      assert.equal(existsSync(fixture.profileRoot), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
+  await t.test('owner', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const filesystem = {
+      ...fsPromises,
+      async lstat(path) {
+        const metadata = await fsPromises.lstat(path);
+        if (path !== fixture.cliFile) return metadata;
+        return {
+          dev: metadata.dev, ino: metadata.ino, uid: process.getuid() + 1,
+          mode: metadata.mode, nlink: metadata.nlink, size: metadata.size,
+          mtimeMs: metadata.mtimeMs, ctimeMs: metadata.ctimeMs,
+          isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false,
+        };
+      },
+    };
+    try {
+      await assert.rejects(
+        removeConfinedPlaywrightTree(filesystem, fixture.profileRoot),
+        /scenario-closure-failed/,
+      );
+      assert.equal(existsSync(fixture.profileRoot), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+test('phase 9 confined cleanup preserves same-inode and pathname replacements before removal', async t => {
+  const { removeConfinedPlaywrightTree } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  await t.test('same-inode content replacement', async () => {
+    const fixture = confinedPlaywrightFixture();
+    let targetLstats = 0;
+    let rmCalls = 0;
+    const filesystem = {
+      ...fsPromises,
+      async lstat(path) {
+        if (path === fixture.cliFile && ++targetLstats === 4) {
+          writeFileSync(path, 'foreign page output!!\n', { mode: 0o600 });
+        }
+        return fsPromises.lstat(path);
+      },
+      async rm(...args) { rmCalls += 1; return fsPromises.rm(...args); },
+    };
+    try {
+      await assert.rejects(
+        removeConfinedPlaywrightTree(filesystem, fixture.profileRoot),
+        /scenario-closure-failed/,
+      );
+      assert.equal(rmCalls, 0);
+      assert.equal(existsSync(fixture.profileRoot), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
+  await t.test('child pathname replacement', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const held = `${fixture.cliFile}.held`;
+    let targetLstats = 0;
+    let rmCalls = 0;
+    const filesystem = {
+      ...fsPromises,
+      async lstat(path) {
+        if (path === fixture.cliFile && ++targetLstats === 4) {
+          renameSync(path, held);
+          writeFileSync(path, 'foreign page output\n', { mode: 0o600 });
+        }
+        return fsPromises.lstat(path);
+      },
+      async rm(...args) { rmCalls += 1; return fsPromises.rm(...args); },
+    };
+    try {
+      await assert.rejects(
+        removeConfinedPlaywrightTree(filesystem, fixture.profileRoot),
+        /scenario-closure-failed/,
+      );
+      assert.equal(rmCalls, 0);
+      assert.equal(readFileSync(fixture.cliFile, 'utf8'), 'foreign page output\n');
+      assert.equal(readFileSync(held, 'utf8'), 'synthetic page output\n');
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
+  await t.test('parent pathname replacement', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const heldWorkspace = `${fixture.workspace}.held`;
+    let parentLstats = 0;
+    let rmCalls = 0;
+    const filesystem = {
+      ...fsPromises,
+      async lstat(path) {
+        if (path === fixture.workspace && ++parentLstats === 3) {
+          renameSync(path, heldWorkspace);
+          mkdirSync(fixture.workspace, { mode: 0o700 });
+          mkdirSync(fixture.profileRoot, { mode: 0o700 });
+          writeFileSync(join(fixture.profileRoot, 'foreign.txt'), 'foreign\n', { mode: 0o600 });
+        }
+        return fsPromises.lstat(path);
+      },
+      async rm(...args) { rmCalls += 1; return fsPromises.rm(...args); },
+    };
+    try {
+      await assert.rejects(
+        removeConfinedPlaywrightTree(filesystem, fixture.profileRoot),
+        /scenario-closure-failed/,
+      );
+      assert.equal(rmCalls, 0);
+      assert.equal(readFileSync(join(fixture.profileRoot, 'foreign.txt'), 'utf8'), 'foreign\n');
+      assert.equal(existsSync(join(heldWorkspace, 'playwright-tmp', '.playwright-cli')), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+      rmSync(heldWorkspace, { recursive: true, force: true });
+    }
+  });
+});
+
 test('phase 9 production child client factory enforces the 90000 millisecond command deadline', async () => {
   const { createPhase9ProductionCliClient } = await import(
     '../scripts/qa-evidence/phase9/playwright-cli-client.mjs'
@@ -9415,6 +9609,36 @@ darwinRuntimeTest('phase 9 bound private profile remains valid across real about
   } finally {
     if (cleanupClient) await closeAndVerifyBrowsers(cleanupClient).catch(() => {});
     await inputs.close();
+    rmSync(fixture.workspace, { recursive: true, force: true });
+  }
+});
+
+darwinRuntimeTest('phase 9 confined cleanup removes real descriptor-rooted Playwright CLI output after browser closure', { timeout: 60_000 }, async () => {
+  const { removeConfinedPlaywrightTree } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  const fixture = privateInputRaceFixture();
+  const inputs = await openBoundPrivateInputs(fixture);
+  let client;
+  try {
+    client = createPhase9ProductionCliClient({
+      sourceEnvironment: { ...process.env, TMPDIR: fixture.profileRootPath },
+      temporaryDirectory: fixture.profileRootPath,
+      profileDirectoryDescriptor: inputs.profileDescriptor,
+      beforeCommand: inputs.revalidate,
+    });
+    const session = 'phase9-confined-cleanup-about-blank';
+    await acquireBlankBrowser(client, session);
+    await armAcquiredSignalRecorder(client, session);
+    assert.equal(await setAndVerifyViewport(client, session, { width: 390, height: 844 }), '390x844');
+    await closeAndVerifyBrowsers(client);
+    assert.equal(existsSync(join(fixture.profileRootPath, '.playwright-cli')), true);
+    await inputs.close();
+    await removeConfinedPlaywrightTree(fsPromises, fixture.profileRootPath);
+    assert.equal(existsSync(fixture.profileRootPath), false);
+  } finally {
+    if (client) await closeAndVerifyBrowsers(client).catch(() => {});
+    await inputs.close().catch(() => {});
     rmSync(fixture.workspace, { recursive: true, force: true });
   }
 });
@@ -10484,7 +10708,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 68);
+  assert.equal(darwinRuntimeTests.length, 69);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

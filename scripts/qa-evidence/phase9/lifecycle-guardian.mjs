@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, types as utilTypes } from 'node:util';
 
@@ -57,6 +57,10 @@ const INTRINSIC_CHILD_ENV = Object.freeze(Object.fromEntries(
 const WORKSPACE_PREFIX = '/tmp/phase9-core-identities.';
 const PLAYWRIGHT_TMP_NAME = 'playwright-tmp';
 const PLAYWRIGHT_PROFILE_PREFIX = 'playwright_chromiumdev_profile-';
+const PLAYWRIGHT_CLI_OUTPUT_NAME = '.playwright-cli';
+const PLAYWRIGHT_CLI_FILE_LIMIT = 256;
+const PLAYWRIGHT_CLI_FILE_BYTES_LIMIT = 1_048_576;
+const PLAYWRIGHT_CLI_TOTAL_BYTES_LIMIT = 16_777_216;
 const RUNNER_STDOUT_LIMIT = 65_536;
 const RUNNER_STDERR_LIMIT = 16_384;
 const RUNNER_LINE_LIMIT = 8_192;
@@ -242,6 +246,7 @@ const defaultFilesystem = Object.freeze({
   chmod,
   stat,
   lstat,
+  open,
   readFile,
   readdir,
   removeCredentialFile: (path, repositoryRoot) => removeCredentialFile(path, repositoryRoot),
@@ -264,7 +269,7 @@ function requireDependencies(value) {
   for (const name of ['closeBrowser', 'listBrowsers']) {
     if (typeof value.browserClient?.[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
-  for (const name of ['mkdtemp', 'mkdir', 'chmod', 'stat', 'lstat', 'readFile', 'readdir', 'removeCredentialFile', 'rm']) {
+  for (const name of ['mkdtemp', 'mkdir', 'chmod', 'stat', 'lstat', 'open', 'readFile', 'readdir', 'removeCredentialFile', 'rm']) {
     if (typeof value.filesystem?.[name] !== 'function') throw new GuardianFailure('configuration-invalid');
   }
   for (const name of ['on', 'off']) {
@@ -644,44 +649,162 @@ async function producerProfileInventory(filesystem, tempRoot) {
   return Object.freeze(profiles.sort());
 }
 
-async function auditConfinedPlaywrightTree(filesystem, root) {
-  const stack = [{ path: root, depth: 0 }];
-  let entriesSeen = 0;
-  let bytesSeen = 0;
-  while (stack.length > 0) {
-    const current = stack.pop();
-    const names = await filesystem.readdir(current.path).catch(() => null);
-    if (!Array.isArray(names) || names.length > 4_096) {
+function confinedEntryKind(metadata) {
+  if (metadata?.isDirectory?.() && !metadata.isSymbolicLink?.()) return 'directory';
+  if (metadata?.isFile?.() && !metadata.isSymbolicLink?.()) return 'file';
+  return null;
+}
+
+function confinedEntryIdentity(metadata) {
+  return Object.freeze({
+    kind: confinedEntryKind(metadata),
+    dev: metadata?.dev,
+    ino: metadata?.ino,
+    uid: metadata?.uid,
+    mode: metadata?.mode & 0o777,
+    nlink: metadata?.nlink,
+    size: metadata?.size,
+    mtimeMs: metadata?.mtimeMs,
+    ctimeMs: metadata?.ctimeMs,
+  });
+}
+
+function confinedEntryMatches(metadata, expected) {
+  const actual = confinedEntryIdentity(metadata);
+  return expected.kind !== null && Object.keys(expected).every(key => actual[key] === expected[key]);
+}
+
+function playwrightCliFileNameIsExact(name) {
+  const timestamp = '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{3}Z';
+  return new RegExp(`^(?:console-${timestamp}\\.log|page-${timestamp}\\.yml)$`).test(name);
+}
+
+export async function removeConfinedPlaywrightTree(filesystem, root) {
+  if (!filesystem || ['open', 'lstat', 'readdir', 'rm'].some(name => typeof filesystem[name] !== 'function')
+    || basename(root) !== PLAYWRIGHT_TMP_NAME) throw new GuardianFailure('scenario-closure-failed');
+  const parent = dirname(root);
+  const handles = [];
+  const receipts = [];
+  const openBound = async (path, expectedKind) => {
+    const before = await filesystem.lstat(path).catch(() => null);
+    const expected = confinedEntryIdentity(before);
+    if (expected.kind !== expectedKind) throw new GuardianFailure('scenario-closure-failed');
+    const flags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW
+      | (expectedKind === 'directory' ? fsConstants.O_DIRECTORY : 0);
+    const handle = await filesystem.open(path, flags).catch(() => null);
+    if (!handle || typeof handle.stat !== 'function' || typeof handle.close !== 'function') {
       throw new GuardianFailure('scenario-closure-failed');
     }
-    for (const name of names) {
-      entriesSeen += 1;
-      if (entriesSeen > 8_192 || typeof name !== 'string' || name.length < 1 || name.length > 255
-        || name.includes('/') || name === '.' || name === '..') {
+    handles.push(handle);
+    const [held, after] = await Promise.all([
+      handle.stat().catch(() => null), filesystem.lstat(path).catch(() => null),
+    ]);
+    if (!confinedEntryMatches(held, expected) || !confinedEntryMatches(after, expected)) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    const receipt = Object.freeze({ path, handle, identity: expected });
+    receipts.push(receipt);
+    return receipt;
+  };
+  try {
+    const parentReceipt = await openBound(parent, 'directory');
+    if (parentReceipt.identity.uid !== INTRINSIC_PROCESS_UID || parentReceipt.identity.mode !== 0o700) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    const rootReceipt = await openBound(root, 'directory');
+    if (rootReceipt.identity.uid !== INTRINSIC_PROCESS_UID || rootReceipt.identity.mode !== 0o700) {
+      throw new GuardianFailure('scenario-closure-failed');
+    }
+    const stack = [{ path: root, depth: 0, scope: 'root' }];
+    let entriesSeen = 0;
+    let bytesSeen = 0;
+    let cliFiles = 0;
+    let cliBytes = 0;
+    while (stack.length > 0) {
+      const current = stack.pop();
+      const names = await filesystem.readdir(current.path).catch(() => null);
+      if (!Array.isArray(names) || names.length > 4_096) {
         throw new GuardianFailure('scenario-closure-failed');
       }
-      if (current.depth === 0 && !(
-        /^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name)
-        || /^pw-[0-9a-f]{8}$/.test(name)
-      )) throw new GuardianFailure('scenario-closure-failed');
-      const path = join(current.path, name);
-      const metadata = await filesystem.lstat(path).catch(() => null);
-      if (!metadata || metadata.isSymbolicLink?.()
-        || (Number.isSafeInteger(INTRINSIC_PROCESS_UID) && metadata.uid !== INTRINSIC_PROCESS_UID)
-        || (metadata.mode & 0o022) !== 0) throw new GuardianFailure('scenario-closure-failed');
-      if (metadata.isDirectory?.()) {
-        if (current.depth >= 8) throw new GuardianFailure('scenario-closure-failed');
-        stack.push({ path, depth: current.depth + 1 });
-      } else if (metadata.isFile?.()) {
-        if (metadata.nlink !== 1 || !Number.isSafeInteger(metadata.size) || metadata.size < 0) {
+      for (const name of names) {
+        entriesSeen += 1;
+        if (entriesSeen > 8_192 || typeof name !== 'string' || name.length < 1 || name.length > 255
+          || name.includes('/') || name === '.' || name === '..') {
           throw new GuardianFailure('scenario-closure-failed');
         }
-        bytesSeen += metadata.size;
-        if (bytesSeen > 536_870_912) throw new GuardianFailure('scenario-closure-failed');
-      } else {
+        let childScope = current.scope;
+        let allowedTopModes = null;
+        if (current.depth === 0) {
+          if (name === PLAYWRIGHT_CLI_OUTPUT_NAME) {
+            childScope = 'cli';
+            allowedTopModes = new Set([0o700]);
+          } else if (/^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name)) {
+            childScope = 'profile';
+            allowedTopModes = new Set([0o700]);
+          } else if (/^pw-[0-9a-f]{8}$/.test(name)) {
+            childScope = 'profile';
+            allowedTopModes = new Set([0o700, 0o755]);
+          } else throw new GuardianFailure('scenario-closure-failed');
+        } else if (current.scope === 'cli' && !playwrightCliFileNameIsExact(name)) {
+          throw new GuardianFailure('scenario-closure-failed');
+        }
+        const path = join(current.path, name);
+        const metadata = await filesystem.lstat(path).catch(() => null);
+        const kind = confinedEntryKind(metadata);
+        if (!kind || metadata.uid !== INTRINSIC_PROCESS_UID || (metadata.mode & 0o022) !== 0) {
+          throw new GuardianFailure('scenario-closure-failed');
+        }
+        if (current.scope === 'cli' && (kind !== 'file' || (metadata.mode & 0o777) !== 0o600)) {
+          throw new GuardianFailure('scenario-closure-failed');
+        }
+        if (current.depth === 0 && (kind !== 'directory'
+          || !allowedTopModes.has(metadata.mode & 0o777))) {
+          throw new GuardianFailure('scenario-closure-failed');
+        }
+        const receipt = await openBound(path, kind);
+        if (kind === 'directory') {
+          if (current.depth >= 8) throw new GuardianFailure('scenario-closure-failed');
+          stack.push({ path, depth: current.depth + 1, scope: childScope });
+        } else {
+          if (receipt.identity.nlink !== 1 || !Number.isSafeInteger(receipt.identity.size)
+            || receipt.identity.size < 0) {
+            throw new GuardianFailure('scenario-closure-failed');
+          }
+          bytesSeen += receipt.identity.size;
+          if (bytesSeen > 536_870_912) throw new GuardianFailure('scenario-closure-failed');
+          if (current.scope === 'cli') {
+            cliFiles += 1;
+            cliBytes += receipt.identity.size;
+            if (cliFiles > PLAYWRIGHT_CLI_FILE_LIMIT
+              || receipt.identity.size > PLAYWRIGHT_CLI_FILE_BYTES_LIMIT
+              || cliBytes > PLAYWRIGHT_CLI_TOTAL_BYTES_LIMIT) {
+              throw new GuardianFailure('scenario-closure-failed');
+            }
+          }
+        }
+      }
+    }
+    for (const receipt of receipts) {
+      const [held, named] = await Promise.all([
+        receipt.handle.stat().catch(() => null), filesystem.lstat(receipt.path).catch(() => null),
+      ]);
+      if (!confinedEntryMatches(held, receipt.identity)
+        || !confinedEntryMatches(named, receipt.identity)) {
         throw new GuardianFailure('scenario-closure-failed');
       }
     }
+    await filesystem.rm(root, { recursive: true, force: false });
+    try {
+      await filesystem.lstat(root);
+      throw new GuardianFailure('scenario-closure-failed');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  } catch (error) {
+    if (error instanceof GuardianFailure) throw error;
+    throw new GuardianFailure('scenario-closure-failed');
+  } finally {
+    await Promise.all(handles.map(handle => handle.close().catch(() => {})));
   }
 }
 
@@ -3135,11 +3258,7 @@ export function createLifecycleGuardian({
     if (!profileRootPath) return;
     if (!profileRootRemoved) {
       await requirePrivateDirectory(filesystem, profileRootPath, 'scenario-closure-failed');
-      await auditConfinedPlaywrightTree(filesystem, profileRootPath);
-      await filesystem.rm(profileRootPath, { recursive: true, force: false });
-      if (!(await proveAbsent(filesystem, profileRootPath))) {
-        throw new GuardianFailure('scenario-closure-failed');
-      }
+      await removeConfinedPlaywrightTree(filesystem, profileRootPath);
       profileRootRemoved = true;
     }
     let current;

@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { runGuardedLifecycle } from './lifecycle-guardian.mjs';
+import { removeConfinedPlaywrightTree, runGuardedLifecycle } from './lifecycle-guardian.mjs';
 import {
   closeAndVerifyBrowsers, createPlaywrightCliClient, phase9CapturedPlaywrightTransport,
   executeCapturedPlaywrightTransportCommand,
@@ -269,41 +269,6 @@ function guardianBrowserClient() {
   });
 }
 
-async function auditOfflinePlaywrightTree(root) {
-  const stack = [{ path: root, depth: 0 }];
-  let count = 0;
-  let bytes = 0;
-  while (stack.length > 0) {
-    const current = stack.pop();
-    const names = await readdir(current.path);
-    if (names.length > 4_096) throw new Error('Offline smoke profile cleanup is incomplete.');
-    for (const name of names) {
-      count += 1;
-      if (count > 8_192 || typeof name !== 'string' || name.length < 1 || name.length > 255
-        || name.includes('/') || name === '.' || name === '..'
-        || (current.depth === 0 && !(
-          /^playwright_chromiumdev_profile-[A-Za-z0-9_-]{1,80}$/.test(name)
-          || /^pw-[0-9a-f]{8}$/.test(name)
-        ))) throw new Error('Offline smoke profile cleanup is incomplete.');
-      const path = join(current.path, name);
-      const metadata = await lstat(path);
-      if (metadata.isSymbolicLink() || metadata.uid !== process.getuid()
-        || (metadata.mode & 0o022) !== 0) throw new Error('Offline smoke profile cleanup is incomplete.');
-      if (metadata.isDirectory()) {
-        if (current.depth >= 8) throw new Error('Offline smoke profile cleanup is incomplete.');
-        stack.push({ path, depth: current.depth + 1 });
-      } else {
-        if (!metadata.isFile() || metadata.nlink !== 1
-          || !Number.isSafeInteger(metadata.size) || metadata.size < 0) {
-          throw new Error('Offline smoke profile cleanup is incomplete.');
-        }
-        bytes += metadata.size;
-        if (bytes > 536_870_912) throw new Error('Offline smoke profile cleanup is incomplete.');
-      }
-    }
-  }
-}
-
 async function offlineSmoke(stdout) {
   validatePlan();
   await validatePinnedConfig({ verifyTransport: true });
@@ -343,13 +308,17 @@ async function offlineSmoke(stdout) {
     if (client) await closeAndVerifyBrowsers(client).catch(() => {});
     let profileAuditInvalid = false;
     if (profileRootCreated) {
-      try { await auditOfflinePlaywrightTree(temporaryDirectory); } catch { profileAuditInvalid = true; }
+      try {
+        await removeConfinedPlaywrightTree({ open, lstat, readdir, rm }, temporaryDirectory);
+      } catch {
+        profileAuditInvalid = true;
+      }
     }
+    if (profileAuditInvalid) throw new Error('Offline smoke profile cleanup is incomplete.');
     await rm(workspace, { recursive: true, force: false });
     try { await lstat(workspace); throw new Error('Offline smoke workspace removal failed.'); } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
     }
-    if (profileAuditInvalid) throw new Error('Offline smoke profile cleanup is incomplete.');
   }
   stdout.write(`${JSON.stringify(result)}\n`);
   return result;
@@ -553,7 +522,7 @@ async function hosted(argv, env, stdout, platform) {
       await requireWorkspace(workspace, manifest, credentials);
       return workspace;
     },
-    mkdir, chmod, stat, lstat, readFile, readdir,
+    mkdir, chmod, stat, lstat, open, readFile, readdir,
     removeCredentialFile: path => removeCredentialFile(path, repositoryRoot),
     rm: (path, options) => rm(path, options),
   };
