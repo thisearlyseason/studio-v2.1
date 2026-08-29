@@ -14,6 +14,7 @@
 - [x] Add a shared descriptor-bound cleanup contract for guardian and offline smoke that admits only the deterministic private CLI output grammar and exact existing `pw-*`/browser-profile roots.
 - [x] Reject and preserve symlinks, foreign names, wrong mode/owner/link/type, byte/count overflow, same-inode mutation, child replacement, and parent replacement before recursive removal.
 - [x] Require exact browser/process closure before guardian cleanup and preserve profile/fixture recovery state on every audit uncertainty.
+- [x] Replace pathname-recursive removal with a pinned descriptor-relative Darwin helper, cover root/nested handoff swaps and partial failure, and make offline close-and-empty proof a sticky prerequisite for cleanup.
 
 **Spec:** `docs/superpowers/specs/2026-08-25-phase-9-core-identity-authorization-verification-design.md`
 

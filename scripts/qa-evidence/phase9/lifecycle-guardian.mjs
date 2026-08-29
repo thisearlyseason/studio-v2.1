@@ -61,6 +61,8 @@ const PLAYWRIGHT_CLI_OUTPUT_NAME = '.playwright-cli';
 const PLAYWRIGHT_CLI_FILE_LIMIT = 256;
 const PLAYWRIGHT_CLI_FILE_BYTES_LIMIT = 1_048_576;
 const PLAYWRIGHT_CLI_TOTAL_BYTES_LIMIT = 16_777_216;
+const PLAYWRIGHT_CLEANUP_HELPER = fileURLToPath(new URL('./playwright-cleanup-dirfd-helper.py', import.meta.url));
+const PLAYWRIGHT_CLEANUP_HELPER_SHA256 = 'f2cd1970c8ef6a7e3ad5e5ecacbe81f66f62c3eb4d40ff333064c3d21f4898f0';
 const RUNNER_STDOUT_LIMIT = 65_536;
 const RUNNER_STDERR_LIMIT = 16_384;
 const RUNNER_LINE_LIMIT = 8_192;
@@ -679,6 +681,77 @@ function playwrightCliFileNameIsExact(name) {
   return new RegExp(`^(?:console-${timestamp}\\.log|page-${timestamp}\\.yml)$`).test(name);
 }
 
+function cleanupHelperIdentity(identity) {
+  return Object.freeze({
+    dev: identity.dev, ino: identity.ino, uid: identity.uid, mode: identity.mode,
+  });
+}
+
+export async function runPlaywrightCleanupHelper({ parentReceipt, rootReceipt, receipts }) {
+  if (process.platform !== 'darwin') throw new GuardianFailure('scenario-closure-failed');
+  const [metadata, bytes] = await Promise.all([
+    lstat(PLAYWRIGHT_CLEANUP_HELPER).catch(() => null),
+    readFile(PLAYWRIGHT_CLEANUP_HELPER).catch(() => null),
+  ]);
+  if (!metadata?.isFile?.() || metadata.isSymbolicLink?.()
+    || metadata.uid !== INTRINSIC_PROCESS_UID || (metadata.mode & 0o022) !== 0
+    || !bytes || createHash('sha256').update(bytes).digest('hex') !== PLAYWRIGHT_CLEANUP_HELPER_SHA256) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  const request = JSON.stringify({
+    version: 1,
+    operation: 'remove-playwright-tree',
+    name: PLAYWRIGHT_TMP_NAME,
+    parent: cleanupHelperIdentity(parentReceipt.identity),
+    root: cleanupHelperIdentity(rootReceipt.identity),
+    entries: receipts
+      .filter(receipt => receipt !== parentReceipt && receipt !== rootReceipt)
+      .map(receipt => Object.freeze({
+        path: relative(rootReceipt.path, receipt.path),
+        identity: receipt.identity,
+      }))
+      .sort((left, right) => left.path.localeCompare(right.path)),
+  });
+  await new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn('/usr/bin/python3', [PLAYWRIGHT_CLEANUP_HELPER], {
+      cwd: '/',
+      env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C', LC_ALL: 'C', PYTHONDONTWRITEBYTECODE: '1' },
+      stdio: ['pipe', 'pipe', 'pipe', parentReceipt.handle.fd, rootReceipt.handle.fd],
+    });
+    let stdout = '';
+    let stderrBytes = 0;
+    let settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) rejectPromise(new GuardianFailure('scenario-closure-failed'));
+      else resolvePromise();
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish(new Error('timeout'));
+    }, 30_000);
+    child.stdout.on('data', chunk => {
+      stdout += chunk.toString('utf8');
+      if (Buffer.byteLength(stdout, 'utf8') > 1_024) child.kill('SIGKILL');
+    });
+    child.stderr.on('data', chunk => {
+      stderrBytes += chunk.length;
+      if (stderrBytes > 1_024) child.kill('SIGKILL');
+    });
+    child.on('error', finish);
+    child.stdin.on('error', () => {});
+    child.on('close', (code, signal) => {
+      let parsed;
+      try { parsed = JSON.parse(stdout.trim()); } catch {}
+      finish(code === 0 && signal === null && parsed?.ok === true && parsed?.status === 'removed'
+        ? null : new Error('failed'));
+    });
+    child.stdin.end(request);
+  });
+}
+
 export async function removeConfinedPlaywrightTree(filesystem, root) {
   if (!filesystem || ['open', 'lstat', 'readdir', 'rm'].some(name => typeof filesystem[name] !== 'function')
     || basename(root) !== PLAYWRIGHT_TMP_NAME) throw new GuardianFailure('scenario-closure-failed');
@@ -793,7 +866,9 @@ export async function removeConfinedPlaywrightTree(filesystem, root) {
         throw new GuardianFailure('scenario-closure-failed');
       }
     }
-    await filesystem.rm(root, { recursive: true, force: false });
+    await (filesystem.removePlaywrightTree ?? runPlaywrightCleanupHelper)({
+      parentReceipt, rootReceipt, receipts,
+    });
     try {
       await filesystem.lstat(root);
       throw new GuardianFailure('scenario-closure-failed');

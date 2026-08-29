@@ -4747,6 +4747,11 @@ function lifecycleGuardianFixture(overrides = {}) {
       if (path === profileRootPath && profileRootExists) return [];
       throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     },
+    async removePlaywrightTree() {
+      events.push('fs:remove-profile-root');
+      if (realFilesystemProfile) rmSync(profileRootPath, { recursive: true, force: false });
+      profileRootExists = false;
+    },
     async removeCredentialFile(path) {
       events.push('fs:remove-credential');
       if (overrides.credentialRemovalFailure) throw new Error('raw credential failure');
@@ -9198,6 +9203,7 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.match(PHASE9_ARTIFACT_PINS.helper, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.terminalHelper, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.recoveryHelper, /^[0-9a-f]{64}$/);
+  assert.match(PHASE9_ARTIFACT_PINS.playwrightCleanupHelper, /^[0-9a-f]{64}$/);
   assert.match(PHASE9_ARTIFACT_PINS.processInspector, /^[0-9a-f]{64}$/);
   assert.equal(
     sha256File(join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'darwin-process-inspector.py')),
@@ -9214,6 +9220,13 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.equal(phase9PlaywrightTransport.version, '0.1.18');
   assert.equal(phase9PlaywrightTransport.coreVersion, '1.63.0-alpha-2026-08-05');
   assert.match(phase9PlaywrightTransport.artifactPath, /playwright-transport\.bundle\.json\.gz$/);
+});
+
+const portableConfinedPlaywrightFilesystem = Object.freeze({
+  ...fsPromises,
+  removePlaywrightTree: ({ rootReceipt }) => fsPromises.rm(
+    rootReceipt.path, { recursive: true, force: false },
+  ),
 });
 
 test('phase 9 confined cleanup removes deterministic private Playwright CLI output', async () => {
@@ -9235,7 +9248,7 @@ test('phase 9 confined cleanup removes deterministic private Playwright CLI outp
       join(profileRoot, '.playwright-cli', 'page-2026-08-29T00-16-10-726Z.yml'),
       'synthetic page output\n', { mode: 0o600 },
     );
-    await removeConfinedPlaywrightTree(fsPromises, profileRoot);
+    await removeConfinedPlaywrightTree(portableConfinedPlaywrightFilesystem, profileRoot);
     assert.equal(existsSync(profileRoot), false);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
@@ -9277,7 +9290,7 @@ test('phase 9 confined cleanup preserves every malformed private Playwright tree
     try {
       mutate(fixture);
       await assert.rejects(
-        removeConfinedPlaywrightTree(fsPromises, fixture.profileRoot),
+        removeConfinedPlaywrightTree(portableConfinedPlaywrightFilesystem, fixture.profileRoot),
         /scenario-closure-failed/,
       );
       assert.equal(existsSync(fixture.profileRoot), true);
@@ -9288,7 +9301,7 @@ test('phase 9 confined cleanup preserves every malformed private Playwright tree
   await t.test('owner', async () => {
     const fixture = confinedPlaywrightFixture();
     const filesystem = {
-      ...fsPromises,
+      ...portableConfinedPlaywrightFilesystem,
       async lstat(path) {
         const metadata = await fsPromises.lstat(path);
         if (path !== fixture.cliFile) return metadata;
@@ -9321,7 +9334,7 @@ test('phase 9 confined cleanup preserves same-inode and pathname replacements be
     let targetLstats = 0;
     let rmCalls = 0;
     const filesystem = {
-      ...fsPromises,
+      ...portableConfinedPlaywrightFilesystem,
       async lstat(path) {
         if (path === fixture.cliFile && ++targetLstats === 4) {
           writeFileSync(path, 'foreign page output!!\n', { mode: 0o600 });
@@ -9347,7 +9360,7 @@ test('phase 9 confined cleanup preserves same-inode and pathname replacements be
     let targetLstats = 0;
     let rmCalls = 0;
     const filesystem = {
-      ...fsPromises,
+      ...portableConfinedPlaywrightFilesystem,
       async lstat(path) {
         if (path === fixture.cliFile && ++targetLstats === 4) {
           renameSync(path, held);
@@ -9375,7 +9388,7 @@ test('phase 9 confined cleanup preserves same-inode and pathname replacements be
     let parentLstats = 0;
     let rmCalls = 0;
     const filesystem = {
-      ...fsPromises,
+      ...portableConfinedPlaywrightFilesystem,
       async lstat(path) {
         if (path === fixture.workspace && ++parentLstats === 3) {
           renameSync(path, heldWorkspace);
@@ -9400,6 +9413,67 @@ test('phase 9 confined cleanup preserves same-inode and pathname replacements be
       rmSync(heldWorkspace, { recursive: true, force: true });
     }
   });
+  await t.test('root replacement at the removal boundary', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const heldRoot = `${fixture.profileRoot}.held`;
+    const foreignFile = join(fixture.profileRoot, 'foreign.txt');
+    const filesystem = {
+      ...portableConfinedPlaywrightFilesystem,
+      async removePlaywrightTree({ rootReceipt }) {
+        renameSync(rootReceipt.path, heldRoot);
+        mkdirSync(rootReceipt.path, { mode: 0o700 });
+        writeFileSync(foreignFile, 'foreign\n', { mode: 0o600 });
+        throw new Error('descriptor identity mismatch');
+      },
+    };
+    try {
+      await assert.rejects(
+        removeConfinedPlaywrightTree(filesystem, fixture.profileRoot),
+        /scenario-closure-failed/,
+      );
+      assert.equal(readFileSync(foreignFile, 'utf8'), 'foreign\n');
+      assert.equal(existsSync(join(heldRoot, '.playwright-cli')), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+      rmSync(heldRoot, { recursive: true, force: true });
+    }
+  });
+  await t.test('partial helper failure remains uncertified and recoverable', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const filesystem = {
+      ...portableConfinedPlaywrightFilesystem,
+      async removePlaywrightTree() {
+        rmSync(fixture.cliFile);
+        throw new Error('synthetic partial descriptor cleanup');
+      },
+    };
+    try {
+      await assert.rejects(
+        removeConfinedPlaywrightTree(filesystem, fixture.profileRoot),
+        /scenario-closure-failed/,
+      );
+      assert.equal(existsSync(fixture.profileRoot), true);
+      assert.equal(existsSync(join(fixture.profileRoot, 'pw-1234abcd')), true);
+      assert.equal(existsSync(fixture.cliRoot), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+test('phase 9 offline profile cleanup preserves state when browser closure is uncertain', async () => {
+  const { closeAndCleanOfflineProfile } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  let cleanupCalls = 0;
+  await assert.rejects(
+    closeAndCleanOfflineProfile({
+      client: {},
+      closeBrowsers: async () => { throw new Error('synthetic closure uncertainty'); },
+      cleanupProfile: async () => { cleanupCalls += 1; },
+      profileRoot: '/tmp/phase9-core-identities.synthetic/playwright-tmp',
+    }),
+    /Offline smoke profile cleanup is incomplete/,
+  );
+  assert.equal(cleanupCalls, 0);
 });
 
 test('phase 9 production child client factory enforces the 90000 millisecond command deadline', async () => {
@@ -9641,6 +9715,52 @@ darwinRuntimeTest('phase 9 confined cleanup removes real descriptor-rooted Playw
     await inputs.close().catch(() => {});
     rmSync(fixture.workspace, { recursive: true, force: true });
   }
+});
+
+darwinRuntimeTest('phase 9 descriptor helper rejects root and nested replacement before deleting any admitted entry', async t => {
+  const { removeConfinedPlaywrightTree, runPlaywrightCleanupHelper } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  await t.test('root handoff replacement', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const heldRoot = `${fixture.profileRoot}.held`;
+    const foreignFile = join(fixture.profileRoot, 'foreign.txt');
+    try {
+      await assert.rejects(removeConfinedPlaywrightTree({
+        ...fsPromises,
+        async removePlaywrightTree(receipts) {
+          renameSync(fixture.profileRoot, heldRoot);
+          mkdirSync(fixture.profileRoot, { mode: 0o700 });
+          writeFileSync(foreignFile, 'foreign\n', { mode: 0o600 });
+          return runPlaywrightCleanupHelper(receipts);
+        },
+      }, fixture.profileRoot), /scenario-closure-failed/);
+      assert.equal(readFileSync(foreignFile, 'utf8'), 'foreign\n');
+      assert.equal(existsSync(join(heldRoot, '.playwright-cli')), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+      rmSync(heldRoot, { recursive: true, force: true });
+    }
+  });
+  await t.test('nested handoff replacement', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const heldFile = `${fixture.cliFile}.held`;
+    try {
+      await assert.rejects(removeConfinedPlaywrightTree({
+        ...fsPromises,
+        async removePlaywrightTree(receipts) {
+          renameSync(fixture.cliFile, heldFile);
+          writeFileSync(fixture.cliFile, 'foreign page output\n', { mode: 0o600 });
+          return runPlaywrightCleanupHelper(receipts);
+        },
+      }, fixture.profileRoot), /scenario-closure-failed/);
+      assert.equal(readFileSync(fixture.cliFile, 'utf8'), 'foreign page output\n');
+      assert.equal(readFileSync(heldFile, 'utf8'), 'synthetic page output\n');
+      assert.equal(existsSync(join(fixture.profileRoot, 'pw-1234abcd')), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
 });
 
 test('phase 9 production child rejects a private input replaced after descriptor open without reading foreign bytes', async () => {
@@ -10708,7 +10828,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 69);
+  assert.equal(darwinRuntimeTests.length, 70);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

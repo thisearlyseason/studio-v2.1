@@ -30,6 +30,7 @@ const childConfig = join(moduleDirectory, 'runner-config.json');
 const evidenceHelper = join(moduleDirectory, 'evidence-dirfd-helper.py');
 const terminalCertificateHelper = join(moduleDirectory, 'terminal-certificate-dirfd-helper.py');
 const terminalRecoveryHelper = join(moduleDirectory, 'terminal-recovery-dirfd-helper.py');
+const playwrightCleanupHelper = join(moduleDirectory, 'playwright-cleanup-dirfd-helper.py');
 const processInspector = join(moduleDirectory, 'darwin-process-inspector.py');
 const fixtureCli = join(repositoryRoot, 'scripts', 'qa-fixtures', 'cli.mjs');
 const evidenceDirectory = join(repositoryRoot, 'docs', 'qa', 'production-audit', 'runs', '2026-08-25-phase9-core-identities');
@@ -76,6 +77,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
   recoveryHelper: 'cf9cbb07cc80304e1607b3e7f26c48c0c5783b7ca4a207b7c551ef95a1f01b95',
+  playwrightCleanupHelper: 'f2cd1970c8ef6a7e3ad5e5ecacbe81f66f62c3eb4d40ff333064c3d21f4898f0',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
 export const phase9PlaywrightTransport = Object.freeze({
@@ -166,6 +168,7 @@ async function buildRunnerCommand() {
     throw new Error('Committed runner bytes do not match the literal reviewed pins.');
   }
   if (await sha256(evidenceHelper) !== PHASE9_ARTIFACT_PINS.helper) throw new Error('Committed evidence helper does not match its literal reviewed pin.');
+  if (await sha256(playwrightCleanupHelper) !== PHASE9_ARTIFACT_PINS.playwrightCleanupHelper) throw new Error('Committed Playwright cleanup helper does not match its literal reviewed pin.');
   if (await sha256(processInspector) !== PHASE9_ARTIFACT_PINS.processInspector) throw new Error('Committed Darwin process inspector does not match its literal reviewed pin.');
   for (const [path, pin] of [
     [childSource, PHASE9_ARTIFACT_PINS.childSource],
@@ -269,6 +272,20 @@ function guardianBrowserClient() {
   });
 }
 
+export async function closeAndCleanOfflineProfile({
+  client,
+  profileRoot,
+  closeBrowsers = closeAndVerifyBrowsers,
+  cleanupProfile = root => removeConfinedPlaywrightTree({ open, lstat, readdir, rm }, root),
+} = {}) {
+  try {
+    await closeBrowsers(client);
+    await cleanupProfile(profileRoot);
+  } catch {
+    throw new Error('Offline smoke profile cleanup is incomplete.');
+  }
+}
+
 async function offlineSmoke(stdout) {
   validatePlan();
   await validatePinnedConfig({ verifyTransport: true });
@@ -305,14 +322,16 @@ async function offlineSmoke(stdout) {
     await closeAndVerifyBrowsers(client);
     result = { ok: true, command: 'offline-smoke', origin: 'about:blank', browsers: 0, network: false, firebase: false };
   } finally {
-    if (client) await closeAndVerifyBrowsers(client).catch(() => {});
     let profileAuditInvalid = false;
     if (profileRootCreated) {
       try {
-        await removeConfinedPlaywrightTree({ open, lstat, readdir, rm }, temporaryDirectory);
+        if (!client) throw new Error('Offline smoke browser client is unavailable.');
+        await closeAndCleanOfflineProfile({ client, profileRoot: temporaryDirectory });
       } catch {
         profileAuditInvalid = true;
       }
+    } else if (client) {
+      try { await closeAndVerifyBrowsers(client); } catch { profileAuditInvalid = true; }
     }
     if (profileAuditInvalid) throw new Error('Offline smoke profile cleanup is incomplete.');
     await rm(workspace, { recursive: true, force: false });
@@ -413,6 +432,7 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ['scripts/qa-evidence/phase9/evidence-dirfd-helper.py', evidenceHelper, PHASE9_ARTIFACT_PINS.helper],
     ['scripts/qa-evidence/phase9/terminal-certificate-dirfd-helper.py', terminalCertificateHelper, PHASE9_ARTIFACT_PINS.terminalHelper],
     ['scripts/qa-evidence/phase9/terminal-recovery-dirfd-helper.py', terminalRecoveryHelper, PHASE9_ARTIFACT_PINS.recoveryHelper],
+    ['scripts/qa-evidence/phase9/playwright-cleanup-dirfd-helper.py', playwrightCleanupHelper, PHASE9_ARTIFACT_PINS.playwrightCleanupHelper],
     ['scripts/qa-evidence/phase9/darwin-process-inspector.py', processInspector, PHASE9_ARTIFACT_PINS.processInspector],
     ['scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz', playwrightArtifact, PHASE9_ARTIFACT_PINS.transport],
     ['scripts/qa-evidence/phase9/playwright-transport-manifest.json', playwrightManifest, PHASE9_ARTIFACT_PINS.transportManifest],
