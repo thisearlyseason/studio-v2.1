@@ -1158,6 +1158,23 @@ const installRecorderSource = () => String.raw`async (page) => {
     }
     state[key].push(value);
   };
+  const isExpectedPriorDocumentRscAbort = input => {
+    try {
+      if (typeof input?.failureText !== 'string' || input.failureText.toUpperCase() !== 'NET::ERR_ABORTED'
+        || input?.method !== 'GET' || input?.resourceType !== 'fetch' || input?.isNavigationRequest !== false
+        || input?.isMainFrame !== true || input?.isRscRequest !== true
+        || !Number.isSafeInteger(input?.startHardNavigationGeneration) || input.startHardNavigationGeneration < 0
+        || !Number.isSafeInteger(input?.currentHardNavigationGeneration) || input.currentHardNavigationGeneration < 0
+        || input.startHardNavigationGeneration >= input.currentHardNavigationGeneration
+        || typeof input?.url !== 'string') return false;
+      const origin = ${JSON.stringify(STAGING_ORIGIN)};
+      if (input.url !== origin && !input.url.startsWith(origin + '/')) return false;
+      const path = input.url.slice(origin.length).split('?', 1)[0].split('#', 1)[0];
+      return !path.includes('%') && !path.includes('\\') && path !== '/api' && !path.startsWith('/api/');
+    } catch {
+      return false;
+    }
+  };
   const classifyRequestFailureSignal = input => {
     try {
     const failureText = typeof input?.failureText === 'string' ? input.failureText.toUpperCase() : '';
@@ -1174,19 +1191,17 @@ const installRecorderSource = () => String.raw`async (page) => {
     let targetClass = 'other';
     if (input?.isNavigationRequest === true && input?.isMainFrame === true) targetClass = 'document';
     else if (typeof input?.url === 'string') {
-      try {
-        const target = new URL(input.url);
-        if (!target.username && !target.password && ['http:', 'https:'].includes(target.protocol)) {
-          if (target.hostname === 'firestore.googleapis.com') targetClass = 'firestore';
-          else if (['identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firebaseinstallations.googleapis.com'].includes(target.hostname)) targetClass = 'identity';
-          else if (target.origin === ${JSON.stringify(STAGING_ORIGIN)}) {
-            if (target.pathname.startsWith('/api/')) {
-              targetClass = ${JSON.stringify([...NON_PROTECTED_API_PATHS])}.includes(target.pathname) ? 'public-api' : 'protected-api';
-            } else if (['script', 'stylesheet', 'image', 'media', 'font'].includes(input?.resourceType)) targetClass = 'static';
-          }
+      const url = input.url;
+      if (url.startsWith('https://firestore.googleapis.com/')) targetClass = 'firestore';
+      else if (${JSON.stringify([...IDENTITY_HOSTS])}.some(host => url.startsWith('https://' + host + '/'))) targetClass = 'identity';
+      else {
+        const origin = ${JSON.stringify(STAGING_ORIGIN)};
+        if (url === origin || url.startsWith(origin + '/')) {
+          const pathname = url.slice(origin.length).split('?', 1)[0].split('#', 1)[0];
+          if (pathname.startsWith('/api/')) {
+            targetClass = ${JSON.stringify([...NON_PROTECTED_API_PATHS])}.includes(pathname) ? 'public-api' : 'protected-api';
+          } else if (['script', 'stylesheet', 'image', 'media', 'font'].includes(input?.resourceType)) targetClass = 'static';
         }
-      } catch {
-        targetClass = 'other';
       }
     }
     let navigationRelationship = 'unknown';
@@ -1302,6 +1317,7 @@ const installRecorderSource = () => String.raw`async (page) => {
       pageId: 'phase9-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2),
       sequence: 0,
       navigationGeneration: 0,
+      hardNavigationGeneration: 0,
       rawRequests: [],
       rawSelections: [],
       renders: [],
@@ -1335,7 +1351,29 @@ const installRecorderSource = () => String.raw`async (page) => {
       };
     };
     page.on('request', request => {
-      requestMetadata.set(request, { navigationGeneration: state.navigationGeneration });
+      let isNavigationRequest = false;
+      let isMainFrame = false;
+      let isRscRequest = false;
+      let url = null;
+      let method = null;
+      let resourceType = null;
+      try { isNavigationRequest = request.isNavigationRequest(); } catch {}
+      try { isMainFrame = request.frame() === page.mainFrame(); } catch {}
+      try { isRscRequest = request.headers()?.rsc === '1'; } catch {}
+      try { url = request.url(); } catch {}
+      try { method = request.method(); } catch {}
+      try { resourceType = request.resourceType(); } catch {}
+      if (isNavigationRequest && isMainFrame) state.hardNavigationGeneration += 1;
+      requestMetadata.set(request, {
+        navigationGeneration: state.navigationGeneration,
+        hardNavigationGeneration: state.hardNavigationGeneration,
+        isNavigationRequest,
+        isMainFrame,
+        isRscRequest,
+        url,
+        method,
+        resourceType,
+      });
       boundedPush(state, 'rawRequests', captureRequest(request));
     });
     page.on('response', response => {
@@ -1349,15 +1387,21 @@ const installRecorderSource = () => String.raw`async (page) => {
       if (message.type() === 'error') boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR');
     });
     page.on('requestfailed', request => {
+      const metadata = requestMetadata.get(request);
       const input = {
-        startGeneration: requestMetadata.get(request)?.navigationGeneration,
+        startGeneration: metadata?.navigationGeneration,
         currentGeneration: state.navigationGeneration,
+        startHardNavigationGeneration: metadata?.hardNavigationGeneration,
+        currentHardNavigationGeneration: state.hardNavigationGeneration,
+        isNavigationRequest: metadata?.isNavigationRequest === true,
+        isMainFrame: metadata?.isMainFrame === true,
+        isRscRequest: metadata?.isRscRequest === true,
+        url: metadata?.url,
+        method: metadata?.method,
+        resourceType: metadata?.resourceType,
       };
       try { input.failureText = request.failure()?.errorText; } catch {}
-      try { input.url = request.url(); } catch {}
-      try { input.resourceType = request.resourceType(); } catch {}
-      try { input.isNavigationRequest = request.isNavigationRequest(); } catch {}
-      try { input.isMainFrame = request.frame() === page.mainFrame(); } catch {}
+      if (isExpectedPriorDocumentRscAbort(input)) return;
       boundedPush(state, 'requestFailureSignals', classifyRequestFailureSignal(input));
     });
     await page.exposeFunction('__phase9RecordRender', signal => {
@@ -1509,6 +1553,26 @@ const REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS = Object.freeze([
 const IDENTITY_HOSTS = new Set([
   'identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firebaseinstallations.googleapis.com',
 ]);
+
+export function isExpectedPriorDocumentRscAbort(input) {
+  try {
+    if (
+      typeof input?.failureText !== 'string' || input.failureText.toUpperCase() !== 'NET::ERR_ABORTED'
+      || input?.method !== 'GET' || input?.resourceType !== 'fetch' || input?.isNavigationRequest !== false
+      || input?.isMainFrame !== true || input?.isRscRequest !== true
+      || !Number.isSafeInteger(input?.startHardNavigationGeneration) || input.startHardNavigationGeneration < 0
+      || !Number.isSafeInteger(input?.currentHardNavigationGeneration) || input.currentHardNavigationGeneration < 0
+      || input.startHardNavigationGeneration >= input.currentHardNavigationGeneration
+      || typeof input?.url !== 'string'
+    ) return false;
+    const target = new URL(input.url);
+    return !target.username && !target.password && target.origin === STAGING_ORIGIN
+      && !target.pathname.includes('%') && !target.pathname.includes('\\')
+      && target.pathname !== '/api' && !target.pathname.startsWith('/api/');
+  } catch {
+    return false;
+  }
+}
 
 export function classifyRequestFailureSignal(input) {
   try {

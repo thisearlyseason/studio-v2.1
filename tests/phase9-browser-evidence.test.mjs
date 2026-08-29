@@ -39,6 +39,7 @@ import {
   createPhase9ProductionCliClient,
   executeCapturedPlaywrightTransportCommand,
   installSignalRecorder,
+  isExpectedPriorDocumentRscAbort,
   isProtectedResource,
   setAndVerifyViewport,
 } from '../scripts/qa-evidence/phase9/playwright-cli-client.mjs';
@@ -359,6 +360,44 @@ test('phase 9 request failure classifier emits closed summaries for every public
   })));
   for (const forbidden of [sensitiveUrl, 'session=browser-session-label', 'qa-phase7-20260829T123456Z-abcdefghijkl', 'net::ERR_NAME_NOT_RESOLVED', 'browser-session-label']) {
     assert.equal(serialized.includes(forbidden), false, `classifier leaked ${forbidden}`);
+  }
+});
+
+test('phase 9 request failure suppression is exact to prior-document same-origin RSC aborts', () => {
+  const valid = {
+    failureText: 'net::ERR_ABORTED',
+    url: `${STAGING_ORIGIN}/_next/rsc/family`,
+    method: 'GET',
+    resourceType: 'fetch',
+    isNavigationRequest: false,
+    isMainFrame: true,
+    isRscRequest: true,
+    startHardNavigationGeneration: 1,
+    currentHardNavigationGeneration: 2,
+  };
+  assert.equal(isExpectedPriorDocumentRscAbort(valid), true);
+  for (const overrides of [
+    { failureText: 'net::ERR_TIMED_OUT' },
+    { failureText: 'net::ERR_ABORTED_BY_CLIENT' },
+    { failureText: 'prefix net::ERR_ABORTED suffix' },
+    { method: 'POST' },
+    { url: `${STAGING_ORIGIN}/api` },
+    { url: `${STAGING_ORIGIN}/api?RSC=1` },
+    { url: `${STAGING_ORIGIN}/api/teams/chat` },
+    { url: `${STAGING_ORIGIN}/%61pi/teams/chat` },
+    { url: `${STAGING_ORIGIN}\\api\\teams\\chat` },
+    { url: 'https://studio--the-squad-v2-staging.us-east4.hosted.app.evil.example/family' },
+    { url: 'https://user@studio--the-squad-v2-staging.us-east4.hosted.app/family' },
+    { url: 'https://firestore.googleapis.com/v1/projects/example/databases/(default)/documents/a' },
+    { resourceType: 'xhr' },
+    { isNavigationRequest: true },
+    { isMainFrame: false },
+    { isRscRequest: false },
+    { startHardNavigationGeneration: 2 },
+    { startHardNavigationGeneration: undefined },
+    { currentHardNavigationGeneration: undefined },
+  ]) {
+    assert.equal(isExpectedPriorDocumentRscAbort({ ...valid, ...overrides }), false, JSON.stringify(overrides));
   }
 });
 
@@ -982,6 +1021,114 @@ darwinRuntimeTest('phase 9 action window classifies real request failures', { ti
         navigationRelationship: 'subresource', multiplicity: 'multiple',
       },
     ]);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+});
+
+darwinRuntimeTest('phase 9 recorder ignores only prior-document Next RSC aborts at a hard-navigation boundary', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPhase9ProductionCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
+  const session = 'phase9-prior-rsc-abort';
+  try {
+    await installSignalRecorder(client, session);
+    const cases = [
+      {
+        label: 'expected-rsc', path: '/_next/rsc/expected', headers: { RSC: '1' }, abort: 'aborted',
+        expectedSignals: [],
+      },
+      {
+        label: 'non-rsc', path: '/_next/rsc/non-rsc', headers: {}, abort: 'aborted',
+        expectedSignals: [{
+          failureClass: 'aborted', targetClass: 'other', resourceType: 'fetch',
+          navigationRelationship: 'subresource', multiplicity: 'single',
+        }],
+      },
+      {
+        label: 'protected-rsc', path: '/api/teams/chat', headers: { RSC: '1' }, abort: 'aborted',
+        expectedSignals: [{
+          failureClass: 'aborted', targetClass: 'protected-api', resourceType: 'fetch',
+          navigationRelationship: 'subresource', multiplicity: 'single',
+        }],
+      },
+      {
+        label: 'timed-out-rsc', path: '/_next/rsc/timed-out', headers: { RSC: '1' }, abort: 'timedout',
+        expectedSignals: [{
+          failureClass: 'timeout', targetClass: 'other', resourceType: 'fetch',
+          navigationRelationship: 'subresource', multiplicity: 'single',
+        }],
+      },
+    ];
+    for (const requestCase of cases) {
+      let rawObservation;
+      const result = await observeAction({
+        client,
+        session,
+        stage: `prior-rsc-hard-navigation-${requestCase.label}`,
+        terminal: async () => {},
+        action: async () => {
+          rawObservation = await client.runCode(session, `async (page) => {
+        const origin = ${JSON.stringify(STAGING_ORIGIN)};
+        const requestCase = ${JSON.stringify(requestCase)};
+        const initialDocument = origin + '/family?case=' + requestCase.label;
+        const nextDocument = origin + '/admin?case=' + requestCase.label;
+        const target = origin + requestCase.path;
+        let releaseFailures;
+        const navigationStarted = new Promise(resolve => { releaseFailures = resolve; });
+        const rawFailureLabels = [];
+        let recordRawFailures;
+        const rawFailuresRecorded = new Promise(resolve => { recordRawFailures = resolve; });
+        const onRequestFailed = request => {
+          if (request.url() !== target) return;
+          rawFailureLabels.push(requestCase.label);
+          recordRawFailures();
+        };
+        const onRequest = request => {
+          if (request.isNavigationRequest() && request.frame() === page.mainFrame() && request.url() === nextDocument) {
+            releaseFailures();
+          }
+        };
+        const routeHandler = async route => {
+          const request = route.request();
+          const url = request.url();
+          if (url === initialDocument) {
+            await route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>initial</title>' });
+            return;
+          }
+          if (url === nextDocument) {
+            await rawFailuresRecorded;
+            await route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>next</title>' });
+            return;
+          }
+          if (url !== target) throw new Error('Unexpected intercepted request.');
+          await navigationStarted;
+          await route.abort(requestCase.abort);
+        };
+        page.on('requestfailed', onRequestFailed);
+        page.on('request', onRequest);
+        await page.route(origin + '/**', routeHandler);
+        try {
+          await page.goto(initialDocument);
+          const seen = page.waitForRequest(target);
+          await page.evaluate(({ target, headers }) => {
+            void fetch(target, { headers }).catch(() => undefined);
+          }, { target, headers: requestCase.headers });
+          await seen;
+          await page.goto(nextDocument);
+          await rawFailuresRecorded;
+          return { ok: true, rawFailureLabels };
+        } finally {
+          page.off('requestfailed', onRequestFailed);
+          page.off('request', onRequest);
+          await page.unroute(origin + '/**', routeHandler);
+        }
+      }`);
+        },
+      });
+      assert.deepEqual(rawObservation, { ok: true, rawFailureLabels: [requestCase.label] });
+      assert.equal(result.unexpectedRequestFailures, requestCase.expectedSignals.length, JSON.stringify(result));
+      assert.deepEqual(result.unexpectedRequestFailureSignals, requestCase.expectedSignals);
+    }
   } finally {
     await closeAndVerifyBrowsers(client);
   }
@@ -11861,7 +12008,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
-  assert.equal(darwinRuntimeTests.length, 71);
+  assert.equal(darwinRuntimeTests.length, 72);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });
