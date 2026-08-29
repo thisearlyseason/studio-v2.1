@@ -72,13 +72,33 @@ const validateContext = (context, group) => {
 const observe = values => observeAction(values);
 const summarizeHttp = results => !Array.isArray(results) || results.length === 0
   ? 'none' : results.map(result => `${result.status}`).join(',');
-export const aggregateWindows = (windows, options = {}, diagnostic = () => {}) => {
+export const aggregateWindows = (windows, options = {}, diagnostic = () => {}, observeRequestFailureSignals = () => {}) => {
   if (!Array.isArray(windows) || windows.length === 0) throw new Error('Scenario requires complete action windows.');
+  if (typeof observeRequestFailureSignals !== 'function') {
+    throw new Error('Scenario request-failure aggregate observer must be a function.');
+  }
   const last = windows.at(-1);
   const failureSignals = windows.flatMap(window => window.unexpectedRequestFailureSignals.map(({
     failureClass, targetClass, resourceType, navigationRelationship,
   }) => ({ failureClass, targetClass, resourceType, navigationRelationship })));
   const failureMultiplicity = failureSignals.length === 1 ? 'single' : 'multiple';
+  const aggregatedRequestFailureSignals = Object.freeze(failureSignals.map(signal => Object.freeze({
+    failureClass: signal.failureClass,
+    targetClass: signal.targetClass,
+    resourceType: signal.resourceType,
+    navigationRelationship: signal.navigationRelationship,
+    multiplicity: failureMultiplicity,
+  })));
+  const replayDiagnostic = (checkpoint, reason, detail) => {
+    if (detail !== undefined) {
+      try {
+        observeRequestFailureSignals(aggregatedRequestFailureSignals);
+      } catch {}
+      diagnostic(checkpoint, reason, detail);
+      return;
+    }
+    diagnostic(checkpoint, reason);
+  };
   return validateActionWindow({
     pageId: last.pageId,
     terminalReached: last.terminalReached,
@@ -122,15 +142,9 @@ export const aggregateWindows = (windows, options = {}, diagnostic = () => {}) =
     pageErrors: windows.reduce((sum, window) => sum + window.pageErrors, 0),
     appConsoleErrors: windows.reduce((sum, window) => sum + window.appConsoleErrors, 0),
     unexpectedRequestFailures: failureSignals.length,
-    unexpectedRequestFailureSignals: failureSignals.map(signal => ({
-      failureClass: signal.failureClass,
-      targetClass: signal.targetClass,
-      resourceType: signal.resourceType,
-      navigationRelationship: signal.navigationRelationship,
-      multiplicity: failureMultiplicity,
-    })),
+    unexpectedRequestFailureSignals: aggregatedRequestFailureSignals,
     overflow: windows.reduce((sum, window) => sum + window.overflow, 0),
-  }, options, diagnostic);
+  }, options, replayDiagnostic);
 };
 const rowFromWindow = ({ context, group, action, expectedResult, window, visibleState, httpSummary, actionSummaries }) => {
   const row = {

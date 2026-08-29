@@ -1230,14 +1230,32 @@ test('phase 9 aggregate windows rebuild request failure summaries from the compl
     }),
   ];
   const diagnostics = [];
+  const aggregatedSignals = [];
   assert.throws(
-    () => aggregateWindows(windows, {}, (...report) => diagnostics.push(report)),
+    () => aggregateWindows(
+      windows,
+      {},
+      (...report) => diagnostics.push(report),
+      signals => aggregatedSignals.push(signals),
+    ),
     /request failure/i,
   );
   assert.deepEqual(diagnostics.at(-1), ['window-request-failure', 'request-failure-invalid', {
     failureClass: 'aborted', targetClass: 'protected-api', resourceType: 'fetch',
     navigationRelationship: 'subresource', multiplicity: 'multiple',
   }]);
+  assert.deepEqual(aggregatedSignals, [[
+    {
+      failureClass: 'aborted', targetClass: 'protected-api', resourceType: 'fetch',
+      navigationRelationship: 'subresource', multiplicity: 'multiple',
+    },
+    {
+      failureClass: 'timeout', targetClass: 'identity', resourceType: 'xhr',
+      navigationRelationship: 'current-document', multiplicity: 'multiple',
+    },
+  ]]);
+  assert.equal(Object.isFrozen(aggregatedSignals[0]), true);
+  assert.equal(aggregatedSignals[0].every(signal => Object.isFrozen(signal)), true);
 });
 
 test('phase 9 action-window diagnostics cannot mutate caller inputs into a passing snapshot', async t => {
