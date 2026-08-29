@@ -711,12 +711,15 @@ if (mode === 'success') {
     browserSessions: retained, attachedBrowserSessions: [],
     launchReceipts: retainedReceipts, releasedBrowserSessions: released,
   }, () => nativeExit(0));
-} else if (mode.startsWith('failure-terminal-')) {
+} else if (mode.startsWith('failure-terminal-') || mode.startsWith('request-failure-terminal')) {
   if (phase !== 'before-transition') nativeExit(70);
+  const requestFailureTerminal = mode.startsWith('request-failure-terminal');
   const trailingOutput = mode.endsWith('-trailing');
   const nonzeroExit = mode.endsWith('-nonzero');
   const hangTrailingOutput = mode.endsWith('-hang-trailing');
-  const stage = mode.slice('failure-terminal-'.length).replace(/-(hang-trailing|trailing|nonzero)$/, '');
+  const stage = requestFailureTerminal
+    ? 'scenario-action'
+    : mode.slice('failure-terminal-'.length).replace(/-(hang-trailing|trailing|nonzero)$/, '');
   const category = new Set(['login', 'scenario-action']).has(stage)
     ? 'scenario-failed' : 'scenario-runner-invalid';
   const session = 'p9-admission-route-qa-parent-a-mobile';
@@ -744,15 +747,21 @@ if (mode === 'success') {
     stage,
     contextOrdinal: 0,
     contextId: 'admission-route-qa-parent-a-mobile',
-    checkpoint: stage === 'login' ? 'login-submit' : stage === 'scenario-action'
-      ? 'scenario-action' : stage === 'authorization' ? 'ownership-authorization'
+    checkpoint: requestFailureTerminal ? 'window-request-failure'
+      : stage === 'login' ? 'login-submit' : stage === 'scenario-action'
+        ? 'scenario-action' : stage === 'authorization' ? 'ownership-authorization'
         : stage === 'acquisition' ? 'browser-acquisition' : stage === 'receipt' ? 'launch-receipt'
           : stage === 'recorder' ? 'recorder-arm' : stage === 'viewport' ? 'viewport-verify'
             : stage === 'row-emission' ? 'row-emission' : 'ownership-release',
-    reason: stage === 'login' ? 'login-failed' : stage === 'scenario-action' ? 'action-failed'
-      : stage === 'authorization' ? 'authorization-failed' : stage === 'acquisition' ? 'acquisition-failed'
-        : stage === 'receipt' ? 'receipt-invalid' : stage === 'recorder' ? 'recorder-failed'
-          : stage === 'viewport' ? 'viewport-mismatch' : stage === 'row-emission' ? 'row-invalid' : 'release-failed',
+    reason: requestFailureTerminal ? 'request-failure-invalid'
+      : stage === 'login' ? 'login-failed' : stage === 'scenario-action' ? 'action-failed'
+        : stage === 'authorization' ? 'authorization-failed' : stage === 'acquisition' ? 'acquisition-failed'
+          : stage === 'receipt' ? 'receipt-invalid' : stage === 'recorder' ? 'recorder-failed'
+            : stage === 'viewport' ? 'viewport-mismatch' : stage === 'row-emission' ? 'row-invalid' : 'release-failed',
+    ...(requestFailureTerminal ? { requestFailure: {
+      failureClass: 'connection', targetClass: 'firestore', resourceType: 'xhr',
+      navigationRelationship: 'prior-document', multiplicity: 'multiple',
+    } } : {}),
     pendingBrowserSession,
     browserSessions: activeStage ? [session] : [],
     attachedBrowserSessions: [],

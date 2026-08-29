@@ -159,6 +159,20 @@ const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'row-emission': 'row-emission',
   'private-finalization': 'row-emission',
 });
+const REQUEST_FAILURE_KEYS = Object.freeze([
+  'failureClass', 'targetClass', 'resourceType', 'navigationRelationship', 'multiplicity',
+]);
+const REQUEST_FAILURE_CLASSES = Object.freeze([
+  'aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other',
+]);
+const REQUEST_FAILURE_TARGET_CLASSES = Object.freeze([
+  'document', 'public-api', 'protected-api', 'firestore', 'identity', 'static', 'other',
+]);
+const REQUEST_FAILURE_RESOURCE_TYPES = Object.freeze(['fetch', 'xhr', 'other']);
+const REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS = Object.freeze([
+  'current-document', 'prior-document', 'subresource', 'unknown',
+]);
+const REQUEST_FAILURE_MULTIPLICITIES = Object.freeze(['single', 'multiple']);
 const PROCESS_AUDIT_OUTPUT_LIMIT = 16_777_216;
 const PROCESS_INSPECTOR_PATH = fileURLToPath(new URL('./darwin-process-inspector.py', import.meta.url));
 const PROCESS_INSPECTOR_SHA256 = '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463';
@@ -1172,6 +1186,20 @@ function closedDataDescriptors(value, expectedKeys, category) {
   return descriptors;
 }
 
+function requireRequestFailure(value) {
+  const category = 'scenario-runner-invalid';
+  const descriptors = closedDataDescriptors(value, REQUEST_FAILURE_KEYS, category);
+  const requestFailure = Object.fromEntries(REQUEST_FAILURE_KEYS.map(key => [key, descriptors[key].value]));
+  if (!REQUEST_FAILURE_CLASSES.includes(requestFailure.failureClass)
+    || !REQUEST_FAILURE_TARGET_CLASSES.includes(requestFailure.targetClass)
+    || !REQUEST_FAILURE_RESOURCE_TYPES.includes(requestFailure.resourceType)
+    || !REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS.includes(requestFailure.navigationRelationship)
+    || !REQUEST_FAILURE_MULTIPLICITIES.includes(requestFailure.multiplicity)) {
+    throw new GuardianFailure(category);
+  }
+  return Object.freeze(requestFailure);
+}
+
 function snapshotArrayValues(value, maximum, category) {
   if (!Array.isArray(value) || utilTypes.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype) {
     throw new GuardianFailure(category);
@@ -1438,10 +1466,12 @@ function requireOwnershipPayload(message) {
 }
 
 export function validateRunnerFailureTerminal(message, accepted) {
+  const hasRequestFailure = Object.hasOwn(message ?? {}, 'requestFailure');
   requireRunnerMessage(message, [
     'attachedBrowserSessions', 'browserSessions', 'category', 'checkpoint', 'contextId', 'contextOrdinal', 'launchReceipts',
     'pendingBrowserSession', 'phase', 'releasedBrowserSessions', 'sequence', 'stage', 'type', 'version',
     'reason',
+    ...(hasRequestFailure ? ['requestFailure'] : []),
   ]);
   if (!accepted || typeof accepted !== 'object' || Array.isArray(accepted)
     || message.type !== 'failure' || message.version !== 4
@@ -1460,6 +1490,12 @@ export function validateRunnerFailureTerminal(message, accepted) {
     || !Object.hasOwn(RUNNER_DIAGNOSTICS, message.checkpoint)
     || message.reason !== RUNNER_DIAGNOSTICS[message.checkpoint]
     || message.stage !== RUNNER_DIAGNOSTIC_STAGES[message.checkpoint]) {
+    throw new GuardianFailure('scenario-runner-invalid');
+  }
+  const requestFailure = hasRequestFailure ? requireRequestFailure(message.requestFailure) : null;
+  if (hasRequestFailure && (message.checkpoint !== 'window-request-failure'
+    || message.reason !== 'request-failure-invalid'
+    || message.stage !== 'scenario-action')) {
     throw new GuardianFailure('scenario-runner-invalid');
   }
   const diagnosticContext = Object.freeze({
@@ -1520,6 +1556,7 @@ export function validateRunnerFailureTerminal(message, accepted) {
     diagnostic: Object.freeze({
       ...diagnosticContext,
       checkpoint: message.checkpoint, reason: message.reason,
+      ...(requestFailure ? { requestFailure } : {}),
     }),
     pendingBrowserSession: message.pendingBrowserSession,
     ...withReceipts,

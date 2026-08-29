@@ -40,6 +40,8 @@ const playwrightEntrySource = join(moduleDirectory, 'playwright-transport-entry.
 const playwrightModuleGuard = join(moduleDirectory, 'playwright-transport-module-guard.cjs');
 const playwrightBuilder = join(moduleDirectory, 'build-playwright-transport.mjs');
 const playwrightClient = join(moduleDirectory, 'playwright-cli-client.mjs');
+const scenarioContracts = join(moduleDirectory, 'scenario-contracts.mjs');
+const scenariosSource = join(moduleDirectory, 'scenarios.mjs');
 const childSource = join(moduleDirectory, 'child-runner-source.mjs');
 const childBuilder = join(moduleDirectory, 'build-child-runner.mjs');
 const childPrivateInputReader = join(moduleDirectory, 'private-input-reader.mjs');
@@ -62,9 +64,9 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '303d87e51e6c17227c0e4701ad522476b9542c04d0acd67351d23c465e8e7784',
-  childSource: '13d275f228b8ec8980932acd0e5fea988e2cf3eac96ff6fc935534db9a6d2487',
-  childBuilder: '215f221a3dad50a22325b571d57afa750893ad34ffcb542b010e2d9d8be5f3b8',
+  child: '394a6793bb56b773f8a604a13a1de46205492819db8ea5c36cd130c2ffd5ddea',
+  childSource: '99c402659e8a583a1a75e73bcacac4aa378965ed1bf9b97a945059bd65933518',
+  childBuilder: 'c98e0b10ab7b3d9d5f1edacc6bae022068ca3796eb6d90df4888f325738e3a35',
   childPrivateInputReader: 'c828285b3f5de1927efb32f11353c4ffed30250fe2e1337885a1c7a74f863be7',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
   config: 'e825e374c830b947b3243dc9bcf09572d006a1ea57020899ae2e5f59d1648a3f',
@@ -73,7 +75,9 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
   transportGuard: '69bef38997f2766a0a9611582a363cb3174b2a96b12c10f8a65174fdbd78bc30',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  transportClient: 'e1317700303e756ef53fd5c56d459ecc2ecccee025488b86971fd4188250ea8f',
+  playwrightClient: '43426642e29f5a13c10d4f9c1aa8afad669b015156ca2e3cc812c18ec7c1f219',
+  scenarioContracts: '9c5839d242de618b039607c2c75955eb9bd4a212fb6507314884d7def7890e38',
+  scenarios: 'd71ac18c3012eeceb982a2ada523aef237049d40e1871cc4ad46cfdf2fca8d3f',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
   recoveryHelper: 'cf9cbb07cc80304e1607b3e7f26c48c0c5783b7ca4a207b7c551ef95a1f01b95',
@@ -180,7 +184,9 @@ async function buildRunnerCommand() {
     [playwrightEntrySource, PHASE9_ARTIFACT_PINS.transportEntry],
     [playwrightModuleGuard, PHASE9_ARTIFACT_PINS.transportGuard],
     [playwrightBuilder, PHASE9_ARTIFACT_PINS.transportBuilder],
-    [playwrightClient, PHASE9_ARTIFACT_PINS.transportClient],
+    [playwrightClient, PHASE9_ARTIFACT_PINS.playwrightClient],
+    [scenarioContracts, PHASE9_ARTIFACT_PINS.scenarioContracts],
+    [scenariosSource, PHASE9_ARTIFACT_PINS.scenarios],
   ]) if (await sha256(path) !== pin) throw new Error('Committed Playwright transport closure does not match its literal reviewed pins.');
   return Object.freeze({
     entrypoint: childEntrypoint,
@@ -439,7 +445,9 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ['scripts/qa-evidence/phase9/playwright-transport-entry.cjs', playwrightEntrySource, PHASE9_ARTIFACT_PINS.transportEntry],
     ['scripts/qa-evidence/phase9/playwright-transport-module-guard.cjs', playwrightModuleGuard, PHASE9_ARTIFACT_PINS.transportGuard],
     ['scripts/qa-evidence/phase9/build-playwright-transport.mjs', playwrightBuilder, PHASE9_ARTIFACT_PINS.transportBuilder],
-    ['scripts/qa-evidence/phase9/playwright-cli-client.mjs', playwrightClient, PHASE9_ARTIFACT_PINS.transportClient],
+    ['scripts/qa-evidence/phase9/playwright-cli-client.mjs', playwrightClient, PHASE9_ARTIFACT_PINS.playwrightClient],
+    ['scripts/qa-evidence/phase9/scenario-contracts.mjs', scenarioContracts, PHASE9_ARTIFACT_PINS.scenarioContracts],
+    ['scripts/qa-evidence/phase9/scenarios.mjs', scenariosSource, PHASE9_ARTIFACT_PINS.scenarios],
   ]) {
     const [{ stdout: blob }, worktree] = await Promise.all([
       execFileAsync('git', ['cat-file', 'blob', `${deployedSha}:${relativePath}`], { cwd: repositoryRoot, encoding: 'buffer', timeout: 10_000, maxBuffer: 4_194_304 }),

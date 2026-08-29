@@ -40,6 +40,7 @@ let diagnosticContextOrdinal = 0;
 let diagnosticContextId = null;
 let diagnosticCheckpoint = 'runner-initialization';
 let diagnosticReason = 'runner-invalid';
+let diagnosticRequestFailure = null;
 let ownershipSequence = 0;
 let pendingBrowserSession = null;
 const ownedSessions = new Set();
@@ -48,9 +49,31 @@ const attachedBrowserSessions = new Set();
 const activeAttachedBrowserSessions = new Set();
 const attachedLaunchReceipts = new Map();
 const releasedBrowserSessions = new Set();
-const setDiagnostic = (checkpoint, reason) => {
+const copyRequestFailure = value => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).sort().join(',') !== [
+      'failureClass', 'multiplicity', 'navigationRelationship', 'resourceType', 'targetClass',
+    ].join(',')
+    || !['aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other'].includes(value.failureClass)
+    || !['document', 'public-api', 'protected-api', 'firestore', 'identity', 'static', 'other'].includes(value.targetClass)
+    || !['fetch', 'xhr', 'other'].includes(value.resourceType)
+    || !['current-document', 'prior-document', 'subresource', 'unknown'].includes(value.navigationRelationship)
+    || !['single', 'multiple'].includes(value.multiplicity)) return null;
+  return Object.freeze({
+    failureClass: value.failureClass,
+    targetClass: value.targetClass,
+    resourceType: value.resourceType,
+    navigationRelationship: value.navigationRelationship,
+    multiplicity: value.multiplicity,
+  });
+};
+const setDiagnostic = (checkpoint, reason, requestFailure) => {
   diagnosticCheckpoint = checkpoint;
   diagnosticReason = reason;
+  diagnosticRequestFailure = checkpoint === 'window-request-failure'
+    && reason === 'request-failure-invalid'
+    ? copyRequestFailure(requestFailure)
+    : null;
 };
 let cleanupPrivateInputs = null;
 let cleanupCredentialBroker = null;
@@ -70,6 +93,12 @@ const emitFailureTerminal = () => {
       category, stage: failureStage, pendingBrowserSession,
       contextOrdinal: diagnosticContextOrdinal, contextId: diagnosticContextId,
       checkpoint: diagnosticCheckpoint, reason: diagnosticReason,
+      ...(failureStage === 'scenario-action'
+        && diagnosticCheckpoint === 'window-request-failure'
+        && diagnosticReason === 'request-failure-invalid'
+        && diagnosticRequestFailure
+        ? { requestFailure: diagnosticRequestFailure }
+        : {}),
       browserSessions,
       attachedBrowserSessions: [...attachedBrowserSessions].sort(),
       launchReceipts: launchReceiptValues,
@@ -455,7 +484,7 @@ const login = async (session, alias) => {
   setDiagnostic('scenario-action', 'action-failed');
 };
 const actionsFor = session => ({
-  diagnostic: (checkpoint, reason) => setDiagnostic(checkpoint, reason),
+  diagnostic: (checkpoint, reason, requestFailure) => setDiagnostic(checkpoint, reason, requestFailure),
   loginAndLand: alias => login(session, alias),
   navigate: path => client.goto(session, `${STAGING_ORIGIN}${path}`),
   waitForExactLocation: (path, sentinel) => waitForExactLocation(session, path, sentinel),

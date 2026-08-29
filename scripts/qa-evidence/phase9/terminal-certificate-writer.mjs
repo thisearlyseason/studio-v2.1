@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { types as utilTypes } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { buildCanonicalScenarioPlan } from './scenarios.mjs';
 
@@ -76,6 +77,20 @@ const DIAGNOSTIC_CONTEXTS = Object.freeze({
   before: buildCanonicalScenarioPlan().filter(row => row.startState !== 'pending_deletion'),
   after: buildCanonicalScenarioPlan().filter(row => row.startState === 'pending_deletion'),
 });
+const REQUEST_FAILURE_KEYS = Object.freeze([
+  'failureClass', 'targetClass', 'resourceType', 'navigationRelationship', 'multiplicity',
+]);
+const REQUEST_FAILURE_CLASSES = Object.freeze([
+  'aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other',
+]);
+const REQUEST_FAILURE_TARGET_CLASSES = Object.freeze([
+  'document', 'public-api', 'protected-api', 'firestore', 'identity', 'static', 'other',
+]);
+const REQUEST_FAILURE_RESOURCE_TYPES = Object.freeze(['fetch', 'xhr', 'other']);
+const REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS = Object.freeze([
+  'current-document', 'prior-document', 'subresource', 'unknown',
+]);
+const REQUEST_FAILURE_MULTIPLICITIES = Object.freeze(['single', 'multiple']);
 const CATEGORIES = new Set([
   'none', 'pending', 'operation-failed', 'terminal-certificate-failed', 'ledger-validation-failed',
   'evidence-write-failed', 'interrupted', 'reentry', 'configuration-invalid', 'guardian-registration-failed',
@@ -90,10 +105,86 @@ const CATEGORIES = new Set([
 const PRIMARY_CATEGORIES = new Set([...CATEGORIES, 'legacy-primary-unavailable']);
 const DEFAULT_FILESYSTEM = Object.freeze({ lstat, open, readFile, readdir, realpath, stat });
 
+function snapshotCertificateDataGraph(input) {
+  const copies = new WeakMap();
+  const active = new WeakSet();
+  let nodes = 0;
+  const capture = (value, depth = 0) => {
+    if (value === null || ['string', 'number', 'boolean', 'undefined'].includes(typeof value)) return value;
+    if (typeof value !== 'object' || utilTypes.isProxy(value) || depth > 64) {
+      throw new Error('invalid certificate data graph');
+    }
+    if (active.has(value)) throw new Error('cyclic certificate data graph');
+    if (copies.has(value)) return copies.get(value);
+    const array = Array.isArray(value);
+    const prototype = Object.getPrototypeOf(value);
+    if ((array && prototype !== Array.prototype)
+      || (!array && prototype !== Object.prototype && prototype !== null)) {
+      throw new Error('invalid certificate prototype');
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.some(key => typeof key !== 'string')) throw new Error('invalid certificate key');
+    let copy;
+    if (array) {
+      const length = descriptors.length?.value;
+      if (!Number.isSafeInteger(length) || length < 0 || length > 10_000
+        || keys.length !== length + 1
+        || descriptors.length.enumerable !== false
+        || descriptors.length.configurable !== false) {
+        throw new Error('invalid certificate array');
+      }
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = descriptors[String(index)];
+        if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
+          throw new Error('invalid certificate array item');
+        }
+      }
+      copy = new Array(length);
+    } else {
+      if (keys.some(key => {
+        const descriptor = descriptors[key];
+        return !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true;
+      })) throw new Error('invalid certificate property');
+      copy = Object.create(prototype);
+    }
+    nodes += keys.length;
+    if (nodes > 20_000) throw new Error('oversized certificate graph');
+    copies.set(value, copy);
+    active.add(value);
+    const dataKeys = array ? keys.filter(key => key !== 'length') : keys;
+    for (const key of dataKeys) Object.defineProperty(copy, key, {
+      value: capture(descriptors[key].value, depth + 1),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    active.delete(value);
+    return copy;
+  };
+  try {
+    return capture(input);
+  } catch {
+    throw new Error('Terminal certificate data graph is invalid.');
+  }
+}
+
 function exactKeys(value, keys, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || Object.keys(value).sort().join(',') !== [...keys].sort().join(',')) {
     throw new Error(`Terminal certificate ${name} is invalid.`);
+  }
+  return value;
+}
+
+function validateRequestFailure(value) {
+  exactKeys(value, REQUEST_FAILURE_KEYS, 'requestFailure');
+  if (!REQUEST_FAILURE_CLASSES.includes(value.failureClass)
+    || !REQUEST_FAILURE_TARGET_CLASSES.includes(value.targetClass)
+    || !REQUEST_FAILURE_RESOURCE_TYPES.includes(value.resourceType)
+    || !REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS.includes(value.navigationRelationship)
+    || !REQUEST_FAILURE_MULTIPLICITIES.includes(value.multiplicity)) {
+    throw new Error('Terminal certificate requestFailure is invalid.');
   }
   return value;
 }
@@ -185,7 +276,7 @@ function validateLifecycle(value, status) {
 function validateCertificate(input, {
   allowVersion1 = false, allowLegacyPrimary = false, allowRecoveryDisposition = false,
 } = {}) {
-  const value = structuredClone(input);
+  const value = snapshotCertificateDataGraph(input);
   const version1 = value?.version === 1;
   const version3 = value?.version === 3;
   exactKeys(value, version1
@@ -216,7 +307,11 @@ function validateCertificate(input, {
     throw new Error('Terminal certificate diagnostic presence is invalid.');
   }
   if (!version1 && Object.hasOwn(value, 'diagnostic')) {
-    exactKeys(value.diagnostic, ['checkpoint', 'contextId', 'contextOrdinal', 'reason'], 'diagnostic');
+    const hasRequestFailure = Object.hasOwn(value.diagnostic ?? {}, 'requestFailure');
+    exactKeys(value.diagnostic, [
+      'checkpoint', 'contextId', 'contextOrdinal', 'reason',
+      ...(hasRequestFailure ? ['requestFailure'] : []),
+    ], 'diagnostic');
     if (!Number.isSafeInteger(value.diagnostic.contextOrdinal) || value.diagnostic.contextOrdinal < 0
       || value.diagnostic.contextOrdinal >= 40
       || typeof value.diagnostic.contextId !== 'string'
@@ -227,6 +322,14 @@ function validateCertificate(input, {
       || value.diagnostic.reason !== DIAGNOSTIC_REASONS[value.diagnostic.checkpoint]
       || value.primaryStage !== DIAGNOSTIC_STAGES[value.diagnostic.checkpoint]) {
       throw new Error('Terminal certificate diagnostic is invalid.');
+    }
+    if (hasRequestFailure) {
+      validateRequestFailure(value.diagnostic.requestFailure);
+      if (value.diagnostic.checkpoint !== 'window-request-failure'
+        || value.diagnostic.reason !== 'request-failure-invalid'
+        || value.primaryStage !== 'scenario-action') {
+        throw new Error('Terminal certificate requestFailure attribution is invalid.');
+      }
     }
   }
   if (version3) {

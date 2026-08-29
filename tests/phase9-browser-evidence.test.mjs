@@ -122,6 +122,14 @@ const safeWindow = (overrides = {}) => {
   };
 };
 
+const canonicalRequestFailureSummary = Object.freeze({
+  failureClass: 'connection',
+  targetClass: 'firestore',
+  resourceType: 'xhr',
+  navigationRelationship: 'prior-document',
+  multiplicity: 'multiple',
+});
+
 const STAGING_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
 const FIRESTORE_DATABASE = 'projects/the-squad-v2-staging/databases/(default)';
 const FIRESTORE_LISTEN_BASE_URL = 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel';
@@ -6782,8 +6790,131 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       assert.deepEqual({ ok: terminal.ok, category: terminal.category, stage: terminal.stage }, {
         ok: false, category, stage,
       }, checkpoint);
+      assert.equal(Object.hasOwn(terminal.diagnostic, 'requestFailure'), false, checkpoint);
     }
   }
+});
+
+test('phase 9 request failure protocol preserves one closed summary and rejects diagnostic forgery', async t => {
+  const { validateRunnerFailureTerminal } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  const session = 'p9-admission-route-qa-parent-a-mobile';
+  const receipt = { session, daemonPid: 915001, chromeMainPid: 915002 };
+  const accepted = {
+    phase: 'before-transition', ownershipSequence: 1, pendingOwnershipIntent: null,
+    activeAnnouncedSessions: new Set([session]), attachedSessions: new Set(),
+    activeAnnouncedReceipts: new Map([[session, receipt]]), releasedSessions: new Set(),
+    ownershipComplete: false, terminal: null,
+    currentContext: { contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile' },
+  };
+  const valid = {
+    version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
+    category: 'scenario-failed', stage: 'scenario-action', pendingBrowserSession: null,
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+    checkpoint: 'window-request-failure', reason: 'request-failure-invalid',
+    requestFailure: { ...canonicalRequestFailureSummary },
+    browserSessions: [session], attachedBrowserSessions: [], launchReceipts: [receipt],
+    releasedBrowserSessions: [],
+  };
+  const terminal = validateRunnerFailureTerminal(valid, accepted);
+  assert.deepEqual(terminal.diagnostic, {
+    contextOrdinal: 0,
+    contextId: 'admission-route-qa-parent-a-mobile',
+    checkpoint: 'window-request-failure',
+    reason: 'request-failure-invalid',
+    requestFailure: canonicalRequestFailureSummary,
+  });
+  assert.equal(Object.isFrozen(terminal.diagnostic.requestFailure), true);
+  assert.notEqual(terminal.diagnostic.requestFailure, valid.requestFailure);
+
+  const fixedOnly = structuredClone(valid);
+  delete fixedOnly.requestFailure;
+  const malformedPreSummary = validateRunnerFailureTerminal(fixedOnly, accepted);
+  assert.equal(Object.hasOwn(malformedPreSummary.diagnostic, 'requestFailure'), false);
+
+  const malformedSummaries = [
+    ['missing detail', (() => {
+      const requestFailure = { ...valid.requestFailure };
+      delete requestFailure.multiplicity;
+      return requestFailure;
+    })()],
+    ['extra key', { ...valid.requestFailure, rawUrl: 'https://secret.invalid/?token=must-not-return' }],
+    ['failure class', { ...valid.requestFailure, failureClass: 'net::ERR_CONNECTION_REFUSED' }],
+    ['target class', { ...valid.requestFailure, targetClass: 'https://secret.invalid/raw-target' }],
+    ['resource type', { ...valid.requestFailure, resourceType: 'document' }],
+    ['navigation relationship', { ...valid.requestFailure, navigationRelationship: 'browser-session-label' }],
+    ['multiplicity', { ...valid.requestFailure, multiplicity: 'many' }],
+    ['raw error', { ...valid.requestFailure, rawError: 'net::ERR_FAILED secret=must-not-return' }],
+    ['fixture string', { ...valid.requestFailure, fixture: 'qa-phase7-20260829T123456Z-abcdefghijkl' }],
+    ['session string', { ...valid.requestFailure, session: 'p9-secret-session' }],
+    ['array', Object.values(valid.requestFailure)],
+    ['foreign prototype', Object.assign(Object.create({ inherited: true }), valid.requestFailure)],
+    ['symbol key', Object.assign({ ...valid.requestFailure }, { [Symbol('raw')]: 'must-not-return' })],
+    ['cycle', (() => { const value = { ...valid.requestFailure }; value.self = value; return value; })()],
+    ['accessor', (() => {
+      const value = { ...valid.requestFailure };
+      Object.defineProperty(value, 'failureClass', { enumerable: true, get: () => 'connection' });
+      return value;
+    })()],
+    ['proxy', new Proxy({ ...valid.requestFailure }, {})],
+  ];
+  for (const [name, requestFailure] of malformedSummaries) await t.test(name, () => {
+    assert.throws(
+      () => validateRunnerFailureTerminal({ ...valid, requestFailure }, accepted),
+      /scenario-runner-invalid/,
+    );
+  });
+  assert.throws(() => validateRunnerFailureTerminal({
+    ...valid,
+    checkpoint: 'scenario-action',
+    reason: 'action-failed',
+  }, accepted), /scenario-runner-invalid/);
+});
+
+test('phase 9 request failure protocol reaches guardian certificate only after clean child closure', async t => {
+  const runMode = async (mode, assertion) => {
+    const configPath = join(
+      testDirectory, 'fixtures', `.phase9-lifecycle-child-${mode}-${process.pid}.json`,
+    );
+    writeFileSync(configPath, `${JSON.stringify({ mode })}\n`, { mode: 0o600, flag: 'wx' });
+    try {
+      const runnerCommand = Object.freeze({
+        entrypoint: guardianChildEntrypoint,
+        entrypointSha256: sha256File(guardianChildEntrypoint),
+        configFiles: Object.freeze([Object.freeze({
+          path: configPath,
+          sha256: sha256File(configPath),
+        })]),
+      });
+      const fixture = lifecycleGuardianFixture({ runnerCommand });
+      const result = await runGuardedLifecycle({ ...fixture.dependencies, options: fixture.options });
+      await assertion({ fixture, result });
+    } finally {
+      rmSync(configPath, { force: true });
+    }
+  };
+
+  await t.test('clean close preserves child summary into the closure checkpoint', () => runMode(
+    'request-failure-terminal',
+    ({ fixture, result }) => {
+      assert.equal(result.ok, false);
+      assert.equal(result.primaryCategory, 'scenario-failed');
+      assert.equal(result.primaryStage, 'scenario-action');
+      assert.deepEqual(result.diagnostic.requestFailure, canonicalRequestFailureSummary);
+      const checkpoint = fixture.terminalCheckpoints.find(value => value.phase === 'closure-pending');
+      assert.deepEqual(checkpoint.diagnostic.requestFailure, canonicalRequestFailureSummary);
+      assert.equal(JSON.stringify(checkpoint).includes('must-not-return'), false);
+    },
+  ));
+  await t.test('trailing output invalidates the untrusted child summary', () => runMode(
+    'request-failure-terminal-trailing',
+    ({ result }) => {
+      assert.equal(result.ok, false);
+      assert.equal(result.primaryCategory, 'scenario-runner-invalid');
+      assert.equal(Object.hasOwn(result, 'diagnostic'), false);
+    },
+  ));
 });
 
 test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and sensitive payloads', async t => {
@@ -8147,6 +8278,81 @@ function task5TerminalCertificate(status = 'closure-pending', overrides = {}) {
   };
 }
 
+test('phase 9 request failure certificate preserves the exact optional closed diagnostic', async t => {
+  const { canonicalPhase9TerminalCertificate } = await import(
+    '../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs'
+  );
+  const certificate = status => task5TerminalCertificate(status, {
+    primaryCategory: 'scenario-failed',
+    primaryStage: 'scenario-action',
+    diagnostic: {
+      contextOrdinal: 0,
+      contextId: 'admission-route-qa-parent-a-mobile',
+      checkpoint: 'window-request-failure',
+      reason: 'request-failure-invalid',
+      requestFailure: { ...canonicalRequestFailureSummary },
+    },
+  });
+  for (const status of ['closure-pending', 'failed']) {
+    const expected = certificate(status);
+    const parsed = JSON.parse(canonicalPhase9TerminalCertificate(expected));
+    assert.deepEqual(parsed.diagnostic.requestFailure, canonicalRequestFailureSummary, status);
+    assert.deepEqual(Object.keys(parsed.diagnostic.requestFailure).sort(), [
+      'failureClass', 'multiplicity', 'navigationRelationship', 'resourceType', 'targetClass',
+    ]);
+  }
+
+  const fixedOnly = certificate('failed');
+  delete fixedOnly.diagnostic.requestFailure;
+  assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(fixedOnly));
+  const ordinary = certificate('failed');
+  ordinary.diagnostic = {
+    ...ordinary.diagnostic,
+    checkpoint: 'scenario-action',
+    reason: 'action-failed',
+  };
+  delete ordinary.diagnostic.requestFailure;
+  const ordinaryParsed = JSON.parse(canonicalPhase9TerminalCertificate(ordinary));
+  assert.equal(Object.hasOwn(ordinaryParsed.diagnostic, 'requestFailure'), false);
+
+  const malformedSummaries = [
+    ['missing detail', (() => {
+      const requestFailure = { ...canonicalRequestFailureSummary };
+      delete requestFailure.targetClass;
+      return requestFailure;
+    })()],
+    ['extra key', { ...canonicalRequestFailureSummary, rawUrl: 'https://secret.invalid/?token=must-not-return' }],
+    ['failure class', { ...canonicalRequestFailureSummary, failureClass: 'net::ERR_FAILED' }],
+    ['target class', { ...canonicalRequestFailureSummary, targetClass: 'qa-phase7-20260829T123456Z-abcdefghijkl' }],
+    ['resource type', { ...canonicalRequestFailureSummary, resourceType: 'script' }],
+    ['navigation relationship', { ...canonicalRequestFailureSummary, navigationRelationship: 'raw-session' }],
+    ['multiplicity', { ...canonicalRequestFailureSummary, multiplicity: 2 }],
+    ['raw error', { ...canonicalRequestFailureSummary, error: 'secret=must-not-return' }],
+    ['array', Object.values(canonicalRequestFailureSummary)],
+    ['foreign prototype', Object.assign(Object.create({ inherited: true }), canonicalRequestFailureSummary)],
+    ['symbol key', Object.assign({ ...canonicalRequestFailureSummary }, { [Symbol('raw')]: 'must-not-return' })],
+    ['cycle', (() => { const value = { ...canonicalRequestFailureSummary }; value.self = value; return value; })()],
+    ['accessor', (() => {
+      const value = { ...canonicalRequestFailureSummary };
+      Object.defineProperty(value, 'failureClass', { enumerable: true, get: () => 'connection' });
+      return value;
+    })()],
+    ['proxy', new Proxy({ ...canonicalRequestFailureSummary }, {})],
+  ];
+  for (const [name, requestFailure] of malformedSummaries) await t.test(name, () => {
+    const forged = certificate('failed');
+    forged.diagnostic.requestFailure = requestFailure;
+    assert.throws(() => canonicalPhase9TerminalCertificate(forged), /terminal certificate/i);
+  });
+  const stale = certificate('failed');
+  stale.diagnostic = {
+    ...stale.diagnostic,
+    checkpoint: 'scenario-action',
+    reason: 'action-failed',
+  };
+  assert.throws(() => canonicalPhase9TerminalCertificate(stale), /terminal certificate/i);
+});
+
 darwinRuntimeTest('phase 9 terminal certificate survives discarded console output and exact workspace removal', async () => {
   const { createPhase9TerminalCertificateWriter } = await import('../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs');
   const root = realpathSync(mkdtempSync('/tmp/phase9-terminal-certificate.'));
@@ -8343,7 +8549,17 @@ darwinRuntimeTest('phase 9 terminal certificate promotion failure preserves the 
       resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
       evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
     });
-    const checkpoint = task5TerminalCertificate('closure-pending');
+    const checkpoint = task5TerminalCertificate('closure-pending', {
+      primaryCategory: 'scenario-failed',
+      primaryStage: 'scenario-action',
+      diagnostic: {
+        contextOrdinal: 0,
+        contextId: 'admission-route-qa-parent-a-mobile',
+        checkpoint: 'window-request-failure',
+        reason: 'request-failure-invalid',
+        requestFailure: { ...canonicalRequestFailureSummary },
+      },
+    });
     await initial.write(checkpoint);
     await initial.close();
     failing = await createPhase9TerminalCertificateWriter({
@@ -9391,7 +9607,17 @@ darwinRuntimeTest('phase 9 terminal certificate conditionally promotes only the 
       resultPath, repositoryRoot: dirname(testDirectory), workspacePath: workspace,
       evidenceDirectory: join(dirname(testDirectory), phase9EvidenceDirectorySuffix),
     });
-    const checkpoint = task5TerminalCertificate('closure-pending');
+    const checkpoint = task5TerminalCertificate('closure-pending', {
+      primaryCategory: 'scenario-failed',
+      primaryStage: 'scenario-action',
+      diagnostic: {
+        contextOrdinal: 0,
+        contextId: 'admission-route-qa-parent-a-mobile',
+        checkpoint: 'window-request-failure',
+        reason: 'request-failure-invalid',
+        requestFailure: { ...canonicalRequestFailureSummary },
+      },
+    });
     await initial.write(checkpoint);
     await initial.close();
     writer = await createPhase9TerminalCertificateWriter({
@@ -9779,6 +10005,49 @@ test('phase 9 committed runner uses a pinned local Playwright transport and lite
   assert.equal(phase9PlaywrightTransport.version, '0.1.18');
   assert.equal(phase9PlaywrightTransport.coreVersion, '1.63.0-alpha-2026-08-05');
   assert.match(phase9PlaywrightTransport.artifactPath, /playwright-transport\.bundle\.json\.gz$/);
+});
+
+test('phase 9 child runner pins every deterministic build input to committed bytes', async () => {
+  const { PHASE9_ARTIFACT_PINS } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  const phase9Root = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9');
+  for (const [pin, name] of [
+    ['child', 'child-runner.mjs'],
+    ['childSource', 'child-runner-source.mjs'],
+    ['childBuilder', 'build-child-runner.mjs'],
+    ['playwrightClient', 'playwright-cli-client.mjs'],
+    ['scenarioContracts', 'scenario-contracts.mjs'],
+    ['scenarios', 'scenarios.mjs'],
+  ]) {
+    assert.equal(PHASE9_ARTIFACT_PINS[pin], sha256File(join(phase9Root, name)), pin);
+  }
+});
+
+test('phase 9 child runner build transform preserves messages read by control flow', async () => {
+  const { minimizeGeneratedErrorMessages } = await import(
+    '../scripts/qa-evidence/phase9/build-child-runner.mjs'
+  );
+  const controlMessage = 'New tab viewport application failed and the browser was closed.';
+  const source = Buffer.from(`
+    export const retainsControlFlow = () => {
+      try { throw new Error(${JSON.stringify(controlMessage)}); }
+      catch (error) {
+        if (error?.message === ${JSON.stringify(controlMessage)}) return true;
+        throw error;
+      }
+    };
+    export const discardedDebugMessage = () => new Error('generated-only private debug').message;
+  `);
+  const transformed = minimizeGeneratedErrorMessages(source);
+  assert.equal(Buffer.isBuffer(transformed), true);
+  assert.equal(transformed.includes(Buffer.from(controlMessage)), true);
+  assert.equal(transformed.includes(Buffer.from('generated-only private debug')), false);
+  const transformedModule = await import(`data:text/javascript;base64,${transformed.toString('base64')}`);
+  assert.equal(transformedModule.retainsControlFlow(), true);
+  assert.equal(transformedModule.discardedDebugMessage(), '');
+  assert.throws(() => minimizeGeneratedErrorMessages(Buffer.from(`
+    try { throw new Error('unlisted control message'); }
+    catch (error) { if (error.message === 'unlisted control message') throw error; }
+  `)), /control-flow error message/i);
 });
 
 const portableConfinedPlaywrightFilesystem = Object.freeze({
