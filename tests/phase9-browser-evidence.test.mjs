@@ -11414,7 +11414,8 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
-  assert.equal(darwinRuntimeTests.length, 70);
+  assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
+  assert.equal(darwinRuntimeTests.length, 71);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });
