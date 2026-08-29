@@ -4,7 +4,7 @@
 
 This design amends Phase 9 Task 7 after five incremental private-harness fix rounds failed independent review. The user authorized an architectural harness replacement on 2026-08-25. It does not authorize production access, a merge, or hosted execution before implementation and independent review pass.
 
-The replacement is a committed, testable evidence subsystem. It replaces the ignored Task 7 browser runner and guarded shell. A later Task 3 amendment also authorizes one bounded SaaS correction: the dashboard settled-role effect must re-evaluate when `userProfile.role` hydrates, so a fresh League Creator deterministically reaches `/competition`. No other product-runtime change is authorized by this design.
+The replacement is a committed, testable evidence subsystem. It replaces the ignored Task 7 browser runner and guarded shell. A later Task 3 amendment authorizes the dashboard settled-role effect to re-evaluate when `userProfile.role` hydrates, so a fresh League Creator deterministically reaches `/competition`. A later source-backed row-zero correction authorizes the login profile decision to send a known parent directly to `/family`, after mandatory session admission and any approved return path, so the strict action-window recorder cannot observe an unintended protected `/dashboard` render. No other product-runtime change is authorized by this design.
 
 ## Problem
 

@@ -105,6 +105,8 @@ export default function LoginPage() {
               router.push('/admin');
             } else if (data.role === 'admin' || data.isSchoolAdmin) {
               router.push('/club');
+            } else if (data.role === 'parent') {
+              router.push('/family');
             } else {
               router.push('/dashboard');
             }
