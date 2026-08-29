@@ -852,7 +852,8 @@ const requireClosedHttpResult = (value, index) => {
   return { targetKind: result.targetKind, status: result.status };
 };
 
-const validateActionWindowSnapshot = (value, options = {}) => {
+const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}) => {
+  diagnostic('window-schema', 'schema-invalid');
   const candidate = requireRecord(value, 'Action window');
   if (Object.hasOwn(candidate, 'requestSignals')) {
     throw new Error('Action window must not expose legacy request signals.');
@@ -866,10 +867,14 @@ const validateActionWindowSnapshot = (value, options = {}) => {
   if (!/^phase9-page-[1-9]\d*$/.test(window.pageId)) {
     throw new Error('pageId must use the closed local page identifier format.');
   }
+  diagnostic('window-terminal', 'terminal-invalid');
   requireBoolean(window.terminalReached, 'terminalReached');
+  diagnostic('window-loading', 'loading-invalid');
   requireBoolean(window.loadingVisible, 'loadingVisible');
+  diagnostic('window-location', 'location-invalid');
   requireString(window.finalPath, 'finalPath');
   requireCanonicalStagingLocation(window.finalUrl, window.finalPath, 'Action window');
+  diagnostic('window-schema', 'schema-invalid');
   const visibleSentinels = requireClosedArray(window.visibleSentinels, 'visibleSentinels').map(item => item);
   if (visibleSentinels.some(item => typeof item !== 'string')) {
     throw new Error('visibleSentinels must be an explicit string array.');
@@ -884,6 +889,7 @@ const validateActionWindowSnapshot = (value, options = {}) => {
   }
   requireBoolean(window.sessionPresent, 'sessionPresent');
   requireBoolean(window.protectedRender, 'protectedRender');
+  diagnostic('window-resource', 'resource-invalid');
   requireCount(window.protectedRequests, 'protectedRequests');
   requireCount(window.protectedListenerStarts, 'protectedListenerStarts');
   const validateClosedSignals = (signals, count, name, { listener = false } = {}) => {
@@ -919,18 +925,29 @@ const validateActionWindowSnapshot = (value, options = {}) => {
     });
   const relevantHttpResults = requireClosedArray(window.relevantHttpResults, 'relevantHttpResults')
     .map((result, index) => requireClosedHttpResult(result, index));
+  diagnostic('window-page-error', 'page-error-invalid');
   requireCount(window.pageErrors, 'pageErrors');
+  diagnostic('window-console-error', 'console-error-invalid');
   requireCount(window.appConsoleErrors, 'appConsoleErrors');
+  diagnostic('window-request-failure', 'request-failure-invalid');
   requireCount(window.unexpectedRequestFailures, 'unexpectedRequestFailures');
+  diagnostic('window-overflow', 'overflow-invalid');
   requireCount(window.overflow, 'overflow');
 
+  diagnostic('window-terminal', 'terminal-invalid');
   if (!window.terminalReached) throw new Error('Action window did not reach its terminal state.');
+  diagnostic('window-loading', 'loading-invalid');
   if (window.loadingVisible) throw new Error('Action window ended with swallowed loading state.');
+  diagnostic('window-page-error', 'page-error-invalid');
   if (window.pageErrors !== 0) throw new Error('Action window contains page errors.');
+  diagnostic('window-console-error', 'console-error-invalid');
   if (window.appConsoleErrors !== 0) throw new Error('Action window contains application console errors.');
+  diagnostic('window-request-failure', 'request-failure-invalid');
   if (window.unexpectedRequestFailures !== 0) throw new Error('Action window contains an unexpected request failure.');
+  diagnostic('window-overflow', 'overflow-invalid');
   if (window.overflow !== 0) throw new Error('Action window signal overflow is nonzero.');
 
+  diagnostic('window-render-coherence', 'render-coherence-invalid');
   const protectedHistory = renderSignals.filter(signal => (
     signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
   ));
@@ -942,6 +959,7 @@ const validateActionWindowSnapshot = (value, options = {}) => {
   const pendingFresh = options.kind === 'pending-deletion-fresh';
   const revoked = options.kind === 'fresh-unauthenticated' || pendingStale || pendingFresh;
   const requireNoProtected = revoked || options.requireNoProtected === true;
+  diagnostic('window-policy', 'policy-invalid');
   if (options.resourcePolicy !== undefined && options.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
     throw new Error('Action window resource policy is unsupported.');
   }
@@ -1019,9 +1037,11 @@ const validateActionWindowSnapshot = (value, options = {}) => {
   return result;
 };
 
-export function validateActionWindow(value, options = {}) {
+export function validateActionWindow(value, options = {}, diagnostic = () => {}) {
+  if (typeof diagnostic !== 'function') throw new Error('Action window diagnostic must be a function.');
+  diagnostic('window-schema', 'schema-invalid');
   const snapshot = snapshotClosedDataGraph({ value, options }, 'Action window input');
-  return validateActionWindowSnapshot(snapshot.value, snapshot.options);
+  return validateActionWindowSnapshot(snapshot.value, snapshot.options, diagnostic);
 }
 
 const validateRouteResultSnapshot = value => {

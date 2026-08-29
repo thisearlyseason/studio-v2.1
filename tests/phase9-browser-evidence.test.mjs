@@ -915,6 +915,47 @@ test('phase 9 evidence contracts reject incomplete and vacuous action windows', 
   assert.equal(validateActionWindow(safeWindow()).finalPath, '/family');
 });
 
+test('phase 9 action-window validator reports only the exact closed failing boundary', async t => {
+  const protectedRender = safeWindow({
+    renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
+    protectedRender: true,
+  });
+  const cases = [
+    ['schema', {}, {}, /terminalReached/i, ['window-schema', 'schema-invalid']],
+    ['terminal', safeWindow({ terminalReached: false }), {}, /terminal state/i,
+      ['window-terminal', 'terminal-invalid']],
+    ['loading', safeWindow({ loadingVisible: true }), {}, /loading state/i,
+      ['window-loading', 'loading-invalid']],
+    ['location', safeWindow({ finalUrl: `${STAGING_ORIGIN}/dashboard` }), {}, /finalUrl|pathname|location/i,
+      ['window-location', 'location-invalid']],
+    ['page error', safeWindow({ pageErrors: 1 }), {}, /page errors/i,
+      ['window-page-error', 'page-error-invalid']],
+    ['console error', safeWindow({ appConsoleErrors: 1 }), {}, /application console/i,
+      ['window-console-error', 'console-error-invalid']],
+    ['request failure', safeWindow({ unexpectedRequestFailures: 1 }), {}, /request failure/i,
+      ['window-request-failure', 'request-failure-invalid']],
+    ['overflow', safeWindow({ overflow: 1 }), {}, /overflow/i,
+      ['window-overflow', 'overflow-invalid']],
+    ['render coherence', safeWindow({
+      renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
+      protectedRender: false,
+    }), {}, /protected render flag/i, ['window-render-coherence', 'render-coherence-invalid']],
+    ['resource', safeWindow({ protectedRequests: 1 }), {}, /complete protected request signals/i,
+      ['window-resource', 'resource-invalid']],
+    ['policy', protectedRender, { requireNoProtected: true }, /protected render/i,
+      ['window-policy', 'policy-invalid']],
+  ];
+  for (const [name, window, options, expectedError, expectedDiagnostic] of cases) await t.test(name, () => {
+    const checkpoints = [];
+    assert.throws(
+      () => validateActionWindow(window, options, (checkpoint, reason) => checkpoints.push([checkpoint, reason])),
+      expectedError,
+    );
+    assert.deepEqual(checkpoints.at(-1), expectedDiagnostic);
+    assert.equal(checkpoints.flat().every(value => typeof value === 'string'), true);
+  });
+});
+
 test('phase 9 evidence contracts accept only closed count-coherent request and listener signals', () => {
   const signal = closedResourceSignal(`${STAGING_ORIGIN}/dashboard`, {
     targetKind: 'firestore-listen',
@@ -2376,7 +2417,7 @@ test('phase 9 browser scenarios reject Dashboard as the final role landing for r
 test('phase 9 admission scenario reports closed diagnostics for each landing contract boundary', async t => {
   const cases = [
     ['action window', scenarioWindow({ pageErrors: 1 }), /page errors/i,
-      ['landing-window-contract', 'window-contract-invalid']],
+      ['window-page-error', 'page-error-invalid']],
     ['final path', scenarioWindow({
       finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'],
     }), /exact landing path and heading/i, ['landing-expectation', 'landing-mismatch']],
@@ -6268,7 +6309,17 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       ['window-resource-contract', 'resource-contract-invalid'],
       ['window-render-contract', 'render-contract-invalid'],
       ['window-output-contract', 'output-contract-invalid'],
-      ['landing-window-contract', 'window-contract-invalid'],
+      ['window-schema', 'schema-invalid'],
+      ['window-location', 'location-invalid'],
+      ['window-terminal', 'terminal-invalid'],
+      ['window-loading', 'loading-invalid'],
+      ['window-page-error', 'page-error-invalid'],
+      ['window-console-error', 'console-error-invalid'],
+      ['window-request-failure', 'request-failure-invalid'],
+      ['window-overflow', 'overflow-invalid'],
+      ['window-render-coherence', 'render-coherence-invalid'],
+      ['window-resource', 'resource-invalid'],
+      ['window-policy', 'policy-invalid'],
       ['landing-expectation', 'landing-mismatch'],
       ['landing-heading', 'heading-mismatch'],
       ['landing-session', 'session-missing'],
@@ -6354,6 +6405,9 @@ test('phase 9 protocol-v4 failure terminal rejects forged, malformed, stale, and
       checkpoint: 'context-start', reason: 'context-invalid',
     }, accepted],
     ['checkpoint', { ...valid, checkpoint: 'raw-checkpoint' }, accepted],
+    ['retired coarse window checkpoint', {
+      ...valid, stage: 'scenario-action', checkpoint: 'landing-window-contract', reason: 'window-contract-invalid',
+    }, accepted],
     ['reason', { ...valid, reason: 'raw-secret-reason' }, accepted],
     ['checkpoint reason mismatch', { ...valid, reason: 'action-failed' }, accepted],
     ['checkpoint stage mismatch', {
@@ -8089,10 +8143,30 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     },
   };
   assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(diagnosticCertificate));
+  for (const [checkpoint, reason] of [
+    ['window-schema', 'schema-invalid'],
+    ['window-location', 'location-invalid'],
+    ['window-terminal', 'terminal-invalid'],
+    ['window-loading', 'loading-invalid'],
+    ['window-page-error', 'page-error-invalid'],
+    ['window-console-error', 'console-error-invalid'],
+    ['window-request-failure', 'request-failure-invalid'],
+    ['window-overflow', 'overflow-invalid'],
+    ['window-render-coherence', 'render-coherence-invalid'],
+    ['window-resource', 'resource-invalid'],
+    ['window-policy', 'policy-invalid'],
+  ]) assert.doesNotThrow(() => canonicalPhase9TerminalCertificate({
+    ...diagnosticCertificate,
+    diagnostic: { ...diagnosticCertificate.diagnostic, checkpoint, reason },
+  }));
   for (const [name, diagnostic] of [
     ['ordinal', { ...diagnosticCertificate.diagnostic, contextOrdinal: 40 }],
     ['context', { ...diagnosticCertificate.diagnostic, contextId: 'raw-context' }],
     ['checkpoint', { ...diagnosticCertificate.diagnostic, checkpoint: 'raw-checkpoint' }],
+    ['retired coarse checkpoint', {
+      ...diagnosticCertificate.diagnostic,
+      checkpoint: 'landing-window-contract', reason: 'window-contract-invalid',
+    }],
     ['reason', { ...diagnosticCertificate.diagnostic, reason: 'raw-reason' }],
     ['checkpoint/reason', { ...diagnosticCertificate.diagnostic, reason: 'action-failed' }],
   ]) assert.throws(

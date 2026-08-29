@@ -143,8 +143,7 @@ const rowFromWindow = ({ context, group, action, expectedResult, window, visible
 const validateLandingWindow = (window, landing, {
   requireNoProtected = false, resourcePolicy, diagnostic = () => {},
 } = {}) => {
-  diagnostic('landing-window-contract', 'window-contract-invalid');
-  const closedWindow = validateActionWindow(window, { requireNoProtected, resourcePolicy });
+  const closedWindow = validateActionWindow(window, { requireNoProtected, resourcePolicy }, diagnostic);
   diagnostic('landing-expectation', 'landing-mismatch');
   if (closedWindow.finalPath !== landing.path || !closedWindow.visibleSentinels.includes(landing.sentinel)) {
     throw new Error('Admission did not reach its exact landing path and heading.');
