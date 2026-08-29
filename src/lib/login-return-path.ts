@@ -20,19 +20,24 @@ export function canonicalSameOriginReturnPath(value: unknown, origin: string): s
   const unsafe = (candidate: string) => (
     !candidate.startsWith('/') || candidate.startsWith('//') || candidate.includes('\\') ||
     RETURN_PATH_CONTROL.test(candidate) || RETURN_PATH_SCHEME.test(candidate) ||
-    RETURN_PATH_ENCODED_AMBIGUITY.test(candidate)
+    RETURN_PATH_ENCODED_AMBIGUITY.test(candidate) ||
+    candidate.split(/[?#]/, 1)[0].split('/').some(segment => segment === '.' || segment === '..')
   );
-  const nonCanonical = (candidate: string) => {
+  const invalidResolution = (candidate: string, requireCanonical: boolean) => {
     try {
       const resolved = new URL(candidate, base);
-      return resolved.origin !== base.origin || resolved.href !== `${base.origin}${candidate}`;
+      return resolved.origin !== base.origin || (
+        requireCanonical && resolved.href !== `${base.origin}${candidate}`
+      );
     } catch {
       return true;
     }
   };
+  if (unsafe(value) || invalidResolution(value, true)) return null;
+
   let decoded = value;
   for (let layer = 0; layer < RETURN_PATH_DECODE_LIMIT; layer += 1) {
-    if (unsafe(decoded) || nonCanonical(decoded)) return null;
+    if (unsafe(decoded) || invalidResolution(decoded, false)) return null;
     let next: string;
     try {
       next = decodeURIComponent(decoded);
@@ -43,6 +48,6 @@ export function canonicalSameOriginReturnPath(value: unknown, origin: string): s
     if (layer === RETURN_PATH_DECODE_LIMIT - 1) return null;
     decoded = next;
   }
-  if (unsafe(decoded) || nonCanonical(decoded)) return null;
+  if (unsafe(decoded) || invalidResolution(decoded, false)) return null;
   return value;
 }

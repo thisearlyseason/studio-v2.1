@@ -133,6 +133,28 @@ describe('login settled-role routing', () => {
     expect(harness.router.push).not.toHaveBeenCalledWith('/dashboard');
   });
 
+  test.each([
+    '/calendar?q=hello%20world#today',
+    '/caf%C3%A9?tab=r%C3%A9sum%C3%A9',
+  ])('preserves canonical encoded stored return path %s', async returnPath => {
+    sessionStorage.setItem('squad_return_path', returnPath);
+    render(<LoginPage />);
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith(returnPath));
+    expect(harness.router.push).not.toHaveBeenCalledWith('/family');
+  });
+
+  test.each([
+    '/calendar?q=hello%20world#today',
+    '/caf%C3%A9?tab=r%C3%A9sum%C3%A9',
+  ])('preserves canonical encoded returnTo query path %s', async returnPath => {
+    window.history.replaceState({}, '', `/login?returnTo=${encodeURIComponent(returnPath)}`);
+    render(<LoginPage />);
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith(returnPath));
+    expect(harness.router.push).not.toHaveBeenCalledWith('/family');
+  });
+
   test.each(UNSAFE_RETURN_PATHS)('rejects unsafe stored return path %s before parent navigation', async returnPath => {
     sessionStorage.setItem('squad_return_path', returnPath);
     render(<LoginPage />);
