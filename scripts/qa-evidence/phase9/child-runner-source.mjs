@@ -455,6 +455,7 @@ const login = async (session, alias) => {
   setDiagnostic('scenario-action', 'action-failed');
 };
 const actionsFor = session => ({
+  diagnostic: (checkpoint, reason) => setDiagnostic(checkpoint, reason),
   loginAndLand: alias => login(session, alias),
   navigate: path => client.goto(session, `${STAGING_ORIGIN}${path}`),
   waitForExactLocation: (path, sentinel) => waitForExactLocation(session, path, sentinel),

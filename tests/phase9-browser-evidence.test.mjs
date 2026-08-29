@@ -465,6 +465,34 @@ test('phase 9 action window treats login terminal sentinels as nonprotected rend
   assert.equal(result.protectedRender, false);
 });
 
+test('phase 9 action window reports a closed visible-contract diagnostic before rejecting the sample', async () => {
+  const checkpoints = [];
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'page-a', sequence: 1 });
+    if (code.includes('phase9:sample')) return cliResult({
+      pageId: 'page-a', terminalReached: true, loadingVisible: false,
+      finalUrl: `${STAGING_ORIGIN}/family`, finalPath: '/family',
+      visibleSentinels: ['not-a-reviewed-heading'], sessionPresent: true,
+      protectedRender: false, rawRequests: [], rawResponses: [], rawTeamSelections: [],
+      pageErrors: [], appConsoleErrors: [], unexpectedRequestFailures: [], overflow: 0,
+      renderPath: '/family', renderSentinel: '', redirectReason: 'none', renderSignals: [],
+    });
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({
+    execute: transport.execute,
+    wrapperPath: '/safe/playwright_cli.sh',
+    onDiagnosticCheckpoint: (checkpoint, reason) => checkpoints.push([checkpoint, reason]),
+  });
+  await installSignalRecorder(client, 'visible-contract-diagnostic');
+  await assert.rejects(observeAction({
+    client, session: 'visible-contract-diagnostic', stage: 'admission-login',
+    terminal: async () => {}, action: async () => {},
+  }), /visible sentinels/i);
+  assert.deepEqual(checkpoints.at(-1), ['window-visible-contract', 'visible-contract-invalid']);
+});
+
 test('phase 9 action window caps sanitized render history', async () => {
   const transport = createCliTransport(argv => {
     const code = argv[argv.indexOf('run-code') + 1] ?? '';
@@ -2343,6 +2371,35 @@ test('phase 9 browser scenarios reject Dashboard as the final role landing for r
       },
     }), /exact landing path and heading/i, alias);
   }
+});
+
+test('phase 9 admission scenario reports closed diagnostics for each landing contract boundary', async t => {
+  const cases = [
+    ['action window', scenarioWindow({ pageErrors: 1 }), /page errors/i,
+      ['landing-window-contract', 'window-contract-invalid']],
+    ['final path', scenarioWindow({
+      finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'],
+    }), /exact landing path and heading/i, ['landing-expectation', 'landing-mismatch']],
+    ['session', scenarioWindow({ sessionPresent: false }), /authenticated session/i,
+      ['landing-session', 'session-missing']],
+    ['render history', scenarioWindow({
+      renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
+      protectedRender: true,
+    }), /unexpected protected render/i, ['landing-render-history', 'render-history-invalid']],
+  ];
+  for (const [name, window, message, expectedDiagnostic] of cases) await t.test(name, async () => {
+    const checkpoints = [];
+    await assert.rejects(runAdmissionScenario({
+      client: createScriptedScenarioClient([window]),
+      session: `parent-landing-diagnostic-${name}`,
+      context: scenarioContext({ contextId: `parent-landing-diagnostic-${name}`, alias: 'qa-parent-a' }),
+      actions: {
+        loginAndLand: async () => {}, navigate: async () => {}, waitForExactLocation: async () => {},
+        diagnostic: (checkpoint, reason) => checkpoints.push([checkpoint, reason]),
+      },
+    }), message);
+    assert.deepEqual(checkpoints.at(-1), expectedDiagnostic);
+  });
 });
 
 test('phase 9 browser scenarios retain strict zero protected data for Missing Profile in every admission window', async () => {
@@ -6205,6 +6262,18 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       ['terminal-wait', 'terminal-not-reached'],
       ['observation-sample', 'observation-failed'],
       ['window-validation', 'expectation-mismatch'],
+      ['window-sample-contract', 'sample-contract-invalid'],
+      ['window-observation-contract', 'observation-contract-invalid'],
+      ['window-visible-contract', 'visible-contract-invalid'],
+      ['window-resource-contract', 'resource-contract-invalid'],
+      ['window-render-contract', 'render-contract-invalid'],
+      ['window-output-contract', 'output-contract-invalid'],
+      ['landing-window-contract', 'window-contract-invalid'],
+      ['landing-expectation', 'landing-mismatch'],
+      ['landing-heading', 'heading-mismatch'],
+      ['landing-session', 'session-missing'],
+      ['landing-render-history', 'render-history-invalid'],
+      ['route-expectation', 'route-mismatch'],
       ['row-validation', 'row-invalid'],
     ],
     'row-emission': [

@@ -1564,7 +1564,11 @@ const bindFinalRecorderGeneration = (value, listenTargetState) => {
   }
 };
 
-const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, expectedViewport, requireAuthenticatedStart = false } = {}) => {
+const sanitizeWindow = (value, {
+  fixtureRunId, publicPageId, listenTargetState, expectedViewport, requireAuthenticatedStart = false,
+  onDiagnosticCheckpoint,
+} = {}) => {
+  onDiagnosticCheckpoint?.('window-sample-contract', 'sample-contract-invalid');
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Signal sample must be an object.');
   const booleanFields = ['terminalReached', 'loadingVisible', 'sessionPresent', 'protectedRender'];
   const stringFields = ['pageId', 'finalUrl', 'finalPath', 'renderPath', 'renderSentinel'];
@@ -1578,6 +1582,7 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, 
     && ['unavailable', 'none', 'other'].includes(value.redirectReason)
     && Number.isInteger(value.overflow) && value.overflow >= 0;
   if (!complete) throw new Error('Recorder must return a complete signal sample.');
+  onDiagnosticCheckpoint?.('window-observation-contract', 'observation-contract-invalid');
   if (expectedViewport && (
     value.viewport?.width !== expectedViewport.width || value.viewport?.height !== expectedViewport.height
   )) throw new Error('Recorder viewport does not match the verified context viewport.');
@@ -1587,6 +1592,7 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, 
   if (typeof publicPageId !== 'string' || !/^phase9-page-\d+$/.test(publicPageId)) {
     throw new Error('Client must assign a fixed local page identifier.');
   }
+  onDiagnosticCheckpoint?.('window-visible-contract', 'visible-contract-invalid');
   if (value.visibleSentinels.some(item => typeof item !== 'string')) throw new Error('Recorder must return a complete signal sample.');
   if (value.visibleSentinels.some(item => !PUBLIC_VISIBLE_SENTINELS.includes(item))) {
     throw new Error('Recorder visible sentinels must use the closed source-backed enum.');
@@ -1603,6 +1609,7 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, 
     || !Number.isSafeInteger(listenTargetState.generation)
     || listenTargetState.generation < 0
   ) throw new Error('Client must own private Listen target state.');
+  onDiagnosticCheckpoint?.('window-resource-contract', 'resource-contract-invalid');
   const requests = [];
   for (const item of value.rawRequests) {
     const generationTrusted = bindRecorderGeneration(item, listenTargetState);
@@ -1617,6 +1624,7 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, 
   bindFinalRecorderGeneration(value, listenTargetState);
   const http = value.rawResponses.map(sanitizeHttpResult).filter(Boolean);
   const teamSelectionSignals = classifyTeamSelections(value.rawTeamSelections, fixtureRunId);
+  onDiagnosticCheckpoint?.('window-render-contract', 'render-contract-invalid');
   if (value.renderSignals.some(item => (
     !item || typeof item !== 'object' || Array.isArray(item)
     || !['heading', 'status'].includes(item.kind)
@@ -1656,6 +1664,7 @@ const sanitizeWindow = (value, { fixtureRunId, publicPageId, listenTargetState, 
     unexpectedRequestFailures: count(value.unexpectedRequestFailures),
     overflow: count(value.overflow),
   };
+  onDiagnosticCheckpoint?.('window-output-contract', 'output-contract-invalid');
   assertNoFixtureIdentifierLeak(sanitized, 'Client action window');
   return sanitized;
 };
@@ -1973,6 +1982,7 @@ export function createPlaywrightCliClient({
         listenTargetState,
         expectedViewport: expectedViewportByTab.get(key),
         requireAuthenticatedStart: authenticatedStartByTab.delete(key),
+        onDiagnosticCheckpoint,
       });
       return sample;
     },

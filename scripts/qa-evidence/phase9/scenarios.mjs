@@ -140,18 +140,25 @@ const rowFromWindow = ({ context, group, action, expectedResult, window, visible
   return Object.freeze(row);
 };
 
-const validateLandingWindow = (window, landing, { requireNoProtected = false, resourcePolicy } = {}) => {
+const validateLandingWindow = (window, landing, {
+  requireNoProtected = false, resourcePolicy, diagnostic = () => {},
+} = {}) => {
+  diagnostic('landing-window-contract', 'window-contract-invalid');
   const closedWindow = validateActionWindow(window, { requireNoProtected, resourcePolicy });
+  diagnostic('landing-expectation', 'landing-mismatch');
   if (closedWindow.finalPath !== landing.path || !closedWindow.visibleSentinels.includes(landing.sentinel)) {
     throw new Error('Admission did not reach its exact landing path and heading.');
   }
+  diagnostic('landing-heading', 'heading-mismatch');
   const finalProtectedHeadings = closedWindow.visibleSentinels.filter(sentinel => PROTECTED_PAGE_HEADINGS.includes(sentinel));
   const expectedFinalProtectedHeadings = PROTECTED_PAGE_HEADINGS.includes(landing.sentinel) ? [landing.sentinel] : [];
   if (
     finalProtectedHeadings.length !== expectedFinalProtectedHeadings.length
     || finalProtectedHeadings.some((sentinel, index) => sentinel !== expectedFinalProtectedHeadings[index])
   ) throw new Error('Admission final visible protected heading must exactly match the expected sentinel.');
+  diagnostic('landing-session', 'session-missing');
   if (!closedWindow.sessionPresent) throw new Error('Admission landing requires an authenticated session.');
+  diagnostic('landing-render-history', 'render-history-invalid');
   if (closedWindow.protectedRender) {
     const signals = closedWindow.renderSignals.filter(signal => (
       signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
@@ -172,6 +179,10 @@ const executeRoute = async ({
     action: () => requireFunction(actions?.navigate, 'navigate')(path),
     terminal: () => requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(expected.path, expected.sentinel),
   });
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
+  diagnostic('route-expectation', 'route-mismatch');
   const validated = validateRouteResult({
     allowed: isAllowed, requestedPath: path,
     expectedPath: expected.path, expectedSentinel: expected.sentinel, requireNoProtected, window,
@@ -214,6 +225,9 @@ export async function runAdmissionScenario({ client, session, context: inputCont
   const authenticatedSession = requireText(session, 'session');
   const requireNoProtected = PROTECTED_FREE_ADMISSION_ALIASES.has(context.alias);
   const resourcePolicy = context.alias === 'qa-no-team' ? NO_TEAM_RESOURCE_POLICY : undefined;
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
   const observedLoginWindow = await observe({
     client, session: authenticatedSession, stage: 'admission-login',
     action: () => requireFunction(actions?.loginAndLand, 'loginAndLand')(context.alias),
@@ -222,7 +236,9 @@ export async function runAdmissionScenario({ client, session, context: inputCont
       contract.landing.sentinel,
     ),
   });
-  const loginWindow = validateLandingWindow(observedLoginWindow, contract.landing, { requireNoProtected, resourcePolicy });
+  const loginWindow = validateLandingWindow(observedLoginWindow, contract.landing, {
+    requireNoProtected, resourcePolicy, diagnostic,
+  });
   const windows = [loginWindow];
   const summaries = [{
     stage: 'admission-login', requestedPath: '/login', allowed: true, finalPath: loginWindow.finalPath,
