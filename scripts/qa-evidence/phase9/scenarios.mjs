@@ -72,7 +72,7 @@ const validateContext = (context, group) => {
 const observe = values => observeAction(values);
 const summarizeHttp = results => !Array.isArray(results) || results.length === 0
   ? 'none' : results.map(result => `${result.status}`).join(',');
-const aggregateWindows = (windows, options = {}) => {
+export const aggregateWindows = (windows, options = {}, diagnostic = () => {}) => {
   if (!Array.isArray(windows) || windows.length === 0) throw new Error('Scenario requires complete action windows.');
   const last = windows.at(-1);
   const failureSignals = windows.flatMap(window => window.unexpectedRequestFailureSignals.map(({
@@ -130,7 +130,7 @@ const aggregateWindows = (windows, options = {}) => {
       multiplicity: failureMultiplicity,
     })),
     overflow: windows.reduce((sum, window) => sum + window.overflow, 0),
-  }, options);
+  }, options, diagnostic);
 };
 const rowFromWindow = ({ context, group, action, expectedResult, window, visibleState, httpSummary, actionSummaries }) => {
   const row = {
