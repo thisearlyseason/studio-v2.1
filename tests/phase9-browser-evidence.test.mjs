@@ -956,6 +956,79 @@ test('phase 9 action-window validator reports only the exact closed failing boun
   });
 });
 
+test('phase 9 action-window diagnostics cannot mutate caller inputs into a passing snapshot', async t => {
+  const assertClosedDiagnostics = checkpoints => {
+    assert.equal(checkpoints.length > 0, true);
+    assert.equal(checkpoints.every(pair => (
+      Array.isArray(pair)
+      && pair.length === 2
+      && pair.every(value => typeof value === 'string' && /^[a-z-]+$/.test(value))
+    )), true);
+  };
+  await t.test('window value', () => {
+    const window = safeWindow({ terminalReached: false, pageErrors: 1 });
+    const checkpoints = [];
+    assert.throws(() => validateActionWindow(window, {}, (checkpoint, reason) => {
+      checkpoints.push([checkpoint, reason]);
+      window.terminalReached = true;
+      window.pageErrors = 0;
+    }), /terminal state/i);
+    assert.deepEqual(checkpoints.at(-1), ['window-terminal', 'terminal-invalid']);
+    assertClosedDiagnostics(checkpoints);
+  });
+  await t.test('window options', () => {
+    const window = safeWindow({
+      renderSignals: [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }],
+      protectedRender: true,
+    });
+    const options = { requireNoProtected: true };
+    const checkpoints = [];
+    assert.throws(() => validateActionWindow(window, options, (checkpoint, reason) => {
+      checkpoints.push([checkpoint, reason]);
+      options.requireNoProtected = false;
+    }), /protected render/i);
+    assert.deepEqual(checkpoints.at(-1), ['window-policy', 'policy-invalid']);
+    assertClosedDiagnostics(checkpoints);
+  });
+});
+
+test('phase 9 action-window diagnostic reporting cannot throw or tamper with validation intrinsics', async t => {
+  await t.test('reporter throw preserves the validation decision', () => {
+    assert.throws(
+      () => validateActionWindow(safeWindow({ terminalReached: false }), {}, () => {
+        throw new Error('reporter-controlled-error');
+      }),
+      error => /terminal state/i.test(error?.message) && !/reporter-controlled/i.test(error?.message),
+    );
+    assert.equal(validateActionWindow(safeWindow(), {}, () => {
+      throw new Error('reporter-controlled-error');
+    }).pass, true);
+  });
+  await t.test('reporter prototype tampering occurs only after the decision', () => {
+    const originalIncludes = Array.prototype.includes;
+    const originalTest = RegExp.prototype.test;
+    let thrown;
+    let reports = 0;
+    try {
+      validateActionWindow(safeWindow({
+        pageId: 'untrusted-page-id',
+        visibleSentinels: ['Untrusted sentinel'],
+      }), {}, () => {
+        reports += 1;
+        Array.prototype.includes = () => true;
+        RegExp.prototype.test = () => true;
+      });
+    } catch (error) {
+      thrown = error;
+    } finally {
+      Array.prototype.includes = originalIncludes;
+      RegExp.prototype.test = originalTest;
+    }
+    assert.match(thrown?.message ?? '', /pageId|sentinel/i);
+    assert.equal(reports > 0, true);
+  });
+});
+
 test('phase 9 evidence contracts accept only closed count-coherent request and listener signals', () => {
   const signal = closedResourceSignal(`${STAGING_ORIGIN}/dashboard`, {
     targetKind: 'firestore-listen',

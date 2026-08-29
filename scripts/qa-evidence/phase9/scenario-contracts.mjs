@@ -1039,9 +1039,25 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
 
 export function validateActionWindow(value, options = {}, diagnostic = () => {}) {
   if (typeof diagnostic !== 'function') throw new Error('Action window diagnostic must be a function.');
-  diagnostic('window-schema', 'schema-invalid');
   const snapshot = snapshotClosedDataGraph({ value, options }, 'Action window input');
-  return validateActionWindowSnapshot(snapshot.value, snapshot.options, diagnostic);
+  const diagnostics = [];
+  const recordDiagnostic = (checkpoint, reason) => {
+    diagnostics[diagnostics.length] = [checkpoint, reason];
+  };
+  let result;
+  let validationError;
+  try {
+    result = validateActionWindowSnapshot(snapshot.value, snapshot.options, recordDiagnostic);
+  } catch (error) {
+    validationError = error;
+  }
+  for (let index = 0; index < diagnostics.length; index += 1) {
+    try {
+      diagnostic(diagnostics[index][0], diagnostics[index][1]);
+    } catch {}
+  }
+  if (validationError !== undefined) throw validationError;
+  return result;
 }
 
 const validateRouteResultSnapshot = value => {
