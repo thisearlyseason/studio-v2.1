@@ -853,7 +853,6 @@ const requireClosedHttpResult = (value, index) => {
 };
 
 const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}) => {
-  diagnostic('window-schema', 'schema-invalid');
   const candidate = requireRecord(value, 'Action window');
   if (Object.hasOwn(candidate, 'requestSignals')) {
     throw new Error('Action window must not expose legacy request signals.');
@@ -1039,16 +1038,18 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
 
 export function validateActionWindow(value, options = {}, diagnostic = () => {}) {
   if (typeof diagnostic !== 'function') throw new Error('Action window diagnostic must be a function.');
-  const snapshot = snapshotClosedDataGraph({ value, options }, 'Action window input');
-  const diagnostics = [];
+  const diagnostics = [['window-schema', 'schema-invalid']];
   const recordDiagnostic = (checkpoint, reason) => {
     diagnostics[diagnostics.length] = [checkpoint, reason];
   };
   let result;
+  let validationFailed = false;
   let validationError;
   try {
+    const snapshot = snapshotClosedDataGraph({ value, options }, 'Action window input');
     result = validateActionWindowSnapshot(snapshot.value, snapshot.options, recordDiagnostic);
   } catch (error) {
+    validationFailed = true;
     validationError = error;
   }
   for (let index = 0; index < diagnostics.length; index += 1) {
@@ -1056,7 +1057,7 @@ export function validateActionWindow(value, options = {}, diagnostic = () => {})
       diagnostic(diagnostics[index][0], diagnostics[index][1]);
     } catch {}
   }
-  if (validationError !== undefined) throw validationError;
+  if (validationFailed) throw validationError;
   return result;
 }
 

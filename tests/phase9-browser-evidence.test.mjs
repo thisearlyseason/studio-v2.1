@@ -1029,6 +1029,43 @@ test('phase 9 action-window diagnostic reporting cannot throw or tamper with val
   });
 });
 
+test('phase 9 action-window graph-shape failures retain the fixed schema diagnostic', async t => {
+  const hiddenWindow = safeWindow();
+  Object.defineProperty(hiddenWindow, 'hidden', { value: true, enumerable: false });
+  const symbolWindow = safeWindow();
+  symbolWindow[Symbol('hidden')] = true;
+  const accessorWindow = safeWindow();
+  Object.defineProperty(accessorWindow, 'terminalReached', {
+    get() { throw new Error('accessor-must-not-run'); },
+    enumerable: true,
+  });
+  let windowProxyTraps = 0;
+  const proxyWindow = new Proxy(safeWindow(), {
+    ownKeys(target) { windowProxyTraps += 1; return Reflect.ownKeys(target); },
+  });
+  let optionsProxyTraps = 0;
+  const proxyOptions = new Proxy({}, {
+    ownKeys(target) { optionsProxyTraps += 1; return Reflect.ownKeys(target); },
+  });
+  const cases = [
+    ['hidden own property', hiddenWindow, {}],
+    ['symbol property', symbolWindow, {}],
+    ['accessor property', accessorWindow, {}],
+    ['Proxy window', proxyWindow, {}],
+    ['Proxy options', safeWindow(), proxyOptions],
+  ];
+  for (const [name, window, options] of cases) await t.test(name, () => {
+    const checkpoints = [];
+    assert.throws(
+      () => validateActionWindow(window, options, (checkpoint, reason) => checkpoints.push([checkpoint, reason])),
+      /cloneable closed data graph/i,
+    );
+    assert.deepEqual(checkpoints, [['window-schema', 'schema-invalid']]);
+  });
+  assert.equal(windowProxyTraps, 0);
+  assert.equal(optionsProxyTraps, 0);
+});
+
 test('phase 9 evidence contracts accept only closed count-coherent request and listener signals', () => {
   const signal = closedResourceSignal(`${STAGING_ORIGIN}/dashboard`, {
     targetKind: 'firestore-listen',
