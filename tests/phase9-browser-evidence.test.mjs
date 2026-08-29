@@ -33,6 +33,7 @@ import {
 import {
   acquireBlankBrowser,
   armAcquiredSignalRecorder,
+  classifyRequestFailureSignal,
   closeAndVerifyBrowsers,
   createPlaywrightCliClient,
   createPhase9ProductionCliClient,
@@ -280,6 +281,75 @@ const blankAwareCliResult = (argv, fallback = { ok: true }) => {
   const code = argv[argv.indexOf('run-code') + 1] ?? '';
   return cliResult(code.includes('phase9:verify-about-blank') ? { url: 'about:blank' } : fallback);
 };
+
+test('phase 9 request failure classifier emits closed summaries for every public class', () => {
+  const sensitiveUrl = 'https://qa-phase7-20260829T123456Z-abcdefghijkl/asset.js?session=browser-session-label';
+  const input = overrides => ({
+    failureText: 'net::ERR_FAILED',
+    url: sensitiveUrl,
+    resourceType: 'fetch',
+    isNavigationRequest: false,
+    isMainFrame: false,
+    startGeneration: 4,
+    currentGeneration: 4,
+    ...overrides,
+  });
+  for (const [failureText, failureClass] of [
+    ['net::ERR_ABORTED', 'aborted'],
+    ['net::ERR_TIMED_OUT', 'timeout'],
+    ['net::ERR_NAME_NOT_RESOLVED', 'name-resolution'],
+    ['net::ERR_CONNECTION_REFUSED', 'connection'],
+    ['net::ERR_CERT_AUTHORITY_INVALID', 'tls'],
+    ['net::ERR_BLOCKED_BY_CLIENT', 'policy-blocked'],
+    ['net::ERR_FAILED', 'other'],
+  ]) {
+    assert.deepEqual(classifyRequestFailureSignal(input({ failureText })), {
+      failureClass, targetClass: 'other', resourceType: 'fetch', navigationRelationship: 'subresource',
+    });
+  }
+  for (const [url, resourceType, targetClass] of [
+    [`${STAGING_ORIGIN}/api/health`, 'fetch', 'public-api'],
+    [`${STAGING_ORIGIN}/api/teams/chat`, 'xhr', 'protected-api'],
+    ['https://firestore.googleapis.com/v1/projects/example/databases/(default)/documents/a', 'fetch', 'firestore'],
+    ['https://identitytoolkit.googleapis.com/v1/accounts:lookup', 'fetch', 'identity'],
+    [`${STAGING_ORIGIN}/assets/app.js`, 'script', 'static'],
+  ]) {
+    assert.deepEqual(classifyRequestFailureSignal(input({ url, resourceType })), {
+      failureClass: 'other', targetClass, resourceType: ['fetch', 'xhr'].includes(resourceType) ? resourceType : 'other',
+      navigationRelationship: 'subresource',
+    });
+  }
+  for (const [startGeneration, currentGeneration, navigationRelationship] of [
+    [4, 4, 'current-document'],
+    [3, 4, 'prior-document'],
+    [undefined, 4, 'unknown'],
+    [5, 4, 'unknown'],
+  ]) {
+    assert.deepEqual(classifyRequestFailureSignal(input({
+      url: `${STAGING_ORIGIN}/family`, resourceType: 'document', isNavigationRequest: true, isMainFrame: true,
+      startGeneration, currentGeneration,
+    })), {
+      failureClass: 'other', targetClass: 'document', resourceType: 'other', navigationRelationship,
+    });
+  }
+  assert.deepEqual(classifyRequestFailureSignal(input({
+    failureText: null, url: null, resourceType: 'unrecognized', isNavigationRequest: 'yes', isMainFrame: true,
+    startGeneration: 'four', currentGeneration: 4,
+  })), {
+    failureClass: 'other', targetClass: 'other', resourceType: 'other', navigationRelationship: 'unknown',
+  });
+  assert.deepEqual(classifyRequestFailureSignal(new Proxy({}, {
+    get() { throw new Error('raw browser value must stay private'); },
+  })), {
+    failureClass: 'other', targetClass: 'other', resourceType: 'other', navigationRelationship: 'unknown',
+  });
+  const serialized = JSON.stringify(classifyRequestFailureSignal(input({
+    failureText: 'net::ERR_NAME_NOT_RESOLVED qa-phase7-20260829T123456Z-abcdefghijkl browser-session-label',
+  })));
+  for (const forbidden of [sensitiveUrl, 'session=browser-session-label', 'qa-phase7-20260829T123456Z-abcdefghijkl', 'net::ERR_NAME_NOT_RESOLVED', 'browser-session-label']) {
+    assert.equal(serialized.includes(forbidden), false, `classifier leaked ${forbidden}`);
+  }
+});
 
 test('phase 9 playwright client arms about:blank before navigation and compiles run-code without evaluation', async () => {
   const transport = createCliTransport(argv => {
@@ -838,6 +908,69 @@ darwinRuntimeTest('phase 9 action window real Chrome captures distinct CSS-anima
     });
     assert.equal(flashes.protectedRender, true, JSON.stringify(flashes));
     assert.equal(flashes.renderSignals.filter(signal => signal.sentinel === 'Family Overview').length, 2);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+});
+
+darwinRuntimeTest('phase 9 action window classifies real request failures', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPhase9ProductionCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
+  const session = 'phase9-request-failure-classification';
+  const captureFailure = async errorCode => observeAction({
+    client,
+    session,
+    stage: `request-failure-${errorCode}`,
+    terminal: async () => {},
+    action: async () => client.runCode(session, `async (page) => {
+      const target = 'https://phase9-request-failure.invalid/${errorCode}';
+      await page.route(target, route => route.abort(${JSON.stringify(errorCode)}));
+      await page.evaluate(target => fetch(target).catch(() => undefined), target);
+      await page.unroute(target);
+      return { ok: true };
+    }`),
+  });
+  try {
+    await installSignalRecorder(client, session);
+    const aborted = await captureFailure('aborted');
+    const timedOut = await captureFailure('timedout');
+    const multiple = await observeAction({
+      client,
+      session,
+      stage: 'request-failure-multiple',
+      terminal: async () => {},
+      action: async () => client.runCode(session, `async (page) => {
+        const targets = [
+          'https://phase9-request-failure.invalid/multiple-a',
+          'https://phase9-request-failure.invalid/multiple-b',
+        ];
+        await Promise.all(targets.map(target => page.route(target, route => route.abort('aborted'))));
+        await page.evaluate(targets => Promise.all(targets.map(target => fetch(target).catch(() => undefined))), targets);
+        await Promise.all(targets.map(target => page.unroute(target)));
+        return { ok: true };
+      }`),
+    });
+    assert.equal(aborted.unexpectedRequestFailures, 1);
+    assert.equal(timedOut.unexpectedRequestFailures, 1);
+    assert.deepEqual(aborted.unexpectedRequestFailureSignals, [{
+      failureClass: 'aborted', targetClass: 'other', resourceType: 'fetch',
+      navigationRelationship: 'subresource', multiplicity: 'single',
+    }]);
+    assert.deepEqual(timedOut.unexpectedRequestFailureSignals, [{
+      failureClass: 'timeout', targetClass: 'other', resourceType: 'fetch',
+      navigationRelationship: 'subresource', multiplicity: 'single',
+    }]);
+    assert.equal(multiple.unexpectedRequestFailures, 2);
+    assert.deepEqual(multiple.unexpectedRequestFailureSignals, [
+      {
+        failureClass: 'aborted', targetClass: 'other', resourceType: 'fetch',
+        navigationRelationship: 'subresource', multiplicity: 'multiple',
+      },
+      {
+        failureClass: 'aborted', targetClass: 'other', resourceType: 'fetch',
+        navigationRelationship: 'subresource', multiplicity: 'multiple',
+      },
+    ]);
   } finally {
     await closeAndVerifyBrowsers(client);
   }

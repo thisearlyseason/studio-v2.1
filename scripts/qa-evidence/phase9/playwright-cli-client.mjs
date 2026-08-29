@@ -1158,6 +1158,50 @@ const installRecorderSource = () => String.raw`async (page) => {
     }
     state[key].push(value);
   };
+  const classifyRequestFailureSignal = input => {
+    try {
+    const failureText = typeof input?.failureText === 'string' ? input.failureText.toUpperCase() : '';
+    let failureClass = 'other';
+    if (failureText.includes('ERR_ABORTED')) failureClass = 'aborted';
+    else if (failureText.includes('ERR_TIMED_OUT') || failureText.includes('ERR_CONNECTION_TIMED_OUT')) failureClass = 'timeout';
+    else if (failureText.includes('ERR_NAME_NOT_RESOLVED') || failureText.includes('ERR_DNS_')) failureClass = 'name-resolution';
+    else if (failureText.includes('ERR_CONNECTION_') || failureText.includes('ERR_NETWORK_CHANGED')
+      || failureText.includes('ERR_INTERNET_DISCONNECTED') || failureText.includes('ERR_ADDRESS_UNREACHABLE')) failureClass = 'connection';
+    else if (failureText.includes('ERR_CERT_') || failureText.includes('ERR_SSL_') || failureText.includes('ERR_TLS_')) failureClass = 'tls';
+    else if (failureText.includes('ERR_BLOCKED_BY_') || failureText.includes('ERR_ACCESS_DENIED')
+      || failureText.includes('ERR_DISALLOWED_URL_SCHEME') || failureText.includes('ERR_UNSAFE_PORT')) failureClass = 'policy-blocked';
+    const resourceType = ['fetch', 'xhr'].includes(input?.resourceType) ? input.resourceType : 'other';
+    let targetClass = 'other';
+    if (input?.isNavigationRequest === true && input?.isMainFrame === true) targetClass = 'document';
+    else if (typeof input?.url === 'string') {
+      try {
+        const target = new URL(input.url);
+        if (!target.username && !target.password && ['http:', 'https:'].includes(target.protocol)) {
+          if (target.hostname === 'firestore.googleapis.com') targetClass = 'firestore';
+          else if (['identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firebaseinstallations.googleapis.com'].includes(target.hostname)) targetClass = 'identity';
+          else if (target.origin === ${JSON.stringify(STAGING_ORIGIN)}) {
+            if (target.pathname.startsWith('/api/')) {
+              targetClass = ${JSON.stringify([...NON_PROTECTED_API_PATHS])}.includes(target.pathname) ? 'public-api' : 'protected-api';
+            } else if (['script', 'stylesheet', 'image', 'media', 'font'].includes(input?.resourceType)) targetClass = 'static';
+          }
+        }
+      } catch {
+        targetClass = 'other';
+      }
+    }
+    let navigationRelationship = 'unknown';
+    if (input?.isNavigationRequest === false) navigationRelationship = 'subresource';
+    else if (input?.isNavigationRequest === true && input?.isMainFrame === true
+      && Number.isSafeInteger(input.startGeneration) && input.startGeneration >= 0
+      && Number.isSafeInteger(input.currentGeneration) && input.currentGeneration >= 0) {
+      if (input.startGeneration === input.currentGeneration) navigationRelationship = 'current-document';
+      else if (input.startGeneration < input.currentGeneration) navigationRelationship = 'prior-document';
+    }
+    return { failureClass, targetClass, resourceType, navigationRelationship };
+    } catch {
+      return { failureClass: 'other', targetClass: 'other', resourceType: 'other', navigationRelationship: 'unknown' };
+    }
+  };
   const initializeRenderObserver = function initializeRenderObserver() {
     if (globalThis.__phase9RenderObserverInstalled) return;
     if (!document.documentElement) {
@@ -1264,10 +1308,11 @@ const installRecorderSource = () => String.raw`async (page) => {
       rawResponses: [],
       pageErrors: [],
       appConsoleErrors: [],
-      requestFailures: [],
+      requestFailureSignals: [],
       overflow: 0,
     };
     page.__phase9EvidenceRecorder = state;
+    const requestMetadata = new WeakMap();
     page.on('framenavigated', frame => {
       if (frame === page.mainFrame()) state.navigationGeneration += 1;
     });
@@ -1290,6 +1335,7 @@ const installRecorderSource = () => String.raw`async (page) => {
       };
     };
     page.on('request', request => {
+      requestMetadata.set(request, { navigationGeneration: state.navigationGeneration });
       boundedPush(state, 'rawRequests', captureRequest(request));
     });
     page.on('response', response => {
@@ -1302,7 +1348,18 @@ const installRecorderSource = () => String.raw`async (page) => {
     page.on('console', message => {
       if (message.type() === 'error') boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR');
     });
-    page.on('requestfailed', () => boundedPush(state, 'requestFailures', 'REQUEST_FAILED'));
+    page.on('requestfailed', request => {
+      const input = {
+        startGeneration: requestMetadata.get(request)?.navigationGeneration,
+        currentGeneration: state.navigationGeneration,
+      };
+      try { input.failureText = request.failure()?.errorText; } catch {}
+      try { input.url = request.url(); } catch {}
+      try { input.resourceType = request.resourceType(); } catch {}
+      try { input.isNavigationRequest = request.isNavigationRequest(); } catch {}
+      try { input.isMainFrame = request.frame() === page.mainFrame(); } catch {}
+      boundedPush(state, 'requestFailureSignals', classifyRequestFailureSignal(input));
+    });
     await page.exposeFunction('__phase9RecordRender', signal => {
       if (!signal || !['heading', 'status'].includes(signal.kind)
         || typeof signal.pathname !== 'string' || typeof signal.sentinel !== 'string') return;
@@ -1332,7 +1389,7 @@ const MARK_SOURCE = String.raw`async (page) => {
   state.rawResponses = [];
   state.pageErrors = [];
   state.appConsoleErrors = [];
-  state.requestFailures = [];
+  state.requestFailureSignals = [];
   state.overflow = 0;
   const cookies = await page.context().cookies(${JSON.stringify(STAGING_ORIGIN)});
   return {
@@ -1386,7 +1443,7 @@ const sampleSource = mark => String.raw`async (page) => {
     rawTeamSelections: state.rawSelections,
     pageErrors: state.pageErrors,
     appConsoleErrors: state.appConsoleErrors,
-    unexpectedRequestFailures: state.requestFailures,
+    unexpectedRequestFailures: state.requestFailureSignals,
     overflow: state.overflow,
     renderPath: render.path,
     renderSentinel: render.sentinels[0] || '',
@@ -1438,6 +1495,84 @@ const NON_PROTECTED_API_PATHS = new Set([
   '/api/newsletter/subscribe',
   '/api/newsletter/unsubscribe',
 ]);
+
+const REQUEST_FAILURE_CLASSES = Object.freeze([
+  'aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other',
+]);
+const REQUEST_FAILURE_TARGET_CLASSES = Object.freeze([
+  'document', 'public-api', 'protected-api', 'firestore', 'identity', 'static', 'other',
+]);
+const REQUEST_FAILURE_RESOURCE_TYPES = Object.freeze(['fetch', 'xhr', 'other']);
+const REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS = Object.freeze([
+  'current-document', 'prior-document', 'subresource', 'unknown',
+]);
+const IDENTITY_HOSTS = new Set([
+  'identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firebaseinstallations.googleapis.com',
+]);
+
+export function classifyRequestFailureSignal(input) {
+  try {
+  const failureText = typeof input?.failureText === 'string' ? input.failureText.toUpperCase() : '';
+  let failureClass = 'other';
+  if (failureText.includes('ERR_ABORTED')) failureClass = 'aborted';
+  else if (failureText.includes('ERR_TIMED_OUT') || failureText.includes('ERR_CONNECTION_TIMED_OUT')) failureClass = 'timeout';
+  else if (failureText.includes('ERR_NAME_NOT_RESOLVED') || failureText.includes('ERR_DNS_')) failureClass = 'name-resolution';
+  else if (
+    failureText.includes('ERR_CONNECTION_') || failureText.includes('ERR_NETWORK_CHANGED')
+    || failureText.includes('ERR_INTERNET_DISCONNECTED') || failureText.includes('ERR_ADDRESS_UNREACHABLE')
+  ) failureClass = 'connection';
+  else if (failureText.includes('ERR_CERT_') || failureText.includes('ERR_SSL_') || failureText.includes('ERR_TLS_')) failureClass = 'tls';
+  else if (
+    failureText.includes('ERR_BLOCKED_BY_') || failureText.includes('ERR_ACCESS_DENIED')
+    || failureText.includes('ERR_DISALLOWED_URL_SCHEME') || failureText.includes('ERR_UNSAFE_PORT')
+  ) failureClass = 'policy-blocked';
+
+  const resourceType = REQUEST_FAILURE_RESOURCE_TYPES.includes(input?.resourceType) ? input.resourceType : 'other';
+  let targetClass = 'other';
+  if (input?.isNavigationRequest === true && input?.isMainFrame === true) targetClass = 'document';
+  else if (typeof input?.url === 'string') {
+    try {
+      const target = new URL(input.url);
+      if (!target.username && !target.password && ['http:', 'https:'].includes(target.protocol)) {
+        if (target.hostname === 'firestore.googleapis.com') targetClass = 'firestore';
+        else if (IDENTITY_HOSTS.has(target.hostname)) targetClass = 'identity';
+        else if (target.origin === STAGING_ORIGIN) {
+          if (target.pathname.startsWith('/api/')) {
+            targetClass = NON_PROTECTED_API_PATHS.has(target.pathname) ? 'public-api' : 'protected-api';
+          } else if (['script', 'stylesheet', 'image', 'media', 'font'].includes(input?.resourceType)) targetClass = 'static';
+        }
+      }
+    } catch {
+      targetClass = 'other';
+    }
+  }
+
+  let navigationRelationship = 'unknown';
+  if (input?.isNavigationRequest === false) navigationRelationship = 'subresource';
+  else if (input?.isNavigationRequest === true && input?.isMainFrame === true) {
+    if (
+      Number.isSafeInteger(input.startGeneration) && input.startGeneration >= 0
+      && Number.isSafeInteger(input.currentGeneration) && input.currentGeneration >= 0
+    ) {
+      if (input.startGeneration === input.currentGeneration) navigationRelationship = 'current-document';
+      else if (input.startGeneration < input.currentGeneration) navigationRelationship = 'prior-document';
+    }
+  }
+  return { failureClass, targetClass, resourceType, navigationRelationship };
+  } catch {
+    return { failureClass: 'other', targetClass: 'other', resourceType: 'other', navigationRelationship: 'unknown' };
+  }
+}
+
+const isClosedRequestFailureSignal = value => (
+  value && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).length === 4
+  && ['failureClass', 'targetClass', 'resourceType', 'navigationRelationship'].every(key => Object.hasOwn(value, key))
+  && REQUEST_FAILURE_CLASSES.includes(value.failureClass)
+  && REQUEST_FAILURE_TARGET_CLASSES.includes(value.targetClass)
+  && REQUEST_FAILURE_RESOURCE_TYPES.includes(value.resourceType)
+  && REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS.includes(value.navigationRelationship)
+);
 
 export function isProtectedResource(signal) {
   if (!signal || typeof signal !== 'object') return false;
@@ -1603,6 +1738,12 @@ const sanitizeWindow = (value, {
   for (const field of ['rawRequests', 'rawResponses', 'rawTeamSelections']) {
     if (value[field].length > MAX_SIGNAL_COUNT) throw new Error(`Recorder ${field} exceeds the bounded signal history.`);
   }
+  const rawRequestFailureSignals = Array.from(value.unexpectedRequestFailures);
+  if (rawRequestFailureSignals.length !== value.unexpectedRequestFailures.length
+    || rawRequestFailureSignals.length > MAX_SIGNAL_COUNT
+    || rawRequestFailureSignals.some(item => !isClosedRequestFailureSignal(item))) {
+    throw new Error('Recorder request failures must use the closed recorder schema.');
+  }
   if (
     !listenTargetState
     || !(listenTargetState.activeTargetIds instanceof Set)
@@ -1624,6 +1765,14 @@ const sanitizeWindow = (value, {
   bindFinalRecorderGeneration(value, listenTargetState);
   const http = value.rawResponses.map(sanitizeHttpResult).filter(Boolean);
   const teamSelectionSignals = classifyTeamSelections(value.rawTeamSelections, fixtureRunId);
+  const requestFailureMultiplicity = rawRequestFailureSignals.length === 1 ? 'single' : 'multiple';
+  const unexpectedRequestFailureSignals = rawRequestFailureSignals.map(item => ({
+    failureClass: item.failureClass,
+    targetClass: item.targetClass,
+    resourceType: item.resourceType,
+    navigationRelationship: item.navigationRelationship,
+    multiplicity: requestFailureMultiplicity,
+  }));
   onDiagnosticCheckpoint?.('window-render-contract', 'render-contract-invalid');
   if (value.renderSignals.some(item => (
     !item || typeof item !== 'object' || Array.isArray(item)
@@ -1662,6 +1811,7 @@ const sanitizeWindow = (value, {
     pageErrors: count(value.pageErrors),
     appConsoleErrors: count(value.appConsoleErrors),
     unexpectedRequestFailures: count(value.unexpectedRequestFailures),
+    unexpectedRequestFailureSignals,
     overflow: count(value.overflow),
   };
   onDiagnosticCheckpoint?.('window-output-contract', 'output-contract-invalid');
