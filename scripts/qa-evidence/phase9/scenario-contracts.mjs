@@ -1118,7 +1118,7 @@ export function validateActionWindow(value, options = {}, diagnostic = () => {})
   return result;
 }
 
-const validateRouteResultSnapshot = value => {
+const validateRouteResultSnapshot = (value, diagnostic = () => {}) => {
   const result = requireRecord(value, 'Route result');
   requireBoolean(result.allowed, 'allowed');
   if (Object.hasOwn(result, 'requireNoProtected')) {
@@ -1147,7 +1147,9 @@ const validateRouteResultSnapshot = value => {
   const window = validateActionWindowSnapshot(result.window, {
     requireNoProtected: result.requireNoProtected === true,
     resourcePolicy: result.resourcePolicy,
-  });
+  }, diagnostic);
+
+  diagnostic('route-expectation', 'route-mismatch');
 
   if (!window.sessionPresent) throw new Error('Active-user route result must retain an authenticated session.');
 
@@ -1194,9 +1196,23 @@ const validateRouteResultSnapshot = value => {
   return validated;
 };
 
-export function validateRouteResult(value) {
-  const snapshot = snapshotClosedDataGraph(value, 'Route result input');
-  return validateRouteResultSnapshot(snapshot);
+export function validateRouteResult(value, diagnostic = () => {}) {
+  if (typeof diagnostic !== 'function') throw new Error('Route result diagnostic must be a function.');
+  const diagnostics = [];
+  let result;
+  let validationError;
+  try {
+    const snapshot = snapshotClosedDataGraph(value, 'Route result input');
+    result = validateRouteResultSnapshot(snapshot, (...report) => diagnostics.push(report));
+  } catch (error) {
+    validationError = error;
+    if (diagnostics.length === 0) diagnostics.push(['route-expectation', 'route-mismatch']);
+  }
+  for (const report of diagnostics) {
+    try { diagnostic(...report); } catch {}
+  }
+  if (validationError) throw validationError;
+  return result;
 }
 
 const validateIsolationResultSnapshot = value => {
@@ -1260,7 +1276,7 @@ export function validateIsolationResult(value) {
   return validateIsolationResultSnapshot(snapshot);
 }
 
-const validateLogoutStagesSnapshot = value => {
+const validateLogoutStagesSnapshot = (value, diagnostic = () => {}) => {
   const inputStages = requireClosedArray(value, 'Logout stages');
   if (inputStages.length !== REQUIRED_LOGOUT_STAGES.length) {
     throw new Error('Logout validation requires every logout stage.');
@@ -1268,7 +1284,7 @@ const validateLogoutStagesSnapshot = value => {
   const stages = inputStages.map((stage, index) => {
     requireRecord(stage, `Logout stage ${index}`);
     if (stage.name !== REQUIRED_LOGOUT_STAGES[index]) throw new Error('Logout stages are missing or out of order.');
-    const window = validateActionWindowSnapshot(stage.window, { requireNoProtected: true });
+    const window = validateActionWindowSnapshot(stage.window, { requireNoProtected: true }, diagnostic);
     if (window.sessionPresent) throw new Error(`${stage.name} retained a session.`);
     if (window.finalPath !== '/login') throw new Error(`${stage.name} pathname must be /login.`);
     if (!window.visibleSentinels.includes('Sign In')) throw new Error(`${stage.name} must reach the login visible sentinel.`);
@@ -1279,9 +1295,22 @@ const validateLogoutStagesSnapshot = value => {
   return result;
 };
 
-export function validateLogoutStages(value) {
-  const snapshot = snapshotClosedDataGraph(value, 'Logout stages input');
-  return validateLogoutStagesSnapshot(snapshot);
+export function validateLogoutStages(value, diagnostic = () => {}) {
+  if (typeof diagnostic !== 'function') throw new Error('Logout stages diagnostic must be a function.');
+  const diagnostics = [];
+  let result;
+  let validationError;
+  try {
+    const snapshot = snapshotClosedDataGraph(value, 'Logout stages input');
+    result = validateLogoutStagesSnapshot(snapshot, (...report) => diagnostics.push(report));
+  } catch (error) {
+    validationError = error;
+  }
+  for (const report of diagnostics) {
+    try { diagnostic(...report); } catch {}
+  }
+  if (validationError) throw validationError;
+  return result;
 }
 
 const validateInspect = (value, expected) => {

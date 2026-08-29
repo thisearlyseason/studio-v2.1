@@ -160,29 +160,41 @@ const rowFromWindow = ({ context, group, action, expectedResult, window, visible
 const validateLandingWindow = (window, landing, {
   requireNoProtected = false, resourcePolicy, diagnostic = () => {},
 } = {}) => {
-  const closedWindow = validateActionWindow(window, { requireNoProtected, resourcePolicy }, diagnostic);
-  diagnostic('landing-expectation', 'landing-mismatch');
-  if (closedWindow.finalPath !== landing.path || !closedWindow.visibleSentinels.includes(landing.sentinel)) {
-    throw new Error('Admission did not reach its exact landing path and heading.');
-  }
-  diagnostic('landing-heading', 'heading-mismatch');
-  const finalProtectedHeadings = closedWindow.visibleSentinels.filter(sentinel => PROTECTED_PAGE_HEADINGS.includes(sentinel));
-  const expectedFinalProtectedHeadings = PROTECTED_PAGE_HEADINGS.includes(landing.sentinel) ? [landing.sentinel] : [];
-  if (
-    finalProtectedHeadings.length !== expectedFinalProtectedHeadings.length
-    || finalProtectedHeadings.some((sentinel, index) => sentinel !== expectedFinalProtectedHeadings[index])
-  ) throw new Error('Admission final visible protected heading must exactly match the expected sentinel.');
-  diagnostic('landing-session', 'session-missing');
-  if (!closedWindow.sessionPresent) throw new Error('Admission landing requires an authenticated session.');
-  diagnostic('landing-render-history', 'render-history-invalid');
-  if (closedWindow.protectedRender) {
-    const signals = closedWindow.renderSignals.filter(signal => (
-      signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
-    ));
-    if (signals.length === 0 || signals.some(signal => signal.pathname !== landing.path || signal.sentinel !== landing.sentinel)) {
-      throw new Error('Admission contains an unexpected protected render.');
+  const diagnostics = [];
+  let closedWindow;
+  let validationError;
+  try {
+    const recordDiagnostic = (...report) => diagnostics.push(report);
+    closedWindow = validateActionWindow(window, { requireNoProtected, resourcePolicy }, recordDiagnostic);
+    recordDiagnostic('landing-expectation', 'landing-mismatch');
+    if (closedWindow.finalPath !== landing.path || !closedWindow.visibleSentinels.includes(landing.sentinel)) {
+      throw new Error('Admission did not reach its exact landing path and heading.');
     }
+    recordDiagnostic('landing-heading', 'heading-mismatch');
+    const finalProtectedHeadings = closedWindow.visibleSentinels.filter(sentinel => PROTECTED_PAGE_HEADINGS.includes(sentinel));
+    const expectedFinalProtectedHeadings = PROTECTED_PAGE_HEADINGS.includes(landing.sentinel) ? [landing.sentinel] : [];
+    if (
+      finalProtectedHeadings.length !== expectedFinalProtectedHeadings.length
+      || finalProtectedHeadings.some((sentinel, index) => sentinel !== expectedFinalProtectedHeadings[index])
+    ) throw new Error('Admission final visible protected heading must exactly match the expected sentinel.');
+    recordDiagnostic('landing-session', 'session-missing');
+    if (!closedWindow.sessionPresent) throw new Error('Admission landing requires an authenticated session.');
+    recordDiagnostic('landing-render-history', 'render-history-invalid');
+    if (closedWindow.protectedRender) {
+      const signals = closedWindow.renderSignals.filter(signal => (
+        signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
+      ));
+      if (signals.length === 0 || signals.some(signal => signal.pathname !== landing.path || signal.sentinel !== landing.sentinel)) {
+        throw new Error('Admission contains an unexpected protected render.');
+      }
+    }
+  } catch (error) {
+    validationError = error;
   }
+  for (const report of diagnostics) {
+    try { diagnostic(...report); } catch {}
+  }
+  if (validationError) throw validationError;
   return closedWindow;
 };
 
@@ -198,12 +210,11 @@ const executeRoute = async ({
   const diagnostic = actions?.diagnostic === undefined
     ? () => {}
     : requireFunction(actions.diagnostic, 'diagnostic');
-  diagnostic('route-expectation', 'route-mismatch');
   const validated = validateRouteResult({
     allowed: isAllowed, requestedPath: path,
     expectedPath: expected.path, expectedSentinel: expected.sentinel, requireNoProtected, window,
     ...(resourcePolicy ? { resourcePolicy } : {}),
-  });
+  }, diagnostic);
   return {
     window: validated.window,
     summary: {
@@ -271,7 +282,7 @@ export async function runAdmissionScenario({ client, session, context: inputCont
     windows.push(result.window);
     summaries.push(result.summary);
   }
-  const aggregate = aggregateWindows(windows, { requireNoProtected, resourcePolicy });
+  const aggregate = aggregateWindows(windows, { requireNoProtected, resourcePolicy }, diagnostic);
   return rowFromWindow({
     context, group: 'admission-route', action: 'login and land, then validate 6 direct routes',
     expectedResult: 'exact admission landing and complete six-route policy', window: aggregate,
@@ -286,6 +297,9 @@ export async function runIsolationScenario({ client, session, context: inputCont
   const firestoreGet = requireFunction(actions?.firestoreGet, 'firestoreGet');
   const waitForSettled = requireFunction(actions?.waitForSettled, 'waitForSettled');
   const authenticatedSession = requireText(session, 'session');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
   const api = [], firestore = [], windows = [], summaries = [];
   for (const probe of expected.sameOriginApi) {
     let status;
@@ -296,7 +310,7 @@ export async function runIsolationScenario({ client, session, context: inputCont
         if (!Number.isInteger(status)) throw new Error('Isolation API result must include the complete exact status set.');
       }, terminal: () => waitForSettled(probe.label),
     });
-    const window = validateActionWindow(observedWindow);
+    const window = validateActionWindow(observedWindow, {}, diagnostic);
     if (!window.sessionPresent) {
       throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
     }
@@ -312,7 +326,7 @@ export async function runIsolationScenario({ client, session, context: inputCont
         if (!Number.isInteger(status)) throw new Error('Isolation must include the complete Firestore probe result set.');
       }, terminal: () => waitForSettled(probe.label),
     });
-    const window = validateActionWindow(observedWindow);
+    const window = validateActionWindow(observedWindow, {}, diagnostic);
     if (!window.sessionPresent) {
       throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
     }
@@ -327,7 +341,7 @@ export async function runIsolationScenario({ client, session, context: inputCont
   });
   return rowFromWindow({
     context, group: 'isolation', action: 'probe own/opposite team and player boundaries',
-    expectedResult: 'own 200; opposite 403', window: aggregateWindows(windows), visibleState: 'Isolation settled',
+    expectedResult: 'own 200; opposite 403', window: aggregateWindows(windows, {}, diagnostic), visibleState: 'Isolation settled',
     httpSummary: summaries.map(value => value.status).join(','), actionSummaries: summaries,
   });
 }
@@ -337,6 +351,9 @@ export async function runLogoutScenario({ client, session, freshSession, context
   const sharedSession = requireText(session, 'session');
   const isolatedSession = requireText(freshSession, 'freshSession');
   if (isolatedSession === sharedSession) throw new Error('freshSession must be distinct from the shared logout session.');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
   const stages = [];
   for (const name of REQUIRED_LOGOUT_STAGES) {
     if (actions?.selectStage !== undefined) {
@@ -350,13 +367,13 @@ export async function runLogoutScenario({ client, session, freshSession, context
       }),
     });
   }
-  const validatedStages = validateLogoutStages(stages).stages;
+  const validatedStages = validateLogoutStages(stages, diagnostic).stages;
   const observedFreshWindow = await observe({
     client, session: isolatedSession, stage: 'fresh-isolated-unauthenticated',
     action: () => requireFunction(actions?.freshUnauthenticated, 'freshUnauthenticated')('/dashboard'),
     terminal: requireFunction(actions?.waitForFreshLogin, 'waitForFreshLogin'),
   });
-  const freshWindow = validateActionWindow(observedFreshWindow, { kind: 'fresh-unauthenticated' });
+  const freshWindow = validateActionWindow(observedFreshWindow, { kind: 'fresh-unauthenticated' }, diagnostic);
   const summaries = [
     ...validatedStages.map(value => ({ stage: value.name, finalPath: value.window.finalPath })),
     { stage: 'fresh-isolated-unauthenticated', finalPath: freshWindow.finalPath },
@@ -365,19 +382,22 @@ export async function runLogoutScenario({ client, session, freshSession, context
     context, group: 'logout',
     action: 'logout, stale-tab reload, back, second reload, and fresh isolated unauthenticated check',
     expectedResult: 'login UI and no protected activity in all five actions',
-    window: aggregateWindows([...validatedStages.map(value => value.window), freshWindow]),
+    window: aggregateWindows([...validatedStages.map(value => value.window), freshWindow], {}, diagnostic),
     visibleState: 'Sign In', actionSummaries: summaries,
   });
 }
 
 export async function runFreshUnauthenticatedScenario({ client, session, context: inputContext, actions } = {}) {
   const context = validateContext(inputContext, 'logout');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
   const observedWindow = await observe({
     client, session: requireText(session, 'session'), stage: 'fresh-unauthenticated',
     action: () => requireFunction(actions?.navigate, 'navigate')('/dashboard'),
     terminal: requireFunction(actions?.waitForLogin, 'waitForLogin'),
   });
-  const window = validateActionWindow(observedWindow, { kind: 'fresh-unauthenticated' });
+  const window = validateActionWindow(observedWindow, { kind: 'fresh-unauthenticated' }, diagnostic);
   return rowFromWindow({
     context, group: 'logout', action: 'fresh unauthenticated protected-route navigation',
     expectedResult: 'login UI with no protected activity', window, visibleState: 'Sign In',
@@ -387,6 +407,9 @@ export async function runFreshUnauthenticatedScenario({ client, session, context
 
 const runPendingRevocation = async ({ client, session, context: inputContext, action, actions, stage, actionLabel, fresh }) => {
   const context = validateContext(inputContext, 'pending-deletion');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
   const observedWindow = await observe({
     client, session: requireText(session, 'session'), stage, action: requireFunction(action, stage),
     terminal: async () => {
@@ -394,7 +417,11 @@ const runPendingRevocation = async ({ client, session, context: inputContext, ac
       if (fresh) await requireFunction(actions?.waitForUnavailable, 'waitForUnavailable')(stage, PENDING_UNAVAILABLE_SENTINEL);
     },
   });
-  const window = validateActionWindow(observedWindow, { kind: fresh ? 'pending-deletion-fresh' : 'pending-deletion-stale' });
+  const window = validateActionWindow(
+    observedWindow,
+    { kind: fresh ? 'pending-deletion-fresh' : 'pending-deletion-stale' },
+    diagnostic,
+  );
   return rowFromWindow({
     context, group: 'pending-deletion', action: actionLabel,
     expectedResult: fresh
@@ -411,12 +438,15 @@ export async function runPendingDeletionScenario(options = {}) {
   if (options.context?.alias !== 'qa-pending-delete') throw new Error('Pending-deletion scenario requires qa-pending-delete.');
   if (scenario === 'active-baseline') {
     const context = validateContext(options.context, 'pending-deletion');
+    const diagnostic = options.actions?.diagnostic === undefined
+      ? () => {}
+      : requireFunction(options.actions.diagnostic, 'diagnostic');
     const observedWindow = await observe({
       client: options.client, session: requireText(options.session, 'session'), stage: 'pending-deletion-active-baseline',
       action: () => requireFunction(options.actions?.navigate, 'navigate')('/dashboard'),
       terminal: requireFunction(options.actions?.waitForDashboard, 'waitForDashboard'),
     });
-    const window = validateLandingWindow(observedWindow, DASHBOARD);
+    const window = validateLandingWindow(observedWindow, DASHBOARD, { diagnostic });
     return rowFromWindow({
       context, group: 'pending-deletion', action: 'record active pending-delete baseline',
       expectedResult: 'Dashboard with active session before transition', window, visibleState: 'Dashboard',

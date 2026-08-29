@@ -2347,6 +2347,119 @@ const createScriptedScenarioClient = windows => {
   };
 };
 
+test('phase 9 production scenario exports preserve closed request failure attribution at every action window', async t => {
+  const requestFailure = Object.freeze({
+    failureClass: 'connection',
+    targetClass: 'firestore',
+    resourceType: 'xhr',
+    navigationRelationship: 'prior-document',
+    multiplicity: 'single',
+  });
+  const failureWindow = overrides => scenarioWindow({
+    unexpectedRequestFailures: 1,
+    unexpectedRequestFailureSignals: [{ ...requestFailure }],
+    ...overrides,
+  });
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const cases = [
+    ['direct route', diagnostic => runRouteScenario({
+      client: createScriptedScenarioClient([failureWindow()]),
+      session: 'request-failure-route',
+      context: scenarioContext({ contextId: 'request-failure-route' }),
+      path: '/family',
+      allowed: true,
+      actions: { navigate: async () => {}, waitForExactLocation: async () => {}, diagnostic },
+    })],
+    ['isolation', diagnostic => runIsolationScenario({
+      client: createScriptedScenarioClient([failureWindow()]),
+      session: 'request-failure-isolation',
+      context: scenarioContext({ contextId: 'request-failure-isolation' }),
+      runId,
+      actions: {
+        sameOriginGet: async () => 200,
+        firestoreGet: async probe => probe.expectedStatus,
+        waitForSettled: async () => {},
+        diagnostic,
+      },
+    })],
+    ['logout stage', diagnostic => runLogoutScenario({
+      client: createScriptedScenarioClient([
+        failureWindow(),
+        ...REQUIRED_LOGOUT_STAGES.slice(1).map(() => failureWindow()),
+      ]),
+      session: 'request-failure-logout',
+      freshSession: 'request-failure-logout-fresh',
+      context: scenarioContext({ contextId: 'request-failure-logout' }),
+      actions: {
+        ...Object.fromEntries(REQUIRED_LOGOUT_STAGES.map(name => [name, async () => {}])),
+        waitForLogin: async () => {},
+        freshUnauthenticated: async () => {},
+        waitForFreshLogin: async () => {},
+        diagnostic,
+      },
+    })],
+    ['fresh unauthenticated', diagnostic => runFreshUnauthenticatedScenario({
+      client: createScriptedScenarioClient([failureWindow()]),
+      session: 'request-failure-fresh',
+      context: scenarioContext({ contextId: 'request-failure-fresh' }),
+      actions: { navigate: async () => {}, waitForLogin: async () => {}, diagnostic },
+    })],
+    ['pending-deletion stale', diagnostic => runPendingDeletionScenario({
+      client: createScriptedScenarioClient([failureWindow()]),
+      session: 'request-failure-pending-stale',
+      context: scenarioContext({ contextId: 'request-failure-pending-stale', alias: 'qa-pending-delete' }),
+      scenario: 'stale-session',
+      actions: { reloadRevokedSession: async () => {}, waitForLogin: async () => {}, diagnostic },
+    })],
+    ['pending-deletion fresh', diagnostic => runPendingDeletionScenario({
+      client: createScriptedScenarioClient([failureWindow()]),
+      session: 'request-failure-pending-fresh',
+      context: scenarioContext({ contextId: 'request-failure-pending-fresh', alias: 'qa-pending-delete' }),
+      scenario: 'fresh-login',
+      actions: {
+        freshLogin: async () => {},
+        waitForLogin: async () => {},
+        waitForUnavailable: async () => {},
+        diagnostic,
+      },
+    })],
+    ['pending-deletion active baseline', diagnostic => runPendingDeletionScenario({
+      client: createScriptedScenarioClient([failureWindow()]),
+      session: 'request-failure-pending-active',
+      context: scenarioContext({ contextId: 'request-failure-pending-active', alias: 'qa-pending-delete' }),
+      scenario: 'active-baseline',
+      actions: { navigate: async () => {}, waitForDashboard: async () => {}, diagnostic },
+    })],
+  ];
+
+  for (const [name, run] of cases) await t.test(name, async () => {
+    const reports = [];
+    await assert.rejects(run((...report) => reports.push(report)), /request failure/i);
+    assert.deepEqual(reports.at(-1), [
+      'window-request-failure',
+      'request-failure-invalid',
+      requestFailure,
+    ]);
+    assert.notEqual(reports.at(-1)[2], requestFailure);
+    assert.equal(JSON.stringify(reports).includes('must-not-return'), false);
+  });
+
+  await t.test('diagnostic callback failure cannot replace the scenario decision', async () => {
+    await assert.rejects(runRouteScenario({
+      client: createScriptedScenarioClient([failureWindow()]),
+      session: 'request-failure-callback-isolation',
+      context: scenarioContext({ contextId: 'request-failure-callback-isolation' }),
+      path: '/family',
+      allowed: true,
+      actions: {
+        navigate: async () => {},
+        waitForExactLocation: async () => {},
+        diagnostic: () => { throw new Error('reporter-controlled-error'); },
+      },
+    }), error => /request failure/i.test(error?.message) && !/reporter-controlled/i.test(error?.message));
+  });
+});
+
 test('phase 9 browser scenario entrypoints reject acquisition fields before row or aggregate assembly', async () => {
   const context = scenarioContext({ contextId: 'closed-scenario-entrypoint' });
   const actions = { navigate: async () => {}, waitForExactLocation: async () => {} };
