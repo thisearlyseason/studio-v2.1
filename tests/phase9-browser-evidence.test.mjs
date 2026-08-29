@@ -9761,6 +9761,97 @@ darwinRuntimeTest('phase 9 descriptor helper rejects root and nested replacement
       rmSync(fixture.workspace, { recursive: true, force: true });
     }
   });
+  await t.test('file replacement at transactional delete', async () => {
+    const fixture = confinedPlaywrightFixture();
+    try {
+      await assert.rejects(removeConfinedPlaywrightTree({
+        ...fsPromises,
+        removePlaywrightTree: receipts => runPlaywrightCleanupHelper({
+          ...receipts, helperEnvironment: { PHASE9_CLEANUP_TEST_SWAP_FILE_AT_DELETE: '1' },
+        }),
+      }, fixture.profileRoot), /scenario-closure-failed/);
+      assert.equal(readFileSync(fixture.cliFile, 'utf8'), 'foreign\n');
+      assert.equal(readFileSync(`${fixture.cliFile}.phase9-test-held`, 'utf8'), 'synthetic page output\n');
+      assert.equal(existsSync(join(fixture.profileRoot, 'pw-1234abcd')), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
+  await t.test('root replacement at transactional delete', async () => {
+    const fixture = confinedPlaywrightFixture();
+    try {
+      await assert.rejects(removeConfinedPlaywrightTree({
+        ...fsPromises,
+        removePlaywrightTree: receipts => runPlaywrightCleanupHelper({
+          ...receipts, helperEnvironment: { PHASE9_CLEANUP_TEST_SWAP_ROOT_AT_DELETE: '1' },
+        }),
+      }, fixture.profileRoot), /scenario-closure-failed/);
+      assert.equal(existsSync(fixture.profileRoot), true);
+      assert.equal(existsSync(`${fixture.profileRoot}.phase9-test-held`), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+      rmSync(`${fixture.profileRoot}.phase9-test-held`, { recursive: true, force: true });
+    }
+  });
+  await t.test('captured helper bytes survive helper pathname replacement and ignore Python startup injection', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const helperCopy = join(fixture.workspace, 'cleanup-helper.py');
+    const startupRoot = join(fixture.workspace, 'python-startup');
+    const startupMarker = join(fixture.workspace, 'sitecustomize-ran');
+    const reviewedHelper = join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'playwright-cleanup-dirfd-helper.py');
+    writeFileSync(helperCopy, readFileSync(reviewedHelper), { mode: 0o600 });
+    mkdirSync(startupRoot, { mode: 0o700 });
+    writeFileSync(join(startupRoot, 'sitecustomize.py'), `open(${JSON.stringify(startupMarker)}, 'w').write('ran')\n`, { mode: 0o600 });
+    let replaced = false;
+    const helperRuntime = {
+      lstat: fsPromises.lstat,
+      realpath: fsPromises.realpath,
+      execFile: childProcess.execFile,
+      async readFile(path) {
+        const bytes = await fsPromises.readFile(path);
+        if (path === helperCopy && !replaced) {
+          replaced = true;
+          writeFileSync(helperCopy, 'raise SystemExit(91)\n', { mode: 0o600 });
+        }
+        return bytes;
+      },
+    };
+    const originalPythonPath = process.env.PYTHONPATH;
+    process.env.PYTHONPATH = startupRoot;
+    try {
+      await removeConfinedPlaywrightTree({
+        ...fsPromises,
+        removePlaywrightTree: receipts => runPlaywrightCleanupHelper({
+          ...receipts, helperPath: realpathSync(helperCopy), helperRuntime,
+        }),
+      }, fixture.profileRoot);
+      assert.equal(existsSync(fixture.profileRoot), false);
+      assert.equal(existsSync(startupMarker), false);
+    } finally {
+      if (originalPythonPath === undefined) delete process.env.PYTHONPATH;
+      else process.env.PYTHONPATH = originalPythonPath;
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
+  await t.test('Python runtime pin mismatch prevents cleanup', async () => {
+    const fixture = confinedPlaywrightFixture();
+    const helperRuntime = {
+      lstat: fsPromises.lstat, realpath: fsPromises.realpath, execFile: childProcess.execFile,
+      async readFile(path) {
+        if (path === '/usr/bin/python3') return Buffer.from('foreign python');
+        return fsPromises.readFile(path);
+      },
+    };
+    try {
+      await assert.rejects(removeConfinedPlaywrightTree({
+        ...fsPromises,
+        removePlaywrightTree: receipts => runPlaywrightCleanupHelper({ ...receipts, helperRuntime }),
+      }, fixture.profileRoot), /scenario-closure-failed/);
+      assert.equal(existsSync(fixture.profileRoot), true);
+    } finally {
+      rmSync(fixture.workspace, { recursive: true, force: true });
+    }
+  });
 });
 
 test('phase 9 production child rejects a private input replaced after descriptor open without reading foreign bytes', async () => {

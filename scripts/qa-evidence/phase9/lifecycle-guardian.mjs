@@ -62,7 +62,9 @@ const PLAYWRIGHT_CLI_FILE_LIMIT = 256;
 const PLAYWRIGHT_CLI_FILE_BYTES_LIMIT = 1_048_576;
 const PLAYWRIGHT_CLI_TOTAL_BYTES_LIMIT = 16_777_216;
 const PLAYWRIGHT_CLEANUP_HELPER = fileURLToPath(new URL('./playwright-cleanup-dirfd-helper.py', import.meta.url));
-const PLAYWRIGHT_CLEANUP_HELPER_SHA256 = 'f2cd1970c8ef6a7e3ad5e5ecacbe81f66f62c3eb4d40ff333064c3d21f4898f0';
+const PLAYWRIGHT_CLEANUP_HELPER_SHA256 = '8383ee70c605cd00b4d9916bd20d9e2a4fe509968693c3bedaf63da0ad129bd7';
+const PLAYWRIGHT_CLEANUP_PYTHON = '/usr/bin/python3';
+const PLAYWRIGHT_CLEANUP_PYTHON_SHA256 = 'b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9';
 const RUNNER_STDOUT_LIMIT = 65_536;
 const RUNNER_STDERR_LIMIT = 16_384;
 const RUNNER_LINE_LIMIT = 8_192;
@@ -687,17 +689,49 @@ function cleanupHelperIdentity(identity) {
   });
 }
 
-export async function runPlaywrightCleanupHelper({ parentReceipt, rootReceipt, receipts }) {
+export async function runPlaywrightCleanupHelper({
+  parentReceipt,
+  rootReceipt,
+  receipts,
+  helperPath = PLAYWRIGHT_CLEANUP_HELPER,
+  helperRuntime = Object.freeze({ lstat, realpath, readFile, execFile }),
+  helperEnvironment = Object.freeze({}),
+}) {
   if (process.platform !== 'darwin') throw new GuardianFailure('scenario-closure-failed');
-  const [metadata, bytes] = await Promise.all([
-    lstat(PLAYWRIGHT_CLEANUP_HELPER).catch(() => null),
-    readFile(PLAYWRIGHT_CLEANUP_HELPER).catch(() => null),
+  if (!helperRuntime || ['lstat', 'realpath', 'readFile', 'execFile'].some(
+    name => typeof helperRuntime[name] !== 'function',
+  ) || !helperEnvironment || typeof helperEnvironment !== 'object' || Array.isArray(helperEnvironment)
+    || Object.keys(helperEnvironment).some(key => !new Set([
+      'PHASE9_CLEANUP_TEST_SWAP_FILE_AT_DELETE', 'PHASE9_CLEANUP_TEST_SWAP_ROOT_AT_DELETE',
+    ]).has(key) || helperEnvironment[key] !== '1')) {
+    throw new GuardianFailure('scenario-closure-failed');
+  }
+  const [metadata, canonicalHelper, bytes, pythonMetadata, canonicalPython, pythonBytes] = await Promise.all([
+    helperRuntime.lstat(helperPath).catch(() => null),
+    helperRuntime.realpath(helperPath).catch(() => null),
+    helperRuntime.readFile(helperPath).catch(() => null),
+    helperRuntime.lstat(PLAYWRIGHT_CLEANUP_PYTHON).catch(() => null),
+    helperRuntime.realpath(PLAYWRIGHT_CLEANUP_PYTHON).catch(() => null),
+    helperRuntime.readFile(PLAYWRIGHT_CLEANUP_PYTHON).catch(() => null),
   ]);
   if (!metadata?.isFile?.() || metadata.isSymbolicLink?.()
     || metadata.uid !== INTRINSIC_PROCESS_UID || (metadata.mode & 0o022) !== 0
-    || !bytes || createHash('sha256').update(bytes).digest('hex') !== PLAYWRIGHT_CLEANUP_HELPER_SHA256) {
+    || canonicalHelper !== helperPath
+    || !bytes || createHash('sha256').update(bytes).digest('hex') !== PLAYWRIGHT_CLEANUP_HELPER_SHA256
+    || !pythonMetadata?.isFile?.() || pythonMetadata.isSymbolicLink?.() || pythonMetadata.uid !== 0
+    || (pythonMetadata.mode & 0o022) !== 0 || canonicalPython !== PLAYWRIGHT_CLEANUP_PYTHON
+    || !pythonBytes || createHash('sha256').update(pythonBytes).digest('hex') !== PLAYWRIGHT_CLEANUP_PYTHON_SHA256) {
     throw new GuardianFailure('scenario-closure-failed');
   }
+  await new Promise((resolvePromise, rejectPromise) => {
+    helperRuntime.execFile('/usr/bin/codesign', [
+      '--verify', '--deep',
+      '-R=identifier "com.apple.dt.xcode_select.tool-shim-public" and anchor apple',
+      PLAYWRIGHT_CLEANUP_PYTHON,
+    ], { cwd: '/', env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }, timeout: 30_000, maxBuffer: 65_536 }, error => {
+      if (error) rejectPromise(new GuardianFailure('scenario-closure-failed')); else resolvePromise();
+    });
+  });
   const request = JSON.stringify({
     version: 1,
     operation: 'remove-playwright-tree',
@@ -713,9 +747,13 @@ export async function runPlaywrightCleanupHelper({ parentReceipt, rootReceipt, r
       .sort((left, right) => left.path.localeCompare(right.path)),
   });
   await new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn('/usr/bin/python3', [PLAYWRIGHT_CLEANUP_HELPER], {
+    const child = spawn(PLAYWRIGHT_CLEANUP_PYTHON, ['-I', '-c', bytes.toString('utf8')], {
       cwd: '/',
-      env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C', LC_ALL: 'C', PYTHONDONTWRITEBYTECODE: '1' },
+      env: {
+        PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C', LC_ALL: 'C', PYTHONHASHSEED: '0',
+        PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1', ...helperEnvironment,
+      },
+      detached: true,
       stdio: ['pipe', 'pipe', 'pipe', parentReceipt.handle.fd, rootReceipt.handle.fd],
     });
     let stdout = '';
@@ -729,8 +767,7 @@ export async function runPlaywrightCleanupHelper({ parentReceipt, rootReceipt, r
       else resolvePromise();
     };
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      finish(new Error('timeout'));
+      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
     }, 30_000);
     child.stdout.on('data', chunk => {
       stdout += chunk.toString('utf8');

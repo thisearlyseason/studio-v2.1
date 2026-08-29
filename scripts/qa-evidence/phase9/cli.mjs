@@ -77,7 +77,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
   recoveryHelper: 'cf9cbb07cc80304e1607b3e7f26c48c0c5783b7ca4a207b7c551ef95a1f01b95',
-  playwrightCleanupHelper: 'f2cd1970c8ef6a7e3ad5e5ecacbe81f66f62c3eb4d40ff333064c3d21f4898f0',
+  playwrightCleanupHelper: '8383ee70c605cd00b4d9916bd20d9e2a4fe509968693c3bedaf63da0ad129bd7',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
 export const phase9PlaywrightTransport = Object.freeze({

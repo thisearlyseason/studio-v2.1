@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import secrets
 import stat
 import sys
 
@@ -61,6 +62,64 @@ def matches_entry(metadata, expected):
             and round(metadata.st_ctime_ns / 1000000, 6) == round(expected["ctimeMs"], 6))
 
 
+def quarantine_name():
+    return f".phase9-playwright-cleanup-{secrets.token_hex(24)}.quarantine"
+
+
+def restore_mismatch(directory_fd, quarantine, name, held, kind):
+    try:
+        current = os.stat(quarantine, dir_fd=directory_fd, follow_symlinks=False)
+        original_missing = False
+        try:
+            os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            original_missing = True
+        if original_missing:
+            os.rename(quarantine, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+    except Exception:
+        pass
+
+
+def quarantine_and_unlink(directory_fd, name, held, expected):
+    quarantine = quarantine_name()
+    if os.environ.get("PHASE9_CLEANUP_TEST_SWAP_FILE_AT_DELETE") == "1":
+        del os.environ["PHASE9_CLEANUP_TEST_SWAP_FILE_AT_DELETE"]
+        os.rename(name, f"{name}.phase9-test-held", src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        descriptor = os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
+        os.write(descriptor, b"foreign\n"); os.close(descriptor)
+    os.rename(name, quarantine, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+    try:
+        moved = os.stat(quarantine, dir_fd=directory_fd, follow_symlinks=False)
+        if (not matches(moved, expected, "file") or moved.st_nlink != expected["nlink"]
+                or moved.st_size != expected["size"] or not matches(os.fstat(held), expected, "file")
+                or os.fstat(held).st_nlink != expected["nlink"] or os.fstat(held).st_size != expected["size"]):
+            raise ValueError("quarantine-identity-mismatch")
+        links = os.fstat(held).st_nlink
+        os.unlink(quarantine, dir_fd=directory_fd)
+        if os.fstat(held).st_nlink != links - 1:
+            raise ValueError("quarantine-unlink-race")
+    except Exception:
+        restore_mismatch(directory_fd, quarantine, name, held, "file")
+        raise
+
+
+def quarantine_and_rmdir(directory_fd, name, held, expected, inject_root=False):
+    quarantine = quarantine_name()
+    if inject_root and os.environ.get("PHASE9_CLEANUP_TEST_SWAP_ROOT_AT_DELETE") == "1":
+        del os.environ["PHASE9_CLEANUP_TEST_SWAP_ROOT_AT_DELETE"]
+        os.rename(name, f"{name}.phase9-test-held", src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        os.mkdir(name, 0o700, dir_fd=directory_fd)
+    os.rename(name, quarantine, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+    try:
+        moved = os.stat(quarantine, dir_fd=directory_fd, follow_symlinks=False)
+        if not matches(moved, expected, "directory") or not matches(os.fstat(held), expected, "directory"):
+            raise ValueError("quarantine-identity-mismatch")
+        os.rmdir(quarantine, dir_fd=directory_fd)
+    except Exception:
+        restore_mismatch(directory_fd, quarantine, name, held, "directory")
+        raise
+
+
 def main():
     raw = sys.stdin.buffer.read(MAX_INPUT + 1)
     if len(raw) > MAX_INPUT:
@@ -95,7 +154,7 @@ def main():
     validated = set()
 
     def validate_children(directory_fd, prefix=""):
-        names = os.listdir(directory_fd)
+        names = sorted(os.listdir(directory_fd))
         expected_names = {
             path[len(prefix) + 1:].split("/", 1)[0] if prefix else path.split("/", 1)[0]
             for path in expected_entries if not prefix or path.startswith(f"{prefix}/")
@@ -127,7 +186,7 @@ def main():
     seen_entries = set()
 
     def remove_children(directory_fd, scope, depth, prefix=""):
-        names = os.listdir(directory_fd)
+        names = sorted(os.listdir(directory_fd))
         if len(names) > 4096:
             raise ValueError("inventory-limit")
         for name in names:
@@ -174,7 +233,7 @@ def main():
                     named = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
                     if not matches(named, before, "directory"):
                         raise ValueError("entry-identity-mismatch")
-                    os.rmdir(name, dir_fd=directory_fd)
+                    quarantine_and_rmdir(directory_fd, name, child_fd, before)
                 finally:
                     os.close(child_fd)
             elif stat.S_ISREG(before_stat.st_mode):
@@ -198,7 +257,7 @@ def main():
                     named = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
                     if not same(named, before, "file"):
                         raise ValueError("entry-identity-mismatch")
-                    os.unlink(name, dir_fd=directory_fd)
+                    quarantine_and_unlink(directory_fd, name, child_fd, expected_entry)
                 finally:
                     os.close(child_fd)
             else:
@@ -214,7 +273,7 @@ def main():
     named_root = os.stat(request["name"], dir_fd=PARENT_FD, follow_symlinks=False)
     if not matches(named_root, root, "directory"):
         raise ValueError("entry-identity-mismatch")
-    os.rmdir(request["name"], dir_fd=PARENT_FD)
+    quarantine_and_rmdir(PARENT_FD, request["name"], ROOT_FD, root, inject_root=True)
     try:
         os.stat(request["name"], dir_fd=PARENT_FD, follow_symlinks=False)
         raise ValueError("cleanup-incomplete")
