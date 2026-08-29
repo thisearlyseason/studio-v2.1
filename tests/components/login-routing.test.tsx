@@ -79,6 +79,12 @@ const UNSAFE_RETURN_PATHS = [
   '/%25255cevil.example',
   '/%2fevil.example',
   '/%252fevil.example',
+  '/foo%2fbar',
+  '/foo%252fbar',
+  '/foo%2f..%2f..%2f%2fevil.example',
+  '/foo%5cbar',
+  '/foo%255cbar',
+  '/foo%25bar',
   '/https:%2f%2fevil.example',
   '/java%73cript:alert(1)',
   '/\tevil.example',
@@ -86,6 +92,9 @@ const UNSAFE_RETURN_PATHS = [
   '/%2509evil.example',
   '/calendar%00',
   '/a/../admin',
+  '/a/%252e%252e/admin',
+  '/a/%25252e%25252e/admin',
+  '/a/%252e%252e%252fadmin',
   '/%',
 ];
 
@@ -139,6 +148,23 @@ describe('login settled-role routing', () => {
 
     await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
     expect(harness.router.push).not.toHaveBeenCalledWith(returnPath);
+    expect(sessionStorage.getItem('squad_return_path')).toBeNull();
+  });
+
+  test('rejects an overlong stored return path before navigation', async () => {
+    sessionStorage.setItem('squad_return_path', `/${'a'.repeat(2048)}`);
+    render(<LoginPage />);
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
+    expect(sessionStorage.getItem('squad_return_path')).toBeNull();
+  });
+
+  test('does not persist an overlong returnTo query value', async () => {
+    const returnPath = `/${'a'.repeat(2048)}`;
+    window.history.replaceState({}, '', `/login?returnTo=${encodeURIComponent(returnPath)}`);
+    render(<LoginPage />);
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
     expect(sessionStorage.getItem('squad_return_path')).toBeNull();
   });
 
