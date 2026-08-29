@@ -21,6 +21,7 @@ import {
   establishBrowserSession,
   establishBrowserSessionOrSignOut,
 } from '@/lib/client-auth';
+import { canonicalSameOriginReturnPath } from '@/lib/login-return-path';
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return Promise.race([
@@ -53,9 +54,10 @@ export default function LoginPage() {
 
   React.useEffect(() => {
     const returnTo = new URLSearchParams(window.location.search).get('returnTo');
-    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
-      sessionStorage.setItem('squad_return_path', returnTo);
-    }
+    if (returnTo === null) return;
+    const returnPath = canonicalSameOriginReturnPath(returnTo, window.location.origin);
+    if (returnPath) sessionStorage.setItem('squad_return_path', returnPath);
+    else sessionStorage.removeItem('squad_return_path');
   }, []);
 
   React.useEffect(() => {
@@ -83,9 +85,10 @@ export default function LoginPage() {
           });
           return;
         }
-        const returnPath = sessionStorage.getItem('squad_return_path');
-        if (returnPath?.startsWith('/') && !returnPath.startsWith('//')) {
-          sessionStorage.removeItem('squad_return_path');
+        const storedReturnPath = sessionStorage.getItem('squad_return_path');
+        const returnPath = canonicalSameOriginReturnPath(storedReturnPath, window.location.origin);
+        if (storedReturnPath !== null) sessionStorage.removeItem('squad_return_path');
+        if (returnPath) {
           router.push(returnPath);
           return;
         }

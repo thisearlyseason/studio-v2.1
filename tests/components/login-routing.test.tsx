@@ -68,6 +68,27 @@ vi.mock('lucide-react', () => Object.fromEntries([
 
 import LoginPage from '@/app/login/page';
 
+const UNSAFE_RETURN_PATHS = [
+  '/\\evil.example',
+  '//evil.example',
+  '///evil.example',
+  'https://evil.example',
+  'javascript:alert(1)',
+  '/%5cevil.example',
+  '/%255cevil.example',
+  '/%25255cevil.example',
+  '/%2fevil.example',
+  '/%252fevil.example',
+  '/https:%2f%2fevil.example',
+  '/java%73cript:alert(1)',
+  '/\tevil.example',
+  '/%09evil.example',
+  '/%2509evil.example',
+  '/calendar%00',
+  '/a/../admin',
+  '/%',
+];
+
 describe('login settled-role routing', () => {
   beforeEach(() => {
     sessionStorage.clear();
@@ -95,12 +116,30 @@ describe('login settled-role routing', () => {
   });
 
   test('preserves an approved return path before applying the parent default landing', async () => {
-    sessionStorage.setItem('squad_return_path', '/calendar');
+    sessionStorage.setItem('squad_return_path', '/calendar?view=month#today');
     render(<LoginPage />);
 
-    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/calendar'));
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/calendar?view=month#today'));
     expect(harness.router.push).not.toHaveBeenCalledWith('/family');
     expect(harness.router.push).not.toHaveBeenCalledWith('/dashboard');
+  });
+
+  test.each(UNSAFE_RETURN_PATHS)('rejects unsafe stored return path %s before parent navigation', async returnPath => {
+    sessionStorage.setItem('squad_return_path', returnPath);
+    render(<LoginPage />);
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
+    expect(harness.router.push).not.toHaveBeenCalledWith(returnPath);
+    expect(sessionStorage.getItem('squad_return_path')).toBeNull();
+  });
+
+  test.each(UNSAFE_RETURN_PATHS)('does not persist unsafe returnTo query value %s', async returnPath => {
+    window.history.replaceState({}, '', `/login?returnTo=${encodeURIComponent(returnPath)}`);
+    render(<LoginPage />);
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
+    expect(harness.router.push).not.toHaveBeenCalledWith(returnPath);
+    expect(sessionStorage.getItem('squad_return_path')).toBeNull();
   });
 
   test.each([
