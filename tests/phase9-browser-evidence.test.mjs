@@ -114,6 +114,7 @@ const safeWindow = (overrides = {}) => {
     pageErrors: 0,
     appConsoleErrors: 0,
     unexpectedRequestFailures: 0,
+    unexpectedRequestFailureSignals: [],
     overflow: 0,
     ...overrides,
   };
@@ -1089,6 +1090,108 @@ test('phase 9 action-window validator reports only the exact closed failing boun
   });
 });
 
+test('phase 9 request failure contract accepts only count-coherent closed summaries', async t => {
+  const requestFailure = Object.freeze({
+    failureClass: 'aborted',
+    targetClass: 'protected-api',
+    resourceType: 'fetch',
+    navigationRelationship: 'subresource',
+    multiplicity: 'single',
+  });
+  const failingWindow = () => safeWindow({
+    unexpectedRequestFailures: 1,
+    unexpectedRequestFailureSignals: [{ ...requestFailure }],
+  });
+
+  const zero = validateActionWindow(safeWindow());
+  assert.deepEqual(zero.unexpectedRequestFailureSignals, []);
+  assert.notEqual(zero.unexpectedRequestFailureSignals, safeWindow().unexpectedRequestFailureSignals);
+
+  const reports = [];
+  assert.throws(
+    () => validateActionWindow(failingWindow(), {}, (...report) => reports.push(report)),
+    /request failure/i,
+  );
+  assert.deepEqual(reports.at(-1), ['window-request-failure', 'request-failure-invalid', requestFailure]);
+
+  const malformed = [
+    ['count mismatch', safeWindow({ unexpectedRequestFailures: 1, unexpectedRequestFailureSignals: [] })],
+    ['wrong multiplicity', safeWindow({
+      unexpectedRequestFailures: 2,
+      unexpectedRequestFailureSignals: [{ ...requestFailure }, { ...requestFailure }],
+    })],
+    ['extra key', safeWindow({
+      unexpectedRequestFailures: 1,
+      unexpectedRequestFailureSignals: [{ ...requestFailure, rawUrl: 'https://secret.invalid/?token=must-not-return' }],
+    })],
+    ['raw failure text', safeWindow({
+      unexpectedRequestFailures: 1,
+      unexpectedRequestFailureSignals: [{ ...requestFailure, failureText: 'net::ERR_FAILED secret=must-not-return' }],
+    })],
+    ['missing key', safeWindow({
+      unexpectedRequestFailures: 1,
+      unexpectedRequestFailureSignals: [{ failureClass: 'aborted', targetClass: 'protected-api', resourceType: 'fetch', multiplicity: 'single' }],
+    })],
+    ['out of enum', safeWindow({
+      unexpectedRequestFailures: 1,
+      unexpectedRequestFailureSignals: [{ ...requestFailure, failureClass: 'net::ERR_FAILED' }],
+    })],
+    ['sparse array', safeWindow({
+      unexpectedRequestFailures: 1,
+      unexpectedRequestFailureSignals: Object.assign(new Array(1), {}),
+    })],
+    ['accessor', (() => {
+      const signal = { ...requestFailure };
+      Object.defineProperty(signal, 'failureClass', { enumerable: true, get: () => 'aborted' });
+      return safeWindow({ unexpectedRequestFailures: 1, unexpectedRequestFailureSignals: [signal] });
+    })()],
+    ['proxy', safeWindow({
+      unexpectedRequestFailures: 1,
+      unexpectedRequestFailureSignals: [new Proxy({ ...requestFailure }, {})],
+    })],
+    ['over limit', safeWindow({
+      unexpectedRequestFailures: 1001,
+      unexpectedRequestFailureSignals: Array.from({ length: 1001 }, () => ({ ...requestFailure, multiplicity: 'multiple' })),
+    })],
+  ];
+  for (const [name, window] of malformed) await t.test(name, () => {
+    const malformedReports = [];
+    assert.throws(
+      () => validateActionWindow(window, {}, (...report) => malformedReports.push(report)),
+      /request.failure|credential-shaped evidence|cloneable closed data graph/i,
+    );
+    assert.equal(malformedReports.every(report => report.length === 2), true);
+  });
+});
+
+test('phase 9 request failure diagnostic cannot alter its validated summary', () => {
+  const window = safeWindow({
+    unexpectedRequestFailures: 1,
+    unexpectedRequestFailureSignals: [{
+      failureClass: 'aborted', targetClass: 'protected-api', resourceType: 'fetch',
+      navigationRelationship: 'subresource', multiplicity: 'single',
+    }],
+  });
+  const originalIncludes = Array.prototype.includes;
+  const reports = [];
+  try {
+    assert.throws(() => validateActionWindow(window, {}, (...report) => {
+      reports.push(report);
+      window.unexpectedRequestFailures = 0;
+      window.unexpectedRequestFailureSignals.length = 0;
+      Array.prototype.includes = () => true;
+    }), /request failure/i);
+  } finally {
+    Array.prototype.includes = originalIncludes;
+  }
+  assert.deepEqual(reports.at(-1), [
+    'window-request-failure', 'request-failure-invalid', {
+      failureClass: 'aborted', targetClass: 'protected-api', resourceType: 'fetch',
+      navigationRelationship: 'subresource', multiplicity: 'single',
+    },
+  ]);
+});
+
 test('phase 9 action-window diagnostics cannot mutate caller inputs into a passing snapshot', async t => {
   const assertClosedDiagnostics = checkpoints => {
     assert.equal(checkpoints.length > 0, true);
@@ -1318,7 +1421,7 @@ test('phase 9 evidence contracts reject unknown action-window acquisition fields
     'appConsoleErrors', 'finalPath', 'finalUrl', 'listenerSignals', 'loadingVisible', 'overflow', 'pageErrors',
     'pageId', 'pass', 'protectedListenerStarts', 'protectedRender', 'protectedRequestSignals', 'protectedRequests',
     'redirectReason', 'relevantHttpResults', 'renderSignals', 'sessionPresent', 'teamSelectionSignals',
-    'terminalReached', 'unexpectedRequestFailures', 'visibleSentinels',
+    'terminalReached', 'unexpectedRequestFailureSignals', 'unexpectedRequestFailures', 'visibleSentinels',
   ]);
   assert.notEqual(result.visibleSentinels, input.visibleSentinels);
   assert.notEqual(result.renderSignals, input.renderSignals);
@@ -1327,16 +1430,22 @@ test('phase 9 evidence contracts reject unknown action-window acquisition fields
   assert.notEqual(result.protectedRequestSignals[0], input.protectedRequestSignals[0]);
   assert.notEqual(result.teamSelectionSignals, input.teamSelectionSignals);
   assert.notEqual(result.relevantHttpResults, input.relevantHttpResults);
+  assert.notEqual(result.unexpectedRequestFailureSignals, input.unexpectedRequestFailureSignals);
   input.visibleSentinels.push('Dashboard');
   input.renderSignals[0].sentinel = 'Dashboard';
   input.protectedRequestSignals[0].method = 'DELETE';
   input.teamSelectionSignals.push('tenant-team-b');
   input.relevantHttpResults[0].status = 500;
+  input.unexpectedRequestFailureSignals.push({
+    failureClass: 'other', targetClass: 'other', resourceType: 'other',
+    navigationRelationship: 'unknown', multiplicity: 'single',
+  });
   assert.deepEqual(result.visibleSentinels, ['Family Overview']);
   assert.deepEqual(result.renderSignals, [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }]);
   assert.equal(result.protectedRequestSignals[0].method, 'GET');
   assert.deepEqual(result.teamSelectionSignals, ['tenant-team-a']);
   assert.deepEqual(result.relevantHttpResults, [{ targetKind: 'staging-protected-api', status: 200 }]);
+  assert.deepEqual(result.unexpectedRequestFailureSignals, []);
 });
 
 test('phase 9 evidence validators snapshot caller-owned graphs once and fail closed on dynamic inputs', () => {

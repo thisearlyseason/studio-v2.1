@@ -75,6 +75,10 @@ const summarizeHttp = results => !Array.isArray(results) || results.length === 0
 const aggregateWindows = (windows, options = {}) => {
   if (!Array.isArray(windows) || windows.length === 0) throw new Error('Scenario requires complete action windows.');
   const last = windows.at(-1);
+  const failureSignals = windows.flatMap(window => window.unexpectedRequestFailureSignals.map(({
+    failureClass, targetClass, resourceType, navigationRelationship,
+  }) => ({ failureClass, targetClass, resourceType, navigationRelationship })));
+  const failureMultiplicity = failureSignals.length === 1 ? 'single' : 'multiple';
   return validateActionWindow({
     pageId: last.pageId,
     terminalReached: last.terminalReached,
@@ -117,7 +121,14 @@ const aggregateWindows = (windows, options = {}) => {
     }))),
     pageErrors: windows.reduce((sum, window) => sum + window.pageErrors, 0),
     appConsoleErrors: windows.reduce((sum, window) => sum + window.appConsoleErrors, 0),
-    unexpectedRequestFailures: windows.reduce((sum, window) => sum + window.unexpectedRequestFailures, 0),
+    unexpectedRequestFailures: failureSignals.length,
+    unexpectedRequestFailureSignals: failureSignals.map(signal => ({
+      failureClass: signal.failureClass,
+      targetClass: signal.targetClass,
+      resourceType: signal.resourceType,
+      navigationRelationship: signal.navigationRelationship,
+      multiplicity: failureMultiplicity,
+    })),
     overflow: windows.reduce((sum, window) => sum + window.overflow, 0),
   }, options);
 };

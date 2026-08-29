@@ -810,11 +810,17 @@ const ACTION_WINDOW_KEYS = [
   'pageErrors',
   'appConsoleErrors',
   'unexpectedRequestFailures',
+  'unexpectedRequestFailureSignals',
   'overflow',
   'pageId',
 ];
 
 const TEAM_SELECTION_SCOPES = ['tenant-team-a', 'tenant-team-b', 'tenant-other'];
+const MAX_REQUEST_FAILURE_SIGNALS = 1000;
+const REQUEST_FAILURE_CLASSES = ['aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other'];
+const REQUEST_FAILURE_TARGET_CLASSES = ['document', 'public-api', 'protected-api', 'firestore', 'identity', 'static', 'other'];
+const REQUEST_FAILURE_RESOURCE_TYPES = ['fetch', 'xhr', 'other'];
+const REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS = ['current-document', 'prior-document', 'subresource', 'unknown'];
 
 const requireClosedRenderSignal = (value, index) => {
   const name = `Action window render signal ${index}`;
@@ -850,6 +856,36 @@ const requireClosedHttpResult = (value, index) => {
   }
   requireCount(result.status, `${name} status`);
   return { targetKind: result.targetKind, status: result.status };
+};
+
+const requireClosedRequestFailureSignal = (value, index, multiplicity) => {
+  const signal = requireClosedOwnDataObject(value, {
+    name: `Action window request failure ${index}`,
+    schemaName: 'request-failure summary',
+    requiredKeys: ['failureClass', 'targetClass', 'resourceType', 'navigationRelationship', 'multiplicity'],
+  });
+  if (!REQUEST_FAILURE_CLASSES.includes(signal.failureClass)) {
+    throw new Error('Action window request failure must use the closed failure-class enum.');
+  }
+  if (!REQUEST_FAILURE_TARGET_CLASSES.includes(signal.targetClass)) {
+    throw new Error('Action window request failure must use the closed target-class enum.');
+  }
+  if (!REQUEST_FAILURE_RESOURCE_TYPES.includes(signal.resourceType)) {
+    throw new Error('Action window request failure must use the closed resource-type enum.');
+  }
+  if (!REQUEST_FAILURE_NAVIGATION_RELATIONSHIPS.includes(signal.navigationRelationship)) {
+    throw new Error('Action window request failure must use the closed navigation-relationship enum.');
+  }
+  if (signal.multiplicity !== multiplicity) {
+    throw new Error('Action window request failure multiplicity must match the complete failure count.');
+  }
+  return {
+    failureClass: signal.failureClass,
+    targetClass: signal.targetClass,
+    resourceType: signal.resourceType,
+    navigationRelationship: signal.navigationRelationship,
+    multiplicity: signal.multiplicity,
+  };
 };
 
 const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}) => {
@@ -930,6 +966,20 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
   requireCount(window.appConsoleErrors, 'appConsoleErrors');
   diagnostic('window-request-failure', 'request-failure-invalid');
   requireCount(window.unexpectedRequestFailures, 'unexpectedRequestFailures');
+  const requestFailureSignals = requireClosedArray(
+    window.unexpectedRequestFailureSignals,
+    'unexpectedRequestFailureSignals',
+  );
+  if (requestFailureSignals.length > MAX_REQUEST_FAILURE_SIGNALS) {
+    throw new Error('Action window request failure signals exceed the bounded signal limit.');
+  }
+  if (requestFailureSignals.length !== window.unexpectedRequestFailures) {
+    throw new Error('Action window requires complete request failure signals matching its exact count.');
+  }
+  const requestFailureMultiplicity = window.unexpectedRequestFailures === 1 ? 'single' : 'multiple';
+  const closedRequestFailureSignals = requestFailureSignals.map((signal, index) => (
+    requireClosedRequestFailureSignal(signal, index, requestFailureMultiplicity)
+  ));
   diagnostic('window-overflow', 'overflow-invalid');
   requireCount(window.overflow, 'overflow');
 
@@ -942,7 +992,10 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
   diagnostic('window-console-error', 'console-error-invalid');
   if (window.appConsoleErrors !== 0) throw new Error('Action window contains application console errors.');
   diagnostic('window-request-failure', 'request-failure-invalid');
-  if (window.unexpectedRequestFailures !== 0) throw new Error('Action window contains an unexpected request failure.');
+  if (window.unexpectedRequestFailures !== 0) {
+    diagnostic('window-request-failure', 'request-failure-invalid', closedRequestFailureSignals[0]);
+    throw new Error('Action window contains an unexpected request failure.');
+  }
   diagnostic('window-overflow', 'overflow-invalid');
   if (window.overflow !== 0) throw new Error('Action window signal overflow is nonzero.');
 
@@ -1005,6 +1058,7 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
     pageErrors: window.pageErrors,
     appConsoleErrors: window.appConsoleErrors,
     unexpectedRequestFailures: window.unexpectedRequestFailures,
+    unexpectedRequestFailureSignals: closedRequestFailureSignals,
     overflow: window.overflow,
   };
   if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) validateNoTeamResourceIsolationSnapshot(closedWindow);
@@ -1029,6 +1083,7 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
     pageErrors: closedWindow.pageErrors,
     appConsoleErrors: closedWindow.appConsoleErrors,
     unexpectedRequestFailures: closedWindow.unexpectedRequestFailures,
+    unexpectedRequestFailureSignals: closedWindow.unexpectedRequestFailureSignals,
     overflow: closedWindow.overflow,
     pass: true,
   };
@@ -1038,9 +1093,9 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
 
 export function validateActionWindow(value, options = {}, diagnostic = () => {}) {
   if (typeof diagnostic !== 'function') throw new Error('Action window diagnostic must be a function.');
-  const diagnostics = [['window-schema', 'schema-invalid']];
-  const recordDiagnostic = (checkpoint, reason) => {
-    diagnostics[diagnostics.length] = [checkpoint, reason];
+  const diagnostics = [['window-schema', 'schema-invalid', undefined]];
+  const recordDiagnostic = (checkpoint, reason, detail) => {
+    diagnostics[diagnostics.length] = [checkpoint, reason, detail];
   };
   let result;
   let validationFailed = false;
@@ -1054,7 +1109,9 @@ export function validateActionWindow(value, options = {}, diagnostic = () => {})
   }
   for (let index = 0; index < diagnostics.length; index += 1) {
     try {
-      diagnostic(diagnostics[index][0], diagnostics[index][1]);
+      const [checkpoint, reason, detail] = diagnostics[index];
+      if (detail === undefined) diagnostic(checkpoint, reason);
+      else diagnostic(checkpoint, reason, detail);
     } catch {}
   }
   if (validationFailed) throw validationError;
