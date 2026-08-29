@@ -72,33 +72,25 @@ const validateContext = (context, group) => {
 const observe = values => observeAction(values);
 const summarizeHttp = results => !Array.isArray(results) || results.length === 0
   ? 'none' : results.map(result => `${result.status}`).join(',');
-export const aggregateWindows = (windows, options = {}, diagnostic = () => {}, observeRequestFailureSignals = () => {}) => {
-  if (!Array.isArray(windows) || windows.length === 0) throw new Error('Scenario requires complete action windows.');
-  if (typeof observeRequestFailureSignals !== 'function') {
-    throw new Error('Scenario request-failure aggregate observer must be a function.');
-  }
-  const last = windows.at(-1);
-  const failureSignals = windows.flatMap(window => window.unexpectedRequestFailureSignals.map(({
+export const rebuildRequestFailureSignals = requestFailureSignals => {
+  const multiplicity = requestFailureSignals.length === 1 ? 'single' : 'multiple';
+  return Object.freeze(requestFailureSignals.map(({
     failureClass, targetClass, resourceType, navigationRelationship,
-  }) => ({ failureClass, targetClass, resourceType, navigationRelationship })));
-  const failureMultiplicity = failureSignals.length === 1 ? 'single' : 'multiple';
-  const aggregatedRequestFailureSignals = Object.freeze(failureSignals.map(signal => Object.freeze({
-    failureClass: signal.failureClass,
-    targetClass: signal.targetClass,
-    resourceType: signal.resourceType,
-    navigationRelationship: signal.navigationRelationship,
-    multiplicity: failureMultiplicity,
+  }) => Object.freeze({
+    failureClass,
+    targetClass,
+    resourceType,
+    navigationRelationship,
+    multiplicity,
   })));
-  const replayDiagnostic = (checkpoint, reason, detail) => {
-    if (detail !== undefined) {
-      try {
-        observeRequestFailureSignals(aggregatedRequestFailureSignals);
-      } catch {}
-      diagnostic(checkpoint, reason, detail);
-      return;
-    }
-    diagnostic(checkpoint, reason);
-  };
+};
+
+export const aggregateWindows = (windows, options = {}, diagnostic = () => {}) => {
+  if (!Array.isArray(windows) || windows.length === 0) throw new Error('Scenario requires complete action windows.');
+  const last = windows.at(-1);
+  const aggregatedRequestFailureSignals = rebuildRequestFailureSignals(
+    windows.flatMap(window => window.unexpectedRequestFailureSignals),
+  );
   return validateActionWindow({
     pageId: last.pageId,
     terminalReached: last.terminalReached,
@@ -141,10 +133,10 @@ export const aggregateWindows = (windows, options = {}, diagnostic = () => {}, o
     }))),
     pageErrors: windows.reduce((sum, window) => sum + window.pageErrors, 0),
     appConsoleErrors: windows.reduce((sum, window) => sum + window.appConsoleErrors, 0),
-    unexpectedRequestFailures: failureSignals.length,
+    unexpectedRequestFailures: aggregatedRequestFailureSignals.length,
     unexpectedRequestFailureSignals: aggregatedRequestFailureSignals,
     overflow: windows.reduce((sum, window) => sum + window.overflow, 0),
-  }, options, replayDiagnostic);
+  }, options, diagnostic);
 };
 const rowFromWindow = ({ context, group, action, expectedResult, window, visibleState, httpSummary, actionSummaries }) => {
   const row = {
