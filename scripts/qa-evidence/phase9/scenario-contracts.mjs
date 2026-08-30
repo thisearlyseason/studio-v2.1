@@ -1132,7 +1132,9 @@ const validateRouteResultSnapshot = (value, diagnostic = () => {}) => {
     : requireString(result.requestedPath, 'requestedPath');
   const expectedPath = requireString(result.expectedPath, 'expectedPath');
   const expectedSentinel = requireString(result.expectedSentinel, 'expectedSentinel');
-  if (!ROUTE_SCENARIOS[requestedPath]) throw new Error('Route result requestedPath must be a configured protected route.');
+  if (!Object.keys(ROUTE_SCENARIOS).includes(requestedPath)) {
+    throw new Error('Route result requestedPath must be a configured protected route.');
+  }
   if (result.allowed && !ROUTE_SCENARIOS[expectedPath]?.visibleSentinels.includes(expectedSentinel)) {
     throw new Error('Allowed route must use its configured route sentinel.');
   }
@@ -1149,11 +1151,12 @@ const validateRouteResultSnapshot = (value, diagnostic = () => {}) => {
     resourcePolicy: result.resourcePolicy,
   }, diagnostic);
 
-  diagnostic('route-expectation', 'route-mismatch');
-
+  diagnostic('route-session', requestedPath);
   if (!window.sessionPresent) throw new Error('Active-user route result must retain an authenticated session.');
 
+  diagnostic('route-location', requestedPath);
   if (window.finalPath !== expectedPath) throw new Error('Route result pathname does not match the expected pathname.');
+  diagnostic('route-heading', requestedPath);
   if (!window.visibleSentinels.includes(expectedSentinel)) {
     throw new Error('Route result did not reach its configured visible sentinel.');
   }
@@ -1163,6 +1166,7 @@ const validateRouteResultSnapshot = (value, diagnostic = () => {}) => {
     finalProtectedHeadings.length !== expectedFinalProtectedHeadings.length
     || finalProtectedHeadings.some((sentinel, index) => sentinel !== expectedFinalProtectedHeadings[index])
   ) throw new Error('Route result final visible protected heading must exactly match the expected sentinel.');
+  diagnostic('route-render', requestedPath);
   if (window.protectedRender) {
     const protectedSignals = window.renderSignals.filter(signal => (
       signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
@@ -1178,6 +1182,7 @@ const validateRouteResultSnapshot = (value, diagnostic = () => {}) => {
   }
 
   if (!result.allowed && result.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
+    diagnostic('route-attribution', requestedPath);
     const validateAttribution = (signal, name) => {
       const pathname = requireCanonicalStagingAttribution(signal.initiatingFrameUrl, name);
       if (isExactPathOrSubtree(pathname, requestedPath)) {

@@ -124,6 +124,12 @@ const RUNNER_DIAGNOSTICS = Object.freeze({
   'row-emission': 'row-invalid',
   'private-finalization': 'finalization-failed',
 });
+const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
+  'route-session', 'route-location', 'route-heading', 'route-render', 'route-attribution',
+]);
+const ROUTE_DIAGNOSTIC_REASONS = new Set([
+  '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
+]);
 const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'runner-initialization': 'authorization',
   'context-start': 'authorization',
@@ -166,6 +172,11 @@ const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'landing-session': 'scenario-action',
   'landing-render-history': 'scenario-action',
   'route-expectation': 'scenario-action',
+  'route-session': 'scenario-action',
+  'route-location': 'scenario-action',
+  'route-heading': 'scenario-action',
+  'route-render': 'scenario-action',
+  'route-attribution': 'scenario-action',
   'row-validation': 'scenario-action',
   'ownership-release': 'release',
   'row-emission': 'row-emission',
@@ -1499,8 +1510,12 @@ export function validateRunnerFailureTerminal(message, accepted) {
     || message.contextOrdinal >= phaseContracts.length
     || typeof message.contextId !== 'string'
     || message.contextId !== phaseContracts[message.contextOrdinal].contextId
-    || !Object.hasOwn(RUNNER_DIAGNOSTICS, message.checkpoint)
-    || message.reason !== RUNNER_DIAGNOSTICS[message.checkpoint]
+    || !(Object.hasOwn(RUNNER_DIAGNOSTICS, message.checkpoint)
+      ? message.reason === RUNNER_DIAGNOSTICS[message.checkpoint]
+      : ROUTE_DIAGNOSTIC_CHECKPOINTS.has(message.checkpoint)
+        && ROUTE_DIAGNOSTIC_REASONS.has(message.reason))
+    || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(message.checkpoint)
+      && phaseContracts[message.contextOrdinal].group !== 'admission-route')
     || message.stage !== RUNNER_DIAGNOSTIC_STAGES[message.checkpoint]) {
     throw new GuardianFailure('scenario-runner-invalid');
   }

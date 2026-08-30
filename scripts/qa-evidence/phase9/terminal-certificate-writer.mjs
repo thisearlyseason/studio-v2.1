@@ -53,6 +53,12 @@ const DIAGNOSTIC_REASONS = Object.freeze({
   'ownership-release': 'release-failed', 'row-emission': 'row-invalid',
   'private-finalization': 'finalization-failed',
 });
+const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
+  'route-session', 'route-location', 'route-heading', 'route-render', 'route-attribution',
+]);
+const ROUTE_DIAGNOSTIC_REASONS = new Set([
+  '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
+]);
 const DIAGNOSTIC_STAGES = Object.freeze({
   'runner-initialization': 'authorization', 'context-start': 'authorization',
   'ownership-authorization': 'authorization', 'browser-acquisition': 'acquisition',
@@ -75,6 +81,9 @@ const DIAGNOSTIC_STAGES = Object.freeze({
   'window-policy': 'scenario-action',
   'landing-heading': 'scenario-action', 'landing-session': 'scenario-action',
   'landing-render-history': 'scenario-action', 'route-expectation': 'scenario-action',
+  'route-session': 'scenario-action', 'route-location': 'scenario-action',
+  'route-heading': 'scenario-action', 'route-render': 'scenario-action',
+  'route-attribution': 'scenario-action',
   'row-validation': 'scenario-action',
   'ownership-release': 'release', 'row-emission': 'row-emission',
   'private-finalization': 'row-emission',
@@ -324,8 +333,15 @@ function validateCertificate(input, {
       || ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
         contexts[value.diagnostic.contextOrdinal]?.contextId === value.diagnostic.contextId
       ))
-      || !Object.hasOwn(DIAGNOSTIC_REASONS, value.diagnostic.checkpoint)
-      || value.diagnostic.reason !== DIAGNOSTIC_REASONS[value.diagnostic.checkpoint]
+      || !(Object.hasOwn(DIAGNOSTIC_REASONS, value.diagnostic.checkpoint)
+        ? value.diagnostic.reason === DIAGNOSTIC_REASONS[value.diagnostic.checkpoint]
+        : ROUTE_DIAGNOSTIC_CHECKPOINTS.has(value.diagnostic.checkpoint)
+          && ROUTE_DIAGNOSTIC_REASONS.has(value.diagnostic.reason))
+      || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(value.diagnostic.checkpoint)
+        && ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
+          contexts[value.diagnostic.contextOrdinal]?.contextId === value.diagnostic.contextId
+          && contexts[value.diagnostic.contextOrdinal]?.group === 'admission-route'
+        )))
       || value.primaryStage !== DIAGNOSTIC_STAGES[value.diagnostic.checkpoint]) {
       throw new Error('Terminal certificate diagnostic is invalid.');
     }

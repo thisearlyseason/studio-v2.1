@@ -3241,6 +3241,90 @@ test('phase 9 admission scenario reports closed diagnostics for each landing con
   });
 });
 
+test('phase 9 admission route diagnostic identifies the exact fixed route and contract branch', async () => {
+  const family = scenarioWindow({
+    finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'],
+  });
+  const wrongAdminLanding = scenarioWindow({
+    finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard`, visibleSentinels: ['Dashboard'],
+  });
+  const diagnostics = [];
+  await assert.rejects(runAdmissionScenario({
+    client: createScriptedScenarioClient([family, wrongAdminLanding]),
+    session: 'parent-route-diagnostic',
+    context: scenarioContext({ contextId: 'parent-route-diagnostic', alias: 'qa-parent-a' }),
+    actions: {
+      loginAndLand: async () => {}, navigate: async () => {}, waitForExactLocation: async () => {},
+      diagnostic: (checkpoint, reason) => diagnostics.push([checkpoint, reason]),
+    },
+  }), /pathname does not match/i);
+  assert.deepEqual(diagnostics.at(-1), ['route-location', '/admin']);
+});
+
+test('phase 9 route validation reports every fixed contract branch without free-form detail', () => {
+  const base = {
+    allowed: false,
+    requestedPath: '/admin',
+    expectedPath: '/family',
+    expectedSentinel: 'Family Overview',
+  };
+  const family = overrides => scenarioWindow({
+    finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'],
+    ...overrides,
+  });
+  const cases = [
+    ['route-session', family({ sessionPresent: false })],
+    ['route-location', family({ finalPath: '/dashboard', finalUrl: `${STAGING_ORIGIN}/dashboard` })],
+    ['route-heading', family({ visibleSentinels: ['Dashboard'] })],
+    ['route-render', family({
+      protectedRender: true,
+      renderSignals: [{ kind: 'heading', pathname: '/dashboard', sentinel: 'Dashboard' }],
+    })],
+    ['route-attribution', family({
+      protectedRequests: 1,
+      protectedRequestSignals: [closedResourceSignal(`${STAGING_ORIGIN}/admin`)],
+    })],
+  ];
+  for (const [checkpoint, window] of cases) {
+    const diagnostics = [];
+    assert.throws(
+      () => validateRouteResult({ ...base, window }, (...report) => diagnostics.push(report)),
+      undefined,
+      checkpoint,
+    );
+    assert.deepEqual(diagnostics.at(-1), [checkpoint, '/admin'], checkpoint);
+  }
+});
+
+test('phase 9 route validation rejects inherited and prototype-polluted route names generically', () => {
+  const window = scenarioWindow({
+    finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'],
+  });
+  const assertGenericRejection = requestedPath => {
+    const diagnostics = [];
+    assert.throws(() => validateRouteResult({
+      allowed: false,
+      requestedPath,
+      expectedPath: '/family',
+      expectedSentinel: 'Family Overview',
+      window,
+    }, (...report) => diagnostics.push(report)), /configured protected route/i, requestedPath);
+    assert.deepEqual(diagnostics, [['route-expectation', 'route-mismatch']], requestedPath);
+  };
+  for (const requestedPath of ['toString', 'constructor', '__proto__']) {
+    assertGenericRejection(requestedPath);
+  }
+  Object.defineProperty(Object.prototype, '/prototype-polluted-route', {
+    configurable: true,
+    value: ROUTE_SCENARIOS['/admin'],
+  });
+  try {
+    assertGenericRejection('/prototype-polluted-route');
+  } finally {
+    delete Object.prototype['/prototype-polluted-route'];
+  }
+});
+
 test('phase 9 browser scenarios retain strict zero protected data for Missing Profile in every admission window', async () => {
   const signal = (initiatingFrameUrl, listener) => closedResourceSignal(
     initiatingFrameUrl,
@@ -7240,7 +7324,7 @@ test('phase 9 lifecycle guardian cleans exact resources when either scenario pha
 });
 
 test('phase 9 protocol-v4 failure terminal validates every closed stage against exact ownership', async () => {
-  const { validateRunnerFailureTerminal } = await import(
+  const { canonicalBrowserSessionsForRow, validateRunnerFailureTerminal } = await import(
     '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
   );
   assert.equal(typeof validateRunnerFailureTerminal, 'function');
@@ -7303,6 +7387,11 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       ['landing-session', 'session-missing'],
       ['landing-render-history', 'render-history-invalid'],
       ['route-expectation', 'route-mismatch'],
+      ['route-session', '/admin'],
+      ['route-location', '/club'],
+      ['route-heading', '/competition'],
+      ['route-render', '/dashboard/billing'],
+      ['route-attribution', '/coaches-corner'],
       ['row-validation', 'row-invalid'],
     ],
     'row-emission': [
@@ -7347,6 +7436,65 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       assert.equal(Object.hasOwn(terminal.diagnostic, 'requestFailure'), false, checkpoint);
     }
   }
+  assert.throws(() => validateRunnerFailureTerminal({
+    version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
+    category: 'scenario-failed', stage: 'scenario-action',
+    contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+    checkpoint: 'route-location', reason: '/login', pendingBrowserSession: null,
+    browserSessions: [session], attachedBrowserSessions: [], launchReceipts: [receipt],
+    releasedBrowserSessions: [],
+  }, accepted), /scenario-runner-invalid/);
+  let admittedRouteContexts = 0;
+  let rejectedNonRouteContexts = 0;
+  for (const phase of ['before-transition', 'after-transition']) {
+    const phaseRows = buildCanonicalScenarioPlan().filter(row => (
+      phase === 'before-transition' ? row.startState !== 'pending_deletion' : row.startState === 'pending_deletion'
+    ));
+    for (const [contextOrdinal, row] of phaseRows.entries()) {
+      const rowSessions = canonicalBrowserSessionsForRow(row);
+      const rowReceipts = rowSessions.map((rowSession, sessionIndex) => Object.freeze({
+        session: rowSession,
+        daemonPid: 930000 + (phase === 'before-transition' ? 0 : 1000) + contextOrdinal * 10 + sessionIndex * 2,
+        chromeMainPid: 930001 + (phase === 'before-transition' ? 0 : 1000) + contextOrdinal * 10 + sessionIndex * 2,
+      }));
+      const rowAccepted = {
+        ...accepted,
+        phase,
+        activeAnnouncedSessions: new Set(rowSessions),
+        activeAnnouncedReceipts: new Map(rowReceipts.map(rowReceipt => [rowReceipt.session, rowReceipt])),
+        currentContext: { contextOrdinal, contextId: row.contextId },
+      };
+      const rowFailure = {
+        version: 4, type: 'failure', phase, sequence: 1,
+        category: 'scenario-failed', stage: 'scenario-action',
+        contextOrdinal, contextId: row.contextId,
+        checkpoint: 'scenario-action', reason: 'action-failed', pendingBrowserSession: null,
+        browserSessions: rowSessions, attachedBrowserSessions: [], launchReceipts: rowReceipts,
+        releasedBrowserSessions: [],
+      };
+      assert.doesNotThrow(
+        () => validateRunnerFailureTerminal(rowFailure, rowAccepted),
+        `${phase}:${row.contextId}:baseline`,
+      );
+      const routeFailure = { ...rowFailure, checkpoint: 'route-location', reason: '/admin' };
+      if (row.group === 'admission-route') {
+        assert.doesNotThrow(
+          () => validateRunnerFailureTerminal(routeFailure, rowAccepted),
+          `${phase}:${row.contextId}:route`,
+        );
+        admittedRouteContexts += 1;
+      } else {
+        assert.throws(
+          () => validateRunnerFailureTerminal(routeFailure, rowAccepted),
+          /scenario-runner-invalid/,
+          `${phase}:${row.contextId}:route`,
+        );
+        rejectedNonRouteContexts += 1;
+      }
+    }
+  }
+  assert.equal(admittedRouteContexts, 18);
+  assert.equal(rejectedNonRouteContexts, 26);
 });
 
 test('phase 9 request failure protocol preserves one closed summary and rejects diagnostic forgery', async t => {
@@ -9347,6 +9495,11 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     ['window-render-coherence', 'render-coherence-invalid'],
     ['window-resource', 'resource-invalid'],
     ['window-policy', 'policy-invalid'],
+    ['route-session', '/admin'],
+    ['route-location', '/club'],
+    ['route-heading', '/competition'],
+    ['route-render', '/dashboard/billing'],
+    ['route-attribution', '/family'],
   ]) assert.doesNotThrow(() => canonicalPhase9TerminalCertificate({
     ...diagnosticCertificate,
     diagnostic: { ...diagnosticCertificate.diagnostic, checkpoint, reason },
@@ -9359,6 +9512,10 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
       ...diagnosticCertificate.diagnostic,
       checkpoint: 'landing-window-contract', reason: 'window-contract-invalid',
     }],
+    ['non-route reason', {
+      ...diagnosticCertificate.diagnostic,
+      checkpoint: 'route-location', reason: '/login',
+    }],
     ['reason', { ...diagnosticCertificate.diagnostic, reason: 'raw-reason' }],
     ['checkpoint/reason', { ...diagnosticCertificate.diagnostic, reason: 'action-failed' }],
   ]) assert.throws(
@@ -9366,6 +9523,47 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     /terminal certificate/i,
     name,
   );
+  let admittedCertificateContexts = 0;
+  let rejectedNonRouteCertificateContexts = 0;
+  for (const phaseRows of [
+    buildCanonicalScenarioPlan().filter(row => row.startState !== 'pending_deletion'),
+    buildCanonicalScenarioPlan().filter(row => row.startState === 'pending_deletion'),
+  ]) {
+    for (const [contextOrdinal, row] of phaseRows.entries()) {
+      const contextualCertificate = {
+        ...diagnosticCertificate,
+        diagnostic: {
+          ...diagnosticCertificate.diagnostic,
+          contextOrdinal,
+          contextId: row.contextId,
+        },
+      };
+      assert.doesNotThrow(
+        () => canonicalPhase9TerminalCertificate(contextualCertificate),
+        `${row.contextId}:baseline`,
+      );
+      const routeCertificate = {
+        ...contextualCertificate,
+        diagnostic: { ...contextualCertificate.diagnostic, checkpoint: 'route-location', reason: '/admin' },
+      };
+      if (row.group === 'admission-route') {
+        assert.doesNotThrow(
+          () => canonicalPhase9TerminalCertificate(routeCertificate),
+          `${row.contextId}:route`,
+        );
+        admittedCertificateContexts += 1;
+      } else {
+        assert.throws(
+          () => canonicalPhase9TerminalCertificate(routeCertificate),
+          /terminal certificate/i,
+          `${row.contextId}:route`,
+        );
+        rejectedNonRouteCertificateContexts += 1;
+      }
+    }
+  }
+  assert.equal(admittedCertificateContexts, 18);
+  assert.equal(rejectedNonRouteCertificateContexts, 26);
   assert.throws(() => canonicalPhase9TerminalCertificate({
     ...diagnosticCertificate,
     primaryStage: 'login',

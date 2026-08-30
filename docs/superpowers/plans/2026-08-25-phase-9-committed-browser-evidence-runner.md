@@ -420,6 +420,14 @@ The exact hosted run at the reviewed staging deployment failed closed on the fir
 
 Apply the repair in `src/lib/dashboard-route-policy.ts`. Add RED/GREEN coverage in `tests/dashboard-route-policy.test.mjs` and `tests/phase9-identity-authorization.test.mjs` proving that denied routes select the exact role-authorized home (`/family`, `/competition`, `/club`, or `/dashboard`) without an intermediate protected landing. Do not weaken the Phase 9 route evidence contract, and do not retry hosted execution until the repaired exact SHA is reviewed, deployed to staging, and separately authorized.
 
+### Defect P9-DIAG-002: direct-route failures must identify the fixed route and contract branch
+
+The exact hosted lifecycle at the repaired and reviewed staging deployment again failed closed before the first evidence row. Cleanup and the independent `20/82/1 -> 0/0/0` absence proof remained certified, but every direct-route validation branch still collapsed to `route-expectation` / `route-mismatch`. That pair cannot distinguish the six fixed routes or the session, location, heading, render-history, and request-attribution contracts, so another identical retry would not produce actionable evidence.
+
+Refine only the closed diagnostic contract in `scripts/qa-evidence/phase9/scenario-contracts.mjs`, `scripts/qa-evidence/phase9/lifecycle-guardian.mjs`, and `scripts/qa-evidence/phase9/terminal-certificate-writer.mjs`. A route failure must emit one fixed branch checkpoint and the exact configured public route path as its closed reason; malformed pre-route inputs retain the generic fallback. Add RED/GREEN production-scenario and protocol/certificate tests in `tests/phase9-browser-evidence.test.mjs`, rebuild and re-pin the deterministic child, and preserve the existing size cap. Do not perform another hosted lifecycle until the refined exact SHA passes full local verification, independent review, release gates, staging deployment, and a new explicit authorization.
+
+Independent review additionally requires configured-route membership to be own-key-only: inherited names (`toString`, `constructor`, `__proto__`) and prototype-polluted names are malformed and retain only the generic fallback. A fixed route checkpoint/reason pair is valid only for a canonical `admission-route` context; guardian and terminal-certificate validation must reject the same pair under isolation, logout, and pending-deletion contexts in both lifecycle phases.
+
 ### Task 6: Independent review, exact staging execution, and Task 7 evidence closure
 
 **Files:**
