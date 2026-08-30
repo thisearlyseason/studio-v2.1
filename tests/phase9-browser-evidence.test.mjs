@@ -33,6 +33,7 @@ import {
 import {
   acquireBlankBrowser,
   armAcquiredSignalRecorder,
+  classifyStableTerminalSample,
   classifyRequestFailureSignal,
   closeAndVerifyBrowsers,
   createPlaywrightCliClient,
@@ -5048,6 +5049,10 @@ darwinRuntimeTest('phase 9 stable terminal polling survives a hard document navi
 test('phase 9 stable terminal timeout reports only closed route and heading boundaries', async () => {
   for (const [outcome, expected] of [
     ['location-mismatch', ['terminal-location', 'location-mismatch']],
+    ['observer-mismatch', ['terminal-observer', 'observer-mismatch']],
+    ['role-restricted', ['terminal-role', 'role-restricted']],
+    ['loading-stalled', ['terminal-loading', 'loading-stalled']],
+    ['runtime-error', ['terminal-runtime', 'runtime-error']],
     ['heading-missing', ['terminal-heading', 'heading-missing']],
     ['not-reached', ['terminal-wait', 'terminal-not-reached']],
   ]) {
@@ -5071,6 +5076,27 @@ test('phase 9 stable terminal timeout reports only closed route and heading boun
     );
     assert.deepEqual(diagnostics.at(-1), expected);
   }
+});
+
+test('phase 9 stable terminal sample classification is closed and ordered', () => {
+  const atExpectedPath = { locationMatches: true, sentinelVisible: false };
+  for (const [sample, outcome] of [
+    [{ locationMatches: false }, 'location-mismatch'],
+    [{ ...atExpectedPath, direct: true }, 'observer-mismatch'],
+    [{ ...atExpectedPath, restricted: true }, 'role-restricted'],
+    [{ ...atExpectedPath, loading: true }, 'loading-stalled'],
+    [{ ...atExpectedPath, runtime: true }, 'runtime-error'],
+    [atExpectedPath, 'heading-missing'],
+    [null, 'not-reached'],
+  ]) assert.equal(classifyStableTerminalSample(sample), outcome);
+
+  assert.equal(classifyStableTerminalSample({
+    ...atExpectedPath,
+    direct: true,
+    restricted: true,
+    loading: true,
+    runtime: true,
+  }), 'observer-mismatch');
 });
 
 test('phase 9 browser scenarios logout row includes a fifth fresh isolated unauthenticated action', async () => {
@@ -7203,6 +7229,10 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       ['scenario-action', 'action-failed'],
       ['terminal-wait', 'terminal-not-reached'],
       ['terminal-location', 'location-mismatch'],
+      ['terminal-observer', 'observer-mismatch'],
+      ['terminal-role', 'role-restricted'],
+      ['terminal-loading', 'loading-stalled'],
+      ['terminal-runtime', 'runtime-error'],
       ['terminal-heading', 'heading-missing'],
       ['observation-sample', 'observation-failed'],
       ['window-validation', 'expectation-mismatch'],
@@ -9256,6 +9286,10 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
   assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(diagnosticCertificate));
   for (const [checkpoint, reason] of [
     ['terminal-location', 'location-mismatch'],
+    ['terminal-observer', 'observer-mismatch'],
+    ['terminal-role', 'role-restricted'],
+    ['terminal-loading', 'loading-stalled'],
+    ['terminal-runtime', 'runtime-error'],
     ['terminal-heading', 'heading-missing'],
     ['window-schema', 'schema-invalid'],
     ['window-location', 'location-invalid'],

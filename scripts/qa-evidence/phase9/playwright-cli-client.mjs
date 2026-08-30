@@ -2370,6 +2370,18 @@ export async function setAndVerifyViewport(client, session, viewport) {
   return internals.applyViewport(session, viewport);
 }
 
+export function classifyStableTerminalSample(sample) {
+  if (!sample || typeof sample !== 'object' || Array.isArray(sample)) return 'not-reached';
+  if (sample.locationMatches === false) return 'location-mismatch';
+  if (sample.locationMatches !== true) return 'not-reached';
+  if (sample.direct === true && sample.sentinelVisible === false) return 'observer-mismatch';
+  if (sample.restricted === true) return 'role-restricted';
+  if (sample.loading === true) return 'loading-stalled';
+  if (sample.runtime === true) return 'runtime-error';
+  if (sample.sentinelVisible === false) return 'heading-missing';
+  return 'not-reached';
+}
+
 export async function waitForStableExactLocation(client, session, path, sentinel) {
   const internals = CLIENT_INTERNALS.get(client);
   if (!internals) throw new Error('Stable location requires a Playwright CLI client.');
@@ -2386,18 +2398,28 @@ export async function waitForStableExactLocation(client, session, path, sentinel
       expectedPath: ${JSON.stringify(path)},
       sentinel: ${JSON.stringify(sentinel)},
     };
+    const classifyStableTerminalSample = ${classifyStableTerminalSample.toString()};
     const startedAt = Date.now();
     let stableSince = null;
     let lastSample = null;
     while (Date.now() - startedAt < 45000) {
       let sample = null;
       try {
-        sample = await page.evaluate(({ expectedUrl, expectedOrigin, expectedPath, sentinel }) => ({
-          locationMatches: expectedUrl === 'about:blank'
-            ? location.href === expectedUrl
-            : location.origin === expectedOrigin && location.pathname === expectedPath,
-          sentinelVisible: (globalThis.__phase9VisibleSentinels?.() || []).includes(sentinel),
-        }), expected);
+        const dom = await page.evaluate(({ expectedUrl, expectedOrigin, expectedPath, sentinel }) => {
+          const exactVisible = (selector, value) => [...document.querySelectorAll(selector)].some(element =>
+            element.innerText.replace(/\\s+/g, ' ').trim() === value
+              && element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+          return {
+            locationMatches: expectedUrl === 'about:blank'
+              ? location.href === expectedUrl
+              : location.origin === expectedOrigin && location.pathname === expectedPath,
+            sentinelVisible: (globalThis.__phase9VisibleSentinels?.() || []).includes(sentinel),
+            direct: exactVisible('h1', sentinel),
+            restricted: exactVisible('h1', 'Family Access Required'),
+            loading: exactVisible('p', 'Synchronizing Secure Hub...'),
+          };
+        }, expected);
+        sample = { ...dom, runtime: (page.__phase9EvidenceRecorder?.pageErrors?.length || 0) > 0 || (page.__phase9EvidenceRecorder?.appConsoleErrors?.length || 0) > 0 };
         lastSample = sample;
       } catch (error) {
         const message = String(error?.message || error);
@@ -2412,13 +2434,19 @@ export async function waitForStableExactLocation(client, session, path, sentinel
       }
       await page.waitForTimeout(16);
     }
-    if (lastSample?.locationMatches === false) return 'location-mismatch';
-    if (lastSample?.locationMatches === true && lastSample?.sentinelVisible === false) return 'heading-missing';
-    return 'not-reached';
+    return classifyStableTerminalSample(lastSample);
   }`);
   if (outcome === true) return true;
   const diagnostic = outcome === 'location-mismatch'
     ? ['terminal-location', 'location-mismatch']
+    : outcome === 'observer-mismatch'
+      ? ['terminal-observer', 'observer-mismatch']
+      : outcome === 'role-restricted'
+        ? ['terminal-role', 'role-restricted']
+        : outcome === 'loading-stalled'
+          ? ['terminal-loading', 'loading-stalled']
+          : outcome === 'runtime-error'
+            ? ['terminal-runtime', 'runtime-error']
     : outcome === 'heading-missing'
       ? ['terminal-heading', 'heading-missing']
       : ['terminal-wait', 'terminal-not-reached'];
