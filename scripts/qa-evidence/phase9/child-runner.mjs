@@ -149,7 +149,7 @@ os.execve(sys.argv[1], sys.argv[1:], os.environ)
     ];
     const keyOf = signal => signal.kind + '\u0000' + signal.sentinel;
     const candidates = new Map(definitions.map(signal => [keyOf(signal), new Set()]));
-    const normalizedHeading = element => (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
+    const normalizedHeading = element => (element.textContent || '').replace(/\s+/g, ' ').trim();
     const visibleEdges = new Set();
     const visible = element => {
       if (!element?.isConnected) return false;
@@ -415,7 +415,7 @@ os.execve(sys.argv[1], sys.argv[1:], os.environ)
       try {
         const dom = await page.evaluate(({ expectedUrl, expectedOrigin, expectedPath, sentinel }) => {
           const exactVisible = (selector, value) => [...document.querySelectorAll(selector)].some(element =>
-            element.innerText.replace(/\\s+/g, ' ').trim() === value
+            (element.textContent || '').replace(/\\s+/g, ' ').trim() === value
               && element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
           return {
             locationMatches: expectedUrl === 'about:blank'

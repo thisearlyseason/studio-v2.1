@@ -447,6 +447,8 @@ On a stable product mismatch, stop at the safe boundary and follow the original 
 
 The deployed stable-terminal follow-up stopped safely at row zero with exact `/family` and `terminal-heading/heading-missing`; cleanup and independent absence were exact. The closed alternatives ruled out observer mismatch, role restriction, the existing layout loading gate, and recorder runtime failure. The matching source boundary was the dashboard-wide `Suspense fallback={null}`. Before another attempt, replace only that blank product fallback with the accessible exact secure-hub loading status, prove RED/GREEN with a real suspended child that later resolves, and rerun the complete release gates. A persistent suspension must then report `terminal-loading/loading-stalled`; it must never return to a blank page or be guessed into a successful row.
 
+The next exact deployed attempt retained `terminal-heading/heading-missing`, disproving persistent dashboard suspension. Chromium characterization then proved that Tailwind `uppercase` changes `innerText` (`Family Overview` renders as `FAMILY OVERVIEW`) while `textContent` retains the closed source string. Change only recorder and stable-terminal identity matching to normalized `textContent`; retain the existing visibility checks and closed sentinel enums. Prove RED/GREEN in real Chrome for both recorder capture and terminal restricted-heading classification under CSS text transformation, deterministically rebuild and re-pin the child, pass the complete release gates, then permit exactly one new guarded hosted lifecycle against the exact reviewed deployment.
+
 - [ ] **Step 5: Sanitize, verify, and commit evidence only**
 
 Run the committed writer and repository hygiene scans. Retain only approved Markdown. Commit:

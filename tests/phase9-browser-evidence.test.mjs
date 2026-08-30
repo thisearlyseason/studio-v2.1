@@ -4969,6 +4969,51 @@ darwinRuntimeTest('phase 9 browser scenarios recorder requires an exact visible 
       })`),
     });
     assert.deepEqual(exactHeading.visibleSentinels, ['Account Lookup']);
+    const transformedHeading = await observeAction({
+      client,
+      session: 'phase9-exact-heading',
+      stage: 'source-heading-under-css-transform',
+      terminal: async () => {},
+      action: () => client.runCode('phase9-exact-heading', `async (page) => page.evaluate(() => {
+        document.body.innerHTML = '<style>h1 { text-transform: uppercase; }</style><h1>Family Overview</h1>';
+      })`),
+    });
+    assert.deepEqual(await client.runCode(
+      'phase9-exact-heading',
+      `async (page) => page.evaluate(() => {
+        const heading = document.querySelector('h1');
+        return { innerText: heading.innerText, textContent: heading.textContent };
+      })`,
+    ), { innerText: 'FAMILY OVERVIEW', textContent: 'Family Overview' });
+    assert.deepEqual(transformedHeading.visibleSentinels, ['Family Overview']);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
+darwinRuntimeTest('phase 9 terminal diagnostics match exact source headings under CSS text transforms', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const diagnostics = [];
+  const client = createPlaywrightCliClient({
+    timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+    onDiagnosticCheckpoint: (checkpoint, reason) => diagnostics.push([checkpoint, reason]),
+  });
+  try {
+    await installSignalRecorder(client, 'phase9-transformed-terminal-heading');
+    await client.runCode('phase9-transformed-terminal-heading', `async (page) => page.evaluate(() => {
+      document.body.innerHTML = '<style>h1 { text-transform: uppercase; }</style><h1>Family Access Required</h1>';
+    })`);
+    assert.deepEqual(await client.runCode(
+      'phase9-transformed-terminal-heading',
+      `async (page) => page.evaluate(() => {
+        const heading = document.querySelector('h1');
+        return { innerText: heading.innerText, textContent: heading.textContent };
+      })`,
+    ), { innerText: 'FAMILY ACCESS REQUIRED', textContent: 'Family Access Required' });
+    await assert.rejects(
+      waitForStableExactLocation(client, 'phase9-transformed-terminal-heading', 'about:blank', 'Family Overview'),
+      /stable terminal location/i,
+    );
+    assert.deepEqual(diagnostics.at(-1), ['terminal-role', 'role-restricted']);
   } finally {
     await closeAndVerifyBrowsers(client);
   }
@@ -12263,7 +12308,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
-  assert.equal(darwinRuntimeTests.length, 75);
+  assert.equal(darwinRuntimeTests.length, 76);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });
