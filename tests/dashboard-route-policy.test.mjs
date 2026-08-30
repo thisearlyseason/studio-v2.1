@@ -50,6 +50,49 @@ test('institution and competition hubs require matching authority', () => {
   assert.equal(authorizeDashboardRoute('/competition', { role: 'coach', plan_type: 'team' }).allowed, false);
 });
 
+test('denied sensitive routes land directly on the persona-authorized home', () => {
+  const paths = [
+    '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
+  ];
+  const cases = [
+    {
+      profile: { role: 'parent' }, institutionAuthority: false,
+      allowed: new Set(['/family']), deniedLanding: '/family',
+    },
+    {
+      profile: { role: 'league_creator' }, institutionAuthority: false,
+      allowed: new Set(['/competition', '/dashboard/billing', '/coaches-corner']),
+      deniedLanding: '/competition',
+    },
+    {
+      profile: { role: 'admin', plan_type: 'school' }, institutionAuthority: true,
+      allowed: new Set(['/club', '/competition', '/dashboard/billing', '/coaches-corner']),
+      deniedLanding: '/club',
+    },
+    {
+      profile: { role: 'adult_player' }, institutionAuthority: false,
+      allowed: new Set(), deniedLanding: '/dashboard',
+    },
+  ];
+
+  for (const routeCase of cases) {
+    for (const path of paths) {
+      const decision = authorizeDashboardRoute(
+        path,
+        routeCase.profile,
+        undefined,
+        routeCase.institutionAuthority,
+      );
+      assert.deepEqual(
+        decision,
+        routeCase.allowed.has(path)
+          ? { allowed: true }
+          : { allowed: false, redirectTo: routeCase.deniedLanding },
+      );
+    }
+  }
+});
+
 test('shared navigation hides routes rejected by the dashboard policy', () => {
   const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
 

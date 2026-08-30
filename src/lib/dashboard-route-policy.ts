@@ -72,35 +72,42 @@ export function authorizeDashboardRoute(
   const isTrustedSuperAdmin = normalizedClaimRole(claimsRole) === 'superadmin';
   const isManagement = isTrustedSuperAdmin || MANAGEMENT_ROLES.has(role) ||
     profile?.isPrimaryClubAuthority === true;
+  const deniedLanding = institutionAuthority || profile?.isPrimaryClubAuthority === true
+    ? '/club'
+    : role === 'league_creator'
+      ? '/competition'
+      : role === 'parent'
+        ? '/family'
+        : '/dashboard';
 
   if (matchesPrefix(pathname, '/admin')) {
-    return isTrustedSuperAdmin ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
+    return isTrustedSuperAdmin ? { allowed: true } : { allowed: false, redirectTo: deniedLanding };
   }
 
   if (matchesPrefix(pathname, '/family')) {
     return role === 'parent' || isTrustedSuperAdmin
       ? { allowed: true }
-      : { allowed: false, redirectTo: '/dashboard' };
+      : { allowed: false, redirectTo: deniedLanding };
   }
 
   if (matchesPrefix(pathname, '/dashboard/billing')) {
-    return isManagement ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
+    return isManagement ? { allowed: true } : { allowed: false, redirectTo: deniedLanding };
   }
 
   if (matchesPrefix(pathname, '/club')) {
     const hasInstitutionAccess = isTrustedSuperAdmin || profile?.isPrimaryClubAuthority === true ||
       institutionAuthority === true;
-    return hasInstitutionAccess ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
+    return hasInstitutionAccess ? { allowed: true } : { allowed: false, redirectTo: deniedLanding };
   }
 
   if (matchesPrefix(pathname, '/competition')) {
     const hasCompetitionAccess = isTrustedSuperAdmin || role === 'league_creator' ||
       (isManagement && ['league', 'elite_league', 'school'].includes(normalizedPlan(profile)));
-    return hasCompetitionAccess ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
+    return hasCompetitionAccess ? { allowed: true } : { allowed: false, redirectTo: deniedLanding };
   }
 
   if (STAFF_PREFIXES.some(prefix => matchesPrefix(pathname, prefix))) {
-    return isManagement ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
+    return isManagement ? { allowed: true } : { allowed: false, redirectTo: deniedLanding };
   }
 
   return { allowed: true };

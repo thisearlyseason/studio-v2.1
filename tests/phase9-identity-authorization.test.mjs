@@ -105,6 +105,21 @@ test('dashboard route authority requires a trusted claim for platform access', (
   });
 });
 
+test('dashboard route authority does not expose an intermediate protected landing', () => {
+  assert.deepEqual(authorizeDashboardRoute('/admin', { role: 'parent' }), {
+    allowed: false,
+    redirectTo: '/family',
+  });
+  assert.deepEqual(authorizeDashboardRoute('/admin', { role: 'league_creator' }), {
+    allowed: false,
+    redirectTo: '/competition',
+  });
+  assert.deepEqual(
+    authorizeDashboardRoute('/admin', { role: 'admin', plan_type: 'school' }, undefined, true),
+    { allowed: false, redirectTo: '/club' },
+  );
+});
+
 test('dashboard route authority preserves family, staff, league, and school behavior', () => {
   assert.deepEqual(authorizeDashboardRoute('/family', { role: 'parent' }), { allowed: true });
   assert.equal(authorizeDashboardRoute('/coaches-corner', { role: 'adult_player' }).allowed, false);

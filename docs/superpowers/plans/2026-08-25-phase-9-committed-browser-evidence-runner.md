@@ -414,6 +414,12 @@ The post-hosted terminal-timeout diagnostic amendment starts from exact deployed
 
 Exact deployed SHA `e28a1ae8f330ce9b917049b95c92c64f6251b0af` then proved that the first mobile parent row reached the exact route but did not produce the expected heading; fixture cleanup and independent `20/82/1 -> 0/0/0` absence remained certified. Before another hosted attempt, refine only that closed heading branch into fixed observer-mismatch, role-restricted, loading-stalled, runtime-error, and heading-missing outcomes. The production waiter must derive them from booleans and fixed allowlists, guardian and certificate schemas must remain symmetric, and focused tests must prove the classifier priority plus every admitted pair. Rebuild and re-pin the deterministic child and repeat the full release boundary before exactly one new guarded lifecycle; do not retry the old deployment.
 
+### Defect P9-ROUTE-001: denied routes must land directly on the persona home
+
+The exact hosted run at the reviewed staging deployment failed closed on the first Parent A direct-route action after successful admission. The server route policy sent the denied `/admin` request through `/dashboard`, while the client later redirected a parent from `/dashboard` to `/family`. That intermediate protected route violates the no-protected-render requirement and can expose the `Dashboard` heading before the authorized Family landing.
+
+Apply the repair in `src/lib/dashboard-route-policy.ts`. Add RED/GREEN coverage in `tests/dashboard-route-policy.test.mjs` and `tests/phase9-identity-authorization.test.mjs` proving that denied routes select the exact role-authorized home (`/family`, `/competition`, `/club`, or `/dashboard`) without an intermediate protected landing. Do not weaken the Phase 9 route evidence contract, and do not retry hosted execution until the repaired exact SHA is reviewed, deployed to staging, and separately authorized.
+
 ### Task 6: Independent review, exact staging execution, and Task 7 evidence closure
 
 **Files:**
