@@ -1297,7 +1297,10 @@ const installRecorderSource = () => String.raw`async (page) => {
         }
       }
     };
-    globalThis.__phase9VisibleSentinels = () => [...new Set(visibleSignals(definitions).map(signal => signal.sentinel))];
+    globalThis.__phase9VisibleSentinels = () => {
+      refreshCandidates();
+      return [...new Set(visibleSignals(definitions).map(signal => signal.sentinel))];
+    };
     const mutationSample = records => {
       if (!records || records.some(record => record.type === 'childList' || record.type === 'characterData')) refreshCandidates();
       recordRisingEdges(definitions);

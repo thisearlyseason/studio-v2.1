@@ -194,7 +194,10 @@ os.execve(sys.argv[1], sys.argv[1:], os.environ)
         }
       }
     };
-    globalThis.__phase9VisibleSentinels = () => [...new Set(visibleSignals(definitions).map(signal => signal.sentinel))];
+    globalThis.__phase9VisibleSentinels = () => {
+      refreshCandidates();
+      return [...new Set(visibleSignals(definitions).map(signal => signal.sentinel))];
+    };
     const mutationSample = records => {
       if (!records || records.some(record => record.type === 'childList' || record.type === 'characterData')) refreshCandidates();
       recordRisingEdges(definitions);

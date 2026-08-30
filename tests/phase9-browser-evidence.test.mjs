@@ -4972,6 +4972,20 @@ darwinRuntimeTest('phase 9 browser scenarios recorder requires an exact visible 
   }
 });
 
+darwinRuntimeTest('phase 9 recorder synchronously refreshes the final visible sentinel snapshot', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
+  try {
+    await installSignalRecorder(client, 'phase9-synchronous-final-sentinel');
+    const sentinels = await client.runCode('phase9-synchronous-final-sentinel', `async (page) => page.evaluate(() => {
+      document.body.innerHTML = '<h1>Family Overview</h1>';
+      return globalThis.__phase9VisibleSentinels?.() || [];
+    })`);
+    assert.deepEqual(sentinels, ['Family Overview']);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
 test('phase 9 browser scenarios logout row includes a fifth fresh isolated unauthenticated action', async () => {
   const login = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
@@ -12124,7 +12138,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
-  assert.equal(darwinRuntimeTests.length, 72);
+  assert.equal(darwinRuntimeTests.length, 73);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });
