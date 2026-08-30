@@ -633,9 +633,18 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   );
 }
 
+function DashboardSuspenseFallback() {
+  return (
+    <div role="status" aria-live="polite" className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background">
+      <Loader2 className="h-10 w-10 animate-spin text-primary" aria-hidden="true" />
+      <p className="text-lg font-black uppercase tracking-widest text-primary">Synchronizing Secure Hub...</p>
+    </div>
+  );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DashboardSuspenseFallback />}>
       <LayoutContent>{children}</LayoutContent>
     </Suspense>
   );

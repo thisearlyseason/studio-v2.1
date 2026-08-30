@@ -445,6 +445,8 @@ Run the committed CLI in hosted mode with the exact staging project, confirmatio
 
 On a stable product mismatch, stop at the safe boundary and follow the original defect gate. On a harness failure, do not patch privately; the committed runner and test must receive RED/GREEN review before another hosted attempt.
 
+The deployed stable-terminal follow-up stopped safely at row zero with exact `/family` and `terminal-heading/heading-missing`; cleanup and independent absence were exact. The closed alternatives ruled out observer mismatch, role restriction, the existing layout loading gate, and recorder runtime failure. The matching source boundary was the dashboard-wide `Suspense fallback={null}`. Before another attempt, replace only that blank product fallback with the accessible exact secure-hub loading status, prove RED/GREEN with a real suspended child that later resolves, and rerun the complete release gates. A persistent suspension must then report `terminal-loading/loading-stalled`; it must never return to a blank page or be guessed into a successful row.
+
 - [ ] **Step 5: Sanitize, verify, and commit evidence only**
 
 Run the committed writer and repository hygiene scans. Retain only approved Markdown. Commit:

@@ -1,4 +1,4 @@
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import type React from 'react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -105,5 +105,31 @@ describe('dashboard settled-role routing', () => {
     harness.activeTeam = { type: 'school' };
     renderLayout();
     await waitFor(() => expect(harness.router.replace).toHaveBeenCalledWith('/club'));
+  });
+
+  test('shows a visible secure-hub boundary while dashboard content suspends', async () => {
+    harness.pathname = '/family';
+    harness.profile = { role: 'parent' };
+    harness.isParent = true;
+
+    let resolved = false;
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => {
+      release = () => {
+        resolved = true;
+        resolve();
+      };
+    });
+    function SuspendedFamily() {
+      if (!resolved) throw pending;
+      return <main>Family content ready</main>;
+    }
+
+    render(<DashboardLayout><SuspendedFamily /></DashboardLayout>);
+
+    expect(screen.getByText('Synchronizing Secure Hub...')).toBeInTheDocument();
+
+    await act(async () => release());
+    expect(await screen.findByText('Family content ready')).toBeInTheDocument();
   });
 });
