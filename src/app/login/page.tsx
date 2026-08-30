@@ -51,6 +51,15 @@ export default function LoginPage() {
   const { user, isUserLoading } = useUser();
   const db = useFirestore();
   const router = useRouter();
+  const admissionRef = React.useRef<{ uid: string; token: symbol } | null>(null);
+  const mountedRef = React.useRef(true);
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     const returnTo = new URLSearchParams(window.location.search).get('returnTo');
@@ -62,21 +71,37 @@ export default function LoginPage() {
 
   React.useEffect(() => {
     if (isDemoLoading) return;
-    if (!isUserLoading && user) {
+    if (isUserLoading) return;
+    if (!user) {
+      admissionRef.current = null;
+      return;
+    }
+    if (admissionRef.current?.uid === user.uid) return;
+    const admission = { uid: user.uid, token: Symbol('login-admission') };
+    admissionRef.current = admission;
+    const isCurrentAdmission = () => (
+      mountedRef.current
+      && admissionRef.current?.uid === admission.uid
+      && admissionRef.current.token === admission.token
+    );
+
       const fetchRole = async () => {
         if (!user.isAnonymous && !user.emailVerified) {
           await clearBrowserSession();
+          if (!isCurrentAdmission()) return;
           router.replace('/verify-email');
           return;
         }
         try {
           const session = await establishBrowserSessionOrSignOut(user, auth);
+          if (!isCurrentAdmission()) return;
           if (session.redirectTo) {
             router.replace(session.redirectTo);
             setIsLoading(false);
             return;
           }
         } catch {
+          if (!isCurrentAdmission()) return;
           setIsLoading(false);
           toast({
             title: 'Login Failed',
@@ -88,6 +113,7 @@ export default function LoginPage() {
         const storedReturnPath = sessionStorage.getItem('squad_return_path');
         const returnPath = canonicalSameOriginReturnPath(storedReturnPath, window.location.origin);
         if (storedReturnPath !== null) sessionStorage.removeItem('squad_return_path');
+        if (!isCurrentAdmission()) return;
         if (returnPath) {
           router.push(returnPath);
           return;
@@ -98,12 +124,15 @@ export default function LoginPage() {
             8000,
             'Profile lookup timed out',
           );
+          if (!isCurrentAdmission()) return;
           if (userDoc.exists()) {
             const data = userDoc.data();
             if (user.email && data.email !== user.email) {
               await updateDoc(userDoc.ref, { email: user.email });
+              if (!isCurrentAdmission()) return;
             }
             const tokenResult = await user.getIdTokenResult();
+            if (!isCurrentAdmission()) return;
             if (tokenResult.claims.role === 'superadmin') {
               router.push('/admin');
             } else if (data.role === 'admin' || data.isSchoolAdmin) {
@@ -117,13 +146,12 @@ export default function LoginPage() {
             router.push('/onboarding');
           }
         } catch (e) {
-          router.push('/onboarding');
+          if (isCurrentAdmission()) router.push('/onboarding');
         } finally {
-          setIsLoading(false);
+          if (isCurrentAdmission()) setIsLoading(false);
         }
       };
       fetchRole();
-    }
   }, [user, isUserLoading, db, router, auth, isDemoLoading]);
 
   const handleLogin = async (e: React.FormEvent) => {

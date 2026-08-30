@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import type React from 'react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -6,6 +6,13 @@ const harness = vi.hoisted(() => ({
   profile: { role: 'parent', email: 'parent@example.test' } as Record<string, unknown> | null,
   claimRole: 'parent',
   sessionRedirect: null as '/onboarding' | '/teams/join' | null,
+  user: null as null | {
+    uid: string;
+    email: string;
+    emailVerified: boolean;
+    isAnonymous: boolean;
+    getIdTokenResult: () => Promise<{ claims: { role: string } }>;
+  },
   router: { push: vi.fn(), replace: vi.fn() },
   getDoc: vi.fn(),
   establish: vi.fn(),
@@ -17,13 +24,7 @@ vi.mock('next/image', () => ({ default: () => null }));
 vi.mock('@/firebase', () => ({
   useAuth: () => ({}),
   useUser: () => ({
-    user: {
-      uid: 'parent-uid',
-      email: 'parent@example.test',
-      emailVerified: true,
-      isAnonymous: false,
-      getIdTokenResult: async () => ({ claims: { role: harness.claimRole } }),
-    },
+    user: harness.user,
     isUserLoading: false,
   }),
   useFirestore: () => ({}),
@@ -105,6 +106,13 @@ describe('login settled-role routing', () => {
     harness.profile = { role: 'parent', email: 'parent@example.test' };
     harness.claimRole = 'parent';
     harness.sessionRedirect = null;
+    harness.user = {
+      uid: 'parent-uid',
+      email: 'parent@example.test',
+      emailVerified: true,
+      isAnonymous: false,
+      getIdTokenResult: async () => ({ claims: { role: harness.claimRole } }),
+    };
     harness.router.push.mockReset();
     harness.router.replace.mockReset();
     harness.establish.mockReset();
@@ -122,6 +130,43 @@ describe('login settled-role routing', () => {
 
     await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
     expect(harness.router.push).not.toHaveBeenCalledWith('/dashboard');
+  });
+
+  test('runs settled-role admission only once across equivalent user rerenders', async () => {
+    const view = render(<LoginPage />);
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
+    harness.user = { ...harness.user! };
+    view.rerender(<LoginPage />);
+    await act(async () => undefined);
+
+    expect(harness.establish).toHaveBeenCalledTimes(1);
+    expect(harness.getDoc).toHaveBeenCalledTimes(1);
+    expect(harness.router.push).toHaveBeenCalledTimes(1);
+  });
+
+  test('runs settled-role admission only once during React Strict Mode effect replay', async () => {
+    render(<LoginPage />, { reactStrictMode: true });
+
+    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/family'));
+    expect(harness.establish).toHaveBeenCalledTimes(1);
+    expect(harness.getDoc).toHaveBeenCalledTimes(1);
+    expect(harness.router.push).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not navigate when an in-flight admission completes after logout', async () => {
+    let resolveAdmission!: (value: { redirectTo: null }) => void;
+    harness.establish.mockImplementation(() => new Promise(resolve => { resolveAdmission = resolve; }));
+    const view = render(<LoginPage />);
+    await waitFor(() => expect(harness.establish).toHaveBeenCalledTimes(1));
+
+    harness.user = null;
+    view.rerender(<LoginPage />);
+    await act(async () => resolveAdmission({ redirectTo: null }));
+
+    expect(harness.getDoc).not.toHaveBeenCalled();
+    expect(harness.router.push).not.toHaveBeenCalled();
+    expect(harness.router.replace).not.toHaveBeenCalled();
   });
 
   test('preserves an approved return path before applying the parent default landing', async () => {
