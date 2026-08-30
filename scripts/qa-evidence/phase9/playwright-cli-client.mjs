@@ -2370,6 +2370,42 @@ export async function setAndVerifyViewport(client, session, viewport) {
   return internals.applyViewport(session, viewport);
 }
 
+export async function waitForStableExactLocation(client, session, path, sentinel) {
+  if (!CLIENT_INTERNALS.has(client)) throw new Error('Stable location requires a Playwright CLI client.');
+  if (typeof session !== 'string' || session.length === 0) throw new Error('Stable location requires a session.');
+  if (path !== 'about:blank' && !PUBLIC_RENDER_PATHS.includes(path)) {
+    throw new Error('Stable location requires a closed public path.');
+  }
+  if (!LANDING_SENTINELS.includes(sentinel)) throw new Error('Stable location requires a closed heading.');
+  const expectedUrl = path === 'about:blank' ? path : `${STAGING_ORIGIN}${path}`;
+  return client.runCode(session, `async (page) => {
+    return page.evaluate(({ expectedUrl, expectedOrigin, expectedPath, sentinel }) => new Promise((resolve, reject) => {
+      const startedAt = performance.now();
+      let stableSince = null;
+      const sample = now => {
+        const locationMatches = expectedUrl === 'about:blank'
+          ? location.href === expectedUrl
+          : location.origin === expectedOrigin && location.pathname === expectedPath;
+        const sentinelVisible = (globalThis.__phase9VisibleSentinels?.() || []).includes(sentinel);
+        if (locationMatches && sentinelVisible) {
+          stableSince ??= now;
+          if (now - stableSince >= 300) return resolve(true);
+        } else {
+          stableSince = null;
+        }
+        if (now - startedAt >= 45000) return reject(new Error('stable-location-timeout'));
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    }), {
+      expectedUrl: ${JSON.stringify(expectedUrl)},
+      expectedOrigin: ${JSON.stringify(STAGING_ORIGIN)},
+      expectedPath: ${JSON.stringify(path)},
+      sentinel: ${JSON.stringify(sentinel)},
+    });
+  }`);
+}
+
 export async function attachExistingSignalRecorder(client, session, { width, height, marker, requireAuthenticated = false } = {}) {
   const internals = CLIENT_INTERNALS.get(client);
   if (!internals || typeof session !== 'string' || typeof marker !== 'string' || marker !== session) {

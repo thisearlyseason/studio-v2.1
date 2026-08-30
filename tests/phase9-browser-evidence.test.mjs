@@ -43,6 +43,7 @@ import {
   isExpectedPriorDocumentRscAbort,
   isProtectedResource,
   setAndVerifyViewport,
+  waitForStableExactLocation,
 } from '../scripts/qa-evidence/phase9/playwright-cli-client.mjs';
 import { observeAction } from '../scripts/qa-evidence/phase9/signal-window.mjs';
 import {
@@ -4981,6 +4982,35 @@ darwinRuntimeTest('phase 9 recorder synchronously refreshes the final visible se
       return globalThis.__phase9VisibleSentinels?.() || [];
     })`);
     assert.deepEqual(sentinels, ['Family Overview']);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
+darwinRuntimeTest('phase 9 terminal location must remain exact before the final evidence sample', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
+  try {
+    await installSignalRecorder(client, 'phase9-stable-final-location');
+    await client.runCode('phase9-stable-final-location', `async (page) => page.evaluate(() => {
+      document.body.innerHTML = '<h1>Family Overview</h1>';
+      globalThis.__phase9StableFinal = false;
+      let visible = true;
+      const transient = setInterval(() => {
+        visible = !visible;
+        document.body.innerHTML = visible ? '<h1>Family Overview</h1>' : '';
+      }, 100);
+      setTimeout(() => {
+        clearInterval(transient);
+        document.body.innerHTML = '<h1>Family Overview</h1>';
+        globalThis.__phase9StableFinal = true;
+      }, 15000);
+      return true;
+    })`);
+    await waitForStableExactLocation(client, 'phase9-stable-final-location', 'about:blank', 'Family Overview');
+    assert.equal(await client.runCode(
+      'phase9-stable-final-location',
+      'async (page) => page.evaluate(() => globalThis.__phase9StableFinal === true)',
+    ), true);
   } finally {
     await closeAndVerifyBrowsers(client);
   }
@@ -12138,7 +12168,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
-  assert.equal(darwinRuntimeTests.length, 73);
+  assert.equal(darwinRuntimeTests.length, 74);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

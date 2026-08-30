@@ -12,6 +12,7 @@ import {
   createPhase9ProductionCliClient,
   installSignalRecorder,
   setAndVerifyViewport,
+  waitForStableExactLocation,
 } from './playwright-cli-client.mjs';
 import {
   REQUIRED_LEDGER_COLUMNS, STAGING_ORIGIN, STAGING_PROJECT_ID,
@@ -459,12 +460,9 @@ const closeAndRelease = async sessions => {
   }
 };
 
-const waitForExactLocation = (session, path, sentinel) => client.runCode(session, `async (page) => {
-  await page.waitForURL(url => url.origin === ${JSON.stringify(STAGING_ORIGIN)} && url.pathname === ${JSON.stringify(path)}, { timeout: 45000 });
-  await page.getByRole('heading', { level: 1, name: ${JSON.stringify(sentinel)}, exact: true }).waitFor({ state: 'visible', timeout: 45000 });
-  await page.waitForFunction(() => !/Loading your workspace|Signing in/i.test(document.body?.innerText || ''), { timeout: 20000 }).catch(() => {});
-  return true;
-}`);
+const waitForExactLocation = (session, path, sentinel) => (
+  waitForStableExactLocation(client, session, path, sentinel)
+);
 const login = async (session, alias) => {
   failureStage = 'login';
   setDiagnostic('login-submit', 'login-failed');
