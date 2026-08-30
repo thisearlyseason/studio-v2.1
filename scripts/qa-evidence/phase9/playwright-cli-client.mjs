@@ -2379,30 +2379,37 @@ export async function waitForStableExactLocation(client, session, path, sentinel
   if (!LANDING_SENTINELS.includes(sentinel)) throw new Error('Stable location requires a closed heading.');
   const expectedUrl = path === 'about:blank' ? path : `${STAGING_ORIGIN}${path}`;
   return client.runCode(session, `async (page) => {
-    return page.evaluate(({ expectedUrl, expectedOrigin, expectedPath, sentinel }) => new Promise((resolve, reject) => {
-      const startedAt = performance.now();
-      let stableSince = null;
-      const sample = now => {
-        const locationMatches = expectedUrl === 'about:blank'
-          ? location.href === expectedUrl
-          : location.origin === expectedOrigin && location.pathname === expectedPath;
-        const sentinelVisible = (globalThis.__phase9VisibleSentinels?.() || []).includes(sentinel);
-        if (locationMatches && sentinelVisible) {
-          stableSince ??= now;
-          if (now - stableSince >= 300) return resolve(true);
-        } else {
-          stableSince = null;
-        }
-        if (now - startedAt >= 45000) return reject(new Error('stable-location-timeout'));
-        requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
-    }), {
+    const expected = {
       expectedUrl: ${JSON.stringify(expectedUrl)},
       expectedOrigin: ${JSON.stringify(STAGING_ORIGIN)},
       expectedPath: ${JSON.stringify(path)},
       sentinel: ${JSON.stringify(sentinel)},
-    });
+    };
+    const startedAt = Date.now();
+    let stableSince = null;
+    while (Date.now() - startedAt < 45000) {
+      let sample = null;
+      try {
+        sample = await page.evaluate(({ expectedUrl, expectedOrigin, expectedPath, sentinel }) => ({
+          locationMatches: expectedUrl === 'about:blank'
+            ? location.href === expectedUrl
+            : location.origin === expectedOrigin && location.pathname === expectedPath,
+          sentinelVisible: (globalThis.__phase9VisibleSentinels?.() || []).includes(sentinel),
+        }), expected);
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (!/Execution context was destroyed|Cannot find context|frame was detached/i.test(message)) throw error;
+      }
+      const now = Date.now();
+      if (sample?.locationMatches && sample?.sentinelVisible) {
+        stableSince ??= now;
+        if (now - stableSince >= 300) return true;
+      } else {
+        stableSince = null;
+      }
+      await page.waitForTimeout(16);
+    }
+    throw new Error('stable-location-timeout');
   }`);
 }
 
