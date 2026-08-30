@@ -1587,7 +1587,7 @@ export function isExpectedPriorDocumentFirestoreListenAbort(input) {
       || input?.isRscRequest !== false
       || !Number.isSafeInteger(input?.startHardNavigationGeneration) || input.startHardNavigationGeneration < 0
       || !Number.isSafeInteger(input?.currentHardNavigationGeneration) || input.currentHardNavigationGeneration < 0
-      || input.startHardNavigationGeneration >= input.currentHardNavigationGeneration
+      || input.startHardNavigationGeneration > input.currentHardNavigationGeneration
       || typeof input?.url !== 'string'
     ) return false;
     const prefix = 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?';

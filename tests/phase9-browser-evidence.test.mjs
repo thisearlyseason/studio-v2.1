@@ -405,7 +405,7 @@ test('phase 9 request failure suppression is exact to prior-document same-origin
   }
 });
 
-test('phase 9 request failure suppression is exact to prior-document Firestore Listen aborts', () => {
+test('phase 9 request failure suppression is exact to current-or-prior-document Firestore Listen aborts', () => {
   const listenPrefix = 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?';
   const database = 'database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)';
   const valid = {
@@ -420,6 +420,10 @@ test('phase 9 request failure suppression is exact to prior-document Firestore L
     currentHardNavigationGeneration: 2,
   };
   assert.equal(isExpectedPriorDocumentFirestoreListenAbort(valid), true);
+  assert.equal(isExpectedPriorDocumentFirestoreListenAbort({
+    ...valid,
+    startHardNavigationGeneration: valid.currentHardNavigationGeneration,
+  }), true);
   assert.equal(isExpectedPriorDocumentFirestoreListenAbort({
     ...valid,
     url: valid.url.replace('&t=1', '&t=2'),
@@ -441,7 +445,7 @@ test('phase 9 request failure suppression is exact to prior-document Firestore L
     { resourceType: 'document' },
     { isNavigationRequest: true },
     { isMainFrame: false },
-    { startHardNavigationGeneration: 2 },
+    { startHardNavigationGeneration: 3 },
     { startHardNavigationGeneration: undefined },
     { currentHardNavigationGeneration: undefined },
     { url: valid.url.replace('&t=1', '') },
@@ -1091,7 +1095,7 @@ darwinRuntimeTest('phase 9 action window classifies real request failures', { ti
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
-darwinRuntimeTest('phase 9 recorder ignores only exact prior-document RSC and Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 recorder ignores exact prior-document RSC and current-or-prior Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPhase9ProductionCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   const session = 'phase9-prior-rsc-abort';
   try {
@@ -1124,6 +1128,11 @@ darwinRuntimeTest('phase 9 recorder ignores only exact prior-document RSC and Fi
       },
       {
         label: 'expected-firestore-listen-get',
+        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token&t=1',
+        headers: {}, method: 'GET', abort: 'aborted', expectedSignals: [],
+      },
+      {
+        label: 'expected-current-firestore-listen-get', sameDocument: true,
         target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token&t=1',
         headers: {}, method: 'GET', abort: 'aborted', expectedSignals: [],
       },
@@ -1193,7 +1202,7 @@ darwinRuntimeTest('phase 9 recorder ignores only exact prior-document RSC and Fi
             return;
           }
           if (url !== target) throw new Error('Unexpected intercepted request.');
-          await navigationStarted;
+          if (!requestCase.sameDocument) await navigationStarted;
           await route.abort(requestCase.abort);
         };
         page.on('requestfailed', onRequestFailed);
@@ -1207,7 +1216,7 @@ darwinRuntimeTest('phase 9 recorder ignores only exact prior-document RSC and Fi
             void fetch(target, { headers, method, ...(body === undefined ? {} : { body }) }).catch(() => undefined);
           }, { target, headers: requestCase.headers, method: requestCase.method || 'GET', body: requestCase.body });
           await seen;
-          await page.goto(nextDocument);
+          if (!requestCase.sameDocument) await page.goto(nextDocument);
           await rawFailuresRecorded;
           return { ok: true, rawFailureLabels };
         } finally {
