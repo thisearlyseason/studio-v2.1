@@ -63,7 +63,7 @@ os.execve(sys.argv[1], sys.argv[1:], os.environ)
         || input?.isMainFrame !== true || input?.isRscRequest !== true
         || !Number.isSafeInteger(input?.startHardNavigationGeneration) || input.startHardNavigationGeneration < 0
         || !Number.isSafeInteger(input?.currentHardNavigationGeneration) || input.currentHardNavigationGeneration < 0
-        || input.startHardNavigationGeneration >= input.currentHardNavigationGeneration
+        || input.startHardNavigationGeneration > input.currentHardNavigationGeneration
         || typeof input?.url !== 'string') return false;
       const origin = ${JSON.stringify(j)};
       if (input.url !== origin && !input.url.startsWith(origin + '/')) return false;

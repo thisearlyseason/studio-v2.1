@@ -367,7 +367,7 @@ test('phase 9 request failure classifier emits closed summaries for every public
   }
 });
 
-test('phase 9 request failure suppression is exact to prior-document same-origin RSC aborts', () => {
+test('phase 9 request failure suppression is exact to current-or-prior same-origin RSC aborts', () => {
   const valid = {
     failureText: 'net::ERR_ABORTED',
     url: `${STAGING_ORIGIN}/_next/rsc/family`,
@@ -380,6 +380,10 @@ test('phase 9 request failure suppression is exact to prior-document same-origin
     currentHardNavigationGeneration: 2,
   };
   assert.equal(isExpectedPriorDocumentRscAbort(valid), true);
+  assert.equal(isExpectedPriorDocumentRscAbort({
+    ...valid,
+    startHardNavigationGeneration: valid.currentHardNavigationGeneration,
+  }), true);
   for (const overrides of [
     { failureText: 'net::ERR_TIMED_OUT' },
     { failureText: 'net::ERR_ABORTED_BY_CLIENT' },
@@ -397,7 +401,7 @@ test('phase 9 request failure suppression is exact to prior-document same-origin
     { isNavigationRequest: true },
     { isMainFrame: false },
     { isRscRequest: false },
-    { startHardNavigationGeneration: 2 },
+    { startHardNavigationGeneration: 3 },
     { startHardNavigationGeneration: undefined },
     { currentHardNavigationGeneration: undefined },
   ]) {
@@ -1095,7 +1099,7 @@ darwinRuntimeTest('phase 9 action window classifies real request failures', { ti
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
-darwinRuntimeTest('phase 9 recorder ignores exact prior-document RSC and current-or-prior Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 recorder ignores exact current-or-prior RSC and Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPhase9ProductionCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   const session = 'phase9-prior-rsc-abort';
   try {
@@ -1103,6 +1107,11 @@ darwinRuntimeTest('phase 9 recorder ignores exact prior-document RSC and current
     const cases = [
       {
         label: 'expected-rsc', path: '/_next/rsc/expected', headers: { RSC: '1' }, abort: 'aborted',
+        expectedSignals: [],
+      },
+      {
+        label: 'expected-current-rsc', sameDocument: true,
+        path: '/_next/rsc/expected-current', headers: { RSC: '1' }, abort: 'aborted',
         expectedSignals: [],
       },
       {
