@@ -675,7 +675,7 @@ const classifyFixtureResourceScopesValue = (
     if (entries.length !== new Set(keys).size) return null;
     const allowed = new Set([
       'database', 'VER', 'RID', 'CVER', 'X-HTTP-Session-Id', 'TYPE', 'SID', 'AID', 'CI', 'TO',
-      'zx', 'gsessionid', 'OSID', 'OAID',
+      'zx', 't', 'gsessionid', 'OSID', 'OAID',
     ]);
     if (keys.some(key => !allowed.has(key))) return null;
     const value = key => entries.find(([candidate]) => candidate === key)?.[1];
@@ -686,6 +686,7 @@ const classifyFixtureResourceScopesValue = (
       value('database') !== database
       || value('VER') !== '8'
       || !/^[a-z0-9]{1,128}$/.test(value('zx') ?? '')
+      || !/^[1-3]$/.test(value('t') ?? '')
       || !digits('AID')
       || !digits('TO')
       || !token('SID')
@@ -1606,7 +1607,7 @@ export function isExpectedPriorDocumentFirestoreListenAbort(input) {
     if (keys.length !== new Set(keys).size) return false;
     const allowed = new Set([
       'database', 'VER', 'RID', 'CVER', 'X-HTTP-Session-Id', 'TYPE', 'SID', 'AID', 'CI', 'TO',
-      'zx', 'gsessionid', 'OSID', 'OAID',
+      'zx', 't', 'gsessionid', 'OSID', 'OAID',
     ]);
     if (keys.some(key => !allowed.has(key))) return false;
     const value = key => entries.find(([candidate]) => candidate === key)?.[1];
@@ -1617,6 +1618,7 @@ export function isExpectedPriorDocumentFirestoreListenAbort(input) {
       value('database') !== 'projects/the-squad-v2-staging/databases/(default)'
       || value('VER') !== '8'
       || !/^[a-z0-9]{1,128}$/.test(value('zx') ?? '')
+      || !/^[1-3]$/.test(value('t') ?? '')
       || !digits('AID') || !digits('TO')
       || !token('SID') || !token('gsessionid') || !token('OSID') || !token('OAID')
       || present('OSID') !== present('OAID')

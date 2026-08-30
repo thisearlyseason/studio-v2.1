@@ -141,6 +141,7 @@ const FIRESTORE_INITIAL_LISTEN_URL = `${FIRESTORE_LISTEN_BASE_URL}?${new URLSear
   RID: '0',
   CVER: '22',
   zx: 'phase9test',
+  t: '1',
 }).toString()}`;
 const FIRESTORE_BACKCHANNEL_LISTEN_URL = `${FIRESTORE_LISTEN_BASE_URL}?${new URLSearchParams({
   database: FIRESTORE_DATABASE,
@@ -151,6 +152,7 @@ const FIRESTORE_BACKCHANNEL_LISTEN_URL = `${FIRESTORE_LISTEN_BASE_URL}?${new URL
   CI: '0',
   TYPE: 'xmlhttp',
   zx: 'phase9test',
+  t: '1',
 }).toString()}`;
 const FIRESTORE_TERMINATE_LISTEN_URL = `${FIRESTORE_LISTEN_BASE_URL}?${new URLSearchParams({
   database: FIRESTORE_DATABASE,
@@ -159,6 +161,7 @@ const FIRESTORE_TERMINATE_LISTEN_URL = `${FIRESTORE_LISTEN_BASE_URL}?${new URLSe
   SID: 'phase9session',
   TYPE: 'terminate',
   zx: 'phase9test',
+  t: '1',
 }).toString()}`;
 const BROWSER_PRODUCER_HEADERS = Object.freeze({
   accept: '*/*',
@@ -407,7 +410,7 @@ test('phase 9 request failure suppression is exact to prior-document Firestore L
   const database = 'database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)';
   const valid = {
     failureText: 'net::ERR_ABORTED',
-    url: `${listenPrefix}${database}&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token`,
+    url: `${listenPrefix}${database}&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token&t=1`,
     method: 'GET',
     resourceType: 'fetch',
     isNavigationRequest: false,
@@ -417,11 +420,19 @@ test('phase 9 request failure suppression is exact to prior-document Firestore L
     currentHardNavigationGeneration: 2,
   };
   assert.equal(isExpectedPriorDocumentFirestoreListenAbort(valid), true);
+  assert.equal(isExpectedPriorDocumentFirestoreListenAbort({
+    ...valid,
+    url: valid.url.replace('&t=1', '&t=2'),
+  }), true);
+  assert.equal(isExpectedPriorDocumentFirestoreListenAbort({
+    ...valid,
+    url: valid.url.replace('&t=1', '&t=3'),
+  }), true);
   assert.equal(isExpectedPriorDocumentFirestoreListenAbort({ ...valid, resourceType: 'xhr' }), true);
   assert.equal(isExpectedPriorDocumentFirestoreListenAbort({
     ...valid,
     method: 'POST',
-    url: `${listenPrefix}${database}&VER=8&RID=123&CVER=22&X-HTTP-Session-Id=gsessionid&zx=token`,
+    url: `${listenPrefix}${database}&VER=8&RID=123&CVER=22&X-HTTP-Session-Id=gsessionid&zx=token&t=1`,
   }), true);
   for (const overrides of [
     { failureText: 'net::ERR_TIMED_OUT' },
@@ -433,6 +444,10 @@ test('phase 9 request failure suppression is exact to prior-document Firestore L
     { startHardNavigationGeneration: 2 },
     { startHardNavigationGeneration: undefined },
     { currentHardNavigationGeneration: undefined },
+    { url: valid.url.replace('&t=1', '') },
+    { url: valid.url.replace('&t=1', '&t=0') },
+    { url: valid.url.replace('&t=1', '&t=4') },
+    { url: `${valid.url}&t=1` },
     { url: 'https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents/users/example' },
     { url: 'https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents:runQuery' },
     { url: `${listenPrefix}database=projects%2Fwrong-project%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token` },
@@ -1109,12 +1124,12 @@ darwinRuntimeTest('phase 9 recorder ignores only exact prior-document RSC and Fi
       },
       {
         label: 'expected-firestore-listen-get',
-        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token',
+        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token&t=1',
         headers: {}, method: 'GET', abort: 'aborted', expectedSignals: [],
       },
       {
         label: 'expected-firestore-listen-post',
-        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=123&CVER=22&X-HTTP-Session-Id=gsessionid&zx=token',
+        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=123&CVER=22&X-HTTP-Session-Id=gsessionid&zx=token&t=1',
         headers: {}, method: 'POST', body: 'count=0&ofs=0', abort: 'aborted', expectedSignals: [],
       },
       {
@@ -1128,7 +1143,7 @@ darwinRuntimeTest('phase 9 recorder ignores only exact prior-document RSC and Fi
       },
       {
         label: 'timed-out-firestore-listen',
-        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token',
+        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token&t=1',
         headers: {}, method: 'GET', abort: 'timedout',
         expectedSignals: [{
           failureClass: 'timeout', targetClass: 'firestore', resourceType: 'fetch',
@@ -3785,6 +3800,10 @@ test('phase 9 Firestore scoping fails closed on malformed schemas and project mi
   });
 
   expectUnscoped({ url: FIRESTORE_LISTEN_BASE_URL, method: 'GET', body: '' });
+  expectUnscoped({ url: listenUrl.replace('&t=1', ''), method: 'POST', body: form(addSelf) });
+  expectUnscoped({ url: listenUrl.replace('&t=1', '&t=0'), method: 'POST', body: form(addSelf) });
+  expectUnscoped({ url: listenUrl.replace('&t=1', '&t=4'), method: 'POST', body: form(addSelf) });
+  expectUnscoped({ url: `${listenUrl}&t=1`, method: 'POST', body: form(addSelf) });
   assert.deepEqual(classify({ url: FIRESTORE_BACKCHANNEL_LISTEN_URL, method: 'GET', body: '' }), {
     scopeEvidence: ['firestore-transport-control'],
     resourceScopes: ['transport-control'],
