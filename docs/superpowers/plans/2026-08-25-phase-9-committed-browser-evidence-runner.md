@@ -410,6 +410,8 @@ The same scenario-export command then passed `9/9`; combined admission/scenario 
 
 ---
 
+The post-hosted terminal-timeout diagnostic amendment starts from exact deployed application SHA `cd79103bbc1fdc848b752b5cc8668e1dc1a8d448`. That guarded lifecycle proved exact fixture cleanup and independent absence but stopped at canonical row zero with only `terminal-wait/terminal-not-reached`, which could not distinguish a wrong final route from a correct route whose exact heading never became visible. Preserve the stable waiter and add a closed final-sample reduction: `terminal-location/location-mismatch`, `terminal-heading/heading-missing`, or the existing no-usable-sample fallback. Mirror the two new pairs in the guardian and terminal certificate at `scenario-action`, emit no raw route/heading/URL/DOM data, and keep the row plan, action-window rules, cleanup, and product runtime unchanged. Prove the three outcomes against the production client, retain the real hard-navigation and long transient-heading regressions, deterministically rebuild and re-pin the child, and pass full local verification before any new push, deployment, or single guarded hosted attempt.
+
 ### Task 6: Independent review, exact staging execution, and Task 7 evidence closure
 
 **Files:**

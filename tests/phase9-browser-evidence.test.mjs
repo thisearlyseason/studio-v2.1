@@ -5045,6 +5045,34 @@ darwinRuntimeTest('phase 9 stable terminal polling survives a hard document navi
   }
 });
 
+test('phase 9 stable terminal timeout reports only closed route and heading boundaries', async () => {
+  for (const [outcome, expected] of [
+    ['location-mismatch', ['terminal-location', 'location-mismatch']],
+    ['heading-missing', ['terminal-heading', 'heading-missing']],
+    ['not-reached', ['terminal-wait', 'terminal-not-reached']],
+  ]) {
+    const diagnostics = [];
+    const transport = createCliTransport(argv => {
+      const code = argv[argv.indexOf('run-code') + 1] ?? '';
+      if (code.includes('phase9:verify-about-blank')) return cliResult({ url: 'about:blank' });
+      if (code.includes('phase9:install')) return cliResult({ navigationGeneration: 0 });
+      if (argv.includes('run-code')) return cliResult(JSON.stringify(outcome));
+      return cliResult({ ok: true });
+    });
+    const client = createPlaywrightCliClient({
+      execute: transport.execute,
+      wrapperPath: '/safe/playwright_cli.sh',
+      onDiagnosticCheckpoint: (checkpoint, reason) => diagnostics.push([checkpoint, reason]),
+    });
+    await installSignalRecorder(client, `phase9-terminal-${outcome}`);
+    await assert.rejects(
+      waitForStableExactLocation(client, `phase9-terminal-${outcome}`, 'about:blank', 'Family Overview'),
+      /stable terminal location/i,
+    );
+    assert.deepEqual(diagnostics.at(-1), expected);
+  }
+});
+
 test('phase 9 browser scenarios logout row includes a fifth fresh isolated unauthenticated action', async () => {
   const login = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
@@ -7174,6 +7202,8 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       ['observation-arm', 'observation-failed'],
       ['scenario-action', 'action-failed'],
       ['terminal-wait', 'terminal-not-reached'],
+      ['terminal-location', 'location-mismatch'],
+      ['terminal-heading', 'heading-missing'],
       ['observation-sample', 'observation-failed'],
       ['window-validation', 'expectation-mismatch'],
       ['window-sample-contract', 'sample-contract-invalid'],
@@ -9225,6 +9255,8 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
   };
   assert.doesNotThrow(() => canonicalPhase9TerminalCertificate(diagnosticCertificate));
   for (const [checkpoint, reason] of [
+    ['terminal-location', 'location-mismatch'],
+    ['terminal-heading', 'heading-missing'],
     ['window-schema', 'schema-invalid'],
     ['window-location', 'location-invalid'],
     ['window-terminal', 'terminal-invalid'],

@@ -2330,7 +2330,7 @@ export function createPlaywrightCliClient({
   };
   CLIENT_INTERNALS.set(client, {
     executeRunCode, installRecorder, applyViewport, openBlank, command, opened, currentTabs, tabCounts, armedTabs,
-    publicPageIds, listenTargetStateByTab, expectedViewportByTab, authenticatedStartByTab,
+    publicPageIds, listenTargetStateByTab, expectedViewportByTab, authenticatedStartByTab, onDiagnosticCheckpoint,
     nextPublicPageId: key => {
       if (!publicPageIds.has(key)) { publicPageSequence += 1; publicPageIds.set(key, `phase9-page-${publicPageSequence}`); }
     },
@@ -2371,14 +2371,15 @@ export async function setAndVerifyViewport(client, session, viewport) {
 }
 
 export async function waitForStableExactLocation(client, session, path, sentinel) {
-  if (!CLIENT_INTERNALS.has(client)) throw new Error('Stable location requires a Playwright CLI client.');
+  const internals = CLIENT_INTERNALS.get(client);
+  if (!internals) throw new Error('Stable location requires a Playwright CLI client.');
   if (typeof session !== 'string' || session.length === 0) throw new Error('Stable location requires a session.');
   if (path !== 'about:blank' && !PUBLIC_RENDER_PATHS.includes(path)) {
     throw new Error('Stable location requires a closed public path.');
   }
   if (!LANDING_SENTINELS.includes(sentinel)) throw new Error('Stable location requires a closed heading.');
   const expectedUrl = path === 'about:blank' ? path : `${STAGING_ORIGIN}${path}`;
-  return client.runCode(session, `async (page) => {
+  const outcome = await client.runCode(session, `async (page) => {
     const expected = {
       expectedUrl: ${JSON.stringify(expectedUrl)},
       expectedOrigin: ${JSON.stringify(STAGING_ORIGIN)},
@@ -2387,6 +2388,7 @@ export async function waitForStableExactLocation(client, session, path, sentinel
     };
     const startedAt = Date.now();
     let stableSince = null;
+    let lastSample = null;
     while (Date.now() - startedAt < 45000) {
       let sample = null;
       try {
@@ -2396,6 +2398,7 @@ export async function waitForStableExactLocation(client, session, path, sentinel
             : location.origin === expectedOrigin && location.pathname === expectedPath,
           sentinelVisible: (globalThis.__phase9VisibleSentinels?.() || []).includes(sentinel),
         }), expected);
+        lastSample = sample;
       } catch (error) {
         const message = String(error?.message || error);
         if (!/Execution context was destroyed|Cannot find context|frame was detached/i.test(message)) throw error;
@@ -2409,8 +2412,18 @@ export async function waitForStableExactLocation(client, session, path, sentinel
       }
       await page.waitForTimeout(16);
     }
-    throw new Error('stable-location-timeout');
+    if (lastSample?.locationMatches === false) return 'location-mismatch';
+    if (lastSample?.locationMatches === true && lastSample?.sentinelVisible === false) return 'heading-missing';
+    return 'not-reached';
   }`);
+  if (outcome === true) return true;
+  const diagnostic = outcome === 'location-mismatch'
+    ? ['terminal-location', 'location-mismatch']
+    : outcome === 'heading-missing'
+      ? ['terminal-heading', 'heading-missing']
+      : ['terminal-wait', 'terminal-not-reached'];
+  internals.onDiagnosticCheckpoint?.(...diagnostic);
+  throw new Error('Stable terminal location was not reached.');
 }
 
 export async function attachExistingSignalRecorder(client, session, { width, height, marker, requireAuthenticated = false } = {}) {
