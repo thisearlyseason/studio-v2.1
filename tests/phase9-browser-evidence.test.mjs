@@ -39,6 +39,7 @@ import {
   createPhase9ProductionCliClient,
   executeCapturedPlaywrightTransportCommand,
   installSignalRecorder,
+  isExpectedPriorDocumentFirestoreListenAbort,
   isExpectedPriorDocumentRscAbort,
   isProtectedResource,
   setAndVerifyViewport,
@@ -398,6 +399,54 @@ test('phase 9 request failure suppression is exact to prior-document same-origin
     { currentHardNavigationGeneration: undefined },
   ]) {
     assert.equal(isExpectedPriorDocumentRscAbort({ ...valid, ...overrides }), false, JSON.stringify(overrides));
+  }
+});
+
+test('phase 9 request failure suppression is exact to prior-document Firestore Listen aborts', () => {
+  const listenPrefix = 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?';
+  const database = 'database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)';
+  const valid = {
+    failureText: 'net::ERR_ABORTED',
+    url: `${listenPrefix}${database}&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token`,
+    method: 'GET',
+    resourceType: 'fetch',
+    isNavigationRequest: false,
+    isMainFrame: true,
+    isRscRequest: false,
+    startHardNavigationGeneration: 1,
+    currentHardNavigationGeneration: 2,
+  };
+  assert.equal(isExpectedPriorDocumentFirestoreListenAbort(valid), true);
+  assert.equal(isExpectedPriorDocumentFirestoreListenAbort({ ...valid, resourceType: 'xhr' }), true);
+  assert.equal(isExpectedPriorDocumentFirestoreListenAbort({
+    ...valid,
+    method: 'POST',
+    url: `${listenPrefix}${database}&VER=8&RID=123&CVER=22&X-HTTP-Session-Id=gsessionid&zx=token`,
+  }), true);
+  for (const overrides of [
+    { failureText: 'net::ERR_TIMED_OUT' },
+    { failureText: 'net::ERR_ABORTED_BY_CLIENT' },
+    { method: 'PUT' },
+    { resourceType: 'document' },
+    { isNavigationRequest: true },
+    { isMainFrame: false },
+    { startHardNavigationGeneration: 2 },
+    { startHardNavigationGeneration: undefined },
+    { currentHardNavigationGeneration: undefined },
+    { url: 'https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents/users/example' },
+    { url: 'https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents:runQuery' },
+    { url: `${listenPrefix}database=projects%2Fwrong-project%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token` },
+    { url: `${listenPrefix}${database}&VER=7&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token` },
+    { url: `${listenPrefix}${database}&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token&unknown=1` },
+    { url: `${listenPrefix}${database}&${database}&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token` },
+    { url: `${listenPrefix}${database}&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token#fragment` },
+    { url: `https://user@firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?${database}&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token` },
+  ]) {
+    assert.equal(
+      isExpectedPriorDocumentFirestoreListenAbort({ ...valid, ...overrides }),
+      false,
+      JSON.stringify(overrides),
+    );
   }
 });
 
@@ -1027,7 +1076,7 @@ darwinRuntimeTest('phase 9 action window classifies real request failures', { ti
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
-darwinRuntimeTest('phase 9 recorder ignores only prior-document Next RSC aborts at a hard-navigation boundary', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+darwinRuntimeTest('phase 9 recorder ignores only exact prior-document RSC and Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPhase9ProductionCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   const session = 'phase9-prior-rsc-abort';
   try {
@@ -1058,6 +1107,34 @@ darwinRuntimeTest('phase 9 recorder ignores only prior-document Next RSC aborts 
           navigationRelationship: 'subresource', multiplicity: 'single',
         }],
       },
+      {
+        label: 'expected-firestore-listen-get',
+        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token',
+        headers: {}, method: 'GET', abort: 'aborted', expectedSignals: [],
+      },
+      {
+        label: 'expected-firestore-listen-post',
+        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=123&CVER=22&X-HTTP-Session-Id=gsessionid&zx=token',
+        headers: {}, method: 'POST', body: 'count=0&ofs=0', abort: 'aborted', expectedSignals: [],
+      },
+      {
+        label: 'firestore-document',
+        target: 'https://firestore.googleapis.com/v1/projects/the-squad-v2-staging/databases/(default)/documents/users/example',
+        headers: {}, method: 'GET', abort: 'aborted',
+        expectedSignals: [{
+          failureClass: 'aborted', targetClass: 'firestore', resourceType: 'fetch',
+          navigationRelationship: 'subresource', multiplicity: 'single',
+        }],
+      },
+      {
+        label: 'timed-out-firestore-listen',
+        target: 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token',
+        headers: {}, method: 'GET', abort: 'timedout',
+        expectedSignals: [{
+          failureClass: 'timeout', targetClass: 'firestore', resourceType: 'fetch',
+          navigationRelationship: 'subresource', multiplicity: 'single',
+        }],
+      },
     ];
     for (const requestCase of cases) {
       let rawObservation;
@@ -1072,7 +1149,7 @@ darwinRuntimeTest('phase 9 recorder ignores only prior-document Next RSC aborts 
         const requestCase = ${JSON.stringify(requestCase)};
         const initialDocument = origin + '/family?case=' + requestCase.label;
         const nextDocument = origin + '/admin?case=' + requestCase.label;
-        const target = origin + requestCase.path;
+        const target = requestCase.target || origin + requestCase.path;
         let releaseFailures;
         const navigationStarted = new Promise(resolve => { releaseFailures = resolve; });
         const rawFailureLabels = [];
@@ -1107,12 +1184,13 @@ darwinRuntimeTest('phase 9 recorder ignores only prior-document Next RSC aborts 
         page.on('requestfailed', onRequestFailed);
         page.on('request', onRequest);
         await page.route(origin + '/**', routeHandler);
+        if (!target.startsWith(origin + '/')) await page.route(target, routeHandler);
         try {
           await page.goto(initialDocument);
           const seen = page.waitForRequest(target);
-          await page.evaluate(({ target, headers }) => {
-            void fetch(target, { headers }).catch(() => undefined);
-          }, { target, headers: requestCase.headers });
+          await page.evaluate(({ target, headers, method, body }) => {
+            void fetch(target, { headers, method, ...(body === undefined ? {} : { body }) }).catch(() => undefined);
+          }, { target, headers: requestCase.headers, method: requestCase.method || 'GET', body: requestCase.body });
           await seen;
           await page.goto(nextDocument);
           await rawFailuresRecorded;
@@ -1121,6 +1199,7 @@ darwinRuntimeTest('phase 9 recorder ignores only prior-document Next RSC aborts 
           page.off('requestfailed', onRequestFailed);
           page.off('request', onRequest);
           await page.unroute(origin + '/**', routeHandler);
+          if (!target.startsWith(origin + '/')) await page.unroute(target, routeHandler);
         }
       }`);
         },

@@ -1175,6 +1175,7 @@ const installRecorderSource = () => String.raw`async (page) => {
       return false;
     }
   };
+  const isExpectedPriorDocumentFirestoreListenAbort = ${isExpectedPriorDocumentFirestoreListenAbort.toString()};
   const classifyRequestFailureSignal = input => {
     try {
     const failureText = typeof input?.failureText === 'string' ? input.failureText.toUpperCase() : '';
@@ -1401,7 +1402,8 @@ const installRecorderSource = () => String.raw`async (page) => {
         resourceType: metadata?.resourceType,
       };
       try { input.failureText = request.failure()?.errorText; } catch {}
-      if (isExpectedPriorDocumentRscAbort(input)) return;
+      if (isExpectedPriorDocumentRscAbort(input)
+        || isExpectedPriorDocumentFirestoreListenAbort(input)) return;
       boundedPush(state, 'requestFailureSignals', classifyRequestFailureSignal(input));
     });
     await page.exposeFunction('__phase9RecordRender', signal => {
@@ -1569,6 +1571,77 @@ export function isExpectedPriorDocumentRscAbort(input) {
     return !target.username && !target.password && target.origin === STAGING_ORIGIN
       && !target.pathname.includes('%') && !target.pathname.includes('\\')
       && target.pathname !== '/api' && !target.pathname.startsWith('/api/');
+  } catch {
+    return false;
+  }
+}
+
+export function isExpectedPriorDocumentFirestoreListenAbort(input) {
+  try {
+    if (
+      typeof input?.failureText !== 'string' || input.failureText.toUpperCase() !== 'NET::ERR_ABORTED'
+      || !['GET', 'POST'].includes(input?.method)
+      || !['fetch', 'xhr'].includes(input?.resourceType)
+      || input?.isNavigationRequest !== false || input?.isMainFrame !== true
+      || input?.isRscRequest !== false
+      || !Number.isSafeInteger(input?.startHardNavigationGeneration) || input.startHardNavigationGeneration < 0
+      || !Number.isSafeInteger(input?.currentHardNavigationGeneration) || input.currentHardNavigationGeneration < 0
+      || input.startHardNavigationGeneration >= input.currentHardNavigationGeneration
+      || typeof input?.url !== 'string'
+    ) return false;
+    const prefix = 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?';
+    if (!input.url.startsWith(prefix) || input.url.includes('#')) return false;
+    const rawQuery = input.url.slice(prefix.length);
+    if (rawQuery.length < 1 || rawQuery.length > 4_096) return false;
+    const entries = [];
+    for (const part of rawQuery.split('&')) {
+      const separator = part.indexOf('=');
+      if (separator <= 0) return false;
+      entries.push([
+        decodeURIComponent(part.slice(0, separator).replaceAll('+', ' ')),
+        decodeURIComponent(part.slice(separator + 1).replaceAll('+', ' ')),
+      ]);
+    }
+    const keys = entries.map(([key]) => key);
+    if (keys.length !== new Set(keys).size) return false;
+    const allowed = new Set([
+      'database', 'VER', 'RID', 'CVER', 'X-HTTP-Session-Id', 'TYPE', 'SID', 'AID', 'CI', 'TO',
+      'zx', 'gsessionid', 'OSID', 'OAID',
+    ]);
+    if (keys.some(key => !allowed.has(key))) return false;
+    const value = key => entries.find(([candidate]) => candidate === key)?.[1];
+    const present = key => keys.includes(key);
+    const digits = key => !present(key) || /^(?:0|[1-9][0-9]{0,9})$/.test(value(key));
+    const token = key => !present(key) || /^[A-Za-z0-9_-]{1,512}$/.test(value(key));
+    if (
+      value('database') !== 'projects/the-squad-v2-staging/databases/(default)'
+      || value('VER') !== '8'
+      || !/^[a-z0-9]{1,128}$/.test(value('zx') ?? '')
+      || !digits('AID') || !digits('TO')
+      || !token('SID') || !token('gsessionid') || !token('OSID') || !token('OAID')
+      || present('OSID') !== present('OAID')
+    ) return false;
+    let queryKind = null;
+    const rid = value('RID');
+    if (/^[0-9]+$/.test(rid ?? '')) {
+      if (value('TYPE') === 'terminate') {
+        if (present('SID') && !present('CVER') && !present('AID') && !present('CI')
+          && !present('TO') && !present('X-HTTP-Session-Id')) queryKind = 'terminate';
+      } else if (present('CVER')) {
+        if (value('CVER') === '22' && !present('SID') && !present('AID') && !present('CI')
+          && !present('TO') && (!present('TYPE') || value('TYPE') === 'init')
+          && (!present('X-HTTP-Session-Id') || value('X-HTTP-Session-Id') === 'gsessionid')) {
+          queryKind = 'initial-forward';
+        }
+      } else if (present('SID') && present('AID') && !present('CI') && !present('TO')
+        && !present('TYPE') && !present('X-HTTP-Session-Id')) queryKind = 'forward';
+    } else if (rid === 'rpc' && present('SID') && present('AID') && ['0', '1'].includes(value('CI'))
+      && value('TYPE') === 'xmlhttp' && !present('CVER') && !present('X-HTTP-Session-Id')) {
+      queryKind = 'back-channel';
+    }
+    return input.method === 'GET'
+      ? ['back-channel', 'terminate'].includes(queryKind)
+      : ['initial-forward', 'forward', 'terminate'].includes(queryKind);
   } catch {
     return false;
   }
