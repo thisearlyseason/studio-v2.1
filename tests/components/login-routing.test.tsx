@@ -238,6 +238,7 @@ describe('login settled-role routing', () => {
   test.each([
     ['trusted superadmin', { role: 'member' }, 'superadmin', '/admin'],
     ['school administrator', { role: 'admin' }, 'admin', '/club'],
+    ['league creator', { role: 'league_creator' }, 'league_creator', '/competition'],
     ['ordinary member', { role: 'member' }, 'member', '/dashboard'],
     ['missing profile', null, 'member', '/onboarding'],
   ])('preserves the %s landing', async (_name, profile, claimRole, landing) => {

@@ -139,6 +139,8 @@ export default function LoginPage() {
               router.push('/club');
             } else if (data.role === 'parent') {
               router.push('/family');
+            } else if (data.role === 'league_creator') {
+              router.push('/competition');
             } else {
               router.push('/dashboard');
             }
