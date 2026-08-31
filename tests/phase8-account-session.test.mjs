@@ -157,7 +157,6 @@ test('session policy preserves independently authorized accounts without squad l
   const cases = [
     { identity: { uid: 'super', role: 'superadmin' }, profile: { role: 'member' } },
     { identity: { uid: 'club' }, profile: { role: 'admin', isPrimaryClubAuthority: true } },
-    { identity: { uid: 'league' }, profile: { role: 'league_creator' } },
   ];
 
   for (const { identity, profile } of cases) {
@@ -177,6 +176,74 @@ test('session policy preserves independently authorized accounts without squad l
     });
     assert.equal(authorityReads, 0);
   }
+});
+
+test('session policy corroborates only the League Creator selected paid squad without changing hub admission', async () => {
+  const profile = { role: 'league_creator', activeTeamId: 'untrusted-profile-team' };
+  for (const coachesCornerAuthority of [false, true]) {
+    const authorityArguments = [];
+    const resolve = createAccountSessionResolver({
+      getProfile: async () => profile,
+      hasActiveSquadAuthority: async () => true,
+      hasSelectedCoachesCornerAuthority: async (...args) => {
+        authorityArguments.push(args);
+        return coachesCornerAuthority;
+      },
+    });
+
+    assert.deepEqual(await resolve({ uid: 'league', selectedTeamId: 'selected-team' }), {
+      allowed: true,
+      redirectTo: null,
+      profile,
+      ...(coachesCornerAuthority ? { coachesCornerAuthority: true } : {}),
+    });
+    assert.deepEqual(authorityArguments, [['league', 'selected-team']]);
+  }
+
+  let selectedReads = 0;
+  const resolveHubMode = createAccountSessionResolver({
+    getProfile: async () => profile,
+    hasActiveSquadAuthority: async () => true,
+    hasSelectedCoachesCornerAuthority: async () => {
+      selectedReads += 1;
+      return true;
+    },
+  });
+  assert.deepEqual(await resolveHubMode({ uid: 'league' }), {
+    allowed: true,
+    redirectTo: null,
+    profile,
+  });
+  assert.equal(selectedReads, 0);
+});
+
+test('server account reader grants Coaches Corner only for the exact selected paid squad', async () => {
+  const { db, operations } = firestoreDouble();
+  const authorityReads = [];
+  const reader = createServerAccountAccessReader({
+    db,
+    getTeamAuthority: async (teamId, uid) => {
+      authorityReads.push([teamId, uid]);
+      return {
+        teamData: { isPro: teamId !== 'free-team', status: 'active' },
+        isOwner: teamId !== 'foreign-team',
+        isSuperAdmin: false,
+        member: null,
+      };
+    },
+  });
+
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', undefined), false);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', '../invalid'), false);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', 'selected-team'), true);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', 'free-team'), false);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', 'foreign-team'), false);
+  assert.deepEqual(authorityReads, [
+    ['selected-team', 'league'],
+    ['free-team', 'league'],
+    ['foreign-team', 'league'],
+  ]);
+  assert.deepEqual(operations, []);
 });
 
 test('session policy does not trust a self-authored school-admin profile flag', async () => {

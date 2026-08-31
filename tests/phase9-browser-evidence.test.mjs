@@ -3102,6 +3102,16 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
     assert.equal(deniedRoutes.length > 0, true);
     for (const route of deniedRoutes) assert.deepEqual([route.path, route.sentinel], expected);
   }
+  const leagueCreator = plan.find(item => item.group === 'admission-route' && item.alias === 'qa-league-creator');
+  assert.deepEqual(
+    leagueCreator.routeExpectations.find(route => route.requestedPath === '/coaches-corner'),
+    {
+      requestedPath: '/coaches-corner',
+      allowed: false,
+      path: '/dashboard',
+      sentinel: 'Competition Hub',
+    },
+  );
 
   const client = createScriptedScenarioClient([scenarioWindow()]);
   await assert.rejects(runAdmissionScenario({

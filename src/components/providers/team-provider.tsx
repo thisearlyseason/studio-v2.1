@@ -9,6 +9,7 @@ import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/househo
 import { hasStaffRole } from '@/lib/staff-position';
 import { activeTeamMembershipProjections } from '@/lib/team-membership-security';
 import { canStartProtectedAccountState } from '@/lib/client-account-admission';
+import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
 
 /**
  * Dispatch push + email notifications to all team members.
@@ -1145,16 +1146,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // happens in activeTeamMembership once teamsRaw is loaded.
   useEffect(() => {
     const storedId = localStorage.getItem('sf_session_team_id');
-    if (storedId) setManualActiveTeamId(storedId);
+    const selected = normalizeSelectedSquadId(storedId);
+    document.cookie = selectedSquadCookie(selected, window.location.protocol === 'https:');
+    if (selected) setManualActiveTeamId(selected);
+    else if (storedId) localStorage.removeItem('sf_session_team_id');
   }, []);
 
   const setActiveTeam = useCallback((team: Team | { id: string } | null) => {
     if (team) {
-      setManualActiveTeamId(team.id);
-      localStorage.setItem('sf_session_team_id', team.id);
+      const selected = normalizeSelectedSquadId(team.id);
+      setManualActiveTeamId(selected || null);
+      if (selected) localStorage.setItem('sf_session_team_id', selected);
+      else localStorage.removeItem('sf_session_team_id');
+      document.cookie = selectedSquadCookie(selected, window.location.protocol === 'https:');
     } else {
       setManualActiveTeamId(null);
       localStorage.removeItem('sf_session_team_id');
+      document.cookie = selectedSquadCookie(undefined, window.location.protocol === 'https:');
     }
   }, []);
 
@@ -1264,6 +1272,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (found) return found;
       // Stale ID — clear it so the institutional default takes over
       localStorage.removeItem('sf_session_team_id');
+      document.cookie = selectedSquadCookie(undefined, window.location.protocol === 'https:');
     }
 
     // --- School Admin / Athletic Director ---

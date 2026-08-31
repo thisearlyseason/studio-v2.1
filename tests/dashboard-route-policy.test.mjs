@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { createAccountSessionResolver } from '../src/lib/account-session-policy.ts';
+import { normalizeSelectedSquadId, selectedSquadCookie } from '../src/lib/selected-squad.ts';
 import * as routePolicyModule from '../src/lib/dashboard-route-policy.ts';
 
 const {
@@ -51,6 +53,21 @@ test('staff operations reject member-only personas', () => {
   assert.equal(authorizeDashboardRoute('/manage-tournaments', { role: 'adult_player' }).allowed, false);
 });
 
+test('league creators need corroborated selected-squad entitlement before entering Coaches Corner', () => {
+  assert.deepEqual(
+    authorizeDashboardRoute('/coaches-corner', { role: 'league_creator', activeTeamId: 'forged-team' }),
+    { allowed: false, redirectTo: '/dashboard' },
+  );
+  assert.deepEqual(
+    authorizeDashboardRoute('/coaches-corner', { role: 'league_creator' }, undefined, false, true),
+    { allowed: true },
+  );
+  assert.deepEqual(
+    authorizeDashboardRoute('/equipment', { role: 'league_creator' }, undefined, false, false),
+    { allowed: true },
+  );
+});
+
 test('institution and competition hubs require matching authority', () => {
   assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }).allowed, false);
   assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }, undefined, true).allowed, true);
@@ -70,7 +87,7 @@ test('denied sensitive routes land directly on the persona-authorized home', () 
     },
     {
       profile: { role: 'league_creator' }, institutionAuthority: false,
-      allowed: new Set(['/competition', '/dashboard/billing', '/coaches-corner']),
+      allowed: new Set(['/competition', '/dashboard/billing']),
       deniedLanding: '/dashboard',
     },
     {
@@ -91,6 +108,7 @@ test('denied sensitive routes land directly on the persona-authorized home', () 
         routeCase.profile,
         undefined,
         routeCase.institutionAuthority,
+        false,
       );
       assert.deepEqual(
         decision,
@@ -127,6 +145,7 @@ test('league creator dashboard is presented as the active competition home', () 
 
 test('shared navigation hides routes rejected by the dashboard policy', () => {
   const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
+  const teamProvider = fs.readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
 
   assert.match(shell, /authorizeDashboardRoute\(tab\.href,/);
   assert.match(shell, /const dashboardHome = dashboardHomePresentation\(user\?\.role, pathname\)/);
@@ -134,6 +153,23 @@ test('shared navigation hides routes rejected by the dashboard policy', () => {
   assert.match(shell, /\{dashboardHome\.label\}/);
   assert.match(shell, /\{ name: 'Leagues', href: '\/dashboard', icon: Medal \}/);
   assert.match(shell, /showDashboardCoordinationTab\(user\?\.role, Boolean\(activeTeam\), tab\.name\)/);
+  assert.match(shell, /}, undefined, false, canAccessCoachesCorner\)\.allowed/);
+  assert.ok((teamProvider.match(/selectedSquadCookie\(/g) || []).length >= 3);
+});
+
+test('selected squad cookie accepts only a closed same-site document ID', () => {
+  assert.equal(normalizeSelectedSquadId(' team_A-1 '), 'team_A-1');
+  for (const value of [undefined, '', '../team', 'team/child', 'team%2Fchild', 'x'.repeat(129)]) {
+    assert.equal(normalizeSelectedSquadId(value), undefined);
+  }
+  assert.equal(
+    selectedSquadCookie('team_A-1', true),
+    'sf_active_squad=team_A-1; Path=/; SameSite=Lax; Secure',
+  );
+  assert.equal(
+    selectedSquadCookie(undefined, false),
+    'sf_active_squad=; Path=/; Max-Age=0; SameSite=Lax',
+  );
 });
 
 test('ordinary authenticated routes remain available during profile setup', () => {
@@ -173,6 +209,40 @@ test('pre-render admission redirects denied sensitive routes before client provi
       code: 'auth/account-unavailable',
     })),
     '/login?reason=unavailable',
+  );
+
+  const leagueCreatorIdentity = { uid: 'league-1', role: 'league_creator', signInProvider: 'password' };
+  assert.equal(
+    await resolveDashboardRouteRedirect('/coaches-corner', leagueCreatorIdentity, async () => ({
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'league_creator', activeTeamId: 'untrusted-profile-value' },
+    })),
+    '/dashboard',
+  );
+  assert.equal(
+    await resolveDashboardRouteRedirect('/coaches-corner', leagueCreatorIdentity, async () => ({
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'league_creator' },
+      coachesCornerAuthority: true,
+    })),
+    null,
+  );
+});
+
+test('league creator hub mode stays denied even when the account owns other squads', async () => {
+  const profile = { role: 'league_creator', activeTeamId: 'untrusted-profile-team' };
+  const resolve = createAccountSessionResolver({
+    getProfile: async () => profile,
+    hasActiveSquadAuthority: async () => true,
+    hasSelectedCoachesCornerAuthority: async () => true,
+  });
+  const identity = { uid: 'league-owner', role: 'league_creator', signInProvider: 'password' };
+
+  assert.equal(
+    await resolveDashboardRouteRedirect('/coaches-corner', identity, resolve),
+    '/dashboard',
   );
 });
 
@@ -343,6 +413,6 @@ test('middleware wires the protected admission result before its sole render con
   assert.ok(returnAt > admissionAt);
   assert.ok(renderAt > returnAt);
   assert.match(middleware, /verifySession: async cookie =>[\s\S]*verifySessionCookie\(cookie, true\)/);
-  assert.match(middleware, /resolveAccountSession: resolveServerAccountSession/);
+  assert.match(middleware, /selectedTeamId: normalizeSelectedSquadId\(request\.cookies\.get\(ACTIVE_SQUAD_COOKIE_NAME\)\?\.value\)/);
   assert.match(middleware, /continueRequest: \(\) => null/);
 });

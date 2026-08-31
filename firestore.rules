@@ -158,7 +158,7 @@ service cloud.firestore {
       // authority remain server-owned and are never accepted from the browser.
       allow create: if isSuperAdmin() || (isAuthenticated() && isOwner(userId) &&
         request.resource.data.role in ['parent', 'adult_player', 'youth_player', 'coach', 'admin', 'league_creator'] &&
-        !request.resource.data.keys().hasAny(['plan_type', 'team_limit', 'extra_teams', 'subscription_status', 'stripe_customer_id', 'stripe_subscription_id', 'isPrimaryClubAuthority', 'isSchoolAdmin', 'isStaff', 'isBetaTester', 'activePlanId', 'proTeamLimit', 'planSource', 'linkedPlayerId', 'parentId', 'guardianIds'])
+        !request.resource.data.keys().hasAny(['plan_type', 'team_limit', 'extra_teams', 'subscription_status', 'stripe_customer_id', 'stripe_subscription_id', 'isPrimaryClubAuthority', 'isSchoolAdmin', 'isStaff', 'isBetaTester', 'activePlanId', 'activeTeamId', 'proTeamLimit', 'planSource', 'linkedPlayerId', 'parentId', 'guardianIds'])
       );
       allow update: if isSuperAdmin() || (isSignedIn() && isOwner(userId) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([

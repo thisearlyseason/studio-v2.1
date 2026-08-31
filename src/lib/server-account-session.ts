@@ -1,6 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { getTeamAuthority } from '@/lib/server-team-access';
+import { normalizeSelectedSquadId } from '@/lib/selected-squad';
 import {
   createAccountSessionResolver,
   type AccountAccessReader,
@@ -54,6 +55,18 @@ export function createServerAccountAccessReader(
         const data = team.data();
         return isCanonicalSchoolInstitution(data, uid);
       });
+    },
+
+    async hasSelectedCoachesCornerAuthority(uid, selectedTeamId) {
+      const selected = normalizeSelectedSquadId(selectedTeamId);
+      if (!selected) return false;
+      const authority = await dependencies.getTeamAuthority(selected, uid);
+      return Boolean(
+        authority &&
+        isActiveOwnedTeam(authority.teamData) &&
+        authority.teamData.isPro === true &&
+        (authority.isOwner || authority.isSuperAdmin || authority.member)
+      );
     },
 
     async hasActiveSquadAuthority(uid, activeTeamId) {

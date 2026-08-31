@@ -22,7 +22,6 @@ const ALIAS_CONTRACTS = Object.freeze({
     landing: exact('/dashboard', 'Competition Hub'),
     routes: {
       '/competition': allowed('Competition Hub'), '/dashboard/billing': allowed('Manage Your Plan'),
-      '/coaches-corner': allowed('Coaches Corner'),
     },
   },
   'qa-school-admin': {

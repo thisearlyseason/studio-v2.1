@@ -8,6 +8,7 @@
  *   })
  */
 import { sendEmailVerification, signOut, type Auth, type User } from 'firebase/auth';
+import { selectedSquadCookie } from '@/lib/selected-squad';
 
 export const DEMO_EXIT_PENDING_KEY = 'squad_demo_exit_pending';
 export const DEMO_START_KEY = 'squad_demo_start_time';
@@ -137,4 +138,5 @@ export async function bootstrapDemoWorkspace(user: User, planId: string): Promis
 
 export async function clearBrowserSession(): Promise<void> {
   await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
+  document.cookie = selectedSquadCookie(undefined, window.location.protocol === 'https:');
 }

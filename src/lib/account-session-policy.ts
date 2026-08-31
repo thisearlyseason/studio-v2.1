@@ -2,6 +2,7 @@ export type SessionIdentity = {
   uid: string;
   role?: string;
   signInProvider?: string;
+  selectedTeamId?: string;
 };
 
 export type AccountSessionProfile = {
@@ -20,6 +21,7 @@ export type AccountAccessReader = {
   getProfile(uid: string): Promise<AccountSessionProfile | null>;
   hasTrustedInstitutionAuthority?(uid: string): Promise<boolean>;
   hasActiveSquadAuthority(uid: string, activeTeamId?: string | null): Promise<boolean>;
+  hasSelectedCoachesCornerAuthority?(uid: string, selectedTeamId?: string): Promise<boolean>;
 };
 
 export type AccountSessionDecision =
@@ -29,6 +31,7 @@ export type AccountSessionDecision =
       redirectTo: '/onboarding' | '/teams/join' | null;
       profile: AccountSessionProfile | null;
       institutionAuthority?: true;
+      coachesCornerAuthority?: true;
     };
 
 function normalized(value: unknown): string {
@@ -79,7 +82,15 @@ export function createAccountSessionResolver(reader: AccountAccessReader) {
       return { allowed: false, code: 'auth/account-unavailable' };
     }
     if (hasIndependentAuthority(identity, profile)) {
-      return { allowed: true, redirectTo: null, profile };
+      const coachesCornerAuthority = normalized(profile.role) === 'league_creator' &&
+        typeof identity.selectedTeamId === 'string' &&
+        await reader.hasSelectedCoachesCornerAuthority?.(identity.uid, identity.selectedTeamId) === true;
+      return {
+        allowed: true,
+        redirectTo: null,
+        profile,
+        ...(coachesCornerAuthority ? { coachesCornerAuthority: true } : {}),
+      };
     }
     const institutionAuthority = hasSchoolAuthorityProfile(profile) &&
       await reader.hasTrustedInstitutionAuthority?.(identity.uid) === true;

@@ -10,6 +10,7 @@ type RouteSessionIdentity = {
   uid: string;
   role?: string;
   signInProvider?: string;
+  selectedTeamId?: string;
 };
 
 type VerifiedRouteSessionIdentity = RouteSessionIdentity & {
@@ -23,6 +24,7 @@ type RouteAccountDecision =
       redirectTo: '/onboarding' | '/teams/join' | null;
       profile: DashboardAccessProfile | null;
       institutionAuthority?: true;
+      coachesCornerAuthority?: true;
     };
 
 type RouteDecision =
@@ -112,6 +114,7 @@ export function authorizeDashboardRoute(
   profile: DashboardAccessProfile | null,
   claimsRole?: unknown,
   institutionAuthority = false,
+  coachesCornerAuthority = false,
 ): RouteDecision {
   const role = normalizedRole(profile, claimsRole);
   const isTrustedSuperAdmin = normalizedClaimRole(claimsRole) === 'superadmin';
@@ -149,6 +152,15 @@ export function authorizeDashboardRoute(
     return hasCompetitionAccess ? { allowed: true } : { allowed: false, redirectTo: deniedLanding };
   }
 
+  if (
+    matchesPrefix(pathname, '/coaches-corner') &&
+    role === 'league_creator' &&
+    !isTrustedSuperAdmin &&
+    coachesCornerAuthority !== true
+  ) {
+    return { allowed: false, redirectTo: deniedLanding };
+  }
+
   if (STAFF_PREFIXES.some(prefix => matchesPrefix(pathname, prefix))) {
     return isManagement ? { allowed: true } : { allowed: false, redirectTo: deniedLanding };
   }
@@ -170,6 +182,7 @@ export async function resolveDashboardRouteRedirect(
     access.profile,
     identity.role,
     access.institutionAuthority === true,
+    access.coachesCornerAuthority === true,
   );
   return decision.allowed ? null : decision.redirectTo;
 }

@@ -7,6 +7,7 @@ import { Auth, User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
 import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY } from '@/lib/client-auth';
+import { selectedSquadCookie } from '@/lib/selected-squad';
 
 interface FirebaseProviderProps {
   children: ReactNode;
@@ -112,6 +113,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           // If we log out, we must ensure any stale demo locks or session pointers are purged
           localStorage.removeItem('squad_seeding_lock');
           localStorage.removeItem('sf_session_team_id');
+          document.cookie = selectedSquadCookie(undefined, window.location.protocol === 'https:');
           sessionStorage.removeItem('squad_demo_start_time');
         }
         setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null });

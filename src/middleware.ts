@@ -7,6 +7,7 @@ import {
   runProtectedRouteAdmission,
 } from '@/lib/dashboard-route-policy'
 import { resolveServerAccountSession } from '@/lib/server-account-session'
+import { ACTIVE_SQUAD_COOKIE_NAME, normalizeSelectedSquadId } from '@/lib/selected-squad'
  
 const PROTECTED_ROOTS = new Set([
   'admin', 'calendar', 'chats', 'club', 'coaches-corner', 'competition',
@@ -235,7 +236,10 @@ export async function middleware(request: NextRequest) {
             emailVerified: decoded.email_verified === true,
           };
         },
-        resolveAccountSession: resolveServerAccountSession,
+        resolveAccountSession: identity => resolveServerAccountSession({
+          ...identity,
+          selectedTeamId: normalizeSelectedSquadId(request.cookies.get(ACTIVE_SQUAD_COOKIE_NAME)?.value),
+        }),
         redirect: decision => {
           const redirectUrl = new URL(decision.location, request.url);
           if (decision.reason) redirectUrl.searchParams.set('reason', decision.reason);
