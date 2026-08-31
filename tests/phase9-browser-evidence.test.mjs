@@ -169,8 +169,8 @@ const BROWSER_PRODUCER_HEADERS = Object.freeze({
   accept: '*/*',
   origin: STAGING_ORIGIN,
   referer: `${STAGING_ORIGIN}/`,
-  'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36',
-  'sec-ch-ua': '"Not=A?Brand";v="99", "Google Chrome";v="151", "Chromium";v="151"',
+  'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36',
+  'sec-ch-ua': '"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"',
   'sec-ch-ua-mobile': '?0',
   'sec-ch-ua-platform': '"macOS"',
 });
@@ -3611,6 +3611,20 @@ test('phase 9 playwright client reduces fixture resource targets to fixed aliase
     }, targetId: 2 },
   })), ['non-tenant']);
 
+  assert.deepEqual(classify(producerRaw({
+    ...listen({
+      database: FIRESTORE_DATABASE,
+      addTarget: {
+        documents: { documents: [`${FIRESTORE_DATABASE}/documents/users/${runId}-no-team`] },
+        targetId: 3,
+      },
+    }),
+    headers: {
+      ...FIRESTORE_LISTEN_TRANSPORT_HEADERS,
+      'sec-ch-ua': '"Not=A?Brand";v="99", "Google Chrome";v="152", "Chromium";v="152"',
+    },
+  })).resourceScopes, ['unscoped']);
+
   const result = classify({
     url: FIRESTORE_INITIAL_LISTEN_URL,
     body: `secret=${runId}-team-a`,
@@ -4625,7 +4639,11 @@ darwinRuntimeTest('phase 9 real recorder increments navigation generation for go
     }`);
 
     const retained = await request(session, selfTarget(90));
-    assert.deepEqual(retained.protectedRequestSignals[0].resourceScopes, ['self-account']);
+    assert.deepEqual(
+      retained.protectedRequestSignals[0].resourceScopes,
+      ['self-account'],
+      JSON.stringify(retained.protectedRequestSignals[0]),
+    );
     await navigate(session, 'async (page) => page.evaluate(() => { document.body.dataset.noNavigation = "true"; })');
     assert.deepEqual((await request(session, removeTarget(90))).protectedRequestSignals[0].resourceScopes, ['transport-control']);
 
@@ -6885,7 +6903,7 @@ test('phase 9 guardian Chrome argv schema rejects duplicates, altered values, po
     ...mainRecord, argv: [...mainRecord.argv, '--guardian-marker-present'],
   }, absoluteProfileOptions), false);
 
-  const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/151.0.7922.175/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
+  const rendererExecutable = `${appPath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.65/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)`;
   const rendererArguments = [
     '--type=renderer', '--noerrdialogs', `--user-data-dir=${profilePath}`,
     '--disable-back-forward-cache', '--disable-background-timer-throttling', '--disable-breakpad',
