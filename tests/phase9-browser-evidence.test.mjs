@@ -5082,6 +5082,12 @@ test('phase 9 browser scenarios heading contracts are backed by the real page h1
   assert.match(login, /else \{[\s\S]*router\.push\('\/dashboard'\)/);
 });
 
+test('the family page honors the trusted superadmin authority admitted by the route policy', () => {
+  const family = readFileSync(new URL('../src/app/(dashboard)/family/page.tsx', import.meta.url), 'utf8');
+  assert.match(family, /isParent,[\s\S]*isSuperAdmin,[\s\S]*user,/);
+  assert.match(family, /if \(!isParent && !isSuperAdmin\) \{/);
+});
+
 darwinRuntimeTest('phase 9 browser scenarios recorder requires an exact visible h1 instead of substring body text', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
