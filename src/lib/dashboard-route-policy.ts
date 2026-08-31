@@ -6,9 +6,35 @@ export type DashboardAccessProfile = {
   isPrimaryClubAuthority?: boolean;
 };
 
+type RouteSessionIdentity = {
+  uid: string;
+  role?: string;
+  signInProvider?: string;
+};
+
+type VerifiedRouteSessionIdentity = RouteSessionIdentity & {
+  emailVerified: boolean;
+};
+
+type RouteAccountDecision =
+  | { allowed: false; code: 'auth/account-unavailable' }
+  | {
+      allowed: true;
+      redirectTo: '/onboarding' | '/teams/join' | null;
+      profile: DashboardAccessProfile | null;
+      institutionAuthority?: true;
+    };
+
 type RouteDecision =
   | { allowed: true }
   | { allowed: false; redirectTo: string };
+
+type RouteAdmissionRedirect = {
+  location: string;
+  clearSession: boolean;
+  reason?: 'expired';
+  returnTo?: string;
+};
 
 const PROTECTED_EXACT_PATHS = new Set([
   '/calendar', '/dashboard', '/drills', '/equipment', '/events', '/facilities',
@@ -111,4 +137,85 @@ export function authorizeDashboardRoute(
   }
 
   return { allowed: true };
+}
+
+export async function resolveDashboardRouteRedirect(
+  pathname: string,
+  identity: RouteSessionIdentity,
+  resolveAccountSession: (identity: RouteSessionIdentity) => Promise<RouteAccountDecision>,
+): Promise<string | null> {
+  const access = await resolveAccountSession(identity);
+  if (!access.allowed) return '/login?reason=unavailable';
+  if (access.redirectTo && access.redirectTo !== pathname) return access.redirectTo;
+
+  const decision = authorizeDashboardRoute(
+    pathname,
+    access.profile,
+    identity.role,
+    access.institutionAuthority === true,
+  );
+  return decision.allowed ? null : decision.redirectTo;
+}
+
+export async function runProtectedRouteAdmission<T>(
+  request: {
+    pathname: string;
+    search: string;
+    sessionCookie?: string;
+  },
+  dependencies: {
+    verifySession(sessionCookie: string): Promise<VerifiedRouteSessionIdentity>;
+    resolveAccountSession(identity: RouteSessionIdentity): Promise<RouteAccountDecision>;
+    redirect(decision: RouteAdmissionRedirect): T;
+    continueRequest(): T;
+  },
+): Promise<T> {
+  if (!request.sessionCookie) {
+    return dependencies.redirect({
+      location: '/login',
+      reason: 'expired',
+      returnTo: `${request.pathname}${request.search}`,
+      clearSession: false,
+    });
+  }
+
+  let identity: VerifiedRouteSessionIdentity;
+  try {
+    identity = await dependencies.verifySession(request.sessionCookie);
+    if (
+      identity.signInProvider !== 'anonymous' &&
+      identity.emailVerified !== true &&
+      identity.role !== 'superadmin'
+    ) {
+      throw new Error('EMAIL_NOT_VERIFIED');
+    }
+  } catch {
+    return dependencies.redirect({
+      location: '/login',
+      reason: 'expired',
+      returnTo: `${request.pathname}${request.search}`,
+      clearSession: true,
+    });
+  }
+
+  if (isSensitiveDashboardPath(request.pathname)) {
+    let redirectPath: string | null;
+    try {
+      redirectPath = await resolveDashboardRouteRedirect(
+        request.pathname,
+        identity,
+        dependencies.resolveAccountSession,
+      );
+    } catch {
+      return dependencies.redirect({
+        location: '/login?reason=session-unavailable',
+        clearSession: false,
+      });
+    }
+    if (redirectPath) {
+      return dependencies.redirect({ location: redirectPath, clearSession: false });
+    }
+  }
+
+  return dependencies.continueRequest();
 }

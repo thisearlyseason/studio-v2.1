@@ -43,10 +43,11 @@ test('login preserves password whitespace and returns a non-enumerating error', 
 });
 
 test('existing unverified accounts are preserved but locked until verification', async () => {
-  const [login, verification, middleware, sessionRouteEntry, sessionHandlers] = await Promise.all([
+  const [login, verification, middleware, routePolicy, sessionRouteEntry, sessionHandlers] = await Promise.all([
     source('../src/app/login/page.tsx'),
     source('../src/app/verify-email/page.tsx'),
     source('../src/middleware.ts'),
+    source('../src/lib/dashboard-route-policy.ts'),
     source('../src/app/api/auth/session/route.ts'),
     source('../src/lib/session-route-handlers.ts'),
   ]);
@@ -59,7 +60,8 @@ test('existing unverified accounts are preserved but locked until verification',
   assert.match(verification, /RESEND_COOLDOWN_MS = 60_000/);
   assert.match(verification, /sendBrandedVerificationEmail\(auth\.currentUser/);
   assert.match(verification, /Use another account/);
-  assert.match(middleware, /decoded\.email_verified !== true/);
+  assert.match(middleware, /emailVerified: decoded\.email_verified === true/);
+  assert.match(routePolicy, /identity\.emailVerified !== true/);
   assert.match(sessionRoute, /decoded\.email_verified !== true/);
 });
 
@@ -111,7 +113,7 @@ test('protected pages require a revocation-checked HTTP-only server session', as
   const sessionRoute = `${sessionRouteEntry}\n${sessionHandlers}`;
 
   assert.match(middleware, /request\.cookies\.get\('__session'\)/);
-  assert.match(middleware, /verifySessionCookie\(sessionCookie, true\)/);
+  assert.match(middleware, /verifySessionCookie\(cookie, true\)/);
   assert.match(middleware, /runtime: 'nodejs'/);
   assert.match(middleware, /pathname\.startsWith\('\/events\/register\/'\).*return false/);
   assert.match(middleware, /pathname === '\/leagues'/);

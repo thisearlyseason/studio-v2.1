@@ -3,7 +3,13 @@ import fs from 'node:fs';
 import test from 'node:test';
 import * as routePolicyModule from '../src/lib/dashboard-route-policy.ts';
 
-const { authorizeDashboardRoute, isProtectedDashboardPath, isSensitiveDashboardPath } = routePolicyModule;
+const {
+  authorizeDashboardRoute,
+  isProtectedDashboardPath,
+  isSensitiveDashboardPath,
+  runProtectedRouteAdmission,
+  resolveDashboardRouteRedirect,
+} = routePolicyModule;
 
 test('dashboard route detection does not capture public league and tournament portals', () => {
   assert.equal(isProtectedDashboardPath('/dashboard'), true);
@@ -102,4 +108,185 @@ test('shared navigation hides routes rejected by the dashboard policy', () => {
 test('ordinary authenticated routes remain available during profile setup', () => {
   assert.equal(authorizeDashboardRoute('/dashboard', null).allowed, true);
   assert.equal(authorizeDashboardRoute('/teams/join', { role: 'adult_player' }).allowed, true);
+});
+
+test('pre-render admission redirects denied sensitive routes before client providers mount', async () => {
+  const parentIdentity = { uid: 'parent-1', role: 'parent', signInProvider: 'password' };
+  const resolveParent = async identity => {
+    assert.deepEqual(identity, parentIdentity);
+    return { allowed: true, redirectTo: null, profile: { role: 'parent' } };
+  };
+
+  assert.equal(
+    await resolveDashboardRouteRedirect('/admin', parentIdentity, resolveParent),
+    '/family',
+  );
+  assert.equal(
+    await resolveDashboardRouteRedirect('/family/payments', parentIdentity, resolveParent),
+    null,
+  );
+
+  const superAdminIdentity = { uid: 'root-1', role: 'superadmin', signInProvider: 'password' };
+  assert.equal(
+    await resolveDashboardRouteRedirect('/admin', superAdminIdentity, async () => ({
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'adult_player' },
+    })),
+    null,
+  );
+
+  assert.equal(
+    await resolveDashboardRouteRedirect('/admin', parentIdentity, async () => ({
+      allowed: false,
+      code: 'auth/account-unavailable',
+    })),
+    '/login?reason=unavailable',
+  );
+});
+
+test('protected request admission redirects before rendering and preserves closed failure behavior', async () => {
+  const execute = async options => {
+    const {
+    pathname,
+    search = '',
+    sessionCookie,
+    verifiedIdentity = {
+      uid: 'parent-1',
+      role: 'parent',
+      signInProvider: 'password',
+      emailVerified: true,
+    },
+    accountDecision = { allowed: true, redirectTo: null, profile: { role: 'parent' } },
+    verifyError,
+    resolveError,
+    } = options;
+    const effectiveSessionCookie = Object.hasOwn(options, 'sessionCookie')
+      ? sessionCookie
+      : 'opaque-session';
+    const events = [];
+    const result = await runProtectedRouteAdmission(
+      { pathname, search, sessionCookie: effectiveSessionCookie },
+      {
+        verifySession: async cookie => {
+          events.push(`verify:${cookie}`);
+          if (verifyError) throw verifyError;
+          return verifiedIdentity;
+        },
+        resolveAccountSession: async identity => {
+          events.push(`resolve:${identity.uid}`);
+          if (resolveError) throw resolveError;
+          return accountDecision;
+        },
+        redirect: decision => {
+          events.push(`redirect:${decision.location}`);
+          return { kind: 'redirect', ...decision };
+        },
+        continueRequest: () => {
+          events.push('continue');
+          return { kind: 'continue' };
+        },
+      },
+    );
+    return { result, events };
+  };
+
+  const denied = await execute({ pathname: '/admin' });
+  assert.deepEqual(denied.result, {
+    kind: 'redirect',
+    location: '/family',
+    clearSession: false,
+  });
+  assert.deepEqual(denied.events, [
+    'verify:opaque-session',
+    'resolve:parent-1',
+    'redirect:/family',
+  ]);
+
+  assert.deepEqual((await execute({ pathname: '/family/payments' })).result, { kind: 'continue' });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    verifiedIdentity: {
+      uid: 'root-1', role: 'superadmin', signInProvider: 'password', emailVerified: true,
+    },
+    accountDecision: { allowed: true, redirectTo: null, profile: { role: 'adult_player' } },
+  })).result, { kind: 'continue' });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    accountDecision: { allowed: false, code: 'auth/account-unavailable' },
+  })).result, {
+    kind: 'redirect',
+    location: '/login?reason=unavailable',
+    clearSession: false,
+  });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    resolveError: new Error('provider details must not escape'),
+  })).result, {
+    kind: 'redirect',
+    location: '/login?reason=session-unavailable',
+    clearSession: false,
+  });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    verifyError: new Error('revoked'),
+  })).result, {
+    kind: 'redirect',
+    location: '/login',
+    reason: 'expired',
+    returnTo: '/admin',
+    clearSession: true,
+  });
+
+  const missing = await execute({
+    pathname: '/admin',
+    search: '?section=plans',
+    sessionCookie: undefined,
+  });
+  assert.deepEqual(missing.result, {
+    kind: 'redirect',
+    location: '/login',
+    reason: 'expired',
+    returnTo: '/admin?section=plans',
+    clearSession: false,
+  });
+  assert.deepEqual(missing.events, ['redirect:/login']);
+});
+
+test('protected request admission does not reclassify a redirect adapter failure', async () => {
+  let redirectAttempts = 0;
+  await assert.rejects(
+    runProtectedRouteAdmission(
+      { pathname: '/admin', search: '', sessionCookie: 'opaque-session' },
+      {
+        verifySession: async () => ({
+          uid: 'parent-1', role: 'parent', signInProvider: 'password', emailVerified: true,
+        }),
+        resolveAccountSession: async () => ({
+          allowed: true, redirectTo: null, profile: { role: 'parent' },
+        }),
+        redirect: () => {
+          redirectAttempts += 1;
+          throw new Error('redirect adapter failed');
+        },
+        continueRequest: () => ({ kind: 'continue' }),
+      },
+    ),
+    /redirect adapter failed/,
+  );
+  assert.equal(redirectAttempts, 1);
+});
+
+test('middleware wires the protected admission result before its sole render continuation', () => {
+  const middleware = fs.readFileSync(new URL('../src/middleware.ts', import.meta.url), 'utf8');
+  const admissionAt = middleware.indexOf('const admission = await runProtectedRouteAdmission(');
+  const returnAt = middleware.indexOf('if (admission) {\n      return admission;');
+  const renderAt = middleware.indexOf('NextResponse.next({ request: { headers: requestHeaders } })');
+
+  assert.ok(admissionAt >= 0);
+  assert.ok(returnAt > admissionAt);
+  assert.ok(renderAt > returnAt);
+  assert.match(middleware, /verifySession: async cookie =>[\s\S]*verifySessionCookie\(cookie, true\)/);
+  assert.match(middleware, /resolveAccountSession: resolveServerAccountSession/);
+  assert.match(middleware, /continueRequest: \(\) => null/);
 });

@@ -3,6 +3,10 @@ import type { NextRequest } from 'next/server'
 import * as admin from 'firebase-admin'
 import { ensureAdminInit } from '@/lib/firebase-admin'
 import { isValidFirestoreDocumentId } from '@/lib/firestore-document-id'
+import {
+  runProtectedRouteAdmission,
+} from '@/lib/dashboard-route-policy'
+import { resolveServerAccountSession } from '@/lib/server-account-session'
  
 const PROTECTED_ROOTS = new Set([
   'admin', 'calendar', 'chats', 'club', 'coaches-corner', 'competition',
@@ -218,29 +222,33 @@ export async function middleware(request: NextRequest) {
 
   if (isProtectedPath(pathname)) {
     const sessionCookie = request.cookies.get('__session')?.value;
-    if (!sessionCookie) {
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('reason', 'expired');
-      loginUrl.searchParams.set('returnTo', `${pathname}${request.nextUrl.search}`);
-      return NextResponse.redirect(loginUrl);
-    }
-    try {
-      ensureAdminInit();
-      const decoded = await admin.auth().verifySessionCookie(sessionCookie, true);
-      if (
-        decoded.firebase?.sign_in_provider !== 'anonymous' &&
-        decoded.email_verified !== true &&
-        decoded.role !== 'superadmin'
-      ) {
-        throw new Error('EMAIL_NOT_VERIFIED');
-      }
-    } catch {
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('reason', 'expired');
-      loginUrl.searchParams.set('returnTo', `${pathname}${request.nextUrl.search}`);
-      const response = NextResponse.redirect(loginUrl);
-      response.cookies.delete('__session');
-      return response;
+    const admission = await runProtectedRouteAdmission(
+      { pathname, search: request.nextUrl.search, sessionCookie },
+      {
+        verifySession: async cookie => {
+          ensureAdminInit();
+          const decoded = await admin.auth().verifySessionCookie(cookie, true);
+          return {
+            uid: decoded.uid,
+            role: typeof decoded.role === 'string' ? decoded.role : undefined,
+            signInProvider: decoded.firebase?.sign_in_provider,
+            emailVerified: decoded.email_verified === true,
+          };
+        },
+        resolveAccountSession: resolveServerAccountSession,
+        redirect: decision => {
+          const redirectUrl = new URL(decision.location, request.url);
+          if (decision.reason) redirectUrl.searchParams.set('reason', decision.reason);
+          if (decision.returnTo) redirectUrl.searchParams.set('returnTo', decision.returnTo);
+          const response = NextResponse.redirect(redirectUrl);
+          if (decision.clearSession) response.cookies.delete('__session');
+          return response;
+        },
+        continueRequest: () => null,
+      },
+    );
+    if (admission) {
+      return admission;
     }
   }
  
