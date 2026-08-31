@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useTeam } from '@/components/providers/team-provider';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, orderBy, limit, deleteDoc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, orderBy, limit, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { getApp } from 'firebase/app';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,8 @@ const PLAN_LABELS: Record<string, { label: string; color: string }> = {
   league:  { label: 'Elite League',  color: 'bg-indigo-100 text-indigo-700' },
   school:  { label: 'School',        color: 'bg-emerald-100 text-emerald-700' },
 };
+
+const LAST_ADMIN_VISIT_KEY = 'squad:last-admin-visit';
 
 function planBadge(plan: string | null | undefined) {
   const p = PLAN_LABELS[plan || 'free'] || { label: plan || 'Free', color: 'bg-gray-100 text-gray-700' };
@@ -171,33 +173,27 @@ export default function AdminPortalPage() {
 
     const checkSinceLastLogin = async () => {
       try {
-        const userRef = doc(db, 'users', user.id);
-        const userSnap = await getDoc(userRef);
-        const lastLoginTs: Timestamp | null = userSnap.exists()
-          ? userSnap.data()?.lastAdminLoginAt ?? null
-          : null;
-        const lastLoginDate = lastLoginTs?.toDate?.() ?? null;
+        const lastLoginDate = adminDate(localStorage.getItem(LAST_ADMIN_VISIT_KEY));
 
         // Query new newsletter signups since last login
         let newNewsletterCount = 0;
         let newBetaCount = 0;
 
         if (lastLoginDate) {
-          const sinceTs = Timestamp.fromDate(lastLoginDate);
           const [legacyNlSnap, currentNlSnap, betaSnap] = await Promise.all([
             getDocs(query(
               collection(db, 'newsletter_signups'),
-              where('createdAt', '>', sinceTs),
+              where('createdAt', '>', lastLoginDate),
               limit(200)
             )),
             getDocs(query(
               collection(db, 'newsletter_subscribers'),
-              where('updatedAt', '>', sinceTs),
+              where('updatedAt', '>', lastLoginDate),
               limit(200)
             )),
             getDocs(query(
               collection(db, 'beta_applications'),
-              where('createdAt', '>', sinceTs),
+              where('createdAt', '>', lastLoginDate),
               where('status', '==', 'pending'),
               limit(200)
             )),
@@ -227,8 +223,7 @@ export default function AdminPortalPage() {
           });
         }
 
-        // Stamp this login time
-        await updateDoc(userRef, { lastAdminLoginAt: serverTimestamp() });
+        localStorage.setItem(LAST_ADMIN_VISIT_KEY, new Date().toISOString());
       } catch (e) {
         // Silently fail — non-critical
       }

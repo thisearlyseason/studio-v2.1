@@ -9,6 +9,7 @@ import { accountSessionRedirect } from '../src/lib/dashboard-account-session.ts'
 import {
   establishBrowserSession,
   establishBrowserSessionOrSignOut,
+  readBrowserSession,
 } from '../src/lib/client-auth.ts';
 import { canStartProtectedAccountState } from '../src/lib/client-account-admission.ts';
 
@@ -662,6 +663,30 @@ test('browser session returns only a validated trusted destination', async () =>
       redirectTo: 'https://outside.example',
     }), { status: 200, headers: { 'content-type': 'application/json' } });
     await assert.rejects(() => establishBrowserSession(user), /secure browser session/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('browser session read exposes only a trusted setup destination', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (_input, init) => {
+      assert.equal(init?.method, 'GET');
+      assert.equal(init?.credentials, 'same-origin');
+      assert.equal(init?.cache, 'no-store');
+      return new Response(JSON.stringify({ authenticated: true, redirectTo: '/onboarding' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    assert.deepEqual(await readBrowserSession(), { redirectTo: '/onboarding' });
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      authenticated: true,
+      redirectTo: 'https://outside.example',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    await assert.rejects(() => readBrowserSession(), /secure browser session/);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { doc, getDoc, writeBatch } from 'firebase/firestore';
+import { doc, writeBatch } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { useFirestore, useUser } from '@/firebase';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import BrandLogo from '@/components/BrandLogo';
 import { toast } from '@/hooks/use-toast';
+import { readBrowserSession } from '@/lib/client-auth';
 
 const ROLES = [
   { value: 'adult_player', label: 'Player', destination: '/teams/join' },
@@ -31,12 +32,16 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (!isUserLoading && !user) router.replace('/login');
     if (user?.displayName) setName(current => current || user.displayName || '');
-    if (user && db) {
-      getDoc(doc(db, 'users', user.uid)).then(snapshot => {
-        if (snapshot.exists()) router.replace('/dashboard');
-      }).catch(() => undefined);
-    }
-  }, [db, isUserLoading, router, user]);
+    if (!user) return;
+
+    let cancelled = false;
+    void readBrowserSession().then(session => {
+      if (!cancelled && session.redirectTo !== '/onboarding') {
+        router.replace(session.redirectTo || '/dashboard');
+      }
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [isUserLoading, router, user]);
 
   const completeProfile = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -49,6 +54,12 @@ export default function OnboardingPage() {
 
     setSaving(true);
     try {
+      const session = await readBrowserSession();
+      if (session.redirectTo !== '/onboarding') {
+        router.replace(session.redirectTo || '/dashboard');
+        setSaving(false);
+        return;
+      }
       const batch = writeBatch(db);
       batch.set(doc(db, 'users', user.uid), {
         id: user.uid,

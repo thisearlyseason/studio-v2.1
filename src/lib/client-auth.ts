@@ -88,6 +88,25 @@ export async function establishBrowserSession(user: User): Promise<BrowserSessio
   return { redirectTo: payload.redirectTo };
 }
 
+export async function readBrowserSession(): Promise<BrowserSessionResult> {
+  const response = await fetch('/api/auth/session', {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (
+    !response.ok ||
+    payload.authenticated !== true ||
+    (payload.redirectTo !== null &&
+      payload.redirectTo !== '/onboarding' &&
+      payload.redirectTo !== '/teams/join')
+  ) {
+    throw sessionSetupError('auth/invalid-session-response');
+  }
+  return { redirectTo: payload.redirectTo };
+}
+
 type BrowserAdmissionDependencies = {
   establishBrowserSession(user: User): Promise<BrowserSessionResult>;
   clearBrowserSession(): Promise<void>;

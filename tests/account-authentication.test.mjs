@@ -74,6 +74,21 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
 });
 
+test('admission-only pages and passive admin navigation do not mutate protected account state', async () => {
+  const [onboarding, admin] = await Promise.all([
+    source('../src/app/onboarding/page.tsx'),
+    source('../src/app/admin/page.tsx'),
+  ]);
+
+  assert.doesNotMatch(onboarding, /\bgetDoc\s*\(/, 'missing-profile onboarding must not probe the protected user document');
+  assert.match(onboarding, /readBrowserSession\(\)/, 'onboarding must retain server-authoritative admission');
+  assert.doesNotMatch(
+    admin,
+    /await updateDoc\(userRef,\s*\{\s*lastAdminLoginAt:/,
+    'rendering the admin route must not add fixture fields to the signed-in user document',
+  );
+});
+
 test('authenticated users without an avatar use the same-origin fallback asset', async () => {
   const provider = await import('../src/components/providers/team-provider.tsx');
 
