@@ -66,7 +66,7 @@ vi.mock('lucide-react', () => ({
 
 import DashboardLayout from '@/app/(dashboard)/layout';
 
-const renderLayout = () => render(<DashboardLayout><main>child</main></DashboardLayout>);
+const renderLayout = () => render(<DashboardLayout><main><h1>Dashboard</h1></main></DashboardLayout>);
 
 describe('dashboard settled-role routing', () => {
   beforeEach(() => {
@@ -85,9 +85,11 @@ describe('dashboard settled-role routing', () => {
     await waitFor(() => expect(harness.router.push).not.toHaveBeenCalledWith('/competition'));
 
     harness.profile = { role: 'league_creator' };
-    await act(async () => view.rerender(<DashboardLayout><main>child</main></DashboardLayout>));
+    await act(async () => view.rerender(<DashboardLayout><main><h1>Dashboard</h1></main></DashboardLayout>));
 
     await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/competition'));
+    expect(screen.queryByRole('heading', { name: 'Dashboard' })).not.toBeInTheDocument();
+    expect(screen.getByText('Synchronizing Secure Hub...')).toBeInTheDocument();
   });
 
   test('preserves Parent and School Admin dashboard redirects', async () => {

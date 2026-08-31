@@ -506,6 +506,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   // We only show the full-screen gate if we aren't 'essentially loaded' OR if we haven't mounted yet.
   // But if we HAVE a userProfile, we skip the !mounted requirement to break the Suspense Trap.
   const isLoadingState = !loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile));
+  const isSettlingLeagueCreatorLanding = pathname === '/dashboard' && userProfile?.role === 'league_creator';
 
   if (isLoadingState) {
     return (
@@ -626,7 +627,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           setIsSeedingDemo={setIsSeedingDemo}
         />
         <ErrorBoundary>
-          <Shell>{children}</Shell>
+          <Shell>{isSettlingLeagueCreatorLanding ? <DashboardSuspenseFallback /> : children}</Shell>
         </ErrorBoundary>
       </div>
     </div>

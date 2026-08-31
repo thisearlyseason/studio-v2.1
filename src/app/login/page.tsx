@@ -22,7 +22,6 @@ import {
   establishBrowserSessionOrSignOut,
 } from '@/lib/client-auth';
 import { canonicalSameOriginReturnPath } from '@/lib/login-return-path';
-import { replaceWithSettledLeagueCreatorLanding } from '@/lib/login-landing-navigation';
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return Promise.race([
@@ -141,7 +140,7 @@ export default function LoginPage() {
             } else if (data.role === 'parent') {
               router.push('/family');
             } else if (data.role === 'league_creator') {
-              replaceWithSettledLeagueCreatorLanding('/competition');
+              router.push('/dashboard');
             } else {
               router.push('/dashboard');
             }
