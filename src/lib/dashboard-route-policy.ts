@@ -84,7 +84,7 @@ export function isSensitiveDashboardPath(pathname: string): boolean {
     matchesPrefix(pathname, '/club') ||
     matchesPrefix(pathname, '/competition') ||
     matchesPrefix(pathname, '/dashboard/billing') ||
-    matchesPrefix(pathname, '/family/payments') ||
+    matchesPrefix(pathname, '/family') ||
     STAFF_PREFIXES.some(prefix => matchesPrefix(pathname, prefix));
 }
 

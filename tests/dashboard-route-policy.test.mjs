@@ -24,7 +24,8 @@ test('sensitive account routes require revocation-aware session verification', (
   assert.equal(isSensitiveDashboardPath('/dashboard'), false);
   assert.equal(isSensitiveDashboardPath('/dashboard/billing'), true);
   assert.equal(isSensitiveDashboardPath('/family/payments'), true);
-  assert.equal(isSensitiveDashboardPath('/family'), false);
+  assert.equal(isSensitiveDashboardPath('/family'), true);
+  assert.equal(isSensitiveDashboardPath('/family/dependant'), true);
   assert.equal(isSensitiveDashboardPath('/admin/plans'), true);
 });
 
@@ -201,6 +202,31 @@ test('protected request admission redirects before rendering and preserves close
     'verify:opaque-session',
     'resolve:parent-1',
     'redirect:/family',
+  ]);
+
+  const deniedFamily = await execute({
+    pathname: '/family',
+    verifiedIdentity: {
+      uid: 'adult-player-1',
+      role: 'adult_player',
+      signInProvider: 'password',
+      emailVerified: true,
+    },
+    accountDecision: {
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'adult_player' },
+    },
+  });
+  assert.deepEqual(deniedFamily.result, {
+    kind: 'redirect',
+    location: '/dashboard',
+    clearSession: false,
+  });
+  assert.deepEqual(deniedFamily.events, [
+    'verify:opaque-session',
+    'resolve:adult-player-1',
+    'redirect:/dashboard',
   ]);
 
   assert.deepEqual((await execute({ pathname: '/family/payments' })).result, { kind: 'continue' });
