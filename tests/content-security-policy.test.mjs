@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import {buildContentSecurityPolicy} from '../src/lib/content-security-policy.ts';
 
-const productionPolicy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com elfsightcdn.com *.elfsightcdn.com; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host; media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org; frame-src 'self' https://*.firebaseapp.com js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com; worker-src 'self' blob:; child-src 'self' blob:";
+const productionPolicy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com elfsightcdn.com *.elfsightcdn.com; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host; media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app; connect-src 'self' https://apis.google.com https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org; frame-src 'self' https://*.firebaseapp.com js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com; worker-src 'self' blob:; child-src 'self' blob:";
 
 const emulatorConnectSources = 'http://localhost:9099 http://127.0.0.1:9099 http://localhost:8080 http://127.0.0.1:8080 http://localhost:9199 http://127.0.0.1:9199 ws://localhost:8080 ws://127.0.0.1:8080';
 const developmentPolicy = productionPolicy.replace(
@@ -72,6 +72,24 @@ test('CSP excludes local emulator transports outside explicit development', () =
     assert.equal(policy, productionPolicy, `unexpected policy for ${String(environment)}`);
     assert.doesNotMatch(policy, localEmulatorSourcePattern);
   }
+});
+
+test('CSP permits the exact Google API host used by the authenticated gapi iframe', () => {
+  const policy = buildContentSecurityPolicy({
+    environment: 'production',
+    firebaseEmulatorsEnabled: false,
+  });
+  const connectDirective = policy
+    .split('; ')
+    .find(directive => directive.startsWith('connect-src '));
+
+  assert.ok(connectDirective, 'connect-src directive is required');
+  const sources = connectDirective.split(' ').slice(1);
+  assert.equal(
+    sources.filter(source => source === 'https://apis.google.com').length,
+    1,
+    'the exact gapi host must be admitted once without broadening to another wildcard',
+  );
 });
 
 test('Next.js headers expose emulator transports only for explicit development with the flag', () => {

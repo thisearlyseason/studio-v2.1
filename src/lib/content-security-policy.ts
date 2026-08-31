@@ -23,6 +23,7 @@ export function buildContentSecurityPolicy({
   const connectSources = [
     "'self'",
     ...(useFirebaseEmulatorSources ? firebaseEmulatorConnectSources : []),
+    'https://apis.google.com',
     'https://*.googleapis.com',
     'https://*.firebaseio.com',
     'https://*.firebase.com',
