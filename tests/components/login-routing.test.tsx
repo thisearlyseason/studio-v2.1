@@ -14,6 +14,7 @@ const harness = vi.hoisted(() => ({
     getIdTokenResult: () => Promise<{ claims: { role: string } }>;
   },
   router: { push: vi.fn(), replace: vi.fn() },
+  replaceDocument: vi.fn(),
   getDoc: vi.fn(),
   establish: vi.fn(),
 }));
@@ -43,6 +44,9 @@ vi.mock('@/components/BrandLogo', () => ({ default: () => null }));
 vi.mock('@/lib/client-auth', () => ({
   bootstrapDemoWorkspace: vi.fn(), clearBrowserSession: vi.fn(), establishBrowserSession: vi.fn(),
   establishBrowserSessionOrSignOut: (...args: unknown[]) => harness.establish(...args),
+}));
+vi.mock('@/lib/login-landing-navigation', () => ({
+  replaceWithSettledLeagueCreatorLanding: (...args: unknown[]) => harness.replaceDocument(...args),
 }));
 
 vi.mock('@/components/ui/button', () => ({
@@ -115,6 +119,7 @@ describe('login settled-role routing', () => {
     };
     harness.router.push.mockReset();
     harness.router.replace.mockReset();
+    harness.replaceDocument.mockReset();
     harness.establish.mockReset();
     harness.establish.mockImplementation(async () => ({ redirectTo: harness.sessionRedirect }));
     harness.getDoc.mockReset();
@@ -238,7 +243,6 @@ describe('login settled-role routing', () => {
   test.each([
     ['trusted superadmin', { role: 'member' }, 'superadmin', '/admin'],
     ['school administrator', { role: 'admin' }, 'admin', '/club'],
-    ['league creator', { role: 'league_creator' }, 'league_creator', '/competition'],
     ['ordinary member', { role: 'member' }, 'member', '/dashboard'],
     ['missing profile', null, 'member', '/onboarding'],
   ])('preserves the %s landing', async (_name, profile, claimRole, landing) => {
@@ -247,6 +251,16 @@ describe('login settled-role routing', () => {
     render(<LoginPage />);
 
     await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith(landing));
+  });
+
+  test('restarts the protected app document for the League Creator landing', async () => {
+    harness.profile = { role: 'league_creator' };
+    harness.claimRole = 'league_creator';
+    render(<LoginPage />);
+
+    await waitFor(() => expect(harness.replaceDocument).toHaveBeenCalledWith('/competition'));
+    expect(harness.router.push).not.toHaveBeenCalledWith('/competition');
+    expect(harness.router.push).not.toHaveBeenCalledWith('/dashboard');
   });
 
   test('preserves mandatory setup admission before reading a landing profile', async () => {
