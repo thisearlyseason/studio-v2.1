@@ -143,6 +143,10 @@ export type UserProfile = {
   upcomingEventNotificationsEnabled?: boolean;
 };
 
+export function resolveUserAvatar(...candidates: Array<string | null | undefined>): string {
+  return candidates.find(candidate => typeof candidate === 'string' && candidate.length > 0) ?? '/icon.png';
+}
+
 export type PlayerProfile = {
   id: string;
   firstName: string;
@@ -1187,7 +1191,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           plan_type: isSuper ? 'league' : data.plan_type,
           team_limit: isSuper ? 100 : data.team_limit,
           role: isSuper ? 'superadmin' : data.role,
-          avatar: data.avatarUrl || data.avatar || `https://picsum.photos/seed/${snap.id}/150/150`
+          avatar: resolveUserAvatar(data.avatarUrl, data.avatar)
         } as UserProfile);
       } else {
         // Fallback if the user document hasn't been written to DB yet or is deleted
@@ -1195,7 +1199,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           id: firebaseUser.uid,
           name: firebaseUser.displayName || 'User',
           email: firebaseUser.email || '',
-          avatar: firebaseUser.photoURL || `https://picsum.photos/seed/${firebaseUser.uid}/150/150`,
+          avatar: resolveUserAvatar(firebaseUser.photoURL),
           role: 'adult_player',
           phone: '',
           parentOf: [],
@@ -1215,7 +1219,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         name: firebaseUser.displayName || 'User',
         email: firebaseUser.email || '',
         phone: '',
-        avatar: firebaseUser.photoURL || `https://picsum.photos/seed/${firebaseUser.uid}/150/150`,
+        avatar: resolveUserAvatar(firebaseUser.photoURL),
         role: 'adult_player',
       } as unknown as UserProfile);
     });

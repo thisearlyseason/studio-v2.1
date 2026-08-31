@@ -220,6 +220,12 @@ The descriptor-rooted Playwright CLI deterministically writes sensitive ephemera
 
 Legacy `legacy-primary-unavailable` is permitted only when the recovery writer migrates a canonical version-1 checkpoint that contains no retained primary attribution. New hosted runs must provide primary attribution before every certificate write. Recovery certificate version 3 records only SHA-256 identity commitments plus the monotonic `validated` and `zeroized` disposition; it contains no raw path, UID, session, fixture run identifier, or error. `originalPathsAbsent`, `credentialRemoved`, and `workspaceRemoved` remain false; `workspaceQuarantinedInPlace` and `workspaceRetained` truthfully describe the retained zeroized recovery state. Zeroization, publication, identity, or replay uncertainty fails closed behind one sanitized recovery error. Replay revalidates the exact result dev/inode and canonical bytes, committed workspace/child identities, exact manifest, zero-length credential, and two-entry inventory before returning the same terminal failure.
 
+## Authenticated avatar fallback correction
+
+The guarded lifecycle for deployed SHA `e943bf3ae27806cae97d6fa4066367aaa1b6784c` stopped safely at the first admission row with the closed request-failure tuple `policy-blocked / other / other / subresource`. Browser, process, profile, fixture, cleanup, and independent `20/82/1 -> 0/0/0` closure were certified and no evidence row was promoted. An isolated public Chrome characterization reproduced `net::ERR_BLOCKED_BY_ORB` for the authenticated `picsum.photos` avatar fallback, matching the closed tuple exactly.
+
+When neither the stored profile nor Firebase Auth provides an avatar, `TeamProvider` must use the existing same-origin `/icon.png` asset. A supplied avatar remains unchanged. A direct production regression must prove missing inputs resolve to the same-origin asset and supplied inputs retain precedence. After full verification and independent review, the correction requires a new exact-SHA push, staging deployment, and separately authorized guarded lifecycle; the failed deployed SHA must not be retried.
+
 ## Expected files
 
 The planned fixture and evidence work may change:

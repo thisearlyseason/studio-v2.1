@@ -72,6 +72,19 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
 });
 
+test('authenticated users without an avatar use the same-origin fallback asset', async () => {
+  const provider = await import('../src/components/providers/team-provider.tsx');
+
+  assert.equal(typeof provider.resolveUserAvatar, 'function');
+  assert.equal(provider.resolveUserAvatar(), '/icon.png');
+  assert.equal(provider.resolveUserAvatar(undefined, ''), '/icon.png');
+  assert.equal(provider.resolveUserAvatar('/member-avatar.png'), '/member-avatar.png');
+  assert.equal(
+    provider.resolveUserAvatar(undefined, 'https://cdn.example.test/member.png'),
+    'https://cdn.example.test/member.png',
+  );
+});
+
 test('verification-email route reports provider configuration failures without a generic 500', async () => {
   const route = await source('../src/app/api/email/verify-email/route.ts');
 
