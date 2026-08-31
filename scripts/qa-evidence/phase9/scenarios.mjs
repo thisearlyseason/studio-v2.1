@@ -19,7 +19,7 @@ const ALIAS_CONTRACTS = Object.freeze({
   'qa-adult-player-a': { landing: DASHBOARD, routes: {} },
   'qa-youth-active': { landing: DASHBOARD, routes: {} },
   'qa-league-creator': {
-    landing: exact('/competition', 'Competition Hub'),
+    landing: exact('/dashboard', 'Competition Hub'),
     routes: {
       '/competition': allowed('Competition Hub'), '/dashboard/billing': allowed('Manage Your Plan'),
       '/coaches-corner': allowed('Coaches Corner'),

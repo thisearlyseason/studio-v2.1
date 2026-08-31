@@ -5,10 +5,12 @@ import * as routePolicyModule from '../src/lib/dashboard-route-policy.ts';
 
 const {
   authorizeDashboardRoute,
+  dashboardHomePresentation,
   isProtectedDashboardPath,
   isSensitiveDashboardPath,
   runProtectedRouteAdmission,
   resolveDashboardRouteRedirect,
+  showDashboardCoordinationTab,
 } = routePolicyModule;
 
 test('dashboard route detection does not capture public league and tournament portals', () => {
@@ -69,7 +71,7 @@ test('denied sensitive routes land directly on the persona-authorized home', () 
     {
       profile: { role: 'league_creator' }, institutionAuthority: false,
       allowed: new Set(['/competition', '/dashboard/billing', '/coaches-corner']),
-      deniedLanding: '/competition',
+      deniedLanding: '/dashboard',
     },
     {
       profile: { role: 'admin', plan_type: 'school' }, institutionAuthority: true,
@@ -100,10 +102,38 @@ test('denied sensitive routes land directly on the persona-authorized home', () 
   }
 });
 
+test('league creator dashboard is presented as the active competition home', () => {
+  assert.deepEqual(
+    dashboardHomePresentation('league_creator', '/dashboard'),
+    {
+      href: '/dashboard',
+      label: 'Competition Hub',
+      active: true,
+    },
+  );
+  assert.deepEqual(
+    dashboardHomePresentation('parent', '/dashboard'),
+    {
+      href: '/dashboard',
+      label: 'Dashboard',
+      active: true,
+    },
+  );
+  assert.equal(showDashboardCoordinationTab('league_creator', false, 'Competition Hub'), false);
+  assert.equal(showDashboardCoordinationTab('league_creator', true, 'Competition Hub'), false);
+  assert.equal(showDashboardCoordinationTab('league_creator', true, 'Roster'), true);
+  assert.equal(showDashboardCoordinationTab('parent', false, 'Competition Hub'), true);
+});
+
 test('shared navigation hides routes rejected by the dashboard policy', () => {
   const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
 
   assert.match(shell, /authorizeDashboardRoute\(tab\.href,/);
+  assert.match(shell, /const dashboardHome = dashboardHomePresentation\(user\?\.role, pathname\)/);
+  assert.match(shell, /<Link href=\{dashboardHome\.href\}>/);
+  assert.match(shell, /\{dashboardHome\.label\}/);
+  assert.match(shell, /\{ name: 'Leagues', href: '\/dashboard', icon: Medal \}/);
+  assert.match(shell, /showDashboardCoordinationTab\(user\?\.role, Boolean\(activeTeam\), tab\.name\)/);
 });
 
 test('ordinary authenticated routes remain available during profile setup', () => {

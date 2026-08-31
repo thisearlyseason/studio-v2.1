@@ -47,6 +47,7 @@ vi.mock('@/components/layout/AlertOverlay', () => ({ AlertOverlay: () => null })
 vi.mock('@/components/StripePaywall', () => ({ StripePaywall: () => null }));
 vi.mock('@/components/layout/QuotaResolutionOverlay', () => ({ QuotaResolutionOverlay: () => null }));
 vi.mock('@/components/layout/BetaNotificationBanner', () => ({ BetaNotificationBanner: () => null }));
+vi.mock('@/app/(dashboard)/competition/page', () => ({ default: () => <h1>Competition Hub</h1> }));
 vi.mock('@/components/ui/button', () => ({ Button: ({ children }: { children: React.ReactNode }) => <button>{children}</button> }));
 vi.mock('@/lib/db-seeder', () => ({ seedGuestDemoTeam: vi.fn() }));
 vi.mock('firebase/auth', () => ({ signOut: vi.fn() }));
@@ -80,16 +81,16 @@ describe('dashboard settled-role routing', () => {
     harness.router.replace.mockReset();
   });
 
-  test('redirects a League Creator when the role hydrates after the first dashboard effect', async () => {
+  test('renders the League Creator hub in place when the role hydrates on dashboard', async () => {
     const view = renderLayout();
     await waitFor(() => expect(harness.router.push).not.toHaveBeenCalledWith('/competition'));
 
     harness.profile = { role: 'league_creator' };
     await act(async () => view.rerender(<DashboardLayout><main><h1>Dashboard</h1></main></DashboardLayout>));
 
-    await waitFor(() => expect(harness.router.push).toHaveBeenCalledWith('/competition'));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Competition Hub' })).toBeInTheDocument());
+    expect(harness.router.push).not.toHaveBeenCalledWith('/competition');
     expect(screen.queryByRole('heading', { name: 'Dashboard' })).not.toBeInTheDocument();
-    expect(screen.getByText('Synchronizing Secure Hub...')).toBeInTheDocument();
   });
 
   test('preserves Parent and School Admin dashboard redirects', async () => {

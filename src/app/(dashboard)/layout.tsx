@@ -18,6 +18,7 @@ import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
+import CompetitionHubPage from './competition/page';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -325,8 +326,6 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         router.replace('/club');
       } else if (isParent) {
         router.push('/family');
-      } else if (userProfile?.role === 'league_creator') {
-        router.push('/competition');
       }
     }
 
@@ -506,7 +505,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   // We only show the full-screen gate if we aren't 'essentially loaded' OR if we haven't mounted yet.
   // But if we HAVE a userProfile, we skip the !mounted requirement to break the Suspense Trap.
   const isLoadingState = !loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile));
-  const isSettlingLeagueCreatorLanding = pathname === '/dashboard' && userProfile?.role === 'league_creator';
+  const isLeagueCreatorDashboard = pathname === '/dashboard' && userProfile?.role === 'league_creator';
 
   if (isLoadingState) {
     return (
@@ -627,7 +626,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           setIsSeedingDemo={setIsSeedingDemo}
         />
         <ErrorBoundary>
-          <Shell>{isSettlingLeagueCreatorLanding ? <DashboardSuspenseFallback /> : children}</Shell>
+          <Shell>{isLeagueCreatorDashboard ? <CompetitionHubPage /> : children}</Shell>
         </ErrorBoundary>
       </div>
     </div>

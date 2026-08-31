@@ -112,7 +112,7 @@ test('dashboard route authority does not expose an intermediate protected landin
   });
   assert.deepEqual(authorizeDashboardRoute('/admin', { role: 'league_creator' }), {
     allowed: false,
-    redirectTo: '/competition',
+    redirectTo: '/dashboard',
   });
   assert.deepEqual(
     authorizeDashboardRoute('/admin', { role: 'admin', plan_type: 'school' }, undefined, true),

@@ -3077,7 +3077,7 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
     'qa-parent-a': ['/family', 'Family Overview'],
     'qa-adult-player-a': ['/dashboard', 'Dashboard'],
     'qa-youth-active': ['/dashboard', 'Dashboard'],
-    'qa-league-creator': ['/competition', 'Competition Hub'],
+    'qa-league-creator': ['/dashboard', 'Competition Hub'],
     'qa-school-admin': ['/club', 'School Hub'],
     'qa-superadmin': ['/admin', 'Account Lookup'],
     'qa-fake-superadmin': ['/dashboard', 'Dashboard'],
@@ -3093,7 +3093,7 @@ test('phase 9 browser scenarios build the exact canonical two-viewport plan and 
   }
   const settledDeniedLandings = {
     'qa-parent-a': ['/family', 'Family Overview'],
-    'qa-league-creator': ['/competition', 'Competition Hub'],
+    'qa-league-creator': ['/dashboard', 'Competition Hub'],
     'qa-school-admin': ['/club', 'School Hub'],
   };
   for (const [alias, expected] of Object.entries(settledDeniedLandings)) {

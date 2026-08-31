@@ -88,6 +88,25 @@ export function isSensitiveDashboardPath(pathname: string): boolean {
     STAFF_PREFIXES.some(prefix => matchesPrefix(pathname, prefix));
 }
 
+export function dashboardHomePresentation(role: unknown, pathname: string) {
+  const leagueCreator = normalizedClaimRole(role) === 'league_creator';
+  return {
+    href: '/dashboard',
+    label: leagueCreator ? 'Competition Hub' : 'Dashboard',
+    active: pathname === '/dashboard',
+  } as const;
+}
+
+export function showDashboardCoordinationTab(
+  role: unknown,
+  hasActiveTeam: boolean,
+  tabName: string,
+): boolean {
+  if (normalizedClaimRole(role) !== 'league_creator') return true;
+  if (tabName === 'Competition Hub') return false;
+  return hasActiveTeam;
+}
+
 export function authorizeDashboardRoute(
   pathname: string,
   profile: DashboardAccessProfile | null,
@@ -100,9 +119,7 @@ export function authorizeDashboardRoute(
     profile?.isPrimaryClubAuthority === true;
   const deniedLanding = institutionAuthority || profile?.isPrimaryClubAuthority === true
     ? '/club'
-    : role === 'league_creator'
-      ? '/competition'
-      : role === 'parent'
+    : role === 'parent'
         ? '/family'
         : '/dashboard';
 

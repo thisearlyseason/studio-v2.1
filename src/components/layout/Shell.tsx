@@ -115,7 +115,11 @@ import { useAuth } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 import { clearBrowserSession } from '@/lib/client-auth';
-import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
+import {
+  authorizeDashboardRoute,
+  dashboardHomePresentation,
+  showDashboardCoordinationTab,
+} from '@/lib/dashboard-route-policy';
 import {
   Tooltip,
   TooltipContent,
@@ -516,10 +520,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const filteredCoordTabs = coordinationTabs
     .filter(tab => {
-      // League creators without a team: only show Competition Hub so they can manage leagues
-      if (user?.role === 'league_creator' && !activeTeam) {
-        return tab.name === 'Competition Hub';
-      }
+      // Their Competition Hub is rendered directly at /dashboard. Active-team
+      // organizers keep team tools, but never receive a duplicate legacy hub link.
+      if (!showDashboardCoordinationTab(user?.role, Boolean(activeTeam), tab.name)) return false;
 
       if (!authorizeDashboardRoute(tab.href, {
         role: user?.role,
@@ -588,7 +591,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     // League creator without a team: only league-related shortcuts
     user?.role === 'league_creator' && !activeTeam
       ? [
-          { name: 'Leagues', href: '/competition', icon: Medal },
+          { name: 'Leagues', href: '/dashboard', icon: Medal },
           { name: 'Facilities', href: '/facilities', icon: MapPin },
           { name: 'Hub', href: '/sports-hub', icon: BookOpen },
         ]
@@ -620,6 +623,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
               ]
   );
+
+  const dashboardHome = dashboardHomePresentation(user?.role, pathname);
 
   if (!activeTeam && !user) return null;
 
@@ -665,14 +670,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <SidebarMenuItem>
                   <SidebarMenuButton 
                     asChild 
-                    isActive={pathname === '/dashboard'} 
+                    isActive={dashboardHome.active}
                     className={cn(
                       "h-12 px-4 rounded-2xl transition-all font-black text-xs uppercase tracking-widest",
-                      pathname === '/dashboard' ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/80 hover:text-primary"
+                      dashboardHome.active ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/80 hover:text-primary"
                     )}
                   >
-                    <Link href="/dashboard">
-                      <Layout className={cn("h-5 w-5 mr-3", pathname === '/dashboard' ? "text-primary stroke-[3px]" : "text-foreground")} />Dashboard
+                    <Link href={dashboardHome.href}>
+                      <Layout className={cn("h-5 w-5 mr-3", dashboardHome.active ? "text-primary stroke-[3px]" : "text-foreground")} />{dashboardHome.label}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -974,8 +979,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </div>
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
-                    {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
-                     pathname === '/dashboard' ? 'Dashboard' :
+                    {pathname === '/dashboard' ? dashboardHome.label :
+                     user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
                      (pathname === '/leagues' && isSchoolMode ? 'Programs' : 
                       pathname === '/club' ? (isSchoolMode ? 'School Hub' : 'Club Hub') :
                       filteredCoordTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard')}
@@ -1225,7 +1230,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                                     <Home className="h-4 w-4" />
                                   </div>
                                   <div className="flex flex-col min-w-0">
-                                    <span className={cn("text-[10px] font-black uppercase tracking-tight truncate", pathname === '/dashboard' ? "text-primary" : "text-foreground")}>Dashboard</span>
+                                    <span className={cn("text-[10px] font-black uppercase tracking-tight truncate", pathname === '/dashboard' ? "text-primary" : "text-foreground")}>{dashboardHome.label}</span>
                                   </div>
                                 </Link>
                                 {filteredCoordTabs.map((tab) => {
