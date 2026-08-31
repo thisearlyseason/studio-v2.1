@@ -1800,12 +1800,14 @@ test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 
     planId: schoolAdminProfile.data.planId,
     plan_type: schoolAdminProfile.data.plan_type,
     activePlanId: schoolAdminProfile.data.activePlanId,
+    subscription_status: schoolAdminProfile.data.subscription_status,
   }, {
     role: 'admin',
     isSchoolAdmin: true,
     planId: 'school',
     plan_type: 'school',
     activePlanId: 'school',
+    subscription_status: 'active',
   });
 
   const membersByAlias = alias => phase9.members.filter(member => member.alias === alias);

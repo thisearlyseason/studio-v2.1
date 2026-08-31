@@ -215,6 +215,7 @@ export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 }
         planId: 'school',
         plan_type: 'school',
         activePlanId: 'school',
+        subscription_status: 'active',
       } : {}),
     },
   }));
