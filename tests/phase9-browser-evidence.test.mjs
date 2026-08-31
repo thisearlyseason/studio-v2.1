@@ -3165,6 +3165,49 @@ test('phase 9 browser scenarios admission row owns login landing and all six dir
   assert.match(row.action, /login.*6 direct routes/i);
 });
 
+test('phase 9 browser scenarios accept Competition Hub as the exact League Creator dashboard landing', async () => {
+  const windowAt = (path, sentinel) => scenarioWindow({
+    finalPath: path,
+    finalUrl: `${STAGING_ORIGIN}${path}`,
+    visibleSentinels: [sentinel],
+    protectedRender: false,
+  });
+  const windows = [
+    windowAt('/dashboard', 'Competition Hub'),
+    windowAt('/dashboard', 'Competition Hub'),
+    windowAt('/dashboard', 'Competition Hub'),
+    windowAt('/competition', 'Competition Hub'),
+    windowAt('/dashboard/billing', 'Manage Your Plan'),
+    windowAt('/dashboard', 'Competition Hub'),
+    windowAt('/dashboard', 'Competition Hub'),
+  ];
+  const row = await runAdmissionScenario({
+    client: createScriptedScenarioClient(windows),
+    session: 'league-creator-dashboard-landing',
+    context: scenarioContext({
+      contextId: 'admission-route-qa-league-creator-mobile',
+      alias: 'qa-league-creator',
+    }),
+    actions: {
+      loginAndLand: async () => {},
+      navigate: async () => {},
+      waitForExactLocation: async () => {},
+    },
+  });
+
+  assert.equal(row.result, 'PASS');
+  assert.equal(row.finalUrl, `${STAGING_ORIGIN}/dashboard`);
+  assert.deepEqual(row.actionSummaries.map(summary => [summary.requestedPath, summary.finalPath]), [
+    ['/login', '/dashboard'],
+    ['/admin', '/dashboard'],
+    ['/club', '/dashboard'],
+    ['/competition', '/competition'],
+    ['/dashboard/billing', '/dashboard/billing'],
+    ['/coaches-corner', '/dashboard'],
+    ['/family', '/dashboard'],
+  ]);
+});
+
 test('phase 9 browser scenarios wait for the exact settled landing instead of an intermediate heading', async () => {
   const family = scenarioWindow({
     finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'],

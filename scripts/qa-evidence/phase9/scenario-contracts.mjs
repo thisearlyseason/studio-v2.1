@@ -102,7 +102,7 @@ export const ROUTE_SCENARIOS = deepFreeze({
 });
 
 export const LANDING_SCENARIOS = deepFreeze({
-  '/dashboard': ['Dashboard'],
+  '/dashboard': ['Dashboard', 'Competition Hub'],
   '/onboarding': ['Complete your profile'],
   '/teams/join': ['Join & Invite'],
   '/login': ['Sign In'],
