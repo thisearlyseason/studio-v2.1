@@ -20,3 +20,21 @@ export function canStartSquadMembershipState(pathname: string): boolean {
 export function canClaimPendingSchoolInvites(pathname: string): boolean {
   return pathname === '/teams/join';
 }
+
+export async function requestPendingSchoolInviteClaim({
+  getToken,
+  getPathname,
+  isCancelled,
+  signal,
+  request,
+}: {
+  getToken: () => Promise<string | null>;
+  getPathname: () => string;
+  isCancelled: () => boolean;
+  signal: AbortSignal;
+  request: (token: string, signal: AbortSignal) => Promise<Response>;
+}): Promise<Response | null> {
+  const token = await getToken();
+  if (isCancelled() || !token || !canClaimPendingSchoolInvites(getPathname())) return null;
+  return request(token, signal);
+}

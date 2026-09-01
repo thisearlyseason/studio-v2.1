@@ -16,6 +16,7 @@ import {
   canStartProtectedAccountState,
   canStartSquadMembershipState,
   canClaimPendingSchoolInvites,
+  requestPendingSchoolInviteClaim,
 } from '../src/lib/client-account-admission.ts';
 
 function firestoreDouble({ profile = null, memberRows = [], ownedTeams = [] } = {}) {
@@ -747,4 +748,47 @@ test('pending School Hub invitations are claimed only from the exact squad-admis
   for (const pathname of ['/', '/dashboard', '/teams/join/other', '/onboarding', '/club']) {
     assert.equal(canClaimPendingSchoolInvites(pathname), false, pathname);
   }
+});
+
+test('pending School Hub invitation request rechecks the live route after deferred token resolution', async () => {
+  let pathname = '/teams/join';
+  let resolveToken;
+  let requestCalls = 0;
+  const token = new Promise(resolve => { resolveToken = resolve; });
+  const pending = requestPendingSchoolInviteClaim({
+    getToken: () => token,
+    getPathname: () => pathname,
+    isCancelled: () => false,
+    signal: new AbortController().signal,
+    request: async () => { requestCalls += 1; return { ok: true }; },
+  });
+
+  pathname = '/dashboard';
+  resolveToken('token');
+
+  assert.equal(await pending, null);
+  assert.equal(requestCalls, 0);
+});
+
+test('pending School Hub invitation request starts once on the live admission route and carries cancellation', async () => {
+  const controller = new AbortController();
+  let requestCalls = 0;
+  let observedSignal;
+  const response = await requestPendingSchoolInviteClaim({
+    getToken: async () => 'token',
+    getPathname: () => '/teams/join',
+    isCancelled: () => false,
+    signal: controller.signal,
+    request: async (_token, signal) => {
+      requestCalls += 1;
+      observedSignal = signal;
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(response, { ok: true });
+  assert.equal(requestCalls, 1);
+  assert.equal(observedSignal, controller.signal);
+  controller.abort();
+  assert.equal(observedSignal.aborted, true);
 });

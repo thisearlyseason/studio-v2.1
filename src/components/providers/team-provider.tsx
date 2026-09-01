@@ -13,6 +13,7 @@ import {
   canStartProtectedAccountState,
   canStartSquadMembershipState,
   canClaimPendingSchoolInvites,
+  requestPendingSchoolInviteClaim,
 } from '@/lib/client-account-admission';
 import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
 
@@ -1126,13 +1127,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     const claimPendingSchoolInvites = async () => {
       try {
-        const token = await getAuthToken(firebaseAuth);
-        if (cancelled || !token) return;
-        const response = await fetch('/api/schools/admins', {
-          method: 'PATCH',
-          headers: authHeader(token),
+        const response = await requestPendingSchoolInviteClaim({
+          getToken: () => getAuthToken(firebaseAuth),
+          getPathname: () => window.location.pathname,
+          isCancelled: () => cancelled,
           signal: controller.signal,
+          request: (token, signal) => fetch('/api/schools/admins', {
+            method: 'PATCH',
+            headers: authHeader(token),
+            signal,
+          }),
         });
+        if (!response) return;
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload.error || 'Unable to claim School Hub invitations.');
