@@ -480,6 +480,13 @@ const exactBrowserProducerHeaders = (headers, referer) => {
   return brand.test(headers['sec-ch-ua']);
 };
 
+const exactSessionCookieHeader = value => {
+  const pairs = [...value.matchAll(/(?:^|; ?)([!#$%&'*+.^_`|~0-9A-Za-z-]+)=([\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*)/g)];
+  const sessions = pairs.filter(([, name]) => name === '__session');
+  return pairs.map(([pair]) => pair).join('') === value && sessions.length === 1
+    && /^(?:[\w.~+=-]|%3D)+$/.test(sessions[0][2]);
+};
+
 const exactJoinFrame = value => value === `${STAGING_ORIGIN}/teams/join`;
 
 const exactFirestoreRestHeaders = value => {
@@ -496,14 +503,12 @@ const exactFirestoreRestHeaders = value => {
     && (!Object.hasOwn(headers, 'x-firebase-appcheck') || validBearer(`Bearer ${headers['x-firebase-appcheck']}`));
 };
 
-const exactJoinAdminHeaders = value => {
+const exactJoinAdminHeaders = (value, frameUrl) => {
   const headers = normalizeHeaders(value);
-  const allowed = new Set(['authorization', 'cookie']);
-  return hasOnlyAllowedHeaders(headers, allowed)
-    && exactBrowserProducerHeaders(headers, `${STAGING_ORIGIN}/teams/join`)
+  return hasOnlyAllowedHeaders(headers, new Set(['authorization', 'cookie']))
+    && exactBrowserProducerHeaders(headers, frameUrl)
     && validBearer(headers.authorization)
-    && (!Object.hasOwn(headers, 'cookie') || /^__session=[A-Za-z0-9._~-]+$/.test(headers.cookie))
-    && headers.accept === '*/*';
+    && (headers.cookie === undefined || exactSessionCookieHeader(headers.cookie));
 };
 
 const exactListenTransportHeaders = (value, method) => {
@@ -620,7 +625,7 @@ const classifyFixtureResourceScopesValue = (
       && target.search === ''
       && target.hash === ''
       && signal.body === ''
-      && exactJoinAdminHeaders(signal.headers)
+      && exactJoinAdminHeaders(signal.headers, signal.frameUrl)
       && exactJoinFrame(signal.frameUrl)
       && !rawContainsIdentifier([
         signal.url, signal.method, signal.resourceType, signal.headers, signal.body, signal.frameUrl,

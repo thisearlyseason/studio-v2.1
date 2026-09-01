@@ -4244,6 +4244,12 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
     scopeEvidence: ['join-admin-patch'],
     resourceScopes: ['join-admin-lookup'],
   });
+  assert.deepEqual(classify(joinAdminRaw({
+    headers: {
+      ...JOIN_ADMIN_PRODUCER_HEADERS,
+      cookie: 'sidebar_state=true; __session=valid.jwt_signature%3D',
+    },
+  })).resourceScopes, ['join-admin-lookup']);
   const teamA = `${runId}-team-a`;
   for (const raw of [
     joinAdminRaw({ url: `${STAGING_ORIGIN}/api/schools/admins?teamId=${teamA}` }),
@@ -4254,7 +4260,14 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, 'x-unapproved': 'present' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: 'other=value' } }),
-    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; other=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; __session=duplicate' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid%ZZ' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; bad name=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid\r\nforged=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid;\r\nforged=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid;\tforged=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid;\u00a0forged=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid;  forged=value' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: `__session=${runId}` } }),
     joinAdminRaw({ resourceType: 'document' }),
     joinAdminRaw({ method: 'POST' }),
@@ -4286,6 +4299,12 @@ darwinRuntimeTest('phase 9 join-admin lookup accepts the exact real Chrome PATCH
         value: 'phase9-test-session',
         url: ${JSON.stringify(STAGING_ORIGIN)},
         httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+      }, {
+        name: 'sidebar_state',
+        value: 'true',
+        url: ${JSON.stringify(STAGING_ORIGIN)},
         secure: true,
         sameSite: 'Lax',
       }]);
