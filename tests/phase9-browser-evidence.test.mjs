@@ -4263,6 +4263,12 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
       'user-agent': 'browser-generated-user-agent-format-may-change',
     },
   })).resourceScopes, ['join-admin-lookup']);
+  assert.deepEqual(classify(joinAdminRaw({
+    headers: {
+      ...JOIN_ADMIN_PRODUCER_HEADERS,
+      cookie: '__session=first-valid-value; __session=second-valid-value',
+    },
+  })).resourceScopes, ['join-admin-lookup']);
   const teamA = `${runId}-team-a`;
   for (const raw of [
     joinAdminRaw({ url: `${STAGING_ORIGIN}/api/schools/admins?teamId=${teamA}` }),
@@ -4272,7 +4278,6 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
     joinAdminRaw({ frameUrl: `${STAGING_ORIGIN}/teams/${teamA}` }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, 'x-unapproved': 'present' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '' } }),
-    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; __session=duplicate' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; bad name=value' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid\r\nforged=value' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid;\r\nforged=value' } }),
@@ -4307,8 +4312,17 @@ darwinRuntimeTest('phase 9 join-admin lookup accepts the exact real Chrome PATCH
       }));
       await page.context().addCookies([{
         name: '__session',
-        value: 'phase9-test-session',
-        url: ${JSON.stringify(STAGING_ORIGIN)},
+        value: 'phase9-root-session',
+        domain: ${JSON.stringify(new URL(STAGING_ORIGIN).hostname)},
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+      }, {
+        name: '__session',
+        value: 'phase9-api-session',
+        domain: ${JSON.stringify(new URL(STAGING_ORIGIN).hostname)},
+        path: '/api',
         httpOnly: true,
         secure: true,
         sameSite: 'Lax',
@@ -4330,6 +4344,7 @@ darwinRuntimeTest('phase 9 join-admin lookup accepts the exact real Chrome PATCH
       return request;
     }`);
     const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+    assert.equal(raw.headers.cookie.split('; ').filter(pair => pair.startsWith('__session=')).length, 2);
     const classified = classifyFixtureResourceScopes(raw, {
       runId: 'qa-phase7-20260825T140000Z-ab12cd34ef56',
       alias: 'qa-no-team',

@@ -482,8 +482,7 @@ const exactBrowserProducerHeaders = (headers, referer) => {
 
 const exactCookieHeader = value => {
   const pairs = [...value.matchAll(/(?:^|; ?)([!#$%&'*+.^_`|~0-9A-Za-z-]+)=([\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*)/g)];
-  return pairs.length > 0 && pairs.map(([pair]) => pair).join('') === value
-    && new Set(pairs.map(pair => pair[1])).size === pairs.length;
+  return pairs.length > 0 && pairs.map(([pair]) => pair).join('') === value;
 };
 
 const exactJoinFrame = value => value === `${STAGING_ORIGIN}/teams/join`;
