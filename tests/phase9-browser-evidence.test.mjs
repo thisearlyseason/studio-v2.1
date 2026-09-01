@@ -3345,6 +3345,85 @@ test('phase 9 admission route diagnostic identifies the exact fixed route and co
   assert.deepEqual(diagnostics.at(-1), ['route-location', '/admin']);
 });
 
+test('phase 9 admission terminal failures retain ordered exact attribution for every fixed route', async t => {
+  const routePaths = ['/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family'];
+  const family = () => scenarioWindow({
+    finalPath: '/family', finalUrl: `${STAGING_ORIGIN}/family`, visibleSentinels: ['Family Overview'],
+  });
+  for (const mode of ['sync', 'async']) for (const [routeIndex, routePath] of routePaths.entries()) {
+    await t.test(`${mode} ${routePath}`, async () => {
+      const terminalError = new Error(`closed ${mode} terminal failure`);
+      const diagnostics = [];
+      let currentPath = '/login';
+      await assert.rejects(runAdmissionScenario({
+        client: createScriptedScenarioClient(Array.from({ length: routeIndex + 1 }, family)),
+        session: `parent-terminal-route-${mode}-${routeIndex}`,
+        context: scenarioContext({ contextId: `parent-terminal-route-${mode}-${routeIndex}`, alias: 'qa-parent-a' }),
+        actions: {
+          loginAndLand: async () => { currentPath = '/login'; },
+          navigate: async path => { currentPath = path; },
+          waitForExactLocation: () => {
+            if (currentPath !== routePath) return undefined;
+            diagnostics.push(['terminal-runtime', 'runtime-error']);
+            if (mode === 'sync') throw terminalError;
+            return Promise.reject(terminalError);
+          },
+          diagnostic: (checkpoint, reason) => {
+            diagnostics.push([checkpoint, reason]);
+            throw new Error('diagnostic callback failure');
+          },
+        },
+      }), error => error === terminalError);
+      assert.deepEqual(diagnostics.slice(-2), [
+        ['terminal-runtime', 'runtime-error'],
+        ['route-attribution', routePath],
+      ]);
+    });
+  }
+});
+
+test('phase 9 admission login terminal failures never claim a direct route', async t => {
+  for (const mode of ['sync', 'async']) await t.test(mode, async () => {
+    const terminalError = new Error(`closed ${mode} login failure`);
+    const diagnostics = [['terminal-runtime', 'runtime-error']];
+    await assert.rejects(runAdmissionScenario({
+      client: createScriptedScenarioClient([]),
+      session: `parent-terminal-login-${mode}`,
+      context: scenarioContext({ contextId: `parent-terminal-login-${mode}`, alias: 'qa-parent-a' }),
+      actions: {
+        loginAndLand: async () => {}, navigate: async () => {},
+        waitForExactLocation: () => {
+          if (mode === 'sync') throw terminalError;
+          return Promise.reject(terminalError);
+        },
+        diagnostic: (...report) => diagnostics.push(report),
+      },
+    }), error => error === terminalError);
+    assert.deepEqual(diagnostics, [['terminal-runtime', 'runtime-error']]);
+  });
+});
+
+test('phase 9 direct route rejects noncanonical paths before actions or diagnostics', async () => {
+  const rawPath = '/fixture-secret-run-123/admin';
+  const diagnostics = [];
+  let actionCalls = 0;
+  await assert.rejects(runRouteScenario({
+    client: createScriptedScenarioClient([]),
+    session: 'noncanonical-route-session',
+    context: scenarioContext({ contextId: 'noncanonical-route-context', alias: 'qa-parent-a' }),
+    path: rawPath,
+    allowed: false,
+    landing: { path: '/family', sentinel: 'Family Overview' },
+    actions: {
+      navigate: async () => { actionCalls += 1; },
+      waitForExactLocation: async () => { throw new Error('must not run'); },
+      diagnostic: (...report) => diagnostics.push(report),
+    },
+  }), /route path must be canonical/i);
+  assert.equal(actionCalls, 0);
+  assert.deepEqual(diagnostics, []);
+});
+
 test('phase 9 route validation reports every fixed contract branch without free-form detail', () => {
   const base = {
     allowed: false,

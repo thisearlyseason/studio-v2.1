@@ -7,7 +7,7 @@ import { observeAction } from './signal-window.mjs';
 
 const VIEWPORT_LABELS = Object.freeze(Object.fromEntries(Object.entries(VIEWPORTS)
   .map(([name, value]) => [name, `${value.width}x${value.height}`])));
-const ROUTE_PATHS = Object.freeze(Object.keys(ROUTE_SCENARIOS));
+const ROUTE_PATHS = Object.keys(ROUTE_SCENARIOS);
 const exact = (path, sentinel) => Object.freeze({ path, sentinel });
 const DASHBOARD = exact('/dashboard', 'Dashboard');
 const ONBOARDING = exact('/onboarding', 'Complete your profile');
@@ -46,7 +46,7 @@ const ALIAS_CONTRACTS = Object.freeze({
 
 const ISOLATION_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-parent-b', 'qa-adult-player-b']);
 const LOGOUT_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin']);
-const PENDING_CASES = Object.freeze(['active-baseline', 'stale-session', 'fresh-login']);
+const PENDING_CASES = ['active-baseline', 'stale-session', 'fresh-login'];
 const PROTECTED_FREE_ADMISSION_ALIASES = new Set(['qa-missing-profile']);
 
 const requireText = (value, name) => {
@@ -68,7 +68,6 @@ const validateContext = (context, group) => {
   if (!Object.hasOwn(SCENARIO_GROUP_COUNTS, group)) throw new Error('Scenario group is unsupported.');
   return validated;
 };
-const observe = values => observeAction(values);
 const summarizeHttp = results => !Array.isArray(results) || results.length === 0
   ? 'none' : results.map(result => `${result.status}`).join(',');
 export const rebuildRequestFailureSignals = requestFailureSignals => {
@@ -201,14 +200,23 @@ const executeRoute = async ({
   client, session, path, isAllowed, landing, sentinel, actions, stage, requireNoProtected = false, resourcePolicy,
 }) => {
   const expected = isAllowed ? exact(path, sentinel) : landing;
-  const window = await observe({
-    client, session, stage,
-    action: () => requireFunction(actions?.navigate, 'navigate')(path),
-    terminal: () => requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(expected.path, expected.sentinel),
-  });
   const diagnostic = actions?.diagnostic === undefined
     ? () => {}
     : requireFunction(actions.diagnostic, 'diagnostic');
+  const window = await observeAction({
+    client, session, stage,
+    action: () => requireFunction(actions?.navigate, 'navigate')(path),
+    terminal: async () => {
+      try {
+        return await requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(
+          expected.path, expected.sentinel,
+        );
+      } catch (error) {
+        try { diagnostic('route-attribution', path); } catch {}
+        throw error;
+      }
+    },
+  });
   const validated = validateRouteResult({
     allowed: isAllowed, requestedPath: path,
     expectedPath: expected.path, expectedSentinel: expected.sentinel, requireNoProtected, window,
@@ -230,6 +238,7 @@ export async function runRouteScenario({
 } = {}) {
   const context = validateContext(inputContext, group);
   const requestedPath = requireText(path, 'route path');
+  if (!ROUTE_PATHS.includes(requestedPath)) throw new Error('Route path must be canonical.');
   if (typeof isAllowed !== 'boolean') throw new Error('Route allowed must be an explicit boolean.');
   const result = await executeRoute({
     client, session: requireText(session, 'session'), path: requestedPath, isAllowed,
@@ -254,7 +263,7 @@ export async function runAdmissionScenario({ client, session, context: inputCont
   const diagnostic = actions?.diagnostic === undefined
     ? () => {}
     : requireFunction(actions.diagnostic, 'diagnostic');
-  const observedLoginWindow = await observe({
+  const observedLoginWindow = await observeAction({
     client, session: authenticatedSession, stage: 'admission-login',
     action: () => requireFunction(actions?.loginAndLand, 'loginAndLand')(context.alias),
     terminal: () => requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(
@@ -302,7 +311,7 @@ export async function runIsolationScenario({ client, session, context: inputCont
   const api = [], firestore = [], windows = [], summaries = [];
   for (const probe of expected.sameOriginApi) {
     let status;
-    const observedWindow = await observe({
+    const observedWindow = await observeAction({
       client, session: authenticatedSession, stage: `isolation-${probe.label}`,
       action: async () => {
         status = await sameOriginGet(probe.target, { session: authenticatedSession, method: 'GET', credentials: 'same-origin' });
@@ -318,7 +327,7 @@ export async function runIsolationScenario({ client, session, context: inputCont
   for (const probe of expected.directFirestore) {
     let status;
     const request = { label: probe.label, path: probe.path, expectedStatus: probe.status };
-    const observedWindow = await observe({
+    const observedWindow = await observeAction({
       client, session: authenticatedSession, stage: `isolation-${probe.label}`,
       action: async () => {
         status = await firestoreGet(request, { session: authenticatedSession });
@@ -360,14 +369,14 @@ export async function runLogoutScenario({ client, session, freshSession, context
     }
     stages.push({
       name,
-      window: await observe({
+      window: await observeAction({
         client, session: sharedSession, stage: name, action: requireFunction(actions?.[name], name),
         terminal: () => requireFunction(actions?.waitForLogin, 'waitForLogin')(name),
       }),
     });
   }
   const validatedStages = validateLogoutStages(stages, diagnostic).stages;
-  const observedFreshWindow = await observe({
+  const observedFreshWindow = await observeAction({
     client, session: isolatedSession, stage: 'fresh-isolated-unauthenticated',
     action: () => requireFunction(actions?.freshUnauthenticated, 'freshUnauthenticated')('/dashboard'),
     terminal: requireFunction(actions?.waitForFreshLogin, 'waitForFreshLogin'),
@@ -391,7 +400,7 @@ export async function runFreshUnauthenticatedScenario({ client, session, context
   const diagnostic = actions?.diagnostic === undefined
     ? () => {}
     : requireFunction(actions.diagnostic, 'diagnostic');
-  const observedWindow = await observe({
+  const observedWindow = await observeAction({
     client, session: requireText(session, 'session'), stage: 'fresh-unauthenticated',
     action: () => requireFunction(actions?.navigate, 'navigate')('/dashboard'),
     terminal: requireFunction(actions?.waitForLogin, 'waitForLogin'),
@@ -409,7 +418,7 @@ const runPendingRevocation = async ({ client, session, context: inputContext, ac
   const diagnostic = actions?.diagnostic === undefined
     ? () => {}
     : requireFunction(actions.diagnostic, 'diagnostic');
-  const observedWindow = await observe({
+  const observedWindow = await observeAction({
     client, session: requireText(session, 'session'), stage, action: requireFunction(action, stage),
     terminal: async () => {
       await requireFunction(actions?.waitForLogin, 'waitForLogin')(stage, 'Sign In');
@@ -440,7 +449,7 @@ export async function runPendingDeletionScenario(options = {}) {
     const diagnostic = options.actions?.diagnostic === undefined
       ? () => {}
       : requireFunction(options.actions.diagnostic, 'diagnostic');
-    const observedWindow = await observe({
+    const observedWindow = await observeAction({
       client: options.client, session: requireText(options.session, 'session'), stage: 'pending-deletion-active-baseline',
       action: () => requireFunction(options.actions?.navigate, 'navigate')('/dashboard'),
       terminal: requireFunction(options.actions?.waitForDashboard, 'waitForDashboard'),
