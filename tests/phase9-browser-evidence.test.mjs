@@ -11152,6 +11152,16 @@ darwinRuntimeTest('phase 9 evidence writer atomically writes only the four appro
   }
 });
 
+test('phase 9 committed evidence destination contains only the four writer-owned files', () => {
+  const outputDirectory = join(dirname(testDirectory), phase9EvidenceDirectorySuffix);
+  assert.deepEqual(readdirSync(outputDirectory).sort(), [
+    '00-environment.md',
+    '01-fixture-lifecycle.md',
+    '03-browser-ledger.md',
+    '04-cleanup.md',
+  ]);
+});
+
 test('phase 9 evidence writer rejects incomplete, duplicate, unsafe, and inconsistent evidence before any write', async () => {
   const { createPhase9EvidenceWriter, writePhase9Evidence } = await import('../scripts/qa-evidence/phase9/evidence-writer.mjs');
   const root = mkdtempSync('/tmp/phase9-evidence-writer-reject.');
