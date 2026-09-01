@@ -73,14 +73,22 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /teamsQuery[\s\S]*firebaseUser\.emailVerified === true/);
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
   const inviteClaimEffect = provider.match(
-    /useEffect\(\(\) => \{[\s\S]*?claimPendingSchoolInvites\(\);[\s\S]*?\}, \[[^\]]*claimedSchoolAdminForUid[^\]]*\]\);/,
+    /useEffect\(\(\) => \{\n    const setClaimState[\s\S]*?claimPendingSchoolInvites\(\);[\s\S]*?\}, \[[^\]]*claimedSchoolAdminForUid[^\]]*\]\);/,
   )?.[0];
   assert.ok(inviteClaimEffect, 'expected the bounded pending School Hub invitation effect');
-  assert.match(inviteClaimEffect, /if \(!canClaimSchoolAdminInvites \|\|/);
+  assert.match(inviteClaimEffect, /if \(!canClaimSchoolAdminInvites\) \{/);
   assert.match(inviteClaimEffect, /\[canClaimSchoolAdminInvites, claimedSchoolAdminForUid,/);
   assert.doesNotMatch(inviteClaimEffect, /canReadProtectedAccountState/);
   assert.match(inviteClaimEffect, /const controller = new AbortController\(\)/);
   assert.match(inviteClaimEffect, /requestPendingSchoolInviteClaim\(\{/);
+  assert.match(provider, /SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE = 'data-school-invite-claim-state'/);
+  assert.match(inviteClaimEffect, /setClaimState\('pending'\)/);
+  assert.match(inviteClaimEffect, /setClaimState\('settled'\)/);
+  assert.match(inviteClaimEffect, /setClaimState\('failed'\)/);
+  assert.match(inviteClaimEffect, /removeAttribute\(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE\)/);
+  assert.match(inviteClaimEffect, /if \(claimedSchoolAdminForUid === firebaseUser\.uid\) \{[\s\S]*?setClaimState\('settled'\)/);
+  assert.match(inviteClaimEffect, /if \(!response\) \{[\s\S]*?setClaimState\('failed'\)/);
+  assert.match(inviteClaimEffect, /setClaimedSchoolAdminForUid\(firebaseUser\.uid\);[\s\S]*?setClaimState\('settled'\)/);
   assert.match(inviteClaimEffect, /getPathname: \(\) => window\.location\.pathname/);
   assert.match(inviteClaimEffect, /isCancelled: \(\) => cancelled/);
   assert.match(inviteClaimEffect, /signal: controller\.signal/);

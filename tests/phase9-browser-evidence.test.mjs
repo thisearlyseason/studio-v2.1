@@ -79,6 +79,9 @@ const LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS = 90_000;
 const DARWIN_RUNTIME_SKIP_REASON = 'Darwin-only: executes or compares the exact pinned macOS Node, Python, Chrome, Playwright, evidence-helper, or process-inspector runtime.';
 const PHASE9_TEST_PLATFORM = process.env.PHASE9_TEST_PLATFORM ?? process.platform;
 const NO_TEAM_POLICY_DIAGNOSTICS = Object.freeze([
+  ['terminal-join-claim', 'claim-missing'],
+  ['terminal-join-claim', 'claim-pending'],
+  ['terminal-join-claim', 'claim-invalid'],
   ['window-no-team-render', 'protected-render'],
   ['window-no-team-selection', 'team-a'],
   ['window-no-team-selection', 'team-b'],
@@ -5354,7 +5357,7 @@ darwinRuntimeTest('phase 9 stable terminal polling survives a hard document navi
   }
 });
 
-test('phase 9 stable terminal timeout reports only closed route and heading boundaries', async () => {
+test('phase 9 stable terminal timeout reports only closed terminal boundaries', async () => {
   for (const [outcome, expected] of [
     ['location-mismatch', ['terminal-location', 'location-mismatch']],
     ['observer-mismatch', ['terminal-observer', 'observer-mismatch']],
@@ -5362,6 +5365,9 @@ test('phase 9 stable terminal timeout reports only closed route and heading boun
     ['loading-stalled', ['terminal-loading', 'loading-stalled']],
     ['runtime-error', ['terminal-runtime', 'runtime-error']],
     ['heading-missing', ['terminal-heading', 'heading-missing']],
+    ['claim-missing', ['terminal-join-claim', 'claim-missing']],
+    ['claim-pending', ['terminal-join-claim', 'claim-pending']],
+    ['claim-invalid', ['terminal-join-claim', 'claim-invalid']],
     ['not-reached', ['terminal-wait', 'terminal-not-reached']],
   ]) {
     const diagnostics = [];
@@ -5416,17 +5422,24 @@ test('phase 9 teams join terminal requires one settled invitation claim request'
     loading: false,
     runtime: false,
     joinAdminRequired: true,
+    joinAdminClaimState: 'missing',
   };
-  for (const sample of [
-    { ...base, joinAdminRequestState: 0 },
-    { ...base, joinAdminRequestState: 1 },
-    { ...base, joinAdminRequestState: 3 },
+  for (const [state, claimState, outcome] of [
+    [0, 'missing', 'claim-missing'],
+    [0, 'pending', 'claim-pending'],
+    [1, 'pending', 'claim-pending'],
+    [2, 'settled', 'reached'],
+    [0, 'settled', 'reached'],
+    [3, 'failed', 'claim-invalid'],
+    [1, 'settled', 'claim-pending'],
+    [3, 'settled', 'claim-invalid'],
   ]) {
-    assert.equal(classifyStableTerminalSample(sample), 'claim-unsettled');
+    assert.equal(classifyStableTerminalSample({
+      ...base, joinAdminRequestState: state, joinAdminClaimState: claimState,
+    }), outcome);
   }
-  assert.equal(classifyStableTerminalSample({ ...base, joinAdminRequestState: 2 }), 'reached');
   assert.equal(classifyStableTerminalSample({
-    ...base, joinAdminRequired: false, joinAdminRequestState: 0,
+    ...base, joinAdminRequired: false, joinAdminRequestState: 0, joinAdminClaimState: 'missing',
   }), 'reached');
 });
 
@@ -5441,6 +5454,8 @@ darwinRuntimeTest('phase 9 teams join terminal waits for the exact invitation cl
     const samples = await client.runCode('phase9-join-admin-settlement', `async (page) => {
       page.__phase9JoinResponseStates = [];
       page.__phase9JoinStatus = 200;
+      page.__phase9JoinRequestEnabled = true;
+      page.__phase9JoinStartDelay = 900;
       page.on('response', response => {
         if (response.url() === ${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)}) {
           page.__phase9JoinResponseStates.push(page.__phase9EvidenceRecorder?.joinAdminRequestState);
@@ -5458,9 +5473,17 @@ darwinRuntimeTest('phase 9 teams join terminal waits for the exact invitation cl
       await page.route(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)}, route => route.fulfill({
         status: 200,
         contentType: 'text/html',
-        body: '<h1>Join & Invite</h1><script>fetch("/api/schools/admins", { method: "PATCH" }).catch(() => {});</script>',
+        body: '<html data-school-invite-claim-state="pending"><body><h1>Join & Invite</h1>'
+          + '<script>'
+          + (page.__phase9JoinRequestEnabled
+            ? 'setTimeout(() => fetch("/api/schools/admins", { method: "PATCH" })'
+              + '.then(response => document.documentElement.setAttribute("data-school-invite-claim-state", response.ok ? "settled" : "failed"))'
+              + '.catch(() => document.documentElement.setAttribute("data-school-invite-claim-state", "failed")), '
+              + String(page.__phase9JoinStartDelay) + ');'
+            : 'document.documentElement.setAttribute("data-school-invite-claim-state", "settled");')
+          + '</script></body></html>',
       }));
-      const sample = () => ({
+      const sample = async () => ({
         locationMatches: page.url() === ${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)},
         sentinelVisible: true,
         direct: true,
@@ -5469,22 +5492,28 @@ darwinRuntimeTest('phase 9 teams join terminal waits for the exact invitation cl
         runtime: false,
         joinAdminRequired: true,
         joinAdminRequestState: page.__phase9EvidenceRecorder?.joinAdminRequestState,
+        joinAdminClaimState: await page.evaluate(() =>
+          document.documentElement.getAttribute('data-school-invite-claim-state') || 'missing'),
       });
       await page.goto(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)});
       await page.waitForTimeout(350);
-      const pending = sample();
-      await page.waitForTimeout(700);
+      const pending = await sample();
+      await page.waitForTimeout(1400);
       return {
         pending,
-        settled: sample(),
+        settled: await sample(),
         failures: page.__phase9EvidenceRecorder?.requestFailureSignals?.length,
         responseStates: page.__phase9JoinResponseStates,
       };
     }`);
-    assert.equal(classifyStableTerminalSample(samples.pending), 'claim-unsettled');
+    assert.equal(classifyStableTerminalSample(samples.pending), 'claim-pending');
     assert.equal(classifyStableTerminalSample(samples.settled), 'reached');
     assert.equal(samples.failures, 0);
     assert.deepEqual(samples.responseStates, [1]);
+    await client.runCode(
+      'phase9-join-admin-settlement',
+      'async (page) => { page.__phase9JoinStartDelay = 0; return true; }',
+    );
     let followup;
     try {
       followup = await observeAction({
@@ -5514,7 +5543,7 @@ darwinRuntimeTest('phase 9 teams join terminal waits for the exact invitation cl
     ), [1, 1]);
     await client.runCode(
       'phase9-join-admin-settlement',
-      'async (page) => { page.__phase9JoinStatus = 500; return true; }',
+      'async (page) => { page.__phase9JoinRequestEnabled = true; page.__phase9JoinStatus = 500; return true; }',
     );
     const failed = await client.captureSignalWindow({
       session: 'phase9-join-admin-settlement',

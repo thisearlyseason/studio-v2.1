@@ -17,6 +17,8 @@ import {
 } from '@/lib/client-account-admission';
 import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
 
+const SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE = 'data-school-invite-claim-state';
+
 /**
  * Dispatch push + email notifications to all team members.
  * Called after addEvent, addDrill, addTeamDocument.
@@ -1120,11 +1122,29 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   useEffect(() => {
-    if (!canClaimSchoolAdminInvites || !isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
-    if (claimedSchoolAdminForUid === firebaseUser.uid) return;
+    const setClaimState = (state: 'pending' | 'settled' | 'failed') => {
+      document.documentElement.setAttribute(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE, state);
+    };
+    if (!canClaimSchoolAdminInvites) {
+      document.documentElement.removeAttribute(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE);
+      return;
+    }
+    if (!isAuthResolved) {
+      setClaimState('pending');
+      return;
+    }
+    if (!firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) {
+      setClaimState('failed');
+      return;
+    }
+    if (claimedSchoolAdminForUid === firebaseUser.uid) {
+      setClaimState('settled');
+      return;
+    }
 
     let cancelled = false;
     const controller = new AbortController();
+    setClaimState('pending');
     const claimPendingSchoolInvites = async () => {
       try {
         const response = await requestPendingSchoolInviteClaim({
@@ -1138,20 +1158,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             signal,
           }),
         });
-        if (!response) return;
+        if (!response) {
+          if (!cancelled) setClaimState('failed');
+          return;
+        }
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload.error || 'Unable to claim School Hub invitations.');
         }
-        if (!cancelled) setClaimedSchoolAdminForUid(firebaseUser.uid);
+        if (!cancelled) {
+          setClaimedSchoolAdminForUid(firebaseUser.uid);
+          setClaimState('settled');
+        }
       } catch (error) {
         if (cancelled) return;
+        setClaimState('failed');
         console.error('[TeamProvider] School Hub invitation claim failed:', error);
       }
     };
     claimPendingSchoolInvites();
     return () => { cancelled = true; controller.abort(); };
-  }, [canClaimSchoolAdminInvites, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
+  }, [canClaimSchoolAdminInvites, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.emailVerified, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);

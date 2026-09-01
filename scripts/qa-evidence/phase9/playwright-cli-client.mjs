@@ -2403,7 +2403,13 @@ export function classifyStableTerminalSample(sample) {
   if (sample.loading === true) return 'loading-stalled';
   if (sample.runtime === true) return 'runtime-error';
   if (sample.sentinelVisible === false) return 'heading-missing';
-  if (sample.joinAdminRequired === true && sample.joinAdminRequestState !== 2) return 'claim-unsettled';
+  if (sample.joinAdminRequired === true) {
+    if (sample.joinAdminRequestState === 1) return 'claim-pending';
+    if (sample.joinAdminRequestState === 3) return 'claim-invalid';
+    if (sample.joinAdminClaimState === 'pending') return 'claim-pending';
+    if (sample.joinAdminClaimState === 'failed') return 'claim-invalid';
+    if (sample.joinAdminClaimState !== 'settled') return 'claim-missing';
+  }
   return 'reached';
 }
 
@@ -2442,6 +2448,7 @@ export async function waitForStableExactLocation(client, session, path, sentinel
             direct: exactVisible('h1', sentinel),
             restricted: exactVisible('h1', 'Family Access Required'),
             loading: exactVisible('p', 'Synchronizing Secure Hub...'),
+            joinAdminClaimState: document.documentElement.getAttribute('data-school-invite-claim-state') || 'missing',
           };
         }, expected);
         const recorder = page.__phase9EvidenceRecorder;
@@ -2450,6 +2457,7 @@ export async function waitForStableExactLocation(client, session, path, sentinel
           runtime: (recorder?.pageErrors?.length || 0) > 0 || (recorder?.appConsoleErrors?.length || 0) > 0,
           joinAdminRequired: expected.expectedPath === '/teams/join',
           joinAdminRequestState: recorder?.joinAdminRequestState,
+          joinAdminClaimState: dom.joinAdminClaimState,
         };
         lastSample = sample;
       } catch (error) {
@@ -2476,10 +2484,12 @@ export async function waitForStableExactLocation(client, session, path, sentinel
         ? ['terminal-role', 'role-restricted']
         : outcome === 'loading-stalled'
           ? ['terminal-loading', 'loading-stalled']
-          : outcome === 'runtime-error'
+      : outcome === 'runtime-error'
             ? ['terminal-runtime', 'runtime-error']
     : outcome === 'heading-missing'
       ? ['terminal-heading', 'heading-missing']
+      : new Set(['claim-missing', 'claim-pending', 'claim-invalid']).has(outcome)
+        ? ['terminal-join-claim', outcome]
       : ['terminal-wait', 'terminal-not-reached'];
   internals.onDiagnosticCheckpoint?.(...diagnostic);
   throw new Error('Stable terminal location was not reached.');

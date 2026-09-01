@@ -60,6 +60,7 @@ const ROUTE_DIAGNOSTIC_REASONS = new Set([
   '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
 ]);
 const NO_TEAM_DIAGNOSTIC_REASONS = Object.freeze({
+  'terminal-join-claim': new Set(['claim-missing', 'claim-pending', 'claim-invalid']),
   'window-no-team-render': new Set(['protected-render']),
   'window-no-team-selection': new Set(['team-a', 'team-b', 'other']),
   'window-no-team-request': new Set([
@@ -88,6 +89,7 @@ const DIAGNOSTIC_STAGES = Object.freeze({
   'terminal-observer': 'scenario-action', 'terminal-role': 'scenario-action',
   'terminal-loading': 'scenario-action', 'terminal-runtime': 'scenario-action',
   'terminal-heading': 'scenario-action', 'observation-sample': 'scenario-action',
+  'terminal-join-claim': 'scenario-action',
   'window-validation': 'scenario-action',
   'window-sample-contract': 'scenario-action', 'window-observation-contract': 'scenario-action',
   'window-visible-contract': 'scenario-action', 'window-resource-contract': 'scenario-action',
