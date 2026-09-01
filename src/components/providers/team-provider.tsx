@@ -12,6 +12,7 @@ import {
   canStartGlobalPlanCatalogState,
   canStartProtectedAccountState,
   canStartSquadMembershipState,
+  canClaimPendingSchoolInvites,
 } from '@/lib/client-account-admission';
 import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
 
@@ -1094,6 +1095,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const canReadProtectedAccountState = canStartProtectedAccountState(pathname);
   const canReadGlobalPlanCatalog = canStartGlobalPlanCatalogState(pathname);
   const canReadSquadMembershipState = canStartSquadMembershipState(pathname);
+  const canClaimSchoolAdminInvites = canClaimPendingSchoolInvites(pathname);
   
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -1117,7 +1119,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   useEffect(() => {
-    if (!canReadProtectedAccountState || !isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
+    if (!canClaimSchoolAdminInvites || !isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
     if (claimedSchoolAdminForUid === firebaseUser.uid) return;
 
     let cancelled = false;
@@ -1140,7 +1142,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     };
     claimPendingSchoolInvites();
     return () => { cancelled = true; };
-  }, [canReadProtectedAccountState, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
+  }, [canClaimSchoolAdminInvites, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);

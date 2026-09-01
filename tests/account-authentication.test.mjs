@@ -72,6 +72,13 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /firebaseUser\.emailVerified !== true/);
   assert.match(provider, /teamsQuery[\s\S]*firebaseUser\.emailVerified === true/);
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
+  const inviteClaimEffect = provider.match(
+    /useEffect\(\(\) => \{[\s\S]*?claimPendingSchoolInvites\(\);[\s\S]*?\}, \[[^\]]*claimedSchoolAdminForUid[^\]]*\]\);/,
+  )?.[0];
+  assert.ok(inviteClaimEffect, 'expected the bounded pending School Hub invitation effect');
+  assert.match(inviteClaimEffect, /if \(!canClaimSchoolAdminInvites \|\|/);
+  assert.match(inviteClaimEffect, /\[canClaimSchoolAdminInvites, claimedSchoolAdminForUid,/);
+  assert.doesNotMatch(inviteClaimEffect, /canReadProtectedAccountState/);
 });
 
 test('account-setup routes do not start global plans or player listeners', async () => {

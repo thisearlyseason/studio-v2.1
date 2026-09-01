@@ -15,6 +15,7 @@ import {
   canStartGlobalPlanCatalogState,
   canStartProtectedAccountState,
   canStartSquadMembershipState,
+  canClaimPendingSchoolInvites,
 } from '../src/lib/client-account-admission.ts';
 
 function firestoreDouble({ profile = null, memberRows = [], ownedTeams = [] } = {}) {
@@ -738,5 +739,12 @@ test('squad membership listeners wait until navigation leaves squad admission', 
   }
   for (const pathname of ['/dashboard', '/family', '/competition']) {
     assert.equal(canStartSquadMembershipState(pathname), true, pathname);
+  }
+});
+
+test('pending School Hub invitations are claimed only from the exact squad-admission route', () => {
+  assert.equal(canClaimPendingSchoolInvites('/teams/join'), true);
+  for (const pathname of ['/', '/dashboard', '/teams/join/other', '/onboarding', '/club']) {
+    assert.equal(canClaimPendingSchoolInvites(pathname), false, pathname);
   }
 });
