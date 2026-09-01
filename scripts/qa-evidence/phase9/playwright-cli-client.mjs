@@ -498,10 +498,11 @@ const exactFirestoreRestHeaders = value => {
 
 const exactJoinAdminHeaders = value => {
   const headers = normalizeHeaders(value);
-  const allowed = new Set(['authorization']);
+  const allowed = new Set(['authorization', 'cookie']);
   return hasOnlyAllowedHeaders(headers, allowed)
     && exactBrowserProducerHeaders(headers, `${STAGING_ORIGIN}/teams/join`)
     && validBearer(headers.authorization)
+    && (!Object.hasOwn(headers, 'cookie') || /^__session=[A-Za-z0-9._~-]+$/.test(headers.cookie))
     && headers.accept === '*/*';
 };
 

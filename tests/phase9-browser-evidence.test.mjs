@@ -4252,6 +4252,10 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, 'x-team-id': teamA } }),
     joinAdminRaw({ frameUrl: `${STAGING_ORIGIN}/teams/${teamA}` }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, 'x-unapproved': 'present' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: 'other=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; other=value' } }),
+    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: `__session=${runId}` } }),
     joinAdminRaw({ resourceType: 'document' }),
     joinAdminRaw({ method: 'POST' }),
     joinAdminRaw({ url: `https://evil.invalid/api/schools/admins` }),
@@ -4259,6 +4263,63 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
     joinAdminRaw({ headers: { accept: '*/*' } }),
   ]) {
     assert.deepEqual(classify(raw).resourceScopes, ['unscoped'], JSON.stringify(raw));
+  }
+});
+
+darwinRuntimeTest('phase 9 join-admin lookup accepts the exact real Chrome PATCH producer', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
+  try {
+    await installSignalRecorder(client, 'phase9-join-admin-producer');
+    const raw = await client.runCode('phase9-join-admin-producer', `async (page) => {
+      await page.route(${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)}, route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{"ok":true}',
+      }));
+      await page.route(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)}, route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<html><body><h1>Join & Invite</h1></body></html>',
+      }));
+      await page.context().addCookies([{
+        name: '__session',
+        value: 'phase9-test-session',
+        url: ${JSON.stringify(STAGING_ORIGIN)},
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+      }]);
+      await page.goto(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)});
+      await page.evaluate(() => fetch('/api/schools/admins', {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer phase9-test' },
+      }).then(response => response.json()));
+      const request = page.__phase9EvidenceRecorder.rawRequests.find(item =>
+        item.url === ${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)});
+      if (!request) throw new Error('Expected the intercepted join-admin PATCH.');
+      return request;
+    }`);
+    const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+    const classified = classifyFixtureResourceScopes(raw, {
+      runId: 'qa-phase7-20260825T140000Z-ab12cd34ef56',
+      alias: 'qa-no-team',
+    });
+    assert.deepEqual(classified.resourceScopes, ['join-admin-lookup'], JSON.stringify({
+      method: raw.method,
+      resourceType: raw.resourceType,
+      bodyLength: raw.body.length,
+      frameUrl: raw.frameUrl,
+      headerNames: Object.keys(raw.headers).sort(),
+      accept: raw.headers.accept,
+      origin: raw.headers.origin,
+      referer: raw.headers.referer,
+      secChUa: raw.headers['sec-ch-ua'],
+      secChUaMobile: raw.headers['sec-ch-ua-mobile'],
+      secChUaPlatform: raw.headers['sec-ch-ua-platform'],
+      userAgent: raw.headers['user-agent'],
+    }));
+  } finally {
+    await closeAndVerifyBrowsers(client);
   }
 });
 
@@ -12882,7 +12943,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
-  assert.equal(darwinRuntimeTests.length, 77);
+  assert.equal(darwinRuntimeTests.length, 78);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });
