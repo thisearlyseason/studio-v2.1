@@ -74,6 +74,21 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
 });
 
+test('account-setup routes do not start global plans or player listeners', async () => {
+  const provider = await source('../src/components/providers/team-provider.tsx');
+
+  assert.match(
+    provider,
+    /plansQuery[\s\S]*canReadProtectedAccountState[\s\S]*collection\(db, 'plans'\)/,
+    'the global plans listener must remain behind the account-admission boundary',
+  );
+  assert.match(
+    provider,
+    /childrenQuery[\s\S]*canReadProtectedAccountState[\s\S]*collection\(db, 'players'\)/,
+    'the signed-in player query must remain behind the account-admission boundary',
+  );
+});
+
 test('admission-only pages and passive admin navigation do not mutate protected account state', async () => {
   const [onboarding, admin] = await Promise.all([
     source('../src/app/onboarding/page.tsx'),

@@ -1370,11 +1370,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
 
-  const plansQuery = useMemoFirebase(() => (db && isAuthResolved) ? collection(db, 'plans') : null, [db, isAuthResolved]);
+  const plansQuery = useMemoFirebase(
+    () => (canReadProtectedAccountState && db && isAuthResolved) ? collection(db, 'plans') : null,
+    [canReadProtectedAccountState, db, isAuthResolved],
+  );
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
   const plans = useMemo(() => plansData || [], [plansData]);
 
-  const childrenQuery = useMemoFirebase(() => (db && firebaseUser?.uid) ? query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid]);
+  const childrenQuery = useMemoFirebase(
+    () => (canReadProtectedAccountState && db && firebaseUser?.uid)
+      ? query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid))
+      : null,
+    [canReadProtectedAccountState, db, firebaseUser?.uid],
+  );
   const { data: myChildrenRaw } = useCollection<PlayerProfile>(childrenQuery);
   const myChildren = useMemo(() => myChildrenRaw || [], [myChildrenRaw]);
 
@@ -1558,7 +1566,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [householdGames, setHouseholdGames] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
+    if (!canReadProtectedAccountState || !db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
 
     const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
     const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
@@ -1606,15 +1614,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return () => {
        unsubscribers.forEach(fn => fn());
     };
-  }, [db, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
+  }, [canReadProtectedAccountState, db, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
 
-  const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved && isParent) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved, isParent]);
+  const householdMembersQuery = useMemoFirebase(
+    () => (canReadProtectedAccountState && db && firebaseUser?.uid && isAuthResolved && isParent)
+      ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid))
+      : null,
+    [canReadProtectedAccountState, db, firebaseUser?.uid, isAuthResolved, isParent],
+  );
   const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
   const householdPaymentsQuery = useMemoFirebase(
-    () => (db && firebaseUser?.uid && isAuthResolved && isParent)
+    () => (canReadProtectedAccountState && db && firebaseUser?.uid && isAuthResolved && isParent)
       ? query(collection(db, 'users', firebaseUser.uid, 'payments'))
       : null,
-    [db, firebaseUser?.uid, isAuthResolved, isParent]
+    [canReadProtectedAccountState, db, firebaseUser?.uid, isAuthResolved, isParent]
   );
   const { data: householdPaymentsData } = useCollection<HouseholdPayment>(householdPaymentsQuery);
   const householdBalance = useMemo(
