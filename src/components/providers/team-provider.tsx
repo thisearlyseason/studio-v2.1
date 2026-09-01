@@ -1123,13 +1123,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (claimedSchoolAdminForUid === firebaseUser.uid) return;
 
     let cancelled = false;
+    const controller = new AbortController();
     const claimPendingSchoolInvites = async () => {
       try {
         const token = await getAuthToken(firebaseAuth);
-        if (!token) return;
+        if (cancelled || !token) return;
         const response = await fetch('/api/schools/admins', {
           method: 'PATCH',
           headers: authHeader(token),
+          signal: controller.signal,
         });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
@@ -1137,11 +1139,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         }
         if (!cancelled) setClaimedSchoolAdminForUid(firebaseUser.uid);
       } catch (error) {
+        if (cancelled) return;
         console.error('[TeamProvider] School Hub invitation claim failed:', error);
       }
     };
     claimPendingSchoolInvites();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [canClaimSchoolAdminInvites, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);

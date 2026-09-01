@@ -79,6 +79,10 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(inviteClaimEffect, /if \(!canClaimSchoolAdminInvites \|\|/);
   assert.match(inviteClaimEffect, /\[canClaimSchoolAdminInvites, claimedSchoolAdminForUid,/);
   assert.doesNotMatch(inviteClaimEffect, /canReadProtectedAccountState/);
+  assert.match(inviteClaimEffect, /const controller = new AbortController\(\)/);
+  assert.match(inviteClaimEffect, /const token = await getAuthToken\(firebaseAuth\);\s*if \(cancelled \|\| !token\) return;/);
+  assert.match(inviteClaimEffect, /fetch\('\/api\/schools\/admins',[\s\S]*signal: controller\.signal/);
+  assert.match(inviteClaimEffect, /return \(\) => \{ cancelled = true; controller\.abort\(\); \};/);
 });
 
 test('account-setup routes do not start global plans or player listeners', async () => {
