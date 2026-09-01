@@ -8,3 +8,7 @@ const ACCOUNT_SETUP_PATHS = new Set([
 export function canStartProtectedAccountState(pathname: string): boolean {
   return !ACCOUNT_SETUP_PATHS.has(pathname);
 }
+
+export function canStartGlobalPlanCatalogState(pathname: string): boolean {
+  return canStartProtectedAccountState(pathname) && pathname !== '/teams/join';
+}

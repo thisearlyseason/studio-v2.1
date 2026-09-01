@@ -11,7 +11,10 @@ import {
   establishBrowserSessionOrSignOut,
   readBrowserSession,
 } from '../src/lib/client-auth.ts';
-import { canStartProtectedAccountState } from '../src/lib/client-account-admission.ts';
+import {
+  canStartGlobalPlanCatalogState,
+  canStartProtectedAccountState,
+} from '../src/lib/client-account-admission.ts';
 
 function firestoreDouble({ profile = null, memberRows = [], ownedTeams = [] } = {}) {
   const operations = [];
@@ -716,5 +719,14 @@ test('protected provider state waits until navigation leaves authentication and 
   }
   for (const pathname of ['/', '/dashboard', '/teams/join', '/club']) {
     assert.equal(canStartProtectedAccountState(pathname), true, pathname);
+  }
+});
+
+test('global plan catalog waits until navigation leaves squad admission', () => {
+  for (const pathname of ['/login', '/signup', '/verify-email', '/onboarding', '/teams/join']) {
+    assert.equal(canStartGlobalPlanCatalogState(pathname), false, pathname);
+  }
+  for (const pathname of ['/dashboard', '/family', '/competition']) {
+    assert.equal(canStartGlobalPlanCatalogState(pathname), true, pathname);
   }
 });

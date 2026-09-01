@@ -79,8 +79,8 @@ test('account-setup routes do not start global plans or player listeners', async
 
   assert.match(
     provider,
-    /plansQuery[\s\S]*canReadProtectedAccountState[\s\S]*collection\(db, 'plans'\)/,
-    'the global plans listener must remain behind the account-admission boundary',
+    /plansQuery[\s\S]*canReadGlobalPlanCatalog[\s\S]*collection\(db, 'plans'\)/,
+    'the global plans listener must remain behind the squad-admission boundary',
   );
   assert.match(
     provider,

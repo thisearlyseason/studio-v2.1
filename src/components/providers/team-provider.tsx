@@ -8,7 +8,10 @@ import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 import { hasStaffRole } from '@/lib/staff-position';
 import { activeTeamMembershipProjections } from '@/lib/team-membership-security';
-import { canStartProtectedAccountState } from '@/lib/client-account-admission';
+import {
+  canStartGlobalPlanCatalogState,
+  canStartProtectedAccountState,
+} from '@/lib/client-account-admission';
 import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
 
 /**
@@ -1088,6 +1091,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const canReadProtectedAccountState = canStartProtectedAccountState(pathname);
+  const canReadGlobalPlanCatalog = canStartGlobalPlanCatalogState(pathname);
   
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -1371,8 +1375,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
 
   const plansQuery = useMemoFirebase(
-    () => (canReadProtectedAccountState && db && isAuthResolved) ? collection(db, 'plans') : null,
-    [canReadProtectedAccountState, db, isAuthResolved],
+    () => (canReadGlobalPlanCatalog && db && isAuthResolved) ? collection(db, 'plans') : null,
+    [canReadGlobalPlanCatalog, db, isAuthResolved],
   );
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
   const plans = useMemo(() => plansData || [], [plansData]);
