@@ -73,11 +73,11 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /teamsQuery[\s\S]*firebaseUser\.emailVerified === true/);
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
   const inviteClaimEffect = provider.match(
-    /useEffect\(\(\) => \{\n    const setClaimState[\s\S]*?claimPendingSchoolInvites\(\);[\s\S]*?\}, \[[^\]]*claimedSchoolAdminForUid[^\]]*\]\);/,
+    /useEffect\(\(\) => \{\n    const setClaimState[\s\S]*?claimPendingSchoolInvites\(\);[\s\S]*?\}, \[[^\]]*isAuthResolved[^\]]*\]\);/,
   )?.[0];
   assert.ok(inviteClaimEffect, 'expected the bounded pending School Hub invitation effect');
   assert.match(inviteClaimEffect, /if \(!canClaimSchoolAdminInvites\) \{/);
-  assert.match(inviteClaimEffect, /\[canClaimSchoolAdminInvites, claimedSchoolAdminForUid,/);
+  assert.match(inviteClaimEffect, /\[canClaimSchoolAdminInvites, firebaseAuth,/);
   assert.doesNotMatch(inviteClaimEffect, /canReadProtectedAccountState/);
   assert.match(inviteClaimEffect, /const controller = new AbortController\(\)/);
   assert.match(inviteClaimEffect, /requestPendingSchoolInviteClaim\(\{/);
@@ -86,13 +86,20 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(inviteClaimEffect, /setClaimState\('settled'\)/);
   assert.match(inviteClaimEffect, /setClaimState\('failed'\)/);
   assert.match(inviteClaimEffect, /removeAttribute\(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE\)/);
-  assert.match(inviteClaimEffect, /if \(claimedSchoolAdminForUid === firebaseUser\.uid\) \{[\s\S]*?setClaimState\('settled'\)/);
+  assert.match(provider, /const schoolInviteClaimAttempt = useRef<SchoolInviteClaimAttempt \| null>\(null\)/);
+  assert.match(inviteClaimEffect, /const existingAttempt = schoolInviteClaimAttempt\.current/);
+  assert.match(inviteClaimEffect, /existingAttempt\?\.uid === firebaseUser\.uid && existingAttempt\.auth === firebaseAuth/);
+  assert.match(inviteClaimEffect, /if \(!isAuthResolved\) \{[\s\S]*?attempt\.controller\.abort\(\);[\s\S]*?schoolInviteClaimAttempt\.current = null/);
+  assert.match(inviteClaimEffect, /setClaimState\(existingAttempt\.state\)/);
+  assert.match(inviteClaimEffect, /schoolInviteClaimAttempt\.current = attempt/);
+  assert.match(inviteClaimEffect, /if \(window\.location\.pathname !== '\/teams\/join'/);
   assert.match(inviteClaimEffect, /if \(!response\) \{[\s\S]*?setClaimState\('failed'\)/);
-  assert.match(inviteClaimEffect, /setClaimedSchoolAdminForUid\(firebaseUser\.uid\);[\s\S]*?setClaimState\('settled'\)/);
+  assert.match(inviteClaimEffect, /attempt\.state = 'settled';[\s\S]*?setClaimState\('settled'\)/);
+  assert.doesNotMatch(inviteClaimEffect, /claimedSchoolAdminForUid/);
   assert.match(inviteClaimEffect, /getPathname: \(\) => window\.location\.pathname/);
-  assert.match(inviteClaimEffect, /isCancelled: \(\) => cancelled/);
+  assert.match(inviteClaimEffect, /isCancelled: \(\) => attempt\.cancelled/);
   assert.match(inviteClaimEffect, /signal: controller\.signal/);
-  assert.match(inviteClaimEffect, /return \(\) => \{ cancelled = true; controller\.abort\(\); \};/);
+  assert.match(inviteClaimEffect, /return \(\) => \{[\s\S]*?window\.location\.pathname !== '\/teams\/join'[\s\S]*?attempt\.cancelled = true;[\s\S]*?controller\.abort\(\)/);
 });
 
 test('account-setup routes do not start global plans or player listeners', async () => {

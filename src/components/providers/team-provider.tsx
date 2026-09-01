@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
 import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
@@ -18,6 +18,13 @@ import {
 import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
 
 const SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE = 'data-school-invite-claim-state';
+type SchoolInviteClaimAttempt = {
+  uid: string;
+  auth: object;
+  state: 'pending' | 'settled' | 'failed';
+  controller: AbortController;
+  cancelled: boolean;
+};
 
 /**
  * Dispatch push + email notifications to all team members.
@@ -1104,7 +1111,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [claimedSchoolAdminForUid, setClaimedSchoolAdminForUid] = useState<string | null>(null);
+  const schoolInviteClaimAttempt = useRef<SchoolInviteClaimAttempt | null>(null);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -1126,31 +1133,61 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       document.documentElement.setAttribute(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE, state);
     };
     if (!canClaimSchoolAdminInvites) {
+      const attempt = schoolInviteClaimAttempt.current;
+      if (attempt) {
+        attempt.cancelled = true;
+        attempt.controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
       document.documentElement.removeAttribute(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE);
       return;
     }
     if (!isAuthResolved) {
+      const attempt = schoolInviteClaimAttempt.current;
+      if (attempt) {
+        attempt.cancelled = true;
+        attempt.controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
       setClaimState('pending');
       return;
     }
     if (!firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) {
+      const attempt = schoolInviteClaimAttempt.current;
+      if (attempt) {
+        attempt.cancelled = true;
+        attempt.controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
       setClaimState('failed');
       return;
     }
-    if (claimedSchoolAdminForUid === firebaseUser.uid) {
-      setClaimState('settled');
+    const existingAttempt = schoolInviteClaimAttempt.current;
+    if (existingAttempt?.uid === firebaseUser.uid && existingAttempt.auth === firebaseAuth) {
+      setClaimState(existingAttempt.state);
       return;
     }
+    if (existingAttempt) {
+      existingAttempt.cancelled = true;
+      existingAttempt.controller.abort();
+    }
 
-    let cancelled = false;
     const controller = new AbortController();
+    const attempt: SchoolInviteClaimAttempt = {
+      uid: firebaseUser.uid,
+      auth: firebaseAuth,
+      state: 'pending',
+      controller,
+      cancelled: false,
+    };
+    schoolInviteClaimAttempt.current = attempt;
     setClaimState('pending');
     const claimPendingSchoolInvites = async () => {
       try {
         const response = await requestPendingSchoolInviteClaim({
           getToken: () => getAuthToken(firebaseAuth),
           getPathname: () => window.location.pathname,
-          isCancelled: () => cancelled,
+          isCancelled: () => attempt.cancelled,
           signal: controller.signal,
           request: (token, signal) => fetch('/api/schools/admins', {
             method: 'PATCH',
@@ -1159,26 +1196,36 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           }),
         });
         if (!response) {
-          if (!cancelled) setClaimState('failed');
+          if (!attempt.cancelled && schoolInviteClaimAttempt.current === attempt) {
+            attempt.state = 'failed';
+            setClaimState('failed');
+          }
           return;
         }
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload.error || 'Unable to claim School Hub invitations.');
         }
-        if (!cancelled) {
-          setClaimedSchoolAdminForUid(firebaseUser.uid);
+        if (!attempt.cancelled && schoolInviteClaimAttempt.current === attempt) {
+          attempt.state = 'settled';
           setClaimState('settled');
         }
       } catch (error) {
-        if (cancelled) return;
+        if (attempt.cancelled || schoolInviteClaimAttempt.current !== attempt) return;
+        attempt.state = 'failed';
         setClaimState('failed');
         console.error('[TeamProvider] School Hub invitation claim failed:', error);
       }
     };
     claimPendingSchoolInvites();
-    return () => { cancelled = true; controller.abort(); };
-  }, [canClaimSchoolAdminInvites, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.emailVerified, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
+    return () => {
+      if (window.location.pathname !== '/teams/join' && schoolInviteClaimAttempt.current === attempt) {
+        attempt.cancelled = true;
+        controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
+    };
+  }, [canClaimSchoolAdminInvites, firebaseAuth, firebaseUser?.emailVerified, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
