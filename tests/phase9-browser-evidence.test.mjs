@@ -88,13 +88,23 @@ const NO_TEAM_POLICY_DIAGNOSTICS = Object.freeze([
   ['window-no-team-request', 'league'],
   ['window-no-team-request', 'other'],
   ['window-no-team-request', 'foreign'],
-  ['window-no-team-request', 'unscoped'],
+  ['window-no-team-request', 'unscoped-firestore-document'],
+  ['window-no-team-request', 'unscoped-firestore-run-query'],
+  ['window-no-team-request', 'unscoped-firestore-listen'],
+  ['window-no-team-request', 'unscoped-firestore-protected'],
+  ['window-no-team-request', 'unscoped-staging-join-admin-api'],
+  ['window-no-team-request', 'unscoped-staging-protected-api'],
   ['window-no-team-listener', 'team-a'],
   ['window-no-team-listener', 'team-b'],
   ['window-no-team-listener', 'league'],
   ['window-no-team-listener', 'other'],
   ['window-no-team-listener', 'foreign'],
-  ['window-no-team-listener', 'unscoped'],
+  ['window-no-team-listener', 'unscoped-firestore-document'],
+  ['window-no-team-listener', 'unscoped-firestore-run-query'],
+  ['window-no-team-listener', 'unscoped-firestore-listen'],
+  ['window-no-team-listener', 'unscoped-firestore-protected'],
+  ['window-no-team-listener', 'unscoped-staging-join-admin-api'],
+  ['window-no-team-listener', 'unscoped-staging-protected-api'],
 ]);
 const darwinRuntimeTests = [];
 const darwinRuntimeTest = (name, options, implementation) => {
@@ -3589,7 +3599,51 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
   await assert.rejects(run(unscoped, requestDiagnostics), /No Team.*typed resource scope/i);
   assert.deepEqual(requestDiagnostics.at(-1), [
     'window-no-team-request',
-    'unscoped',
+    'unscoped-firestore-listen',
+  ]);
+
+  const joinAdminUnscoped = Array.from({ length: 7 }, landing);
+  joinAdminUnscoped[1] = {
+    ...landing(),
+    protectedRequests: 1,
+    protectedRequestSignals: [{
+      targetKind: 'staging-join-admin-api',
+      method: 'PATCH',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}/admin`,
+      scopeEvidence: ['unscoped-resource'],
+      resourceScopes: ['unscoped'],
+    }],
+    protectedListenerStarts: 0,
+    listenerSignals: [],
+  };
+  const joinAdminDiagnostics = [];
+  await assert.rejects(run(joinAdminUnscoped, joinAdminDiagnostics), /No Team.*typed resource scope/i);
+  assert.deepEqual(joinAdminDiagnostics.at(-1), [
+    'window-no-team-request',
+    'unscoped-staging-join-admin-api',
+  ]);
+
+  const protectedFirestoreUnscoped = Array.from({ length: 7 }, landing);
+  protectedFirestoreUnscoped[1] = {
+    ...landing(),
+    protectedRequests: 1,
+    protectedRequestSignals: [{
+      targetKind: 'firestore-protected',
+      method: 'GET',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}/admin`,
+      scopeEvidence: ['unscoped-resource'],
+      resourceScopes: ['unscoped'],
+    }],
+    protectedListenerStarts: 0,
+    listenerSignals: [],
+  };
+  const protectedFirestoreDiagnostics = [];
+  await assert.rejects(run(protectedFirestoreUnscoped, protectedFirestoreDiagnostics), /No Team.*typed resource scope/i);
+  assert.deepEqual(protectedFirestoreDiagnostics.at(-1), [
+    'window-no-team-request',
+    'unscoped-firestore-protected',
   ]);
 
   const tenantListener = Array.from({ length: 7 }, landing);

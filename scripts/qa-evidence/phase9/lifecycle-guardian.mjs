@@ -133,8 +133,18 @@ const ROUTE_DIAGNOSTIC_REASONS = new Set([
 const NO_TEAM_DIAGNOSTIC_REASONS = Object.freeze({
   'window-no-team-render': new Set(['protected-render']),
   'window-no-team-selection': new Set(['team-a', 'team-b', 'other']),
-  'window-no-team-request': new Set(['team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped']),
-  'window-no-team-listener': new Set(['team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped']),
+  'window-no-team-request': new Set([
+    'team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped-firestore-document',
+    'unscoped-firestore-run-query', 'unscoped-firestore-listen', 'unscoped-firestore-protected',
+    'unscoped-staging-join-admin-api',
+    'unscoped-staging-protected-api',
+  ]),
+  'window-no-team-listener': new Set([
+    'team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped-firestore-document',
+    'unscoped-firestore-run-query', 'unscoped-firestore-listen', 'unscoped-firestore-protected',
+    'unscoped-staging-join-admin-api',
+    'unscoped-staging-protected-api',
+  ]),
 });
 const isNoTeamDiagnostic = (checkpoint, reason) => (
   Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, checkpoint)

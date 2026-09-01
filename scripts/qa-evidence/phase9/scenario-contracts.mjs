@@ -767,9 +767,10 @@ const validateNoTeamResourceIsolationSnapshot = (value, diagnostic = () => {}) =
     for (const [index, value] of closedSignals.entries()) {
       const signal = requireClosedResourceSignal(value, `No Team ${name} ${index}`);
       for (const scope of signal.resourceScopes) {
-        if (!scope.startsWith('tenant-') && scope !== 'foreign-account' && scope !== 'unscoped') continue;
-        diagnostic(checkpoint, scope === 'foreign-account' ? 'foreign'
-          : scope === 'unscoped' ? scope : scope.slice(7));
+        // Closed resource-scope enums make f=foreign-account and u=unscoped unique.
+        if (!scope.startsWith('tenant') && scope[0] !== 'f' && scope[0] !== 'u') continue;
+        diagnostic(checkpoint, scope[0] === 'f' ? 'foreign'
+          : scope[0] === 'u' ? 'unscoped-' + signal.targetKind : scope.slice(7));
         if (scope === 'tenant-team-a') {
           throw new Error('No Team evidence contains Team A tenant resource activity.');
         }
