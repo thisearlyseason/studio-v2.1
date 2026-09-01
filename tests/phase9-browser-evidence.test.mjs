@@ -5407,6 +5407,132 @@ test('phase 9 stable terminal sample classification is closed and ordered', () =
   }), 'observer-mismatch');
 });
 
+test('phase 9 teams join terminal requires one settled invitation claim request', () => {
+  const base = {
+    locationMatches: true,
+    sentinelVisible: true,
+    direct: true,
+    restricted: false,
+    loading: false,
+    runtime: false,
+    joinAdminRequired: true,
+  };
+  for (const sample of [
+    { ...base, joinAdminRequestState: 0 },
+    { ...base, joinAdminRequestState: 1 },
+    { ...base, joinAdminRequestState: 3 },
+  ]) {
+    assert.equal(classifyStableTerminalSample(sample), 'claim-unsettled');
+  }
+  assert.equal(classifyStableTerminalSample({ ...base, joinAdminRequestState: 2 }), 'reached');
+  assert.equal(classifyStableTerminalSample({
+    ...base, joinAdminRequired: false, joinAdminRequestState: 0,
+  }), 'reached');
+});
+
+darwinRuntimeTest('phase 9 teams join terminal waits for the exact invitation claim response', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const checkpoints = [];
+  const client = createPlaywrightCliClient({
+    timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+    onDiagnosticCheckpoint: (...checkpoint) => checkpoints.push(checkpoint),
+  });
+  try {
+    await installSignalRecorder(client, 'phase9-join-admin-settlement');
+    const samples = await client.runCode('phase9-join-admin-settlement', `async (page) => {
+      page.__phase9JoinResponseStates = [];
+      page.__phase9JoinStatus = 200;
+      page.on('response', response => {
+        if (response.url() === ${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)}) {
+          page.__phase9JoinResponseStates.push(page.__phase9EvidenceRecorder?.joinAdminRequestState);
+        }
+      });
+      await page.route(${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)}, async route => {
+        await page.waitForTimeout(700);
+        await route.fulfill({
+          status: page.__phase9JoinStatus,
+          contentType: 'application/json',
+          headers: { 'access-control-allow-origin': '*' },
+          body: '{"ok":true}',
+        });
+      });
+      await page.route(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)}, route => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<h1>Join & Invite</h1><script>fetch("/api/schools/admins", { method: "PATCH" }).catch(() => {});</script>',
+      }));
+      const sample = () => ({
+        locationMatches: page.url() === ${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)},
+        sentinelVisible: true,
+        direct: true,
+        restricted: false,
+        loading: false,
+        runtime: false,
+        joinAdminRequired: true,
+        joinAdminRequestState: page.__phase9EvidenceRecorder?.joinAdminRequestState,
+      });
+      await page.goto(${JSON.stringify(`${STAGING_ORIGIN}/teams/join`)});
+      await page.waitForTimeout(350);
+      const pending = sample();
+      await page.waitForTimeout(700);
+      return {
+        pending,
+        settled: sample(),
+        failures: page.__phase9EvidenceRecorder?.requestFailureSignals?.length,
+        responseStates: page.__phase9JoinResponseStates,
+      };
+    }`);
+    assert.equal(classifyStableTerminalSample(samples.pending), 'claim-unsettled');
+    assert.equal(classifyStableTerminalSample(samples.settled), 'reached');
+    assert.equal(samples.failures, 0);
+    assert.deepEqual(samples.responseStates, [1]);
+    let followup;
+    try {
+      followup = await observeAction({
+        client,
+        session: 'phase9-join-admin-settlement',
+        stage: 'admission-route:/admin',
+        action: () => client.goto('phase9-join-admin-settlement', `${STAGING_ORIGIN}/teams/join`),
+        terminal: () => waitForStableExactLocation(
+          client, 'phase9-join-admin-settlement', '/teams/join', 'Join & Invite',
+        ),
+      });
+    } catch (error) {
+      const state = await client.runCode(
+        'phase9-join-admin-settlement',
+        'async (page) => page.__phase9EvidenceRecorder?.joinAdminRequestState',
+      );
+      throw new Error(`followup failed at ${JSON.stringify(checkpoints)} with state ${state}: ${error.message}`);
+    }
+    assert.equal(followup.unexpectedRequestFailures, 0);
+    assert.equal(await client.runCode(
+      'phase9-join-admin-settlement',
+      'async (page) => page.__phase9EvidenceRecorder?.joinAdminRequestState',
+    ), 2);
+    assert.deepEqual(await client.runCode(
+      'phase9-join-admin-settlement',
+      'async (page) => page.__phase9JoinResponseStates',
+    ), [1, 1]);
+    await client.runCode(
+      'phase9-join-admin-settlement',
+      'async (page) => { page.__phase9JoinStatus = 500; return true; }',
+    );
+    const failed = await client.captureSignalWindow({
+      session: 'phase9-join-admin-settlement',
+      action: () => client.goto('phase9-join-admin-settlement', `${STAGING_ORIGIN}/teams/join`),
+      terminal: () => client.runCode(
+        'phase9-join-admin-settlement', 'async (page) => { await page.waitForTimeout(1000); return true; }',
+      ),
+    });
+    assert.equal(failed.relevantHttpResults.some(result => result.status === 500), true);
+    assert.equal(await client.runCode(
+      'phase9-join-admin-settlement',
+      'async (page) => page.__phase9EvidenceRecorder?.joinAdminRequestState',
+    ), 3);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+});
+
 test('phase 9 browser scenarios logout row includes a fifth fresh isolated unauthenticated action', async () => {
   const login = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
@@ -10997,19 +11123,32 @@ test('phase 9 child runner build transform preserves messages read by control fl
     export const retainsControlFlow = () => {
       try { throw new Error(${JSON.stringify(controlMessage)}); }
       catch (error) {
-        if (error?.message === ${JSON.stringify(controlMessage)}) return true;
+        if (error?.message === \`${controlMessage}\`) return true;
         throw error;
       }
     };
     export const discardedDebugMessage = () => new Error('generated-only private debug').message;
+    let templateEffects = 0;
+    export const discardedTemplateMessage = () => new Error(\`generated-only \${++templateEffects}\`).message;
+    export const templateEffectCount = () => templateEffects;
   `);
   const transformed = minimizeGeneratedErrorMessages(source);
   assert.equal(Buffer.isBuffer(transformed), true);
   assert.equal(transformed.includes(Buffer.from(controlMessage)), true);
   assert.equal(transformed.includes(Buffer.from('generated-only private debug')), false);
+  assert.equal(transformed.includes(Buffer.from('generated-only ${')), false);
   const transformedModule = await import(`data:text/javascript;base64,${transformed.toString('base64')}`);
   assert.equal(transformedModule.retainsControlFlow(), true);
   assert.equal(transformedModule.discardedDebugMessage(), '');
+  assert.equal(transformedModule.discardedTemplateMessage(), '');
+  assert.equal(transformedModule.templateEffectCount(), 1);
+  assert.throws(() => minimizeGeneratedErrorMessages(Buffer.from(`
+    export const nested = value => new Error(\`outer-private \${new Error(\`inner-private \${value}\`)}                \`);
+    export const requiredInventory = () => {
+      try { throw new Error(${JSON.stringify(controlMessage)}); }
+      catch (error) { return error.message === \`${controlMessage}\`; }
+    };
+  `)), /must not overlap/);
   assert.throws(() => minimizeGeneratedErrorMessages(Buffer.from(`
     try { throw new Error('unlisted control message'); }
     catch (error) { if (error.message === 'unlisted control message') throw error; }
@@ -12714,7 +12853,7 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
-  assert.equal(darwinRuntimeTests.length, 76);
+  assert.equal(darwinRuntimeTests.length, 77);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

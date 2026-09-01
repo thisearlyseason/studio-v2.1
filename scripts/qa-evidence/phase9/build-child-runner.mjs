@@ -22,6 +22,14 @@ const messageMember = value => {
     && node.property.name === 'message';
 };
 
+const staticString = node => {
+  if (node?.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node?.type === 'TemplateLiteral' && node.expressions.length === 0) {
+    return node.quasis[0]?.value?.cooked;
+  }
+  return undefined;
+};
+
 export function minimizeGeneratedErrorMessages(bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > 262_144) {
     throw new Error('Child runner build input is invalid.');
@@ -43,20 +51,32 @@ export function minimizeGeneratedErrorMessages(bytes) {
       && node.callee?.type === 'Identifier'
       && node.callee.name === 'Error'
       && node.arguments?.length === 1
-      && node.arguments[0]?.type === 'Literal'
-      && typeof node.arguments[0].value === 'string') {
+      && (node.arguments[0]?.type === 'TemplateLiteral'
+        || (node.arguments[0]?.type === 'Literal' && typeof node.arguments[0].value === 'string'))) {
       literalErrorCount += 1;
       const argument = node.arguments[0];
-      if (constructed.has(argument.value)) {
-        constructed.set(argument.value, constructed.get(argument.value) + 1);
-      } else edits.push(Object.freeze({ start: argument.start, end: argument.end }));
+      const fixedMessage = staticString(argument);
+      if (fixedMessage !== undefined && constructed.has(fixedMessage)) {
+        constructed.set(fixedMessage, constructed.get(fixedMessage) + 1);
+      } else if (argument.type === 'TemplateLiteral' && argument.expressions.length > 0) {
+        const effects = argument.expressions.map(expression => (
+          `\`\${${text.slice(expression.start, expression.end)}}\``
+        ));
+        edits.push(Object.freeze({
+          start: argument.start,
+          end: argument.end,
+          replacement: `(${effects.join(',')},"")`,
+        }));
+      } else edits.push(Object.freeze({ start: argument.start, end: argument.end, replacement: '' }));
     }
     if (node.type === 'BinaryExpression'
       && new Set(['===', '!==', '==', '!=']).has(node.operator)) {
-      const pair = node.left?.type === 'Literal' && typeof node.left.value === 'string'
-        ? [node.right, node.left.value]
-        : node.right?.type === 'Literal' && typeof node.right.value === 'string'
-          ? [node.left, node.right.value]
+      const leftString = staticString(node.left);
+      const rightString = staticString(node.right);
+      const pair = leftString !== undefined
+        ? [node.right, leftString]
+        : rightString !== undefined
+          ? [node.left, rightString]
           : null;
       if (pair && messageMember(pair[0])) {
         if (!compared.has(pair[1])) {
@@ -76,15 +96,40 @@ export function minimizeGeneratedErrorMessages(bytes) {
     || controlFlowErrorMessages.some(message => (
       constructed.get(message) !== 1 || compared.get(message) !== 1
     ))) throw new Error('Child runner control-flow error message inventory is invalid.');
+  const orderedEdits = edits.slice().sort((left, right) => left.start - right.start);
+  if (orderedEdits.some((edit, index) => index > 0 && orderedEdits[index - 1].end > edit.start)) {
+    throw new Error('Child runner error message edits must not overlap.');
+  }
   let minimized = text;
   for (const edit of edits.sort((left, right) => right.start - left.start)) {
-    minimized = `${minimized.slice(0, edit.start)}${minimized.slice(edit.end)}`;
+    minimized = `${minimized.slice(0, edit.start)}${edit.replacement}${minimized.slice(edit.end)}`;
   }
+  let minimizedTree;
   try {
-    parse(minimized, { ecmaVersion: 'latest', sourceType: 'module' });
+    minimizedTree = parse(minimized, { ecmaVersion: 'latest', sourceType: 'module' });
   } catch {
     throw new Error('Child runner minimized output is not valid JavaScript.');
   }
+  const audit = node => {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'NewExpression'
+      && node.callee?.type === 'Identifier'
+      && node.callee.name === 'Error'
+      && node.arguments?.length === 1) {
+      const argument = node.arguments[0];
+      const fixedMessage = staticString(argument);
+      if ((fixedMessage !== undefined && !controlFlowErrorMessages.includes(fixedMessage))
+        || (argument.type === 'TemplateLiteral' && argument.expressions.length > 0)) {
+        throw new Error('Child runner minimized output retained an unapproved error message.');
+      }
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (new Set(['start', 'end', 'loc', 'range']).has(key)) continue;
+      if (Array.isArray(child)) child.forEach(audit);
+      else audit(child);
+    }
+  };
+  audit(minimizedTree);
   return Buffer.from(minimized, 'utf8');
 }
 

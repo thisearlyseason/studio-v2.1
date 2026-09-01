@@ -1330,10 +1330,18 @@ const installRecorderSource = () => String.raw`async (page) => {
       pageErrors: [],
       appConsoleErrors: [],
       requestFailureSignals: [],
+      joinAdminRequestState: 0,
       overflow: 0,
     };
     page.__phase9EvidenceRecorder = state;
     const requestMetadata = new WeakMap();
+    const settleJoinAdminRequest = (request, succeeded) => {
+      const metadata = requestMetadata.get(request);
+      if (!metadata?.isJoinAdminRequest || metadata.joinAdminSettled) return metadata;
+      metadata.joinAdminSettled = true;
+      state.joinAdminRequestState = state.joinAdminRequestState === 1 && succeeded === true ? 2 : 3;
+      return metadata;
+    };
     page.on('framenavigated', frame => {
       if (frame === page.mainFrame()) state.navigationGeneration += 1;
     });
@@ -1369,6 +1377,9 @@ const installRecorderSource = () => String.raw`async (page) => {
       try { method = request.method(); } catch {}
       try { resourceType = request.resourceType(); } catch {}
       if (isNavigationRequest && isMainFrame) state.hardNavigationGeneration += 1;
+      const isJoinAdminRequest = url === ${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)}
+        && method === 'PATCH' && resourceType === 'fetch'
+        && isNavigationRequest === false && isMainFrame === true;
       requestMetadata.set(request, {
         navigationGeneration: state.navigationGeneration,
         hardNavigationGeneration: state.hardNavigationGeneration,
@@ -1378,21 +1389,30 @@ const installRecorderSource = () => String.raw`async (page) => {
         url,
         method,
         resourceType,
+        isJoinAdminRequest,
+        joinAdminSettled: false,
       });
+      if (isJoinAdminRequest) state.joinAdminRequestState = state.joinAdminRequestState === 0 ? 1 : 3;
       boundedPush(state, 'rawRequests', captureRequest(request));
     });
     page.on('response', response => {
+      const metadata = requestMetadata.get(response.request());
+      if (metadata?.isJoinAdminRequest) metadata.joinAdminResponseAccepted = response.status() >= 200 && response.status() < 300;
       boundedPush(state, 'rawResponses', {
         ...captureRequest(response.request()),
         status: response.status(),
       });
+    });
+    page.on('requestfinished', request => {
+      const metadata = requestMetadata.get(request);
+      settleJoinAdminRequest(request, metadata?.joinAdminResponseAccepted === true);
     });
     page.on('pageerror', () => boundedPush(state, 'pageErrors', 'PAGE_ERROR'));
     page.on('console', message => {
       if (message.type() === 'error') boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR');
     });
     page.on('requestfailed', request => {
-      const metadata = requestMetadata.get(request);
+      const metadata = settleJoinAdminRequest(request, false) ?? requestMetadata.get(request);
       const input = {
         startGeneration: metadata?.navigationGeneration,
         currentGeneration: state.navigationGeneration,
@@ -1433,6 +1453,10 @@ const MARK_SOURCE = String.raw`async (page) => {
   const state = page.__phase9EvidenceRecorder;
   if (!state) throw new Error('SIGNAL_RECORDER_NOT_ARMED');
   state.sequence += 1;
+  if (state.joinAdminRequestState === 1 || state.joinAdminRequestState === 3) {
+    throw new Error('SIGNAL_WINDOW_PENDING_JOIN_ADMIN_REQUEST');
+  }
+  if (state.joinAdminRequestState === 2) state.joinAdminRequestState = 0;
   state.rawRequests = [];
   state.rawSelections = [];
   state.renders = [];
@@ -2379,7 +2403,8 @@ export function classifyStableTerminalSample(sample) {
   if (sample.loading === true) return 'loading-stalled';
   if (sample.runtime === true) return 'runtime-error';
   if (sample.sentinelVisible === false) return 'heading-missing';
-  return 'not-reached';
+  if (sample.joinAdminRequired === true && sample.joinAdminRequestState !== 2) return 'claim-unsettled';
+  return 'reached';
 }
 
 export async function waitForStableExactLocation(client, session, path, sentinel) {
@@ -2419,14 +2444,20 @@ export async function waitForStableExactLocation(client, session, path, sentinel
             loading: exactVisible('p', 'Synchronizing Secure Hub...'),
           };
         }, expected);
-        sample = { ...dom, runtime: (page.__phase9EvidenceRecorder?.pageErrors?.length || 0) > 0 || (page.__phase9EvidenceRecorder?.appConsoleErrors?.length || 0) > 0 };
+        const recorder = page.__phase9EvidenceRecorder;
+        sample = {
+          ...dom,
+          runtime: (recorder?.pageErrors?.length || 0) > 0 || (recorder?.appConsoleErrors?.length || 0) > 0,
+          joinAdminRequired: expected.expectedPath === '/teams/join',
+          joinAdminRequestState: recorder?.joinAdminRequestState,
+        };
         lastSample = sample;
       } catch (error) {
         const message = String(error?.message || error);
         if (!/Execution context was destroyed|Cannot find context|frame was detached/i.test(message)) throw error;
       }
       const now = Date.now();
-      if (sample?.locationMatches && sample?.sentinelVisible) {
+      if (classifyStableTerminalSample(sample) === 'reached') {
         stableSince ??= now;
         if (now - stableSince >= 300) return true;
       } else {
