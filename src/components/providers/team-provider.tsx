@@ -11,6 +11,7 @@ import { activeTeamMembershipProjections } from '@/lib/team-membership-security'
 import {
   canStartGlobalPlanCatalogState,
   canStartProtectedAccountState,
+  canStartSquadMembershipState,
 } from '@/lib/client-account-admission';
 import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
 
@@ -1092,6 +1093,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const canReadProtectedAccountState = canStartProtectedAccountState(pathname);
   const canReadGlobalPlanCatalog = canStartGlobalPlanCatalogState(pathname);
+  const canReadSquadMembershipState = canStartSquadMembershipState(pathname);
   
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -1237,7 +1239,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [canReadProtectedAccountState, firebaseUser, db, userRole]);
 
-  const teamsQuery = useMemoFirebase(() => (canReadProtectedAccountState && isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [canReadProtectedAccountState, isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
+  const teamsQuery = useMemoFirebase(() => (canReadSquadMembershipState && isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [canReadSquadMembershipState, isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
   // ── Shared deterministic invite-code fallback ─────────────────────────

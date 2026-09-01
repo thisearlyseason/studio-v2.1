@@ -14,6 +14,7 @@ import {
 import {
   canStartGlobalPlanCatalogState,
   canStartProtectedAccountState,
+  canStartSquadMembershipState,
 } from '../src/lib/client-account-admission.ts';
 
 function firestoreDouble({ profile = null, memberRows = [], ownedTeams = [] } = {}) {
@@ -728,5 +729,14 @@ test('global plan catalog waits until navigation leaves squad admission', () => 
   }
   for (const pathname of ['/dashboard', '/family', '/competition']) {
     assert.equal(canStartGlobalPlanCatalogState(pathname), true, pathname);
+  }
+});
+
+test('squad membership listeners wait until navigation leaves squad admission', () => {
+  for (const pathname of ['/login', '/signup', '/verify-email', '/onboarding', '/teams/join']) {
+    assert.equal(canStartSquadMembershipState(pathname), false, pathname);
+  }
+  for (const pathname of ['/dashboard', '/family', '/competition']) {
+    assert.equal(canStartSquadMembershipState(pathname), true, pathname);
   }
 });

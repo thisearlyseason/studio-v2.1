@@ -84,6 +84,11 @@ test('account-setup routes do not start global plans or player listeners', async
   );
   assert.match(
     provider,
+    /teamsQuery[\s\S]*canReadSquadMembershipState[\s\S]*collection\(db, 'users', firebaseUser\.uid, 'teamMemberships'\)/,
+    'the collection-wide squad-membership listener must remain behind the squad-admission boundary',
+  );
+  assert.match(
+    provider,
     /childrenQuery[\s\S]*canReadProtectedAccountState[\s\S]*collection\(db, 'players'\)/,
     'the signed-in player query must remain behind the account-admission boundary',
   );

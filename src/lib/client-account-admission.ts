@@ -12,3 +12,7 @@ export function canStartProtectedAccountState(pathname: string): boolean {
 export function canStartGlobalPlanCatalogState(pathname: string): boolean {
   return canStartProtectedAccountState(pathname) && pathname !== '/teams/join';
 }
+
+export function canStartSquadMembershipState(pathname: string): boolean {
+  return canStartProtectedAccountState(pathname) && pathname !== '/teams/join';
+}
