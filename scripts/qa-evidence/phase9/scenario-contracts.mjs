@@ -741,46 +741,56 @@ export function validateResourceSignal(value, name = 'Resource signal') {
   return result;
 }
 
-const validateNoTeamResourceIsolationSnapshot = value => {
+const validateNoTeamResourceIsolationSnapshot = (value, diagnostic = () => {}) => {
   const window = requireRecord(value, 'No Team action window');
-  if (window.protectedRender === true) throw new Error('No Team action window contains a protected render.');
+  if (window.protectedRender === true) {
+    diagnostic('window-no-team-render', 'protected-render');
+    throw new Error('No Team action window contains a protected render.');
+  }
   const teamSelectionSignals = requireClosedArray(window.teamSelectionSignals, 'No Team team-selection signals');
   if (teamSelectionSignals.some(scope => (
     !['tenant-team-a', 'tenant-team-b', 'tenant-other'].includes(scope)
   ))) throw new Error('No Team evidence requires complete typed team-selection scopes.');
-  if (teamSelectionSignals.includes('tenant-team-a')) throw new Error('No Team selected Team A.');
-  if (teamSelectionSignals.includes('tenant-team-b')) throw new Error('No Team selected Team B.');
-  if (teamSelectionSignals.includes('tenant-other')) throw new Error('No Team selected another tenant.');
+  for (const scope of teamSelectionSignals) {
+    diagnostic('window-no-team-selection', scope.slice(7));
+    if (scope === 'tenant-team-a') throw new Error('No Team selected Team A.');
+    if (scope === 'tenant-team-b') throw new Error('No Team selected Team B.');
+    throw new Error('No Team selected another tenant.');
+  }
   const validateSignals = (signals, count, name) => {
     requireCount(count, `No Team ${name} count`);
     const closedSignals = requireClosedArray(signals, `No Team ${name} signals`);
     if (closedSignals.length !== count) {
       throw new Error(`No Team evidence requires complete ${name} signals.`);
     }
+    const checkpoint = `window-no-team-${name}`;
     for (const [index, value] of closedSignals.entries()) {
       const signal = requireClosedResourceSignal(value, `No Team ${name} ${index}`);
-      if (signal.resourceScopes.includes('tenant-team-a')) {
-        throw new Error('No Team evidence contains Team A tenant resource activity.');
-      }
-      if (signal.resourceScopes.includes('tenant-team-b')) {
-        throw new Error('No Team evidence contains Team B tenant resource activity.');
-      }
-      if (signal.resourceScopes.includes('tenant-league')) {
-        throw new Error('No Team evidence contains league tenant resource activity.');
-      }
-      if (signal.resourceScopes.includes('tenant-other')) {
-        throw new Error('No Team evidence contains other tenant resource activity.');
-      }
-      if (signal.resourceScopes.includes('foreign-account')) {
-        throw new Error('No Team evidence contains foreign account resource activity.');
-      }
-      if (signal.resourceScopes.includes('unscoped')) {
+      for (const scope of signal.resourceScopes) {
+        if (!scope.startsWith('tenant-') && scope !== 'foreign-account' && scope !== 'unscoped') continue;
+        diagnostic(checkpoint, scope === 'foreign-account' ? 'foreign'
+          : scope === 'unscoped' ? scope : scope.slice(7));
+        if (scope === 'tenant-team-a') {
+          throw new Error('No Team evidence contains Team A tenant resource activity.');
+        }
+        if (scope === 'tenant-team-b') {
+          throw new Error('No Team evidence contains Team B tenant resource activity.');
+        }
+        if (scope === 'tenant-league') {
+          throw new Error('No Team evidence contains league tenant resource activity.');
+        }
+        if (scope === 'tenant-other') {
+          throw new Error('No Team evidence contains other tenant resource activity.');
+        }
+        if (scope === 'foreign-account') {
+          throw new Error('No Team evidence contains foreign account resource activity.');
+        }
         throw new Error('No Team evidence requires a typed resource scope.');
       }
     }
   };
-  validateSignals(window.protectedRequestSignals, window.protectedRequests, 'protected request');
-  validateSignals(window.listenerSignals, window.protectedListenerStarts, 'protected listener');
+  validateSignals(window.protectedRequestSignals, window.protectedRequests, 'request');
+  validateSignals(window.listenerSignals, window.protectedListenerStarts, 'listener');
   const result = { pass: true };
   assertNoFixtureIdentifierLeakSnapshot(result, 'Validated No Team resource isolation');
   return result;
@@ -1061,7 +1071,9 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
     unexpectedRequestFailureSignals: closedRequestFailureSignals,
     overflow: window.overflow,
   };
-  if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) validateNoTeamResourceIsolationSnapshot(closedWindow);
+  if (options.resourcePolicy === NO_TEAM_RESOURCE_POLICY) {
+    validateNoTeamResourceIsolationSnapshot(closedWindow, diagnostic);
+  }
 
   const result = {
     pageId: closedWindow.pageId,

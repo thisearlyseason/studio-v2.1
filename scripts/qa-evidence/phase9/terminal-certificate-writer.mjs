@@ -59,6 +59,16 @@ const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
 const ROUTE_DIAGNOSTIC_REASONS = new Set([
   '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
 ]);
+const NO_TEAM_DIAGNOSTIC_REASONS = Object.freeze({
+  'window-no-team-render': new Set(['protected-render']),
+  'window-no-team-selection': new Set(['team-a', 'team-b', 'other']),
+  'window-no-team-request': new Set(['team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped']),
+  'window-no-team-listener': new Set(['team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped']),
+});
+const isNoTeamDiagnostic = (checkpoint, reason) => (
+  Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, checkpoint)
+  && NO_TEAM_DIAGNOSTIC_REASONS[checkpoint].has(reason)
+);
 const DIAGNOSTIC_STAGES = Object.freeze({
   'runner-initialization': 'authorization', 'context-start': 'authorization',
   'ownership-authorization': 'authorization', 'browser-acquisition': 'acquisition',
@@ -79,6 +89,10 @@ const DIAGNOSTIC_STAGES = Object.freeze({
   'window-request-failure': 'scenario-action', 'window-overflow': 'scenario-action',
   'window-render-coherence': 'scenario-action', 'window-resource': 'scenario-action',
   'window-policy': 'scenario-action',
+  'window-no-team-render': 'scenario-action',
+  'window-no-team-selection': 'scenario-action',
+  'window-no-team-request': 'scenario-action',
+  'window-no-team-listener': 'scenario-action',
   'landing-heading': 'scenario-action', 'landing-session': 'scenario-action',
   'landing-render-history': 'scenario-action', 'route-expectation': 'scenario-action',
   'route-session': 'scenario-action', 'route-location': 'scenario-action',
@@ -336,11 +350,17 @@ function validateCertificate(input, {
       || !(Object.hasOwn(DIAGNOSTIC_REASONS, value.diagnostic.checkpoint)
         ? value.diagnostic.reason === DIAGNOSTIC_REASONS[value.diagnostic.checkpoint]
         : ROUTE_DIAGNOSTIC_CHECKPOINTS.has(value.diagnostic.checkpoint)
-          && ROUTE_DIAGNOSTIC_REASONS.has(value.diagnostic.reason))
+          ? ROUTE_DIAGNOSTIC_REASONS.has(value.diagnostic.reason)
+          : isNoTeamDiagnostic(value.diagnostic.checkpoint, value.diagnostic.reason))
       || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(value.diagnostic.checkpoint)
         && ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
           contexts[value.diagnostic.contextOrdinal]?.contextId === value.diagnostic.contextId
           && contexts[value.diagnostic.contextOrdinal]?.group === 'admission-route'
+        )))
+      || (Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, value.diagnostic.checkpoint)
+        && ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
+          contexts[value.diagnostic.contextOrdinal]?.contextId === value.diagnostic.contextId
+          && contexts[value.diagnostic.contextOrdinal]?.alias === 'qa-no-team'
         )))
       || value.primaryStage !== DIAGNOSTIC_STAGES[value.diagnostic.checkpoint]) {
       throw new Error('Terminal certificate diagnostic is invalid.');

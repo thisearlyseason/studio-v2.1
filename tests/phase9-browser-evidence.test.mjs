@@ -78,6 +78,24 @@ const LOCAL_REAL_CHROME_EXTENDED_TEST_TIMEOUT_MS = 1_800_000;
 const LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS = 90_000;
 const DARWIN_RUNTIME_SKIP_REASON = 'Darwin-only: executes or compares the exact pinned macOS Node, Python, Chrome, Playwright, evidence-helper, or process-inspector runtime.';
 const PHASE9_TEST_PLATFORM = process.env.PHASE9_TEST_PLATFORM ?? process.platform;
+const NO_TEAM_POLICY_DIAGNOSTICS = Object.freeze([
+  ['window-no-team-render', 'protected-render'],
+  ['window-no-team-selection', 'team-a'],
+  ['window-no-team-selection', 'team-b'],
+  ['window-no-team-selection', 'other'],
+  ['window-no-team-request', 'team-a'],
+  ['window-no-team-request', 'team-b'],
+  ['window-no-team-request', 'league'],
+  ['window-no-team-request', 'other'],
+  ['window-no-team-request', 'foreign'],
+  ['window-no-team-request', 'unscoped'],
+  ['window-no-team-listener', 'team-a'],
+  ['window-no-team-listener', 'team-b'],
+  ['window-no-team-listener', 'league'],
+  ['window-no-team-listener', 'other'],
+  ['window-no-team-listener', 'foreign'],
+  ['window-no-team-listener', 'unscoped'],
+]);
 const darwinRuntimeTests = [];
 const darwinRuntimeTest = (name, options, implementation) => {
   const normalizedOptions = typeof options === 'function' ? {} : options;
@@ -3470,7 +3488,7 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
       resourceScopes: ['self-account'],
     }],
   });
-  const run = windows => runAdmissionScenario({
+  const run = (windows, diagnostics = []) => runAdmissionScenario({
     client: createScriptedScenarioClient(windows),
     session: 'no-team-account-scope',
     context: scenarioContext({ contextId: 'no-team-account-scope', alias: 'qa-no-team' }),
@@ -3478,6 +3496,7 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
       loginAndLand: async () => {},
       navigate: async () => {},
       waitForExactLocation: async () => {},
+      diagnostic: (...entry) => diagnostics.push(entry),
     },
   });
 
@@ -3565,6 +3584,35 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
     listenerSignals: [],
   };
   await assert.rejects(run(unscoped), /No Team.*typed resource scope/i);
+
+  const requestDiagnostics = [];
+  await assert.rejects(run(unscoped, requestDiagnostics), /No Team.*typed resource scope/i);
+  assert.deepEqual(requestDiagnostics.at(-1), [
+    'window-no-team-request',
+    'unscoped',
+  ]);
+
+  const tenantListener = Array.from({ length: 7 }, landing);
+  tenantListener[3] = {
+    ...landing(),
+    protectedRequests: 0,
+    protectedRequestSignals: [],
+    protectedListenerStarts: 1,
+    listenerSignals: [{
+      targetKind: 'firestore-listen',
+      method: 'POST',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}/competition`,
+      scopeEvidence: ['fixture-team-b-query'],
+      resourceScopes: ['tenant-team-b'],
+    }],
+  };
+  const listenerDiagnostics = [];
+  await assert.rejects(run(tenantListener, listenerDiagnostics), /No Team.*Team B tenant/i);
+  assert.deepEqual(listenerDiagnostics.at(-1), [
+    'window-no-team-listener',
+    'team-b',
+  ]);
 });
 
 test('phase 9 playwright client reduces fixture resource targets to fixed aliases without retaining identifiers', async () => {
@@ -7459,6 +7507,7 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       ['window-render-coherence', 'render-coherence-invalid'],
       ['window-resource', 'resource-invalid'],
       ['window-policy', 'policy-invalid'],
+      ...NO_TEAM_POLICY_DIAGNOSTICS,
       ['landing-expectation', 'landing-mismatch'],
       ['landing-heading', 'heading-mismatch'],
       ['landing-session', 'session-missing'],
@@ -7498,15 +7547,29 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       const diagnosticAccepted = checkpoint === 'runner-initialization'
         ? { ...stageAccepted, currentContext: null }
         : stageAccepted;
+      const noTeamDiagnostic = Object.hasOwn(
+        Object.fromEntries(NO_TEAM_POLICY_DIAGNOSTICS), checkpoint,
+      );
+      const noTeamSession = 'p9-admission-route-qa-no-team-mobile';
+      const noTeamReceipt = { session: noTeamSession, daemonPid: 910003, chromeMainPid: 910004 };
+      const acceptedForDiagnostic = noTeamDiagnostic ? {
+        ...diagnosticAccepted,
+        currentContext: { contextOrdinal: 8, contextId: 'admission-route-qa-no-team-mobile' },
+        activeAnnouncedSessions: new Set([noTeamSession]),
+        activeAnnouncedReceipts: new Map([[noTeamSession, noTeamReceipt]]),
+      } : diagnosticAccepted;
       const terminal = validateRunnerFailureTerminal({
         version: 4, type: 'failure', phase: 'before-transition', sequence: 1,
         category, stage,
-        contextOrdinal: 0, contextId: 'admission-route-qa-parent-a-mobile',
+        contextOrdinal: noTeamDiagnostic ? 8 : 0,
+        contextId: noTeamDiagnostic
+          ? 'admission-route-qa-no-team-mobile'
+          : 'admission-route-qa-parent-a-mobile',
         checkpoint, reason,
-        pendingBrowserSession: stageAccepted.pendingOwnershipIntent?.session ?? null,
-        browserSessions: [...stageAccepted.activeAnnouncedSessions], attachedBrowserSessions: [],
-        launchReceipts: [...stageAccepted.activeAnnouncedReceipts.values()], releasedBrowserSessions: [],
-      }, diagnosticAccepted);
+        pendingBrowserSession: acceptedForDiagnostic.pendingOwnershipIntent?.session ?? null,
+        browserSessions: [...acceptedForDiagnostic.activeAnnouncedSessions], attachedBrowserSessions: [],
+        launchReceipts: [...acceptedForDiagnostic.activeAnnouncedReceipts.values()], releasedBrowserSessions: [],
+      }, acceptedForDiagnostic);
       assert.deepEqual({ ok: terminal.ok, category: terminal.category, stage: terminal.stage }, {
         ok: false, category, stage,
       }, checkpoint);
@@ -9572,15 +9635,29 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     ['window-render-coherence', 'render-coherence-invalid'],
     ['window-resource', 'resource-invalid'],
     ['window-policy', 'policy-invalid'],
+    ...NO_TEAM_POLICY_DIAGNOSTICS,
     ['route-session', '/admin'],
     ['route-location', '/club'],
     ['route-heading', '/competition'],
     ['route-render', '/dashboard/billing'],
     ['route-attribution', '/family'],
-  ]) assert.doesNotThrow(() => canonicalPhase9TerminalCertificate({
-    ...diagnosticCertificate,
-    diagnostic: { ...diagnosticCertificate.diagnostic, checkpoint, reason },
-  }));
+  ]) {
+    const noTeamDiagnostic = Object.hasOwn(
+      Object.fromEntries(NO_TEAM_POLICY_DIAGNOSTICS), checkpoint,
+    );
+    assert.doesNotThrow(() => canonicalPhase9TerminalCertificate({
+      ...diagnosticCertificate,
+      diagnostic: {
+        ...diagnosticCertificate.diagnostic,
+        contextOrdinal: noTeamDiagnostic ? 8 : diagnosticCertificate.diagnostic.contextOrdinal,
+        contextId: noTeamDiagnostic
+          ? 'admission-route-qa-no-team-mobile'
+          : diagnosticCertificate.diagnostic.contextId,
+        checkpoint,
+        reason,
+      },
+    }));
+  }
   for (const [name, diagnostic] of [
     ['ordinal', { ...diagnosticCertificate.diagnostic, contextOrdinal: 40 }],
     ['context', { ...diagnosticCertificate.diagnostic, contextId: 'raw-context' }],

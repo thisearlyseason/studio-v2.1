@@ -130,6 +130,16 @@ const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
 const ROUTE_DIAGNOSTIC_REASONS = new Set([
   '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
 ]);
+const NO_TEAM_DIAGNOSTIC_REASONS = Object.freeze({
+  'window-no-team-render': new Set(['protected-render']),
+  'window-no-team-selection': new Set(['team-a', 'team-b', 'other']),
+  'window-no-team-request': new Set(['team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped']),
+  'window-no-team-listener': new Set(['team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped']),
+});
+const isNoTeamDiagnostic = (checkpoint, reason) => (
+  Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, checkpoint)
+  && NO_TEAM_DIAGNOSTIC_REASONS[checkpoint].has(reason)
+);
 const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'runner-initialization': 'authorization',
   'context-start': 'authorization',
@@ -167,6 +177,10 @@ const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'window-render-coherence': 'scenario-action',
   'window-resource': 'scenario-action',
   'window-policy': 'scenario-action',
+  'window-no-team-render': 'scenario-action',
+  'window-no-team-selection': 'scenario-action',
+  'window-no-team-request': 'scenario-action',
+  'window-no-team-listener': 'scenario-action',
   'landing-expectation': 'scenario-action',
   'landing-heading': 'scenario-action',
   'landing-session': 'scenario-action',
@@ -1513,9 +1527,12 @@ export function validateRunnerFailureTerminal(message, accepted) {
     || !(Object.hasOwn(RUNNER_DIAGNOSTICS, message.checkpoint)
       ? message.reason === RUNNER_DIAGNOSTICS[message.checkpoint]
       : ROUTE_DIAGNOSTIC_CHECKPOINTS.has(message.checkpoint)
-        && ROUTE_DIAGNOSTIC_REASONS.has(message.reason))
+        ? ROUTE_DIAGNOSTIC_REASONS.has(message.reason)
+        : isNoTeamDiagnostic(message.checkpoint, message.reason))
     || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(message.checkpoint)
       && phaseContracts[message.contextOrdinal].group !== 'admission-route')
+    || (Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, message.checkpoint)
+      && phaseContracts[message.contextOrdinal].alias !== 'qa-no-team')
     || message.stage !== RUNNER_DIAGNOSTIC_STAGES[message.checkpoint]) {
     throw new GuardianFailure('scenario-runner-invalid');
   }
