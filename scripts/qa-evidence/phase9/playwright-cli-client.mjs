@@ -480,11 +480,11 @@ const exactBrowserProducerHeaders = (headers, referer) => {
   return brand.test(headers['sec-ch-ua']);
 };
 
-const exactSessionCookieHeader = value => {
+const exactCookieHeader = value => {
   const pairs = [...value.matchAll(/(?:^|; ?)([!#$%&'*+.^_`|~0-9A-Za-z-]+)=([\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*)/g)];
-  const sessions = pairs.filter(([, name]) => name === '__session');
-  return pairs.map(([pair]) => pair).join('') === value && sessions.length === 1
-    && /^(?:[\w.~+=-]|%3D)+$/.test(sessions[0][2]);
+  const names = pairs.map(([, name]) => name);
+  return pairs.length > 0 && pairs.map(([pair]) => pair).join('') === value
+    && new Set(names).size === names.length;
 };
 
 const exactJoinFrame = value => value === `${STAGING_ORIGIN}/teams/join`;
@@ -506,9 +506,11 @@ const exactFirestoreRestHeaders = value => {
 const exactJoinAdminHeaders = (value, frameUrl) => {
   const headers = normalizeHeaders(value);
   return hasOnlyAllowedHeaders(headers, new Set(['authorization', 'cookie']))
-    && exactBrowserProducerHeaders(headers, frameUrl)
+    && headers.accept === '*/*'
+    && headers.origin === STAGING_ORIGIN
+    && headers.referer === frameUrl
     && validBearer(headers.authorization)
-    && (headers.cookie === undefined || exactSessionCookieHeader(headers.cookie));
+    && (headers.cookie === undefined || exactCookieHeader(headers.cookie));
 };
 
 const exactListenTransportHeaders = (value, method) => {

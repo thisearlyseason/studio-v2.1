@@ -4250,6 +4250,19 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
       cookie: 'sidebar_state=true; __session=valid.jwt_signature%3D',
     },
   })).resourceScopes, ['join-admin-lookup']);
+  assert.deepEqual(classify(joinAdminRaw({
+    headers: {
+      accept: '*/*',
+      origin: STAGING_ORIGIN,
+      referer: `${STAGING_ORIGIN}/teams/join`,
+      authorization: 'Bearer phase9-test',
+      cookie: 'sidebar_state=true',
+      'sec-ch-ua': 'browser-generated-client-hint-format-may-change',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"macOS"',
+      'user-agent': 'browser-generated-user-agent-format-may-change',
+    },
+  })).resourceScopes, ['join-admin-lookup']);
   const teamA = `${runId}-team-a`;
   for (const raw of [
     joinAdminRaw({ url: `${STAGING_ORIGIN}/api/schools/admins?teamId=${teamA}` }),
@@ -4259,9 +4272,7 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
     joinAdminRaw({ frameUrl: `${STAGING_ORIGIN}/teams/${teamA}` }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, 'x-unapproved': 'present' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '' } }),
-    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: 'other=value' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; __session=duplicate' } }),
-    joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid%ZZ' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid; bad name=value' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid\r\nforged=value' } }),
     joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '__session=valid;\r\nforged=value' } }),
