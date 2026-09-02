@@ -223,10 +223,8 @@ const FIRESTORE_LISTEN_TRANSPORT_HEADERS = Object.freeze({
 const FIRESTORE_LISTEN_HEADER_BLOCK = [
   'authorization:Bearer phase9-test',
   'content-type:text/plain',
-  `google-cloud-resource-prefix:${FIRESTORE_DATABASE}`,
   'x-firebase-gmpid:1:61782012212:web:8913d2b40fd9843148f561',
   'x-goog-api-client:gl-js/ fire/10.14.1',
-  'x-goog-request-params:project_id=the-squad-v2-staging',
   '',
 ].join('\r\n');
 const JOIN_ADMIN_PRODUCER_HEADERS = Object.freeze({
@@ -4573,6 +4571,8 @@ test('phase 9 Firestore producer contract enforces exact depths headers and resu
     document(`users/${selfUid}`, { headers: { ...FIRESTORE_PRODUCER_HEADERS, 'google-cloud-resource-prefix': 'projects/wrong/databases/(default)' } }),
     document(`users/${selfUid}`, { headers: { ...FIRESTORE_PRODUCER_HEADERS, 'x-goog-request-params': 'project_id=wrong' } }),
     document(`users/${selfUid}`, { headers: { ...FIRESTORE_PRODUCER_HEADERS, 'content-type': 'application/json' } }),
+    document(`users/${selfUid}`, { headers: Object.fromEntries(Object.entries(FIRESTORE_PRODUCER_HEADERS).filter(([name]) => name !== 'google-cloud-resource-prefix')) }),
+    document(`users/${selfUid}`, { headers: Object.fromEntries(Object.entries(FIRESTORE_PRODUCER_HEADERS).filter(([name]) => name !== 'x-goog-request-params')) }),
     document(`users/${selfUid}`, { headers: Object.fromEntries(Object.entries(FIRESTORE_PRODUCER_HEADERS).filter(([name]) => name !== 'accept')) }),
     document(`users/${selfUid}`, { headers: Object.fromEntries(Object.entries(FIRESTORE_PRODUCER_HEADERS).filter(([name]) => name !== 'origin')) }),
   ]) assert.deepEqual(classify(raw).resourceScopes, ['unscoped'], JSON.stringify(raw));
@@ -4599,8 +4599,8 @@ test('phase 9 Firestore producer contract enforces exact depths headers and resu
     listen(selfTarget({ resumeToken: 'AQID', readTime: '2026-08-25T14:00:00.000000000Z' })),
     listen(selfTarget({ expectedCount: 1 })),
     listen(selfTarget({ resumeToken: '', expectedCount: 1 })),
-    listen(selfTarget(), FIRESTORE_LISTEN_HEADER_BLOCK.replace(FIRESTORE_DATABASE, 'projects/wrong/databases/(default)')),
-    listen(selfTarget(), FIRESTORE_LISTEN_HEADER_BLOCK.replace('project_id=the-squad-v2-staging', 'project_id=wrong')),
+    listen(selfTarget(), FIRESTORE_LISTEN_HEADER_BLOCK.replace('\r\n', `\r\ngoogle-cloud-resource-prefix:${FIRESTORE_DATABASE}\r\n`)),
+    listen(selfTarget(), FIRESTORE_LISTEN_HEADER_BLOCK.replace('\r\n', '\r\nx-goog-request-params:project_id=the-squad-v2-staging\r\n')),
     listen(selfTarget(), FIRESTORE_LISTEN_HEADER_BLOCK.replace('content-type:text/plain', 'content-type:application/json')),
   ]) assert.deepEqual(classify(raw).resourceScopes, ['unscoped'], JSON.stringify(raw));
 });
@@ -4786,6 +4786,39 @@ test('phase 9 Firestore Listen accepts the exact production request-event header
         targetId: 1,
       },
     }),
+  });
+
+  assert.deepEqual(
+    classifyFixtureResourceScopes(raw, { runId, alias: 'qa-no-team' }).resourceScopes,
+    ['self-account'],
+  );
+});
+
+test('phase 9 Firestore Listen accepts the exact WebChannel init header block without REST metadata', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const webChannelHeaders = [
+    'authorization:Bearer phase9-test',
+    'content-type:text/plain',
+    'x-firebase-gmpid:1:61782012212:web:8913d2b40fd9843148f561',
+    'x-goog-api-client:gl-js/ fire/10.14.1',
+    '',
+  ].join('\r\n');
+  const message = {
+    database: FIRESTORE_DATABASE,
+    addTarget: {
+      documents: { documents: [`${databaseRoot}/users/${runId}-no-team`] },
+      targetId: 1,
+    },
+  };
+  const raw = firestoreRaw({
+    body: new URLSearchParams({
+      headers: webChannelHeaders,
+      count: '1',
+      ofs: '0',
+      req0___data__: JSON.stringify(message),
+    }).toString(),
   });
 
   assert.deepEqual(

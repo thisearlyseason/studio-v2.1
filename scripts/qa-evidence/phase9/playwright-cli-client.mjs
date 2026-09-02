@@ -996,8 +996,8 @@ const classifyFixtureResourceScopesValue = (
       if (typeof headerBlock !== 'string' || headerBlock.length === 0 || headerBlock.length > 32_768
         || !headerBlock.endsWith('\r\n')) return null;
       const allowedHeaders = new Set([
-        'authorization', 'content-type', 'google-cloud-resource-prefix', 'x-firebase-appcheck',
-        'x-firebase-gmpid', 'x-goog-api-client', 'x-goog-request-params',
+        'authorization', 'content-type', 'x-firebase-appcheck',
+        'x-firebase-gmpid', 'x-goog-api-client',
       ]);
       const headerNames = [];
       const headerValues = {};
@@ -1013,9 +1013,7 @@ const classifyFixtureResourceScopesValue = (
       if (
         !validBearer(headerValues.authorization)
         || headerValues['content-type'] !== 'text/plain'
-        || headerValues['google-cloud-resource-prefix'] !== database
         || !validFirebaseAppId(headerValues['x-firebase-gmpid'])
-        || headerValues['x-goog-request-params'] !== `project_id=${stagingProjectId}`
         || headerValues['x-goog-api-client'] !== 'gl-js/ fire/10.14.1'
         || (Object.hasOwn(headerValues, 'x-firebase-appcheck') && !validBearer(`Bearer ${headerValues['x-firebase-appcheck']}`))
       ) return null;
