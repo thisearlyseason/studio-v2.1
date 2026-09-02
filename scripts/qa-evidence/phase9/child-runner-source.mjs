@@ -71,8 +71,10 @@ const copyRequestFailure = value => {
 const setDiagnostic = (checkpoint, reason, requestFailure) => {
   diagnosticCheckpoint = checkpoint;
   diagnosticReason = reason;
-  diagnosticRequestFailure = checkpoint === 'window-request-failure'
-    && reason === 'request-failure-invalid'
+  diagnosticRequestFailure = ((checkpoint === 'window-request-failure'
+    && reason === 'request-failure-invalid')
+    || (checkpoint === 'window-console-network'
+      && reason === 'request-failure-prior-window'))
     ? copyRequestFailure(requestFailure)
     : null;
 };
@@ -95,8 +97,10 @@ const emitFailureTerminal = () => {
       contextOrdinal: diagnosticContextOrdinal, contextId: diagnosticContextId,
       checkpoint: diagnosticCheckpoint, reason: diagnosticReason,
       ...(failureStage === 'scenario-action'
-        && diagnosticCheckpoint === 'window-request-failure'
-        && diagnosticReason === 'request-failure-invalid'
+        && ((diagnosticCheckpoint === 'window-request-failure'
+          && diagnosticReason === 'request-failure-invalid')
+          || (diagnosticCheckpoint === 'window-console-network'
+            && diagnosticReason === 'request-failure-prior-window'))
         && diagnosticRequestFailure
         ? { requestFailure: diagnosticRequestFailure }
         : {}),

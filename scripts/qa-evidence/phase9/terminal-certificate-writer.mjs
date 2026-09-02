@@ -64,7 +64,7 @@ const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
   ['403', '404', 'other'].flatMap(status => (
     ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
       .map(target => `${status}-${target}`)
-  )),
+  )).concat(['request-failure-prior-window']),
 );
 const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
   'route-session', 'route-location', 'route-heading', 'route-render', 'route-attribution',
@@ -405,8 +405,11 @@ function validateCertificate(input, {
     }
     if (hasRequestFailure) {
       validateRequestFailure(value.diagnostic.requestFailure);
-      if (value.diagnostic.checkpoint !== 'window-request-failure'
-        || value.diagnostic.reason !== 'request-failure-invalid'
+      const requestFailureDiagnostic = value.diagnostic.checkpoint === 'window-request-failure'
+        && value.diagnostic.reason === 'request-failure-invalid';
+      const priorWindowFailureDiagnostic = value.diagnostic.checkpoint === 'window-console-network'
+        && value.diagnostic.reason === 'request-failure-prior-window';
+      if (!(requestFailureDiagnostic || priorWindowFailureDiagnostic)
         || value.primaryStage !== 'scenario-action') {
         throw new Error('Terminal certificate requestFailure attribution is invalid.');
       }

@@ -135,7 +135,7 @@ const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
   ['403', '404', 'other'].flatMap(status => (
     ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
       .map(target => `${status}-${target}`)
-  )),
+  )).concat(['request-failure-prior-window']),
 );
 const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
   'route-session', 'route-location', 'route-heading', 'route-render', 'route-attribution',
@@ -1575,8 +1575,11 @@ export function validateRunnerFailureTerminal(message, accepted) {
     throw new GuardianFailure('scenario-runner-invalid');
   }
   const requestFailure = hasRequestFailure ? requireRequestFailure(message.requestFailure) : null;
-  if (hasRequestFailure && (message.checkpoint !== 'window-request-failure'
-    || message.reason !== 'request-failure-invalid'
+  const requestFailureDiagnostic = message.checkpoint === 'window-request-failure'
+    && message.reason === 'request-failure-invalid';
+  const priorWindowFailureDiagnostic = message.checkpoint === 'window-console-network'
+    && message.reason === 'request-failure-prior-window';
+  if (hasRequestFailure && (!(requestFailureDiagnostic || priorWindowFailureDiagnostic)
     || message.stage !== 'scenario-action')) {
     throw new GuardianFailure('scenario-runner-invalid');
   }

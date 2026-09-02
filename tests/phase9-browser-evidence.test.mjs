@@ -1204,6 +1204,51 @@ darwinRuntimeTest('phase 9 recorder separates response-bound HTTP denial noise f
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
+darwinRuntimeTest('phase 9 recorder preserves closed request-failure provenance when console delivery crosses a mark', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const diagnostics = [];
+  const client = createPhase9ProductionCliClient({
+    timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+    onDiagnosticCheckpoint: (...diagnostic) => diagnostics.push(diagnostic),
+  });
+  const session = 'phase9-cross-mark-request-failure-provenance';
+  const requestFailure = {
+    failureClass: 'timeout', targetClass: 'other', resourceType: 'other',
+    navigationRelationship: 'subresource', multiplicity: 'single',
+  };
+  try {
+    await installSignalRecorder(client, session);
+    await client.runCode(session, `async (page) => {
+      const request = {
+        failure: () => ({ errorText: 'net::ERR_TIMED_OUT' }),
+      };
+      page.listeners('requestfailed').at(-1)(request);
+      return true;
+    }`);
+    diagnostics.length = 0;
+    await assert.rejects(observeAction({
+      client,
+      session,
+      stage: 'cross-mark-request-failure',
+      terminal: async () => {},
+      action: () => client.runCode(session, `async (page) => {
+        page.listeners('console').at(-1)({
+          type: () => 'error',
+          args: () => [],
+          text: () => 'Failed to load resource: net::ERR_TIMED_OUT',
+          location: () => ({ url: '', lineNumber: 0, columnNumber: 0 }),
+        });
+        return true;
+      }`),
+    }), /classified application console error/i);
+    assert.deepEqual(diagnostics.at(-1), [
+      'window-console-network', 'request-failure-prior-window', requestFailure,
+    ]);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+});
+
 test('phase 9 recorder correlates an exact protected HTTP console event across a signal-window mark', () => {
   const target = `${STAGING_ORIGIN}/api/teams/chat?teamId=fixture-team-b`;
   const candidates = [{
@@ -8379,6 +8424,15 @@ test('phase 9 request failure protocol preserves one closed summary and rejects 
     reason: '403-protected-api',
   }, accepted);
   assert.equal(networkTerminal.diagnostic.reason, '403-protected-api');
+  const priorWindowNetworkTerminal = validateRunnerFailureTerminal({
+    ...fixedOnly,
+    checkpoint: 'window-console-network',
+    reason: 'request-failure-prior-window',
+    requestFailure: { ...valid.requestFailure, multiplicity: 'single' },
+  }, accepted);
+  assert.deepEqual(priorWindowNetworkTerminal.diagnostic.requestFailure, {
+    ...canonicalRequestFailureSummary, multiplicity: 'single',
+  });
   assert.throws(() => validateRunnerFailureTerminal({
     ...fixedOnly,
     checkpoint: 'window-console-network',
@@ -9853,6 +9907,18 @@ test('phase 9 request failure certificate preserves the exact optional closed di
       'failureClass', 'multiplicity', 'navigationRelationship', 'resourceType', 'targetClass',
     ]);
   }
+
+  const priorWindow = certificate('failed');
+  priorWindow.diagnostic = {
+    ...priorWindow.diagnostic,
+    checkpoint: 'window-console-network',
+    reason: 'request-failure-prior-window',
+    requestFailure: { ...canonicalRequestFailureSummary, multiplicity: 'single' },
+  };
+  assert.deepEqual(
+    JSON.parse(canonicalPhase9TerminalCertificate(priorWindow)).diagnostic.requestFailure,
+    { ...canonicalRequestFailureSummary, multiplicity: 'single' },
+  );
 
   const fixedOnly = certificate('failed');
   delete fixedOnly.diagnostic.requestFailure;
@@ -13535,7 +13601,7 @@ test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded'
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 recorder separates response-bound HTTP denial noise from application console errors').length, 1);
-  assert.equal(darwinRuntimeTests.length, 79);
+  assert.equal(darwinRuntimeTests.length, 80);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

@@ -1339,6 +1339,7 @@ const installRecorderSource = () => String.raw`async (page) => {
       pageErrors: [],
       appConsoleErrors: [],
       requestFailureSignals: [],
+      requestFailureConsoleCandidates: [],
       joinAdminRequestState: 0,
       overflow: 0,
     };
@@ -1427,6 +1428,25 @@ const installRecorderSource = () => String.raw`async (page) => {
       let location;
       try {
         location = message.location();
+        const failureConsoleMatch = /^Failed to load resource: net::ERR_[A-Z0-9_]+$/.test(message.text());
+        if (message.args().length === 0 && failureConsoleMatch) {
+          const failureClass = classifyRequestFailureSignal({ failureText: message.text() }).failureClass;
+          const matchingCandidates = state.requestFailureConsoleCandidates
+            .map((candidate, index) => ({ candidate, index }))
+            .filter(({ candidate }) => candidate.requestFailure.failureClass === failureClass);
+          if (matchingCandidates.length === 1) {
+            const { candidate, index } = matchingCandidates[0];
+            state.requestFailureConsoleCandidates.splice(index, 1);
+            if (candidate.sequence === state.sequence) return;
+            if (candidate.sequence === state.sequence - 1) {
+              boundedPush(state, 'appConsoleErrors', {
+                kind: 'request-failure-prior-window',
+                requestFailure: candidate.requestFailure,
+              });
+              return;
+            }
+          }
+        }
         const candidateIndex = (${correlateBrowserHttpConsoleError.toString()})({
           type: message.type(),
           argsLength: message.args().length,
@@ -1484,7 +1504,13 @@ const installRecorderSource = () => String.raw`async (page) => {
       try { input.failureText = request.failure()?.errorText; } catch {}
       if (isExpectedPriorDocumentRscAbort(input)
         || isExpectedPriorDocumentFirestoreListenAbort(input)) return;
-      boundedPush(state, 'requestFailureSignals', classifyRequestFailureSignal(input));
+      const requestFailure = classifyRequestFailureSignal(input);
+      boundedPush(state, 'requestFailureSignals', requestFailure);
+      if (state.requestFailureConsoleCandidates.length >= ${MAX_SIGNAL_COUNT}) {
+        state.requestFailureConsoleCandidates.shift();
+        state.overflow += 1;
+      }
+      state.requestFailureConsoleCandidates.push({ sequence: state.sequence, requestFailure });
     });
     await page.exposeFunction('__phase9RecordRender', signal => {
       if (!signal || !['heading', 'status'].includes(signal.kind)
@@ -1509,6 +1535,9 @@ const MARK_SOURCE = String.raw`async (page) => {
   const state = page.__phase9EvidenceRecorder;
   if (!state) throw new Error('SIGNAL_RECORDER_NOT_ARMED');
   state.sequence += 1;
+  state.requestFailureConsoleCandidates = state.requestFailureConsoleCandidates.filter(candidate => (
+    candidate.sequence >= state.sequence - 1
+  ));
   if (state.joinAdminRequestState === 1 || state.joinAdminRequestState === 3) {
     throw new Error('SIGNAL_WINDOW_PENDING_JOIN_ADMIN_REQUEST');
   }
@@ -1724,7 +1753,7 @@ const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
   ['403', '404', 'other'].flatMap(status => (
     ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
       .map(target => `${status}-${target}`)
-  )),
+  )).concat(['request-failure-prior-window']),
 );
 
 const REQUEST_FAILURE_CLASSES = Object.freeze([
@@ -2095,16 +2124,22 @@ const sanitizeWindow = (value, {
   const applicationConsoleErrors = [];
   const correlatedHttpResponses = value.httpConsoleResponses ?? [];
   const consumedCorrelatedResponses = new Set();
-  let remainingRetainedRequestFailureConsoleNoise = rawRequestFailureSignals.length;
   for (const item of value.appConsoleErrors) {
+    const priorWindowRequestFailure = item && typeof item === 'object' && !Array.isArray(item)
+      && Object.keys(item).sort().join(',') === 'kind,requestFailure'
+      && item.kind === 'request-failure-prior-window'
+      && isClosedRequestFailureSignal(item.requestFailure);
+    if (priorWindowRequestFailure) {
+      onDiagnosticCheckpoint?.('window-console-network', 'request-failure-prior-window', {
+        ...item.requestFailure,
+        multiplicity: 'single',
+      });
+      throw new Error('Recorder captured a classified application console error.');
+    }
     if (typeof item === 'string' && item.startsWith('APPLICATION_CONSOLE_ERROR_network-')) {
       const reason = item.slice('APPLICATION_CONSOLE_ERROR_network-'.length);
       if (!NETWORK_CONSOLE_DIAGNOSTIC_REASONS.has(reason)) {
         throw new Error('Recorder captured an invalid network console classification.');
-      }
-      if (reason === 'other-invalid' && remainingRetainedRequestFailureConsoleNoise > 0) {
-        remainingRetainedRequestFailureConsoleNoise -= 1;
-        continue;
       }
       onDiagnosticCheckpoint?.('window-console-network', reason);
       throw new Error('Recorder captured a classified application console error.');
