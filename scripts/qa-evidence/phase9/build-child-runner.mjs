@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmod, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync, gunzipSync } from 'node:zlib';
 
 import { parse } from 'acorn';
 import { build } from 'esbuild';
@@ -10,6 +11,7 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const source = join(moduleDirectory, 'child-runner-source.mjs');
 const output = join(moduleDirectory, 'child-runner.mjs');
 const maximumBytes = 131_072;
+const maximumRecoveredBytes = 262_144;
 const controlFlowErrorMessages = Object.freeze([
   'New tab viewport application failed and the browser was closed.',
 ]);
@@ -133,7 +135,63 @@ export function minimizeGeneratedErrorMessages(bytes) {
   return Buffer.from(minimized, 'utf8');
 }
 
-const compile = async () => {
+export const auditRecoveredChild = bytes => {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > maximumRecoveredBytes) {
+    throw new Error('Recovered child module is invalid.');
+  }
+  let text;
+  let tree;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    tree = parse(text, { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    throw new Error('Recovered child module is invalid.');
+  }
+  const specifiers = [];
+  let entryBindingReferences = 0;
+  let importMetaReferences = 0;
+  let invalidImportExpression = false;
+  const visit = node => {
+    if (!node || typeof node !== 'object') return;
+    if ((node.type === 'ImportDeclaration'
+        || node.type === 'ExportAllDeclaration'
+        || node.type === 'ExportNamedDeclaration')
+      && node.source) specifiers.push(node.source.value);
+    if (node.type === 'ImportExpression') {
+      if (node.source?.type !== 'Literal' || typeof node.source.value !== 'string') {
+        invalidImportExpression = true;
+      } else specifiers.push(node.source.value);
+    }
+    if (node.type === 'MemberExpression'
+      && node.computed === false
+      && node.object?.type === 'Identifier'
+      && node.object.name === 'globalThis'
+      && node.property?.type === 'Identifier'
+      && node.property.name === '__phase9EntryUrl') entryBindingReferences += 1;
+    if (node.type === 'MetaProperty'
+      && node.meta?.name === 'import'
+      && node.property?.name === 'meta') importMetaReferences += 1;
+    for (const [key, child] of Object.entries(node)) {
+      if (new Set(['start', 'end', 'loc', 'range']).has(key)) continue;
+      if (Array.isArray(child)) child.forEach(visit);
+      else visit(child);
+    }
+  };
+  visit(tree);
+  if (importMetaReferences !== 0 || entryBindingReferences < 1) {
+    throw new Error('Recovered child entry URL binding is invalid.');
+  }
+  if (invalidImportExpression
+    || !specifiers.every(specifier => typeof specifier === 'string' && specifier.startsWith('node:'))) {
+    throw new Error('Recovered child module import is invalid.');
+  }
+  return Object.freeze({
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  });
+};
+
+export const compileRecoveredChild = async () => {
   const result = await build({
     entryPoints: [source],
     bundle: true,
@@ -145,28 +203,104 @@ const compile = async () => {
     target: 'node24',
     legalComments: 'none',
     charset: 'utf8',
+    define: { 'import.meta.url': 'globalThis.__phase9EntryUrl' },
   });
   if (result.outputFiles.length !== 1) throw new Error('Child runner build produced an unexpected output set.');
-  return minimizeGeneratedErrorMessages(Buffer.from(result.outputFiles[0].contents));
+  const bytes = minimizeGeneratedErrorMessages(Buffer.from(result.outputFiles[0].contents));
+  auditRecoveredChild(bytes);
+  return bytes;
+};
+
+const renderPackagedChild = (payload, recoveredBytes) => Buffer.from(
+  `import{gunzipSync as g}from'node:zlib';const k='__phase9EntryUrl';if(Object.hasOwn(globalThis,k))throw Error();Object.defineProperty(globalThis,k,{value:import.meta.url,writable:false,enumerable:false,configurable:true});try{const b=g(Buffer.from(${JSON.stringify(payload)},"base64"));if(b.length!==${recoveredBytes})throw Error();await import("data:text/javascript;base64,"+b.toString("base64"))}finally{delete globalThis[k]}`,
+  'utf8',
+);
+
+export const packageRecoveredChild = bytes => {
+  const recovered = auditRecoveredChild(bytes);
+  const gzip = gzipSync(bytes, { level: 9, mtime: 0 });
+  const wrapper = renderPackagedChild(gzip.toString('base64'), bytes.length);
+  if (wrapper.length > maximumBytes) throw new Error('Packaged child wrapper is invalid.');
+  return Object.freeze({
+    wrapper,
+    gzip,
+    recoveredSha256: recovered.sha256,
+    gzipSha256: createHash('sha256').update(gzip).digest('hex'),
+  });
+};
+
+export const inspectPackagedChild = wrapper => {
+  if (!Buffer.isBuffer(wrapper) || wrapper.length < 1 || wrapper.length > maximumBytes) {
+    throw new Error('Packaged child wrapper is invalid.');
+  }
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(wrapper);
+  } catch {
+    throw new Error('Packaged child wrapper is invalid.');
+  }
+  const payloads = [...text.matchAll(/Buffer\.from\("([A-Za-z0-9+/]+={0,2})","base64"\)/g)];
+  const lengths = [...text.matchAll(/b\.length!==([1-9][0-9]*)/g)];
+  if (payloads.length !== 1 || lengths.length !== 1) throw new Error('Packaged child wrapper is invalid.');
+  const payload = payloads[0][1];
+  const recoveredBytes = Number(lengths[0][1]);
+  if (!Number.isSafeInteger(recoveredBytes) || recoveredBytes < 1 || recoveredBytes > maximumRecoveredBytes
+    || !wrapper.equals(renderPackagedChild(payload, recoveredBytes))) {
+    throw new Error('Packaged child wrapper is invalid.');
+  }
+  const gzip = Buffer.from(payload, 'base64');
+  if (gzip.length < 1 || gzip.toString('base64') !== payload) throw new Error('Packaged child wrapper is invalid.');
+  let recovered;
+  try {
+    recovered = gunzipSync(gzip, { maxOutputLength: maximumRecoveredBytes });
+  } catch {
+    throw new Error('Packaged child wrapper is invalid.');
+  }
+  if (recovered.length !== recoveredBytes) throw new Error('Packaged child wrapper is invalid.');
+  auditRecoveredChild(recovered);
+  if (!gzip.equals(gzipSync(recovered, { level: 9, mtime: 0 }))) {
+    throw new Error('Packaged child wrapper is invalid.');
+  }
+  return Object.freeze({ recovered, gzip });
+};
+
+export const compilePackagedChild = async () => {
+  const recoveredA = await compileRecoveredChild();
+  const recoveredB = await compileRecoveredChild();
+  const packagedA = packageRecoveredChild(recoveredA);
+  const packagedB = packageRecoveredChild(recoveredB);
+  if (!recoveredA.equals(recoveredB)
+    || !packagedA.gzip.equals(packagedB.gzip)
+    || !packagedA.wrapper.equals(packagedB.wrapper)) {
+    throw new Error('Child runner build is not deterministic.');
+  }
+  const inspected = inspectPackagedChild(packagedA.wrapper);
+  if (!inspected.recovered.equals(recoveredA) || !inspected.gzip.equals(packagedA.gzip)) {
+    throw new Error('Child runner package inspection failed.');
+  }
+  return Object.freeze({
+    wrapper: packagedA.wrapper,
+    bytes: packagedA.wrapper.length,
+    sha256: createHash('sha256').update(packagedA.wrapper).digest('hex'),
+    recoveredBytes: recoveredA.length,
+    recoveredSha256: packagedA.recoveredSha256,
+    gzipBytes: packagedA.gzip.length,
+    gzipSha256: packagedA.gzipSha256,
+  });
 };
 
 async function buildChildRunner() {
-  const first = await compile();
-  const second = await compile();
-  if (!first.equals(second) || first.length > maximumBytes) {
-    throw new Error('Child runner build is not deterministic or bounded.');
-  }
-  const text = first.toString('utf8');
-  const specifiers = [...text.matchAll(/(?:\bfrom\s+|\bimport\()\s*["']([^"']+)["']/g)].map(match => match[1]);
-  if (!specifiers.every(specifier => specifier.startsWith('node:'))) {
-    throw new Error('Child runner build retained a non-intrinsic import.');
-  }
+  const built = await compilePackagedChild();
   await chmod(output, 0o644).catch(error => { if (error?.code !== 'ENOENT') throw error; });
-  await writeFile(output, first, { mode: 0o644 });
+  await writeFile(output, built.wrapper, { mode: 0o644 });
   await chmod(output, 0o444);
   process.stdout.write(`${JSON.stringify({
-    bytes: first.length,
-    sha256: createHash('sha256').update(first).digest('hex'),
+    bytes: built.bytes,
+    sha256: built.sha256,
+    recoveredBytes: built.recoveredBytes,
+    recoveredSha256: built.recoveredSha256,
+    gzipBytes: built.gzipBytes,
+    gzipSha256: built.gzipSha256,
   })}\n`);
 }
 

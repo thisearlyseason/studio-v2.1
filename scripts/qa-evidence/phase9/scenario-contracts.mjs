@@ -17,6 +17,9 @@ export const FIXTURE_MANIFEST_VERSION = 3;
 export const FIXTURE_RESOURCE_COUNTS = deepFreeze({ aliases: 20, teams: 3, auth: 20, firestore: 82, expectedAbsent: 1 });
 export const PENDING_UNAVAILABLE_SENTINEL = 'The email or password is incorrect, or this account is unavailable.';
 export const NO_TEAM_RESOURCE_POLICY = 'no-team-tenant-isolation';
+export const JOIN_ADMIN_SCOPE_REJECTIONS = deepFreeze(
+  'url|method|resource-type|body|frame|header-schema|authorization|cookie|identifier|recorder'.split('|'),
+);
 export const RESOURCE_SCOPES = deepFreeze([
   'self-account',
   'join-admin-lookup',
@@ -635,7 +638,7 @@ const requireClosedResourceSignal = (value, name) => {
     name,
     schemaName: 'resource evidence',
     requiredKeys,
-    optionalKeys,
+    optionalKeys: [...optionalKeys, 'scopeRejection'],
   });
   if (!RESOURCE_TARGET_KINDS.includes(signal.targetKind)) {
     throw new Error(`${name} target kind is unsupported.`);
@@ -670,6 +673,16 @@ const requireClosedResourceSignal = (value, name) => {
   ) throw new Error(`${name} resource scopes must be derived from its closed resource evidence.`);
 
   const evidence = new Set(signal.scopeEvidence);
+  const hasScopeRejection = Object.hasOwn(signal, 'scopeRejection');
+  if (hasScopeRejection !== (
+    signal.targetKind === 'staging-join-admin-api' && evidence.has('unscoped-resource')
+  ) || (hasScopeRejection && (
+    !Number.isInteger(signal.scopeRejection)
+    || signal.scopeRejection < 0
+    || signal.scopeRejection >= JOIN_ADMIN_SCOPE_REJECTIONS.length
+  ))) {
+    throw new Error(`${name} scope rejection is invalid.`);
+  }
   if (evidence.has('join-admin-patch') && (
     signal.targetKind !== 'staging-join-admin-api' || signal.method !== 'PATCH'
   )) throw new Error(`${name} join-admin evidence is disconnected from its exact target.`);
@@ -729,6 +742,7 @@ const requireClosedResourceSignal = (value, name) => {
     initiatingFrameUrl: signal.initiatingFrameUrl,
     scopeEvidence: signal.scopeEvidence.map(item => item),
     resourceScopes: signal.resourceScopes.map(item => item),
+    ...(Object.hasOwn(signal, 'scopeRejection') ? { scopeRejection: signal.scopeRejection } : {}),
     ...(Object.hasOwn(signal, 'status') ? { status: signal.status } : {}),
   };
 };
@@ -769,8 +783,14 @@ const validateNoTeamResourceIsolationSnapshot = (value, diagnostic = () => {}) =
       for (const scope of signal.resourceScopes) {
         // Closed resource-scope enums make f=foreign-account and u=unscoped unique.
         if (!scope.startsWith('tenant') && scope[0] !== 'f' && scope[0] !== 'u') continue;
-        diagnostic(checkpoint, scope[0] === 'f' ? 'foreign'
-          : scope[0] === 'u' ? 'unscoped-' + signal.targetKind : scope.slice(7));
+        diagnostic(
+          scope === 'unscoped' && Object.hasOwn(signal, 'scopeRejection')
+            ? 'window-no-team-join-admin' : checkpoint,
+          scope === 'unscoped' && Object.hasOwn(signal, 'scopeRejection')
+            ? JOIN_ADMIN_SCOPE_REJECTIONS[signal.scopeRejection]
+            : scope[0] === 'f' ? 'foreign'
+              : scope[0] === 'u' ? 'unscoped-' + signal.targetKind : scope.slice(7),
+        );
         if (scope === 'tenant-team-a') {
           throw new Error('No Team evidence contains Team A tenant resource activity.');
         }

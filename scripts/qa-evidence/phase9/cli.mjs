@@ -5,6 +5,7 @@ import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, st
 import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 
 import { removeConfinedPlaywrightTree, runGuardedLifecycle } from './lifecycle-guardian.mjs';
 import {
@@ -64,9 +65,11 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '271482ea993f8762a0ed896d7c5921a7caec0dc9453892f15355840f83423478',
+  child: 'a3bbc43a795349456087797a9c72d1c41dcf1157ffa0756ed5f5e92b51711646',
+  childRecovered: 'b5134d38b792bad9a01b3e718a668f814c02d20965519f340c7316321872ba22',
+  childGzip: '5f54d479f6cfcc5863e0ffe138a805dbf52fb14ea01f2fb82188d3f3e1abf0e2',
   childSource: 'fa5666efef25296683091bf8e4b7d2d2a656b12a034cf87165dc46518f785a05',
-  childBuilder: '783432ab50fd6c77bb1fc4fb6a28685d9e5ed041242d2cce7ad39c00387b9044',
+  childBuilder: 'd6fbd668babed07afc442ce9a6f2666c447d839e5c519a6af76e48c270e3d66a',
   childPrivateInputReader: 'c828285b3f5de1927efb32f11353c4ffed30250fe2e1337885a1c7a74f863be7',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
   config: 'b959789c8df66556141b3cdd4bc862ba448ab524a46895a1fcf22b14d8904b93',
@@ -75,8 +78,8 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportEntry: '706f882c8f0ea4fdf44552debde828db1aff7fcc4f8531b3df9a4528ab194a0d',
   transportGuard: '69bef38997f2766a0a9611582a363cb3174b2a96b12c10f8a65174fdbd78bc30',
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
-  playwrightClient: 'dde48530d1fa05e10299a1be5fb506e560c836f4cabb662dbd39188897398137',
-  scenarioContracts: '1e498d142f46bd98a1b885c50f668d1706f4eb29b65569ee5f59c8a8a86c36c9',
+  playwrightClient: 'ff50cc2d8db1a601f7398f687ca9785fd278876c65dc058cc2acb1c7c4904db1',
+  scenarioContracts: '4c4a869624923c0ef447843dc2c536051f98150ba380b9764e3cbdd78ed9ca16',
   scenarios: '9cda6f6c43d51cb431fcafb65f7c1057eb449c6c5017f08770cb395b36b2e999',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
@@ -84,6 +87,43 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   playwrightCleanupHelper: '8383ee70c605cd00b4d9916bd20d9e2a4fe509968693c3bedaf63da0ad129bd7',
   processInspector: '62d94b58d9c2f09b92d16b643f69388084f72082c0b189c4005195410c0f5463',
 });
+
+export function verifyPinnedChildPackage(wrapper) {
+  if (!Buffer.isBuffer(wrapper) || wrapper.length < 1 || wrapper.length > 131_072
+    || createHash('sha256').update(wrapper).digest('hex') !== PHASE9_ARTIFACT_PINS.child) {
+    throw new Error('Committed child package does not match its literal reviewed pins.');
+  }
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(wrapper);
+  } catch {
+    throw new Error('Committed child package does not match its literal reviewed pins.');
+  }
+  const payloads = [...text.matchAll(/Buffer\.from\("([A-Za-z0-9+/]+={0,2})","base64"\)/g)];
+  const lengths = [...text.matchAll(/b\.length!==([1-9][0-9]*)/g)];
+  if (payloads.length !== 1 || lengths.length !== 1) {
+    throw new Error('Committed child package does not match its literal reviewed pins.');
+  }
+  const gzip = Buffer.from(payloads[0][1], 'base64');
+  if (gzip.length < 1 || gzip.toString('base64') !== payloads[0][1]
+    || createHash('sha256').update(gzip).digest('hex') !== PHASE9_ARTIFACT_PINS.childGzip) {
+    throw new Error('Committed child package does not match its literal reviewed pins.');
+  }
+  let recovered;
+  try {
+    recovered = gunzipSync(gzip, { maxOutputLength: 262_144 });
+  } catch {
+    throw new Error('Committed child package does not match its literal reviewed pins.');
+  }
+  if (recovered.length !== Number(lengths[0][1])
+    || createHash('sha256').update(recovered).digest('hex') !== PHASE9_ARTIFACT_PINS.childRecovered) {
+    throw new Error('Committed child package does not match its literal reviewed pins.');
+  }
+  return {
+    recoveredSha256: PHASE9_ARTIFACT_PINS.childRecovered,
+    gzipSha256: PHASE9_ARTIFACT_PINS.childGzip,
+  };
+}
 export const phase9PlaywrightTransport = Object.freeze({
   version: PLAYWRIGHT_VERSION, coreVersion: PLAYWRIGHT_CORE_VERSION,
   artifactPath: playwrightArtifact, manifestPath: playwrightManifest,
@@ -168,9 +208,12 @@ async function validatePinnedConfig({ verifyTransport = false } = {}) {
 
 async function buildRunnerCommand() {
   await validatePinnedConfig();
-  if (await sha256(childEntrypoint) !== PHASE9_ARTIFACT_PINS.child || await sha256(childConfig) !== PHASE9_ARTIFACT_PINS.config) {
+  const childBytes = await readFile(childEntrypoint);
+  if (createHash('sha256').update(childBytes).digest('hex') !== PHASE9_ARTIFACT_PINS.child
+    || await sha256(childConfig) !== PHASE9_ARTIFACT_PINS.config) {
     throw new Error('Committed runner bytes do not match the literal reviewed pins.');
   }
+  verifyPinnedChildPackage(childBytes);
   if (await sha256(evidenceHelper) !== PHASE9_ARTIFACT_PINS.helper) throw new Error('Committed evidence helper does not match its literal reviewed pin.');
   if (await sha256(playwrightCleanupHelper) !== PHASE9_ARTIFACT_PINS.playwrightCleanupHelper) throw new Error('Committed Playwright cleanup helper does not match its literal reviewed pin.');
   if (await sha256(processInspector) !== PHASE9_ARTIFACT_PINS.processInspector) throw new Error('Committed Darwin process inspector does not match its literal reviewed pin.');
@@ -455,6 +498,9 @@ async function verifyAdmittedRunnerBlobs(deployedSha) {
     ]);
     if (!Buffer.from(blob).equals(worktree) || createHash('sha256').update(blob).digest('hex') !== pin) {
       throw new Error('Admitted runner bytes do not match the deployed Git blob and literal reviewed pin.');
+    }
+    if (relativePath === 'scripts/qa-evidence/phase9/child-runner.mjs') {
+      verifyPinnedChildPackage(Buffer.from(blob));
     }
   }
 }

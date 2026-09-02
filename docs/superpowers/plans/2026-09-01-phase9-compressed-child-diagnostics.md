@@ -35,11 +35,11 @@
 - Produces: internal resource signal field `scopeRejection: 0|1|2|3|4|5|6|7|8|9` only for an unscoped `staging-join-admin-api` request.
 - Produces: terminal diagnostic checkpoint `window-no-team-join-admin` with reason `url|method|resource-type|body|frame|header-schema|authorization|cookie|identifier|recorder`.
 
-- [ ] **Step 1: Write classifier and propagation RED tests**
+- [x] **Step 1: Write classifier and propagation RED tests**
 
 Add literal cases that mutate exactly one raw request field and require codes `0..8`; add a null bounded-header capture requiring code `9`; add a No Team admission window requiring diagnostic `['window-no-team-join-admin', 'cookie']`; add all ten pairs to guardian/certificate symmetry fixtures.
 
-- [ ] **Step 2: Run the RED tests**
+- [x] **Step 2: Run the RED tests**
 
 Run:
 
@@ -49,7 +49,7 @@ node --test --test-name-pattern='join-admin lookup reports a closed rejection ca
 
 Expected: classifier lacks `scopeRejection`, action-window schema rejects the field, and guardian rejects the new checkpoint.
 
-- [ ] **Step 3: Implement minimal closed propagation**
+- [x] **Step 3: Implement minimal closed propagation**
 
 In the client, derive only the numeric code after exact URL/method/resource/body/frame/header/auth/cookie/identifier checks; code `9` represents incomplete bounded recorder material. In scenario contracts, require the field if and only if target kind is join-admin and evidence is unscoped, validate integer range `0..9`, map through:
 
@@ -59,7 +59,7 @@ In the client, derive only the numeric code after exact URL/method/resource/body
 
 Emit only the mapped reason at `window-no-team-join-admin`. Add the identical checkpoint/reason set and `scenario-action` stage to guardian and terminal certificate schemas.
 
-- [ ] **Step 4: Run focused GREEN plus real Chrome**
+- [x] **Step 4: Run focused GREEN plus real Chrome**
 
 Run the Step 2 command, then:
 
@@ -79,11 +79,11 @@ Expected: all focused cases pass; real Chrome distinguishes the exact valid PATC
 - Produces: `compileRecoveredChild(): Promise<Buffer>`.
 - Produces: `auditRecoveredChild(bytes: Buffer): { bytes: number, sha256: string }`.
 
-- [ ] **Step 1: Write the recovered-module RED**
+- [x] **Step 1: Write the recovered-module RED**
 
 Require two `compileRecoveredChild()` calls to be byte-identical, require no literal `import.meta.url`, require the generated-only `globalThis.__phase9EntryUrl` binding, parse the bytes as ESM, and require every static specifier to begin `node:`.
 
-- [ ] **Step 2: Run the RED**
+- [x] **Step 2: Run the RED**
 
 Run:
 
@@ -93,7 +93,7 @@ node --test --test-name-pattern='recovered child module is deterministic and ent
 
 Expected: FAIL because `compileRecoveredChild` is absent.
 
-- [ ] **Step 3: Implement the recovered compiler**
+- [x] **Step 3: Implement the recovered compiler**
 
 Rename the current private compile function to exported `compileRecoveredChild`; retain the error-minimization transform and add the exact esbuild define:
 
@@ -103,7 +103,7 @@ define: { 'import.meta.url': 'globalThis.__phase9EntryUrl' }
 
 Implement `auditRecoveredChild` using `new TextDecoder('utf-8', { fatal: true })`, Acorn, and the existing static-specifier scan, rejecting non-Buffer, empty, over-`262,144` bytes, invalid UTF-8/ESM, a missing generated entry binding, any literal `import.meta.url`, or any non-`node:` static import.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run the Step 2 command and the existing child error-transform test. Expected: both pass.
 
@@ -117,11 +117,11 @@ Run the Step 2 command and the existing child error-transform test. Expected: bo
 - Produces: `packageRecoveredChild(bytes: Buffer): { wrapper: Buffer, gzip: Buffer, recoveredSha256: string, gzipSha256: string }`.
 - Produces: `inspectPackagedChild(wrapper: Buffer): { recovered: Buffer, gzip: Buffer }` for build/test admission only.
 
-- [ ] **Step 1: Write packaging RED tests**
+- [x] **Step 1: Write packaging RED tests**
 
 Require two packages of independent recovered builds to have identical gzip and wrapper bytes; require wrapper size `<= 131072`; require one static `node:zlib` import, one base64 payload, no path APIs, and no literal recovered source. `inspectPackagedChild` must recover bytes exactly equal to `compileRecoveredChild()`. Mutations to payload, length, import, duplicate payload, global binding, or wrapper structure must reject.
 
-- [ ] **Step 2: Run the RED**
+- [x] **Step 2: Run the RED**
 
 Run:
 
@@ -131,7 +131,7 @@ node --test --test-name-pattern='compressed child wrapper is deterministic self-
 
 Expected: FAIL because packaging exports are absent.
 
-- [ ] **Step 3: Implement deterministic packaging**
+- [x] **Step 3: Implement deterministic packaging**
 
 Use `gzipSync(bytes, { level: 9, mtime: 0 })`. Generate one fixed wrapper that:
 
@@ -153,11 +153,11 @@ try {
 
 Generate the string without interpolating any path or external value. `inspectPackagedChild` must parse and validate the exact fixed wrapper grammar before decoding/gunzipping; it must enforce one payload, exact length, valid gzip, recovered audit, and no trailing/alternate source.
 
-- [ ] **Step 4: Execute through the real eval boundary**
+- [x] **Step 4: Execute through the real eval boundary**
 
 Run a test fixture using the exact pinned Node arguments `--input-type=module --eval <wrapper> -- ...`; assert the recovered module sees the wrapper eval URL through the generated binding, emits expected protocol, and removes the binding. Add corrupt/nonzero/trailing-output fixtures to existing guardian attribution tests.
 
-- [ ] **Step 5: Run packaging GREEN**
+- [x] **Step 5: Run packaging GREEN**
 
 Run Task 2 and Task 3 focused patterns. Expected: all pass.
 
@@ -173,19 +173,19 @@ Run Task 2 and Task 3 focused patterns. Expected: all pass.
 **Interfaces:**
 - Builder stdout: exact JSON keys `bytes`, `sha256`, `recoveredBytes`, `recoveredSha256`, `gzipBytes`, `gzipSha256`.
 
-- [ ] **Step 1: Make builder output the wrapper only after dual equality**
+- [x] **Step 1: Make builder output the wrapper only after dual equality**
 
 Compile and package twice; require recovered, gzip, and wrapper equality; audit both; write only the wrapper mode `0444`. Emit the six fixed metadata fields.
 
-- [ ] **Step 2: Build twice and compare**
+- [x] **Step 2: Build twice and compare**
 
 Run the builder twice, saving the first child bytes outside the repository with `mktemp`; compare exact bytes and all six metadata values. Expected: identical and under cap.
 
-- [ ] **Step 3: Update literal pins**
+- [x] **Step 3: Update literal pins**
 
 Update `PHASE9_ARTIFACT_PINS` and runner config literals for child, child source, builder, Playwright client, scenario contracts, and config hashes. Add exact tests that the wrapper inspection recovers the reported recovered SHA and that worktree/Git-blob inputs match literals.
 
-- [ ] **Step 4: Run focused child/guardian tests**
+- [x] **Step 4: Run focused child/guardian tests**
 
 Run:
 
@@ -201,15 +201,15 @@ Expected: all pass, including clean-close/nonzero/trailing-output attribution.
 - Modify: `docs/superpowers/plans/2026-08-25-phase-9-committed-browser-evidence-runner.md` with exact RED/GREEN/build evidence.
 - Modify ignored progress/report files only with sanitized counts and hashes.
 
-- [ ] **Step 1: Run complete local verification**
+- [x] **Step 1: Run complete local verification**
 
 Run full Phase 9, fixture/identity/hygiene, `npm run verify`, dry-run `44=40+4`, stripped-env offline smoke, syntax/ESLint/diff/secret scans, and exact browser/process/profile/materialization inventories. Expected: zero failures and zero managed residue.
 
-- [ ] **Step 2: Request independent review**
+- [x] **Step 2: Request independent review**
 
 Review cumulative diff from `a6d4d4308fb2292f02574f6aecec99a6cec95d35` through the final candidate, emphasizing wrapper grammar, recovered import audit, entry-URL binding, child protocol semantics, diagnostic non-disclosure, and fixed-cap admission. Resolve every Critical/Important finding with separate RED/GREEN cycles.
 
-- [ ] **Step 3: Commit exact reviewed bytes**
+- [x] **Step 3: Commit exact reviewed bytes**
 
 Commit only after fresh final gates and clean status. Record exact wrapper/recovered/gzip/input hashes.
 

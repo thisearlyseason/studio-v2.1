@@ -137,7 +137,6 @@ const NO_TEAM_DIAGNOSTIC_REASONS = Object.freeze({
   'window-no-team-request': new Set([
     'team-a', 'team-b', 'league', 'other', 'foreign', 'unscoped-firestore-document',
     'unscoped-firestore-run-query', 'unscoped-firestore-listen', 'unscoped-firestore-protected',
-    'unscoped-staging-join-admin-api',
     'unscoped-staging-protected-api',
   ]),
   'window-no-team-listener': new Set([
@@ -146,6 +145,9 @@ const NO_TEAM_DIAGNOSTIC_REASONS = Object.freeze({
     'unscoped-staging-join-admin-api',
     'unscoped-staging-protected-api',
   ]),
+  'window-no-team-join-admin': new Set(
+    'url|method|resource-type|body|frame|header-schema|authorization|cookie|identifier|recorder'.split('|'),
+  ),
 });
 const isNoTeamDiagnostic = (checkpoint, reason) => (
   Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, checkpoint)
@@ -193,6 +195,7 @@ const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'window-no-team-selection': 'scenario-action',
   'window-no-team-request': 'scenario-action',
   'window-no-team-listener': 'scenario-action',
+  'window-no-team-join-admin': 'scenario-action',
   'landing-expectation': 'scenario-action',
   'landing-heading': 'scenario-action',
   'landing-session': 'scenario-action',

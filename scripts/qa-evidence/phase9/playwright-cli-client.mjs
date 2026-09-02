@@ -501,16 +501,6 @@ const exactFirestoreRestHeaders = value => {
     && (!Object.hasOwn(headers, 'x-firebase-appcheck') || validBearer(`Bearer ${headers['x-firebase-appcheck']}`));
 };
 
-const exactJoinAdminHeaders = (value, frameUrl) => {
-  const headers = normalizeHeaders(value);
-  return hasOnlyAllowedHeaders(headers, new Set(['authorization', 'cookie']))
-    && headers.accept === '*/*'
-    && headers.origin === STAGING_ORIGIN
-    && headers.referer === frameUrl
-    && validBearer(headers.authorization)
-    && (headers.cookie === undefined || exactCookieHeader(headers.cookie));
-};
-
 const exactListenTransportHeaders = (value, method) => {
   const headers = normalizeHeaders(value);
   const allowed = new Set(['content-type']);
@@ -590,16 +580,22 @@ const classifyFixtureResourceScopesValue = (
   ];
   const evidence = new Set();
   let invalidEvidenceCount = 0;
+  let scopeRejection = null;
   const add = value => evidence.add(value);
-  const unknown = () => {
+  const unknown = rejection => {
     invalidEvidenceCount += 1;
+    if (scopeRejection === null && Number.isInteger(rejection)) scopeRejection = rejection;
     add('unscoped-resource');
   };
   const result = () => {
     const scopeEvidence = evidenceOrder.filter(value => evidence.has(value));
     if (scopeEvidence.length === 0) scopeEvidence.push('unscoped-resource');
     const resourceScopes = scopeOrder.filter(scope => scopeEvidence.some(item => evidenceToScope[item] === scope));
-    return { scopeEvidence, resourceScopes };
+    return {
+      scopeEvidence,
+      resourceScopes,
+      ...(scopeRejection === null ? {} : { scopeRejection }),
+    };
   };
 
   if (!signal || typeof signal !== 'object' || Array.isArray(signal) || typeof signal.url !== 'string') {
@@ -620,18 +616,22 @@ const classifyFixtureResourceScopesValue = (
     const identifiers = typeof runId === 'string'
       ? [runId, `${runId}-team-a`, `${runId}-team-b`, `${runId}-league`]
       : [];
-    const exactShape = method === 'PATCH'
-      && signal.resourceType === 'fetch'
-      && target.search === ''
-      && target.hash === ''
-      && signal.body === ''
-      && exactJoinAdminHeaders(signal.headers, signal.frameUrl)
-      && exactJoinFrame(signal.frameUrl)
-      && !rawContainsIdentifier([
-        signal.url, signal.method, signal.resourceType, signal.headers, signal.body, signal.frameUrl,
-      ], identifiers);
-    if (exactShape) add('join-admin-patch');
-    else unknown();
+    const headers = normalizeHeaders(signal.headers);
+    if (target.search !== '' || target.hash !== '') unknown(0);
+    else if (method !== 'PATCH') unknown(1);
+    else if (signal.resourceType !== 'fetch') unknown(2);
+    else if (signal.body !== '') unknown(3);
+    else if (!exactJoinFrame(signal.frameUrl)) unknown(4);
+    else if (!hasOnlyAllowedHeaders(headers, new Set(['authorization', 'cookie']))
+      || headers.accept !== '*/*'
+      || headers.origin !== stagingOrigin
+      || headers.referer !== signal.frameUrl) unknown(5);
+    else if (!validBearer(headers.authorization)) unknown(6);
+    else if (headers.cookie !== undefined && !exactCookieHeader(headers.cookie)) unknown(7);
+    else if (rawContainsIdentifier([
+      signal.url, signal.method, signal.resourceType, signal.headers, signal.body, signal.frameUrl,
+    ], identifiers)) unknown(8);
+    else add('join-admin-patch');
     return result();
   }
   if (
@@ -1818,7 +1818,9 @@ const sanitizeResourceSignal = (
       ? classifyFixtureResourceScopesValue(
         raw, undefined, 'qa-no-team', STAGING_ORIGIN, STAGING_PROJECT_ID, activeListenTargetIds,
       )
-      : failClosedScopes;
+      : targetKind === 'staging-join-admin-api'
+        ? { ...failClosedScopes, scopeRejection: 9 }
+        : failClosedScopes;
   const signal = {
     targetKind,
     method,
@@ -1826,6 +1828,7 @@ const sanitizeResourceSignal = (
     initiatingFrameUrl: cleanUrl(raw.frameUrl, fixtureRunId),
     scopeEvidence: [...scopes.scopeEvidence],
     resourceScopes: [...scopes.resourceScopes],
+    ...(Object.hasOwn(scopes, 'scopeRejection') ? { scopeRejection: scopes.scopeRejection } : {}),
   };
   validateResourceSignal(signal, 'Locally derived resource signal');
   return signal;

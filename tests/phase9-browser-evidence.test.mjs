@@ -11,6 +11,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 import { accountSessionRedirect } from '../src/lib/dashboard-account-session.ts';
 import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
@@ -95,8 +96,9 @@ const NO_TEAM_POLICY_DIAGNOSTICS = Object.freeze([
   ['window-no-team-request', 'unscoped-firestore-run-query'],
   ['window-no-team-request', 'unscoped-firestore-listen'],
   ['window-no-team-request', 'unscoped-firestore-protected'],
-  ['window-no-team-request', 'unscoped-staging-join-admin-api'],
   ['window-no-team-request', 'unscoped-staging-protected-api'],
+  ...'url|method|resource-type|body|frame|header-schema|authorization|cookie|identifier|recorder'
+    .split('|').map(reason => ['window-no-team-join-admin', reason]),
   ['window-no-team-listener', 'team-a'],
   ['window-no-team-listener', 'team-b'],
   ['window-no-team-listener', 'league'],
@@ -3699,11 +3701,29 @@ test('phase 9 browser scenarios allow No Team self-account setup while rejecting
     protectedListenerStarts: 0,
     listenerSignals: [],
   };
-  const joinAdminDiagnostics = [];
-  await assert.rejects(run(joinAdminUnscoped, joinAdminDiagnostics), /No Team.*typed resource scope/i);
-  assert.deepEqual(joinAdminDiagnostics.at(-1), [
-    'window-no-team-request',
-    'unscoped-staging-join-admin-api',
+  await assert.rejects(run(joinAdminUnscoped), /scope rejection/i);
+
+  const closedJoinAdminCause = Array.from({ length: 7 }, landing);
+  closedJoinAdminCause[1] = {
+    ...landing(),
+    protectedRequests: 1,
+    protectedRequestSignals: [{
+      targetKind: 'staging-join-admin-api',
+      method: 'PATCH',
+      resourceType: 'fetch',
+      initiatingFrameUrl: `${STAGING_ORIGIN}/admin`,
+      scopeEvidence: ['unscoped-resource'],
+      resourceScopes: ['unscoped'],
+      scopeRejection: 7,
+    }],
+    protectedListenerStarts: 0,
+    listenerSignals: [],
+  };
+  const closedJoinAdminDiagnostics = [];
+  await assert.rejects(run(closedJoinAdminCause, closedJoinAdminDiagnostics), /No Team.*typed resource scope/i);
+  assert.deepEqual(closedJoinAdminDiagnostics.at(-1), [
+    'window-no-team-join-admin',
+    'cookie',
   ]);
 
   const protectedFirestoreUnscoped = Array.from({ length: 7 }, landing);
@@ -4315,6 +4335,39 @@ test('phase 9 local client derives request evidence from raw transport facts and
   assert.notEqual(result.pageId, forgedPageId);
 });
 
+test('phase 9 local client attributes incomplete join-admin capture to the recorder boundary', async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const transport = createCliTransport(argv => {
+    const code = argv[argv.indexOf('run-code') + 1] ?? '';
+    if (code.includes('phase9:mark')) return cliResult({ pageId: 'ignored', sequence: 1 });
+    if (code.includes('phase9:sample')) return cliResult({
+      pageId: 'ignored', terminalReached: true, loadingVisible: false,
+      finalUrl: `${STAGING_ORIGIN}/teams/join`, finalPath: '/teams/join',
+      visibleSentinels: ['Join & Invite'], sessionPresent: true, protectedRender: false,
+      rawRequests: [joinAdminRaw({ headers: null })], rawResponses: [], rawTeamSelections: [],
+      pageErrors: [], appConsoleErrors: [], unexpectedRequestFailures: [], overflow: 1,
+      renderPath: '/teams/join', renderSentinel: 'Join & Invite', redirectReason: 'none', renderSignals: [],
+    });
+    return blankAwareCliResult(argv);
+  });
+  const client = createPlaywrightCliClient({
+    execute: transport.execute,
+    wrapperPath: '/safe/playwright_cli.sh',
+    fixtureRunId: runId,
+  });
+  await installSignalRecorder(client, 'incomplete-join-admin');
+  const result = await observeAction({
+    client, session: 'incomplete-join-admin', stage: 'incomplete-join-admin',
+    terminal: async () => {}, action: async () => {},
+  });
+  assert.deepEqual(result.protectedRequestSignals[0], {
+    targetKind: 'staging-join-admin-api', method: 'PATCH', resourceType: 'fetch',
+    initiatingFrameUrl: RAW_STAGING_FRAME,
+    scopeEvidence: ['unscoped-resource'], resourceScopes: ['unscoped'],
+    scopeRejection: 9,
+  });
+});
+
 test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH producer shape', async () => {
   const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
@@ -4374,6 +4427,31 @@ test('phase 9 join-admin lookup requires the exact bodyless authenticated PATCH 
   }
 });
 
+test('phase 9 join-admin lookup reports a closed rejection cause without raw request material', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const classify = signal => classifyFixtureResourceScopes(signal, { runId, alias: 'qa-no-team' });
+  const rejected = [
+    [joinAdminRaw({ url: `${STAGING_ORIGIN}/api/schools/admins?probe=1` }), 0],
+    [joinAdminRaw({ method: 'POST' }), 1],
+    [joinAdminRaw({ resourceType: 'xhr' }), 2],
+    [joinAdminRaw({ body: '{}' }), 3],
+    [joinAdminRaw({ frameUrl: `${STAGING_ORIGIN}/admin` }), 4],
+    [joinAdminRaw({ headers: { accept: '*/*' } }), 5],
+    [joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, authorization: 'Basic rejected' } }), 6],
+    [joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: '' } }), 7],
+    [joinAdminRaw({ headers: { ...JOIN_ADMIN_PRODUCER_HEADERS, cookie: `fixture=${runId}` } }), 8],
+  ];
+  for (const [raw, cause] of rejected) {
+    assert.deepEqual(classify(raw), {
+      scopeEvidence: ['unscoped-resource'],
+      resourceScopes: ['unscoped'],
+      scopeRejection: cause,
+    });
+    assert.equal(JSON.stringify(classify(raw)).includes(runId), false);
+  }
+});
+
 darwinRuntimeTest('phase 9 join-admin lookup accepts the exact real Chrome PATCH producer', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPlaywrightCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   try {
@@ -4420,28 +4498,43 @@ darwinRuntimeTest('phase 9 join-admin lookup accepts the exact real Chrome PATCH
       const request = page.__phase9EvidenceRecorder.rawRequests.find(item =>
         item.url === ${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)});
       if (!request) throw new Error('Expected the intercepted join-admin PATCH.');
-      return request;
+      await page.evaluate(() => fetch('/api/schools/admins', {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer phase9-test', 'X-Unapproved': 'present' },
+      }).then(response => response.json()));
+      const rejected = page.__phase9EvidenceRecorder.rawRequests.filter(item =>
+        item.url === ${JSON.stringify(`${STAGING_ORIGIN}/api/schools/admins`)}).at(-1);
+      if (!rejected || rejected === request) throw new Error('Expected the rejected join-admin PATCH.');
+      return { request, rejected };
     }`);
     const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
-    assert.equal(raw.headers.cookie.split('; ').filter(pair => pair.startsWith('__session=')).length, 2);
-    const classified = classifyFixtureResourceScopes(raw, {
+    assert.equal(raw.request.headers.cookie.split('; ').filter(pair => pair.startsWith('__session=')).length, 2);
+    const classified = classifyFixtureResourceScopes(raw.request, {
       runId: 'qa-phase7-20260825T140000Z-ab12cd34ef56',
       alias: 'qa-no-team',
     });
     assert.deepEqual(classified.resourceScopes, ['join-admin-lookup'], JSON.stringify({
-      method: raw.method,
-      resourceType: raw.resourceType,
-      bodyLength: raw.body.length,
-      frameUrl: raw.frameUrl,
-      headerNames: Object.keys(raw.headers).sort(),
-      accept: raw.headers.accept,
-      origin: raw.headers.origin,
-      referer: raw.headers.referer,
-      secChUa: raw.headers['sec-ch-ua'],
-      secChUaMobile: raw.headers['sec-ch-ua-mobile'],
-      secChUaPlatform: raw.headers['sec-ch-ua-platform'],
-      userAgent: raw.headers['user-agent'],
+      method: raw.request.method,
+      resourceType: raw.request.resourceType,
+      bodyLength: raw.request.body.length,
+      frameUrl: raw.request.frameUrl,
+      headerNames: Object.keys(raw.request.headers).sort(),
+      accept: raw.request.headers.accept,
+      origin: raw.request.headers.origin,
+      referer: raw.request.headers.referer,
+      secChUa: raw.request.headers['sec-ch-ua'],
+      secChUaMobile: raw.request.headers['sec-ch-ua-mobile'],
+      secChUaPlatform: raw.request.headers['sec-ch-ua-platform'],
+      userAgent: raw.request.headers['user-agent'],
     }));
+    assert.deepEqual(classifyFixtureResourceScopes(raw.rejected, {
+      runId: 'qa-phase7-20260825T140000Z-ab12cd34ef56',
+      alias: 'qa-no-team',
+    }), {
+      scopeEvidence: ['unscoped-resource'],
+      resourceScopes: ['unscoped'],
+      scopeRejection: 5,
+    });
   } finally {
     await closeAndVerifyBrowsers(client);
   }
@@ -11379,6 +11472,129 @@ test('phase 9 child runner build transform preserves messages read by control fl
   `)), /control-flow error message/i);
 });
 
+test('phase 9 recovered child module is deterministic and entry-url bound', async () => {
+  const { compileRecoveredChild, auditRecoveredChild } = await import(
+    '../scripts/qa-evidence/phase9/build-child-runner.mjs'
+  );
+  assert.equal(typeof compileRecoveredChild, 'function');
+  assert.equal(typeof auditRecoveredChild, 'function');
+  const first = await compileRecoveredChild();
+  const second = await compileRecoveredChild();
+  assert.equal(first.equals(second), true);
+  assert.equal(first.includes(Buffer.from('import.meta.url')), false);
+  assert.equal(first.includes(Buffer.from('globalThis.__phase9EntryUrl')), true);
+  const receipt = auditRecoveredChild(first);
+  assert.deepEqual(receipt, {
+    bytes: first.length,
+    sha256: createHash('sha256').update(first).digest('hex'),
+  });
+  assert.throws(() => auditRecoveredChild(Buffer.from('import value from "local-package";')),
+    /recovered child/i);
+});
+
+test('phase 9 recovered child audit rejects alternate imports and dead entry-binding text', async () => {
+  const { auditRecoveredChild } = await import(
+    '../scripts/qa-evidence/phase9/build-child-runner.mjs'
+  );
+  for (const source of [
+    "import 'data:text/javascript,globalThis.phase9AlternateSource=true';globalThis.__phase9EntryUrl;",
+    "'globalThis.__phase9EntryUrl';export{};",
+    '/* globalThis.__phase9EntryUrl */ export{};',
+    "globalThis.__phase9EntryUrl;import.meta['url'];",
+    'globalThis.__phase9EntryUrl;const {url}=import.meta;',
+  ]) assert.throws(() => auditRecoveredChild(Buffer.from(source)), /recovered child/i);
+});
+
+test('phase 9 compressed child wrapper is deterministic self-contained and exact', async () => {
+  const {
+    compileRecoveredChild, inspectPackagedChild, packageRecoveredChild,
+  } = await import('../scripts/qa-evidence/phase9/build-child-runner.mjs');
+  assert.equal(typeof packageRecoveredChild, 'function');
+  assert.equal(typeof inspectPackagedChild, 'function');
+  const recoveredA = await compileRecoveredChild();
+  const recoveredB = await compileRecoveredChild();
+  const packagedA = packageRecoveredChild(recoveredA);
+  const packagedB = packageRecoveredChild(recoveredB);
+  assert.equal(packagedA.wrapper.equals(packagedB.wrapper), true);
+  assert.equal(packagedA.gzip.equals(packagedB.gzip), true);
+  assert.equal(packagedA.wrapper.length <= 131_072, true);
+  assert.equal(packagedA.wrapper.toString('utf8').includes("from'node:zlib'"), true);
+  assert.equal(packagedA.wrapper.toString('utf8').includes('node:fs'), false);
+  assert.equal(packagedA.wrapper.includes(recoveredA.subarray(0, 128)), false);
+  const inspected = inspectPackagedChild(packagedA.wrapper);
+  assert.equal(inspected.recovered.equals(recoveredA), true);
+  assert.equal(inspected.gzip.equals(packagedA.gzip), true);
+  assert.deepEqual({
+    recoveredSha256: packagedA.recoveredSha256,
+    gzipSha256: packagedA.gzipSha256,
+  }, {
+    recoveredSha256: createHash('sha256').update(recoveredA).digest('hex'),
+    gzipSha256: createHash('sha256').update(packagedA.gzip).digest('hex'),
+  });
+  const wrapperText = packagedA.wrapper.toString('utf8');
+  for (const mutation of [
+    `${wrapperText} `,
+    wrapperText.replace("node:zlib", 'node:fs'),
+    wrapperText.replace('__phase9EntryUrl', '__phase9OtherEntryUrl'),
+    wrapperText.replace(/([A-Za-z0-9+/])(?=[A-Za-z0-9+/]*={0,2}\"\s*,\s*\"base64\")/, value => value === 'A' ? 'B' : 'A'),
+  ]) assert.throws(() => inspectPackagedChild(Buffer.from(mutation)), /packaged child/i);
+  const payload = /Buffer\.from\("([A-Za-z0-9+/]+={0,2})","base64"\)/.exec(wrapperText)?.[1];
+  assert.ok(payload);
+  const concatenatedGzip = Buffer.concat([
+    packagedA.gzip, gzipSync(Buffer.alloc(0), { level: 9, mtime: 0 }),
+  ]);
+  assert.throws(() => inspectPackagedChild(Buffer.from(
+    wrapperText.replace(payload, concatenatedGzip.toString('base64')),
+  )), /packaged child/i);
+
+  const synthetic = Buffer.from(`
+    process.stdout.write(globalThis.__phase9EntryUrl + '\\n');
+    setTimeout(() => process.stdout.write(String(!Object.hasOwn(globalThis, '__phase9EntryUrl'))), 0);
+  `);
+  const execution = spawnSync(process.execPath, [
+    '--input-type=module', '--eval', packageRecoveredChild(synthetic).wrapper.toString('utf8'), '--', 'probe',
+  ], { cwd: join(testDirectory, '..'), encoding: 'utf8', timeout: 10_000 });
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.deepEqual(execution.stdout.trim().split('\n'), [
+    `${pathToFileURL(join(testDirectory, '..')).href}/[eval1]`,
+    'true',
+  ]);
+});
+
+test('phase 9 child builder selects the deterministic packaged wrapper', async () => {
+  const { compilePackagedChild, inspectPackagedChild } = await import(
+    '../scripts/qa-evidence/phase9/build-child-runner.mjs'
+  );
+  assert.equal(typeof compilePackagedChild, 'function');
+  const built = await compilePackagedChild();
+  assert.deepEqual(Object.keys(built), [
+    'wrapper', 'bytes', 'sha256', 'recoveredBytes', 'recoveredSha256', 'gzipBytes', 'gzipSha256',
+  ]);
+  assert.equal(built.wrapper.length, built.bytes);
+  assert.equal(built.bytes <= 131_072, true);
+  assert.equal(createHash('sha256').update(built.wrapper).digest('hex'), built.sha256);
+  const inspected = inspectPackagedChild(built.wrapper);
+  assert.equal(inspected.recovered.length, built.recoveredBytes);
+  assert.equal(createHash('sha256').update(inspected.recovered).digest('hex'), built.recoveredSha256);
+  assert.equal(inspected.gzip.length, built.gzipBytes);
+  assert.equal(createHash('sha256').update(inspected.gzip).digest('hex'), built.gzipSha256);
+});
+
+test('phase 9 CLI admits the literal recovered and gzip child identities', async () => {
+  const { PHASE9_ARTIFACT_PINS, verifyPinnedChildPackage } = await import(
+    '../scripts/qa-evidence/phase9/cli.mjs'
+  );
+  const wrapper = readFileSync(join(
+    testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs',
+  ));
+  assert.match(PHASE9_ARTIFACT_PINS.childRecovered, /^[0-9a-f]{64}$/);
+  assert.match(PHASE9_ARTIFACT_PINS.childGzip, /^[0-9a-f]{64}$/);
+  assert.deepEqual(verifyPinnedChildPackage(wrapper), {
+    recoveredSha256: PHASE9_ARTIFACT_PINS.childRecovered,
+    gzipSha256: PHASE9_ARTIFACT_PINS.childGzip,
+  });
+});
+
 const portableConfinedPlaywrightFilesystem = Object.freeze({
   ...fsPromises,
   removePlaywrightTree: ({ rootReceipt }) => fsPromises.rm(
@@ -11637,6 +11853,9 @@ test('phase 9 production child client factory enforces the 90000 millisecond com
   const { createPhase9ProductionCliClient } = await import(
     '../scripts/qa-evidence/phase9/playwright-cli-client.mjs'
   );
+  const { inspectPackagedChild } = await import(
+    '../scripts/qa-evidence/phase9/build-child-runner.mjs'
+  );
   assert.equal(typeof createPhase9ProductionCliClient, 'function');
   let observedTimeout = null;
   const client = createPhase9ProductionCliClient({
@@ -11649,9 +11868,10 @@ test('phase 9 production child client factory enforces the 90000 millisecond com
   await client.listBrowsers();
   assert.equal(observedTimeout, 90_000);
   const generated = readFileSync(
-    join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs'), 'utf8',
+    join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs'),
   );
-  assert.equal(generated.match(/timeoutMs:9e4/g)?.length, 1);
+  const recovered = inspectPackagedChild(generated).recovered.toString('utf8');
+  assert.equal(recovered.match(/timeoutMs:9e4/g)?.length, 1);
 });
 
 test('phase 9 production child reserves ownership before local acquisition and reports its receipt before browser action', () => {
@@ -12866,6 +13086,7 @@ test('phase 9 terminal recovery entrypoint rejects non-Darwin before filesystem 
 
 darwinRuntimeTest('phase 9 evidence CLI pins the reviewed self-contained child and one exact config artifact', async () => {
   const { buildRunnerCommand } = await import('../scripts/qa-evidence/phase9/cli.mjs');
+  const { inspectPackagedChild } = await import('../scripts/qa-evidence/phase9/build-child-runner.mjs');
   const descriptor = await buildRunnerCommand();
   assert.deepEqual(Object.keys(descriptor).sort(), ['configFiles', 'entrypoint', 'entrypointSha256']);
   assert.equal(descriptor.entrypoint, join(testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner.mjs'));
@@ -12873,10 +13094,14 @@ darwinRuntimeTest('phase 9 evidence CLI pins the reviewed self-contained child a
   assert.equal(readFileSync(descriptor.entrypoint).byteLength <= 131_072, true);
   assert.equal(descriptor.configFiles.length, 1);
   assert.equal(descriptor.configFiles[0].sha256, sha256File(descriptor.configFiles[0].path));
-  const source = readFileSync(descriptor.entrypoint, 'utf8');
-  const specifiers = [...source.matchAll(/(?:\bfrom\s+|\bimport\()\s*["']([^"']+)["']/g)].map(match => match[1]);
+  const wrapper = readFileSync(descriptor.entrypoint);
+  const source = wrapper.toString('utf8');
+  const recovered = inspectPackagedChild(wrapper).recovered.toString('utf8');
+  assert.equal(source.includes("from'node:zlib'"), true);
+  const specifiers = [...recovered.matchAll(/(?:\bfrom\s+|\bimport\()\s*["']([^"']+)["']/g)]
+    .map(match => match[1]);
   assert.equal(specifiers.every(specifier => specifier.startsWith('node:')), true);
-  assert.doesNotMatch(source, /PHASE9_GUARDIAN_RUN_MARKER|NODE_OPTIONS|NODE_PATH/);
+  assert.doesNotMatch(recovered, /PHASE9_GUARDIAN_RUN_MARKER|NODE_OPTIONS|NODE_PATH/);
 });
 
 test('phase 9 evidence child selects each logout tab before the action window mark', async () => {
