@@ -491,7 +491,20 @@ const actionsFor = session => ({
   navigate: path => client.goto(session, `${STAGING_ORIGIN}${path}`),
   waitForExactLocation: (path, sentinel) => waitForExactLocation(session, path, sentinel),
   waitForSettled: async () => client.runCode(session, 'async (page) => { await page.waitForTimeout(300); return true; }'),
-  sameOriginGet: target => client.runCode(session, `async (page) => page.evaluate(async target => (await fetch(target, { method: 'GET', credentials: 'same-origin', cache: 'no-store' })).status, ${JSON.stringify(target)})`),
+  sameOriginGet: target => client.runCode(session, `async (page) => page.evaluate(async target => {
+    const openDatabase = name => new Promise((resolve, reject) => { const request = indexedDB.open(name); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    const requestAll = store => new Promise((resolve, reject) => { const request = store.getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    const database = await openDatabase('firebaseLocalStorageDb');
+    const records = await requestAll(database.transaction('firebaseLocalStorage', 'readonly').objectStore('firebaseLocalStorage'));
+    database.close();
+    let accessToken = null;
+    const visit = (value, depth = 0) => { if (accessToken || !value || typeof value !== 'object' || depth > 8) return; if (typeof value.accessToken === 'string' && value.accessToken.length > 20) { accessToken = value.accessToken; return; } for (const child of Object.values(value)) visit(child, depth + 1); };
+    for (const record of records) visit(record);
+    if (!accessToken) throw new Error('client-auth-unavailable');
+    const result = await fetch(target, { method: 'GET', credentials: 'same-origin', cache: 'no-store', headers: { Authorization: 'Bearer ' + accessToken } });
+    accessToken = null;
+    return result.status;
+  }, ${JSON.stringify(target)})`),
   firestoreGet: target => client.runCode(session, `async (page) => page.evaluate(async ({ projectId, path }) => {
     const openDatabase = name => new Promise((resolve, reject) => { const request = indexedDB.open(name); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     const requestAll = store => new Promise((resolve, reject) => { const request = store.getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });

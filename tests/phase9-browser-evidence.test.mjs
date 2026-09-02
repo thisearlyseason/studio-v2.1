@@ -12382,6 +12382,20 @@ test('phase 9 production child client factory enforces the 90000 millisecond com
   assert.equal(recovered.match(/timeoutMs:9e4/g)?.length, 1);
 });
 
+test('phase 9 production isolation API probe sends the authenticated Firebase bearer token', () => {
+  const source = readFileSync(join(
+    testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner-source.mjs',
+  ), 'utf8');
+  const start = source.indexOf('sameOriginGet: target =>');
+  const end = source.indexOf('firestoreGet: target =>', start);
+  assert.ok(start >= 0 && end > start);
+  const implementation = source.slice(start, end);
+  assert.match(implementation, /firebaseLocalStorageDb/);
+  assert.match(implementation, /if \(!accessToken\) throw new Error\('client-auth-unavailable'\)/);
+  assert.match(implementation, /headers: \{ Authorization: 'Bearer ' \+ accessToken \}/);
+  assert.match(implementation, /accessToken = null/);
+});
+
 test('phase 9 production child reserves ownership before local acquisition and reports its receipt before browser action', () => {
   const source = readFileSync(join(
     testDirectory, '..', 'scripts', 'qa-evidence', 'phase9', 'child-runner-source.mjs',
