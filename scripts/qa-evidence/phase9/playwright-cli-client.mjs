@@ -1631,8 +1631,8 @@ export function correlateBrowserHttpConsoleError(
     if (
       !input || typeof input !== 'object' || Array.isArray(input)
       || input.type !== 'error'
-      || input.argsLength !== 0
-      || input.text !== 'Failed to load resource: the server responded with a status of 403 (Forbidden)'
+      || !Number.isInteger(input.argsLength) || input.argsLength < 0
+      || typeof input.text !== 'string'
       || !input.location || typeof input.location !== 'object' || Array.isArray(input.location)
       || input.location.lineNumber !== 0 || input.location.columnNumber !== 0
       || typeof input.location.url !== 'string' || input.location.url.length === 0

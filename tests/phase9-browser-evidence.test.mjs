@@ -1205,15 +1205,18 @@ test('phase 9 recorder correlates an exact protected HTTP console event across a
     location: { url: target, lineNumber: 0, columnNumber: 0 },
   };
   assert.equal(correlateBrowserHttpConsoleError(exact, candidates), 0);
-  assert.equal(correlateBrowserHttpConsoleError({ ...exact, argsLength: 1 }, candidates), -1);
+  assert.equal(correlateBrowserHttpConsoleError({
+    ...exact,
+    argsLength: 1,
+    text: 'A browser-specific presentation of the same response-bound denial',
+  }, candidates), 0);
   assert.equal(correlateBrowserHttpConsoleError({
     ...exact,
     location: { ...exact.location, url: `${STAGING_ORIGIN}/api/teams/chat?teamId=other` },
   }, candidates), -1);
   assert.equal(correlateBrowserHttpConsoleError({
     ...exact,
-    text: 'Failed to load resource: the server responded with a status of 404 (Not Found)',
-  }, candidates), -1);
+  }, [{ ...candidates[0], status: 404 }]), -1);
 });
 
 darwinRuntimeTest('phase 9 recorder ignores exact current-or-prior RSC and Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
