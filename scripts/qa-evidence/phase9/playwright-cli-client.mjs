@@ -1334,6 +1334,8 @@ const installRecorderSource = () => String.raw`async (page) => {
       rawSelections: [],
       renders: [],
       rawResponses: [],
+      httpConsoleResponseCandidates: [],
+      httpConsoleResponses: [],
       pageErrors: [],
       appConsoleErrors: [],
       requestFailureSignals: [],
@@ -1405,10 +1407,15 @@ const installRecorderSource = () => String.raw`async (page) => {
     page.on('response', response => {
       const metadata = requestMetadata.get(response.request());
       if (metadata?.isJoinAdminRequest) metadata.joinAdminResponseAccepted = response.status() >= 200 && response.status() < 300;
-      boundedPush(state, 'rawResponses', {
+      const capturedResponse = {
         ...captureRequest(response.request()),
         status: response.status(),
-      });
+      };
+      boundedPush(state, 'rawResponses', capturedResponse);
+      state.httpConsoleResponseCandidates.push(capturedResponse);
+      if (state.httpConsoleResponseCandidates.length > ${MAX_SIGNAL_COUNT}) {
+        state.httpConsoleResponseCandidates.shift();
+      }
     });
     page.on('requestfinished', request => {
       const metadata = requestMetadata.get(request);
@@ -1419,6 +1426,22 @@ const installRecorderSource = () => String.raw`async (page) => {
       if (message.type() !== 'error') return;
       try {
         const location = message.location();
+        const candidateIndex = (${correlateBrowserHttpConsoleError.toString()})({
+          type: message.type(),
+          argsLength: message.args().length,
+          text: message.text(),
+          location,
+        }, state.httpConsoleResponseCandidates, ${JSON.stringify(STAGING_ORIGIN)}, ${JSON.stringify([...NON_PROTECTED_API_PATHS])});
+        if (candidateIndex >= 0) {
+          const candidate = state.httpConsoleResponseCandidates.splice(candidateIndex, 1)[0];
+          boundedPush(state, 'httpConsoleResponses', candidate);
+          boundedPush(state, 'appConsoleErrors', {
+            kind: 'http-status',
+            status: 403,
+            url: boundedString(state, location.url, ${MAX_RAW_URL_BYTES}),
+          });
+          return;
+        }
         if (
           message.args().length === 0
           && message.text() === 'Failed to load resource: the server responded with a status of 403 (Forbidden)'
@@ -1487,6 +1510,7 @@ const MARK_SOURCE = String.raw`async (page) => {
   state.rawSelections = [];
   state.renders = [];
   state.rawResponses = [];
+  state.httpConsoleResponses = [];
   state.pageErrors = [];
   state.appConsoleErrors = [];
   state.requestFailureSignals = [];
@@ -1540,6 +1564,7 @@ const sampleSource = mark => String.raw`async (page) => {
     redirectReason: render.redirectReason,
     rawRequests: state.rawRequests,
     rawResponses: state.rawResponses,
+    httpConsoleResponses: state.httpConsoleResponses,
     rawTeamSelections: state.rawSelections,
     pageErrors: state.pageErrors,
     appConsoleErrors: state.appConsoleErrors,
@@ -1595,6 +1620,47 @@ const NON_PROTECTED_API_PATHS = new Set([
   '/api/newsletter/subscribe',
   '/api/newsletter/unsubscribe',
 ]);
+
+export function correlateBrowserHttpConsoleError(
+  input,
+  candidates,
+  stagingOrigin = STAGING_ORIGIN,
+  nonProtectedApiPaths = [...NON_PROTECTED_API_PATHS],
+) {
+  try {
+    if (
+      !input || typeof input !== 'object' || Array.isArray(input)
+      || input.type !== 'error'
+      || input.argsLength !== 0
+      || input.text !== 'Failed to load resource: the server responded with a status of 403 (Forbidden)'
+      || !input.location || typeof input.location !== 'object' || Array.isArray(input.location)
+      || input.location.lineNumber !== 0 || input.location.columnNumber !== 0
+      || typeof input.location.url !== 'string' || input.location.url.length === 0
+      || !Array.isArray(candidates)
+      || typeof stagingOrigin !== 'string'
+      || !Array.isArray(nonProtectedApiPaths)
+      || nonProtectedApiPaths.some(path => typeof path !== 'string')
+    ) return -1;
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      const candidate = candidates[index];
+      if (
+        !candidate || typeof candidate !== 'object' || Array.isArray(candidate)
+        || candidate.url !== input.location.url
+        || candidate.status !== 403
+        || candidate.resourceType !== 'fetch'
+      ) continue;
+      const target = new URL(candidate.url);
+      const protectedFirestore = target.protocol === 'https:' && target.hostname === 'firestore.googleapis.com';
+      const protectedApi = target.origin === stagingOrigin
+        && target.pathname.startsWith('/api/')
+        && !nonProtectedApiPaths.includes(target.pathname);
+      if (protectedFirestore || protectedApi) return index;
+    }
+    return -1;
+  } catch {
+    return -1;
+  }
+}
 
 const REQUEST_FAILURE_CLASSES = Object.freeze([
   'aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other',
@@ -1909,6 +1975,7 @@ const sanitizeWindow = (value, {
   const complete = booleanFields.every(field => typeof value[field] === 'boolean')
     && stringFields.every(field => typeof value[field] === 'string')
     && arrayFields.every(field => Array.isArray(value[field]))
+    && (value.httpConsoleResponses === undefined || Array.isArray(value.httpConsoleResponses))
     && ['unavailable', 'none', 'other'].includes(value.redirectReason)
     && Number.isInteger(value.overflow) && value.overflow >= 0;
   if (!complete) throw new Error('Recorder must return a complete signal sample.');
@@ -1930,7 +1997,8 @@ const sanitizeWindow = (value, {
   if (value.renderSentinel !== '' && !PUBLIC_VISIBLE_SENTINELS.includes(value.renderSentinel)) {
     throw new Error('Recorder render sentinel must use the closed source-backed enum.');
   }
-  for (const field of ['rawRequests', 'rawResponses', 'rawTeamSelections']) {
+  for (const field of ['rawRequests', 'rawResponses', 'rawTeamSelections', 'httpConsoleResponses']) {
+    if (value[field] === undefined) continue;
     if (value[field].length > MAX_SIGNAL_COUNT) throw new Error(`Recorder ${field} exceeds the bounded signal history.`);
   }
   const rawRequestFailureSignals = Array.from(value.unexpectedRequestFailures);
@@ -1960,6 +2028,8 @@ const sanitizeWindow = (value, {
   bindFinalRecorderGeneration(value, listenTargetState);
   const http = value.rawResponses.map(sanitizeHttpResult).filter(Boolean);
   const applicationConsoleErrors = [];
+  const correlatedHttpResponses = value.httpConsoleResponses ?? [];
+  const consumedCorrelatedResponses = new Set();
   for (const item of value.appConsoleErrors) {
     if (item === 'APPLICATION_CONSOLE_ERROR') {
       applicationConsoleErrors.push(item);
@@ -1970,16 +2040,27 @@ const sanitizeWindow = (value, {
       && item.kind === 'http-status'
       && item.status === 403
       && typeof item.url === 'string';
-    const matchingProtectedResponse = exactHttpStatusSignal && value.rawResponses.some(response => {
+    const matchesProtectedResponse = response => {
       if (response?.url !== item.url || response?.status !== item.status || response?.resourceType !== 'fetch') {
         return false;
       }
       const signal = sanitizeResourceSignal(response, fixtureRunId);
       return signal !== null && isProtectedResource(signal);
-    });
+    };
+    const correlatedIndex = exactHttpStatusSignal
+      ? correlatedHttpResponses.findIndex((response, index) => (
+        !consumedCorrelatedResponses.has(index) && matchesProtectedResponse(response)
+      ))
+      : -1;
+    const matchingProtectedResponse = correlatedIndex >= 0
+      || (exactHttpStatusSignal && value.rawResponses.some(matchesProtectedResponse));
     if (!matchingProtectedResponse) {
       throw new Error('Recorder HTTP console error must match an exact protected fetch response.');
     }
+    if (correlatedIndex >= 0) consumedCorrelatedResponses.add(correlatedIndex);
+  }
+  if (consumedCorrelatedResponses.size !== correlatedHttpResponses.length) {
+    throw new Error('Recorder HTTP console response proof must be consumed exactly once.');
   }
   const teamSelectionSignals = classifyTeamSelections(value.rawTeamSelections, fixtureRunId);
   const requestFailureMultiplicity = rawRequestFailureSignals.length === 1 ? 'single' : 'multiple';
