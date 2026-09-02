@@ -1424,8 +1424,9 @@ const installRecorderSource = () => String.raw`async (page) => {
     page.on('pageerror', () => boundedPush(state, 'pageErrors', 'PAGE_ERROR'));
     page.on('console', message => {
       if (message.type() !== 'error') return;
+      let location;
       try {
-        const location = message.location();
+        location = message.location();
         const candidateIndex = (${correlateBrowserHttpConsoleError.toString()})({
           type: message.type(),
           argsLength: message.args().length,
@@ -1437,14 +1438,15 @@ const installRecorderSource = () => String.raw`async (page) => {
           boundedPush(state, 'httpConsoleResponses', candidate);
           boundedPush(state, 'appConsoleErrors', {
             kind: 'http-status',
-            status: 403,
+            status: candidate.status,
             url: boundedString(state, location.url, ${MAX_RAW_URL_BYTES}),
           });
           return;
         }
+        const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2}) \([^)]+\)$/.exec(message.text());
         if (
           message.args().length === 0
-          && message.text() === 'Failed to load resource: the server responded with a status of 403 (Forbidden)'
+          && statusMatch
           && location?.lineNumber === 0
           && location?.columnNumber === 0
           && typeof location.url === 'string'
@@ -1452,7 +1454,7 @@ const installRecorderSource = () => String.raw`async (page) => {
         ) {
           boundedPush(state, 'appConsoleErrors', {
             kind: 'http-status',
-            status: 403,
+            status: Number(statusMatch[1]),
             url: boundedString(state, location.url, ${MAX_RAW_URL_BYTES}),
           });
           return;
@@ -1461,7 +1463,8 @@ const installRecorderSource = () => String.raw`async (page) => {
       const applicationClass = (${classifyApplicationConsoleError.toString()})({
         text: message.text(),
         argsLength: message.args().length,
-      });
+        location,
+      }, ${JSON.stringify(STAGING_ORIGIN)}, ${JSON.stringify([...NON_PROTECTED_API_PATHS])});
       boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR_' + applicationClass);
     });
     page.on('requestfailed', request => {
@@ -1645,12 +1648,14 @@ export function correlateBrowserHttpConsoleError(
       || !Array.isArray(nonProtectedApiPaths)
       || nonProtectedApiPaths.some(path => typeof path !== 'string')
     ) return -1;
+    const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2}) \([^)]+\)$/.exec(input.text);
+    const status = statusMatch ? Number(statusMatch[1]) : null;
     for (let index = candidates.length - 1; index >= 0; index -= 1) {
       const candidate = candidates[index];
       if (
         !candidate || typeof candidate !== 'object' || Array.isArray(candidate)
         || candidate.url !== input.location.url
-        || candidate.status !== 403
+        || (status !== null && candidate.status !== status)
         || candidate.resourceType !== 'fetch'
       ) continue;
       const target = new URL(candidate.url);
@@ -1666,16 +1671,42 @@ export function correlateBrowserHttpConsoleError(
   }
 }
 
-export function classifyApplicationConsoleError(input) {
+export function classifyApplicationConsoleError(
+  input,
+  stagingOrigin = STAGING_ORIGIN,
+  nonProtectedApiPaths = [...NON_PROTECTED_API_PATHS],
+) {
   if (!input || typeof input !== 'object' || Array.isArray(input)
     || typeof input.text !== 'string'
-    || !Number.isInteger(input.argsLength) || input.argsLength < 0) return 'other-plain';
+    || !Number.isInteger(input.argsLength) || input.argsLength < 0
+    || typeof stagingOrigin !== 'string'
+    || !Array.isArray(nonProtectedApiPaths)
+    || nonProtectedApiPaths.some(path => typeof path !== 'string')) return 'other-plain';
   if (input.text.startsWith('Event Sync Error:')) return 'team-event';
   if (input.text.startsWith('Game Sync Error:')) return 'team-game';
   if (input.text.startsWith('Error fetching ID token result:')) return 'token';
   if (input.text.startsWith('[TeamProvider] School Hub invitation claim failed:')) return 'invite';
   if (input.text.includes('Uncaught Error in snapshot listener')) return 'firebase-sdk';
-  if (input.text.startsWith('Failed to load resource:')) return 'network';
+  if (input.text.startsWith('Failed to load resource:')) {
+    const status = input.text.includes('status of 403')
+      ? '403'
+      : input.text.includes('status of 404') ? '404' : 'other';
+    let targetClass = 'invalid';
+    try {
+      const target = new URL(input.location?.url);
+      if (target.protocol === 'https:' && target.hostname === 'firestore.googleapis.com') {
+        targetClass = 'firestore';
+      } else if (target.origin === stagingOrigin) {
+        targetClass = target.pathname.startsWith('/api/')
+          && !nonProtectedApiPaths.includes(target.pathname)
+          ? 'protected-api'
+          : 'staging-other';
+      } else {
+        targetClass = 'external';
+      }
+    } catch {}
+    return `network-${status}-${targetClass}`;
+  }
   return input.argsLength > 0 ? 'other-args' : 'other-plain';
 }
 
@@ -1685,10 +1716,16 @@ const APPLICATION_CONSOLE_DIAGNOSTICS = Object.freeze({
   APPLICATION_CONSOLE_ERROR_token: 'window-console-token',
   APPLICATION_CONSOLE_ERROR_invite: 'window-console-invite',
   'APPLICATION_CONSOLE_ERROR_firebase-sdk': 'window-console-firebase-sdk',
-  APPLICATION_CONSOLE_ERROR_network: 'window-console-network',
   'APPLICATION_CONSOLE_ERROR_other-args': 'window-console-other-args',
   'APPLICATION_CONSOLE_ERROR_other-plain': 'window-console-other-plain',
 });
+
+const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
+  ['403', '404', 'other'].flatMap(status => (
+    ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
+      .map(target => `${status}-${target}`)
+  )),
+);
 
 const REQUEST_FAILURE_CLASSES = Object.freeze([
   'aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other',
@@ -2058,7 +2095,20 @@ const sanitizeWindow = (value, {
   const applicationConsoleErrors = [];
   const correlatedHttpResponses = value.httpConsoleResponses ?? [];
   const consumedCorrelatedResponses = new Set();
+  let remainingRetainedRequestFailureConsoleNoise = rawRequestFailureSignals.length;
   for (const item of value.appConsoleErrors) {
+    if (typeof item === 'string' && item.startsWith('APPLICATION_CONSOLE_ERROR_network-')) {
+      const reason = item.slice('APPLICATION_CONSOLE_ERROR_network-'.length);
+      if (!NETWORK_CONSOLE_DIAGNOSTIC_REASONS.has(reason)) {
+        throw new Error('Recorder captured an invalid network console classification.');
+      }
+      if (reason === 'other-invalid' && remainingRetainedRequestFailureConsoleNoise > 0) {
+        remainingRetainedRequestFailureConsoleNoise -= 1;
+        continue;
+      }
+      onDiagnosticCheckpoint?.('window-console-network', reason);
+      throw new Error('Recorder captured a classified application console error.');
+    }
     if (typeof item === 'string' && Object.hasOwn(APPLICATION_CONSOLE_DIAGNOSTICS, item)) {
       onDiagnosticCheckpoint?.(APPLICATION_CONSOLE_DIAGNOSTICS[item], 'console-error-invalid');
       throw new Error('Recorder captured a classified application console error.');
@@ -2066,7 +2116,7 @@ const sanitizeWindow = (value, {
     const exactHttpStatusSignal = item && typeof item === 'object' && !Array.isArray(item)
       && Object.keys(item).sort().join(',') === 'kind,status,url'
       && item.kind === 'http-status'
-      && item.status === 403
+      && Number.isInteger(item.status) && item.status >= 400 && item.status <= 599
       && typeof item.url === 'string';
     const matchesProtectedResponse = response => {
       if (response?.url !== item.url || response?.status !== item.status || response?.resourceType !== 'fetch') {

@@ -48,7 +48,6 @@ const DIAGNOSTIC_REASONS = Object.freeze({
   'window-console-token': 'console-error-invalid',
   'window-console-invite': 'console-error-invalid',
   'window-console-firebase-sdk': 'console-error-invalid',
-  'window-console-network': 'console-error-invalid',
   'window-console-other-args': 'console-error-invalid',
   'window-console-other-plain': 'console-error-invalid',
   'window-request-failure': 'request-failure-invalid', 'window-overflow': 'overflow-invalid',
@@ -61,6 +60,12 @@ const DIAGNOSTIC_REASONS = Object.freeze({
   'ownership-release': 'release-failed', 'row-emission': 'row-invalid',
   'private-finalization': 'finalization-failed',
 });
+const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
+  ['403', '404', 'other'].flatMap(status => (
+    ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
+      .map(target => `${status}-${target}`)
+  )),
+);
 const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
   'route-session', 'route-location', 'route-heading', 'route-render', 'route-attribution',
 ]);
@@ -382,6 +387,8 @@ function validateCertificate(input, {
         ? value.diagnostic.reason === DIAGNOSTIC_REASONS[value.diagnostic.checkpoint]
         : ROUTE_DIAGNOSTIC_CHECKPOINTS.has(value.diagnostic.checkpoint)
           ? ROUTE_DIAGNOSTIC_REASONS.has(value.diagnostic.reason)
+          : value.diagnostic.checkpoint === 'window-console-network'
+            ? NETWORK_CONSOLE_DIAGNOSTIC_REASONS.has(value.diagnostic.reason)
           : isNoTeamDiagnostic(value.diagnostic.checkpoint, value.diagnostic.reason))
       || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(value.diagnostic.checkpoint)
         && ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (

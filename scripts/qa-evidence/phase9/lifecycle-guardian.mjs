@@ -114,7 +114,6 @@ const RUNNER_DIAGNOSTICS = Object.freeze({
   'window-console-token': 'console-error-invalid',
   'window-console-invite': 'console-error-invalid',
   'window-console-firebase-sdk': 'console-error-invalid',
-  'window-console-network': 'console-error-invalid',
   'window-console-other-args': 'console-error-invalid',
   'window-console-other-plain': 'console-error-invalid',
   'window-request-failure': 'request-failure-invalid',
@@ -132,6 +131,12 @@ const RUNNER_DIAGNOSTICS = Object.freeze({
   'row-emission': 'row-invalid',
   'private-finalization': 'finalization-failed',
 });
+const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
+  ['403', '404', 'other'].flatMap(status => (
+    ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
+      .map(target => `${status}-${target}`)
+  )),
+);
 const ROUTE_DIAGNOSTIC_CHECKPOINTS = new Set([
   'route-session', 'route-location', 'route-heading', 'route-render', 'route-attribution',
 ]);
@@ -1559,6 +1564,8 @@ export function validateRunnerFailureTerminal(message, accepted) {
       ? message.reason === RUNNER_DIAGNOSTICS[message.checkpoint]
       : ROUTE_DIAGNOSTIC_CHECKPOINTS.has(message.checkpoint)
         ? ROUTE_DIAGNOSTIC_REASONS.has(message.reason)
+        : message.checkpoint === 'window-console-network'
+          ? NETWORK_CONSOLE_DIAGNOSTIC_REASONS.has(message.reason)
         : isNoTeamDiagnostic(message.checkpoint, message.reason))
     || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(message.checkpoint)
       && phaseContracts[message.contextOrdinal].group !== 'admission-route')
