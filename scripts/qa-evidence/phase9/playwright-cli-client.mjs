@@ -1719,9 +1719,26 @@ export function classifyApplicationConsoleError(
   if (input.text.startsWith('[TeamProvider] School Hub invitation claim failed:')) return 'invite';
   if (input.text.includes('Uncaught Error in snapshot listener')) return 'firebase-sdk';
   if (input.text.startsWith('Failed to load resource:')) {
-    const status = input.text.includes('status of 403')
+    const failureText = input.text.toUpperCase();
+    let status = input.text.includes('status of 403')
       ? '403'
       : input.text.includes('status of 404') ? '404' : 'other';
+    if (/^FAILED TO LOAD RESOURCE: NET::ERR_[A-Z0-9_]+$/.test(failureText)) {
+      let failureClass = 'other';
+      if (failureText.includes('ERR_ABORTED')) failureClass = 'aborted';
+      else if (failureText.includes('ERR_TIMED_OUT') || failureText.includes('ERR_CONNECTION_TIMED_OUT')) failureClass = 'timeout';
+      else if (failureText.includes('ERR_NAME_NOT_RESOLVED') || failureText.includes('ERR_DNS_')) failureClass = 'name-resolution';
+      else if (
+        failureText.includes('ERR_CONNECTION_') || failureText.includes('ERR_NETWORK_CHANGED')
+        || failureText.includes('ERR_INTERNET_DISCONNECTED') || failureText.includes('ERR_ADDRESS_UNREACHABLE')
+      ) failureClass = 'connection';
+      else if (failureText.includes('ERR_CERT_') || failureText.includes('ERR_SSL_') || failureText.includes('ERR_TLS_')) failureClass = 'tls';
+      else if (
+        failureText.includes('ERR_BLOCKED_BY_') || failureText.includes('ERR_ACCESS_DENIED')
+        || failureText.includes('ERR_DISALLOWED_URL_SCHEME') || failureText.includes('ERR_UNSAFE_PORT')
+      ) failureClass = 'policy-blocked';
+      status = `failure-${failureClass}`;
+    }
     let targetClass = 'invalid';
     try {
       const target = new URL(input.location?.url);
@@ -1752,7 +1769,11 @@ const APPLICATION_CONSOLE_DIAGNOSTICS = Object.freeze({
 });
 
 const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
-  ['403', '404', 'other'].flatMap(status => (
+  [
+    '403', '404', 'other',
+    ...['aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other']
+      .map(value => `failure-${value}`),
+  ].flatMap(status => (
     ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
       .map(target => `${status}-${target}`)
   )).concat(['request-failure-prior-window']),

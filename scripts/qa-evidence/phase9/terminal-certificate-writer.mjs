@@ -61,7 +61,11 @@ const DIAGNOSTIC_REASONS = Object.freeze({
   'private-finalization': 'finalization-failed',
 });
 const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
-  ['403', '404', 'other'].flatMap(status => (
+  [
+    '403', '404', 'other',
+    ...['aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other']
+      .map(value => `failure-${value}`),
+  ].flatMap(status => (
     ['protected-api', 'firestore', 'staging-other', 'external', 'invalid']
       .map(target => `${status}-${target}`)
   )).concat(['request-failure-prior-window']),

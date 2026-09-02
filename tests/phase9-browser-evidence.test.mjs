@@ -1197,7 +1197,7 @@ darwinRuntimeTest('phase 9 recorder separates response-bound HTTP denial noise f
         await page.waitForTimeout(100);
       }`),
     }), /classified application console error/i);
-    assert.deepEqual(diagnostics.at(-1), ['window-console-network', 'other-invalid']);
+    assert.deepEqual(diagnostics.at(-1), ['window-console-network', 'failure-timeout-invalid']);
   } finally {
     await closeAndVerifyBrowsers(client);
   }
@@ -1366,7 +1366,12 @@ test('phase 9 recorder reduces application console errors to a closed non-sensit
     text: 'Failed to load resource: net::ERR_FAILED',
     argsLength: 0,
     location: { url: 'https://cdn.example.invalid/image.png' },
-  }), 'network-other-external');
+  }), 'network-failure-other-external');
+  assert.equal(classifyApplicationConsoleError({
+    text: 'Failed to load resource: net::ERR_ABORTED',
+    argsLength: 0,
+    location: { url: '', lineNumber: 0, columnNumber: 0 },
+  }), 'network-failure-aborted-invalid');
   assert.equal(classifyApplicationConsoleError({ text: 'unclassified', argsLength: 1 }), 'other-args');
   assert.equal(classifyApplicationConsoleError({ text: 'unclassified', argsLength: 0 }), 'other-plain');
 });
@@ -8479,6 +8484,12 @@ test('phase 9 request failure protocol preserves one closed summary and rejects 
     reason: '403-protected-api',
   }, accepted);
   assert.equal(networkTerminal.diagnostic.reason, '403-protected-api');
+  const unpairedFailureTerminal = validateRunnerFailureTerminal({
+    ...fixedOnly,
+    checkpoint: 'window-console-network',
+    reason: 'failure-aborted-invalid',
+  }, accepted);
+  assert.equal(unpairedFailureTerminal.diagnostic.reason, 'failure-aborted-invalid');
   const priorWindowNetworkTerminal = validateRunnerFailureTerminal({
     ...fixedOnly,
     checkpoint: 'window-console-network',
@@ -9973,6 +9984,18 @@ test('phase 9 request failure certificate preserves the exact optional closed di
   assert.deepEqual(
     JSON.parse(canonicalPhase9TerminalCertificate(priorWindow)).diagnostic.requestFailure,
     { ...canonicalRequestFailureSummary, multiplicity: 'single' },
+  );
+
+  const unpairedFailure = certificate('failed');
+  unpairedFailure.diagnostic = {
+    ...unpairedFailure.diagnostic,
+    checkpoint: 'window-console-network',
+    reason: 'failure-aborted-invalid',
+  };
+  delete unpairedFailure.diagnostic.requestFailure;
+  assert.equal(
+    JSON.parse(canonicalPhase9TerminalCertificate(unpairedFailure)).diagnostic.reason,
+    'failure-aborted-invalid',
   );
 
   const fixedOnly = certificate('failed');
