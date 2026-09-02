@@ -1249,6 +1249,61 @@ darwinRuntimeTest('phase 9 recorder preserves closed request-failure provenance 
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
+darwinRuntimeTest('phase 9 recorder suppresses the console duplicate of an expected prior-window Firestore Listen abort', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const diagnostics = [];
+  const client = createPhase9ProductionCliClient({
+    timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+    onDiagnosticCheckpoint: (...diagnostic) => diagnostics.push(diagnostic),
+  });
+  const session = 'phase9-prior-firestore-listen-console-duplicate';
+  try {
+    await installSignalRecorder(client, session);
+    await client.runCode(session, `async (page) => {
+      const target = 'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fthe-squad-v2-staging%2Fdatabases%2F(default)&VER=8&RID=rpc&SID=session&AID=1&CI=0&TYPE=xmlhttp&zx=token&t=1';
+      const request = {
+        failure: () => ({ errorText: 'net::ERR_ABORTED' }),
+        frame: () => page.mainFrame(),
+        headers: () => ({}),
+        isNavigationRequest: () => false,
+        method: () => 'GET',
+        postData: () => null,
+        resourceType: () => 'fetch',
+        url: () => target,
+      };
+      const requestListener = page.listeners('request').find(listener => String(listener).includes('requestMetadata.set'));
+      const failedListener = page.listeners('requestfailed').find(listener => String(listener).includes('isExpectedPriorDocumentFirestoreListenAbort'));
+      if (!requestListener || !failedListener) throw new Error('Expected recorder request listeners were not installed.');
+      requestListener(request);
+      failedListener(request);
+      return true;
+    }`);
+    diagnostics.length = 0;
+    const result = await observeAction({
+      client,
+      session,
+      stage: 'prior-firestore-listen-console-duplicate',
+      terminal: async () => {},
+      action: () => client.runCode(session, `async (page) => {
+        const consoleListener = page.listeners('console').find(listener => String(listener).includes('correlateBrowserHttpConsoleError'));
+        if (!consoleListener) throw new Error('Expected recorder console listener was not installed.');
+        consoleListener({
+          type: () => 'error',
+          args: () => [],
+          text: () => 'Failed to load resource: net::ERR_ABORTED',
+          location: () => ({ url: '', lineNumber: 0, columnNumber: 0 }),
+        });
+        return true;
+      }`),
+    });
+    assert.equal(result.appConsoleErrors, 0, JSON.stringify(result));
+    assert.equal(result.unexpectedRequestFailures, 0, JSON.stringify(result));
+    assert.equal(diagnostics.some(([checkpoint]) => checkpoint === 'window-console-network'), false);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+});
+
 test('phase 9 recorder correlates an exact protected HTTP console event across a signal-window mark', () => {
   const target = `${STAGING_ORIGIN}/api/teams/chat?teamId=fixture-team-b`;
   const candidates = [{
@@ -13601,7 +13656,7 @@ test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded'
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 recorder separates response-bound HTTP denial noise from application console errors').length, 1);
-  assert.equal(darwinRuntimeTests.length, 80);
+  assert.equal(darwinRuntimeTests.length, 81);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

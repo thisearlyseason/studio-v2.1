@@ -1437,6 +1437,8 @@ const installRecorderSource = () => String.raw`async (page) => {
           if (matchingCandidates.length === 1) {
             const { candidate, index } = matchingCandidates[0];
             state.requestFailureConsoleCandidates.splice(index, 1);
+            if (candidate.expectedSuppressed === true
+              && (candidate.sequence === state.sequence || candidate.sequence === state.sequence - 1)) return;
             if (candidate.sequence === state.sequence) return;
             if (candidate.sequence === state.sequence - 1) {
               boundedPush(state, 'appConsoleErrors', {
@@ -1502,15 +1504,15 @@ const installRecorderSource = () => String.raw`async (page) => {
         resourceType: metadata?.resourceType,
       };
       try { input.failureText = request.failure()?.errorText; } catch {}
-      if (isExpectedPriorDocumentRscAbort(input)
-        || isExpectedPriorDocumentFirestoreListenAbort(input)) return;
       const requestFailure = classifyRequestFailureSignal(input);
-      boundedPush(state, 'requestFailureSignals', requestFailure);
+      const expectedSuppressed = isExpectedPriorDocumentRscAbort(input)
+        || isExpectedPriorDocumentFirestoreListenAbort(input);
+      if (!expectedSuppressed) boundedPush(state, 'requestFailureSignals', requestFailure);
       if (state.requestFailureConsoleCandidates.length >= ${MAX_SIGNAL_COUNT}) {
         state.requestFailureConsoleCandidates.shift();
         state.overflow += 1;
       }
-      state.requestFailureConsoleCandidates.push({ sequence: state.sequence, requestFailure });
+      state.requestFailureConsoleCandidates.push({ expectedSuppressed, sequence: state.sequence, requestFailure });
     });
     await page.exposeFunction('__phase9RecordRender', signal => {
       if (!signal || !['heading', 'status'].includes(signal.kind)
