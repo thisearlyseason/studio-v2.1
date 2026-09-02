@@ -62,7 +62,8 @@ const DIAGNOSTIC_REASONS = Object.freeze({
 });
 const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
   [
-    '403', '404', 'other',
+    ...Array.from({ length: 200 }, (_, index) => String(400 + index)),
+    'unrecognized',
     ...['aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other']
       .map(value => `failure-${value}`),
   ].flatMap(status => (

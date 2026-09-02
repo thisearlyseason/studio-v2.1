@@ -1720,9 +1720,8 @@ export function classifyApplicationConsoleError(
   if (input.text.includes('Uncaught Error in snapshot listener')) return 'firebase-sdk';
   if (input.text.startsWith('Failed to load resource:')) {
     const failureText = input.text.toUpperCase();
-    let status = input.text.includes('status of 403')
-      ? '403'
-      : input.text.includes('status of 404') ? '404' : 'other';
+    const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2}) \([^)]+\)$/.exec(input.text);
+    let status = statusMatch?.[1] ?? 'unrecognized';
     if (/^FAILED TO LOAD RESOURCE: NET::ERR_[A-Z0-9_]+$/.test(failureText)) {
       let failureClass = 'other';
       if (failureText.includes('ERR_ABORTED')) failureClass = 'aborted';
@@ -1770,7 +1769,8 @@ const APPLICATION_CONSOLE_DIAGNOSTICS = Object.freeze({
 
 const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
   [
-    '403', '404', 'other',
+    ...Array.from({ length: 200 }, (_, index) => String(400 + index)),
+    'unrecognized',
     ...['aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other']
       .map(value => `failure-${value}`),
   ].flatMap(status => (

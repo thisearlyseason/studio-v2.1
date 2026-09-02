@@ -1363,6 +1363,16 @@ test('phase 9 recorder reduces application console errors to a closed non-sensit
     location: { url: `${STAGING_ORIGIN}/missing-avatar.png` },
   }), 'network-404-staging-other');
   assert.equal(classifyApplicationConsoleError({
+    text: 'Failed to load resource: the server responded with a status of 500 (Internal Server Error)',
+    argsLength: 0,
+    location: { url: '', lineNumber: 0, columnNumber: 0 },
+  }), 'network-500-invalid');
+  assert.equal(classifyApplicationConsoleError({
+    text: 'Failed to load resource: a browser-specific presentation',
+    argsLength: 0,
+    location: { url: '', lineNumber: 0, columnNumber: 0 },
+  }), 'network-unrecognized-invalid');
+  assert.equal(classifyApplicationConsoleError({
     text: 'Failed to load resource: net::ERR_FAILED',
     argsLength: 0,
     location: { url: 'https://cdn.example.invalid/image.png' },
@@ -8490,6 +8500,16 @@ test('phase 9 request failure protocol preserves one closed summary and rejects 
     reason: 'failure-aborted-invalid',
   }, accepted);
   assert.equal(unpairedFailureTerminal.diagnostic.reason, 'failure-aborted-invalid');
+  assert.equal(validateRunnerFailureTerminal({
+    ...fixedOnly,
+    checkpoint: 'window-console-network',
+    reason: '500-invalid',
+  }, accepted).diagnostic.reason, '500-invalid');
+  assert.equal(validateRunnerFailureTerminal({
+    ...fixedOnly,
+    checkpoint: 'window-console-network',
+    reason: 'unrecognized-invalid',
+  }, accepted).diagnostic.reason, 'unrecognized-invalid');
   const priorWindowNetworkTerminal = validateRunnerFailureTerminal({
     ...fixedOnly,
     checkpoint: 'window-console-network',
@@ -9997,6 +10017,20 @@ test('phase 9 request failure certificate preserves the exact optional closed di
     JSON.parse(canonicalPhase9TerminalCertificate(unpairedFailure)).diagnostic.reason,
     'failure-aborted-invalid',
   );
+
+  for (const reason of ['500-invalid', 'unrecognized-invalid']) {
+    const closedNetwork = certificate('failed');
+    closedNetwork.diagnostic = {
+      ...closedNetwork.diagnostic,
+      checkpoint: 'window-console-network',
+      reason,
+    };
+    delete closedNetwork.diagnostic.requestFailure;
+    assert.equal(
+      JSON.parse(canonicalPhase9TerminalCertificate(closedNetwork)).diagnostic.reason,
+      reason,
+    );
+  }
 
   const fixedOnly = certificate('failed');
   delete fixedOnly.diagnostic.requestFailure;
