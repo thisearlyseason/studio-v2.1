@@ -4573,6 +4573,8 @@ test('phase 9 Firestore producer contract enforces exact depths headers and resu
     document(`users/${selfUid}`, { headers: { ...FIRESTORE_PRODUCER_HEADERS, 'google-cloud-resource-prefix': 'projects/wrong/databases/(default)' } }),
     document(`users/${selfUid}`, { headers: { ...FIRESTORE_PRODUCER_HEADERS, 'x-goog-request-params': 'project_id=wrong' } }),
     document(`users/${selfUid}`, { headers: { ...FIRESTORE_PRODUCER_HEADERS, 'content-type': 'application/json' } }),
+    document(`users/${selfUid}`, { headers: Object.fromEntries(Object.entries(FIRESTORE_PRODUCER_HEADERS).filter(([name]) => name !== 'accept')) }),
+    document(`users/${selfUid}`, { headers: Object.fromEntries(Object.entries(FIRESTORE_PRODUCER_HEADERS).filter(([name]) => name !== 'origin')) }),
   ]) assert.deepEqual(classify(raw).resourceScopes, ['unscoped'], JSON.stringify(raw));
 
   const selfTarget = extra => ({
@@ -4761,10 +4763,35 @@ test('phase 9 protected producers require exact canonical frame origin and refer
     { ...selfListen, frameUrl: `${STAGING_ORIGIN}/family` },
     { ...selfListen, frameUrl: 'https://evil.invalid/teams/join' },
     { ...selfListen, headers: { ...selfListen.headers, origin: 'https://evil.invalid' } },
+    { ...selfListen, headers: { ...selfListen.headers, accept: 'application/json' } },
     { ...selfListen, headers: { ...selfListen.headers, referer: 'https://evil.invalid/' } },
-    { ...selfListen, headers: Object.fromEntries(Object.entries(selfListen.headers).filter(([name]) => name !== 'accept')) },
+    { ...selfListen, headers: Object.fromEntries(Object.entries(selfListen.headers).filter(([name]) => name !== 'sec-ch-ua')) },
     { ...selfListen, headers: { ...selfListen.headers, 'x-extra': 'present' } },
   ]) assert.deepEqual(classify(raw), ['unscoped'], JSON.stringify(raw));
+});
+
+test('phase 9 Firestore Listen accepts the exact production request-event header omission', async () => {
+  const { classifyFixtureResourceScopes } = await import('../scripts/qa-evidence/phase9/playwright-cli-client.mjs');
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const databaseRoot = `${FIRESTORE_DATABASE}/documents`;
+  const headers = Object.fromEntries(Object.entries(FIRESTORE_LISTEN_TRANSPORT_HEADERS).filter(
+    ([name]) => name !== 'accept' && name !== 'origin',
+  ));
+  const raw = firestoreRaw({
+    headers,
+    body: initialListenForm({
+      database: FIRESTORE_DATABASE,
+      addTarget: {
+        documents: { documents: [`${databaseRoot}/users/${runId}-no-team`] },
+        targetId: 1,
+      },
+    }),
+  });
+
+  assert.deepEqual(
+    classifyFixtureResourceScopes(raw, { runId, alias: 'qa-no-team' }).resourceScopes,
+    ['self-account'],
+  );
 });
 
 test('phase 9 Listen target IDs are stateful, private, removable, and reusable within one producer body', async () => {

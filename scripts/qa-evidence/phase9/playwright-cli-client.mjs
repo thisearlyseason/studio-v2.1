@@ -465,12 +465,13 @@ const hasOnlyAllowedHeaders = (headers, allowed) => (
 
 const validBearer = value => typeof value === 'string' && /^Bearer [A-Za-z0-9._~-]+$/.test(value);
 const validFirebaseAppId = value => typeof value === 'string' && /^1:\d{5,20}:web:[a-f0-9]{16,64}$/.test(value);
-const exactBrowserProducerHeaders = (headers, referer) => {
-  const required = [...BROWSER_PRODUCER_HEADERS];
+const exactBrowserProducerHeaders = (headers, referer, { allowMissingAcceptOrigin = false } = {}) => {
+  const optional = allowMissingAcceptOrigin ? new Set(['accept', 'origin']) : new Set();
+  const required = [...BROWSER_PRODUCER_HEADERS].filter(name => !optional.has(name));
   if (required.some(name => !Object.hasOwn(headers ?? {}, name))) return false;
   if (
-    headers.accept !== '*/*'
-    || headers.origin !== STAGING_ORIGIN
+    (headers.accept !== undefined && headers.accept !== '*/*')
+    || (headers.origin !== undefined && headers.origin !== STAGING_ORIGIN)
     || headers.referer !== referer
     || headers['sec-ch-ua-mobile'] !== '?0'
     || headers['sec-ch-ua-platform'] !== '"macOS"'
@@ -504,7 +505,9 @@ const exactFirestoreRestHeaders = value => {
 const exactListenTransportHeaders = (value, method) => {
   const headers = normalizeHeaders(value);
   const allowed = new Set(['content-type']);
-  if (!hasOnlyAllowedHeaders(headers, allowed) || !exactBrowserProducerHeaders(headers, `${STAGING_ORIGIN}/`)) return false;
+  if (!hasOnlyAllowedHeaders(headers, allowed) || !exactBrowserProducerHeaders(
+    headers, `${STAGING_ORIGIN}/`, { allowMissingAcceptOrigin: true },
+  )) return false;
   if (method === 'GET') return !Object.hasOwn(headers, 'content-type');
   return [
     'application/x-www-form-urlencoded',
