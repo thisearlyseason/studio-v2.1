@@ -11561,6 +11561,14 @@ test('phase 9 compressed child wrapper is deterministic self-contained and exact
   ]);
 });
 
+test('phase 9 compressed child uses one platform-independent gzip header', async () => {
+  const { compileRecoveredChild, packageRecoveredChild } = await import(
+    '../scripts/qa-evidence/phase9/build-child-runner.mjs'
+  );
+  const packaged = packageRecoveredChild(await compileRecoveredChild());
+  assert.deepEqual([...packaged.gzip.subarray(0, 10)], [31, 139, 8, 0, 0, 0, 0, 0, 2, 255]);
+});
+
 test('phase 9 child builder selects the deterministic packaged wrapper', async () => {
   const { compilePackagedChild, inspectPackagedChild } = await import(
     '../scripts/qa-evidence/phase9/build-child-runner.mjs'

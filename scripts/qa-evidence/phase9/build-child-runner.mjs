@@ -216,9 +216,19 @@ const renderPackagedChild = (payload, recoveredBytes) => Buffer.from(
   'utf8',
 );
 
+const canonicalGzip = bytes => {
+  const gzip = Buffer.from(gzipSync(bytes, { level: 9, mtime: 0 }));
+  const fixedHeader = [31, 139, 8, 0, 0, 0, 0, 0, 2];
+  if (gzip.length < 18 || !fixedHeader.every((value, index) => gzip[index] === value)) {
+    throw new Error('Packaged child wrapper is invalid.');
+  }
+  gzip[9] = 255;
+  return gzip;
+};
+
 export const packageRecoveredChild = bytes => {
   const recovered = auditRecoveredChild(bytes);
-  const gzip = gzipSync(bytes, { level: 9, mtime: 0 });
+  const gzip = canonicalGzip(bytes);
   const wrapper = renderPackagedChild(gzip.toString('base64'), bytes.length);
   if (wrapper.length > maximumBytes) throw new Error('Packaged child wrapper is invalid.');
   return Object.freeze({
@@ -258,7 +268,7 @@ export const inspectPackagedChild = wrapper => {
   }
   if (recovered.length !== recoveredBytes) throw new Error('Packaged child wrapper is invalid.');
   auditRecoveredChild(recovered);
-  if (!gzip.equals(gzipSync(recovered, { level: 9, mtime: 0 }))) {
+  if (!gzip.equals(canonicalGzip(recovered))) {
     throw new Error('Packaged child wrapper is invalid.');
   }
   return Object.freeze({ recovered, gzip });

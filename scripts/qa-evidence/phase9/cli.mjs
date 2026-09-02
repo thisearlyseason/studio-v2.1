@@ -65,11 +65,11 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: 'a3bbc43a795349456087797a9c72d1c41dcf1157ffa0756ed5f5e92b51711646',
+  child: 'dfe5c8db973bc9face600471b7673fea6015f72221e4f32f200bec356e2f7fba',
   childRecovered: 'b5134d38b792bad9a01b3e718a668f814c02d20965519f340c7316321872ba22',
-  childGzip: '5f54d479f6cfcc5863e0ffe138a805dbf52fb14ea01f2fb82188d3f3e1abf0e2',
+  childGzip: '5c2b71680dbb82fc2c335197f7added07de0c1cfc5133a16470af74f007b2a91',
   childSource: 'fa5666efef25296683091bf8e4b7d2d2a656b12a034cf87165dc46518f785a05',
-  childBuilder: 'd6fbd668babed07afc442ce9a6f2666c447d839e5c519a6af76e48c270e3d66a',
+  childBuilder: '64538be543150abebad65d6ebd4dc8bdf5e1f82baee43b4a81185374a2236657',
   childPrivateInputReader: 'c828285b3f5de1927efb32f11353c4ffed30250fe2e1337885a1c7a74f863be7',
   workspaceBoundary: 'be35d246f2b7cdbd8da394bce5881c265de98e7630a06fdad80c9b48e0537ca1',
   config: 'b959789c8df66556141b3cdd4bc862ba448ab524a46895a1fcf22b14d8904b93',
