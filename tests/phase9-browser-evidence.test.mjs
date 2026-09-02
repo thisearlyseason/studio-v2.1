@@ -1132,6 +1132,59 @@ darwinRuntimeTest('phase 9 action window classifies real request failures', { ti
   assert.deepEqual(await client.listBrowsers(), { browsers: [] });
 });
 
+darwinRuntimeTest('phase 9 recorder separates response-bound HTTP denial noise from application console errors', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const client = createPhase9ProductionCliClient({
+    fixtureRunId: runId,
+    timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+  });
+  const session = 'phase9-http-denial-console-provenance';
+  const target = `${STAGING_ORIGIN}/api/teams/chat?teamId=${runId}-team-b`;
+  try {
+    await installSignalRecorder(client, session);
+    const denied = await observeAction({
+      client,
+      session,
+      stage: 'response-bound-http-denial',
+      terminal: async () => {},
+      action: () => client.runCode(session, `async (page) => {
+        const target = ${JSON.stringify(target)};
+        await page.route(target, route => route.fulfill({
+          status: 403,
+          headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' },
+          body: '{}',
+        }));
+        await page.evaluate(async target => { await fetch(target); }, target);
+        await page.waitForTimeout(300);
+        await page.unroute(target);
+      }`),
+    });
+    assert.equal(denied.appConsoleErrors, 0, JSON.stringify(denied));
+    assert.deepEqual(denied.relevantHttpResults, [{
+      targetKind: 'staging-protected-api',
+      status: 403,
+    }]);
+
+    const application = await observeAction({
+      client,
+      session,
+      stage: 'application-console-error',
+      terminal: async () => {},
+      action: () => client.runCode(session, `async (page) => {
+        await page.evaluate(() => {
+          console.error('Failed to load resource: the server responded with a status of 403 (Forbidden)');
+        });
+        await page.waitForTimeout(100);
+      }`),
+    });
+    assert.equal(application.appConsoleErrors, 1, JSON.stringify(application));
+    assert.deepEqual(application.relevantHttpResults, []);
+  } finally {
+    await closeAndVerifyBrowsers(client);
+  }
+  assert.deepEqual(await client.listBrowsers(), { browsers: [] });
+});
+
 darwinRuntimeTest('phase 9 recorder ignores exact current-or-prior RSC and Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const client = createPhase9ProductionCliClient({ timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS });
   const session = 'phase9-prior-rsc-abort';
@@ -13382,7 +13435,8 @@ darwinRuntimeTest('phase 9 runner config matches the exact pinned Darwin Node an
 test('phase 9 Darwin-only runtime test inventory is explicit unique and bounded', () => {
   assert.equal(DARWIN_RUNTIME_SKIP_REASON.startsWith('Darwin-only:'), true);
   assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 action window classifies real request failures').length, 1);
-  assert.equal(darwinRuntimeTests.length, 78);
+  assert.equal(darwinRuntimeTests.filter(name => name === 'phase 9 recorder separates response-bound HTTP denial noise from application console errors').length, 1);
+  assert.equal(darwinRuntimeTests.length, 79);
   assert.equal(new Set(darwinRuntimeTests).size, darwinRuntimeTests.length);
   assert.equal(darwinRuntimeTests.every(name => name.startsWith('phase 9 ')), true);
 });

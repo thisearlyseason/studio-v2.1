@@ -1416,7 +1416,26 @@ const installRecorderSource = () => String.raw`async (page) => {
     });
     page.on('pageerror', () => boundedPush(state, 'pageErrors', 'PAGE_ERROR'));
     page.on('console', message => {
-      if (message.type() === 'error') boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR');
+      if (message.type() !== 'error') return;
+      try {
+        const location = message.location();
+        if (
+          message.args().length === 0
+          && message.text() === 'Failed to load resource: the server responded with a status of 403 (Forbidden)'
+          && location?.lineNumber === 0
+          && location?.columnNumber === 0
+          && typeof location.url === 'string'
+          && location.url.length > 0
+        ) {
+          boundedPush(state, 'appConsoleErrors', {
+            kind: 'http-status',
+            status: 403,
+            url: boundedString(state, location.url, ${MAX_RAW_URL_BYTES}),
+          });
+          return;
+        }
+      } catch {}
+      boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR');
     });
     page.on('requestfailed', request => {
       const metadata = settleJoinAdminRequest(request, false) ?? requestMetadata.get(request);
@@ -1940,6 +1959,28 @@ const sanitizeWindow = (value, {
   }
   bindFinalRecorderGeneration(value, listenTargetState);
   const http = value.rawResponses.map(sanitizeHttpResult).filter(Boolean);
+  const applicationConsoleErrors = [];
+  for (const item of value.appConsoleErrors) {
+    if (item === 'APPLICATION_CONSOLE_ERROR') {
+      applicationConsoleErrors.push(item);
+      continue;
+    }
+    const exactHttpStatusSignal = item && typeof item === 'object' && !Array.isArray(item)
+      && Object.keys(item).sort().join(',') === 'kind,status,url'
+      && item.kind === 'http-status'
+      && item.status === 403
+      && typeof item.url === 'string';
+    const matchingProtectedResponse = exactHttpStatusSignal && value.rawResponses.some(response => {
+      if (response?.url !== item.url || response?.status !== item.status || response?.resourceType !== 'fetch') {
+        return false;
+      }
+      const signal = sanitizeResourceSignal(response, fixtureRunId);
+      return signal !== null && isProtectedResource(signal);
+    });
+    if (!matchingProtectedResponse) {
+      throw new Error('Recorder HTTP console error must match an exact protected fetch response.');
+    }
+  }
   const teamSelectionSignals = classifyTeamSelections(value.rawTeamSelections, fixtureRunId);
   const requestFailureMultiplicity = rawRequestFailureSignals.length === 1 ? 'single' : 'multiple';
   const unexpectedRequestFailureSignals = rawRequestFailureSignals.map(item => ({
@@ -1985,7 +2026,7 @@ const sanitizeWindow = (value, {
     teamSelectionSignals,
     relevantHttpResults: http,
     pageErrors: count(value.pageErrors),
-    appConsoleErrors: count(value.appConsoleErrors),
+    appConsoleErrors: count(applicationConsoleErrors),
     unexpectedRequestFailures: count(value.unexpectedRequestFailures),
     unexpectedRequestFailureSignals,
     overflow: count(value.overflow),
