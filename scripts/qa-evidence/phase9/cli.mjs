@@ -65,9 +65,9 @@ const CHROME_POLICY = Object.freeze({
   teamIdentifier: 'EQHXZ8M8AV',
 });
 export const PHASE9_ARTIFACT_PINS = Object.freeze({
-  child: '3347ce670652ef518234639214c017201b9d6751de5bc2a734fb51439f951d28',
-  childRecovered: '8e06d95c9cff53a223cbe77f5e40ba9ee99642fd8301561ece5bfcfebebf8774',
-  childGzip: '80ed97fd23782e95a731f95845bd40646cde92408701a0e198d1067c8b88dd12',
+  child: '47212edb6ff00292de04d771f480d5dc160df91bcee0466e1900289ee746d6c9',
+  childRecovered: '23ff5d5e1fc3e78bf797d9cb968db76c61af931a9d6b1758fdd8142d716c2919',
+  childGzip: '7544cef9077dd05c987d0b254f3bffd2de95ca3852e931e95ea465c4a967e5d4',
   childSource: '2650b599e253139a0b2e10ccc1a8a2dcf247842d7f073a6ad5735607bf2b98fe',
   childBuilder: '64538be543150abebad65d6ebd4dc8bdf5e1f82baee43b4a81185374a2236657',
   childPrivateInputReader: 'c828285b3f5de1927efb32f11353c4ffed30250fe2e1337885a1c7a74f863be7',
@@ -80,7 +80,7 @@ export const PHASE9_ARTIFACT_PINS = Object.freeze({
   transportBuilder: '6b7eab9f10e4e6191348928256daf784a3eae8755689f0b774f2914daf5fae37',
   playwrightClient: '130ae5cc40a743443c2d3bd83530699a075656fcd9b66caf999fb125fbc1f7b6',
   scenarioContracts: '4c4a869624923c0ef447843dc2c536051f98150ba380b9764e3cbdd78ed9ca16',
-  scenarios: '9cda6f6c43d51cb431fcafb65f7c1057eb449c6c5017f08770cb395b36b2e999',
+  scenarios: '453c2841a99cf0f85e490133f24fba469dec440447fe7739a0173ee1bd95c775',
   helper: '217af8dc511e7d1d2098fbea8f2040517f4264e36b2bc4ca80e4bb548a44bfc1',
   terminalHelper: '7a133389f2d88c2e92169b0f6fd86732d8c1287825531e130586b6705763478b',
   recoveryHelper: 'cf9cbb07cc80304e1607b3e7f26c48c0c5783b7ca4a207b7c551ef95a1f01b95',

@@ -57,6 +57,9 @@ const requireFunction = (value, name) => {
   if (typeof value !== 'function') throw new Error(`${name} action is required.`);
   return value;
 };
+const reportDiagnostic = (diagnostic, checkpoint, reason) => {
+  try { diagnostic(checkpoint, reason); } catch {}
+};
 const validateContext = (context, group) => {
   if (!context || typeof context !== 'object' || Array.isArray(context)) throw new Error('Scenario context is required.');
   const validated = {
@@ -316,9 +319,12 @@ export async function runIsolationScenario({ client, session, context: inputCont
       action: async () => {
         status = await sameOriginGet(probe.target, { session: authenticatedSession, method: 'GET', credentials: 'same-origin' });
         if (!Number.isInteger(status)) throw new Error('Isolation API result must include the complete exact status set.');
+        reportDiagnostic(diagnostic, 'isolation-api-status', 'status-mismatch');
+        if (status !== probe.status) throw new Error(`${probe.label} status must equal ${probe.status}.`);
       }, terminal: () => waitForSettled(probe.label),
     });
     const window = validateActionWindow(observedWindow, {}, diagnostic);
+    reportDiagnostic(diagnostic, 'isolation-session', 'session-missing');
     if (!window.sessionPresent) {
       throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
     }
@@ -332,9 +338,12 @@ export async function runIsolationScenario({ client, session, context: inputCont
       action: async () => {
         status = await firestoreGet(request, { session: authenticatedSession });
         if (!Number.isInteger(status)) throw new Error('Isolation must include the complete Firestore probe result set.');
+        reportDiagnostic(diagnostic, 'isolation-firestore-status', 'status-mismatch');
+        if (status !== probe.status) throw new Error(`${probe.label} status must equal ${probe.status}.`);
       }, terminal: () => waitForSettled(probe.label),
     });
     const window = validateActionWindow(observedWindow, {}, diagnostic);
+    reportDiagnostic(diagnostic, 'isolation-session', 'session-missing');
     if (!window.sessionPresent) {
       throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
     }
@@ -342,11 +351,13 @@ export async function runIsolationScenario({ client, session, context: inputCont
     summaries.push({ stage: probe.label, status });
   }
   const oppositeWindows = [windows[1], windows[3], windows[5]];
+  reportDiagnostic(diagnostic, 'isolation-protection', 'protected-activity');
   validateIsolationResult({
     ...expected, sameOriginApi: api, directFirestore: firestore,
     oppositeProtectedRender: oppositeWindows.some(window => window.protectedRender),
     oppositeListenerStarts: oppositeWindows.reduce((sum, window) => sum + window.protectedListenerStarts, 0),
   });
+  reportDiagnostic(diagnostic, 'isolation-aggregate', 'aggregate-invalid');
   return rowFromWindow({
     context, group: 'isolation', action: 'probe own/opposite team and player boundaries',
     expectedResult: 'own 200; opposite 403', window: aggregateWindows(windows, {}, diagnostic), visibleState: 'Isolation settled',

@@ -81,6 +81,13 @@ const LOCAL_REAL_CHROME_EXTENDED_TEST_TIMEOUT_MS = 1_800_000;
 const LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS = 90_000;
 const DARWIN_RUNTIME_SKIP_REASON = 'Darwin-only: executes or compares the exact pinned macOS Node, Python, Chrome, Playwright, evidence-helper, or process-inspector runtime.';
 const PHASE9_TEST_PLATFORM = process.env.PHASE9_TEST_PLATFORM ?? process.platform;
+const ISOLATION_DIAGNOSTICS = Object.freeze([
+  ['isolation-session', 'session-missing'],
+  ['isolation-api-status', 'status-mismatch'],
+  ['isolation-firestore-status', 'status-mismatch'],
+  ['isolation-protection', 'protected-activity'],
+  ['isolation-aggregate', 'aggregate-invalid'],
+]);
 const NO_TEAM_POLICY_DIAGNOSTICS = Object.freeze([
   ['terminal-join-claim', 'claim-missing'],
   ['terminal-join-claim', 'claim-pending'],
@@ -3213,6 +3220,75 @@ test('phase 9 browser scenarios require an authenticated session in each indexed
       },
     }), new RegExp(`isolation-${stage}.*authenticated session`, 'i'));
   });
+});
+
+test('phase 9 isolation failures emit exact closed diagnostics instead of the generic window policy', async t => {
+  const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const expectation = buildIsolationExpectation({ runId, alias: 'qa-parent-a' });
+  const canonicalStatuses = [200, 403, 200, 403, 200, 403];
+  const execute = async ({ windows = canonicalStatuses.map((status, index) => scenarioWindow({
+    relevantHttpResults: [{
+      targetKind: index < 2 ? 'staging-protected-api' : 'firestore-document', status,
+    }],
+  })), statuses = canonicalStatuses, diagnostic = () => {} } = {}) => {
+    let apiIndex = 0;
+    let firestoreIndex = 0;
+    return runIsolationScenario({
+      client: createScriptedScenarioClient(windows),
+      session: 'isolation-diagnostic',
+      context: scenarioContext({ contextId: 'isolation-qa-parent-a-mobile' }),
+      runId,
+      actions: {
+        sameOriginGet: async () => statuses[apiIndex++],
+        firestoreGet: async () => statuses[2 + firestoreIndex++],
+        waitForSettled: async () => {},
+        diagnostic,
+      },
+    });
+  };
+
+  for (const [name, setup, expected] of [
+    ['session', () => ({
+      windows: canonicalStatuses.map((status, index) => scenarioWindow({
+        sessionPresent: index !== 0,
+        relevantHttpResults: [{
+          targetKind: index < 2 ? 'staging-protected-api' : 'firestore-document', status,
+        }],
+      })),
+    }), ['isolation-session', 'session-missing']],
+    ['API status', () => ({ statuses: [403, 403, 200, 403, 200, 403] }),
+      ['isolation-api-status', 'status-mismatch']],
+    ['Firestore status', () => ({ statuses: [200, 403, 403, 403, 200, 403] }),
+      ['isolation-firestore-status', 'status-mismatch']],
+    ['opposite protection', () => ({
+      windows: canonicalStatuses.map((status, index) => scenarioWindow({
+        protectedRender: index === 1,
+        renderSignals: index === 1
+          ? [{ kind: 'heading', pathname: '/family', sentinel: 'Family Overview' }]
+          : [],
+        relevantHttpResults: [{
+          targetKind: index < 2 ? 'staging-protected-api' : 'firestore-document', status,
+        }],
+      })),
+    }), ['isolation-protection', 'protected-activity']],
+  ]) await t.test(name, async () => {
+    const diagnostics = [];
+    await assert.rejects(execute({ ...setup(), diagnostic: (...report) => diagnostics.push(report) }));
+    assert.deepEqual(diagnostics.at(-1), expected);
+  });
+
+  await t.test('callback failure cannot replace the isolation decision', async () => {
+    await assert.rejects(
+      execute({ statuses: [403, 403, 200, 403, 200, 403], diagnostic: () => {
+        throw new Error('diagnostic-callback-controlled');
+      } }),
+      error => /own-team-api.*200/i.test(error?.message)
+        && !/diagnostic-callback-controlled/i.test(error?.message),
+    );
+  });
+
+  assert.equal(expectation.sameOriginApi.length, 2);
+  assert.equal(expectation.directFirestore.length, 4);
 });
 
 test('phase 9 browser scenarios mark before every logout stage and reject transient activity', async () => {
@@ -8335,6 +8411,7 @@ test('phase 9 protocol-v4 failure terminal validates every closed stage against 
       ['window-render-coherence', 'render-coherence-invalid'],
       ['window-resource', 'resource-invalid'],
       ['window-policy', 'policy-invalid'],
+      ...ISOLATION_DIAGNOSTICS,
       ...NO_TEAM_POLICY_DIAGNOSTICS,
       ['landing-expectation', 'landing-mismatch'],
       ['landing-heading', 'heading-mismatch'],
@@ -10544,6 +10621,7 @@ test('phase 9 terminal checkpoint validator requires every exact certified closu
     ['window-render-coherence', 'render-coherence-invalid'],
     ['window-resource', 'resource-invalid'],
     ['window-policy', 'policy-invalid'],
+    ...ISOLATION_DIAGNOSTICS,
     ...NO_TEAM_POLICY_DIAGNOSTICS,
     ['route-session', '/admin'],
     ['route-location', '/club'],
