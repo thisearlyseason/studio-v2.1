@@ -623,8 +623,8 @@ const classifyFixtureResourceScopesValue = (
     else if (signal.body !== '') unknown(3);
     else if (!exactJoinFrame(signal.frameUrl)) unknown(4);
     else if (!hasOnlyAllowedHeaders(headers, new Set(['authorization', 'cookie']))
-      || headers.accept !== '*/*'
-      || headers.origin !== stagingOrigin
+      || (headers.accept !== undefined && headers.accept !== '*/*')
+      || (headers.origin !== undefined && headers.origin !== stagingOrigin)
       || headers.referer !== signal.frameUrl) unknown(5);
     else if (!validBearer(headers.authorization)) unknown(6);
     else if (headers.cookie !== undefined && !exactCookieHeader(headers.cookie)) unknown(7);
