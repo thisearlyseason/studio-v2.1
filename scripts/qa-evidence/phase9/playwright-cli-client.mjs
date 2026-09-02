@@ -1458,7 +1458,11 @@ const installRecorderSource = () => String.raw`async (page) => {
           return;
         }
       } catch {}
-      boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR');
+      const applicationClass = (${classifyApplicationConsoleError.toString()})({
+        text: message.text(),
+        argsLength: message.args().length,
+      });
+      boundedPush(state, 'appConsoleErrors', 'APPLICATION_CONSOLE_ERROR_' + applicationClass);
     });
     page.on('requestfailed', request => {
       const metadata = settleJoinAdminRequest(request, false) ?? requestMetadata.get(request);
@@ -1661,6 +1665,30 @@ export function correlateBrowserHttpConsoleError(
     return -1;
   }
 }
+
+export function classifyApplicationConsoleError(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+    || typeof input.text !== 'string'
+    || !Number.isInteger(input.argsLength) || input.argsLength < 0) return 'other-plain';
+  if (input.text.startsWith('Event Sync Error:')) return 'team-event';
+  if (input.text.startsWith('Game Sync Error:')) return 'team-game';
+  if (input.text.startsWith('Error fetching ID token result:')) return 'token';
+  if (input.text.startsWith('[TeamProvider] School Hub invitation claim failed:')) return 'invite';
+  if (input.text.includes('Uncaught Error in snapshot listener')) return 'firebase-sdk';
+  if (input.text.startsWith('Failed to load resource:')) return 'network';
+  return input.argsLength > 0 ? 'other-args' : 'other-plain';
+}
+
+const APPLICATION_CONSOLE_DIAGNOSTICS = Object.freeze({
+  'APPLICATION_CONSOLE_ERROR_team-event': 'window-console-team-event',
+  'APPLICATION_CONSOLE_ERROR_team-game': 'window-console-team-game',
+  APPLICATION_CONSOLE_ERROR_token: 'window-console-token',
+  APPLICATION_CONSOLE_ERROR_invite: 'window-console-invite',
+  'APPLICATION_CONSOLE_ERROR_firebase-sdk': 'window-console-firebase-sdk',
+  APPLICATION_CONSOLE_ERROR_network: 'window-console-network',
+  'APPLICATION_CONSOLE_ERROR_other-args': 'window-console-other-args',
+  'APPLICATION_CONSOLE_ERROR_other-plain': 'window-console-other-plain',
+});
 
 const REQUEST_FAILURE_CLASSES = Object.freeze([
   'aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other',
@@ -2031,9 +2059,9 @@ const sanitizeWindow = (value, {
   const correlatedHttpResponses = value.httpConsoleResponses ?? [];
   const consumedCorrelatedResponses = new Set();
   for (const item of value.appConsoleErrors) {
-    if (item === 'APPLICATION_CONSOLE_ERROR') {
-      applicationConsoleErrors.push(item);
-      continue;
+    if (typeof item === 'string' && Object.hasOwn(APPLICATION_CONSOLE_DIAGNOSTICS, item)) {
+      onDiagnosticCheckpoint?.(APPLICATION_CONSOLE_DIAGNOSTICS[item], 'console-error-invalid');
+      throw new Error('Recorder captured a classified application console error.');
     }
     const exactHttpStatusSignal = item && typeof item === 'object' && !Array.isArray(item)
       && Object.keys(item).sort().join(',') === 'kind,status,url'

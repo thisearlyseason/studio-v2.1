@@ -35,6 +35,7 @@ import {
   acquireBlankBrowser,
   armAcquiredSignalRecorder,
   classifyStableTerminalSample,
+  classifyApplicationConsoleError,
   correlateBrowserHttpConsoleError,
   classifyRequestFailureSignal,
   closeAndVerifyBrowsers,
@@ -1135,9 +1136,11 @@ darwinRuntimeTest('phase 9 action window classifies real request failures', { ti
 
 darwinRuntimeTest('phase 9 recorder separates response-bound HTTP denial noise from application console errors', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
   const runId = 'qa-phase7-20260825T140000Z-ab12cd34ef56';
+  const diagnostics = [];
   const client = createPhase9ProductionCliClient({
     fixtureRunId: runId,
     timeoutMs: LOCAL_REAL_CHROME_COMMAND_TIMEOUT_MS,
+    onDiagnosticCheckpoint: (...diagnostic) => diagnostics.push(diagnostic),
   });
   const session = 'phase9-http-denial-console-provenance';
   const target = `${STAGING_ORIGIN}/api/teams/chat?teamId=${runId}-team-b`;
@@ -1166,7 +1169,8 @@ darwinRuntimeTest('phase 9 recorder separates response-bound HTTP denial noise f
       status: 403,
     }]);
 
-    const application = await observeAction({
+    diagnostics.length = 0;
+    await assert.rejects(observeAction({
       client,
       session,
       stage: 'application-console-error',
@@ -1177,9 +1181,8 @@ darwinRuntimeTest('phase 9 recorder separates response-bound HTTP denial noise f
         });
         await page.waitForTimeout(100);
       }`),
-    });
-    assert.equal(application.appConsoleErrors, 1, JSON.stringify(application));
-    assert.deepEqual(application.relevantHttpResults, []);
+    }), /classified application console error/i);
+    assert.deepEqual(diagnostics.at(-1), ['window-console-network', 'console-error-invalid']);
   } finally {
     await closeAndVerifyBrowsers(client);
   }
@@ -1217,6 +1220,17 @@ test('phase 9 recorder correlates an exact protected HTTP console event across a
   assert.equal(correlateBrowserHttpConsoleError({
     ...exact,
   }, [{ ...candidates[0], status: 404 }]), -1);
+});
+
+test('phase 9 recorder reduces application console errors to a closed non-sensitive class', () => {
+  assert.equal(classifyApplicationConsoleError({ text: 'Event Sync Error: redacted', argsLength: 2 }), 'team-event');
+  assert.equal(classifyApplicationConsoleError({ text: 'Game Sync Error: redacted', argsLength: 2 }), 'team-game');
+  assert.equal(classifyApplicationConsoleError({ text: 'Error fetching ID token result: redacted', argsLength: 2 }), 'token');
+  assert.equal(classifyApplicationConsoleError({ text: '[TeamProvider] School Hub invitation claim failed: redacted', argsLength: 2 }), 'invite');
+  assert.equal(classifyApplicationConsoleError({ text: 'Firestore (x): Uncaught Error in snapshot listener', argsLength: 1 }), 'firebase-sdk');
+  assert.equal(classifyApplicationConsoleError({ text: 'Failed to load resource: status 403', argsLength: 0 }), 'network');
+  assert.equal(classifyApplicationConsoleError({ text: 'unclassified', argsLength: 1 }), 'other-args');
+  assert.equal(classifyApplicationConsoleError({ text: 'unclassified', argsLength: 0 }), 'other-plain');
 });
 
 darwinRuntimeTest('phase 9 recorder ignores exact current-or-prior RSC and Firestore Listen aborts', { timeout: LOCAL_REAL_CHROME_TEST_TIMEOUT_MS }, async () => {
