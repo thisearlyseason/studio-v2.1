@@ -1368,10 +1368,25 @@ test('phase 9 recorder reduces application console errors to a closed non-sensit
     location: { url: '', lineNumber: 0, columnNumber: 0 },
   }), 'network-500-invalid');
   assert.equal(classifyApplicationConsoleError({
+    text: 'Failed to load resource: the server responded with a status of 401 ()',
+    argsLength: 0,
+    location: { url: '', lineNumber: 0, columnNumber: 0 },
+  }), 'network-401-invalid');
+  assert.equal(classifyApplicationConsoleError({
+    text: 'Failed to load resource: the server responded with a status of 503',
+    argsLength: 0,
+    location: { url: '', lineNumber: 0, columnNumber: 0 },
+  }), 'network-503-invalid');
+  assert.equal(classifyApplicationConsoleError({
     text: 'Failed to load resource: a browser-specific presentation',
     argsLength: 0,
     location: { url: '', lineNumber: 0, columnNumber: 0 },
-  }), 'network-unrecognized-invalid');
+  }), 'network-unrecognized-browser-invalid');
+  assert.equal(classifyApplicationConsoleError({
+    text: 'Failed to load resource: application-specific detail',
+    argsLength: 1,
+    location: { url: '', lineNumber: 0, columnNumber: 0 },
+  }), 'network-unrecognized-application-invalid');
   assert.equal(classifyApplicationConsoleError({
     text: 'Failed to load resource: net::ERR_FAILED',
     argsLength: 0,
@@ -8508,8 +8523,13 @@ test('phase 9 request failure protocol preserves one closed summary and rejects 
   assert.equal(validateRunnerFailureTerminal({
     ...fixedOnly,
     checkpoint: 'window-console-network',
-    reason: 'unrecognized-invalid',
-  }, accepted).diagnostic.reason, 'unrecognized-invalid');
+    reason: 'unrecognized-browser-invalid',
+  }, accepted).diagnostic.reason, 'unrecognized-browser-invalid');
+  assert.equal(validateRunnerFailureTerminal({
+    ...fixedOnly,
+    checkpoint: 'window-console-network',
+    reason: 'unrecognized-application-invalid',
+  }, accepted).diagnostic.reason, 'unrecognized-application-invalid');
   const priorWindowNetworkTerminal = validateRunnerFailureTerminal({
     ...fixedOnly,
     checkpoint: 'window-console-network',
@@ -10018,7 +10038,7 @@ test('phase 9 request failure certificate preserves the exact optional closed di
     'failure-aborted-invalid',
   );
 
-  for (const reason of ['500-invalid', 'unrecognized-invalid']) {
+  for (const reason of ['500-invalid', 'unrecognized-browser-invalid', 'unrecognized-application-invalid']) {
     const closedNetwork = certificate('failed');
     closedNetwork.diagnostic = {
       ...closedNetwork.diagnostic,

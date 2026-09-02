@@ -1465,7 +1465,7 @@ const installRecorderSource = () => String.raw`async (page) => {
           });
           return;
         }
-        const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2}) \([^)]+\)$/.exec(message.text());
+        const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2})(?: \([^()\r\n]{0,80}\))?$/.exec(message.text());
         if (
           message.args().length === 0
           && statusMatch
@@ -1679,7 +1679,7 @@ export function correlateBrowserHttpConsoleError(
       || !Array.isArray(nonProtectedApiPaths)
       || nonProtectedApiPaths.some(path => typeof path !== 'string')
     ) return -1;
-    const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2}) \([^)]+\)$/.exec(input.text);
+    const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2})(?: \([^()\r\n]{0,80}\))?$/.exec(input.text);
     const status = statusMatch ? Number(statusMatch[1]) : null;
     for (let index = candidates.length - 1; index >= 0; index -= 1) {
       const candidate = candidates[index];
@@ -1720,8 +1720,9 @@ export function classifyApplicationConsoleError(
   if (input.text.includes('Uncaught Error in snapshot listener')) return 'firebase-sdk';
   if (input.text.startsWith('Failed to load resource:')) {
     const failureText = input.text.toUpperCase();
-    const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2}) \([^)]+\)$/.exec(input.text);
-    let status = statusMatch?.[1] ?? 'unrecognized';
+    const statusMatch = /^Failed to load resource: the server responded with a status of ([45][0-9]{2})(?: \([^()\r\n]{0,80}\))?$/.exec(input.text);
+    let status = statusMatch?.[1]
+      ?? (input.argsLength === 0 ? 'unrecognized-browser' : 'unrecognized-application');
     if (/^FAILED TO LOAD RESOURCE: NET::ERR_[A-Z0-9_]+$/.test(failureText)) {
       let failureClass = 'other';
       if (failureText.includes('ERR_ABORTED')) failureClass = 'aborted';
@@ -1770,7 +1771,7 @@ const APPLICATION_CONSOLE_DIAGNOSTICS = Object.freeze({
 const NETWORK_CONSOLE_DIAGNOSTIC_REASONS = new Set(
   [
     ...Array.from({ length: 200 }, (_, index) => String(400 + index)),
-    'unrecognized',
+    'unrecognized-browser', 'unrecognized-application',
     ...['aborted', 'timeout', 'name-resolution', 'connection', 'tls', 'policy-blocked', 'other']
       .map(value => `failure-${value}`),
   ].flatMap(status => (
