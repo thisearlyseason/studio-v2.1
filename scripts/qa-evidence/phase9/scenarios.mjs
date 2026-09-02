@@ -392,7 +392,10 @@ export async function runLogoutScenario({ client, session, freshSession, context
     action: () => requireFunction(actions?.freshUnauthenticated, 'freshUnauthenticated')('/dashboard'),
     terminal: requireFunction(actions?.waitForFreshLogin, 'waitForFreshLogin'),
   });
-  const freshWindow = validateActionWindow(observedFreshWindow, { kind: 'fresh-unauthenticated' }, diagnostic);
+  const freshWindow = validateActionWindow(observedFreshWindow, {
+    kind: 'fresh-unauthenticated',
+    policyContext: 'fresh-isolated-unauthenticated',
+  }, diagnostic);
   const summaries = [
     ...validatedStages.map(value => ({ stage: value.name, finalPath: value.window.finalPath })),
     { stage: 'fresh-isolated-unauthenticated', finalPath: freshWindow.finalPath },

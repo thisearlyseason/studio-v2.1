@@ -105,6 +105,15 @@ const isNoTeamDiagnostic = (checkpoint, reason) => (
   Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, checkpoint)
   && NO_TEAM_DIAGNOSTIC_REASONS[checkpoint].has(reason)
 );
+const LOGOUT_POLICY_REASONS = new Set(
+  [
+    'logout-tab', 'stale-tab-reload', 'stale-tab-back', 'stale-tab-second-reload',
+    'fresh-isolated-unauthenticated',
+  ].flatMap(stage => [
+    'session-present', 'location-invalid', 'sentinel-missing',
+    'protected-render', 'protected-request', 'protected-listener',
+  ].map(cause => `${stage}-${cause}`)),
+);
 const DIAGNOSTIC_STAGES = Object.freeze({
   'runner-initialization': 'authorization', 'context-start': 'authorization',
   'ownership-authorization': 'authorization', 'browser-acquisition': 'acquisition',
@@ -134,6 +143,7 @@ const DIAGNOSTIC_STAGES = Object.freeze({
   'window-request-failure': 'scenario-action', 'window-overflow': 'scenario-action',
   'window-render-coherence': 'scenario-action', 'window-resource': 'scenario-action',
   'window-policy': 'scenario-action',
+  'logout-policy': 'scenario-action',
   'isolation-session': 'scenario-action',
   'isolation-api-status': 'scenario-action',
   'isolation-firestore-status': 'scenario-action',
@@ -404,6 +414,8 @@ function validateCertificate(input, {
           ? ROUTE_DIAGNOSTIC_REASONS.has(value.diagnostic.reason)
           : value.diagnostic.checkpoint === 'window-console-network'
             ? NETWORK_CONSOLE_DIAGNOSTIC_REASONS.has(value.diagnostic.reason)
+          : value.diagnostic.checkpoint === 'logout-policy'
+            ? LOGOUT_POLICY_REASONS.has(value.diagnostic.reason)
           : isNoTeamDiagnostic(value.diagnostic.checkpoint, value.diagnostic.reason))
       || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(value.diagnostic.checkpoint)
         && ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
@@ -414,6 +426,11 @@ function validateCertificate(input, {
         && ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
           contexts[value.diagnostic.contextOrdinal]?.contextId === value.diagnostic.contextId
           && contexts[value.diagnostic.contextOrdinal]?.alias === 'qa-no-team'
+        )))
+      || (value.diagnostic.checkpoint === 'logout-policy'
+        && ![DIAGNOSTIC_CONTEXTS.before, DIAGNOSTIC_CONTEXTS.after].some(contexts => (
+          contexts[value.diagnostic.contextOrdinal]?.contextId === value.diagnostic.contextId
+          && contexts[value.diagnostic.contextOrdinal]?.group === 'logout'
         )))
       || value.primaryStage !== DIAGNOSTIC_STAGES[value.diagnostic.checkpoint]) {
       throw new Error('Terminal certificate diagnostic is invalid.');

@@ -200,6 +200,10 @@ export const REQUIRED_LOGOUT_STAGES = deepFreeze([
   'stale-tab-back',
   'stale-tab-second-reload',
 ]);
+const LOGOUT_POLICY_CONTEXTS = deepFreeze([
+  ...REQUIRED_LOGOUT_STAGES,
+  'fresh-isolated-unauthenticated',
+]);
 
 export const SCENARIO_GROUP_COUNTS = deepFreeze({
   'admission-route': 18,
@@ -1042,13 +1046,29 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
   const pendingFresh = options.kind === 'pending-deletion-fresh';
   const revoked = options.kind === 'fresh-unauthenticated' || pendingStale || pendingFresh;
   const requireNoProtected = revoked || options.requireNoProtected === true;
+  const policyContext = options.policyContext;
+  if (policyContext !== undefined && !LOGOUT_POLICY_CONTEXTS.includes(policyContext)) {
+    throw new Error('Action window logout policy context is unsupported.');
+  }
+  const reportLogoutPolicy = cause => {
+    if (policyContext !== undefined) diagnostic('logout-policy', `${policyContext}-${cause}`);
+  };
   diagnostic('window-policy', 'policy-invalid');
   if (options.resourcePolicy !== undefined && options.resourcePolicy !== NO_TEAM_RESOURCE_POLICY) {
     throw new Error('Action window resource policy is unsupported.');
   }
-  if (revoked && window.sessionPresent) throw new Error('Revoked action window retained a session.');
-  if (revoked && window.finalPath !== '/login') throw new Error('Revoked action window must end at /login.');
-  if (revoked && !window.visibleSentinels.includes('Sign In')) throw new Error('Revoked action window must reach the Sign In sentinel.');
+  if (revoked && window.sessionPresent) {
+    reportLogoutPolicy('session-present');
+    throw new Error('Revoked action window retained a session.');
+  }
+  if (revoked && window.finalPath !== '/login') {
+    reportLogoutPolicy('location-invalid');
+    throw new Error('Revoked action window must end at /login.');
+  }
+  if (revoked && !window.visibleSentinels.includes('Sign In')) {
+    reportLogoutPolicy('sentinel-missing');
+    throw new Error('Revoked action window must reach the Sign In sentinel.');
+  }
   const unavailableStatusObserved = renderSignals.some(signal => (
     signal.kind === 'status' && signal.sentinel === PENDING_UNAVAILABLE_SENTINEL
   ));
@@ -1065,9 +1085,18 @@ const validateActionWindowSnapshot = (value, options = {}, diagnostic = () => {}
     throw new Error(`Fresh pending-deletion action window must show unavailable status signal: ${PENDING_UNAVAILABLE_SENTINEL}`);
   }
   if (requireNoProtected) {
-    if (window.protectedRender) throw new Error('Revoked action window contains a protected render.');
-    if (window.protectedRequests !== 0) throw new Error('Revoked action window contains a protected request.');
-    if (window.protectedListenerStarts !== 0) throw new Error('Revoked action window contains a protected listener start.');
+    if (window.protectedRender) {
+      reportLogoutPolicy('protected-render');
+      throw new Error('Revoked action window contains a protected render.');
+    }
+    if (window.protectedRequests !== 0) {
+      reportLogoutPolicy('protected-request');
+      throw new Error('Revoked action window contains a protected request.');
+    }
+    if (window.protectedListenerStarts !== 0) {
+      reportLogoutPolicy('protected-listener');
+      throw new Error('Revoked action window contains a protected listener start.');
+    }
   }
   const closedWindow = {
     pageId: window.pageId,
@@ -1322,10 +1351,23 @@ const validateLogoutStagesSnapshot = (value, diagnostic = () => {}) => {
   const stages = inputStages.map((stage, index) => {
     requireRecord(stage, `Logout stage ${index}`);
     if (stage.name !== REQUIRED_LOGOUT_STAGES[index]) throw new Error('Logout stages are missing or out of order.');
-    const window = validateActionWindowSnapshot(stage.window, { requireNoProtected: true }, diagnostic);
-    if (window.sessionPresent) throw new Error(`${stage.name} retained a session.`);
-    if (window.finalPath !== '/login') throw new Error(`${stage.name} pathname must be /login.`);
-    if (!window.visibleSentinels.includes('Sign In')) throw new Error(`${stage.name} must reach the login visible sentinel.`);
+    const window = validateActionWindowSnapshot(
+      stage.window,
+      { requireNoProtected: true, policyContext: stage.name },
+      diagnostic,
+    );
+    if (window.sessionPresent) {
+      diagnostic('logout-policy', `${stage.name}-session-present`);
+      throw new Error(`${stage.name} retained a session.`);
+    }
+    if (window.finalPath !== '/login') {
+      diagnostic('logout-policy', `${stage.name}-location-invalid`);
+      throw new Error(`${stage.name} pathname must be /login.`);
+    }
+    if (!window.visibleSentinels.includes('Sign In')) {
+      diagnostic('logout-policy', `${stage.name}-sentinel-missing`);
+      throw new Error(`${stage.name} must reach the login visible sentinel.`);
+    }
     return { name: stage.name, window };
   });
   const result = { pass: true, stages };

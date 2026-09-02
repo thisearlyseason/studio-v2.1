@@ -176,6 +176,15 @@ const isNoTeamDiagnostic = (checkpoint, reason) => (
   Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, checkpoint)
   && NO_TEAM_DIAGNOSTIC_REASONS[checkpoint].has(reason)
 );
+const LOGOUT_POLICY_REASONS = new Set(
+  [
+    'logout-tab', 'stale-tab-reload', 'stale-tab-back', 'stale-tab-second-reload',
+    'fresh-isolated-unauthenticated',
+  ].flatMap(stage => [
+    'session-present', 'location-invalid', 'sentinel-missing',
+    'protected-render', 'protected-request', 'protected-listener',
+  ].map(cause => `${stage}-${cause}`)),
+);
 const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'runner-initialization': 'authorization',
   'context-start': 'authorization',
@@ -222,6 +231,7 @@ const RUNNER_DIAGNOSTIC_STAGES = Object.freeze({
   'window-render-coherence': 'scenario-action',
   'window-resource': 'scenario-action',
   'window-policy': 'scenario-action',
+  'logout-policy': 'scenario-action',
   'isolation-session': 'scenario-action',
   'isolation-api-status': 'scenario-action',
   'isolation-firestore-status': 'scenario-action',
@@ -1581,11 +1591,15 @@ export function validateRunnerFailureTerminal(message, accepted) {
         ? ROUTE_DIAGNOSTIC_REASONS.has(message.reason)
         : message.checkpoint === 'window-console-network'
           ? NETWORK_CONSOLE_DIAGNOSTIC_REASONS.has(message.reason)
+        : message.checkpoint === 'logout-policy'
+          ? LOGOUT_POLICY_REASONS.has(message.reason)
         : isNoTeamDiagnostic(message.checkpoint, message.reason))
     || (ROUTE_DIAGNOSTIC_CHECKPOINTS.has(message.checkpoint)
       && phaseContracts[message.contextOrdinal].group !== 'admission-route')
     || (Object.hasOwn(NO_TEAM_DIAGNOSTIC_REASONS, message.checkpoint)
       && phaseContracts[message.contextOrdinal].alias !== 'qa-no-team')
+    || (message.checkpoint === 'logout-policy'
+      && phaseContracts[message.contextOrdinal].group !== 'logout')
     || message.stage !== RUNNER_DIAGNOSTIC_STAGES[message.checkpoint]) {
     throw new GuardianFailure('scenario-runner-invalid');
   }

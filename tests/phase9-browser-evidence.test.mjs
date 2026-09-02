@@ -3337,6 +3337,38 @@ test('phase 9 browser scenarios mark before every logout stage and reject transi
   }
 });
 
+test('phase 9 logout policy diagnostics identify the exact stage and protected activity', async () => {
+  const stageNames = [...REQUIRED_LOGOUT_STAGES, 'fresh-isolated-unauthenticated'];
+  const clean = scenarioWindow({
+    finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`,
+    visibleSentinels: ['Sign In'], sessionPresent: false,
+  });
+  const protectedRequest = {
+    ...clean,
+    protectedRequests: 1,
+    protectedRequestSignals: [closedResourceSignal(`${STAGING_ORIGIN}/dashboard`)],
+  };
+  const actions = Object.fromEntries(REQUIRED_LOGOUT_STAGES.map(name => [name, async () => {}]));
+  actions.waitForLogin = async () => {};
+  actions.freshUnauthenticated = async () => {};
+  actions.waitForFreshLogin = async () => {};
+  for (const [failedIndex, stageName] of stageNames.entries()) {
+    const diagnostics = [];
+    await assert.rejects(runLogoutScenario({
+      client: createScriptedScenarioClient(stageNames.map((_, index) => (
+        index === failedIndex ? protectedRequest : clean
+      ))),
+      session: 'logout-shared',
+      freshSession: 'logout-fresh',
+      context: scenarioContext({ contextId: 'logout-qa-parent-a-mobile' }),
+      actions: { ...actions, diagnostic: (...entry) => diagnostics.push(entry) },
+    }), /protected request/i);
+    assert.deepEqual(diagnostics.at(-1), [
+      'logout-policy', `${stageName}-protected-request`,
+    ]);
+  }
+});
+
 test('phase 9 browser scenarios reject transient protected activity for fresh and pending deletion', async () => {
   const fresh = scenarioWindow({
     finalPath: '/login', finalUrl: `${STAGING_ORIGIN}/login`, visibleSentinels: ['Sign In'], sessionPresent: false,
@@ -10066,6 +10098,52 @@ function task5TerminalCertificate(status = 'closure-pending', overrides = {}) {
     ...overrides,
   };
 }
+
+test('phase 9 logout policy diagnostic crosses guardian and terminal certificate boundaries', async () => {
+  const { canonicalBrowserSessionsForRow, validateRunnerFailureTerminal } = await import(
+    '../scripts/qa-evidence/phase9/lifecycle-guardian.mjs'
+  );
+  const { canonicalPhase9TerminalCertificate } = await import(
+    '../scripts/qa-evidence/phase9/terminal-certificate-writer.mjs'
+  );
+  const row = buildCanonicalScenarioPlan()
+    .filter(candidate => candidate.startState !== 'pending_deletion')[14];
+  assert.equal(row.contextId, 'logout-qa-parent-a-mobile');
+  const sessions = canonicalBrowserSessionsForRow(row);
+  const receipts = sessions.map((session, index) => ({
+    session, daemonPid: 960001 + index * 2, chromeMainPid: 960002 + index * 2,
+  }));
+  const diagnostic = {
+    contextOrdinal: 14,
+    contextId: row.contextId,
+    checkpoint: 'logout-policy',
+    reason: 'stale-tab-reload-protected-request',
+  };
+  const terminal = validateRunnerFailureTerminal({
+    version: 4, type: 'failure', phase: 'before-transition', sequence: 2,
+    category: 'scenario-failed', stage: 'scenario-action', ...diagnostic,
+    pendingBrowserSession: null,
+    browserSessions: sessions,
+    attachedBrowserSessions: [],
+    launchReceipts: receipts,
+    releasedBrowserSessions: [],
+  }, {
+    phase: 'before-transition', ownershipSequence: 2, pendingOwnershipIntent: null,
+    activeAnnouncedSessions: new Set(sessions), attachedSessions: new Set(),
+    activeAnnouncedReceipts: new Map(receipts.map(receipt => [receipt.session, receipt])),
+    releasedSessions: new Set(), ownershipComplete: false, terminal: null,
+    currentContext: { contextOrdinal: 14, contextId: row.contextId },
+  });
+  assert.deepEqual(terminal.diagnostic, diagnostic);
+
+  const certificate = task5TerminalCertificate('failed', {
+    primaryCategory: 'scenario-failed', primaryStage: 'scenario-action', diagnostic,
+  });
+  assert.deepEqual(
+    JSON.parse(canonicalPhase9TerminalCertificate(certificate)).diagnostic,
+    diagnostic,
+  );
+});
 
 test('phase 9 request failure certificate preserves the exact optional closed diagnostic', async t => {
   const { canonicalPhase9TerminalCertificate } = await import(
