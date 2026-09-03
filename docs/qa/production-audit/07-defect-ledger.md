@@ -2,7 +2,26 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-03; four defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence is recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-03; five defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence is recorded separately from the still-incomplete coverage matrix.
+
+## BUG-006 — Landing support widget emits repeat console errors in Chromium and WebKit (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Marketing landing page — visitor support |
+| Role | Visitor |
+| Page or route | `/` |
+| Description | A clean landing-page load emitted five styled-components error 17 messages from the Elfsight AI Chatbot bundle in both Chromium and WebKit. The widget still opened in Chromium, but the repeated errors violated the audit's console-clean requirement and the same vendor path was unreliable in Safari/WebKit. |
+| Expected behavior | Every supported browser exposes a usable support path without application console errors. |
+| Actual behavior | Lazy Elfsight initialization repeatedly lost an injected stylesheet in Chromium. Eager initialization removed that failure there, but the vendor Safari/WebKit path continued to emit the same errors. |
+| Exact reproduction steps | 1. Open a clean visitor session. 2. Navigate to staging `/`. 3. Wait for the Elfsight launcher. 4. Inspect the console and open the support control. |
+| Reproduction consistency | Five errors per clean Chromium and WebKit load before repair; zero errors in final hosted Chromium, Firefox, and WebKit checks. |
+| Root cause | `data-elfsight-app-lazy` exposed a vendor stylesheet teardown race. Elfsight AI Chatbot v1.31.1 also retained an incompatible Safari/WebKit rendering path after eager initialization. |
+| Fix | Chromium and Firefox now initialize the full Elfsight assistant eagerly. Safari and iOS WebKit receive an accessible native support mail link instead of loading the incompatible vendor bundle. |
+| Automated verification | `tests/landing-chat-support.test.mjs` covers browser selection and `tests/preview-regressions.test.mjs` prevents restoration of lazy initialization. Staging workflow `33789859140` passed the authoritative 397 application tests, 38 rules tests, typechecks, lint with zero errors, production builds, deployment, and health checks for commit `febfbf2002b294d1edb4dbd40deaa44ae821cb00`. |
+| Hosted verification | Clean staging sessions exposed the full `Squad Assistant` dialog and `Write your message...` textbox in Chrome and Firefox. WebKit exposed one `Contact The Squad support` mail link and loaded zero Elfsight scripts. All three reported zero console errors; desktop and 390x844 checks had no horizontal overflow. |
+| Status | RESOLVED |
 
 ## BUG-001 — Event deletion has no confirmation (resolved)
 

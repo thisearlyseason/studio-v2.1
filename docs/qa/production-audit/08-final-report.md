@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved four defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved five defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -32,8 +32,9 @@ Roles actually exercised were unauthenticated visitor, anonymous Squad Pro demo 
 - BUG-003, P1: A newly verified zero-team Coach now reaches `/teams/new` rather than being redirected to Join & Invite.
 - BUG-004, P1: The staging Stripe Connect endpoint now receives signed connected-account test events; the superseded endpoint is disabled after verification.
 - BUG-005, P1: Chat notification fan-out and primary PWA identity are repaired on staging; physical Android and iPhone/iPad acceptance remains mandatory before this defect is closed.
+- BUG-006, P2: Landing support no longer produces repeat Elfsight stylesheet errors; Chrome/Firefox retain the full assistant and Safari/WebKit receives an accessible native support fallback.
 
-Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 2, P2 2.
+Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 2, P2 3.
 
 Post-recovery application console-error count: 0. Unexpected network-failure count: 0. One expected HTML time-format warning was generated deliberately during negative testing. Transient Next.js 500s caused by an identified test-harness build/dev collision were discarded and all affected checks rerun.
 
@@ -65,9 +66,15 @@ The release dependency gate also identified and updated vulnerable transitive Br
 
 This evidence verifies the implementation, deployment path, and hosted PWA resources. It does not substitute for physical Android and iPhone/iPad notification receipt, click-through, opt-out, update, and reinstall behavior. The Push and PWA rows therefore remain `BLOCKED`, and production promotion is not authorized by this report until those device checks pass on the combined release candidate.
 
+## Cross-browser landing support follow-up — 2026-09-03
+
+Installing the required Firefox and WebKit engines exposed BUG-006: the Elfsight AI Chatbot vendor bundle emitted five styled-components error 17 messages on clean Chromium and WebKit landing-page loads. Removing lazy initialization made the full assistant console-clean in Chromium and Firefox. Because the vendor's Safari/WebKit path remained faulty, Safari and iOS WebKit now receive a native, keyboard-accessible support mail link and do not load the Elfsight bundle.
+
+Protected staging workflow `33789859140` deployed application commit `febfbf2002b294d1edb4dbd40deaa44ae821cb00` after passing 397 application tests, 38 rules tests, typechecks, lint with zero errors, production builds, infrastructure deployment, App Hosting rollout, and health checks. On that exact hosted revision, clean Chrome and Firefox sessions opened the `Squad Assistant` dialog and exposed its message textbox with zero console errors. A clean WebKit session exposed one `Contact The Squad support` link, loaded zero Elfsight scripts, and reported zero console errors. Desktop and 390x844 checks had no horizontal overflow. Firefox produced one browser-level OpaqueResponseBlocking warning for an external Unsplash image that nevertheless returned HTTP 200; it was not an application error or failed request.
+
 ## Blocked and untested depth
 
-Blocked areas include credential account lifecycle; full role and cross-tenant authorization; destructive account/team/institution lifecycle; household/guardian/youth privacy; complete roster and recruiting CRUD; RSVP/attendance/ICS/FCM; practice media; feed/chat/poll multi-session mutations; remaining Resend workflows; uploads/storage URLs; waivers/signatures/incidents; leagues/tournaments/scoring; billing/Stripe/Connect/payments/donations; superadmin management; Firefox/WebKit and physical-device checks; full PWA offline/update/logout behavior; Time Out UI; provider webhooks/background schedules; CI/deploy drift, backup, restore, and rollback.
+Blocked areas include credential account lifecycle; full role and cross-tenant authorization; destructive account/team/institution lifecycle; household/guardian/youth privacy; complete roster and recruiting CRUD; RSVP/attendance/ICS/FCM; practice media; feed/chat/poll multi-session mutations; remaining Resend workflows; uploads/storage URLs; waivers/signatures/incidents; leagues/tournaments/scoring; billing/Stripe/Connect/payments/donations; superadmin management; authenticated Firefox/WebKit journeys and physical-device checks; full PWA offline/update/logout behavior; Time Out UI; provider webhooks/background schedules; CI/deploy drift, backup, restore, and rollback.
 
 Required next evidence is named in `06-test-account-requirements.md` and summarized by `B-FIXTURES` in the coverage matrix.
 
