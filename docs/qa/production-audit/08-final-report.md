@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved five defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved eight defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -23,7 +23,7 @@ Completed functional-row coverage is `(PASS + FAIL) / all rows = 3 / 88 = 3.4%`.
 
 Browser testing covered marketing/legal/audience/sport pages, authentication and signup UI, visitor route denial, anonymous demos, Dashboard, Events CRUD, Roster, Chat, Practice, Games, Feed, Files, Facilities, Equipment, Sports Hub browse/search/resources/PDF, embeds, invalid public portal identifiers, responsive layouts, manifest/service worker, and Schedule App rendering.
 
-Roles actually exercised were unauthenticated visitor, anonymous Squad Pro demo coach/staff, anonymous Player demo, and one verified synthetic Coach owner in isolated staging. All remaining registered role/account-state combinations—including parent, adult/youth player, delegated staff/admin, league creator, superadmin, removed, suspended, unverified, and pending deletion—remain blocked without the specified identities and tenant fixtures.
+Roles exercised were unauthenticated visitor, anonymous Squad Pro demo coach/staff, anonymous Player demo, one verified synthetic Coach owner in isolated staging, and ephemeral local emulator identities for two Coach owners, team assistant/member, two parents, two adult players, a youth player, trusted and profile-only fake superadmins, unverified, disabled, removed-member, pending-deletion, and multi-team states. These local identities improve authorization evidence but do not replace durable hosted/provider/device journeys required by the strict matrix.
 
 ## Resolved audit defects
 
@@ -33,8 +33,17 @@ Roles actually exercised were unauthenticated visitor, anonymous Squad Pro demo 
 - BUG-004, P1: The staging Stripe Connect endpoint now receives signed connected-account test events; the superseded endpoint is disabled after verification.
 - BUG-005, P1: Chat notification fan-out and primary PWA identity are repaired on staging; physical Android and iPhone/iPad acceptance remains mandatory before this defect is closed.
 - BUG-006, P2: Landing support no longer produces repeat Elfsight stylesheet errors; Chrome/Firefox retain the full assistant and Safari/WebKit receives an accessible native support fallback.
+- BUG-007, P1: Global superadmin authority now depends on the verified custom claim, not a profile role string.
+- BUG-008, P1: Admin SDK APIs and protected server rendering now reject blocked account lifecycle states consistently with the rules boundary.
+- BUG-009, P2: Explicit development emulator mode now receives the exact loopback CSP connections required for real-browser audit execution without changing production CSP.
 
-Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 2, P2 3.
+Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 4, P2 4.
+
+## Deterministic local identity and tenant follow-up — 2026-09-03
+
+A loopback-only Firebase fixture seeder now builds 16 synthetic identities and two isolated teams in a `demo-*` project. Its random credential exists only for the process lifetime, is never printed or persisted, and the seeder refuses non-loopback emulator hosts. No Stripe, Resend, Firebase production, or other paid provider call is involved.
+
+The complete emulator audit exercised real Auth, Firestore, Storage, Next.js APIs, and Chrome routes. It proved own-team chat access and reciprocal cross-tenant denial, removed-member denial, deletion-pending API denial, disabled Auth denial, unverified browser-session denial, trusted custom-claim superadmin access, profile-only fake-superadmin denial, parent `/family` routing, and adult-player family denial. The focused regression suite passed 18 of 18 checks, typecheck completed successfully, and scoped lint reported zero errors. These results add partial evidence to strict rows; they do not turn any row PASS where lifecycle transitions, full feature behavior, responsive/device coverage, provider delivery, or hosted persistence remain unexecuted.
 
 Post-recovery application console-error count: 0. Unexpected network-failure count: 0. One expected HTML time-format warning was generated deliberately during negative testing. Transient Next.js 500s caused by an identified test-harness build/dev collision were discarded and all affected checks rerun.
 

@@ -2,7 +2,55 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-03; five defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence is recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-03; eight defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-009 — Local browser audit cannot connect to enabled Firebase emulators (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Audit infrastructure — Firebase emulator browser execution |
+| Role | Synthetic Phase 2 identities |
+| Page or route | `/login` and protected dashboard routes |
+| Description | The application was explicitly configured for local Firebase emulators, but its Content Security Policy rejected the loopback Auth, Firestore, and Storage connections needed by a real browser. |
+| Expected behavior | Development builds with emulator mode explicitly enabled can connect only to the known loopback emulator ports; production CSP remains unchanged. |
+| Actual behavior | Browser login failed at the CSP boundary before the synthetic identity and route policy could be exercised. |
+| Root cause | `connect-src` included hosted Firebase origins but did not conditionally include the loopback emulator origins. |
+| Fix | Development CSP now adds the exact localhost and `127.0.0.1` Auth, Firestore, and Storage ports only when `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true`. |
+| Verification | `tests/emulator-csp.test.mjs` covers the environment boundary. The complete emulator audit then authenticated real Chrome sessions and exercised protected routes without relaxing production CSP. |
+| Status | RESOLVED |
+
+## BUG-008 — Suspended or deletion-pending accounts can reach Admin SDK APIs (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Account lifecycle — server authorization |
+| Role | Suspended, disabled, and deletion-pending registered users |
+| Page or route | Authenticated `/api/*` routes and protected dashboard rendering |
+| Description | Firestore rules denied inactive account states, but server routes using the Admin SDK validated the token without consistently applying the same account-state restriction. |
+| Expected behavior | A suspended, disabled, pending-deletion, or deleted account loses server API and dashboard access even while an otherwise valid credential exists. |
+| Actual behavior | The client/rules boundary and Admin SDK boundary used different account-state policies. |
+| Root cause | Admin SDK bypasses Firestore rules by design, and the shared server token verifier did not load and evaluate the user's lifecycle state. |
+| Fix | Added one shared account-access policy to API authentication, session inspection, and server dashboard authorization. The coarse middleware remains free of a redundant profile read because the dashboard template and admin layout already enforce the server gate. |
+| Verification | Policy regressions cover all blocked and allowed lifecycle values. The real emulator audit returned HTTP 403 for a deletion-pending identity, Auth returned `USER_DISABLED` for the disabled identity, and the focused suite passed 18/18. |
+| Status | RESOLVED |
+
+## BUG-007 — Profile-only `superadmin` value grants elevated application authority (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Administration — trusted role boundary |
+| Role | Ordinary account with a forged or stale profile role |
+| Page or route | `/admin`, shared dashboard navigation, and quota logic |
+| Description | Some route and client policy paths treated a Firestore profile value of `superadmin` as equivalent to the trusted Firebase custom claim. |
+| Expected behavior | Global administration and superadmin quota elevation depend only on the verified custom claim; profile data alone cannot confer that authority. |
+| Actual behavior | The profile role could feed the route policy and client quota calculation as elevated authority. |
+| Root cause | Trusted claim state and editable/stale profile state were combined into one normalized role input. |
+| Fix | The dashboard policy recognizes superadmin only from the decoded claim. Navigation and quota elevation consume the trusted `isSuperAdmin` state rather than a profile string. |
+| Verification | Regression tests cover forged-profile denial and trusted-claim allowance. In real local Chrome sessions, the claim-controlled identity landed on and retained `/admin`; the profile-only fake landed on `/dashboard` and a direct `/admin` request redirected to `/dashboard`. The admin API returned 200 for the trusted claim and 403 for the fake profile. |
+| Status | RESOLVED |
 
 ## BUG-006 — Landing support widget emits repeat console errors in Chromium and WebKit (resolved)
 

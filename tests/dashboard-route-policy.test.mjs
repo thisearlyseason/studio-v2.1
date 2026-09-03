@@ -24,8 +24,9 @@ test('sensitive account routes require revocation-aware session verification', (
 
 test('only superadmins can access global administration', () => {
   assert.equal(authorizeDashboardRoute('/admin/plans', { role: 'admin' }).allowed, false);
-  assert.equal(authorizeDashboardRoute('/admin/plans', { role: 'superadmin' }).allowed, true);
+  assert.equal(authorizeDashboardRoute('/admin/plans', { role: 'superadmin' }).allowed, false);
   assert.equal(authorizeDashboardRoute('/admin', { role: 'adult_player' }, 'superadmin').allowed, true);
+  assert.equal(authorizeDashboardRoute('/admin', { role: 'superadmin' }, 'superadmin').allowed, true);
 });
 
 test('family finance is limited to guardians and superadmins', () => {
@@ -49,7 +50,13 @@ test('institution and competition hubs require matching authority', () => {
 test('shared navigation hides routes rejected by the dashboard policy', () => {
   const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
 
-  assert.match(shell, /authorizeDashboardRoute\(tab\.href,/);
+  assert.match(shell, /authorizeDashboardRoute\(tab\.href,[\s\S]+isSuperAdmin \? 'superadmin' : undefined/);
+});
+
+test('a forged profile role cannot inherit management or institution authority', () => {
+  assert.equal(authorizeDashboardRoute('/admin', { role: 'superadmin' }).allowed, false);
+  assert.equal(authorizeDashboardRoute('/equipment', { role: 'superadmin' }).allowed, false);
+  assert.equal(authorizeDashboardRoute('/club', { role: 'superadmin', plan_type: 'school' }).allowed, false);
 });
 
 test('ordinary authenticated routes remain available during profile setup', () => {

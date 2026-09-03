@@ -15,6 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.mjs",
     "test:rules": "firebase --project demo-the-squad-rules-test emulators:exec --only firestore,storage \"node --test --test-concurrency=1 tests/rules/*.test.mjs\"",
+    "qa:seed-emulator": "node scripts/qa/seed-phase2-emulator-fixtures.mjs",
+    "qa:audit-emulator": "node scripts/qa/run-phase2-emulator-audit.mjs",
     "verify:env": "node scripts/check-production-env.mjs",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:rules && npm run build && npm --prefix functions run build"
   },

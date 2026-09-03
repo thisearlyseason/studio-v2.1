@@ -1660,13 +1660,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       limit = Math.max(limit, 1);
     }
     
-    // Superadmin access must come from the authenticated role, never an email match.
-    if (rawData.role === 'superadmin') {
+    // Superadmin access must come from the authenticated custom claim, never a
+    // mutable profile role or email match.
+    if (isSuperAdmin) {
       limit = Math.max(limit, 100);
     }
 
     return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && (limit > 0), remaining: Math.max(0, limit - ownedProTeams.length) };
-  }, [teamsRaw, userProfile]);
+  }, [teamsRaw, userProfile, isSuperAdmin]);
 
   const getTeamByCode = useCallback(async (code: string, leagueId?: string) => {
     if (!db || !code) return null;

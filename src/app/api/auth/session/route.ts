@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
-import { ensureAdminInit } from '@/lib/firebase-admin';
+import { adminDb, ensureAdminInit } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 
 const SESSION_COOKIE = '__session';
 const SESSION_DURATION_MS = 5 * 24 * 60 * 60 * 1000;
@@ -57,6 +58,12 @@ export async function GET(request: NextRequest) {
       decoded.role !== 'superadmin'
     ) {
       return NextResponse.json({ authenticated: false }, { status: 403 });
+    }
+    if (decoded.firebase?.sign_in_provider !== 'anonymous') {
+      const profile = await adminDb.collection('users').doc(decoded.uid).get();
+      if (profile.exists && isAccountAccessBlocked(profile.data())) {
+        return NextResponse.json({ authenticated: false }, { status: 403 });
+      }
     }
     return NextResponse.json({
       authenticated: true,

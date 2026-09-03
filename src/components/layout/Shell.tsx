@@ -525,7 +525,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         role: user?.role,
         plan_type: user?.plan_type,
         isPrimaryClubAuthority,
-      }).allowed) return false;
+      }, isSuperAdmin ? 'superadmin' : undefined).allowed) return false;
 
       // Module Visibility Settings
       if (tab.name === 'Feed' && activeTeam?.features?.feed === false) return false;

@@ -12,7 +12,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
-import { ensureAdminInit, getAdminProjectId } from '@/lib/firebase-admin';
+import { adminDb, ensureAdminInit, getAdminProjectId } from '@/lib/firebase-admin';
+import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 
 export interface DecodedToken {
   uid: string;
@@ -85,6 +86,19 @@ export async function verifyFirebaseToken(
         },
         { status: 403 }
       );
+    }
+
+    if (signInProvider !== 'anonymous') {
+      const profile = await adminDb.collection('users').doc(decodedToken.uid).get();
+      if (profile.exists && isAccountAccessBlocked(profile.data())) {
+        return NextResponse.json(
+          {
+            error: 'This account is unavailable. Contact support if you believe this is an error.',
+            code: 'auth/account-disabled',
+          },
+          { status: 403 },
+        );
+      }
     }
 
     return {
