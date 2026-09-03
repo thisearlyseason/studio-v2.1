@@ -44,7 +44,7 @@ export function LandingChatbot() {
   return (
     <>
       <Script id="elfsight-squad-chatbot" src="https://elfsightcdn.com/platform.js" strategy="afterInteractive" />
-      <div className={APP_CLASS} data-elfsight-app-lazy />
+      <div className={APP_CLASS} />
     </>
   );
 }

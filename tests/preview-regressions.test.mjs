@@ -578,6 +578,7 @@ test('the Elfsight chatbot and beta reporter are restricted to the landing page'
   assert.match(landing, /<LandingChatbot/);
   assert.match(chatbot, /Elfsight mounts parts of the widget directly under <body>/);
   assert.match(chatbot, /iframe\[src\*="elfsight"\]/);
+  assert.doesNotMatch(chatbot, /data-elfsight-app-lazy/);
   assert.match(reporter, /pathname !== '\/'/);
   assert.doesNotMatch(dashboardLayout, /LandingChatbot|elfsight/);
 });
