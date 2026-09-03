@@ -11,6 +11,7 @@ const eslintConfig = [
     ignores: [
       '.next/**',
       '.next-stale-*/**',
+      '.worktrees/**',
       '.playwright-cli/**',
       'functions/lib/**',
       'functions/node_modules/**',
