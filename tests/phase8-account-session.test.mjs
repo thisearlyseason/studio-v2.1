@@ -126,6 +126,25 @@ test('session policy sends a removed sole member to squad join', async () => {
   assert.deepEqual(authorityArguments, [['user-1', 'team-a']]);
 });
 
+test('session policy sends a verified Coach without a squad to team creation', async () => {
+  const profile = { role: 'coach', accountStatus: 'active' };
+  let authorityReads = 0;
+  const resolve = createAccountSessionResolver({
+    getProfile: async () => profile,
+    hasActiveSquadAuthority: async () => {
+      authorityReads += 1;
+      return false;
+    },
+  });
+
+  assert.deepEqual(await resolve({ uid: 'coach-without-squad', signInProvider: 'password' }), {
+    allowed: true,
+    redirectTo: '/teams/new',
+    profile,
+  });
+  assert.equal(authorityReads, 0);
+});
+
 test('session policy keeps ordinary and alternate-squad access', async () => {
   for (const activeTeamId of ['team-a', null]) {
     const profile = { role: 'member', accountStatus: 'active', activeTeamId };
@@ -663,6 +682,12 @@ test('browser session returns only a validated trusted destination', async () =>
       redirectTo: '/teams/join',
     }), { status: 200, headers: { 'content-type': 'application/json' } });
     assert.deepEqual(await establishBrowserSession(user), { redirectTo: '/teams/join' });
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      redirectTo: '/teams/new',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    assert.deepEqual(await establishBrowserSession(user), { redirectTo: '/teams/new' });
 
     globalThis.fetch = async () => new Response(JSON.stringify({
       ok: true,

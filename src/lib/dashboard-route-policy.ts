@@ -21,7 +21,7 @@ type RouteAccountDecision =
   | { allowed: false; code: 'auth/account-unavailable' }
   | {
       allowed: true;
-      redirectTo: '/onboarding' | '/teams/join' | null;
+      redirectTo: '/onboarding' | '/teams/join' | '/teams/new' | null;
       profile: DashboardAccessProfile | null;
       institutionAuthority?: true;
       coachesCornerAuthority?: true;

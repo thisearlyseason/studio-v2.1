@@ -56,7 +56,7 @@ export async function sendBrandedVerificationEmail(user: User): Promise<void> {
 }
 
 export type BrowserSessionResult = {
-  redirectTo: '/onboarding' | '/teams/join' | null;
+  redirectTo: '/onboarding' | '/teams/join' | '/teams/new' | null;
 };
 
 function sessionSetupError(code?: unknown): Error {
@@ -81,7 +81,8 @@ export async function establishBrowserSession(user: User): Promise<BrowserSessio
   if (
     payload.redirectTo !== null &&
     payload.redirectTo !== '/onboarding' &&
-    payload.redirectTo !== '/teams/join'
+    payload.redirectTo !== '/teams/join' &&
+    payload.redirectTo !== '/teams/new'
   ) {
     throw sessionSetupError('auth/invalid-session-response');
   }
@@ -100,7 +101,8 @@ export async function readBrowserSession(): Promise<BrowserSessionResult> {
     payload.authenticated !== true ||
     (payload.redirectTo !== null &&
       payload.redirectTo !== '/onboarding' &&
-      payload.redirectTo !== '/teams/join')
+      payload.redirectTo !== '/teams/join' &&
+      payload.redirectTo !== '/teams/new')
   ) {
     throw sessionSetupError('auth/invalid-session-response');
   }

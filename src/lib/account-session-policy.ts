@@ -28,7 +28,7 @@ export type AccountSessionDecision =
   | { allowed: false; code: 'auth/account-unavailable' }
   | {
       allowed: true;
-      redirectTo: '/onboarding' | '/teams/join' | null;
+      redirectTo: '/onboarding' | '/teams/join' | '/teams/new' | null;
       profile: AccountSessionProfile | null;
       institutionAuthority?: true;
       coachesCornerAuthority?: true;
@@ -96,6 +96,10 @@ export function createAccountSessionResolver(reader: AccountAccessReader) {
       await reader.hasTrustedInstitutionAuthority?.(identity.uid) === true;
     if (institutionAuthority) {
       return { allowed: true, redirectTo: null, profile, institutionAuthority: true };
+    }
+
+    if (normalized(profile.role) === 'coach') {
+      return { allowed: true, redirectTo: '/teams/new', profile };
     }
 
     const hasSquadAuthority = await reader.hasActiveSquadAuthority(
