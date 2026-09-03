@@ -94,3 +94,12 @@ test('push opt-in is branded, explicit, and registers the device through a prote
   assert.match(serviceWorker, /searchParams\.get\('firebaseConfig'\)/);
   assert.match(signup, /notificationsEnabled: false/);
 });
+
+test('protected device registration supports FCM and web push subscriptions', () => {
+  const deviceRoute = fs.readFileSync(new URL('../src/app/api/notifications/device/route.ts', import.meta.url), 'utf8');
+  assert.match(deviceRoute, /normalizeWebPushSubscription/);
+  assert.match(deviceRoute, /notificationWebPushSubscriptions/);
+  assert.match(deviceRoute, /webPushSubscriptions/);
+  assert.match(deviceRoute, /assertNonAnonymous/);
+  assert.match(deviceRoute, /MAX_DEVICES_PER_ACCOUNT = 10/);
+});
