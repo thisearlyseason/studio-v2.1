@@ -651,15 +651,29 @@ function containsBase64ServiceAccount(contents) {
   return false;
 }
 
+function containsPhase9TerminalCertificate(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && value.version === 1
+    && value.command === 'hosted'
+    && new Set(['closure-pending', 'complete', 'failed']).has(value.status)
+    && value.deployment && typeof value.deployment === 'object'
+    && typeof value.deployment.deployedSha === 'string'
+    && value.lifecycle && typeof value.lifecycle === 'object'
+    && typeof value.lifecycle.workspaceRemoved === 'boolean'
+    && value.evidence && typeof value.evidence === 'object';
+}
+
 function inspectStructuredContents(contents) {
   const variants = decodedTextVariants(contents);
-  if (variants.limitExceeded) return { manifest: false, secret: false, limitExceeded: true };
+  if (variants.limitExceeded) return { manifest: false, terminal: false, secret: false, limitExceeded: true };
   let manifest = false;
+  let terminal = false;
   let secret = false;
   const privateKeyMarker = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
   for (const text of variants.texts) {
     const values = jsonValuesInText(text);
     if (values.some(containsPhase7Manifest)) manifest = true;
+    if (values.some(containsPhase9TerminalCertificate)) terminal = true;
     if (
       text.includes(privateKeyMarker)
       || containsBase64ServiceAccount(text)
@@ -668,7 +682,7 @@ function inspectStructuredContents(contents) {
       || containsRawSessionCookieHeader(text)
     ) secret = true;
   }
-  return { manifest, secret, limitExceeded: false };
+  return { manifest, terminal, secret, limitExceeded: false };
 }
 
 function fixtureArtifactViolations(files) {
@@ -685,6 +699,7 @@ function fixtureArtifactViolations(files) {
     if (fileEntry.aggregateSizeError) violations.add('<repository>: repository scanned source bytes exceed 64 MiB aggregate limit');
     if (credentialArtifact.test(file)) violations.add(`${file}: tracked fixture credential/manifest artifact`);
     let manifest = false;
+    let terminal = false;
     let secret = false;
     let limitExceeded = false;
     for (const representation of scanRepresentations(fileEntry)) {
@@ -694,11 +709,13 @@ function fixtureArtifactViolations(files) {
       }
       const result = inspectStructuredContents(representation.contents);
       manifest ||= result.manifest;
+      terminal ||= result.terminal;
       secret ||= result.secret;
       limitExceeded ||= result.limitExceeded;
     }
     if (limitExceeded) violations.add(`${file}: repository structured-content scan limit exceeded`);
     if (manifest) violations.add(`${file}: tracked Phase 7 manifest payload`);
+    if (terminal) violations.add(`${file}: tracked Phase 9 terminal certificate payload`);
     if (secret) violations.add(`${file}: fixture secret material pattern`);
   }
   return [...violations];
@@ -799,6 +816,22 @@ test('fixture hygiene detects Phase 7 manifests and Playwright session cookies b
     'tests/qa-fixture-safety.test.mjs: fixture secret material pattern',
     'tests/repository-hygiene.test.mjs: fixture secret material pattern',
   ]);
+});
+
+test('fixture hygiene detects an external Phase 9 terminal certificate retained in the repository', () => {
+  const certificate = JSON.stringify({
+    version: 1,
+    command: 'hosted',
+    status: 'closure-pending',
+    exitCode: 1,
+    category: 'pending',
+    deployment: { deployedSha: '0123456789abcdef0123456789abcdef01234567', stagingRunId: '33100000000', pullRequestNumber: 41 },
+    lifecycle: { workspaceRemoved: false },
+    evidence: { rows: 0, written: false },
+  });
+  assert.deepEqual(fixtureArtifactViolations([
+    { file: 'tmp/hosted-result.json', contents: certificate },
+  ]), ['tmp/hosted-result.json: tracked Phase 9 terminal certificate payload']);
 });
 
 test('fixture hygiene detects credential-shaped HAR and raw Cookie session records without flagging harmless cookies', () => {

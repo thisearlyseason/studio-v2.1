@@ -329,6 +329,10 @@ test('user profiles remain private and billing authority cannot be self-granted'
     role: 'adult_player',
     isSchoolAdmin: true,
   }));
+  await assertFails(setDoc(doc(newUserDb, 'users', 'new-user'), {
+    role: 'league_creator',
+    activeTeamId: 'forged-team',
+  }));
 });
 
 test('OAuth credentials remain server-only despite the user subcollection fallback', async () => {

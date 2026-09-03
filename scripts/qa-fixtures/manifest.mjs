@@ -3,18 +3,51 @@ import { MANAGED_PREFIX, STAGING_PROJECT_ID } from './guard.mjs';
 const RUN_ID_PATTERN = new RegExp(`^${MANAGED_PREFIX}(\\d{8}T\\d{6}Z)-([a-z0-9]{12,32})$`);
 const UID_SUFFIX_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const MANIFEST_STATES = new Set(['planned', 'partial', 'seeded', 'cleaned']);
-const TRANSITION_ALIASES = ['qa-suspended', 'qa-removed-member'];
-const MANIFEST_FIELDS = new Set([
+const VERSION_SCHEMAS = Object.freeze({
+  2: Object.freeze({
+    transitionAliases: ['qa-suspended', 'qa-removed-member'],
+    expectedAbsence: false,
+  }),
+  3: Object.freeze({
+    transitionAliases: ['qa-suspended', 'qa-removed-member', 'qa-pending-delete'],
+    expectedAbsence: true,
+  }),
+});
+const VERSION_MANIFEST_FIELDS = Object.freeze({
+  2: new Set([
+    'version',
+    'runId',
+    'projectId',
+    'authUids',
+    'firestorePaths',
+    'state',
+    'createdAt',
+    'updatedAt',
+    'expiresAt',
+    'transitions',
+  ]),
+  3: new Set([
+    'version',
+    'runId',
+    'projectId',
+    'authUids',
+    'firestorePaths',
+    'expectedAbsentFirestorePaths',
+    'state',
+    'createdAt',
+    'updatedAt',
+    'expiresAt',
+    'transitions',
+  ]),
+});
+const TRANSITION_FIELDS = new Set([
   'version',
-  'runId',
-  'projectId',
-  'authUids',
-  'firestorePaths',
   'state',
-  'createdAt',
-  'updatedAt',
-  'expiresAt',
-  'transitions',
+  'startedAt',
+  'firestoreUpdatedAt',
+  'cacheDeletedAt',
+  'revokedAt',
+  'completedAt',
 ]);
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
@@ -119,21 +152,24 @@ export function createRunId({ now = new Date(), randomSuffix } = {}) {
   return `${MANAGED_PREFIX}${stamp}-${randomSuffix}`;
 }
 
-function normalizeTransitions(value) {
+function normalizeTransitions(value, schema) {
   if (!isRecord(value)) throw new Error('Manifest transitions must be an object.');
-  const allowedAliases = new Set(TRANSITION_ALIASES);
+  const allowedAliases = new Set(schema.transitionAliases);
   const aliases = Object.keys(value);
-  if (aliases.length !== TRANSITION_ALIASES.length || TRANSITION_ALIASES.some(alias => !aliases.includes(alias))) {
-    throw new Error('Manifest transitions must contain exactly the suspended and removed-member aliases.');
+  if (aliases.length !== schema.transitionAliases.length || schema.transitionAliases.some(alias => !aliases.includes(alias))) {
+    throw new Error(`Manifest transitions must contain exactly the version-approved aliases: ${schema.transitionAliases.join(', ')}.`);
   }
   const normalized = {};
-  for (const alias of TRANSITION_ALIASES) {
+  for (const alias of schema.transitionAliases) {
     const transition = value[alias];
     if (!allowedAliases.has(alias) || !isRecord(transition)) throw new Error('Manifest contains an unsupported transition.');
-    const allowedFields = new Set(['version', 'state', 'startedAt', 'firestoreUpdatedAt', 'cacheDeletedAt', 'revokedAt', 'completedAt']);
-    const unknown = Object.keys(transition).find(field => !allowedFields.has(field));
+    const unknown = Object.keys(transition).find(field => !TRANSITION_FIELDS.has(field));
     if (unknown) throw new Error(`Unknown transition field: ${unknown}.`);
-    const finalState = alias === 'qa-suspended' ? 'suspended' : 'removed';
+    const finalState = {
+      'qa-suspended': 'suspended',
+      'qa-removed-member': 'removed',
+      'qa-pending-delete': 'pending_deletion',
+    }[alias];
     if (transition.version !== 1 || !new Set(['active', 'applying', finalState]).has(transition.state)) {
       throw new Error(`Manifest transition ${alias} has an invalid version or state.`);
     }
@@ -142,11 +178,12 @@ function normalizeTransitions(value) {
     }
 
     const timestampFields = ['startedAt', 'firestoreUpdatedAt', 'cacheDeletedAt', 'revokedAt', 'completedAt'];
-    const checkpointOrder = alias === 'qa-suspended'
+    const forbidsCacheDeletion = alias === 'qa-suspended' || alias === 'qa-pending-delete';
+    const checkpointOrder = forbidsCacheDeletion
       ? ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']
       : timestampFields;
-    if (alias === 'qa-suspended' && transition.cacheDeletedAt !== undefined) {
-      throw new Error('Suspended transition forbids a cache-deletion timestamp.');
+    if (forbidsCacheDeletion && transition.cacheDeletedAt !== undefined) {
+      throw new Error(`${alias} transition forbids a cache-deletion timestamp.`);
     }
     if (transition.state === 'active') {
       if (timestampFields.some(field => transition[field] !== undefined)) {
@@ -187,12 +224,14 @@ export function validateManifest(manifest) {
   if (!isRecord(manifest)) {
     throw new Error('Manifest must be an object.');
   }
-  const unknownFields = Object.keys(manifest).filter(field => !MANIFEST_FIELDS.has(field));
+  if (manifest.version !== 2 && manifest.version !== 3) {
+    throw new Error('Manifest version must equal 2 or 3.');
+  }
+  const schema = VERSION_SCHEMAS[manifest.version];
+  const manifestFields = VERSION_MANIFEST_FIELDS[manifest.version];
+  const unknownFields = Object.keys(manifest).filter(field => !manifestFields.has(field));
   if (unknownFields.length > 0) {
     throw new Error(`Unknown manifest field: ${unknownFields[0]}.`);
-  }
-  if (manifest.version !== 2) {
-    throw new Error('Manifest version must equal 2.');
   }
   if (manifest.projectId !== STAGING_PROJECT_ID) {
     throw new Error('Manifest project must equal the isolated staging project.');
@@ -207,6 +246,16 @@ export function validateManifest(manifest) {
   for (const path of manifest.firestorePaths) {
     assertManagedPath(path, manifest.runId);
   }
+  if (schema.expectedAbsence) {
+    assertStringArray(manifest.expectedAbsentFirestorePaths, 'expectedAbsentFirestorePaths');
+    for (const path of manifest.expectedAbsentFirestorePaths) {
+      assertManagedPath(path, manifest.runId);
+    }
+    const presentPaths = new Set(manifest.firestorePaths);
+    if (manifest.expectedAbsentFirestorePaths.some(path => presentPaths.has(path))) {
+      throw new Error('expectedAbsentFirestorePaths must not overlap present firestorePaths.');
+    }
+  }
   if (!MANIFEST_STATES.has(manifest.state)) {
     throw new Error('Manifest state must be planned, partial, seeded, or cleaned.');
   }
@@ -215,14 +264,17 @@ export function validateManifest(manifest) {
   assertTimestamp(manifest.expiresAt, 'expiresAt');
 
   const normalized = {
-    version: 2,
+    version: manifest.version,
     runId: manifest.runId,
     projectId: STAGING_PROJECT_ID,
     authUids: [...manifest.authUids],
     firestorePaths: [...manifest.firestorePaths],
     state: manifest.state,
-    transitions: normalizeTransitions(manifest.transitions),
+    transitions: normalizeTransitions(manifest.transitions, schema),
   };
+  if (schema.expectedAbsence) {
+    normalized.expectedAbsentFirestorePaths = [...manifest.expectedAbsentFirestorePaths];
+  }
   for (const field of ['createdAt', 'updatedAt', 'expiresAt']) {
     if (manifest[field] !== undefined) {
       normalized[field] = manifest[field];
@@ -243,17 +295,25 @@ export function assertExactFixtureJournal(manifest, definition) {
     || definition.expiresAt !== normalized.expiresAt
     || !Array.isArray(definition.identities)
     || !Array.isArray(definition.documents)
+    || (normalized.version === 3 && !Array.isArray(definition.expectedAbsentDocuments))
   ) {
     throw new Error('Manifest journal must contain the exact fixture definition.');
   }
 
   const expectedUids = definition.identities.map(identity => identity?.uid);
   const expectedPaths = definition.documents.map(document => document?.path);
+  const expectedAbsentPaths = normalized.version === 3
+    ? definition.expectedAbsentDocuments.map(document => document?.path)
+    : [];
   const hasExactSet = (actual, expected) => (
     actual.length === expected.length
     && expected.every(value => typeof value === 'string' && actual.includes(value))
   );
-  if (!hasExactSet(normalized.authUids, expectedUids) || !hasExactSet(normalized.firestorePaths, expectedPaths)) {
+  if (
+    !hasExactSet(normalized.authUids, expectedUids)
+    || !hasExactSet(normalized.firestorePaths, expectedPaths)
+    || (normalized.version === 3 && !hasExactSet(normalized.expectedAbsentFirestorePaths, expectedAbsentPaths))
+  ) {
     throw new Error('Manifest journal must contain the exact fixture definition.');
   }
   return normalized;

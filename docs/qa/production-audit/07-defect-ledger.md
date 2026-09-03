@@ -184,3 +184,22 @@
 | Phase 8 implementation | One exact ascending collection-group field override was added. The GET handler authorizes the requested team before a bounded `.limit(200)` query and returns a sanitized `503` for query service failure. |
 | Phase 8 verification | On exact staging revision `b495b4eafe5fd9caf6e04c4cf5500a2b6d0baf97`, both Team A and Team B owners received an own-team `200` whose `assignments` field was an array, changed-team API `403`, and direct other-team Firestore GET/PATCH `403/403` at 390×844 and 1440×900, with zero page/application errors, unexpected request failures, or overflow. Evidence: closure-supplement rows in `docs/qa/production-audit/runs/2026-08-24-phase8-confirmed-defects/03-browser-ledger.md`. |
 | Status | FIXED AND VERIFIED |
+
+## BUG-011 — Profile text grants platform superadmin authority
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Authentication/account admission and dashboard route authorization |
+| Role | Account whose profile document says `superadmin` without a verified server-controlled `superadmin` claim |
+| Page or route | Account-session resolution and `/admin` |
+| Description | Two local policy functions treated profile role text as equivalent to a verified superadmin claim, granting independent account admission and platform route authority. |
+| Expected behavior | Platform superadmin authority comes only from the verified claim. A profile-only `superadmin` follows ordinary canonical squad admission and is denied `/admin`; a verified claim remains authorized. |
+| Actual behavior | The profile-only account bypassed squad authority with a neutral destination and received `{ allowed: true }` for `/admin`. |
+| Exact local reproduction | Run `node --import tsx --test tests/phase9-identity-authorization.test.mjs` against `cd45a2be`. The `profile-only superadmin` resolver case expected `/teams/join` but received `null`; the `/admin` route case expected denial but received `{ allowed: true }`. |
+| Reproduction consistency | Deterministic in both exported policy paths; the RED run passed 9 tests and reported the two behavioral failures plus one aggregate parent-test failure. |
+| Root cause | `hasIndependentAuthority` explicitly accepted `profile.role === 'superadmin'`. Separately, dashboard `normalizedRole` merged claim and profile role before deriving `isSuperAdmin`, erasing the trust-boundary distinction. The server dashboard boundary already passed the decoded claim separately. |
+| Implementation | Remove profile-only superadmin from independent session authority. Derive trusted dashboard superadmin authority only from the normalized claim and use that value for `/admin` and platform-wide bypasses, while preserving ordinary management, primary-club, league-creator, parent/player, and institution-plan behavior. No server-reader change is required. |
+| Verification | Focused GREEN passed 12/12. The exact Phase 9, Phase 8 account-session, and security-regression gate passed 56/56; `npm run typecheck` also exited 0. |
+| Scope limitation | Local exported policy verification only; no hosted environment, provider, production data, or secrets were accessed or mutated. |
+| Status | FIXED AND LOCALLY VERIFIED |

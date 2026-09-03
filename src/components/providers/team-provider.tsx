@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
 import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
@@ -8,7 +8,23 @@ import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 import { hasStaffRole } from '@/lib/staff-position';
 import { activeTeamMembershipProjections } from '@/lib/team-membership-security';
-import { canStartProtectedAccountState } from '@/lib/client-account-admission';
+import {
+  canStartGlobalPlanCatalogState,
+  canStartProtectedAccountState,
+  canStartSquadMembershipState,
+  canClaimPendingSchoolInvites,
+  requestPendingSchoolInviteClaim,
+} from '@/lib/client-account-admission';
+import { normalizeSelectedSquadId, selectedSquadCookie } from '@/lib/selected-squad';
+
+const SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE = 'data-school-invite-claim-state';
+type SchoolInviteClaimAttempt = {
+  uid: string;
+  auth: object;
+  state: 'pending' | 'settled' | 'failed';
+  controller: AbortController;
+  cancelled: boolean;
+};
 
 /**
  * Dispatch push + email notifications to all team members.
@@ -142,6 +158,10 @@ export type UserProfile = {
   notificationsEnabled?: boolean; // Push notification preference — persisted to Firestore
   upcomingEventNotificationsEnabled?: boolean;
 };
+
+export function resolveUserAvatar(...candidates: Array<string | null | undefined>): string {
+  return candidates.find(candidate => typeof candidate === 'string' && candidate.length > 0) ?? '/icon.png';
+}
 
 export type PlayerProfile = {
   id: string;
@@ -1083,12 +1103,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const canReadProtectedAccountState = canStartProtectedAccountState(pathname);
+  const canReadGlobalPlanCatalog = canStartGlobalPlanCatalogState(pathname);
+  const canReadSquadMembershipState = canStartSquadMembershipState(pathname);
+  const canClaimSchoolAdminInvites = canClaimPendingSchoolInvites(pathname);
   
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [claimedSchoolAdminForUid, setClaimedSchoolAdminForUid] = useState<string | null>(null);
+  const schoolInviteClaimAttempt = useRef<SchoolInviteClaimAttempt | null>(null);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -1106,30 +1129,103 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   useEffect(() => {
-    if (!canReadProtectedAccountState || !isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
-    if (claimedSchoolAdminForUid === firebaseUser.uid) return;
+    const setClaimState = (state: 'pending' | 'settled' | 'failed') => {
+      document.documentElement.setAttribute(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE, state);
+    };
+    if (!canClaimSchoolAdminInvites) {
+      const attempt = schoolInviteClaimAttempt.current;
+      if (attempt) {
+        attempt.cancelled = true;
+        attempt.controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
+      document.documentElement.removeAttribute(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE);
+      return;
+    }
+    if (!isAuthResolved) {
+      const attempt = schoolInviteClaimAttempt.current;
+      if (attempt) {
+        attempt.cancelled = true;
+        attempt.controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
+      setClaimState('pending');
+      return;
+    }
+    if (!firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) {
+      const attempt = schoolInviteClaimAttempt.current;
+      if (attempt) {
+        attempt.cancelled = true;
+        attempt.controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
+      setClaimState('failed');
+      return;
+    }
+    const existingAttempt = schoolInviteClaimAttempt.current;
+    if (existingAttempt?.uid === firebaseUser.uid && existingAttempt.auth === firebaseAuth) {
+      setClaimState(existingAttempt.state);
+      return;
+    }
+    if (existingAttempt) {
+      existingAttempt.cancelled = true;
+      existingAttempt.controller.abort();
+    }
 
-    let cancelled = false;
+    const controller = new AbortController();
+    const attempt: SchoolInviteClaimAttempt = {
+      uid: firebaseUser.uid,
+      auth: firebaseAuth,
+      state: 'pending',
+      controller,
+      cancelled: false,
+    };
+    schoolInviteClaimAttempt.current = attempt;
+    setClaimState('pending');
     const claimPendingSchoolInvites = async () => {
       try {
-        const token = await getAuthToken(firebaseAuth);
-        if (!token) return;
-        const response = await fetch('/api/schools/admins', {
-          method: 'PATCH',
-          headers: authHeader(token),
+        const response = await requestPendingSchoolInviteClaim({
+          getToken: () => getAuthToken(firebaseAuth),
+          getPathname: () => window.location.pathname,
+          isCancelled: () => attempt.cancelled,
+          signal: controller.signal,
+          request: (token, signal) => fetch('/api/schools/admins', {
+            method: 'PATCH',
+            headers: authHeader(token),
+            signal,
+          }),
         });
+        if (!response) {
+          if (!attempt.cancelled && schoolInviteClaimAttempt.current === attempt) {
+            attempt.state = 'failed';
+            setClaimState('failed');
+          }
+          return;
+        }
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload.error || 'Unable to claim School Hub invitations.');
         }
-        if (!cancelled) setClaimedSchoolAdminForUid(firebaseUser.uid);
+        if (!attempt.cancelled && schoolInviteClaimAttempt.current === attempt) {
+          attempt.state = 'settled';
+          setClaimState('settled');
+        }
       } catch (error) {
+        if (attempt.cancelled || schoolInviteClaimAttempt.current !== attempt) return;
+        attempt.state = 'failed';
+        setClaimState('failed');
         console.error('[TeamProvider] School Hub invitation claim failed:', error);
       }
     };
     claimPendingSchoolInvites();
-    return () => { cancelled = true; };
-  }, [canReadProtectedAccountState, claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
+    return () => {
+      if (window.location.pathname !== '/teams/join' && schoolInviteClaimAttempt.current === attempt) {
+        attempt.cancelled = true;
+        controller.abort();
+        schoolInviteClaimAttempt.current = null;
+      }
+    };
+  }, [canClaimSchoolAdminInvites, firebaseAuth, firebaseUser?.emailVerified, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
@@ -1141,16 +1237,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // happens in activeTeamMembership once teamsRaw is loaded.
   useEffect(() => {
     const storedId = localStorage.getItem('sf_session_team_id');
-    if (storedId) setManualActiveTeamId(storedId);
+    const selected = normalizeSelectedSquadId(storedId);
+    document.cookie = selectedSquadCookie(selected, window.location.protocol === 'https:');
+    if (selected) setManualActiveTeamId(selected);
+    else if (storedId) localStorage.removeItem('sf_session_team_id');
   }, []);
 
   const setActiveTeam = useCallback((team: Team | { id: string } | null) => {
     if (team) {
-      setManualActiveTeamId(team.id);
-      localStorage.setItem('sf_session_team_id', team.id);
+      const selected = normalizeSelectedSquadId(team.id);
+      setManualActiveTeamId(selected || null);
+      if (selected) localStorage.setItem('sf_session_team_id', selected);
+      else localStorage.removeItem('sf_session_team_id');
+      document.cookie = selectedSquadCookie(selected, window.location.protocol === 'https:');
     } else {
       setManualActiveTeamId(null);
       localStorage.removeItem('sf_session_team_id');
+      document.cookie = selectedSquadCookie(undefined, window.location.protocol === 'https:');
     }
   }, []);
 
@@ -1187,7 +1290,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           plan_type: isSuper ? 'league' : data.plan_type,
           team_limit: isSuper ? 100 : data.team_limit,
           role: isSuper ? 'superadmin' : data.role,
-          avatar: data.avatarUrl || data.avatar || `https://picsum.photos/seed/${snap.id}/150/150`
+          avatar: resolveUserAvatar(data.avatarUrl, data.avatar)
         } as UserProfile);
       } else {
         // Fallback if the user document hasn't been written to DB yet or is deleted
@@ -1195,7 +1298,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           id: firebaseUser.uid,
           name: firebaseUser.displayName || 'User',
           email: firebaseUser.email || '',
-          avatar: firebaseUser.photoURL || `https://picsum.photos/seed/${firebaseUser.uid}/150/150`,
+          avatar: resolveUserAvatar(firebaseUser.photoURL),
           role: 'adult_player',
           phone: '',
           parentOf: [],
@@ -1215,13 +1318,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         name: firebaseUser.displayName || 'User',
         email: firebaseUser.email || '',
         phone: '',
-        avatar: firebaseUser.photoURL || `https://picsum.photos/seed/${firebaseUser.uid}/150/150`,
+        avatar: resolveUserAvatar(firebaseUser.photoURL),
         role: 'adult_player',
       } as unknown as UserProfile);
     });
   }, [canReadProtectedAccountState, firebaseUser, db, userRole]);
 
-  const teamsQuery = useMemoFirebase(() => (canReadProtectedAccountState && isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [canReadProtectedAccountState, isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
+  const teamsQuery = useMemoFirebase(() => (canReadSquadMembershipState && isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [canReadSquadMembershipState, isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
   // ── Shared deterministic invite-code fallback ─────────────────────────
@@ -1260,6 +1363,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (found) return found;
       // Stale ID — clear it so the institutional default takes over
       localStorage.removeItem('sf_session_team_id');
+      document.cookie = selectedSquadCookie(undefined, window.location.protocol === 'https:');
     }
 
     // --- School Admin / Athletic Director ---
@@ -1357,11 +1461,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
 
-  const plansQuery = useMemoFirebase(() => (db && isAuthResolved) ? collection(db, 'plans') : null, [db, isAuthResolved]);
+  const plansQuery = useMemoFirebase(
+    () => (canReadGlobalPlanCatalog && db && isAuthResolved) ? collection(db, 'plans') : null,
+    [canReadGlobalPlanCatalog, db, isAuthResolved],
+  );
   const { data: plansData, isLoading: isPlansLoading } = useCollection(plansQuery);
   const plans = useMemo(() => plansData || [], [plansData]);
 
-  const childrenQuery = useMemoFirebase(() => (db && firebaseUser?.uid) ? query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid]);
+  const childrenQuery = useMemoFirebase(
+    () => (canReadProtectedAccountState && db && firebaseUser?.uid)
+      ? query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid))
+      : null,
+    [canReadProtectedAccountState, db, firebaseUser?.uid],
+  );
   const { data: myChildrenRaw } = useCollection<PlayerProfile>(childrenQuery);
   const myChildren = useMemo(() => myChildrenRaw || [], [myChildrenRaw]);
 
@@ -1545,7 +1657,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [householdGames, setHouseholdGames] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
+    if (!canReadProtectedAccountState || !db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
 
     const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
     const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
@@ -1593,15 +1705,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return () => {
        unsubscribers.forEach(fn => fn());
     };
-  }, [db, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
+  }, [canReadProtectedAccountState, db, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
 
-  const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved && isParent) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved, isParent]);
+  const householdMembersQuery = useMemoFirebase(
+    () => (canReadProtectedAccountState && db && firebaseUser?.uid && isAuthResolved && isParent)
+      ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid))
+      : null,
+    [canReadProtectedAccountState, db, firebaseUser?.uid, isAuthResolved, isParent],
+  );
   const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
   const householdPaymentsQuery = useMemoFirebase(
-    () => (db && firebaseUser?.uid && isAuthResolved && isParent)
+    () => (canReadProtectedAccountState && db && firebaseUser?.uid && isAuthResolved && isParent)
       ? query(collection(db, 'users', firebaseUser.uid, 'payments'))
       : null,
-    [db, firebaseUser?.uid, isAuthResolved, isParent]
+    [canReadProtectedAccountState, db, firebaseUser?.uid, isAuthResolved, isParent]
   );
   const { data: householdPaymentsData } = useCollection<HouseholdPayment>(householdPaymentsQuery);
   const householdBalance = useMemo(

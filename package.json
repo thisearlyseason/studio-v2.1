@@ -22,6 +22,9 @@
     "qa:fixtures:seed": "node scripts/qa-fixtures/cli.mjs seed",
     "qa:fixtures:inspect": "node scripts/qa-fixtures/cli.mjs inspect",
     "qa:fixtures:cleanup": "node scripts/qa-fixtures/cli.mjs cleanup",
+    "qa:evidence:phase9": "node scripts/qa-evidence/phase9/cli.mjs",
+    "qa:evidence:phase9:help": "node scripts/qa-evidence/phase9/cli.mjs help",
+    "qa:evidence:phase9:recover-terminal": "node scripts/qa-evidence/phase9/cli.mjs recover-terminal",
     "verify": "npm run typecheck && npm run lint && npm test && npm run test:rules && npm run build && npm --prefix functions run build"
   },
   "dependencies": {
@@ -81,6 +84,7 @@
     "@eslint/eslintrc": "3.3.3",
     "@eslint/js": "9.39.5",
     "@firebase/rules-unit-testing": "3.0.4",
+    "@playwright/cli": "0.1.18",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",

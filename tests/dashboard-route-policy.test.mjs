@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { createAccountSessionResolver } from '../src/lib/account-session-policy.ts';
+import { normalizeSelectedSquadId, selectedSquadCookie } from '../src/lib/selected-squad.ts';
 import * as routePolicyModule from '../src/lib/dashboard-route-policy.ts';
 
-const { authorizeDashboardRoute, isProtectedDashboardPath, isSensitiveDashboardPath } = routePolicyModule;
+const {
+  authorizeDashboardRoute,
+  dashboardHomePresentation,
+  isProtectedDashboardPath,
+  isSensitiveDashboardPath,
+  runProtectedRouteAdmission,
+  resolveDashboardRouteRedirect,
+  showDashboardCoordinationTab,
+} = routePolicyModule;
 
 test('dashboard route detection does not capture public league and tournament portals', () => {
   assert.equal(isProtectedDashboardPath('/dashboard'), true);
@@ -18,13 +28,17 @@ test('sensitive account routes require revocation-aware session verification', (
   assert.equal(isSensitiveDashboardPath('/dashboard'), false);
   assert.equal(isSensitiveDashboardPath('/dashboard/billing'), true);
   assert.equal(isSensitiveDashboardPath('/family/payments'), true);
-  assert.equal(isSensitiveDashboardPath('/family'), false);
+  assert.equal(isSensitiveDashboardPath('/family'), true);
+  assert.equal(isSensitiveDashboardPath('/family/dependant'), true);
   assert.equal(isSensitiveDashboardPath('/admin/plans'), true);
 });
 
 test('only superadmins can access global administration', () => {
   assert.equal(authorizeDashboardRoute('/admin/plans', { role: 'admin' }).allowed, false);
-  assert.equal(authorizeDashboardRoute('/admin/plans', { role: 'superadmin' }).allowed, true);
+  assert.equal(
+    authorizeDashboardRoute('/admin/plans', { role: 'superadmin' }, 'superadmin').allowed,
+    true,
+  );
   assert.equal(authorizeDashboardRoute('/admin', { role: 'adult_player' }, 'superadmin').allowed, true);
 });
 
@@ -39,20 +53,366 @@ test('staff operations reject member-only personas', () => {
   assert.equal(authorizeDashboardRoute('/manage-tournaments', { role: 'adult_player' }).allowed, false);
 });
 
+test('league creators need corroborated selected-squad entitlement before entering Coaches Corner', () => {
+  assert.deepEqual(
+    authorizeDashboardRoute('/coaches-corner', { role: 'league_creator', activeTeamId: 'forged-team' }),
+    { allowed: false, redirectTo: '/dashboard' },
+  );
+  assert.deepEqual(
+    authorizeDashboardRoute('/coaches-corner', { role: 'league_creator' }, undefined, false, true),
+    { allowed: true },
+  );
+  assert.deepEqual(
+    authorizeDashboardRoute('/equipment', { role: 'league_creator' }, undefined, false, false),
+    { allowed: true },
+  );
+});
+
 test('institution and competition hubs require matching authority', () => {
-  assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }).allowed, true);
+  assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }).allowed, false);
+  assert.equal(authorizeDashboardRoute('/club', { role: 'admin', plan_type: 'school' }, undefined, true).allowed, true);
   assert.equal(authorizeDashboardRoute('/club', { role: 'coach', plan_type: 'free' }).allowed, false);
   assert.equal(authorizeDashboardRoute('/competition', { role: 'league_creator', plan_type: 'free' }).allowed, true);
   assert.equal(authorizeDashboardRoute('/competition', { role: 'coach', plan_type: 'team' }).allowed, false);
 });
 
+test('denied sensitive routes land directly on the persona-authorized home', () => {
+  const paths = [
+    '/admin', '/club', '/competition', '/dashboard/billing', '/coaches-corner', '/family',
+  ];
+  const cases = [
+    {
+      profile: { role: 'parent' }, institutionAuthority: false,
+      allowed: new Set(['/family']), deniedLanding: '/family',
+    },
+    {
+      profile: { role: 'league_creator' }, institutionAuthority: false,
+      allowed: new Set(['/competition', '/dashboard/billing']),
+      deniedLanding: '/dashboard',
+    },
+    {
+      profile: { role: 'admin', plan_type: 'school' }, institutionAuthority: true,
+      allowed: new Set(['/club', '/competition', '/dashboard/billing', '/coaches-corner']),
+      deniedLanding: '/club',
+    },
+    {
+      profile: { role: 'adult_player' }, institutionAuthority: false,
+      allowed: new Set(), deniedLanding: '/dashboard',
+    },
+  ];
+
+  for (const routeCase of cases) {
+    for (const path of paths) {
+      const decision = authorizeDashboardRoute(
+        path,
+        routeCase.profile,
+        undefined,
+        routeCase.institutionAuthority,
+        false,
+      );
+      assert.deepEqual(
+        decision,
+        routeCase.allowed.has(path)
+          ? { allowed: true }
+          : { allowed: false, redirectTo: routeCase.deniedLanding },
+      );
+    }
+  }
+});
+
+test('league creator dashboard is presented as the active competition home', () => {
+  assert.deepEqual(
+    dashboardHomePresentation('league_creator', '/dashboard'),
+    {
+      href: '/dashboard',
+      label: 'Competition Hub',
+      active: true,
+    },
+  );
+  assert.deepEqual(
+    dashboardHomePresentation('parent', '/dashboard'),
+    {
+      href: '/dashboard',
+      label: 'Dashboard',
+      active: true,
+    },
+  );
+  assert.equal(showDashboardCoordinationTab('league_creator', false, 'Competition Hub'), false);
+  assert.equal(showDashboardCoordinationTab('league_creator', true, 'Competition Hub'), false);
+  assert.equal(showDashboardCoordinationTab('league_creator', true, 'Roster'), true);
+  assert.equal(showDashboardCoordinationTab('parent', false, 'Competition Hub'), true);
+});
+
 test('shared navigation hides routes rejected by the dashboard policy', () => {
   const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
+  const teamProvider = fs.readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
 
   assert.match(shell, /authorizeDashboardRoute\(tab\.href,/);
+  assert.match(shell, /const dashboardHome = dashboardHomePresentation\(user\?\.role, pathname\)/);
+  assert.match(shell, /<Link href=\{dashboardHome\.href\}>/);
+  assert.match(shell, /\{dashboardHome\.label\}/);
+  assert.match(shell, /\{ name: 'Leagues', href: '\/dashboard', icon: Medal \}/);
+  assert.match(shell, /showDashboardCoordinationTab\(user\?\.role, Boolean\(activeTeam\), tab\.name\)/);
+  assert.match(shell, /}, undefined, false, canAccessCoachesCorner\)\.allowed/);
+  assert.ok((teamProvider.match(/selectedSquadCookie\(/g) || []).length >= 3);
+});
+
+test('selected squad cookie accepts only a closed same-site document ID', () => {
+  assert.equal(normalizeSelectedSquadId(' team_A-1 '), 'team_A-1');
+  for (const value of [undefined, '', '../team', 'team/child', 'team%2Fchild', 'x'.repeat(129)]) {
+    assert.equal(normalizeSelectedSquadId(value), undefined);
+  }
+  assert.equal(
+    selectedSquadCookie('team_A-1', true),
+    'sf_active_squad=team_A-1; Path=/; SameSite=Lax; Secure',
+  );
+  assert.equal(
+    selectedSquadCookie(undefined, false),
+    'sf_active_squad=; Path=/; Max-Age=0; SameSite=Lax',
+  );
 });
 
 test('ordinary authenticated routes remain available during profile setup', () => {
   assert.equal(authorizeDashboardRoute('/dashboard', null).allowed, true);
   assert.equal(authorizeDashboardRoute('/teams/join', { role: 'adult_player' }).allowed, true);
+});
+
+test('pre-render admission redirects denied sensitive routes before client providers mount', async () => {
+  const parentIdentity = { uid: 'parent-1', role: 'parent', signInProvider: 'password' };
+  const resolveParent = async identity => {
+    assert.deepEqual(identity, parentIdentity);
+    return { allowed: true, redirectTo: null, profile: { role: 'parent' } };
+  };
+
+  assert.equal(
+    await resolveDashboardRouteRedirect('/admin', parentIdentity, resolveParent),
+    '/family',
+  );
+  assert.equal(
+    await resolveDashboardRouteRedirect('/family/payments', parentIdentity, resolveParent),
+    null,
+  );
+
+  const superAdminIdentity = { uid: 'root-1', role: 'superadmin', signInProvider: 'password' };
+  assert.equal(
+    await resolveDashboardRouteRedirect('/admin', superAdminIdentity, async () => ({
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'adult_player' },
+    })),
+    null,
+  );
+
+  assert.equal(
+    await resolveDashboardRouteRedirect('/admin', parentIdentity, async () => ({
+      allowed: false,
+      code: 'auth/account-unavailable',
+    })),
+    '/login?reason=unavailable',
+  );
+
+  const leagueCreatorIdentity = { uid: 'league-1', role: 'league_creator', signInProvider: 'password' };
+  assert.equal(
+    await resolveDashboardRouteRedirect('/coaches-corner', leagueCreatorIdentity, async () => ({
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'league_creator', activeTeamId: 'untrusted-profile-value' },
+    })),
+    '/dashboard',
+  );
+  assert.equal(
+    await resolveDashboardRouteRedirect('/coaches-corner', leagueCreatorIdentity, async () => ({
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'league_creator' },
+      coachesCornerAuthority: true,
+    })),
+    null,
+  );
+});
+
+test('league creator hub mode stays denied even when the account owns other squads', async () => {
+  const profile = { role: 'league_creator', activeTeamId: 'untrusted-profile-team' };
+  const resolve = createAccountSessionResolver({
+    getProfile: async () => profile,
+    hasActiveSquadAuthority: async () => true,
+    hasSelectedCoachesCornerAuthority: async () => true,
+  });
+  const identity = { uid: 'league-owner', role: 'league_creator', signInProvider: 'password' };
+
+  assert.equal(
+    await resolveDashboardRouteRedirect('/coaches-corner', identity, resolve),
+    '/dashboard',
+  );
+});
+
+test('protected request admission redirects before rendering and preserves closed failure behavior', async () => {
+  const execute = async options => {
+    const {
+    pathname,
+    search = '',
+    sessionCookie,
+    verifiedIdentity = {
+      uid: 'parent-1',
+      role: 'parent',
+      signInProvider: 'password',
+      emailVerified: true,
+    },
+    accountDecision = { allowed: true, redirectTo: null, profile: { role: 'parent' } },
+    verifyError,
+    resolveError,
+    } = options;
+    const effectiveSessionCookie = Object.hasOwn(options, 'sessionCookie')
+      ? sessionCookie
+      : 'opaque-session';
+    const events = [];
+    const result = await runProtectedRouteAdmission(
+      { pathname, search, sessionCookie: effectiveSessionCookie },
+      {
+        verifySession: async cookie => {
+          events.push(`verify:${cookie}`);
+          if (verifyError) throw verifyError;
+          return verifiedIdentity;
+        },
+        resolveAccountSession: async identity => {
+          events.push(`resolve:${identity.uid}`);
+          if (resolveError) throw resolveError;
+          return accountDecision;
+        },
+        redirect: decision => {
+          events.push(`redirect:${decision.location}`);
+          return { kind: 'redirect', ...decision };
+        },
+        continueRequest: () => {
+          events.push('continue');
+          return { kind: 'continue' };
+        },
+      },
+    );
+    return { result, events };
+  };
+
+  const denied = await execute({ pathname: '/admin' });
+  assert.deepEqual(denied.result, {
+    kind: 'redirect',
+    location: '/family',
+    clearSession: false,
+  });
+  assert.deepEqual(denied.events, [
+    'verify:opaque-session',
+    'resolve:parent-1',
+    'redirect:/family',
+  ]);
+
+  const deniedFamily = await execute({
+    pathname: '/family',
+    verifiedIdentity: {
+      uid: 'adult-player-1',
+      role: 'adult_player',
+      signInProvider: 'password',
+      emailVerified: true,
+    },
+    accountDecision: {
+      allowed: true,
+      redirectTo: null,
+      profile: { role: 'adult_player' },
+    },
+  });
+  assert.deepEqual(deniedFamily.result, {
+    kind: 'redirect',
+    location: '/dashboard',
+    clearSession: false,
+  });
+  assert.deepEqual(deniedFamily.events, [
+    'verify:opaque-session',
+    'resolve:adult-player-1',
+    'redirect:/dashboard',
+  ]);
+
+  assert.deepEqual((await execute({ pathname: '/family/payments' })).result, { kind: 'continue' });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    verifiedIdentity: {
+      uid: 'root-1', role: 'superadmin', signInProvider: 'password', emailVerified: true,
+    },
+    accountDecision: { allowed: true, redirectTo: null, profile: { role: 'adult_player' } },
+  })).result, { kind: 'continue' });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    accountDecision: { allowed: false, code: 'auth/account-unavailable' },
+  })).result, {
+    kind: 'redirect',
+    location: '/login?reason=unavailable',
+    clearSession: false,
+  });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    resolveError: new Error('provider details must not escape'),
+  })).result, {
+    kind: 'redirect',
+    location: '/login?reason=session-unavailable',
+    clearSession: false,
+  });
+  assert.deepEqual((await execute({
+    pathname: '/admin',
+    verifyError: new Error('revoked'),
+  })).result, {
+    kind: 'redirect',
+    location: '/login',
+    reason: 'expired',
+    returnTo: '/admin',
+    clearSession: true,
+  });
+
+  const missing = await execute({
+    pathname: '/admin',
+    search: '?section=plans',
+    sessionCookie: undefined,
+  });
+  assert.deepEqual(missing.result, {
+    kind: 'redirect',
+    location: '/login',
+    reason: 'expired',
+    returnTo: '/admin?section=plans',
+    clearSession: false,
+  });
+  assert.deepEqual(missing.events, ['redirect:/login']);
+});
+
+test('protected request admission does not reclassify a redirect adapter failure', async () => {
+  let redirectAttempts = 0;
+  await assert.rejects(
+    runProtectedRouteAdmission(
+      { pathname: '/admin', search: '', sessionCookie: 'opaque-session' },
+      {
+        verifySession: async () => ({
+          uid: 'parent-1', role: 'parent', signInProvider: 'password', emailVerified: true,
+        }),
+        resolveAccountSession: async () => ({
+          allowed: true, redirectTo: null, profile: { role: 'parent' },
+        }),
+        redirect: () => {
+          redirectAttempts += 1;
+          throw new Error('redirect adapter failed');
+        },
+        continueRequest: () => ({ kind: 'continue' }),
+      },
+    ),
+    /redirect adapter failed/,
+  );
+  assert.equal(redirectAttempts, 1);
+});
+
+test('middleware wires the protected admission result before its sole render continuation', () => {
+  const middleware = fs.readFileSync(new URL('../src/middleware.ts', import.meta.url), 'utf8');
+  const admissionAt = middleware.indexOf('const admission = await runProtectedRouteAdmission(');
+  const returnAt = middleware.indexOf('if (admission) {\n      return admission;');
+  const renderAt = middleware.indexOf('NextResponse.next({ request: { headers: requestHeaders } })');
+
+  assert.ok(admissionAt >= 0);
+  assert.ok(returnAt > admissionAt);
+  assert.ok(renderAt > returnAt);
+  assert.match(middleware, /verifySession: async cookie =>[\s\S]*verifySessionCookie\(cookie, true\)/);
+  assert.match(middleware, /selectedTeamId: normalizeSelectedSquadId\(request\.cookies\.get\(ACTIVE_SQUAD_COOKIE_NAME\)\?\.value\)/);
+  assert.match(middleware, /continueRequest: \(\) => null/);
 });

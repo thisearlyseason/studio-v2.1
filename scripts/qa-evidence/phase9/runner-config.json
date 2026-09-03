@@ -1,0 +1,22 @@
+{
+  "origin": "https://studio--the-squad-v2-staging.us-east4.hosted.app",
+  "projectId": "the-squad-v2-staging",
+  "protocolVersion": "4",
+  "playwrightArtifact": "scripts/qa-evidence/phase9/playwright-transport.bundle.json.gz",
+  "playwrightArtifactSha256": "8a66b85498ad521f7354305ffb970591d7f66036adcf743165b0259302378f43",
+  "playwrightCoreVersion": "1.63.0-alpha-2026-08-05",
+  "playwrightVersion": "0.1.18",
+  "nodeRuntime": {
+    "path": "/usr/local/bin/node",
+    "sha256": "257c121b8efcb1932a92acac811b8d9a3940c956a295a74838a1443bf5be0d4c",
+    "codesignIdentifier": "node",
+    "teamIdentifier": "HX7739G8FX"
+  },
+  "chrome": {
+    "appPath": "/Applications/Google Chrome.app",
+    "binaryPath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "binarySha256": "d7c482410d72ac0b4e834d16f97d0f884c55bc302a47a7bb2a01d189b449f9a5",
+    "codesignIdentifier": "com.google.Chrome",
+    "teamIdentifier": "EQHXZ8M8AV"
+  }
+}

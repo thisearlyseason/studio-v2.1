@@ -1,6 +1,6 @@
 import { assertManagedUid } from './manifest.mjs';
 
-const IDENTITY_SPECS = [
+const V2_IDENTITY_SPECS = [
   ['qa-coach-owner-a', 'Coach Owner A', 'Admin', 'active', true],
   ['qa-coach-owner-b', 'Coach Owner B', 'Admin', 'active', true],
   ['qa-team-assistant', 'Team Assistant', 'coach', 'active', true],
@@ -11,6 +11,29 @@ const IDENTITY_SPECS = [
   ['qa-suspended', 'Suspended Baseline Member', 'Member', 'active', true],
   ['qa-removed-member', 'Removed Baseline Member', 'Member', 'active', true],
 ];
+
+const V3_IDENTITY_SPECS = [
+  ...V2_IDENTITY_SPECS,
+  ['qa-parent-a', 'Parent A', 'parent', 'active', true],
+  ['qa-parent-b', 'Parent B', 'parent', 'active', true],
+  ['qa-adult-player-a', 'Adult Player A', 'adult_player', 'active', true],
+  ['qa-adult-player-b', 'Adult Player B', 'adult_player', 'active', true],
+  ['qa-youth-active', 'Youth Player A', 'youth_player', 'active', true],
+  ['qa-league-creator', 'League Creator', 'league_creator', 'active', true],
+  ['qa-school-admin', 'School Administrator', 'admin', 'active', true],
+  ['qa-superadmin', 'Trusted Superadmin', 'superadmin', 'active', true],
+  ['qa-pending-delete', 'Pending Delete Baseline', 'Member', 'active', true],
+  ['qa-missing-profile', 'Missing Profile', 'Member', 'active', true],
+  ['qa-no-team', 'No Team Member', 'Member', 'active', true],
+];
+
+const PHASE9_FIXTURE_CREATED_AT = '2026-08-25T00:00:00.000Z';
+
+function identitySpecsFor(manifestVersion) {
+  if (manifestVersion === 2) return V2_IDENTITY_SPECS;
+  if (manifestVersion === 3) return V3_IDENTITY_SPECS;
+  throw new Error('manifestVersion must be 2 or 3.');
+}
 
 function marker(runId, alias, expiresAt) {
   return {
@@ -33,13 +56,14 @@ function freezeDeep(value) {
  * Negative accounts deliberately start in their positive baseline state and
  * are transitioned only through lifecycle.applyNegativeState().
  */
-export function buildFixtureDefinition({ runId, expiresAt } = {}) {
+export function buildFixtureDefinition({ runId, expiresAt, manifestVersion = 3 } = {}) {
   assertManagedUid(`${runId}-definition`, runId);
   if (typeof expiresAt !== 'string' || Number.isNaN(Date.parse(expiresAt))) {
     throw new Error('expiresAt must be an ISO timestamp.');
   }
 
-  const identities = IDENTITY_SPECS.map(([alias, displayName, role, accountStatus, emailVerified]) => {
+  const identitySpecs = identitySpecsFor(manifestVersion);
+  const identities = identitySpecs.map(([alias, displayName, role, accountStatus, emailVerified]) => {
     const uid = `${runId}-${alias.replace(/^qa-/, '')}`;
     const claims = marker(runId, alias, expiresAt);
     if (alias !== 'qa-fake-superadmin') claims.role = role;
@@ -74,12 +98,27 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       sentinel: 'qa-fixture-team-b-only',
       ownerUserId: byAlias.get('qa-coach-owner-b').uid,
     },
+    ...(manifestVersion === 3 ? [{
+      alias: 'qa-school',
+      id: `${runId}-school`,
+      name: 'QA Fixture School',
+      teamName: 'QA Fixture School',
+      sentinel: 'qa-fixture-school-only',
+      ownerUserId: byAlias.get('qa-school-admin').uid,
+      type: 'school',
+      isInstitution: true,
+      status: 'active',
+      schoolAdminIds: [byAlias.get('qa-school-admin').uid],
+      planId: 'school',
+      planType: 'school',
+      isPro: true,
+    }] : []),
   ].map(team => ({
     ...team,
     createdBy: team.ownerUserId,
-    planId: 'free',
-    planType: 'free',
-    isPro: false,
+    planId: team.planId || 'free',
+    planType: team.planType || 'free',
+    isPro: team.isPro || false,
     ...marker(runId, team.alias, expiresAt),
   }));
 
@@ -96,8 +135,37 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
     ['qa-unverified', teamA, 'Member', 'Player'],
     ['qa-suspended', teamA, 'Member', 'Player'],
     ['qa-removed-member', teamA, 'Member', 'Player'],
+    ...(manifestVersion === 3 ? [
+      ['qa-parent-a', teamA, 'Member', 'Parent', {
+        playerId: `${runId}-player-youth-active`,
+        parentId: byAlias.get('qa-parent-a').uid,
+        guardianIds: [byAlias.get('qa-parent-a').uid],
+      }],
+      ['qa-parent-b', teamB, 'Member', 'Parent', {
+        playerId: `${runId}-youth-player-b`,
+        parentId: byAlias.get('qa-parent-b').uid,
+        guardianIds: [byAlias.get('qa-parent-b').uid],
+      }],
+      ['qa-adult-player-a', teamA, 'Member', 'Player', {
+        playerId: `${runId}-player-adult-a`,
+        parentId: byAlias.get('qa-adult-player-a').uid,
+        guardianIds: [byAlias.get('qa-adult-player-a').uid],
+      }],
+      ['qa-adult-player-b', teamB, 'Member', 'Player', {
+        playerId: `${runId}-player-adult-b`,
+        parentId: byAlias.get('qa-adult-player-b').uid,
+        guardianIds: [byAlias.get('qa-adult-player-b').uid],
+      }],
+      ['qa-youth-active', teamA, 'Member', 'Player', {
+        playerId: `${runId}-player-youth-active`,
+        parentId: byAlias.get('qa-parent-a').uid,
+        guardianIds: [byAlias.get('qa-parent-a').uid],
+      }],
+      ['qa-pending-delete', teamA, 'Member', 'Player'],
+      ['qa-school-admin', teams.find(team => team.alias === 'qa-school'), 'Admin', 'Athletic Director'],
+    ] : []),
   ];
-  const members = membershipSpecs.map(([alias, team, role, position], index) => {
+  const members = membershipSpecs.map(([alias, team, role, position, relationships = {}], index) => {
     const identity = byAlias.get(alias);
     return {
       alias,
@@ -108,17 +176,20 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       ownerUserId: team.ownerUserId,
       teamId: team.id,
       name: identity.name,
-      playerId: `p_${identity.uid}`,
+      playerId: relationships.playerId || `p_${identity.uid}`,
       role,
       position,
       jersey: String(index + 1),
       avatar: '/icon.png',
       status: 'active',
+      ...relationships,
       ...marker(runId, alias, expiresAt),
     };
   });
 
-  const userDocuments = identities.map(identity => ({
+  const userDocuments = identities
+    .filter(identity => manifestVersion !== 3 || identity.alias !== 'qa-missing-profile')
+    .map(identity => ({
     alias: identity.alias,
     kind: 'user',
     path: `users/${identity.uid}`,
@@ -130,12 +201,22 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
       displayName: identity.displayName,
       role: identity.role,
       accountStatus: identity.accountStatus,
-      activePlanId: 'free',
+      activePlanId: identity.alias === 'qa-school-admin' ? 'school' : 'free',
       proTeamLimit: 1,
-      activeTeamId: identity.alias === 'qa-multi-org'
-        ? teamA.id
-        : members.find(member => member.alias === identity.alias)?.teamId,
+      ...(identity.alias === 'qa-multi-org'
+        ? { activeTeamId: teamA.id }
+        : members.find(member => member.alias === identity.alias)
+          ? { activeTeamId: members.find(member => member.alias === identity.alias).teamId }
+          : {}),
       ...marker(runId, identity.alias, expiresAt),
+      ...(identity.alias === 'qa-school-admin' ? {
+        role: 'admin',
+        isSchoolAdmin: true,
+        planId: 'school',
+        plan_type: 'school',
+        activePlanId: 'school',
+        subscription_status: 'active',
+      } : {}),
     },
   }));
   const ownershipDocuments = identities.map(identity => ({
@@ -166,21 +247,150 @@ export function buildFixtureDefinition({ runId, expiresAt } = {}) {
         position: member.position,
         status: member.status,
         ownerUserId: member.ownerUserId,
-        planId: 'free',
-        planType: 'free',
-        isPro: false,
+        planId: team.planId,
+        planType: team.planType,
+        isPro: team.isPro,
         userId: identity.uid,
+        ...(team.type ? { type: team.type } : {}),
+        ...(team.isInstitution === true ? { isInstitution: true } : {}),
+        ...(member.parentId ? { parentId: member.parentId } : {}),
+        ...(member.guardianIds ? { guardianIds: member.guardianIds } : {}),
         ...marker(runId, member.alias, expiresAt),
       },
     };
   });
 
+  const playerDocuments = manifestVersion === 3 ? [
+    {
+      alias: 'qa-youth-active',
+      id: `${runId}-player-youth-active`,
+      name: 'Youth Player A',
+      firstName: 'Youth',
+      lastName: 'Player A',
+      dateOfBirth: '2012-01-01',
+      userId: byAlias.get('qa-youth-active').uid,
+      teamId: teamA.id,
+      parentId: byAlias.get('qa-parent-a').uid,
+      guardianIds: [byAlias.get('qa-parent-a').uid],
+      isMinor: true,
+    },
+    {
+      alias: 'qa-parent-b',
+      id: `${runId}-youth-player-b`,
+      name: 'Youth Player B',
+      firstName: 'Youth',
+      lastName: 'Player B',
+      dateOfBirth: '2012-01-01',
+      userId: null,
+      teamId: teamB.id,
+      parentId: byAlias.get('qa-parent-b').uid,
+      guardianIds: [byAlias.get('qa-parent-b').uid],
+      isMinor: true,
+    },
+    ...['qa-adult-player-a', 'qa-adult-player-b'].map(alias => {
+      const identity = byAlias.get(alias);
+      const membership = members.find(member => member.alias === alias);
+      return {
+        alias,
+        id: membership.playerId,
+        name: identity.name,
+        firstName: 'Adult',
+        lastName: alias === 'qa-adult-player-a' ? 'Player A' : 'Player B',
+        dateOfBirth: '2000-01-01',
+        userId: identity.uid,
+        teamId: membership.teamId,
+        parentId: identity.uid,
+        guardianIds: [identity.uid],
+        isMinor: false,
+      };
+    }),
+  ].map(player => ({
+    alias: player.alias,
+    kind: 'player',
+    path: `players/${player.id}`,
+    data: {
+      ...player,
+      hasLogin: player.userId !== null,
+      createdAt: PHASE9_FIXTURE_CREATED_AT,
+      ...marker(runId, player.alias, expiresAt),
+    },
+  })) : [];
+  const leagueDocuments = manifestVersion === 3 ? [{
+    alias: 'qa-league',
+    kind: 'league',
+    path: `leagues/${runId}-league`,
+    data: {
+      id: `${runId}-league`,
+      name: 'QA Fixture League',
+      sentinel: 'qa-fixture-league-only',
+      creatorId: byAlias.get('qa-league-creator').uid,
+      ownerUserId: byAlias.get('qa-league-creator').uid,
+      memberUserIds: [byAlias.get('qa-league-creator').uid],
+      memberTeamIds: [],
+      isActive: true,
+      ...marker(runId, 'qa-league', expiresAt),
+    },
+  }] : [];
+  const derivedLeagueDocuments = manifestVersion === 3 ? [{
+    alias: 'qa-public-league',
+    kind: 'derived-public-league-view',
+    path: `publicLeagueViews/${runId}-league`,
+    ownershipProofPath: `qaAuditRuns/${runId}/authOwnership/${byAlias.get('qa-league-creator').uid}`,
+    sourcePath: `leagues/${runId}-league`,
+    dynamicFields: ['updatedAt'],
+    data: {
+      id: `${runId}-league`,
+      name: 'QA Fixture League',
+      sport: '',
+      divisionTitle: '',
+      teams: {},
+      schedule: [],
+    },
+  }] : [];
+  const expectedAbsentDocuments = manifestVersion === 3 ? [{
+    alias: 'qa-missing-profile',
+    kind: 'user',
+    path: `users/${byAlias.get('qa-missing-profile').uid}`,
+  }] : [];
+
   return freezeDeep({
+    manifestVersion,
     runId,
     expiresAt,
     identities,
     teams,
     members,
-    documents: [...ownershipDocuments, ...userDocuments, ...teamDocuments, ...memberDocuments, ...membershipDocuments],
+    documents: [
+      ...ownershipDocuments,
+      ...userDocuments,
+      ...teamDocuments,
+      ...memberDocuments,
+      ...membershipDocuments,
+      ...playerDocuments,
+      ...leagueDocuments,
+      ...derivedLeagueDocuments,
+    ],
+    expectedAbsentDocuments,
+  });
+}
+
+export function fixturePlanSummary({ manifestVersion = 3 } = {}) {
+  const identitySpecs = identitySpecsFor(manifestVersion);
+  const aliases = identitySpecs.map(([alias]) => alias);
+  const teamAliases = manifestVersion === 3
+    ? ['qa-team-a', 'qa-team-b', 'qa-school']
+    : ['qa-team-a', 'qa-team-b'];
+  const firestoreDocuments = manifestVersion === 3 ? 82 : 40;
+  return freezeDeep({
+    manifestVersion,
+    aliases,
+    teamAliases,
+    identityCount: aliases.length,
+    teamCount: teamAliases.length,
+    resourceCounts: {
+      authUids: aliases.length,
+      firestoreDocuments,
+      expectedAbsentDocuments: manifestVersion === 3 ? 1 : 0,
+    },
   });
 }

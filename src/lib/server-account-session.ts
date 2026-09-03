@@ -1,6 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { getTeamAuthority } from '@/lib/server-team-access';
+import { normalizeSelectedSquadId } from '@/lib/selected-squad';
 import {
   createAccountSessionResolver,
   type AccountAccessReader,
@@ -23,6 +24,18 @@ function isActiveOwnedTeam(data: Record<string, unknown>): boolean {
   return data.isDeleted !== true && status !== 'deleted' && status !== 'removed';
 }
 
+function isCanonicalSchoolInstitution(data: Record<string, unknown>, uid: string): boolean {
+  const planId = String(data.planId || '').trim().toLowerCase();
+  const planType = String(data.planType || '').trim().toLowerCase();
+  return isActiveOwnedTeam(data) &&
+    data.type === 'school' &&
+    data.isInstitution === true &&
+    planId === 'school' &&
+    planType === 'school' &&
+    Array.isArray(data.schoolAdminIds) &&
+    data.schoolAdminIds.includes(uid);
+}
+
 export function createServerAccountAccessReader(
   dependencies: ServerAccountAccessDependencies,
 ): AccountAccessReader {
@@ -40,9 +53,20 @@ export function createServerAccountAccessReader(
         .get();
       return schools.docs.some(team => {
         const data = team.data();
-        return isActiveOwnedTeam(data) &&
-          (data.type === 'school' || data.isInstitution === true);
+        return isCanonicalSchoolInstitution(data, uid);
       });
+    },
+
+    async hasSelectedCoachesCornerAuthority(uid, selectedTeamId) {
+      const selected = normalizeSelectedSquadId(selectedTeamId);
+      if (!selected) return false;
+      const authority = await dependencies.getTeamAuthority(selected, uid);
+      return Boolean(
+        authority &&
+        isActiveOwnedTeam(authority.teamData) &&
+        authority.teamData.isPro === true &&
+        (authority.isOwner || authority.isSuperAdmin || authority.member)
+      );
     },
 
     async hasActiveSquadAuthority(uid, activeTeamId) {

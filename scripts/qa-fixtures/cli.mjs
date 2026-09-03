@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { link, lstat, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { buildFixtureDefinition } from './definition.mjs';
+import { buildFixtureDefinition, fixturePlanSummary } from './definition.mjs';
 import { createFirebaseAdapter } from './firebase-adapter.mjs';
 import {
+  STAGING_PROJECT_ID,
   assertHostedStagingIntent,
   assertRequestedHostedStagingIntent,
   assertStagingOrigin,
@@ -86,6 +87,50 @@ async function readExternalManifest(manifestPath, {
     throw new Error('Fixture manifest must contain valid JSON.');
   }
   return validateManifest(manifest);
+}
+
+function exactPlannedManifest(definition) {
+  const timestamp = new Date().toISOString();
+  return assertExactFixtureJournal({
+    version: 3,
+    runId: definition.runId,
+    projectId: STAGING_PROJECT_ID,
+    authUids: definition.identities.map(identity => identity.uid),
+    firestorePaths: definition.documents.map(document => document.path),
+    expectedAbsentFirestorePaths: definition.expectedAbsentDocuments.map(document => document.path),
+    state: 'planned',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    expiresAt: definition.expiresAt,
+    transitions: {
+      'qa-suspended': { version: 1, state: 'active' },
+      'qa-removed-member': { version: 1, state: 'active' },
+      'qa-pending-delete': { version: 1, state: 'active' },
+    },
+  }, definition);
+}
+
+async function persistOrReuseExactPlannedManifest(manifestPath, definition) {
+  const planned = exactPlannedManifest(definition);
+  const tempPath = join(dirname(manifestPath), `.${basename(manifestPath)}.${process.pid}-${Date.now()}.tmp`);
+  try {
+    await writeFile(tempPath, `${JSON.stringify(planned, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx',
+    });
+    try {
+      await link(tempPath, manifestPath);
+      return planned;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw new Error('Fixture manifest could not be persisted.');
+      return assertExactFixtureJournal(await readExternalManifest(manifestPath), definition);
+    }
+  } finally {
+    await unlink(tempPath).catch(error => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  }
 }
 
 function output(writer, value) {
@@ -179,14 +224,23 @@ export async function runCli({
       readManifestFile: manifestReadFile,
     });
     if (manifest) {
-      definition = buildFixtureDefinition({ runId: manifest.runId, expiresAt: manifest.expiresAt });
+      definition = buildFixtureDefinition({
+        runId: manifest.runId,
+        expiresAt: manifest.expiresAt,
+        manifestVersion: manifest.version,
+      });
       manifest = assertExactFixtureJournal(manifest, definition);
     } else {
       if (typeof runIdGenerator !== 'function') throw new Error('runIdGenerator must be a function.');
       const runId = runIdGenerator();
       const expiresAt = argv.includes('--expires-at') ? argumentValue(argv, '--expires-at') : defaultExpiry();
-      definition = buildFixtureDefinition({ runId, expiresAt });
+      definition = buildFixtureDefinition({ runId, expiresAt, manifestVersion: 3 });
+      manifest = await persistOrReuseExactPlannedManifest(manifestPath, definition);
     }
+  }
+
+  if (manifest?.version === 2 && !new Set(['inspect', 'cleanup']).has(command)) {
+    throw new Error('Manifest version 2 is recovery-only; seed a new version 3 run.');
   }
 
   // Resolving the Admin project is read-only. The second guard verifies it
@@ -195,12 +249,13 @@ export async function runCli({
   const { projectId } = assertHostedStagingIntent({ argv, env, resolvedProjectId: adapter?.projectId });
 
   if (command === 'preflight') {
+    const plan = fixturePlanSummary({ manifestVersion: 3 });
     output(stdout, {
       command,
       projectId,
       origin,
-      plannedAliases: 9,
-      plannedTeams: 2,
+      plannedAliases: plan.identityCount,
+      plannedTeams: plan.teamCount,
       safe: true,
     });
     return { command, projectId, origin, safe: true };

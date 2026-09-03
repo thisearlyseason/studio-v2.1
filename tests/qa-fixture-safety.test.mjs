@@ -8,12 +8,13 @@ import {
   assertHostedStagingIntent,
 } from '../scripts/qa-fixtures/guard.mjs';
 import {
+  assertExactFixtureJournal,
   assertManagedPath,
   assertManagedUid,
   createRunId,
   validateManifest,
 } from '../scripts/qa-fixtures/manifest.mjs';
-import { buildFixtureDefinition } from '../scripts/qa-fixtures/definition.mjs';
+import { buildFixtureDefinition, fixturePlanSummary } from '../scripts/qa-fixtures/definition.mjs';
 import { createLifecycle, removeCredentialFile } from '../scripts/qa-fixtures/lifecycle.mjs';
 import { runCli } from '../scripts/qa-fixtures/cli.mjs';
 import { createFirebaseAdapter } from '../scripts/qa-fixtures/firebase-adapter.mjs';
@@ -42,11 +43,38 @@ function hostedEnvironment() {
   return { ALLOW_STAGING_QA_FIXTURES: 'true' };
 }
 
-function approvedActiveTransitions() {
-  return {
+function activeTransitions(version) {
+  const transitions = {
     'qa-suspended': { version: 1, state: 'active' },
     'qa-removed-member': { version: 1, state: 'active' },
   };
+  if (version === 3) transitions['qa-pending-delete'] = { version: 1, state: 'active' };
+  return transitions;
+}
+
+function approvedActiveTransitions() {
+  return activeTransitions(2);
+}
+
+function assertFirestoreSerializable(value, path = '$') {
+  assert.notEqual(value, undefined, `Firestore value at ${path} must not be undefined`);
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertFirestoreSerializable(item, `${path}[${index}]`));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      assertFirestoreSerializable(child, `${path}.${key}`);
+    }
+  }
+}
+
+function assertOrderedTimestamps(transition, fields) {
+  const timestamps = fields.map(field => Date.parse(transition[field]));
+  assert.equal(timestamps.every(Number.isFinite), true);
+  for (let index = 1; index < timestamps.length; index += 1) {
+    assert.equal(timestamps[index] >= timestamps[index - 1], true, `${fields[index]} must not precede ${fields[index - 1]}`);
+  }
 }
 
 function directAdapter(auth, firestore, calls = []) {
@@ -186,6 +214,7 @@ class FakeFirestore {
   constructor() {
     this.documents = new Map();
     this.deleted = [];
+    this.sets = [];
     this.failPath = null;
     this.failAfterSetPath = null;
     this.failGetPath = null;
@@ -208,7 +237,20 @@ class FakeFirestore {
 
   async set(path, data) {
     if (path === this.failPath) throw new Error('simulated Firestore write failure');
+    this.sets.push(path);
     this.documents.set(path, structuredClone(data));
+    if (/^leagues\/[^/]+$/.test(path)) {
+      const leagueId = path.slice('leagues/'.length);
+      this.inject(`publicLeagueViews/${leagueId}`, {
+        id: leagueId,
+        name: data.name || '',
+        sport: data.sport || '',
+        divisionTitle: data.divisionTitle || '',
+        teams: {},
+        schedule: [],
+        updatedAt: { _seconds: 1787580000, _nanoseconds: 0 },
+      });
+    }
     if (path === this.failAfterSetPath) throw new Error('simulated ambiguous Firestore write response');
   }
 
@@ -216,10 +258,13 @@ class FakeFirestore {
     if (path === this.failDeletePath) throw new Error('simulated Firestore delete failure with unsafe details omitted');
     this.deleted.push(path);
     this.documents.delete(path);
+    if (/^leagues\/[^/]+$/.test(path)) {
+      this.documents.delete(`publicLeagueViews/${path.slice('leagues/'.length)}`);
+    }
   }
 }
 
-async function lifecycleFixture(t, runId = RUN_ID) {
+async function lifecycleFixture(t, runId = RUN_ID, manifestVersion = 3) {
   const directory = await mkdtemp(join(tmpdir(), 'qa-fixture-lifecycle-'));
   t.after(async () => {
     await removeCredentialFile(join(directory, 'credentials.json'), process.cwd());
@@ -227,7 +272,7 @@ async function lifecycleFixture(t, runId = RUN_ID) {
       if (error?.code !== 'ENOENT') throw error;
     });
   });
-  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion });
   const auth = new FakeAuth();
   const firestore = new FakeFirestore();
   const inputs = {
@@ -260,7 +305,7 @@ async function lifecycleFixture(t, runId = RUN_ID) {
 
 function completeManifest(definition, overrides = {}) {
   return {
-    version: 2,
+    version: definition.manifestVersion,
     runId: definition.runId,
     projectId: STAGING,
     authUids: definition.identities.map(identity => identity.uid),
@@ -269,7 +314,10 @@ function completeManifest(definition, overrides = {}) {
     createdAt: '2026-08-24T14:00:00.000Z',
     updatedAt: '2026-08-24T14:00:00.000Z',
     expiresAt: definition.expiresAt,
-    transitions: approvedActiveTransitions(),
+    transitions: activeTransitions(definition.manifestVersion),
+    ...(definition.manifestVersion === 3 ? {
+      expectedAbsentFirestorePaths: definition.expectedAbsentDocuments.map(document => document.path),
+    } : {}),
     ...overrides,
   };
 }
@@ -326,7 +374,7 @@ async function credentialConfinementFixture(t, runId) {
     await removeFlatDirectory(repository);
     await rmdir(base);
   });
-  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId, expiresAt: EXPIRES_AT, manifestVersion: 3 });
   const auth = new FakeAuth();
   const firestore = new FakeFirestore();
   const inputs = {
@@ -425,7 +473,7 @@ async function hardExitSeedProcess(fixture, alias) {
         await persist();
       },
     };
-    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(fixture.definition.runId)}, expiresAt: ${JSON.stringify(EXPIRES_AT)} });
+    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(fixture.definition.runId)}, expiresAt: ${JSON.stringify(EXPIRES_AT)}, manifestVersion: ${fixture.definition.manifestVersion} });
     const lifecycle = createLifecycle({
       auth,
       firestore,
@@ -473,8 +521,8 @@ test('cli preflight resolves staging intent without Auth or Firestore mutation',
     command: 'preflight',
     projectId: STAGING,
     origin: 'https://studio--the-squad-v2-staging.us-east4.hosted.app',
-    plannedAliases: 9,
-    plannedTeams: 2,
+    plannedAliases: 20,
+    plannedTeams: 3,
     safe: true,
   });
 });
@@ -653,6 +701,66 @@ test('cli seed rejects an existing incomplete transition journal before adapter 
   }
 });
 
+test('CLI version 2 recovery rejects seed and transition before adapter construction', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
+  const legacyManifest = completeManifest(fixture.definition);
+  await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`, { mode: 0o600 });
+  let factoryCalls = 0;
+  const adapterFactory = async () => {
+    factoryCalls += 1;
+    return directAdapter(fixture.auth, fixture.firestore);
+  };
+  const seedArgsForExistingV2 = [
+    'seed', '--project', STAGING, '--confirm-project', STAGING,
+    '--manifest', fixture.inputs.manifestPath, '--credentials', fixture.inputs.credentialPath,
+  ];
+  const transitionArgsForExistingV2 = [
+    'transition', '--project', STAGING, '--confirm-project', STAGING,
+    '--manifest', fixture.inputs.manifestPath, '--alias', 'qa-suspended',
+  ];
+
+  await assert.rejects(() => runCli({
+    argv: seedArgsForExistingV2,
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory,
+  }), /version 2.*recovery|new version 3 run/i);
+  assert.equal(factoryCalls, 0);
+  await assert.rejects(() => runCli({
+    argv: transitionArgsForExistingV2,
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    adapterFactory,
+  }), /version 2.*recovery/i);
+  assert.equal(factoryCalls, 0);
+});
+
+test('CLI version 2 recovery accepts inspect and cleanup after pure local validation', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
+  const legacyManifest = completeManifest(fixture.definition);
+  let factoryCalls = 0;
+  const adapterFactory = async () => {
+    factoryCalls += 1;
+    return directAdapter(fixture.auth, fixture.firestore);
+  };
+
+  for (const command of ['inspect', 'cleanup']) {
+    await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`, { mode: 0o600 });
+    await runCli({
+      argv: [
+        command, '--project', STAGING, '--confirm-project', STAGING,
+        '--manifest', fixture.inputs.manifestPath,
+      ],
+      env: hostedEnvironment(),
+      cwd: repositoryRoot,
+      adapterFactory,
+      stdout: () => {},
+    });
+  }
+
+  assert.equal(factoryCalls, 2);
+});
+
 test('cli seed sanitizes an injected manifest read denial before adapter construction', async t => {
   const fixture = await lifecycleFixture(t);
   await writeFile(fixture.inputs.manifestPath, `${JSON.stringify({
@@ -775,13 +883,45 @@ test('cli seed obtains its run ID from the injected internal generator seam', as
   assert.equal(JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8')).runId, RUN_ID);
 });
 
-test('two real CLI seed invocations recover the same exact run without regenerating its definition', async t => {
+test('cli persists an exact planned v3 journal before adapter construction', async t => {
   const fixture = await lifecycleFixture(t);
-  const replacementRunId = 'qa-phase7-20260824T140001Z-cd34ef56ab78';
+  await runCli({
+    argv: hostedArgs(
+      'seed',
+      '--manifest', fixture.inputs.manifestPath,
+      '--credentials', fixture.inputs.credentialPath,
+      '--expires-at', EXPIRES_AT,
+    ),
+    env: hostedEnvironment(),
+    cwd: repositoryRoot,
+    runIdGenerator: () => RUN_ID,
+    adapterFactory: async () => {
+      const persisted = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+      assert.equal(persisted.state, 'planned');
+      assert.doesNotThrow(() => assertExactFixtureJournal(
+        persisted,
+        buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 }),
+      ));
+      return directAdapter(fixture.auth, fixture.firestore);
+    },
+    stdout: () => {},
+  });
+});
+
+test('two real CLI seed invocations recover the same exact v3 run without regenerating its definition', async t => {
+  const fixture = await lifecycleFixture(t);
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const plannedManifest = completeManifest(phase9Definition, {
+    version: 3,
+    state: 'planned',
+    expectedAbsentFirestorePaths: phase9Definition.expectedAbsentDocuments.map(item => item.path),
+    transitions: activeTransitions(3),
+  });
+  await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(plannedManifest, null, 2)}\n`, { mode: 0o600 });
   let generatorCalls = 0;
   const runIdGenerator = () => {
     generatorCalls += 1;
-    return generatorCalls === 1 ? RUN_ID : replacementRunId;
+    throw new Error('existing v3 manifest must not regenerate its run ID');
   };
   const args = hostedArgs(
     'seed',
@@ -806,7 +946,7 @@ test('two real CLI seed invocations recover the same exact run without regenerat
   const second = await invoke();
   const secondManifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
 
-  assert.equal(generatorCalls, 1);
+  assert.equal(generatorCalls, 0);
   assert.equal(first.runId, RUN_ID);
   assert.equal(second.runId, RUN_ID);
   assert.deepEqual({ ...secondManifest, updatedAt: firstManifest.updatedAt }, firstManifest);
@@ -817,7 +957,7 @@ test('two real CLI seed invocations recover the same exact run without regenerat
 
 test('CLI rejects every incomplete or extra journal before adapter construction for every manifest command', async t => {
   for (const command of ['seed', 'inspect', 'transition', 'cleanup']) {
-    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT }))) {
+    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 }))) {
       await t.test(`${command}: ${item.name}`, async caseTest => {
         const fixture = await lifecycleFixture(caseTest);
         await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(item.manifest, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
@@ -864,6 +1004,13 @@ test('CLI rejects every incomplete or extra journal before adapter construction 
 
 test('cli transition uses a fresh lifecycle with the persistent seeded manifest after guard resolution', async t => {
   const fixture = await lifecycleFixture(t);
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(completeManifest(phase9Definition, {
+    version: 3,
+    state: 'planned',
+    expectedAbsentFirestorePaths: phase9Definition.expectedAbsentDocuments.map(item => item.path),
+    transitions: activeTransitions(3),
+  }), null, 2)}\n`, { mode: 0o600 });
   const seededCalls = [];
   const seededOutput = [];
   await runCli({
@@ -1158,6 +1305,14 @@ test('manifest validation requires a complete supported lifecycle manifest', () 
     state: 'planned',
   }), /version/i);
   assert.throws(() => validateManifest({
+    version: 'toString',
+    runId: RUN_ID,
+    projectId: STAGING,
+    authUids: [],
+    firestorePaths: [],
+    state: 'planned',
+  }), /version/i);
+  assert.throws(() => validateManifest({
     version: 2,
     runId: RUN_ID,
     projectId: 'production-project',
@@ -1210,10 +1365,147 @@ test('manifest v2 requires exactly both approved transition records', () => {
   }
 });
 
+test('manifest versions reject numeric strings before selecting version schemas', () => {
+  const legacyDefinition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const candidates = [
+    completeManifest(legacyDefinition, { version: '2' }),
+    completeManifest(phase9Definition, {
+      version: '3',
+      expectedAbsentFirestorePaths: phase9Definition.expectedAbsentDocuments.map(item => item.path),
+      transitions: activeTransitions(3),
+    }),
+  ];
+  const outcomes = candidates.map(candidate => {
+    try {
+      return `accepted as ${JSON.stringify(validateManifest(candidate).version)}`;
+    } catch (error) {
+      assert.match(error.message, /version/i);
+      return 'rejected';
+    }
+  });
+
+  assert.deepEqual(outcomes, ['rejected', 'rejected']);
+});
+
+test('manifest v3 validates the exact present and expected absence journal sets', () => {
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const expectedAbsentFirestorePaths = phase9Definition.expectedAbsentDocuments.map(item => item.path);
+  const v3 = completeManifest(phase9Definition, {
+    version: 3,
+    expectedAbsentFirestorePaths,
+    transitions: activeTransitions(3),
+  });
+
+  const normalized = validateManifest(v3);
+  assert.equal(normalized.version, 3);
+  assert.deepEqual(normalized.expectedAbsentFirestorePaths, expectedAbsentFirestorePaths);
+  assert(Object.isFrozen(normalized.expectedAbsentFirestorePaths));
+  assert.doesNotThrow(() => assertExactFixtureJournal(v3, phase9Definition));
+
+  const mutations = [
+    { name: 'omitted Auth UID', change: { authUids: v3.authUids.slice(1) } },
+    { name: 'extra Auth UID', change: { authUids: [...v3.authUids, `${RUN_ID}-extra-user`] } },
+    { name: 'omitted present path', change: { firestorePaths: v3.firestorePaths.slice(1) } },
+    { name: 'extra present path', change: { firestorePaths: [...v3.firestorePaths, `users/${RUN_ID}-extra-user`] } },
+    { name: 'omitted expected absence path', change: { expectedAbsentFirestorePaths: [] } },
+    {
+      name: 'extra expected absence path',
+      change: { expectedAbsentFirestorePaths: [...expectedAbsentFirestorePaths, `users/${RUN_ID}-extra-user`] },
+    },
+    {
+      name: 'omitted transition alias',
+      change: {
+        transitions: {
+          'qa-suspended': v3.transitions['qa-suspended'],
+          'qa-removed-member': v3.transitions['qa-removed-member'],
+        },
+      },
+    },
+    {
+      name: 'extra transition alias',
+      change: { transitions: { ...v3.transitions, 'qa-extra': { version: 1, state: 'active' } } },
+    },
+  ];
+  for (const item of mutations) {
+    assert.throws(
+      () => assertExactFixtureJournal({ ...v3, ...item.change }, phase9Definition),
+      /exact fixture definition|transition/i,
+      item.name,
+    );
+  }
+});
+
+test('manifest v3 expected absence paths are managed, unique, and disjoint from present paths', () => {
+  const phase9Definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const expectedPath = phase9Definition.expectedAbsentDocuments[0].path;
+  const base = completeManifest(phase9Definition, {
+    version: 3,
+    expectedAbsentFirestorePaths: [expectedPath],
+    transitions: activeTransitions(3),
+  });
+
+  for (const expectedAbsentFirestorePaths of [
+    [expectedPath, expectedPath],
+    ['users/unrelated-user'],
+    [base.firestorePaths[0]],
+  ]) {
+    assert.throws(
+      () => validateManifest({ ...base, expectedAbsentFirestorePaths }),
+      /expectedAbsentFirestorePaths|managed|overlap|present/i,
+    );
+  }
+
+  const legacyDefinition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const legacy = completeManifest(legacyDefinition);
+  assert.equal(validateManifest(legacy).version, 2);
+  assert.doesNotThrow(() => assertExactFixtureJournal(legacy, legacyDefinition));
+  assert.throws(
+    () => validateManifest({ ...legacy, expectedAbsentFirestorePaths: [] }),
+    /expectedAbsentFirestorePaths|version 2/i,
+  );
+});
+
+test('manifest v3 pending-delete transition uses suspended checkpoint ordering and final state', () => {
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const base = completeManifest(definition, {
+    version: 3,
+    expectedAbsentFirestorePaths: definition.expectedAbsentDocuments.map(item => item.path),
+    transitions: activeTransitions(3),
+  });
+  const completed = {
+    version: 1,
+    state: 'pending_deletion',
+    startedAt: '2026-08-24T14:00:00.000Z',
+    firestoreUpdatedAt: '2026-08-24T14:00:01.000Z',
+    revokedAt: '2026-08-24T14:00:02.000Z',
+    completedAt: '2026-08-24T14:00:03.000Z',
+  };
+
+  assert.doesNotThrow(() => validateManifest({
+    ...base,
+    transitions: { ...base.transitions, 'qa-pending-delete': completed },
+  }));
+  assert.throws(() => validateManifest({
+    ...base,
+    transitions: {
+      ...base.transitions,
+      'qa-pending-delete': { ...completed, cacheDeletedAt: '2026-08-24T14:00:01.500Z' },
+    },
+  }), /cache-deletion|cacheDeletedAt/i);
+  assert.throws(() => validateManifest({
+    ...base,
+    transitions: {
+      ...base.transitions,
+      'qa-pending-delete': { ...completed, firestoreUpdatedAt: undefined },
+    },
+  }), /checkpoint|ordering/i);
+});
+
 test('pure exact-journal validation compares manifest UID and path sets to the deterministic definition', async () => {
   const manifestModule = await import('../scripts/qa-fixtures/manifest.mjs');
   assert.equal(typeof manifestModule.assertExactFixtureJournal, 'function');
-  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
   const complete = completeManifest(definition, {
     authUids: definition.identities.map(identity => identity.uid).reverse(),
     firestorePaths: definition.documents.map(document => document.path).reverse(),
@@ -1437,7 +1729,7 @@ test('manifest transition validation enforces alias-specific ordered checkpoint 
 });
 
 test('definition contains the approved identities and two distinct tenants', () => {
-  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT });
+  const definition = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
   assert.deepEqual(definition.identities.map(item => item.alias), [
     'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant',
     'qa-team-member', 'qa-multi-org', 'qa-fake-superadmin',
@@ -1466,6 +1758,272 @@ test('definition contains the approved identities and two distinct tenants', () 
     assert.match(member.jersey, /^\d+$/);
     assert.equal(typeof member.avatar, 'string');
   }
+});
+
+test('phase 9 fixture definition preserves v2 recovery and creates the exact v3 identity graph', () => {
+  const legacy = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  assert.deepEqual(legacy.identities.map(item => item.alias), [
+    'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member',
+    'qa-multi-org', 'qa-fake-superadmin', 'qa-unverified', 'qa-suspended', 'qa-removed-member',
+  ]);
+  assert.equal(legacy.manifestVersion, 2);
+  assert.deepEqual(legacy.expectedAbsentDocuments, []);
+
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  assert.deepEqual(phase9.identities.map(item => item.alias), [
+    'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-assistant', 'qa-team-member',
+    'qa-multi-org', 'qa-fake-superadmin', 'qa-unverified', 'qa-suspended', 'qa-removed-member',
+    'qa-parent-a', 'qa-parent-b', 'qa-adult-player-a', 'qa-adult-player-b',
+    'qa-youth-active', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin',
+    'qa-pending-delete', 'qa-missing-profile', 'qa-no-team',
+  ]);
+  assert.equal(phase9.manifestVersion, 3);
+  assert.equal(phase9.expectedAbsentDocuments.length, 1);
+  assert.equal(phase9.expectedAbsentDocuments[0].alias, 'qa-missing-profile');
+  assert.equal(phase9.documents.some(item => item.path === phase9.expectedAbsentDocuments[0].path), false);
+
+  const byAlias = (items, alias) => items.find(item => item.alias === alias);
+  const trusted = byAlias(phase9.identities, 'qa-superadmin');
+  const fake = byAlias(phase9.identities, 'qa-fake-superadmin');
+  assert.equal(trusted.customClaims.role, 'superadmin');
+  assert.equal(fake.customClaims.role, undefined);
+  assert.equal(byAlias(phase9.identities, 'qa-school-admin').customClaims.role, 'admin');
+
+  const school = phase9.teams.find(team => team.alias === 'qa-school');
+  assert.equal(school.type, 'school');
+  assert.deepEqual(school.schoolAdminIds, [byAlias(phase9.identities, 'qa-school-admin').uid]);
+  assert.equal(school.planType, 'school');
+  const schoolAdminProfile = phase9.documents.find(document => document.kind === 'user' && document.alias === 'qa-school-admin');
+  assert.deepEqual({
+    role: schoolAdminProfile.data.role,
+    isSchoolAdmin: schoolAdminProfile.data.isSchoolAdmin,
+    planId: schoolAdminProfile.data.planId,
+    plan_type: schoolAdminProfile.data.plan_type,
+    activePlanId: schoolAdminProfile.data.activePlanId,
+    subscription_status: schoolAdminProfile.data.subscription_status,
+  }, {
+    role: 'admin',
+    isSchoolAdmin: true,
+    planId: 'school',
+    plan_type: 'school',
+    activePlanId: 'school',
+    subscription_status: 'active',
+  });
+
+  const membersByAlias = alias => phase9.members.filter(member => member.alias === alias);
+  const parentA = byAlias(phase9.identities, 'qa-parent-a');
+  const parentB = byAlias(phase9.identities, 'qa-parent-b');
+  const parentAMembership = membersByAlias('qa-parent-a').at(0);
+  const parentBMembership = membersByAlias('qa-parent-b').at(0);
+  const youthMembership = membersByAlias('qa-youth-active').at(0);
+  assert.equal(parentAMembership.teamId, youthMembership.teamId);
+  assert.equal(parentAMembership.playerId, youthMembership.playerId);
+  assert.deepEqual(parentAMembership.guardianIds, [parentA.uid]);
+  assert.deepEqual(youthMembership.guardianIds, [parentA.uid]);
+  assert.equal(parentAMembership.parentId, parentA.uid);
+  assert.equal(youthMembership.parentId, parentA.uid);
+  assert.notEqual(parentAMembership.playerId, parentBMembership.playerId);
+  assert.equal(parentBMembership.parentId, parentB.uid);
+  assert.deepEqual(parentBMembership.guardianIds, [parentB.uid]);
+  for (const [membership, parent] of [[parentAMembership, parentA], [parentBMembership, parentB]]) {
+    const player = phase9.documents.find(document => document.kind === 'player' && document.data.id === membership.playerId);
+    assert.equal(player.data.teamId, membership.teamId);
+    assert.equal(player.data.parentId, parent.uid);
+    assert.deepEqual(player.data.guardianIds, [parent.uid]);
+  }
+
+  for (const alias of ['qa-adult-player-a', 'qa-adult-player-b']) {
+    const identity = byAlias(phase9.identities, alias);
+    const membership = membersByAlias(alias).at(0);
+    const player = phase9.documents.find(document => document.kind === 'player' && document.data.userId === identity.uid);
+    assert.equal(membership.playerId, player.data.id);
+    assert.equal(membership.parentId, identity.uid);
+    assert.deepEqual(membership.guardianIds, [identity.uid]);
+    assert.equal(player.data.parentId, identity.uid);
+    assert.deepEqual(player.data.guardianIds, [identity.uid]);
+  }
+
+  assert.equal(membersByAlias('qa-missing-profile').length, 0);
+  for (const alias of ['qa-no-team', 'qa-league-creator', 'qa-superadmin']) {
+    assert.equal(membersByAlias(alias).length, 0, alias);
+  }
+  assert.equal(membersByAlias('qa-pending-delete').length, 1);
+  assert.equal(new Set(phase9.teams.map(team => team.sentinel)).size, phase9.teams.length);
+  assert.equal(new Set(phase9.identities.map(identity => identity.uid)).size, phase9.identities.length);
+  assert.equal(new Set(phase9.documents.map(document => document.path)).size, phase9.documents.length);
+  for (const identity of phase9.identities) assertManagedUid(identity.uid, RUN_ID);
+  for (const document of phase9.documents) assertManagedPath(document.path, RUN_ID);
+
+  const forbiddenFields = new Set([
+    'medical', 'medicalInfo', 'stripeCustomerId', 'stripe_customer_id',
+    'paymentMethod', 'accessToken', 'refreshToken', 'providerAccountId',
+  ]);
+  for (const document of phase9.documents) {
+    assert.deepEqual(Object.keys(document.data).filter(key => forbiddenFields.has(key)), []);
+    assertFirestoreSerializable(document.data, document.path);
+  }
+
+  const schoolMembership = membersByAlias('qa-school-admin').at(0);
+  const schoolMemberDocument = phase9.documents.find(document => document.path === schoolMembership.path);
+  const schoolMembershipDocument = phase9.documents.find(document => document.path === schoolMembership.membershipPath);
+  assert.deepEqual({
+    role: schoolMemberDocument.data.role,
+    position: schoolMemberDocument.data.position,
+    status: schoolMemberDocument.data.status,
+    teamId: schoolMemberDocument.data.teamId,
+  }, {
+    role: 'Admin',
+    position: 'Athletic Director',
+    status: 'active',
+    teamId: school.id,
+  });
+  assert.deepEqual({
+    teamId: schoolMembershipDocument.data.teamId,
+    type: schoolMembershipDocument.data.type,
+    isInstitution: schoolMembershipDocument.data.isInstitution,
+    isPro: schoolMembershipDocument.data.isPro,
+    planId: schoolMembershipDocument.data.planId,
+    ownerUserId: schoolMembershipDocument.data.ownerUserId,
+  }, {
+    teamId: school.id,
+    type: 'school',
+    isInstitution: true,
+    isPro: true,
+    planId: 'school',
+    ownerUserId: school.ownerUserId,
+  });
+
+  assert.deepEqual(fixturePlanSummary({ manifestVersion: 3 }), {
+    manifestVersion: 3,
+    aliases: phase9.identities.map(identity => identity.alias),
+    teamAliases: phase9.teams.map(team => team.alias),
+    identityCount: 20,
+    teamCount: 3,
+    resourceCounts: {
+      authUids: 20,
+      firestoreDocuments: 82,
+      expectedAbsentDocuments: 1,
+    },
+  });
+});
+
+test('phase 9 league fixture includes the trusted creator membership cache', () => {
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const creator = phase9.identities.find(identity => identity.alias === 'qa-league-creator');
+  const league = phase9.documents.find(document => document.kind === 'league' && document.alias === 'qa-league');
+
+  assert.deepEqual(league.data.memberUserIds, [creator.uid]);
+});
+
+test('phase 9 player fixtures satisfy the Family PlayerProfile contract', () => {
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const players = phase9.documents
+    .filter(document => document.kind === 'player')
+    .map(document => ({
+      alias: document.alias,
+      firstName: document.data.firstName,
+      lastName: document.data.lastName,
+      dateOfBirth: document.data.dateOfBirth,
+      hasLogin: document.data.hasLogin,
+      createdAt: document.data.createdAt,
+    }));
+
+  assert.deepEqual(players, [
+    {
+      alias: 'qa-youth-active',
+      firstName: 'Youth',
+      lastName: 'Player A',
+      dateOfBirth: '2012-01-01',
+      hasLogin: true,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+    {
+      alias: 'qa-parent-b',
+      firstName: 'Youth',
+      lastName: 'Player B',
+      dateOfBirth: '2012-01-01',
+      hasLogin: false,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+    {
+      alias: 'qa-adult-player-a',
+      firstName: 'Adult',
+      lastName: 'Player A',
+      dateOfBirth: '2000-01-01',
+      hasLogin: true,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+    {
+      alias: 'qa-adult-player-b',
+      firstName: 'Adult',
+      lastName: 'Player B',
+      dateOfBirth: '2000-01-01',
+      hasLogin: true,
+      createdAt: '2026-08-25T00:00:00.000Z',
+    },
+  ]);
+});
+
+test('phase 9 journals the complete league-create trigger footprint without changing v2 recovery', () => {
+  const legacy = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 });
+  const phase9 = buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 3 });
+  const publicView = phase9.documents.find(document => document.kind === 'derived-public-league-view');
+
+  assert.equal(legacy.documents.some(document => document.kind === 'derived-public-league-view'), false);
+  assert.equal(fixturePlanSummary({ manifestVersion: 2 }).resourceCounts.firestoreDocuments, 40);
+  assert.deepEqual(publicView, {
+    alias: 'qa-public-league',
+    kind: 'derived-public-league-view',
+    path: `publicLeagueViews/${RUN_ID}-league`,
+    ownershipProofPath: `qaAuditRuns/${RUN_ID}/authOwnership/${RUN_ID}-league-creator`,
+    sourcePath: `leagues/${RUN_ID}-league`,
+    dynamicFields: ['updatedAt'],
+    data: {
+      id: `${RUN_ID}-league`,
+      name: 'QA Fixture League',
+      sport: '',
+      divisionTitle: '',
+      teams: {},
+      schedule: [],
+    },
+  });
+  assert.equal(fixturePlanSummary({ manifestVersion: 3 }).resourceCounts.firestoreDocuments, 82);
+});
+
+test('trigger-derived league view is inspected and exactly cleaned without client seeding', async t => {
+  const fixture = await lifecycleFixture(t);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  assert.ok(publicView);
+
+  await fixture.lifecycle.seed(fixture.inputs);
+  assert.equal(fixture.firestore.sets.includes(publicView.path), false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, true);
+  assert.deepEqual(inspection.counts, {
+    expected: { auth: 20, firestore: 82 },
+    actualPresent: { auth: 20, firestore: 82 },
+  });
+
+  const cleanup = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(cleanup.ok, true);
+  assert.deepEqual(cleanup.deleted, { auth: 20, firestore: 82 });
+  assert.equal(fixture.firestore.has(publicView.path), false);
+  const cleaned = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(cleaned.ok, true);
+  assert.deepEqual(cleaned.counts.actualPresent, { auth: 0, firestore: 0 });
+});
+
+test('seed rejects an orphan trigger-derived league view without exact source ownership', async t => {
+  const fixture = await lifecycleFixture(t);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  fixture.firestore.inject(publicView.path, {
+    ...publicView.data,
+    updatedAt: { _seconds: 1787580000, _nanoseconds: 0 },
+  });
+
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /collision/i);
+  assert.equal(fixture.auth.users.size, 0);
 });
 
 test('definition uses the verified same-origin avatar asset for every roster member', async () => {
@@ -1654,7 +2212,7 @@ test('re-seed rejects omitted or one-alias transition journals before credential
 
 test('lifecycle defense rejects incomplete or extra journals before adapter access for every operation', async t => {
   for (const operation of ['seed', 'inspect', 'transition', 'cleanup']) {
-    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT }))) {
+    for (const item of incompleteJournalCases(buildFixtureDefinition({ runId: RUN_ID, expiresAt: EXPIRES_AT, manifestVersion: 2 }))) {
       await t.test(`${operation}: ${item.name}`, async caseTest => {
         const fixture = await lifecycleFixture(caseTest);
         await writeFile(fixture.inputs.manifestPath, `${JSON.stringify(item.manifest, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
@@ -1724,7 +2282,7 @@ test('atomic manifest failure preserves the last complete JSON document and remo
   });
   await assert.rejects(() => lifecycle.seed(fixture.inputs), /interruption/i);
   const persisted = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
-  assert.equal(persisted.version, 2);
+  assert.equal(persisted.version, fixture.definition.manifestVersion);
   assert.equal(persisted.state, 'partial');
   const names = await import('node:fs/promises').then(fs => fs.readdir(fixture.directory));
   assert.equal(names.some(name => name.includes('.manifest.json.') && name.endsWith('.tmp')), false);
@@ -1774,6 +2332,108 @@ test('seed rejects duplicate resource paths and mismatched resource markers', as
   await assert.rejects(() => mismatched.lifecycle.seed(mismatched.inputs), /collision|marker/i);
 });
 
+test('expected absence definition paths are unique, disjoint, and run-owned', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 3);
+  const expected = fixture.definition.expectedAbsentDocuments[0];
+  const candidates = [
+    {
+      name: 'duplicate expected absence path',
+      definition: {
+        ...structuredClone(fixture.definition),
+        expectedAbsentDocuments: [structuredClone(expected), structuredClone(expected)],
+      },
+    },
+    {
+      name: 'expected absence overlaps a created document',
+      definition: {
+        ...structuredClone(fixture.definition),
+        expectedAbsentDocuments: [{ ...structuredClone(expected), path: fixture.definition.documents[0].path }],
+      },
+    },
+    {
+      name: 'expected absence escapes the run namespace',
+      definition: {
+        ...structuredClone(fixture.definition),
+        expectedAbsentDocuments: [{ ...structuredClone(expected), path: 'users/unrelated-user' }],
+      },
+    },
+  ];
+
+  for (const candidate of candidates) {
+    assert.throws(() => createLifecycle({
+      ...fixture.lifecycleOptions,
+      definition: candidate.definition,
+    }), /expected.absen|duplicate|overlap|managed/i, candidate.name);
+  }
+});
+
+test('seed preserves expected absence and inspect reports alias-only unexpected presence', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 3);
+  const missing = fixture.definition.expectedAbsentDocuments[0];
+  const manifest = await fixture.lifecycle.seed(fixture.inputs);
+
+  assert.equal(manifest.version, 3);
+  assert.deepEqual(manifest.expectedAbsentFirestorePaths, [missing.path]);
+  assert.equal(await fixture.firestore.get(missing.path), null);
+
+  await fixture.firestore.set(missing.path, { foreign: true });
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, false);
+  assert.equal(inspection.drift.some(item => (
+    item.alias === 'qa-missing-profile'
+    && item.reason === 'unexpected-presence'
+  )), true);
+  const serialized = JSON.stringify(inspection.drift);
+  assert.equal(serialized.includes(missing.path), false);
+  assert.equal(serialized.includes(fixture.definition.runId), false);
+});
+
+test('expected absence collision aborts seed before the first remote mutation', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140012Z-ef56ab78cd90', 3);
+  const missing = fixture.definition.expectedAbsentDocuments[0];
+  fixture.firestore.inject(missing.path, { foreign: true });
+  const calls = [];
+  const adapter = directAdapter(fixture.auth, fixture.firestore, calls);
+  const lifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    auth: adapter.auth,
+    firestore: adapter.firestore,
+  });
+
+  const error = await lifecycle.seed(fixture.inputs).then(
+    () => null,
+    caught => caught,
+  );
+  assert.ok(error instanceof Error);
+  assert.match(error.message, /qa-missing-profile|expected.absen/i);
+  assert.equal(error.message.includes(missing.path), false);
+  assert.equal(error.message.includes(fixture.definition.runId), false);
+  const mutations = calls.filter(call => /createUser|updateUser|setCustomUserClaims|revokeRefreshTokens|deleteUser|firestore\.set|firestore\.delete/.test(call));
+  assert.deepEqual(mutations, []);
+  assert.equal(fixture.auth.users.size, 0);
+  assert.deepEqual(await fixture.firestore.get(missing.path), { foreign: true });
+});
+
+test('expected absence cleanup retains an unmarked unexpected document and leaves follow-up unclean', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140013Z-1234ab56cd78', 3);
+  const missing = fixture.definition.expectedAbsentDocuments[0];
+  await fixture.lifecycle.seed(fixture.inputs);
+  await fixture.firestore.set(missing.path, { foreign: true });
+
+  const cleanup = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(cleanup.ok, false);
+  assert.deepEqual(cleanup.deleted, {
+    auth: fixture.definition.identities.length,
+    firestore: fixture.definition.documents.length,
+  });
+  assert.deepEqual(cleanup.followUp.retained.firestore, {
+    count: 1,
+    aliases: ['qa-missing-profile'],
+  });
+  assert.deepEqual(await fixture.firestore.get(missing.path), { foreign: true });
+  assert.equal(JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8')).state, 'seeded');
+});
+
 test('seed writes private browser credentials and returns redacted inspection output', async t => {
   const fixture = await lifecycleFixture(t);
   await fixture.lifecycle.seed(fixture.inputs);
@@ -1821,7 +2481,7 @@ test('credential publication hard exit leaves no partial target and only a priva
       async set(path, data) { documents.set(path, structuredClone(data)); },
       async delete(path) { documents.delete(path); },
     };
-    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(RUN_ID)}, expiresAt: ${JSON.stringify(EXPIRES_AT)} });
+    const definition = buildFixtureDefinition({ runId: ${JSON.stringify(RUN_ID)}, expiresAt: ${JSON.stringify(EXPIRES_AT)}, manifestVersion: 3 });
     const lifecycle = createLifecycle({
       auth,
       firestore,
@@ -1843,7 +2503,7 @@ test('credential publication hard exit leaves no partial target and only a priva
   const payload = JSON.parse(await readFile(tempPath, 'utf8'));
   assert.equal(payload.version, 1);
   assert.equal(payload.runId, RUN_ID);
-  assert.equal(payload.identities.length, 9);
+  assert.equal(payload.identities.length, 20);
 });
 
 test('credential publication writes no bytes when the parent is swapped inside exclusive open', async t => {
@@ -1875,6 +2535,7 @@ test('credential publication writes no bytes when the parent is swapped inside e
     const definition = buildFixtureDefinition({
       runId: ${JSON.stringify(fixture.definition.runId)},
       expiresAt: ${JSON.stringify(EXPIRES_AT)},
+      manifestVersion: ${fixture.definition.manifestVersion},
     });
     let swapped = false;
     const lifecycle = createLifecycle({
@@ -1988,7 +2649,9 @@ test('credential publication sanitizes an exact temporary-file unlink failure', 
 test('credential publication rejects a parent swap into the repository before temporary creation', async t => {
   const fixture = await credentialConfinementFixture(t, 'qa-phase7-20260824T140030Z-ab12cd34ef56');
   const originalSet = fixture.firestore.set.bind(fixture.firestore);
-  const lastPath = fixture.definition.documents.at(-1).path;
+  const lastPath = fixture.definition.documents
+    .filter(document => document.kind !== 'derived-public-league-view')
+    .at(-1).path;
   let swapped = false;
   fixture.firestore.set = async (path, data) => {
     await originalSet(path, data);
@@ -2186,7 +2849,7 @@ test('inspect reports full sanitized absence drift for planned and partial manif
       : 'qa-phase7-20260824T140011Z-cd34ef56ab78');
     const timestamp = '2026-08-24T14:00:00.000Z';
     await writeFile(fixture.inputs.manifestPath, `${JSON.stringify({
-      version: 2,
+      version: fixture.definition.manifestVersion,
       runId: fixture.definition.runId,
       projectId: STAGING,
       authUids: fixture.definition.identities.map(identity => identity.uid),
@@ -2195,18 +2858,18 @@ test('inspect reports full sanitized absence drift for planned and partial manif
       createdAt: timestamp,
       updatedAt: timestamp,
       expiresAt: EXPIRES_AT,
-      transitions: {
-        'qa-suspended': { version: 1, state: 'active' },
-        'qa-removed-member': { version: 1, state: 'active' },
-      },
+      transitions: activeTransitions(fixture.definition.manifestVersion),
+      ...(fixture.definition.manifestVersion === 3 ? {
+        expectedAbsentFirestorePaths: fixture.definition.expectedAbsentDocuments.map(document => document.path),
+      } : {}),
     }, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
 
     const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
     assert.equal(inspection.ok, false, state);
     assert.deepEqual(inspection.counts.actualPresent, { auth: 0, firestore: 0 });
-    assert.equal(inspection.drift.length, 49);
-    assert.equal(inspection.drift.filter(item => item.kind === 'auth').length, 9);
-    assert.equal(inspection.drift.filter(item => item.kind === 'firestore').length, 40);
+    assert.equal(inspection.drift.length, fixture.definition.identities.length + fixture.definition.documents.length);
+    assert.equal(inspection.drift.filter(item => item.kind === 'auth').length, fixture.definition.identities.length);
+    assert.equal(inspection.drift.filter(item => item.kind === 'firestore').length, fixture.definition.documents.length);
     assert.equal(inspection.drift.every(item => item.field === 'presence' && item.reason === 'missing'), true);
     const serialized = JSON.stringify(inspection.drift);
     assert.equal(serialized.includes(fixture.definition.runId), false);
@@ -2302,6 +2965,155 @@ test('negative states require a seeded active baseline and revoke sessions after
   const drifted = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
   assert.equal(drifted.ok, false);
   assert.equal(drifted.drift.some(item => item.field === 'presence' && item.reason === 'unexpected-after-transition'), true);
+});
+
+test('lifecycle seed rejects a v2 definition before remote mutation', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
+  await assert.rejects(() => fixture.lifecycle.seed(fixture.inputs), /version 3/i);
+  assert.equal(fixture.auth.users.size, 0);
+  assert.equal(fixture.firestore.documents.size, 0);
+});
+
+test('lifecycle transition rejects a v2 definition before baseline access', async t => {
+  const fixture = await lifecycleFixture(t, RUN_ID, 2);
+  await assert.rejects(() => fixture.lifecycle.applyNegativeState('qa-suspended'), /version 3/i);
+  assert.equal(fixture.auth.users.size, 0);
+  assert.equal(fixture.firestore.documents.size, 0);
+});
+
+test('pending-delete persists the exact pending deletion state and revokes sessions', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140014Z-3456ab78cd90', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+
+  const result = await fixture.lifecycle.applyNegativeState('qa-pending-delete');
+  assert.equal(result.state, 'pending_deletion');
+  assert.equal(result.resumed, false);
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-pending-delete');
+  const userPath = `users/${identity.uid}`;
+  const persisted = await fixture.firestore.get(userPath);
+  assert.deepEqual({
+    accountStatus: persisted.accountStatus,
+    deletionStatus: persisted.deletionStatus,
+  }, { accountStatus: 'pending_deletion', deletionStatus: 'pending' });
+  assert.equal(fixture.auth.revoked.includes(identity.uid), true);
+
+  const manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  const transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'pending_deletion');
+  assertOrderedTimestamps(transition, ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']);
+  assert.equal((await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath })).ok, true);
+
+  await fixture.firestore.set(userPath, { ...persisted, unexpected: true });
+  const inspection = await fixture.lifecycle.inspect({ manifestPath: fixture.inputs.manifestPath });
+  assert.equal(inspection.ok, false);
+  assert.equal(inspection.drift.some(item => (
+    item.alias === 'qa-pending-delete'
+    && item.field === 'shape'
+    && item.reason === 'unexpected-fields'
+  )), true);
+});
+
+test('pending deletion resumes after interruption at the Firestore fault boundary', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140015Z-5678ab90cd12', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-pending-delete');
+  const userPath = `users/${identity.uid}`;
+  const adapter = directAdapter(fixture.auth, fixture.firestore);
+  const set = adapter.firestore.set;
+  let applyingObservedBeforeWrite = false;
+  adapter.firestore.set = async (path, data) => {
+    if (path === userPath && data.accountStatus === 'pending_deletion') {
+      const beforeWrite = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+      applyingObservedBeforeWrite = beforeWrite.transitions['qa-pending-delete'].state === 'applying';
+    }
+    return set(path, data);
+  };
+  let interrupted = false;
+  const interruptedLifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    auth: adapter.auth,
+    firestore: adapter.firestore,
+    faultInjector(stage) {
+      if (!interrupted && stage === 'transition.qa-pending-delete.afterFirestore') {
+        interrupted = true;
+        throw new Error('simulated pending deletion Firestore interruption');
+      }
+    },
+  });
+
+  await assert.rejects(() => interruptedLifecycle.applyNegativeState('qa-pending-delete'), /interruption/i);
+  let manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  let transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'applying');
+  assert.match(transition.startedAt, /Z$/);
+  assert.equal(transition.firestoreUpdatedAt, undefined);
+  assert.equal(transition.revokedAt, undefined);
+  assert.equal(applyingObservedBeforeWrite, true);
+  const persisted = await fixture.firestore.get(userPath);
+  assert.deepEqual({
+    accountStatus: persisted.accountStatus,
+    deletionStatus: persisted.deletionStatus,
+  }, { accountStatus: 'pending_deletion', deletionStatus: 'pending' });
+  assert.deepEqual(fixture.auth.revoked, []);
+  assert.equal((await interruptedLifecycle.inspect({ manifestPath: fixture.inputs.manifestPath })).ok, true);
+
+  const resumed = await createLifecycle(fixture.lifecycleOptions).applyNegativeState('qa-pending-delete');
+  assert.equal(resumed.state, 'pending_deletion');
+  assert.equal(resumed.resumed, true);
+  manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'pending_deletion');
+  assertOrderedTimestamps(transition, ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']);
+});
+
+test('pending deletion resumes after interruption at the revocation fault boundary', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140016Z-7890cd12ef34', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+  let interrupted = false;
+  const interruptedLifecycle = createLifecycle({
+    ...fixture.lifecycleOptions,
+    faultInjector(stage) {
+      if (!interrupted && stage === 'transition.qa-pending-delete.afterRevoke') {
+        interrupted = true;
+        throw new Error('simulated pending deletion revocation interruption');
+      }
+    },
+  });
+
+  await assert.rejects(() => interruptedLifecycle.applyNegativeState('qa-pending-delete'), /interruption/i);
+  let manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  let transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'applying');
+  assert.match(transition.firestoreUpdatedAt, /Z$/);
+  assert.equal(transition.revokedAt, undefined);
+  assert.equal(fixture.auth.revoked.length, 1);
+  assert.equal((await interruptedLifecycle.inspect({ manifestPath: fixture.inputs.manifestPath })).ok, true);
+
+  const resumed = await createLifecycle(fixture.lifecycleOptions).applyNegativeState('qa-pending-delete');
+  assert.equal(resumed.state, 'pending_deletion');
+  assert.equal(resumed.resumed, true);
+  assert.equal(fixture.auth.revoked.length, 2);
+  manifest = JSON.parse(await readFile(fixture.inputs.manifestPath, 'utf8'));
+  transition = manifest.transitions['qa-pending-delete'];
+  assert.equal(transition.state, 'pending_deletion');
+  assertOrderedTimestamps(transition, ['startedAt', 'firestoreUpdatedAt', 'revokedAt', 'completedAt']);
+});
+
+test('completed pending deletion refuses exact remote-state drift', async t => {
+  const fixture = await lifecycleFixture(t, 'qa-phase7-20260824T140017Z-90abcdef1234', 3);
+  await fixture.lifecycle.seed(fixture.inputs);
+  await fixture.lifecycle.applyNegativeState('qa-pending-delete');
+  const identity = fixture.definition.identities.find(item => item.alias === 'qa-pending-delete');
+  const userPath = `users/${identity.uid}`;
+  const persisted = await fixture.firestore.get(userPath);
+  await fixture.firestore.set(userPath, { ...persisted, deletionStatus: 'cancelled' });
+  const revocationCount = fixture.auth.revoked.length;
+
+  await assert.rejects(
+    () => fixture.lifecycle.applyNegativeState('qa-pending-delete'),
+    /completed.*drifted|drifted.*persisted/i,
+  );
+  assert.equal(fixture.auth.revoked.length, revocationCount);
 });
 
 test('negative transition resumes after interruption between remote mutation and checkpoint persistence', async t => {
@@ -2401,7 +3213,10 @@ test('cleanup returns sanitized alias counts and continues after adapter read an
 
   const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
   assert.equal(result.ok, false);
-  assert.deepEqual(result.deleted, { auth: 7, firestore: 36 });
+  assert.deepEqual(result.deleted, {
+    auth: fixture.definition.identities.length - 2,
+    firestore: fixture.definition.documents.length - 4,
+  });
   assert.deepEqual(result.followUp, {
     retained: {
       auth: { count: 0, aliases: [] },
@@ -2418,6 +3233,79 @@ test('cleanup returns sanitized alias counts and continues after adapter read an
   assert.equal(serialized.includes('simulated'), false);
   assert.equal(fixture.auth.users.size, 2);
   assert.equal(fixture.firestore.documents.size, 4);
+});
+
+test('cleanup preserves the league ownership chain when its derived view cannot be proven', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  const league = fixture.definition.documents.find(document => document.path === publicView.sourcePath);
+  const proof = fixture.definition.documents.find(document => document.path === publicView.ownershipProofPath);
+  const creator = fixture.definition.identities.find(identity => identity.uid === proof.uid);
+  fixture.firestore.inject(publicView.path, {
+    ...publicView.data,
+    name: 'Unproven projection',
+    updatedAt: { _seconds: 1787580000, _nanoseconds: 0 },
+  });
+
+  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+
+  assert.equal(result.ok, false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  assert.equal(fixture.firestore.has(league.path), true);
+  assert.equal(fixture.firestore.has(proof.path), true);
+  assert.equal(fixture.auth.users.has(creator.uid), true);
+  assert.equal(fixture.firestore.deleted.includes(publicView.path), false);
+  assert.equal(fixture.firestore.deleted.includes(league.path), false);
+  assert.deepEqual(result.followUp.retained.firestore.aliases, ['qa-league', 'qa-league-creator', 'qa-public-league']);
+  assert.deepEqual(result.followUp.retained.auth.aliases, ['qa-league-creator']);
+});
+
+test('cleanup retains a marker-shaped malformed derived view and its ownership chain', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  const league = fixture.definition.documents.find(document => document.path === publicView.sourcePath);
+  const proof = fixture.definition.documents.find(document => document.path === publicView.ownershipProofPath);
+  const creator = fixture.definition.identities.find(identity => identity.uid === proof.uid);
+  fixture.firestore.inject(publicView.path, {
+    qaFixture: true,
+    qaFixtureVersion: 1,
+  });
+
+  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+
+  assert.equal(result.ok, false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  assert.equal(fixture.firestore.has(league.path), true);
+  assert.equal(fixture.firestore.has(proof.path), true);
+  assert.equal(fixture.auth.users.has(creator.uid), true);
+  assert.equal(fixture.firestore.deleted.includes(publicView.path), false);
+  assert.equal(fixture.firestore.deleted.includes(league.path), false);
+  assert.deepEqual(result.followUp.retained.firestore.aliases, ['qa-league', 'qa-league-creator', 'qa-public-league']);
+  assert.deepEqual(result.followUp.retained.auth.aliases, ['qa-league-creator']);
+});
+
+test('cleanup sanitizes derived ownership read failures and preserves the ownership chain', async t => {
+  const fixture = await lifecycleFixture(t);
+  await fixture.lifecycle.seed(fixture.inputs);
+  const publicView = fixture.definition.documents.find(document => document.kind === 'derived-public-league-view');
+  const league = fixture.definition.documents.find(document => document.path === publicView.sourcePath);
+  const proof = fixture.definition.documents.find(document => document.path === publicView.ownershipProofPath);
+  const creator = fixture.definition.identities.find(identity => identity.uid === proof.uid);
+  fixture.firestore.failGetPath = proof.path;
+
+  const result = await fixture.lifecycle.cleanup({ manifestPath: fixture.inputs.manifestPath });
+
+  assert.equal(result.ok, false);
+  assert.equal(fixture.firestore.has(publicView.path), true);
+  assert.equal(fixture.firestore.has(league.path), true);
+  assert.equal(fixture.firestore.has(proof.path), true);
+  assert.equal(fixture.auth.users.has(creator.uid), true);
+  assert.equal(fixture.firestore.deleted.includes(publicView.path), false);
+  assert.equal(fixture.firestore.deleted.includes(league.path), false);
+  assert.equal(result.followUp.failures.firestore.aliases.includes('qa-public-league'), true);
+  assert.equal(JSON.stringify(result).includes(RUN_ID), false);
 });
 
 test('seed CLI stdout contains only aliases, counts, state, and opaque UID suffixes', async t => {

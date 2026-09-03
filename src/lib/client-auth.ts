@@ -8,6 +8,7 @@
  *   })
  */
 import { sendEmailVerification, signOut, type Auth, type User } from 'firebase/auth';
+import { selectedSquadCookie } from '@/lib/selected-squad';
 
 export const DEMO_EXIT_PENDING_KEY = 'squad_demo_exit_pending';
 export const DEMO_START_KEY = 'squad_demo_start_time';
@@ -55,7 +56,7 @@ export async function sendBrandedVerificationEmail(user: User): Promise<void> {
 }
 
 export type BrowserSessionResult = {
-  redirectTo: '/onboarding' | '/teams/join' | null;
+  redirectTo: '/onboarding' | '/teams/join' | '/teams/new' | null;
 };
 
 function sessionSetupError(code?: unknown): Error {
@@ -80,7 +81,28 @@ export async function establishBrowserSession(user: User): Promise<BrowserSessio
   if (
     payload.redirectTo !== null &&
     payload.redirectTo !== '/onboarding' &&
-    payload.redirectTo !== '/teams/join'
+    payload.redirectTo !== '/teams/join' &&
+    payload.redirectTo !== '/teams/new'
+  ) {
+    throw sessionSetupError('auth/invalid-session-response');
+  }
+  return { redirectTo: payload.redirectTo };
+}
+
+export async function readBrowserSession(): Promise<BrowserSessionResult> {
+  const response = await fetch('/api/auth/session', {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (
+    !response.ok ||
+    payload.authenticated !== true ||
+    (payload.redirectTo !== null &&
+      payload.redirectTo !== '/onboarding' &&
+      payload.redirectTo !== '/teams/join' &&
+      payload.redirectTo !== '/teams/new')
   ) {
     throw sessionSetupError('auth/invalid-session-response');
   }
@@ -137,4 +159,5 @@ export async function bootstrapDemoWorkspace(user: User, planId: string): Promis
 
 export async function clearBrowserSession(): Promise<void> {
   await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
+  document.cookie = selectedSquadCookie(undefined, window.location.protocol === 'https:');
 }

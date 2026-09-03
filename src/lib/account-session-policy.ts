@@ -2,6 +2,7 @@ export type SessionIdentity = {
   uid: string;
   role?: string;
   signInProvider?: string;
+  selectedTeamId?: string;
 };
 
 export type AccountSessionProfile = {
@@ -20,14 +21,17 @@ export type AccountAccessReader = {
   getProfile(uid: string): Promise<AccountSessionProfile | null>;
   hasTrustedInstitutionAuthority?(uid: string): Promise<boolean>;
   hasActiveSquadAuthority(uid: string, activeTeamId?: string | null): Promise<boolean>;
+  hasSelectedCoachesCornerAuthority?(uid: string, selectedTeamId?: string): Promise<boolean>;
 };
 
 export type AccountSessionDecision =
   | { allowed: false; code: 'auth/account-unavailable' }
   | {
       allowed: true;
-      redirectTo: '/onboarding' | '/teams/join' | null;
+      redirectTo: '/onboarding' | '/teams/join' | '/teams/new' | null;
       profile: AccountSessionProfile | null;
+      institutionAuthority?: true;
+      coachesCornerAuthority?: true;
     };
 
 function normalized(value: unknown): string {
@@ -48,9 +52,20 @@ function hasIndependentAuthority(
   const claimRole = normalized(identity.role);
   const profileRole = normalized(profile.role);
   return claimRole === 'superadmin' ||
-    profileRole === 'superadmin' ||
     profileRole === 'league_creator' ||
     profile.isPrimaryClubAuthority === true;
+}
+
+function hasCanonicalSchoolPlan(profile: AccountSessionProfile): boolean {
+  const planValues = [profile.plan_type, profile.planId, profile.activePlanId]
+    .filter(value => value !== undefined && value !== null);
+  return planValues.length > 0 && planValues.every(value => normalized(value) === 'school');
+}
+
+function hasSchoolAuthorityProfile(profile: AccountSessionProfile): boolean {
+  return normalized(profile.role) === 'admin' &&
+    profile.isSchoolAdmin === true &&
+    hasCanonicalSchoolPlan(profile);
 }
 
 export function createAccountSessionResolver(reader: AccountAccessReader) {
@@ -67,13 +82,24 @@ export function createAccountSessionResolver(reader: AccountAccessReader) {
       return { allowed: false, code: 'auth/account-unavailable' };
     }
     if (hasIndependentAuthority(identity, profile)) {
-      return { allowed: true, redirectTo: null, profile };
+      const coachesCornerAuthority = normalized(profile.role) === 'league_creator' &&
+        typeof identity.selectedTeamId === 'string' &&
+        await reader.hasSelectedCoachesCornerAuthority?.(identity.uid, identity.selectedTeamId) === true;
+      return {
+        allowed: true,
+        redirectTo: null,
+        profile,
+        ...(coachesCornerAuthority ? { coachesCornerAuthority: true } : {}),
+      };
     }
-    if (
-      profile.isSchoolAdmin === true &&
-      await reader.hasTrustedInstitutionAuthority?.(identity.uid) === true
-    ) {
-      return { allowed: true, redirectTo: null, profile };
+    const institutionAuthority = hasSchoolAuthorityProfile(profile) &&
+      await reader.hasTrustedInstitutionAuthority?.(identity.uid) === true;
+    if (institutionAuthority) {
+      return { allowed: true, redirectTo: null, profile, institutionAuthority: true };
+    }
+
+    if (normalized(profile.role) === 'coach') {
+      return { allowed: true, redirectTo: '/teams/new', profile };
     }
 
     const hasSquadAuthority = await reader.hasActiveSquadAuthority(

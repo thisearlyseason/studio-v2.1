@@ -9,8 +9,15 @@ import { accountSessionRedirect } from '../src/lib/dashboard-account-session.ts'
 import {
   establishBrowserSession,
   establishBrowserSessionOrSignOut,
+  readBrowserSession,
 } from '../src/lib/client-auth.ts';
-import { canStartProtectedAccountState } from '../src/lib/client-account-admission.ts';
+import {
+  canStartGlobalPlanCatalogState,
+  canStartProtectedAccountState,
+  canStartSquadMembershipState,
+  canClaimPendingSchoolInvites,
+  requestPendingSchoolInviteClaim,
+} from '../src/lib/client-account-admission.ts';
 
 function firestoreDouble({ profile = null, memberRows = [], ownedTeams = [] } = {}) {
   const operations = [];
@@ -119,6 +126,25 @@ test('session policy sends a removed sole member to squad join', async () => {
   assert.deepEqual(authorityArguments, [['user-1', 'team-a']]);
 });
 
+test('session policy sends a verified Coach without a squad to team creation', async () => {
+  const profile = { role: 'coach', accountStatus: 'active' };
+  let authorityReads = 0;
+  const resolve = createAccountSessionResolver({
+    getProfile: async () => profile,
+    hasActiveSquadAuthority: async () => {
+      authorityReads += 1;
+      return false;
+    },
+  });
+
+  assert.deepEqual(await resolve({ uid: 'coach-without-squad', signInProvider: 'password' }), {
+    allowed: true,
+    redirectTo: '/teams/new',
+    profile,
+  });
+  assert.equal(authorityReads, 0);
+});
+
 test('session policy keeps ordinary and alternate-squad access', async () => {
   for (const activeTeamId of ['team-a', null]) {
     const profile = { role: 'member', accountStatus: 'active', activeTeamId };
@@ -157,7 +183,6 @@ test('session policy preserves independently authorized accounts without squad l
   const cases = [
     { identity: { uid: 'super', role: 'superadmin' }, profile: { role: 'member' } },
     { identity: { uid: 'club' }, profile: { role: 'admin', isPrimaryClubAuthority: true } },
-    { identity: { uid: 'league' }, profile: { role: 'league_creator' } },
   ];
 
   for (const { identity, profile } of cases) {
@@ -179,10 +204,78 @@ test('session policy preserves independently authorized accounts without squad l
   }
 });
 
+test('session policy corroborates only the League Creator selected paid squad without changing hub admission', async () => {
+  const profile = { role: 'league_creator', activeTeamId: 'untrusted-profile-team' };
+  for (const coachesCornerAuthority of [false, true]) {
+    const authorityArguments = [];
+    const resolve = createAccountSessionResolver({
+      getProfile: async () => profile,
+      hasActiveSquadAuthority: async () => true,
+      hasSelectedCoachesCornerAuthority: async (...args) => {
+        authorityArguments.push(args);
+        return coachesCornerAuthority;
+      },
+    });
+
+    assert.deepEqual(await resolve({ uid: 'league', selectedTeamId: 'selected-team' }), {
+      allowed: true,
+      redirectTo: null,
+      profile,
+      ...(coachesCornerAuthority ? { coachesCornerAuthority: true } : {}),
+    });
+    assert.deepEqual(authorityArguments, [['league', 'selected-team']]);
+  }
+
+  let selectedReads = 0;
+  const resolveHubMode = createAccountSessionResolver({
+    getProfile: async () => profile,
+    hasActiveSquadAuthority: async () => true,
+    hasSelectedCoachesCornerAuthority: async () => {
+      selectedReads += 1;
+      return true;
+    },
+  });
+  assert.deepEqual(await resolveHubMode({ uid: 'league' }), {
+    allowed: true,
+    redirectTo: null,
+    profile,
+  });
+  assert.equal(selectedReads, 0);
+});
+
+test('server account reader grants Coaches Corner only for the exact selected paid squad', async () => {
+  const { db, operations } = firestoreDouble();
+  const authorityReads = [];
+  const reader = createServerAccountAccessReader({
+    db,
+    getTeamAuthority: async (teamId, uid) => {
+      authorityReads.push([teamId, uid]);
+      return {
+        teamData: { isPro: teamId !== 'free-team', status: 'active' },
+        isOwner: teamId !== 'foreign-team',
+        isSuperAdmin: false,
+        member: null,
+      };
+    },
+  });
+
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', undefined), false);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', '../invalid'), false);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', 'selected-team'), true);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', 'free-team'), false);
+  assert.equal(await reader.hasSelectedCoachesCornerAuthority?.('league', 'foreign-team'), false);
+  assert.deepEqual(authorityReads, [
+    ['selected-team', 'league'],
+    ['free-team', 'league'],
+    ['foreign-team', 'league'],
+  ]);
+  assert.deepEqual(operations, []);
+});
+
 test('session policy does not trust a self-authored school-admin profile flag', async () => {
   let authorityReads = 0;
   let institutionReads = 0;
-  const profile = { role: 'member', accountStatus: 'active', isSchoolAdmin: true };
+  const profile = { role: 'admin', accountStatus: 'active', isSchoolAdmin: true, plan_type: 'school' };
   const resolve = createAccountSessionResolver({
     getProfile: async () => profile,
     hasTrustedInstitutionAuthority: async () => {
@@ -206,7 +299,7 @@ test('session policy does not trust a self-authored school-admin profile flag', 
 
 test('session policy preserves a school administrator corroborated by canonical school data', async () => {
   let squadReads = 0;
-  const profile = { role: 'member', accountStatus: 'active', isSchoolAdmin: true };
+  const profile = { role: 'admin', accountStatus: 'active', isSchoolAdmin: true, plan_type: 'school' };
   const resolve = createAccountSessionResolver({
     getProfile: async () => profile,
     hasTrustedInstitutionAuthority: async uid => uid === 'school-admin',
@@ -220,12 +313,19 @@ test('session policy preserves a school administrator corroborated by canonical 
     allowed: true,
     redirectTo: null,
     profile,
+    institutionAuthority: true,
   });
   assert.equal(squadReads, 0);
 });
 
 test('server account reader corroborates school administrators only against a live institution', async () => {
-  const live = firestoreDouble({ ownedTeams: [{ type: 'school', isInstitution: true }] });
+  const live = firestoreDouble({ ownedTeams: [{
+    type: 'school',
+    isInstitution: true,
+    planId: 'school',
+    planType: 'school',
+    schoolAdminIds: ['school-admin'],
+  }] });
   const liveReader = createServerAccountAccessReader({
     db: live.db,
     getTeamAuthority: async () => null,
@@ -238,13 +338,34 @@ test('server account reader corroborates school administrators only against a li
   ]);
 
   const deleted = firestoreDouble({
-    ownedTeams: [{ type: 'school', isInstitution: true, status: 'deleted' }],
+    ownedTeams: [{
+      type: 'school',
+      isInstitution: true,
+      planId: 'school',
+      planType: 'school',
+      schoolAdminIds: ['school-admin'],
+      status: 'deleted',
+    }],
   });
   const deletedReader = createServerAccountAccessReader({
     db: deleted.db,
     getTeamAuthority: async () => null,
   });
   assert.equal(await deletedReader.hasTrustedInstitutionAuthority('school-admin'), false);
+
+  for (const [name, school] of [
+    ['missing school type', { isInstitution: true, planId: 'school', planType: 'school', schoolAdminIds: ['school-admin'] }],
+    ['missing institution marker', { type: 'school', planId: 'school', planType: 'school', schoolAdminIds: ['school-admin'] }],
+    ['missing school plan', { type: 'school', isInstitution: true, planId: 'free', planType: 'free', schoolAdminIds: ['school-admin'] }],
+    ['missing school admin membership', { type: 'school', isInstitution: true, planId: 'school', planType: 'school', schoolAdminIds: [] }],
+  ]) {
+    const fixture = firestoreDouble({ ownedTeams: [school] });
+    const reader = createServerAccountAccessReader({
+      db: fixture.db,
+      getTeamAuthority: async () => null,
+    });
+    assert.equal(await reader.hasTrustedInstitutionAuthority('school-admin'), false, name);
+  }
 });
 
 test('anonymous demo sessions do not read account state', async () => {
@@ -564,9 +685,39 @@ test('browser session returns only a validated trusted destination', async () =>
 
     globalThis.fetch = async () => new Response(JSON.stringify({
       ok: true,
+      redirectTo: '/teams/new',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    assert.deepEqual(await establishBrowserSession(user), { redirectTo: '/teams/new' });
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
       redirectTo: 'https://outside.example',
     }), { status: 200, headers: { 'content-type': 'application/json' } });
     await assert.rejects(() => establishBrowserSession(user), /secure browser session/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('browser session read exposes only a trusted setup destination', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (_input, init) => {
+      assert.equal(init?.method, 'GET');
+      assert.equal(init?.credentials, 'same-origin');
+      assert.equal(init?.cache, 'no-store');
+      return new Response(JSON.stringify({ authenticated: true, redirectTo: '/onboarding' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    assert.deepEqual(await readBrowserSession(), { redirectTo: '/onboarding' });
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      authenticated: true,
+      redirectTo: 'https://outside.example',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    await assert.rejects(() => readBrowserSession(), /secure browser session/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -597,4 +748,72 @@ test('protected provider state waits until navigation leaves authentication and 
   for (const pathname of ['/', '/dashboard', '/teams/join', '/club']) {
     assert.equal(canStartProtectedAccountState(pathname), true, pathname);
   }
+});
+
+test('global plan catalog waits until navigation leaves squad admission', () => {
+  for (const pathname of ['/login', '/signup', '/verify-email', '/onboarding', '/teams/join']) {
+    assert.equal(canStartGlobalPlanCatalogState(pathname), false, pathname);
+  }
+  for (const pathname of ['/dashboard', '/family', '/competition']) {
+    assert.equal(canStartGlobalPlanCatalogState(pathname), true, pathname);
+  }
+});
+
+test('squad membership listeners wait until navigation leaves squad admission', () => {
+  for (const pathname of ['/login', '/signup', '/verify-email', '/onboarding', '/teams/join']) {
+    assert.equal(canStartSquadMembershipState(pathname), false, pathname);
+  }
+  for (const pathname of ['/dashboard', '/family', '/competition']) {
+    assert.equal(canStartSquadMembershipState(pathname), true, pathname);
+  }
+});
+
+test('pending School Hub invitations are claimed only from the exact squad-admission route', () => {
+  assert.equal(canClaimPendingSchoolInvites('/teams/join'), true);
+  for (const pathname of ['/', '/dashboard', '/teams/join/other', '/onboarding', '/club']) {
+    assert.equal(canClaimPendingSchoolInvites(pathname), false, pathname);
+  }
+});
+
+test('pending School Hub invitation request rechecks the live route after deferred token resolution', async () => {
+  let pathname = '/teams/join';
+  let resolveToken;
+  let requestCalls = 0;
+  const token = new Promise(resolve => { resolveToken = resolve; });
+  const pending = requestPendingSchoolInviteClaim({
+    getToken: () => token,
+    getPathname: () => pathname,
+    isCancelled: () => false,
+    signal: new AbortController().signal,
+    request: async () => { requestCalls += 1; return { ok: true }; },
+  });
+
+  pathname = '/dashboard';
+  resolveToken('token');
+
+  assert.equal(await pending, null);
+  assert.equal(requestCalls, 0);
+});
+
+test('pending School Hub invitation request starts once on the live admission route and carries cancellation', async () => {
+  const controller = new AbortController();
+  let requestCalls = 0;
+  let observedSignal;
+  const response = await requestPendingSchoolInviteClaim({
+    getToken: async () => 'token',
+    getPathname: () => '/teams/join',
+    isCancelled: () => false,
+    signal: controller.signal,
+    request: async (_token, signal) => {
+      requestCalls += 1;
+      observedSignal = signal;
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(response, { ok: true });
+  assert.equal(requestCalls, 1);
+  assert.equal(observedSignal, controller.signal);
+  controller.abort();
+  assert.equal(observedSignal.aborted, true);
 });

@@ -776,6 +776,7 @@ export default function FamilyPage() {
     householdGames,
     householdBalance, 
     isParent,
+    isSuperAdmin,
     user,
     sendChildInvite
   } = useTeam();
@@ -1181,7 +1182,7 @@ export default function FamilyPage() {
     });
   }, [myChildren, householdEvents, householdGames]);
 
-  if (!isParent) {
+  if (!isParent && !isSuperAdmin) {
     return <AccessRestricted type="role" title="Family Access Required" description="This page is available to parents and guardians." />;
   }
 

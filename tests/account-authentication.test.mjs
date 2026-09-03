@@ -43,10 +43,11 @@ test('login preserves password whitespace and returns a non-enumerating error', 
 });
 
 test('existing unverified accounts are preserved but locked until verification', async () => {
-  const [login, verification, middleware, sessionRouteEntry, sessionHandlers] = await Promise.all([
+  const [login, verification, middleware, routePolicy, sessionRouteEntry, sessionHandlers] = await Promise.all([
     source('../src/app/login/page.tsx'),
     source('../src/app/verify-email/page.tsx'),
     source('../src/middleware.ts'),
+    source('../src/lib/dashboard-route-policy.ts'),
     source('../src/app/api/auth/session/route.ts'),
     source('../src/lib/session-route-handlers.ts'),
   ]);
@@ -59,7 +60,8 @@ test('existing unverified accounts are preserved but locked until verification',
   assert.match(verification, /RESEND_COOLDOWN_MS = 60_000/);
   assert.match(verification, /sendBrandedVerificationEmail\(auth\.currentUser/);
   assert.match(verification, /Use another account/);
-  assert.match(middleware, /decoded\.email_verified !== true/);
+  assert.match(middleware, /emailVerified: decoded\.email_verified === true/);
+  assert.match(routePolicy, /identity\.emailVerified !== true/);
   assert.match(sessionRoute, /decoded\.email_verified !== true/);
 });
 
@@ -70,6 +72,82 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /firebaseUser\.emailVerified !== true/);
   assert.match(provider, /teamsQuery[\s\S]*firebaseUser\.emailVerified === true/);
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
+  const inviteClaimEffect = provider.match(
+    /useEffect\(\(\) => \{\n    const setClaimState[\s\S]*?claimPendingSchoolInvites\(\);[\s\S]*?\}, \[[^\]]*isAuthResolved[^\]]*\]\);/,
+  )?.[0];
+  assert.ok(inviteClaimEffect, 'expected the bounded pending School Hub invitation effect');
+  assert.match(inviteClaimEffect, /if \(!canClaimSchoolAdminInvites\) \{/);
+  assert.match(inviteClaimEffect, /\[canClaimSchoolAdminInvites, firebaseAuth,/);
+  assert.doesNotMatch(inviteClaimEffect, /canReadProtectedAccountState/);
+  assert.match(inviteClaimEffect, /const controller = new AbortController\(\)/);
+  assert.match(inviteClaimEffect, /requestPendingSchoolInviteClaim\(\{/);
+  assert.match(provider, /SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE = 'data-school-invite-claim-state'/);
+  assert.match(inviteClaimEffect, /setClaimState\('pending'\)/);
+  assert.match(inviteClaimEffect, /setClaimState\('settled'\)/);
+  assert.match(inviteClaimEffect, /setClaimState\('failed'\)/);
+  assert.match(inviteClaimEffect, /removeAttribute\(SCHOOL_INVITE_CLAIM_STATE_ATTRIBUTE\)/);
+  assert.match(provider, /const schoolInviteClaimAttempt = useRef<SchoolInviteClaimAttempt \| null>\(null\)/);
+  assert.match(inviteClaimEffect, /const existingAttempt = schoolInviteClaimAttempt\.current/);
+  assert.match(inviteClaimEffect, /existingAttempt\?\.uid === firebaseUser\.uid && existingAttempt\.auth === firebaseAuth/);
+  assert.match(inviteClaimEffect, /if \(!isAuthResolved\) \{[\s\S]*?attempt\.controller\.abort\(\);[\s\S]*?schoolInviteClaimAttempt\.current = null/);
+  assert.match(inviteClaimEffect, /setClaimState\(existingAttempt\.state\)/);
+  assert.match(inviteClaimEffect, /schoolInviteClaimAttempt\.current = attempt/);
+  assert.match(inviteClaimEffect, /if \(window\.location\.pathname !== '\/teams\/join'/);
+  assert.match(inviteClaimEffect, /if \(!response\) \{[\s\S]*?setClaimState\('failed'\)/);
+  assert.match(inviteClaimEffect, /attempt\.state = 'settled';[\s\S]*?setClaimState\('settled'\)/);
+  assert.doesNotMatch(inviteClaimEffect, /claimedSchoolAdminForUid/);
+  assert.match(inviteClaimEffect, /getPathname: \(\) => window\.location\.pathname/);
+  assert.match(inviteClaimEffect, /isCancelled: \(\) => attempt\.cancelled/);
+  assert.match(inviteClaimEffect, /signal: controller\.signal/);
+  assert.match(inviteClaimEffect, /return \(\) => \{[\s\S]*?window\.location\.pathname !== '\/teams\/join'[\s\S]*?attempt\.cancelled = true;[\s\S]*?controller\.abort\(\)/);
+});
+
+test('account-setup routes do not start global plans or player listeners', async () => {
+  const provider = await source('../src/components/providers/team-provider.tsx');
+
+  assert.match(
+    provider,
+    /plansQuery[\s\S]*canReadGlobalPlanCatalog[\s\S]*collection\(db, 'plans'\)/,
+    'the global plans listener must remain behind the squad-admission boundary',
+  );
+  assert.match(
+    provider,
+    /teamsQuery[\s\S]*canReadSquadMembershipState[\s\S]*collection\(db, 'users', firebaseUser\.uid, 'teamMemberships'\)/,
+    'the collection-wide squad-membership listener must remain behind the squad-admission boundary',
+  );
+  assert.match(
+    provider,
+    /childrenQuery[\s\S]*canReadProtectedAccountState[\s\S]*collection\(db, 'players'\)/,
+    'the signed-in player query must remain behind the account-admission boundary',
+  );
+});
+
+test('admission-only pages and passive admin navigation do not mutate protected account state', async () => {
+  const [onboarding, admin] = await Promise.all([
+    source('../src/app/onboarding/page.tsx'),
+    source('../src/app/admin/page.tsx'),
+  ]);
+
+  assert.doesNotMatch(onboarding, /\bgetDoc\s*\(/, 'missing-profile onboarding must not probe the protected user document');
+  assert.match(onboarding, /readBrowserSession\(\)/, 'onboarding must retain server-authoritative admission');
+  assert.doesNotMatch(
+    admin,
+    /await updateDoc\(userRef,\s*\{\s*lastAdminLoginAt:/,
+    'rendering the admin route must not add fixture fields to the signed-in user document',
+  );
+});
+
+test('authenticated users without an avatar use the same-origin fallback asset', async () => {
+  const provider = await import('../src/components/providers/team-provider.tsx');
+
+  assert.equal(typeof provider.resolveUserAvatar, 'function');
+  assert.equal(provider.resolveUserAvatar(), '/icon.png');
+  assert.equal(provider.resolveUserAvatar(undefined, ''), '/icon.png');
+  assert.equal(provider.resolveUserAvatar('/member-avatar.png'), '/member-avatar.png');
+  assert.equal(
+    provider.resolveUserAvatar(undefined, 'https://cdn.example.test/member.png'),
+    'https://cdn.example.test/member.png',
+  );
 });
 
 test('verification-email route reports provider configuration failures without a generic 500', async () => {
@@ -98,7 +176,7 @@ test('protected pages require a revocation-checked HTTP-only server session', as
   const sessionRoute = `${sessionRouteEntry}\n${sessionHandlers}`;
 
   assert.match(middleware, /request\.cookies\.get\('__session'\)/);
-  assert.match(middleware, /verifySessionCookie\(sessionCookie, true\)/);
+  assert.match(middleware, /verifySessionCookie\(cookie, true\)/);
   assert.match(middleware, /runtime: 'nodejs'/);
   assert.match(middleware, /pathname\.startsWith\('\/events\/register\/'\).*return false/);
   assert.match(middleware, /pathname === '\/leagues'/);

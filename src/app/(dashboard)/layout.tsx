@@ -18,6 +18,7 @@ import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
+import CompetitionHubPage from './competition/page';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -325,8 +326,6 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         router.replace('/club');
       } else if (isParent) {
         router.push('/family');
-      } else if (userProfile?.role === 'league_creator') {
-        router.push('/competition');
       }
     }
 
@@ -350,7 +349,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
+  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam, userProfile?.role]);
 
   useEffect(() => {
     // Wait for both the profile and team hydration before deciding that the
@@ -506,6 +505,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   // We only show the full-screen gate if we aren't 'essentially loaded' OR if we haven't mounted yet.
   // But if we HAVE a userProfile, we skip the !mounted requirement to break the Suspense Trap.
   const isLoadingState = !loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile));
+  const isLeagueCreatorDashboard = pathname === '/dashboard' && userProfile?.role === 'league_creator';
 
   if (isLoadingState) {
     return (
@@ -626,16 +626,25 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           setIsSeedingDemo={setIsSeedingDemo}
         />
         <ErrorBoundary>
-          <Shell>{children}</Shell>
+          <Shell>{isLeagueCreatorDashboard ? <CompetitionHubPage /> : children}</Shell>
         </ErrorBoundary>
       </div>
     </div>
   );
 }
 
+function DashboardSuspenseFallback() {
+  return (
+    <div role="status" aria-live="polite" className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background">
+      <Loader2 className="h-10 w-10 animate-spin text-primary" aria-hidden="true" />
+      <p className="text-lg font-black uppercase tracking-widest text-primary">Synchronizing Secure Hub...</p>
+    </div>
+  );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DashboardSuspenseFallback />}>
       <LayoutContent>{children}</LayoutContent>
     </Suspense>
   );

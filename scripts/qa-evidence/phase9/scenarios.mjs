@@ -1,0 +1,533 @@
+import {
+  NO_TEAM_RESOURCE_POLICY, PENDING_UNAVAILABLE_SENTINEL, REQUIRED_LEDGER_COLUMNS, REQUIRED_LOGOUT_STAGES,
+  PROTECTED_PAGE_HEADINGS, ROUTE_SCENARIOS, SCENARIO_GROUP_COUNTS, VIEWPORTS, buildIsolationExpectation,
+  assertNoFixtureIdentifierLeak, validateActionWindow, validateIsolationResult, validateLogoutStages, validateRouteResult,
+} from './scenario-contracts.mjs';
+import { observeAction } from './signal-window.mjs';
+
+const VIEWPORT_LABELS = Object.freeze(Object.fromEntries(Object.entries(VIEWPORTS)
+  .map(([name, value]) => [name, `${value.width}x${value.height}`])));
+const ROUTE_PATHS = Object.keys(ROUTE_SCENARIOS);
+const exact = (path, sentinel) => Object.freeze({ path, sentinel });
+const DASHBOARD = exact('/dashboard', 'Dashboard');
+const ONBOARDING = exact('/onboarding', 'Complete your profile');
+const JOIN = exact('/teams/join', 'Join & Invite');
+const allowed = sentinel => Object.freeze({ allowed: true, sentinel });
+
+const ALIAS_CONTRACTS = Object.freeze({
+  'qa-parent-a': { landing: exact('/family', 'Family Overview'), routes: { '/family': allowed('Family Overview') } },
+  'qa-adult-player-a': { landing: DASHBOARD, routes: {} },
+  'qa-youth-active': { landing: DASHBOARD, routes: {} },
+  'qa-league-creator': {
+    landing: exact('/dashboard', 'Competition Hub'),
+    routes: {
+      '/competition': allowed('Competition Hub'), '/dashboard/billing': allowed('Manage Your Plan'),
+    },
+  },
+  'qa-school-admin': {
+    landing: exact('/club', 'School Hub'),
+    routes: {
+      '/club': allowed('School Hub'), '/competition': allowed('Program League Hub'),
+      '/dashboard/billing': allowed('Manage Your Plan'), '/coaches-corner': allowed('Coaches Corner'),
+    },
+  },
+  'qa-superadmin': {
+    landing: exact('/admin', 'Account Lookup'),
+    routes: {
+      '/admin': allowed('Account Lookup'), '/club': allowed('Club Hub'),
+      '/competition': allowed('Competition Hub'), '/dashboard/billing': allowed('Manage Your Plan'),
+      '/coaches-corner': allowed('Coaches Corner'), '/family': allowed('Family Overview'),
+    },
+  },
+  'qa-fake-superadmin': { landing: DASHBOARD, routes: {} },
+  'qa-missing-profile': { landing: ONBOARDING, deniedLanding: ONBOARDING, routes: {} },
+  'qa-no-team': { landing: JOIN, deniedLanding: JOIN, routes: {} },
+});
+
+const ISOLATION_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-youth-active', 'qa-parent-b', 'qa-adult-player-b']);
+const LOGOUT_ALIASES = Object.freeze(['qa-parent-a', 'qa-adult-player-a', 'qa-league-creator', 'qa-school-admin', 'qa-superadmin']);
+const PENDING_CASES = ['active-baseline', 'stale-session', 'fresh-login'];
+const PROTECTED_FREE_ADMISSION_ALIASES = new Set(['qa-missing-profile']);
+
+const requireText = (value, name) => {
+  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${name} is required.`);
+  return value;
+};
+const requireFunction = (value, name) => {
+  if (typeof value !== 'function') throw new Error(`${name} action is required.`);
+  return value;
+};
+const reportDiagnostic = (diagnostic, checkpoint, reason) => {
+  try { diagnostic(checkpoint, reason); } catch {}
+};
+const validateContext = (context, group) => {
+  if (!context || typeof context !== 'object' || Array.isArray(context)) throw new Error('Scenario context is required.');
+  const validated = {
+    contextId: requireText(context.contextId, 'contextId'), alias: requireText(context.alias, 'alias'),
+    viewport: requireText(context.viewport, 'viewport'), startState: requireText(context.startState, 'startState'),
+    startUrl: requireText(context.startUrl, 'startUrl'),
+  };
+  if (!Object.values(VIEWPORT_LABELS).includes(validated.viewport)) throw new Error('viewport must be canonical.');
+  if (!Object.hasOwn(SCENARIO_GROUP_COUNTS, group)) throw new Error('Scenario group is unsupported.');
+  return validated;
+};
+const summarizeHttp = results => !Array.isArray(results) || results.length === 0
+  ? 'none' : results.map(result => `${result.status}`).join(',');
+export const rebuildRequestFailureSignals = requestFailureSignals => {
+  const multiplicity = requestFailureSignals.length === 1 ? 'single' : 'multiple';
+  return Object.freeze(requestFailureSignals.map(({
+    failureClass, targetClass, resourceType, navigationRelationship,
+  }) => Object.freeze({
+    failureClass,
+    targetClass,
+    resourceType,
+    navigationRelationship,
+    multiplicity,
+  })));
+};
+
+export const aggregateWindows = (windows, options = {}, diagnostic = () => {}) => {
+  if (!Array.isArray(windows) || windows.length === 0) throw new Error('Scenario requires complete action windows.');
+  const last = windows.at(-1);
+  const aggregatedRequestFailureSignals = rebuildRequestFailureSignals(
+    windows.flatMap(window => window.unexpectedRequestFailureSignals),
+  );
+  return validateActionWindow({
+    pageId: last.pageId,
+    terminalReached: last.terminalReached,
+    loadingVisible: last.loadingVisible,
+    finalUrl: last.finalUrl,
+    finalPath: last.finalPath,
+    visibleSentinels: last.visibleSentinels.map(value => value),
+    renderSignals: windows.flatMap(window => window.renderSignals.map(signal => ({
+      kind: signal.kind,
+      pathname: signal.pathname,
+      sentinel: signal.sentinel,
+    }))),
+    redirectReason: last.redirectReason,
+    sessionPresent: last.sessionPresent,
+    protectedRender: windows.some(window => window.protectedRender),
+    protectedRequests: windows.reduce((sum, window) => sum + window.protectedRequests, 0),
+    protectedRequestSignals: windows.flatMap(window => window.protectedRequestSignals.map(signal => ({
+      targetKind: signal.targetKind,
+      method: signal.method,
+      resourceType: signal.resourceType,
+      initiatingFrameUrl: signal.initiatingFrameUrl,
+      scopeEvidence: signal.scopeEvidence.map(value => value),
+      resourceScopes: signal.resourceScopes.map(value => value),
+      ...(Object.hasOwn(signal, 'status') ? { status: signal.status } : {}),
+    }))),
+    protectedListenerStarts: windows.reduce((sum, window) => sum + window.protectedListenerStarts, 0),
+    listenerSignals: windows.flatMap(window => window.listenerSignals.map(signal => ({
+      targetKind: signal.targetKind,
+      method: signal.method,
+      resourceType: signal.resourceType,
+      initiatingFrameUrl: signal.initiatingFrameUrl,
+      scopeEvidence: signal.scopeEvidence.map(value => value),
+      resourceScopes: signal.resourceScopes.map(value => value),
+      ...(Object.hasOwn(signal, 'status') ? { status: signal.status } : {}),
+    }))),
+    teamSelectionSignals: windows.flatMap(window => window.teamSelectionSignals.map(value => value)),
+    relevantHttpResults: windows.flatMap(window => window.relevantHttpResults.map(result => ({
+      targetKind: result.targetKind,
+      status: result.status,
+    }))),
+    pageErrors: windows.reduce((sum, window) => sum + window.pageErrors, 0),
+    appConsoleErrors: windows.reduce((sum, window) => sum + window.appConsoleErrors, 0),
+    unexpectedRequestFailures: aggregatedRequestFailureSignals.length,
+    unexpectedRequestFailureSignals: aggregatedRequestFailureSignals,
+    overflow: windows.reduce((sum, window) => sum + window.overflow, 0),
+  }, options, diagnostic);
+};
+const rowFromWindow = ({ context, group, action, expectedResult, window, visibleState, httpSummary, actionSummaries }) => {
+  const row = {
+    ...context, group, action, expectedResult, finalUrl: requireText(window.finalUrl, 'finalUrl'),
+    visibleState: requireText(visibleState, 'visibleState'), sessionPresent: window.sessionPresent,
+    protectedRequests: window.protectedRequests, protectedListenerStarts: window.protectedListenerStarts,
+    relevantHttpDataResult: httpSummary ?? summarizeHttp(window.relevantHttpResults),
+    pageErrors: window.pageErrors, appConsoleErrors: window.appConsoleErrors,
+    unexpectedRequestFailures: window.unexpectedRequestFailures, overflow: window.overflow, result: 'PASS',
+    ...(actionSummaries ? { actionSummaries: Object.freeze(actionSummaries.map(value => Object.freeze(value))) } : {}),
+  };
+  for (const column of REQUIRED_LEDGER_COLUMNS) {
+    if (!(column in row) || row[column] === undefined || row[column] === null || row[column] === '') {
+      throw new Error(`Scenario row is missing ${column}.`);
+    }
+  }
+  assertNoFixtureIdentifierLeak(row, 'Scenario row');
+  return Object.freeze(row);
+};
+
+const validateLandingWindow = (window, landing, {
+  requireNoProtected = false, resourcePolicy, diagnostic = () => {},
+} = {}) => {
+  const diagnostics = [];
+  let closedWindow;
+  let validationError;
+  try {
+    const recordDiagnostic = (...report) => diagnostics.push(report);
+    closedWindow = validateActionWindow(window, { requireNoProtected, resourcePolicy }, recordDiagnostic);
+    recordDiagnostic('landing-expectation', 'landing-mismatch');
+    if (closedWindow.finalPath !== landing.path || !closedWindow.visibleSentinels.includes(landing.sentinel)) {
+      throw new Error('Admission did not reach its exact landing path and heading.');
+    }
+    recordDiagnostic('landing-heading', 'heading-mismatch');
+    const finalProtectedHeadings = closedWindow.visibleSentinels.filter(sentinel => PROTECTED_PAGE_HEADINGS.includes(sentinel));
+    const expectedFinalProtectedHeadings = PROTECTED_PAGE_HEADINGS.includes(landing.sentinel) ? [landing.sentinel] : [];
+    if (
+      finalProtectedHeadings.length !== expectedFinalProtectedHeadings.length
+      || finalProtectedHeadings.some((sentinel, index) => sentinel !== expectedFinalProtectedHeadings[index])
+    ) throw new Error('Admission final visible protected heading must exactly match the expected sentinel.');
+    recordDiagnostic('landing-session', 'session-missing');
+    if (!closedWindow.sessionPresent) throw new Error('Admission landing requires an authenticated session.');
+    recordDiagnostic('landing-render-history', 'render-history-invalid');
+    if (closedWindow.protectedRender) {
+      const signals = closedWindow.renderSignals.filter(signal => (
+        signal.kind === 'heading' && PROTECTED_PAGE_HEADINGS.includes(signal.sentinel)
+      ));
+      if (signals.length === 0 || signals.some(signal => signal.pathname !== landing.path || signal.sentinel !== landing.sentinel)) {
+        throw new Error('Admission contains an unexpected protected render.');
+      }
+    }
+  } catch (error) {
+    validationError = error;
+  }
+  for (const report of diagnostics) {
+    try { diagnostic(...report); } catch {}
+  }
+  if (validationError) throw validationError;
+  return closedWindow;
+};
+
+const executeRoute = async ({
+  client, session, path, isAllowed, landing, sentinel, actions, stage, requireNoProtected = false, resourcePolicy,
+}) => {
+  const expected = isAllowed ? exact(path, sentinel) : landing;
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
+  const window = await observeAction({
+    client, session, stage,
+    action: () => requireFunction(actions?.navigate, 'navigate')(path),
+    terminal: async () => {
+      try {
+        return await requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(
+          expected.path, expected.sentinel,
+        );
+      } catch (error) {
+        try { diagnostic('route-attribution', path); } catch {}
+        throw error;
+      }
+    },
+  });
+  const validated = validateRouteResult({
+    allowed: isAllowed, requestedPath: path,
+    expectedPath: expected.path, expectedSentinel: expected.sentinel, requireNoProtected, window,
+    ...(resourcePolicy ? { resourcePolicy } : {}),
+  }, diagnostic);
+  return {
+    window: validated.window,
+    summary: {
+      stage, requestedPath: path, allowed: isAllowed, finalPath: validated.window.finalPath,
+      visibleSentinel: expected.sentinel, protectedRequests: validated.window.protectedRequests,
+      protectedListenerStarts: validated.window.protectedListenerStarts,
+    },
+  };
+};
+
+export async function runRouteScenario({
+  client, session, context: inputContext, path, allowed: isAllowed, landing, actions,
+  group = 'admission-route', stage = 'admission-route', expectedSentinel,
+} = {}) {
+  const context = validateContext(inputContext, group);
+  const requestedPath = requireText(path, 'route path');
+  if (!ROUTE_PATHS.includes(requestedPath)) throw new Error('Route path must be canonical.');
+  if (typeof isAllowed !== 'boolean') throw new Error('Route allowed must be an explicit boolean.');
+  const result = await executeRoute({
+    client, session: requireText(session, 'session'), path: requestedPath, isAllowed,
+    landing: isAllowed ? undefined : exact(requireText(landing?.path, 'landing path'), requireText(landing?.sentinel, 'landing sentinel')),
+    sentinel: isAllowed ? expectedSentinel ?? ROUTE_SCENARIOS[requestedPath]?.visibleSentinels[0] : undefined,
+    actions, stage,
+  });
+  return rowFromWindow({
+    context, group, action: `navigate ${requestedPath}`,
+    expectedResult: isAllowed ? `allow ${requestedPath}` : `deny to ${landing.path}`,
+    window: result.window, visibleState: result.summary.visibleSentinel, actionSummaries: [result.summary],
+  });
+}
+
+export async function runAdmissionScenario({ client, session, context: inputContext, actions } = {}) {
+  const context = validateContext(inputContext, 'admission-route');
+  const contract = ALIAS_CONTRACTS[context.alias];
+  if (!contract) throw new Error('Admission alias is not in the canonical Task 7 matrix.');
+  const authenticatedSession = requireText(session, 'session');
+  const requireNoProtected = PROTECTED_FREE_ADMISSION_ALIASES.has(context.alias);
+  const resourcePolicy = context.alias === 'qa-no-team' ? NO_TEAM_RESOURCE_POLICY : undefined;
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
+  const observedLoginWindow = await observeAction({
+    client, session: authenticatedSession, stage: 'admission-login',
+    action: () => requireFunction(actions?.loginAndLand, 'loginAndLand')(context.alias),
+    terminal: () => requireFunction(actions?.waitForExactLocation, 'waitForExactLocation')(
+      contract.landing.path,
+      contract.landing.sentinel,
+    ),
+  });
+  const loginWindow = validateLandingWindow(observedLoginWindow, contract.landing, {
+    requireNoProtected, resourcePolicy, diagnostic,
+  });
+  const windows = [loginWindow];
+  const summaries = [{
+    stage: 'admission-login', requestedPath: '/login', allowed: true, finalPath: loginWindow.finalPath,
+    visibleSentinel: contract.landing.sentinel, protectedRequests: loginWindow.protectedRequests,
+    protectedListenerStarts: loginWindow.protectedListenerStarts,
+  }];
+  for (const path of ROUTE_PATHS) {
+    const route = contract.routes[path];
+    const result = await executeRoute({
+      client, session: authenticatedSession, path, isAllowed: route?.allowed === true,
+      landing: contract.deniedLanding ?? contract.landing, sentinel: route?.sentinel,
+      actions, stage: `admission-route:${path}`, requireNoProtected, resourcePolicy,
+    });
+    windows.push(result.window);
+    summaries.push(result.summary);
+  }
+  const aggregate = aggregateWindows(windows, { requireNoProtected, resourcePolicy }, diagnostic);
+  return rowFromWindow({
+    context, group: 'admission-route', action: 'login and land, then validate 6 direct routes',
+    expectedResult: 'exact admission landing and complete six-route policy', window: aggregate,
+    visibleState: summaries.map(value => value.visibleSentinel).join('; '), actionSummaries: summaries,
+  });
+}
+
+export async function runIsolationScenario({ client, session, context: inputContext, runId, actions } = {}) {
+  const context = validateContext(inputContext, 'isolation');
+  const expected = buildIsolationExpectation({ runId, alias: context.alias });
+  const sameOriginGet = requireFunction(actions?.sameOriginGet, 'sameOriginGet');
+  const firestoreGet = requireFunction(actions?.firestoreGet, 'firestoreGet');
+  const waitForSettled = requireFunction(actions?.waitForSettled, 'waitForSettled');
+  const authenticatedSession = requireText(session, 'session');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
+  const api = [], firestore = [], windows = [], summaries = [];
+  for (const probe of expected.sameOriginApi) {
+    let status;
+    const observedWindow = await observeAction({
+      client, session: authenticatedSession, stage: `isolation-${probe.label}`,
+      action: async () => {
+        status = await sameOriginGet(probe.target, { session: authenticatedSession, method: 'GET', credentials: 'same-origin' });
+        if (!Number.isInteger(status)) throw new Error('Isolation API result must include the complete exact status set.');
+        reportDiagnostic(diagnostic, 'isolation-api-status', 'status-mismatch');
+        if (status !== probe.status) throw new Error(`${probe.label} status must equal ${probe.status}.`);
+      }, terminal: () => waitForSettled(probe.label),
+    });
+    const window = validateActionWindow(observedWindow, {}, diagnostic);
+    reportDiagnostic(diagnostic, 'isolation-session', 'session-missing');
+    if (!window.sessionPresent) {
+      throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
+    }
+    api.push({ ...probe, status }); windows.push(window); summaries.push({ stage: probe.label, status });
+  }
+  for (const probe of expected.directFirestore) {
+    let status;
+    const request = { label: probe.label, path: probe.path, expectedStatus: probe.status };
+    const observedWindow = await observeAction({
+      client, session: authenticatedSession, stage: `isolation-${probe.label}`,
+      action: async () => {
+        status = await firestoreGet(request, { session: authenticatedSession });
+        if (!Number.isInteger(status)) throw new Error('Isolation must include the complete Firestore probe result set.');
+        reportDiagnostic(diagnostic, 'isolation-firestore-status', 'status-mismatch');
+        if (status !== probe.status) throw new Error(`${probe.label} status must equal ${probe.status}.`);
+      }, terminal: () => waitForSettled(probe.label),
+    });
+    const window = validateActionWindow(observedWindow, {}, diagnostic);
+    reportDiagnostic(diagnostic, 'isolation-session', 'session-missing');
+    if (!window.sessionPresent) {
+      throw new Error(`isolation-${probe.label} action window requires an authenticated session.`);
+    }
+    firestore.push({ label: probe.label, path: probe.path, status }); windows.push(window);
+    summaries.push({ stage: probe.label, status });
+  }
+  const oppositeWindows = [windows[1], windows[3], windows[5]];
+  reportDiagnostic(diagnostic, 'isolation-protection', 'protected-activity');
+  validateIsolationResult({
+    ...expected, sameOriginApi: api, directFirestore: firestore,
+    oppositeProtectedRender: oppositeWindows.some(window => window.protectedRender),
+    oppositeListenerStarts: oppositeWindows.reduce((sum, window) => sum + window.protectedListenerStarts, 0),
+  });
+  reportDiagnostic(diagnostic, 'isolation-aggregate', 'aggregate-invalid');
+  return rowFromWindow({
+    context, group: 'isolation', action: 'probe own/opposite team and player boundaries',
+    expectedResult: 'own 200; opposite 403', window: aggregateWindows(windows, {}, diagnostic), visibleState: 'Isolation settled',
+    httpSummary: summaries.map(value => value.status).join(','), actionSummaries: summaries,
+  });
+}
+
+export async function runLogoutScenario({ client, session, freshSession, context: inputContext, actions } = {}) {
+  const context = validateContext(inputContext, 'logout');
+  const sharedSession = requireText(session, 'session');
+  const isolatedSession = requireText(freshSession, 'freshSession');
+  if (isolatedSession === sharedSession) throw new Error('freshSession must be distinct from the shared logout session.');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
+  const stages = [];
+  for (const name of REQUIRED_LOGOUT_STAGES) {
+    if (actions?.selectStage !== undefined) {
+      await requireFunction(actions.selectStage, 'selectStage')(name);
+    }
+    stages.push({
+      name,
+      window: await observeAction({
+        client, session: sharedSession, stage: name, action: requireFunction(actions?.[name], name),
+        terminal: () => requireFunction(actions?.waitForLogin, 'waitForLogin')(name),
+      }),
+    });
+  }
+  const validatedStages = validateLogoutStages(stages, diagnostic).stages;
+  const observedFreshWindow = await observeAction({
+    client, session: isolatedSession, stage: 'fresh-isolated-unauthenticated',
+    action: () => requireFunction(actions?.freshUnauthenticated, 'freshUnauthenticated')('/dashboard'),
+    terminal: requireFunction(actions?.waitForFreshLogin, 'waitForFreshLogin'),
+  });
+  const freshWindow = validateActionWindow(observedFreshWindow, {
+    kind: 'fresh-unauthenticated',
+    policyContext: 'fresh-isolated-unauthenticated',
+  }, diagnostic);
+  const summaries = [
+    ...validatedStages.map(value => ({ stage: value.name, finalPath: value.window.finalPath })),
+    { stage: 'fresh-isolated-unauthenticated', finalPath: freshWindow.finalPath },
+  ];
+  return rowFromWindow({
+    context, group: 'logout',
+    action: 'logout, stale-tab reload, back, second reload, and fresh isolated unauthenticated check',
+    expectedResult: 'login UI and no protected activity in all five actions',
+    window: aggregateWindows([...validatedStages.map(value => value.window), freshWindow], {}, diagnostic),
+    visibleState: 'Sign In', actionSummaries: summaries,
+  });
+}
+
+export async function runFreshUnauthenticatedScenario({ client, session, context: inputContext, actions } = {}) {
+  const context = validateContext(inputContext, 'logout');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
+  const observedWindow = await observeAction({
+    client, session: requireText(session, 'session'), stage: 'fresh-unauthenticated',
+    action: () => requireFunction(actions?.navigate, 'navigate')('/dashboard'),
+    terminal: requireFunction(actions?.waitForLogin, 'waitForLogin'),
+  });
+  const window = validateActionWindow(observedWindow, { kind: 'fresh-unauthenticated' }, diagnostic);
+  return rowFromWindow({
+    context, group: 'logout', action: 'fresh unauthenticated protected-route navigation',
+    expectedResult: 'login UI with no protected activity', window, visibleState: 'Sign In',
+    actionSummaries: [{ stage: 'fresh-unauthenticated', finalPath: window.finalPath }],
+  });
+}
+
+const runPendingRevocation = async ({ client, session, context: inputContext, action, actions, stage, actionLabel, fresh }) => {
+  const context = validateContext(inputContext, 'pending-deletion');
+  const diagnostic = actions?.diagnostic === undefined
+    ? () => {}
+    : requireFunction(actions.diagnostic, 'diagnostic');
+  const observedWindow = await observeAction({
+    client, session: requireText(session, 'session'), stage, action: requireFunction(action, stage),
+    terminal: async () => {
+      await requireFunction(actions?.waitForLogin, 'waitForLogin')(stage, 'Sign In');
+      if (fresh) await requireFunction(actions?.waitForUnavailable, 'waitForUnavailable')(stage, PENDING_UNAVAILABLE_SENTINEL);
+    },
+  });
+  const window = validateActionWindow(
+    observedWindow,
+    { kind: fresh ? 'pending-deletion-fresh' : 'pending-deletion-stale' },
+    diagnostic,
+  );
+  return rowFromWindow({
+    context, group: 'pending-deletion', action: actionLabel,
+    expectedResult: fresh
+      ? 'login UI with generic unavailable message and no protected activity'
+      : 'login UI with no session or protected activity after revocation',
+    window, visibleState: fresh ? PENDING_UNAVAILABLE_SENTINEL : 'Sign In',
+    actionSummaries: [{ stage, finalPath: window.finalPath }],
+  });
+};
+
+export async function runPendingDeletionScenario(options = {}) {
+  const scenario = options.scenario ?? 'fresh-login';
+  if (!PENDING_CASES.includes(scenario)) throw new Error('Unsupported pending-deletion scenario.');
+  if (options.context?.alias !== 'qa-pending-delete') throw new Error('Pending-deletion scenario requires qa-pending-delete.');
+  if (scenario === 'active-baseline') {
+    const context = validateContext(options.context, 'pending-deletion');
+    const diagnostic = options.actions?.diagnostic === undefined
+      ? () => {}
+      : requireFunction(options.actions.diagnostic, 'diagnostic');
+    const observedWindow = await observeAction({
+      client: options.client, session: requireText(options.session, 'session'), stage: 'pending-deletion-active-baseline',
+      action: () => requireFunction(options.actions?.navigate, 'navigate')('/dashboard'),
+      terminal: requireFunction(options.actions?.waitForDashboard, 'waitForDashboard'),
+    });
+    const window = validateLandingWindow(observedWindow, DASHBOARD, { diagnostic });
+    return rowFromWindow({
+      context, group: 'pending-deletion', action: 'record active pending-delete baseline',
+      expectedResult: 'Dashboard with active session before transition', window, visibleState: 'Dashboard',
+      actionSummaries: [{ stage: 'pending-deletion-active-baseline', finalPath: window.finalPath }],
+    });
+  }
+  return runPendingRevocation({
+    ...options, stage: `pending-deletion-${scenario}`,
+    fresh: scenario === 'fresh-login',
+    action: scenario === 'stale-session' ? options.actions?.reloadRevokedSession : options.actions?.freshLogin,
+    actionLabel: scenario === 'stale-session'
+      ? 'reload pre-transition session after pending deletion' : 'fresh pending-deletion login',
+  });
+}
+
+export function buildCanonicalScenarioPlan(options = {}) {
+  if (options.contextIds !== undefined) {
+    if (!Array.isArray(options.contextIds)) throw new Error('contextIds must be an array.');
+    const ids = new Set();
+    for (const id of options.contextIds) {
+      requireText(id, 'contextId');
+      if (ids.has(id)) throw new Error(`Duplicate context ID ${id}.`);
+      ids.add(id);
+    }
+  }
+  const rows = [];
+  for (const [viewportName, viewport] of Object.entries(VIEWPORT_LABELS)) {
+    for (const [alias, contract] of Object.entries(ALIAS_CONTRACTS)) rows.push({
+      contextId: `admission-route-${alias}-${viewportName}`, group: 'admission-route', alias, viewport, viewportName,
+      startState: 'fresh-context', startUrl: 'about:blank', landing: contract.landing,
+      routeExpectations: ROUTE_PATHS.map(requestedPath => {
+        const route = contract.routes[requestedPath];
+        const outcome = route?.allowed === true
+          ? exact(requestedPath, route.sentinel)
+          : contract.deniedLanding ?? contract.landing;
+        return Object.freeze({ requestedPath, allowed: route?.allowed === true, ...outcome });
+      }),
+    });
+    for (const alias of ISOLATION_ALIASES) rows.push({
+      contextId: `isolation-${alias}-${viewportName}`, group: 'isolation', alias, viewport, viewportName,
+      startState: 'authenticated', startUrl: 'about:blank',
+    });
+    for (const alias of LOGOUT_ALIASES) rows.push({
+      contextId: `logout-${alias}-${viewportName}`, group: 'logout', alias, viewport, viewportName,
+      startState: 'authenticated-two-tab', startUrl: 'about:blank',
+    });
+    for (const scenario of PENDING_CASES) rows.push({
+      contextId: `pending-deletion-${scenario}-${viewportName}`, group: 'pending-deletion', alias: 'qa-pending-delete',
+      viewport, viewportName, startState: scenario === 'active-baseline' ? 'active' : 'pending_deletion',
+      startUrl: 'about:blank', scenario,
+    });
+  }
+  const ids = new Set();
+  for (const row of rows) {
+    if (ids.has(row.contextId)) throw new Error(`Duplicate context ID ${row.contextId}.`);
+    ids.add(row.contextId);
+  }
+  if (rows.length !== Object.values(SCENARIO_GROUP_COUNTS).reduce((sum, count) => sum + count, 0)) {
+    throw new Error('Canonical scenario plan arithmetic is incomplete.');
+  }
+  return Object.freeze(rows.map(row => Object.freeze(row)));
+}
