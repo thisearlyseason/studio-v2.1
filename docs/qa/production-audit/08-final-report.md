@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved the three recorded defects; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved four defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -31,8 +31,9 @@ Roles actually exercised were unauthenticated visitor, anonymous Squad Pro demo 
 - BUG-002, P2: At 768×1024, Sports Hub now presents a named compact search control instead of a clipped input.
 - BUG-003, P1: A newly verified zero-team Coach now reaches `/teams/new` rather than being redirected to Join & Invite.
 - BUG-004, P1: The staging Stripe Connect endpoint now receives signed connected-account test events; the superseded endpoint is disabled after verification.
+- BUG-005, P1: Chat notification fan-out and primary PWA identity are repaired on staging; physical Android and iPhone/iPad acceptance remains mandatory before this defect is closed.
 
-Open severity totals: P0 0, P1 0, P2 0, P3 0. Historical resolved findings: P1 2, P2 2.
+Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 2, P2 2.
 
 Post-recovery application console-error count: 0. Unexpected network-failure count: 0. One expected HTML time-format warning was generated deliberately during negative testing. Transient Next.js 500s caused by an identified test-harness build/dev collision were discarded and all affected checks rerun.
 
@@ -53,6 +54,14 @@ This is valid evidence for one verification-email delivery and Coach setup path 
 All provider activity used `the-squad-v2-staging` and Stripe test mode. The standard and Connect handlers rejected malformed signatures with HTTP 400. A signed standard event completed once. The deployed Connect handler completed one signed event and acknowledged its replay as a duplicate. A real connected-account event then exposed that the existing Connect endpoint did not deliver to the staging ledger; BUG-004 was recorded and repaired by creating one supported current Connect endpoint, securely updating the staging signing secret, and deploying build `build-2026-09-03-002`. Real connected-account `payment_intent.created` and `payment_intent.payment_failed` events subsequently completed once in `stripeConnectWebhookEvents`; only the replacement Connect endpoint remains enabled. No live Stripe data, real payment, payout, or customer record was used.
 
 Two verified synthetic Coach owners each created one Starter team. The protected team-chat context endpoint returned HTTP 200 for each owner's own team and HTTP 403 for the other owner's team in both directions. This is narrow, successful tenant-boundary evidence—not complete coverage of all tenant-scoped data or workflows. At 390×844 mobile emulation, the public staging surface had no horizontal overflow or browser console errors and exposed its manifest and service-worker support. A physical device remains required for FCM delivery and full device certification.
+
+## PWA and cross-platform push repair — 2026-09-03
+
+BUG-005 was traced to two independent defects: the team-chat message route stored messages without dispatching any push notification, and the primary application did not register the service worker. The repair adds FCM and standards Web Push device registration, authenticated bounded storage, server-side recipient fan-out after successful chat persistence, active-membership filtering, sender exclusion, provider-expiry cleanup, transport-neutral opt-in/out, and an iPhone/iPad-compatible Push API fallback. The root manifest now identifies The Squad, starts at `/dashboard`, and provides valid 192/512 PNG icons. The root worker precaches only public manifest/icon/offline assets and never caches personalized dashboard or API responses.
+
+Separate staging Web Push VAPID credentials were generated directly into Secret Manager and granted only to the App Hosting backend; no key material was printed or committed. Local `npm run verify` passed 393 application tests, 38 rules tests, typecheck, lint with zero errors, the Next.js production build, and the Functions build. Protected GitHub staging workflow `33757773460` passed verification, infrastructure deployment, rollout, and health checks for commit `a66e8858`. Hosted HTTP checks passed for health, manifest, worker, offline shell, and both icons. A clean Chromium session discovered `/manifest.json`, reported a root-scoped active controlling worker using the staging Firebase configuration, and produced zero console errors or warnings.
+
+This evidence verifies the implementation, deployment path, and hosted PWA resources. It does not substitute for physical Android and iPhone/iPad notification receipt, click-through, opt-out, update, and reinstall behavior. The Push and PWA rows therefore remain `BLOCKED`, and production promotion is not authorized by this report until those device checks pass on the combined release candidate.
 
 ## Blocked and untested depth
 
