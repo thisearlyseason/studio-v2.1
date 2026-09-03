@@ -76,7 +76,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
-import { deleteFCMToken, initFCM } from '@/lib/fcm-client';
+import { deletePushDevice, registerPushDevice } from '@/lib/client-push-registration';
 import { clearBrowserSession } from '@/lib/client-auth';
 import { isStaffPosition } from '@/lib/staff-position';
 import { canManageActiveTeamModules } from '@/lib/team-settings-authority';
@@ -312,7 +312,7 @@ export default function SettingsPage() {
     try {
       // Clean up FCM token before signing out (non-blocking — don't let it prevent logout)
       if (user?.id) {
-        deleteFCMToken(user.id).catch(() => {});
+        deletePushDevice(user.id).catch(() => {});
       }
       await clearBrowserSession();
       await signOut(auth);
@@ -333,9 +333,9 @@ export default function SettingsPage() {
         });
         return;
       }
-      const token = await initFCM(user.id);
+      const transport = await registerPushDevice(user.id);
       setNotificationPermission(Notification.permission);
-      if (!token) {
+      if (!transport) {
         const blocked = Notification.permission === 'denied';
         toast({
           title: blocked ? 'Notifications Blocked' : 'Notifications Could Not Be Enabled',
@@ -367,7 +367,7 @@ export default function SettingsPage() {
 
     setIsNotifLoading(true);
     try {
-      await deleteFCMToken(user.id);
+      await deletePushDevice(user.id);
       setNotifications(false);
       setUpcomingEventNotifications(false);
       await updateUser({

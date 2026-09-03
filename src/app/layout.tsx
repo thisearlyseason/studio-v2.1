@@ -6,6 +6,7 @@ import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { TeamProvider } from '@/components/providers/team-provider';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import BugReporter from '@/components/BugReporter';
+import { AppServiceWorkerRegistration } from '@/components/pwa/AppServiceWorkerRegistration';
 
 // ─── SEO Metadata ────────────────────────────────────────────────────────────
 export const metadata: Metadata = {
@@ -113,6 +114,11 @@ export const metadata: Metadata = {
 
   // ── App Manifest ────────────────────────────────────────────────────────────
   manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'The Squad',
+  },
 
   // ── Verification (add tokens when available) ─────────────────────────────────
   // verification: { google: 'YOUR_GOOGLE_SITE_VERIFICATION_TOKEN' },
@@ -201,6 +207,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen bg-background text-foreground selection:bg-primary/20" suppressHydrationWarning>
         <FirebaseClientProvider>
+          <AppServiceWorkerRegistration />
           <Suspense fallback={null}>
             <TooltipProvider delayDuration={0}>
               <TeamProvider>

@@ -8,6 +8,9 @@ const checker = fileURLToPath(new URL('../scripts/check-production-env.mjs', imp
 const validEnvironment = {
   NEXT_PUBLIC_APP_URL: 'https://www.thesquad.pro',
   NEXT_PUBLIC_FCM_VAPID_KEY: 'public-vapid-key',
+  NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY: 'separate-public-web-push-key',
+  WEB_PUSH_VAPID_PRIVATE_KEY: 'separate-private-web-push-key',
+  WEB_PUSH_VAPID_SUBJECT: 'mailto:push@example.test',
   NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY: 'price_team_monthly',
   NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL: 'price_team_annual',
   NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_MONTHLY: 'price_elite_teams_monthly',
@@ -62,4 +65,16 @@ test('production environment accepts platform identity and keeps owner push opti
   });
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stderr, /OWNER_FCM_TOKEN/);
+});
+
+test('production environment requires separate web push VAPID configuration', () => {
+  const result = runChecker({
+    NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY: '',
+    WEB_PUSH_VAPID_PRIVATE_KEY: '',
+    WEB_PUSH_VAPID_SUBJECT: '',
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY/);
+  assert.match(result.stderr, /WEB_PUSH_VAPID_PRIVATE_KEY/);
+  assert.match(result.stderr, /WEB_PUSH_VAPID_SUBJECT/);
 });

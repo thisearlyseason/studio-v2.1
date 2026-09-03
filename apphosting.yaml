@@ -26,6 +26,19 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  - variable: NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY
+    secret: NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: WEB_PUSH_VAPID_PRIVATE_KEY
+    secret: WEB_PUSH_VAPID_PRIVATE_KEY
+    availability:
+      - RUNTIME
+  - variable: WEB_PUSH_VAPID_SUBJECT
+    secret: WEB_PUSH_VAPID_SUBJECT
+    availability:
+      - RUNTIME
   - variable: NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY
     secret: NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY
     availability:

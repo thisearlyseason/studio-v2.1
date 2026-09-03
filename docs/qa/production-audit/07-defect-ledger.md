@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-03; all four recorded defects are resolved. Provider evidence is recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-03; four defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence is recorded separately from the still-incomplete coverage matrix.
 
 ## BUG-001 — Event deletion has no confirmation (resolved)
 
@@ -68,6 +68,24 @@
 | Fix | Created one new Stripe test-mode Connect endpoint subscribed to the supported Connect event set, securely updated `STRIPE_CONNECT_WEBHOOK_SECRET` in staging, deployed App Hosting build `build-2026-09-03-002`, verified signed delivery, then disabled only the superseded Connect endpoint. |
 | Verification | Staging revision `studio-build-2026-09-03-002` is ready and returns HTTP 200. Standard endpoint remains enabled. The replacement Connect endpoint is enabled; the old Connect endpoint is disabled. |
 | Status | RESOLVED |
+
+## BUG-005 — Chat messages do not notify Android and installed app shows Schedule identity (device verification pending)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Team Chat notifications and PWA installation |
+| Role | Active team member on Android; cross-platform Home Screen user |
+| Page or route | `/chats/[chatId]`, `/api/teams/chat/message`, `/settings`, `/manifest.json`, `/sw.js` |
+| Description | A physical Android test received no notification after another member sent a live chat message. The installed shortcut identified itself as Schedule and did not show the expected Squad icon. |
+| Expected behavior | Other active channel members receive one background notification; the sender does not. Android and iPhone/iPad install The Squad with the Squad icon and open the dashboard. |
+| Actual behavior | The chat write completed without any notification fan-out. Only `/schedule-app` registered the worker globally, and the companion layout carried Schedule-specific Apple metadata. |
+| Reproduction consistency | User-observed on one Android device before repair; code paths deterministically confirmed the missing server send and root worker registration. |
+| Root cause | The chat message route persisted messages but never called notification delivery. The main app did not register `/sw.js`; the worker cached the Schedule companion route and the manifest started at `/`. Firebase JavaScript Messaging also cannot be the sole iPhone/iPad Home Screen transport. |
+| Fix | Added authenticated standards Web Push subscriptions alongside FCM; shared server fan-out; active channel-member resolution with sender exclusion; chat post-write delivery; root worker registration; The Squad manifest identity and icons; a public-only offline shell; and Push API fallback for browsers without Firebase Messaging support. Separate VAPID configuration is mandatory. |
+| Automated verification | Local authoritative `npm run verify` passed: 393 application tests, 38 Firestore/Storage rules tests, app and Functions typechecks, lint with zero errors, and production builds. Protected staging workflow `33759075497` passed verification, infrastructure deployment, App Hosting rollout, and health for combined commit `70cc9737`. Hosted manifest, worker, offline page, and both PNG icons returned HTTP 200; a real Chromium session reported a root-scoped active controlling worker and zero console errors/warnings. |
+| Remaining acceptance | Remove the old Schedule shortcut; install The Squad on physical Android and iPhone/iPad Home Screen; enable Tactical Alerts; confirm receipt and click-through from another current channel member; confirm sender exclusion and opt-out. |
+| Status | FIX DEPLOYED TO STAGING; PHYSICAL DEVICE VERIFICATION REQUIRED |
 
 ## BUG-002 — Sports Hub header search collapses at tablet width (resolved)
 
