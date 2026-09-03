@@ -2,7 +2,23 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-03; eight defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-03; nine defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-010 — Profile-only superadmin can receive private applicant notifications (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Public beta/newsletter submissions — admin notification targeting |
+| Role | Public applicant and global administrator |
+| Page or route | `/api/public/notify-admin` |
+| Description | The notification route selected additional email and FCM recipients by querying user profiles whose Firestore `role` value was `superadmin`. A profile-only fake could therefore receive private applicant details despite being denied the admin route and API. |
+| Expected behavior | Only identities carrying the verified Firebase custom claim contribute administrator email or push destinations. |
+| Actual behavior | Recipient discovery trusted the profile string without checking the Auth claim. |
+| Root cause | Notification delivery had an independent profile-based privilege path outside the central request authorization policy. |
+| Fix | Candidate profiles are now batched through Firebase Auth and only UIDs with the trusted `superadmin` custom claim contribute normalized email or bounded FCM tokens. The fixed operational inbox remains the fallback. |
+| Verification | The regression first failed because no trusted-target filter existed, then passed 2/2 with the fake profile's email/token excluded and malformed target values rejected. Typecheck passed and scoped lint reported zero errors. |
+| Status | RESOLVED |
 
 ## BUG-009 — Local browser audit cannot connect to enabled Firebase emulators (resolved)
 

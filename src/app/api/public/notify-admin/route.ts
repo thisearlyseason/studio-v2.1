@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 import { Resend } from 'resend';
-import { adminDb, ensureAdminInit } from '@/lib/firebase-admin';
+import { adminDb, ensureAdminInit, getAdminAuth } from '@/lib/firebase-admin';
 import { escapeHtml } from '@/lib/html-escape';
+import { collectTrustedAdminTargets } from '@/lib/trusted-admin-targets';
 import {
   enforcePublicRateLimit,
   readJsonBodyWithLimit,
@@ -11,8 +12,6 @@ import {
 } from '@/lib/server-request-guards';
 
 const FROM = 'The Squad Pro <noreply@thesquad.pro>';
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
-
 function getResend() {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error('RESEND_API_KEY env var not set');
@@ -98,23 +97,29 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Fetch all Super Admins
-    const adminsSnap = await db.collection('users').where('role', '==', 'superadmin').get();
+    const adminsSnap = await db.collection('users').where('role', '==', 'superadmin').limit(100).get();
     if (adminsSnap.empty) {
       console.warn('[Notify Admin] No superadmin users found in database.');
     }
 
     const adminEmails = new Set<string>(['team@thesquad.pro']);
     const fcmTokens: string[] = [];
-
-    adminsSnap.docs.forEach(doc => {
-      const data = doc.data();
-      if (typeof data.email === 'string' && EMAIL_PATTERN.test(data.email.trim())) {
-        adminEmails.add(data.email.trim().toLowerCase());
-      }
-      if (Array.isArray(data.fcmTokens)) {
-        fcmTokens.push(...data.fcmTokens);
-      }
-    });
+    if (!adminsSnap.empty) {
+      const claimResults = await getAdminAuth().getUsers(
+        adminsSnap.docs.map(document => ({ uid: document.id })),
+      );
+      const trustedUids = new Set(
+        claimResults.users
+          .filter(user => user.customClaims?.role === 'superadmin')
+          .map(user => user.uid),
+      );
+      const trustedTargets = collectTrustedAdminTargets(
+        adminsSnap.docs.map(document => ({ uid: document.id, ...document.data() })),
+        trustedUids,
+      );
+      for (const emailAddress of trustedTargets.emails) adminEmails.add(emailAddress);
+      fcmTokens.push(...trustedTargets.tokens);
+    }
 
     // 3. Prepare Notification Content
     const title = type === 'beta' ? 'New Beta Application! 🚀' : 'New Newsletter Signup! 🏆';
