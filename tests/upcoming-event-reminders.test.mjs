@@ -84,10 +84,10 @@ test('push opt-in is branded, explicit, and registers the device through a prote
 
   assert.match(settings, /The Squad wants to send you notifications/);
   assert.match(settings, /Allow Notifications/);
-  assert.match(settings, /await initFCM\(user\.id\)/);
+  assert.match(settings, /await registerPushDevice\(user\.id\)/);
   assert.doesNotMatch(provider, /initFCM/);
   assert.match(client, /\/api\/notifications\/device/);
-  assert.match(client, /serviceWorkerUrl\(\)/);
+  assert.match(client, /registerPrimaryServiceWorker/);
   assert.doesNotMatch(client, /updateDoc\(doc\(db, 'users'/);
   assert.match(deviceRoute, /verifyFirebaseToken/);
   assert.match(deviceRoute, /assertNonAnonymous/);
