@@ -9,11 +9,25 @@ import { pathToFileURL } from 'node:url';
 
 import { buildFixtureCatalog, inspectFixtureMedia } from './certification/fixture-catalog.mjs';
 
-const PROJECT_ID = 'demo-the-squad-audit';
-const BASE_URL = 'http://127.0.0.1:9001';
-const FIXTURE_RUN_SUFFIX = 'phase2';
+export function resolveAuditRuntimeConfiguration({ environment = process.env, argv = process.argv.slice(2) } = {}) {
+  return {
+    projectId: environment.AUDIT_FIREBASE_PROJECT_ID || 'demo-the-squad-audit',
+    baseUrl: environment.AUDIT_BASE_URL || 'http://127.0.0.1:9001',
+    fixtureRunSuffix: environment.AUDIT_FIXTURE_RUN_SUFFIX || 'phase2',
+    browserSessionPrefix: environment.AUDIT_BROWSER_SESSION_PREFIX || 'phase2',
+    certificationIdentity: argv.includes('--certification-identity'),
+    runBrowser: argv.includes('--browser'),
+  };
+}
+
+const runtimeConfiguration = resolveAuditRuntimeConfiguration();
+const PROJECT_ID = runtimeConfiguration.projectId;
+const BASE_URL = runtimeConfiguration.baseUrl;
+const FIXTURE_RUN_SUFFIX = runtimeConfiguration.fixtureRunSuffix;
+const BROWSER_SESSION_PREFIX = runtimeConfiguration.browserSessionPrefix;
 const FIXTURES = buildFixtureCatalog(FIXTURE_RUN_SUFFIX);
-const runBrowser = process.argv.includes('--browser');
+const runBrowser = runtimeConfiguration.runBrowser;
+const certificationIdentity = runtimeConfiguration.certificationIdentity;
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const teamSwitchOnly = process.argv.includes('--team-switch-only');
 const alertsOnly = process.argv.includes('--alerts-only');
@@ -112,6 +126,13 @@ export function buildBlockedAuditPlan(blockedAliases) {
     api: Object.freeze(entries),
     browser: Object.freeze(entries.filter(identity => identity.browserPath && identity.browserTitle)),
   });
+}
+
+export function buildIdentityApiTargets(fixtures) {
+  const teamAId = fixtures.teams.find(team => team.alias === 'qa-team-a')?.id;
+  const teamBId = fixtures.teams.find(team => team.alias === 'qa-team-b')?.id;
+  if (!teamAId || !teamBId) throw new Error('Identity API audit requires Team A and Team B fixture IDs.');
+  return Object.freeze({ teamAId, teamBId });
 }
 
 const BLOCKED_AUDIT_PLAN = buildBlockedAuditPlan(FIXTURES.blockedAliases);
@@ -221,8 +242,12 @@ function cli(session, args, { sensitive = false } = {}) {
   return output;
 }
 
+function browserSessionName(label) {
+  return `${BROWSER_SESSION_PREFIX}-${label}`;
+}
+
 async function browserLogin(alias, expectedPath, sessionLabel = alias) {
-  const session = `phase2-${sessionLabel}`;
+  const session = browserSessionName(sessionLabel);
   cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
   const code = `async page => {
     const consoleErrors = [];
@@ -284,7 +309,7 @@ function browserRouteAudit(session, pathname, { mobile = false } = {}) {
 }
 
 function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expectedTitle, sessionLabel) {
-  const session = `phase2-${sessionLabel}-${process.pid}`;
+  const session = browserSessionName(`${sessionLabel}-${process.pid}`);
   cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
   const code = `async page => {
     const consoleErrors = [];
@@ -316,7 +341,7 @@ function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expecte
 }
 
 function browserProtectedReturnAudit() {
-  const session = `phase2-protected-return-${process.pid}`;
+  const session = browserSessionName(`protected-return-${process.pid}`);
   cli(session, ['open', `${BASE_URL}/facilities`, '--browser', 'chrome']);
   const code = `async page => {
     await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
@@ -1422,6 +1447,7 @@ function assertAlertsAudit(result) {
 
 async function runApiAudit() {
   const tokens = new Map();
+  const { teamAId, teamBId } = buildIdentityApiTargets(FIXTURES);
   for (const alias of FIXTURES.activeAliases) {
     const result = await signIn(alias);
     expectEqual(result.status, 200, `${alias} emulator sign-in`);
@@ -1456,27 +1482,27 @@ async function runApiAudit() {
   }
 
   expectEqual(
-    await apiStatus('/api/teams/chat?teamId=qa-team-a', tokens.get('qa-coach-owner-a')),
+    await apiStatus(`/api/teams/chat?teamId=${teamAId}`, tokens.get('qa-coach-owner-a')),
     200,
     'Team A owner reads Team A chat context',
   );
   expectEqual(
-    await apiStatus('/api/teams/chat?teamId=qa-team-b', tokens.get('qa-coach-owner-a')),
+    await apiStatus(`/api/teams/chat?teamId=${teamBId}`, tokens.get('qa-coach-owner-a')),
     403,
     'Team A owner denied Team B chat context',
   );
   expectEqual(
-    await apiStatus('/api/teams/chat?teamId=qa-team-a', tokens.get('qa-coach-owner-b')),
+    await apiStatus(`/api/teams/chat?teamId=${teamAId}`, tokens.get('qa-coach-owner-b')),
     403,
     'Team B owner denied Team A chat context',
   );
   expectEqual(
-    await apiStatus('/api/teams/chat?teamId=qa-team-a', tokens.get('qa-removed-member')),
+    await apiStatus(`/api/teams/chat?teamId=${teamAId}`, tokens.get('qa-removed-member')),
     403,
     'removed member denied former team context',
   );
   expectEqual(
-    await apiStatus('/api/teams/chat?teamId=qa-team-a', tokens.get('qa-pending-delete')),
+    await apiStatus(`/api/teams/chat?teamId=${teamAId}`, tokens.get('qa-pending-delete')),
     403,
     'deletion-pending account denied server API',
   );
@@ -1591,6 +1617,11 @@ async function runApiAudit() {
 
 async function runBrowserAudit() {
   if (!playwrightCli) throw new Error('PLAYWRIGHT_CLI is required with --browser.');
+  if (certificationIdentity) {
+    await runIdentityBrowserAudit();
+    await runSurfaceSmokeAudit({ remainderOnly: true });
+    return;
+  }
   if (workflowChatProbeOnly) {
     await runChatProbeAudit();
     return;
@@ -1722,7 +1753,7 @@ async function main() {
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
+  if (certificationIdentity || (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly)) await runApiAudit();
   if (runBrowser) await runBrowserAudit();
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
 }

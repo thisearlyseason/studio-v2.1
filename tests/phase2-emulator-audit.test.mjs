@@ -10,6 +10,43 @@ const { processEnv, resetEnv } = nextEnvironment;
 
 const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
 
+test('certification identity mode accepts a unique local scope without changing legacy defaults', () => {
+  const configured = auditRunner.resolveAuditRuntimeConfiguration({
+    environment: {
+      AUDIT_FIREBASE_PROJECT_ID: 'demo-task3-certification',
+      AUDIT_FIXTURE_RUN_SUFFIX: 't3-20260904-180000-a1',
+      AUDIT_BASE_URL: 'http://127.0.0.1:9001',
+      AUDIT_BROWSER_SESSION_PREFIX: 'cert-final-cert-t3-20260904-180000-a1-identity',
+    },
+    argv: ['--certification-identity', '--browser'],
+  });
+  assert.deepEqual(configured, {
+    projectId: 'demo-task3-certification',
+    baseUrl: 'http://127.0.0.1:9001',
+    fixtureRunSuffix: 't3-20260904-180000-a1',
+    browserSessionPrefix: 'cert-final-cert-t3-20260904-180000-a1-identity',
+    certificationIdentity: true,
+    runBrowser: true,
+  });
+
+  assert.deepEqual(auditRunner.resolveAuditRuntimeConfiguration({ environment: {}, argv: [] }), {
+    projectId: 'demo-the-squad-audit',
+    baseUrl: 'http://127.0.0.1:9001',
+    fixtureRunSuffix: 'phase2',
+    browserSessionPrefix: 'phase2',
+    certificationIdentity: false,
+    runBrowser: false,
+  });
+});
+
+test('identity API targets follow uniquely scoped fixture team IDs', () => {
+  const catalog = buildFixtureCatalog('t3-identity-target-a1');
+  assert.deepEqual(auditRunner.buildIdentityApiTargets(catalog), {
+    teamAId: 'qa-team-a-t3-identity-target-a1',
+    teamBId: 'qa-team-b-t3-identity-target-a1',
+  });
+});
+
 test('emulator audit creates runtime-only credentials and redacts failures', () => {
   assert.match(source, /randomBytes\(24\)/);
   assert.match(source, /replaceAll\(password, '\[redacted\]'\)/);

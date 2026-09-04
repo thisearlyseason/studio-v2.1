@@ -38,9 +38,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { formatDistanceToNow, format } from 'date-fns';
 import { useTeam } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
+import { formatFeedDistance } from '@/lib/feed-date';
 import {
   Tooltip,
   TooltipContent,
@@ -84,7 +84,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId, onDeleteComment }
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-[10px] font-black tracking-tight truncate max-w-[120px]">{comment.authorName}</span>
               <div className="flex items-center gap-2">
-                <span className="text-[9px] text-muted-foreground whitespace-nowrap">{formatDistanceToNow(new Date(comment.createdAt))} ago</span>
+                <span className="text-[9px] text-muted-foreground whitespace-nowrap">{formatFeedDistance(comment.createdAt)}</span>
                 {(isAdmin || comment.authorId === currentUserId) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -411,7 +411,7 @@ export default function FeedPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-black text-sm lg:text-base tracking-tight truncate">{post.author?.name}</div>
                   <div className="text-[8px] lg:text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-0.5 lg:mt-1">
-                    {formatDistanceToNow(new Date(post.createdAt))} ago
+                    {formatFeedDistance(post.createdAt)}
                   </div>
                 </div>
                 {(isAdmin || post.authorId === user?.id) && (
