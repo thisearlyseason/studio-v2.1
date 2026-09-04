@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved nineteen defects, retired one rejected feature, and obtained physical Android closed-app push, tap-through, dot, and adaptive-icon acceptance for BUG-005; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved twenty defects, retired one rejected feature, and obtained physical Android closed-app push, tap-through, dot, and adaptive-icon acceptance for BUG-005; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -49,8 +49,15 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-018, P2: Facility enrollment cannot submit until both required trimmed fields are present.
 - BUG-019, P2: Every icon-only facility edit action now has a facility-specific accessible name.
 - BUG-020, P1: Assigned equipment cannot be deleted until all assignments have been returned.
+- BUG-021, P1: Hosted anonymous-demo cleanup now validates the configured public origin instead of App Hosting's internal proxy origin.
 
-Open severity totals: P0 0, P1 0, P2 0, P3 0. Historical findings addressed: P1 10 resolved, P2 9 resolved and 1 retired.
+Open severity totals: P0 0, P1 0, P2 0, P3 0. Historical findings addressed: P1 11 resolved, P2 9 resolved and 1 retired.
+
+## Exact-candidate staging and live-demo follow-up — 2026-09-04
+
+Protected release gate `33909495858` passed all application, Functions, rules, and production-dependency jobs for commit `ffcf5c9b20f13c95d081cf1b1d6a763c0c72cbfe`. Protected staging workflow `33909834915` then verified and deployed indexes, Functions, Firestore/Storage rules, and the exact App Hosting commit; no-cache health reported revision `studio-build-2026-09-04-011`. The manifest and service worker returned HTTP 200, and invalid Stripe standard, Stripe Connect, and Resend webhook signatures each returned HTTP 400. Read-only provider probes confirmed the configured Stripe account and all ten required prices are active test-mode resources; the Resend credential is valid and its only configured domain is verified.
+
+Fresh hosted Playwright opened two independent anonymous browser sessions. Squad Pro produced `Apex Demo Squad`; the player persona produced `Strikers`. Both dashboards loaded with distinct anonymous identities and zero application console errors. The coach traversed Team Chat into a seeded conversation, which rendered safely on desktop and at 390×844 with no horizontal overflow. Immediate cleanup then returned HTTP 403 for both otherwise valid same-origin sessions, exposing BUG-021. The regression was written first, failed for the proxy-origin comparison, and passed after the route adopted the configured trusted-origin guard. The repaired candidate must complete a new exact-commit staging deployment and cleanup retest before the live demo is publishable.
 
 ## Final remaining-only local run — 2026-09-04
 

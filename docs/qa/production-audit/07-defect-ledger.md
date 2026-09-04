@@ -2,7 +2,23 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-04; nineteen defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-04; twenty defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-021 — Hosted demo cleanup rejects its own public origin (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Anonymous live demo — immediate cleanup |
+| Role | Anonymous demo visitor |
+| Page or route | `/api/demo/exit` |
+| Description | A same-site cleanup request from the hosted App Hosting domain returned HTTP 403 after a demo session. |
+| Expected behavior | Same-origin anonymous demos can delete their disposable workspace immediately; foreign origins remain denied. |
+| Actual behavior | The route compared the browser `Origin` header with `request.nextUrl.origin`, which reflects the internal proxy origin in App Hosting rather than the configured public origin. |
+| Root cause | The CSRF boundary trusted proxy-derived URL state instead of the configured application origin already used by server request guards. |
+| Fix | Demo cleanup now compares the request origin with `getTrustedAppOrigin(request)`, retaining production configured-origin and local-development loopback restrictions. |
+| Verification | The regression was observed failing before the repair and passing after it. Hosted Playwright retest is recorded in `runs/2026-09-04T170500Z/04-hosted-live-demo.md`. |
+| Status | RESOLVED |
 
 ## BUG-020 — Assigned equipment can be deleted (resolved)
 
