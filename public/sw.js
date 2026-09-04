@@ -1,13 +1,14 @@
 // The Squad service worker: public PWA shell plus standards Web Push.
-const CACHE_NAME = 'the-squad-shell-v7';
+const CACHE_NAME = 'the-squad-shell-v8';
 const SCHEDULE_SHELL_URL = '/schedule-app';
 const SHELL_URLS = [
   SCHEDULE_SHELL_URL,
   '/offline.html',
   '/manifest.json',
-  '/app-icon-192-v4.png',
-  '/app-icon-512-v4.png',
-  '/app-icon-maskable-512-v4.png',
+  '/app-icon-192-v5.png',
+  '/app-icon-512-v5.png',
+  '/app-icon-maskable-192-v5.png',
+  '/app-icon-maskable-512-v5.png',
   '/notification-badge.png',
 ];
 
@@ -62,7 +63,7 @@ self.addEventListener('fetch', (event) => {
 function showSquadNotification({ title, body, imageUrl, url, tag }) {
   return self.registration.showNotification(title || 'The Squad', {
     body: body || '',
-    icon: '/app-icon-192-v4.png',
+    icon: '/app-icon-192-v5.png',
     badge: '/notification-badge.png',
     image: imageUrl || undefined,
     data: { url: typeof url === 'string' && url.startsWith('/') ? url : '/dashboard' },

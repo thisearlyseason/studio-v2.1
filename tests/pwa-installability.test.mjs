@@ -35,10 +35,12 @@ test('manifest ships consistent full-frame regular and dedicated maskable artwor
   const manifest = JSON.parse(await source('../public/manifest.json'));
   const regular192 = manifest.icons.find(icon => icon.sizes === '192x192' && icon.purpose === 'any');
   const regular512 = manifest.icons.find(icon => icon.sizes === '512x512' && icon.purpose === 'any');
+  const maskable192 = manifest.icons.find(icon => icon.sizes === '192x192' && icon.purpose === 'maskable');
   const maskable512 = manifest.icons.find(icon => icon.sizes === '512x512' && icon.purpose === 'maskable');
 
   assert.ok(regular192);
   assert.ok(regular512);
+  assert.ok(maskable192);
   assert.ok(maskable512);
 
   const root = new URL('../public/', import.meta.url);
@@ -57,7 +59,7 @@ test('manifest ships consistent full-frame regular and dedicated maskable artwor
   assert.equal(maskableMetadata.height, 512);
 });
 
-test('install artwork reaches every canvas corner without a baked-in white frame', async () => {
+test('install artwork fills every canvas corner with visible grass instead of a baked-in frame', async () => {
   const manifest = JSON.parse(await source('../public/manifest.json'));
   const root = new URL('../public/', import.meta.url);
 
@@ -78,8 +80,8 @@ test('install artwork reaches every canvas corner without a baked-in white frame
       const green = data[offset + 1];
       const blue = data[offset + 2];
       assert.ok(
-        red < 245 || green < 245 || blue < 245,
-        `${icon.src} has a white canvas corner that Android will render as an inset square`
+        green >= 30 && green > red && green > blue,
+        `${icon.src} has a dark or neutral canvas corner that Android will render as an inset square`
       );
     }
   }
@@ -88,14 +90,15 @@ test('install artwork reaches every canvas corner without a baked-in white frame
 test('all browser and operating-system icon discovery paths use full-frame artwork', async () => {
   const layout = await source('../src/app/layout.tsx');
   assert.doesNotMatch(layout, /favicon-192\.png|favicon-512\.png|favicon\.ico/);
-  assert.match(layout, /app-icon-192-v4\.png/);
-  assert.match(layout, /app-icon-512-v4\.png/);
+  assert.match(layout, /app-icon-192-v5\.png/);
+  assert.match(layout, /app-icon-512-v5\.png/);
+  assert.doesNotMatch(layout, /app-icon-(?:192|512)-v4\.png/);
 
   const root = new URL('../public/', import.meta.url);
   for (const path of ['favicon-192.png', '../src/app/icon.png', '../src/app/apple-icon.png']) {
     const sourcePath = fileURLToPath(new URL(path, root));
     const metadata = await sharp(sourcePath).metadata();
-    const expected = await sharp(fileURLToPath(new URL('app-icon-512-v4.png', root)))
+    const expected = await sharp(fileURLToPath(new URL('app-icon-512-v5.png', root)))
       .resize(metadata.width, metadata.height)
       .removeAlpha()
       .raw()
@@ -170,6 +173,7 @@ test('web push displays a dedicated monochrome notification badge', async () => 
   });
   await completion;
 
+  assert.equal(notification.options.icon, '/app-icon-192-v5.png');
   assert.equal(notification.options.badge, '/notification-badge.png');
   const { width, height, hasAlpha, channels } = await sharp(fileURLToPath(
     new URL('../public/notification-badge.png', import.meta.url),
