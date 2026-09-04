@@ -8,6 +8,7 @@ import {
   isSensitiveDashboardPath,
   type DashboardAccessProfile,
 } from '@/lib/dashboard-route-policy';
+import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 
 export const SESSION_COOKIE_NAME = '__session';
 
@@ -33,6 +34,7 @@ export async function requireDashboardSession(pathname: string): Promise<void> {
   const snapshot = await adminDb.collection('users').doc(decoded.uid).get();
   const profile = snapshot.exists ? snapshot.data() as DashboardAccessProfile : null;
   if (!profile) redirect('/onboarding');
+  if (isAccountAccessBlocked(profile)) redirect(invalidSessionPath(pathname));
   const decision = authorizeDashboardRoute(pathname, profile, decoded.role);
   if (!decision.allowed) redirect(decision.redirectTo);
 }

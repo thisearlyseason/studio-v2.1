@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminAuth } from '@/lib/firebase-admin';
 import { deleteAnonymousDemo } from '@/lib/server-demo-cleanup';
+import { getTrustedAppOrigin } from '@/lib/server-request-guards';
 
 const SESSION_COOKIE = '__session';
 
@@ -17,7 +18,7 @@ function clearedSessionCookie(response: NextResponse) {
 
 export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin');
-  if (origin && origin !== request.nextUrl.origin) {
+  if (origin && origin !== getTrustedAppOrigin(request)) {
     return NextResponse.json({ error: 'Cross-origin demo cleanup is not allowed.' }, { status: 403 });
   }
 

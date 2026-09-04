@@ -1,11 +1,11 @@
 'use client';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { syncFromFirestore, SyncEvent, SyncResult } from './sync';
+import { syncFromFirestore, SyncEvent, SyncResult, watchScheduleUser } from './sync';
+import { loadScopedTodos, saveScopedTodos, type ScheduleTodo } from './storage';
 
-const TODO_KEY = 'squad_schedule_todos';
 const THEME_KEY = 'squad_schedule_theme';
 
-interface TodoItem { id: string; text: string; dueDate: string; completed: boolean; createdAt: string; }
+type TodoItem = ScheduleTodo;
 type Tab = 'schedule' | 'todos';
 type Theme = 'dark' | 'light';
 
@@ -40,6 +40,8 @@ export default function ScheduleApp() {
   const [tab, setTab] = useState<Tab>('schedule');
   const [events, setEvents] = useState<SyncEvent[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [storageUserId, setStorageUserId] = useState('');
+  const [todosHydrated, setTodosHydrated] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
@@ -67,6 +69,10 @@ export default function ScheduleApp() {
       setSyncSource(result.source);
       if (result.teamName) setTeamName(result.teamName);
       if (result.teamId) setSyncTeamId(result.teamId);
+      if (!result.userId) {
+        setStorageUserId('');
+        setTodos([]);
+      }
       if (result.error) setSyncError(result.error);
       setLastSync(new Date().toLocaleTimeString());
     } finally {
@@ -79,22 +85,33 @@ export default function ScheduleApp() {
     try {
       const t = localStorage.getItem(THEME_KEY) as Theme;
       if (t === 'light' || t === 'dark') setTheme(t);
-      const saved = localStorage.getItem(TODO_KEY);
-      if (saved) setTodos(JSON.parse(saved));
     } catch {}
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
     const h = (e: Event) => { e.preventDefault(); setInstallPrompt(e); };
     window.addEventListener('beforeinstallprompt', h);
     window.addEventListener('appinstalled', () => setInstalled(true));
     if (window.matchMedia('(display-mode: standalone)').matches) setInstalled(true);
+    const unsubscribeAuth = watchScheduleUser(user => {
+      setTodosHydrated(false);
+      if (!user) {
+        setStorageUserId('');
+        setTodos([]);
+      } else {
+        setTodos(loadScopedTodos(localStorage, user.uid));
+        setStorageUserId(user.uid);
+      }
+      setTodosHydrated(true);
+    });
     doSync();
-    return () => window.removeEventListener('beforeinstallprompt', h);
+    return () => {
+      unsubscribeAuth();
+      window.removeEventListener('beforeinstallprompt', h);
+    };
   }, [doSync]);
 
   useEffect(() => {
-    if (!mounted) return;
-    try { localStorage.setItem(TODO_KEY, JSON.stringify(todos)); } catch {}
-  }, [todos, mounted]);
+    if (!mounted || !todosHydrated || !storageUserId) return;
+    try { saveScopedTodos(localStorage, storageUserId, todos); } catch {}
+  }, [todos, mounted, storageUserId, todosHydrated]);
 
   const toggleTheme = () => {
     const next: Theme = theme === 'dark' ? 'light' : 'dark';

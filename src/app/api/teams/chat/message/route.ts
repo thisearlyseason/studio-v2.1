@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { findActiveTeamMember } from '@/lib/server-team-access';
+import { sendNotificationToUsers } from '@/lib/server-notification-delivery';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
       chatRef.get(),
       adminDb.collection('users').doc(auth.uid).get(),
     ]);
-    const chatMembers = Array.isArray(chat.data()?.memberIds) ? chat.data()?.memberIds : [];
+    const chatMembers: unknown[] = Array.isArray(chat.data()?.memberIds) ? chat.data()?.memberIds : [];
     const isOwner = team.data()?.ownerUserId === auth.uid;
     const isSuperAdmin = auth.role === 'superadmin';
     const activeMembership = isOwner || isSuperAdmin
@@ -86,7 +87,44 @@ export async function POST(req: NextRequest) {
       createdAt,
     });
     await chatRef.set({ lastMessage: content || (type === 'poll' ? 'New poll' : 'Shared an image'), lastMessageAt: createdAt }, { merge: true });
-    return NextResponse.json({ ok: true, messageId: messageRef.id });
+    const chatRecipientIds = chatMembers.filter(
+      (memberId): memberId is string => typeof memberId === 'string' && memberId !== auth.uid
+    );
+    const channelName = typeof chat.data()?.name === 'string'
+      ? chat.data()!.name.trim().slice(0, 100) || 'Team Chat'
+      : 'Team Chat';
+    let notificationResult = {
+      fcmSuccessCount: 0,
+      fcmFailureCount: 0,
+      webPushSuccessCount: 0,
+      webPushFailureCount: 0,
+    };
+    try {
+      const members = await Promise.all(
+        chatRecipientIds.map(memberId => findActiveTeamMember(teamId, memberId))
+      );
+      const recipientUserIds = members.flatMap((member, index) => {
+        if (!member) return [];
+        const linkedUserId = member.data.userId;
+        const resolvedUserId = typeof linkedUserId === 'string' && linkedUserId.trim()
+          ? linkedUserId.trim()
+          : chatRecipientIds[index];
+        return resolvedUserId && resolvedUserId !== auth.uid ? [resolvedUserId] : [];
+      });
+      notificationResult = await sendNotificationToUsers({
+        recipientUserIds,
+        title: `New message in ${channelName}`,
+        body: content || (type === 'poll' ? 'New poll' : 'Shared an image'),
+        url: `/chats/${chatId}`,
+      });
+    } catch (error) {
+      console.warn('[Chat Push] Delivery failed:', error instanceof Error ? error.message : 'unknown error');
+    }
+    return NextResponse.json({
+      ok: true,
+      messageId: messageRef.id,
+      notification: notificationResult,
+    });
   } catch (error) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

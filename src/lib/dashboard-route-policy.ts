@@ -4,6 +4,8 @@ export type DashboardAccessProfile = {
   planId?: string | null;
   activePlanId?: string | null;
   isPrimaryClubAuthority?: boolean;
+  accountStatus?: unknown;
+  deletionStatus?: unknown;
 };
 
 type RouteDecision =
@@ -34,8 +36,15 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
 }
 
 function normalizedRole(profile: DashboardAccessProfile | null, claimsRole?: unknown): string {
-  const claim = typeof claimsRole === 'string' ? claimsRole : '';
-  return String(claim || profile?.role || '').trim().toLowerCase();
+  const claim = typeof claimsRole === 'string' ? claimsRole.trim().toLowerCase() : '';
+  const profileRole = String(profile?.role || '').trim().toLowerCase();
+
+  // Platform-wide superadmin authority is valid only when Firebase Auth signed
+  // the custom claim. A Firestore profile is user-associated data and must not
+  // be able to promote itself into the global administration surface.
+  if (claim === 'superadmin') return claim;
+  if (profileRole === 'superadmin') return '';
+  return claim || profileRole;
 }
 
 function normalizedPlan(profile: DashboardAccessProfile | null): string {

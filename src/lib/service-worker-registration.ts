@@ -8,3 +8,13 @@ export async function waitForActiveServiceWorker<T extends RegistrationWithActiv
 ): Promise<T> {
   return registration.active ? registration : ready;
 }
+
+export async function registerPrimaryServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+
+  const registration = await navigator.serviceWorker.register('/sw.js', {
+    scope: '/',
+    updateViaCache: 'none',
+  });
+  return waitForActiveServiceWorker(registration, navigator.serviceWorker.ready);
+}

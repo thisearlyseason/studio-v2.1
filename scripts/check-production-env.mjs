@@ -1,6 +1,9 @@
 const required = [
   'NEXT_PUBLIC_APP_URL',
   'NEXT_PUBLIC_FCM_VAPID_KEY',
+  'NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY',
+  'WEB_PUSH_VAPID_PRIVATE_KEY',
+  'WEB_PUSH_VAPID_SUBJECT',
   'NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY',
   'NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL',
   'NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_MONTHLY',
@@ -113,6 +116,17 @@ for (const name of ['STRIPE_WEBHOOK_SECRET', 'STRIPE_CONNECT_WEBHOOK_SECRET']) {
 const resendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET?.trim();
 if (resendWebhookSecret && !resendWebhookSecret.startsWith('whsec_')) {
   invalid.push('RESEND_WEBHOOK_SECRET has an unexpected format');
+}
+
+const webPushSubject = process.env.WEB_PUSH_VAPID_SUBJECT?.trim();
+if (webPushSubject && !/^(mailto:|https:\/\/)/i.test(webPushSubject)) {
+  invalid.push('WEB_PUSH_VAPID_SUBJECT must be a mailto: or HTTPS contact URI');
+}
+
+const fcmVapidPublicKey = process.env.NEXT_PUBLIC_FCM_VAPID_KEY?.trim();
+const webPushVapidPublicKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim();
+if (fcmVapidPublicKey && webPushVapidPublicKey && fcmVapidPublicKey === webPushVapidPublicKey) {
+  invalid.push('NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY must be distinct from NEXT_PUBLIC_FCM_VAPID_KEY');
 }
 
 const newsletterUnsubscribeSecret = process.env.NEWSLETTER_UNSUBSCRIBE_SECRET?.trim();

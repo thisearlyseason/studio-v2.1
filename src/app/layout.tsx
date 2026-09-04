@@ -6,6 +6,7 @@ import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { TeamProvider } from '@/components/providers/team-provider';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import BugReporter from '@/components/BugReporter';
+import { AppServiceWorkerRegistration } from '@/components/pwa/AppServiceWorkerRegistration';
 
 // ─── SEO Metadata ────────────────────────────────────────────────────────────
 export const metadata: Metadata = {
@@ -103,16 +104,20 @@ export const metadata: Metadata = {
   // ── Icons ───────────────────────────────────────────────────────────────────
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/favicon-192.png', type: 'image/png', sizes: '192x192' },
-      { url: '/favicon-512.png', type: 'image/png', sizes: '512x512' },
+      { url: '/app-icon-192-v5.png', type: 'image/png', sizes: '192x192' },
+      { url: '/app-icon-512-v5.png', type: 'image/png', sizes: '512x512' },
     ],
-    apple: [{ url: '/favicon-192.png', sizes: '192x192', type: 'image/png' }],
-    shortcut: '/favicon.ico',
+    apple: [{ url: '/app-icon-192-v5.png', sizes: '192x192', type: 'image/png' }],
+    shortcut: '/app-icon-192-v5.png',
   },
 
   // ── App Manifest ────────────────────────────────────────────────────────────
   manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'The Squad',
+  },
 
   // ── Verification (add tokens when available) ─────────────────────────────────
   // verification: { google: 'YOUR_GOOGLE_SITE_VERIFICATION_TOKEN' },
@@ -138,7 +143,7 @@ const organizationSchema = {
   '@type': 'Organization',
   name: 'The Squad',
   url: 'https://www.thesquad.pro',
-  logo: 'https://www.thesquad.pro/favicon-512.png',
+  logo: 'https://www.thesquad.pro/app-icon-512-v5.png',
   contactPoint: {
     '@type': 'ContactPoint',
     email: 'team@thesquad.pro',
@@ -201,6 +206,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen bg-background text-foreground selection:bg-primary/20" suppressHydrationWarning>
         <FirebaseClientProvider>
+          <AppServiceWorkerRegistration />
           <Suspense fallback={null}>
             <TooltipProvider delayDuration={0}>
               <TeamProvider>

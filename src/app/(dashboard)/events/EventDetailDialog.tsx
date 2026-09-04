@@ -29,6 +29,16 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { 
   Tooltip,
   TooltipContent,
@@ -98,6 +108,7 @@ export function EventDetailDialog({
   const { user, exportAttendanceCSV, myChildren, isParent, isPlayer, teams, getMember, games, isStaff, claimAssignment, activeTeam } = useTeam();
   const router = useRouter();
   const db = useFirestore();
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = React.useState(false);
 
   const registrationsQuery = useMemoFirebase(() => {
     const eventTeamId = event.teamId || activeTeam?.id;
@@ -303,7 +314,7 @@ export function EventDetailDialog({
                     <Button variant="secondary" className="flex-1 rounded-2xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Activity</Button>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button aria-label={`Delete ${event.title}`} variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => onDelete(event.id)}>
+                        <Button aria-label={`Delete ${event.title}`} variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => setDeleteConfirmationOpen(true)}>
                           <Trash2 className="h-5 w-5" />
                         </Button>
                       </TooltipTrigger>
@@ -686,6 +697,22 @@ export function EventDetailDialog({
             })()}
           </div>
         </div>
+        <AlertDialog open={deleteConfirmationOpen} onOpenChange={setDeleteConfirmationOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Activity?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <strong>{event.title}</strong> will be permanently removed from the team schedule. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => onDelete(event.id)}>
+                Delete Activity
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

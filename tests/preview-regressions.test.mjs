@@ -26,6 +26,16 @@ test('facility management remains owner-scoped for super admins', async () => {
   );
 });
 
+test('facility enrollment cannot submit before both required fields are present', async () => {
+  const source = await readSource('../src/app/(dashboard)/facilities/page.tsx');
+  assert.match(source, /disabled=\{isProcessing \|\| !newFac\.name\.trim\(\) \|\| !newFac\.address\.trim\(\)\}/);
+});
+
+test('facility edit control has an accessible name', async () => {
+  const source = await readSource('../src/app/(dashboard)/facilities/page.tsx');
+  assert.match(source, /aria-label=\{`Edit \$\{facility\.name\}`\}/);
+});
+
 test('unused facility deletion scans owner schedules without collection-group indexes', async () => {
   const source = await readSource('../src/app/api/facilities/delete/route.ts');
 
@@ -578,6 +588,7 @@ test('the Elfsight chatbot and beta reporter are restricted to the landing page'
   assert.match(landing, /<LandingChatbot/);
   assert.match(chatbot, /Elfsight mounts parts of the widget directly under <body>/);
   assert.match(chatbot, /iframe\[src\*="elfsight"\]/);
+  assert.doesNotMatch(chatbot, /data-elfsight-app-lazy/);
   assert.match(reporter, /pathname !== '\/'/);
   assert.doesNotMatch(dashboardLayout, /LandingChatbot|elfsight/);
 });

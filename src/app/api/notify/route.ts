@@ -3,6 +3,7 @@ import { verifyFirebaseToken } from '@/lib/api-auth';
 import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin'; // Ensures admin app is initialized
 import { findActiveTeamMember, getTeamAuthority } from '@/lib/server-team-access';
+import { sendNotificationToUsers } from '@/lib/server-notification-delivery';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Topic notifications are restricted to trusted server callers.' }, { status: 403 });
     }
 
-    let tokens: string[] = [];
+    let allowedRecipientUserIds: string[] = [];
     if (!isInternal) {
       if (recipientUserIds.length > 500) return NextResponse.json({ error: 'Too many recipients.' }, { status: 400 });
       const authority = await getTeamAuthority(teamId, authResult!.uid, authResult!.role);
@@ -79,24 +80,27 @@ export async function POST(req: NextRequest) {
       if (members.some(member => !member)) {
         return NextResponse.json({ error: 'Recipients must be current team members.' }, { status: 403 });
       }
-      const allowedRecipientUserIds = [...new Set(members.map((member, index) => {
+      allowedRecipientUserIds = [...new Set(members.map((member, index) => {
         const linkedUserId = member?.data.userId;
         return typeof linkedUserId === 'string' && linkedUserId.trim()
           ? linkedUserId.trim()
           : uniqueRecipients[index];
       }))];
-      const userSnaps = await Promise.all(allowedRecipientUserIds.map(id => adminDb.collection('users').doc(id).get()));
-      tokens = userSnaps.flatMap(snap => {
-        const user = snap.data();
-        if (user?.notificationsEnabled === false) return [];
-        const savedTokens = user?.fcmTokens;
-        return Array.isArray(savedTokens) ? savedTokens.filter((token: unknown): token is string => typeof token === 'string') : [];
+      const result = await sendNotificationToUsers({
+        recipientUserIds: allowedRecipientUserIds,
+        title: title.trim(),
+        body: msgBody.trim(),
+        url,
+        imageUrl,
       });
+      return NextResponse.json({ ok: true, ...result });
     }
     if (isInternal && !topic && !Array.isArray(body.tokens)) {
       return NextResponse.json({ error: 'tokens[] or topic is required' }, { status: 400 });
     }
-    if (isInternal && Array.isArray(body.tokens)) tokens = body.tokens.filter((token: unknown): token is string => typeof token === 'string');
+    const tokens = Array.isArray(body.tokens)
+      ? body.tokens.filter((token: unknown): token is string => typeof token === 'string')
+      : [];
     if (!tokens.length && !topic) {
       return NextResponse.json({ ok: true, successCount: 0, failureCount: 0 });
     }
@@ -110,8 +114,8 @@ export async function POST(req: NextRequest) {
 
     const webpush: admin.messaging.WebpushConfig = {
       notification: {
-        icon: '/favicon-192.png',
-        badge: '/favicon-192.png',
+        icon: '/app-icon-192-v3.png',
+        badge: '/notification-badge.png',
         ...(url ? { clickAction: url } : {}),
       },
       fcmOptions: url ? { link: url } : undefined,

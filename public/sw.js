@@ -1,24 +1,24 @@
-// The Squad Pro — Service Worker
-// Handles: schedule-app offline caching + FCM push notifications
-
-// ── 1. App Shell Cache ───────────────────────────────────────────────────────
-const CACHE_NAME = 'squad-schedule-v2';
+// The Squad service worker: public PWA shell plus standards Web Push.
+const CACHE_NAME = 'the-squad-shell-v9';
+const SCHEDULE_SHELL_URL = '/schedule-app';
 const SHELL_URLS = [
-  '/schedule-app',
+  SCHEDULE_SHELL_URL,
+  '/offline.html',
   '/manifest.json',
+  '/app-icon-192-v5.png',
+  '/app-icon-512-v5.png',
+  '/notification-badge.png',
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)));
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
@@ -26,78 +26,82 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/schedule-app') || url.pathname === '/manifest.json') {
+  const requestedUrl = new URL(event.request.url);
+  if (requestedUrl.origin === self.location.origin && requestedUrl.pathname.startsWith('/_next/static/')) {
     event.respondWith(
-      caches.match(event.request).then((cached) => {
-        const networkFetch = fetch(event.request)
-          .then((response) => {
-            if (response && response.status === 200) {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        const response = await fetch(event.request);
+        if (response.ok) await cache.put(event.request, response.clone());
+        return response;
+      })
+    );
+    return;
+  }
+  if (event.request.mode === 'navigate') {
+    if (requestedUrl.origin === self.location.origin && requestedUrl.pathname === SCHEDULE_SHELL_URL) {
+      event.respondWith(
+        fetch(event.request)
+          .then(async (response) => {
+            if (response.ok) {
+              const cache = await caches.open(CACHE_NAME);
+              await cache.put(SCHEDULE_SHELL_URL, response.clone());
             }
             return response;
           })
-          .catch(() => cached);
-        return cached || networkFetch;
-      })
-    );
+          .catch(async () => (await caches.match(SCHEDULE_SHELL_URL)) || caches.match('/offline.html'))
+      );
+      return;
+    }
+    event.respondWith(fetch(event.request).catch(() => caches.match('/offline.html')));
   }
 });
 
-// ── 2. FCM Push Notification Handler ────────────────────────────────────────
-// Firebase Messaging SDK uses the service worker to deliver push messages
-// when the app is backgrounded or closed.
-importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
-
-const fallbackFirebaseConfig = {
-  apiKey: 'AIzaSyA8G2_7gu0WK8efQ9sl7UJG6tsrC7iOCdU',
-  authDomain: 'studio-6850142148-fe343.firebaseapp.com',
-  projectId: 'studio-6850142148-fe343',
-  storageBucket: 'studio-6850142148-fe343.firebasestorage.app',
-  messagingSenderId: '61782012212',
-  appId: '1:61782012212:web:8913d2b40fd9843148f561',
-};
-
-let firebaseConfig = fallbackFirebaseConfig;
-try {
-  const configured = new URL(self.location.href).searchParams.get('firebaseConfig');
-  if (configured) firebaseConfig = JSON.parse(configured);
-} catch {
-  // Keep the production fallback if a stale or malformed registration is found.
-}
-firebase.initializeApp(firebaseConfig);
-
-const messaging = firebase.messaging();
-
-// Background message handler — shows the notification when app is not in focus
-messaging.onBackgroundMessage((payload) => {
-  const { title, body, image } = payload.notification ?? {};
-  const url = payload.fcmOptions?.link || '/';
-
-  self.registration.showNotification(title || 'The Squad Pro', {
+function showSquadNotification({ title, body, imageUrl, url, tag }) {
+  return self.registration.showNotification(title || 'The Squad', {
     body: body || '',
-    icon: '/favicon-192.png',
-    badge: '/favicon-192.png',
-    image: image || undefined,
-    data: { url },
-    // Group notifications by topic so they don't stack endlessly
-    tag: payload.collapseKey || 'squad-notification',
+    icon: '/app-icon-192-v5.png',
+    badge: '/notification-badge.png',
+    image: imageUrl || undefined,
+    data: { url: typeof url === 'string' && url.startsWith('/') ? url : '/dashboard' },
+    tag: tag || 'squad-notification',
     renotify: true,
     requireInteraction: false,
     silent: false,
   });
+}
+
+// Browser-native Web Push is the only PWA transport. A single transport avoids
+// Firebase token lifecycle conflicts with the browser's PushSubscription.
+self.addEventListener('push', (event) => {
+  event.waitUntil(
+    (async () => {
+      let payload;
+      try {
+        payload = event.data?.json();
+      } catch {
+        return;
+      }
+      const webPush = payload?.webPush;
+      if (!webPush || typeof webPush !== 'object') return;
+      await showSquadNotification({
+        title: typeof webPush.title === 'string' ? webPush.title : 'The Squad',
+        body: typeof webPush.body === 'string' ? webPush.body : '',
+        imageUrl: typeof webPush.imageUrl === 'string' ? webPush.imageUrl : undefined,
+        url: typeof webPush.url === 'string' ? webPush.url : '/dashboard',
+        tag: 'squad-web-push',
+      });
+    })()
+  );
 });
 
-// Notification click — open/focus the app and navigate to the relevant URL
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
+  const targetUrl = event.notification.data?.url || '/dashboard';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // If a window is already open, focus it and navigate
       for (const client of windowClients) {
         if ('focus' in client) {
           client.focus();
@@ -105,7 +109,6 @@ self.addEventListener('notificationclick', (event) => {
           return;
         }
       }
-      // Otherwise open a new window
       if (clients.openWindow) return clients.openWindow(targetUrl);
     })
   );

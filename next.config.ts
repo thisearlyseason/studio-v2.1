@@ -1,5 +1,11 @@
 import type {NextConfig} from 'next';
 
+const localEmulatorConnectSources =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true'
+    ? ' http://127.0.0.1:8080 http://127.0.0.1:9099 http://127.0.0.1:9199 http://localhost:8080 http://localhost:9099 http://localhost:9199'
+    : '';
+
 /** Security headers applied to every response. */
 const securityHeaders = [
   // Prevent browsers from guessing MIME type — blocks MIME-sniffing attacks
@@ -34,7 +40,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host",
       "media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app",
       // Stripe Connect needs several stripe.com subdomains for its onboarding iframe/XHR
-      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org",
+      `connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org${localEmulatorConnectSources}`,
       // Stripe Connect onboarding is iframe-based
       "frame-src 'self' https://*.firebaseapp.com js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com",
       "worker-src 'self' blob:",

@@ -144,7 +144,9 @@ test('anonymous demos survive reloads and clean up abandoned sessions with the s
   assert.doesNotMatch(layout, /navigator\.sendBeacon\('\/api\/demo\/exit'\)/);
   assert.match(layout, /isDemoInitializing \|\|\s+isSeedingDemo \|\|\s+!userProfile\?\.isDemo/);
   assert.match(layout, /user\?\.isAnonymous/);
-  assert.match(endpoint, /origin !== request\.nextUrl\.origin/);
+  assert.match(endpoint, /getTrustedAppOrigin/);
+  assert.match(endpoint, /origin !== getTrustedAppOrigin\(request\)/);
+  assert.doesNotMatch(endpoint, /origin !== request\.nextUrl\.origin/);
   assert.match(endpoint, /verifySessionCookie\(sessionCookie, true\)/);
   assert.match(endpoint, /sign_in_provider !== 'anonymous'/);
   assert.match(provider, /firebaseUser\?\.isAnonymous && localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);

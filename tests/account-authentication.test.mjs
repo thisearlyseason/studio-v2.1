@@ -70,6 +70,19 @@ test('unverified accounts do not start protected Firestore profile listeners', a
   assert.match(provider, /claimPendingSchoolInvites[\s\S]*firebaseUser\.emailVerified !== true/);
 });
 
+test('blocked accounts cannot hydrate protected data or remain Firebase-authenticated on login', async () => {
+  const [provider, login] = await Promise.all([
+    source('../src/components/providers/team-provider.tsx'),
+    source('../src/app/login/page.tsx'),
+  ]);
+
+  assert.match(provider, /isAuthGatePath/);
+  assert.match(provider, /claimPendingSchoolInvites[\s\S]*isAuthGatePath/);
+  assert.match(provider, /userRef[\s\S]*isAuthGatePath/);
+  assert.match(provider, /teamsQuery[\s\S]*!isAuthGatePath/);
+  assert.match(login, /establishBrowserSession\(user\)[\s\S]*catch[\s\S]*clearBrowserSession\(\)[\s\S]*signOut\(auth\)/);
+});
+
 test('verification-email route reports provider configuration failures without a generic 500', async () => {
   const route = await source('../src/app/api/email/verify-email/route.ts');
 

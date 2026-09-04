@@ -340,6 +340,19 @@ function AuthorizedEquipmentPage() {
     }
   };
 
+  const handleDeleteItem = async (item: EquipmentItem) => {
+    try {
+      await deleteEquipmentItem(item.id);
+      toast({ title: 'Asset Removed', description: `${item.name} was removed from the vault.` });
+    } catch (error: any) {
+      toast({
+        title: 'Asset Still Assigned',
+        description: error?.message || 'Return all assignments before deleting this asset.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -506,7 +519,7 @@ function AuthorizedEquipmentPage() {
                   >
                     <UserPlus className="h-4 w-4 mr-2" /> Assign to Player
                   </Button>
-                  <Button aria-label={`Delete ${item.name}`} variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteEquipmentItem(item.id)}>
+                  <Button aria-label={`Delete ${item.name}`} variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => handleDeleteItem(item)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </CardFooter>

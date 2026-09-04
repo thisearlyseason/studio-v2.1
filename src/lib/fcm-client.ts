@@ -7,24 +7,11 @@
  */
 
 import { getApp } from 'firebase/app';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging';
 import { getAuth } from 'firebase/auth';
-import { waitForActiveServiceWorker } from '@/lib/service-worker-registration';
+import { registerPrimaryServiceWorker } from '@/lib/service-worker-registration';
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_FCM_VAPID_KEY;
-
-function serviceWorkerUrl() {
-  const options = getApp().options;
-  const config = {
-    apiKey: options.apiKey,
-    authDomain: options.authDomain,
-    projectId: options.projectId,
-    storageBucket: options.storageBucket,
-    messagingSenderId: options.messagingSenderId,
-    appId: options.appId,
-  };
-  return `/sw.js?firebaseConfig=${encodeURIComponent(JSON.stringify(config))}`;
-}
 
 async function updateRegisteredDevice(
   token: string,
@@ -55,6 +42,7 @@ export async function initFCM(userId: string): Promise<string | null> {
   if (!('Notification' in window)) return null;
 
   try {
+    if (!(await isSupported())) return null;
     const currentUser = getAuth(getApp()).currentUser;
     if (!currentUser || currentUser.uid !== userId) return null;
 
@@ -68,14 +56,8 @@ export async function initFCM(userId: string): Promise<string | null> {
     const messaging = getMessaging(app);
 
     // Register service worker for FCM
-    const installingRegistration = await navigator.serviceWorker.register(serviceWorkerUrl(), {
-      scope: '/',
-      updateViaCache: 'none',
-    });
-    const registration = await waitForActiveServiceWorker(
-      installingRegistration,
-      navigator.serviceWorker.ready
-    );
+    const registration = await registerPrimaryServiceWorker();
+    if (!registration) return null;
 
     const token = await getToken(messaging, {
       ...(VAPID_KEY ? { vapidKey: VAPID_KEY } : {}),
@@ -101,6 +83,7 @@ export async function initFCM(userId: string): Promise<string | null> {
 export async function deleteFCMToken(userId: string): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
+    if (!(await isSupported())) return;
     const app = getApp();
     if (getAuth(app).currentUser?.uid !== userId) return;
     const messaging = getMessaging(app);

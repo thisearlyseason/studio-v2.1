@@ -3,7 +3,7 @@ import test from 'node:test';
 
 const serviceWorkerModule = await import('../src/lib/service-worker-registration.ts').catch(() => ({}));
 
-test('FCM waits for an active service worker before subscribing for a token', async () => {
+test('push registration waits for an active service worker before subscribing', async () => {
   assert.equal(
     typeof serviceWorkerModule.waitForActiveServiceWorker,
     'function',
@@ -30,4 +30,12 @@ test('FCM waits for an active service worker before subscribing for a token', as
 
   markReady(activeRegistration);
   assert.equal(await resultPromise, activeRegistration);
+});
+
+test('primary service worker has one stable URL without embedded Firebase credentials', async () => {
+  const source = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(new URL('../src/lib/service-worker-registration.ts', import.meta.url), 'utf8')
+  );
+  assert.match(source, /register\('\/sw\.js'/);
+  assert.doesNotMatch(source, /firebaseConfig|FirebaseOptions/);
 });

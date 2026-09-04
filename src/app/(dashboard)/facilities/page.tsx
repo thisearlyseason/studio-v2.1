@@ -297,7 +297,7 @@ function EditFacilityDialog({ facility }: { facility: Facility }) {
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/5 rounded-xl h-10 w-10">
+            <Button aria-label={`Edit ${facility.name}`} variant="ghost" size="icon" className="text-primary hover:bg-primary/5 rounded-xl h-10 w-10">
               <Pencil className="h-4 w-4" />
             </Button>
           </DialogTrigger>
@@ -381,7 +381,7 @@ function AuthorizedFacilityManagementPage() {
   if (!isStaff) return <AccessRestricted type="role" />;
 
   const handleAddFacility = async () => {
-    if (!newFac.name || !newFac.address) return;
+    if (!newFac.name.trim() || !newFac.address.trim()) return;
     setIsProcessing(true);
     await addFacility(newFac);
     setNewFac({ name: '', address: '', notes: '' });
@@ -465,11 +465,11 @@ function AuthorizedFacilityManagementPage() {
                     </AlertDescription>
                   </Alert>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Venue Name</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Venue Name *</Label>
                     <Input placeholder="e.g. Metro Sports Complex" value={newFac.name} onChange={e => setNewFac({...newFac, name: e.target.value})} className="h-14 rounded-2xl font-bold border-2" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Physical Address</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Physical Address *</Label>
                     <LocationAutocomplete
                       value={newFac.address}
                       onChange={(val) => setNewFac({...newFac, address: val})}
@@ -483,7 +483,7 @@ function AuthorizedFacilityManagementPage() {
                   </div>
                 </div>
                 <DialogFooter className="pt-4">
-                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddFacility} disabled={isProcessing || !newFac.name}>
+                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddFacility} disabled={isProcessing || !newFac.name.trim() || !newFac.address.trim()}>
                     {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Commit Facility Enrollment"}
                   </Button>
                 </DialogFooter>
