@@ -13,6 +13,15 @@ test('team chat sends only to other channel members', async () => {
   assert.match(chat, /notification: notificationResult/);
   assert.match(sender, /sendEachForMulticast/);
   assert.match(sender, /webpush\.sendNotification/);
+  assert.match(sender, /TTL:\s*3_600/);
+  assert.match(sender, /app-icon-192-v4\.png/);
+});
+
+test('device API can atomically retire all legacy FCM registrations for the signed-in user', async () => {
+  const deviceRoute = await source('../src/app/api/notifications/device/route.ts');
+  assert.match(deviceRoute, /clearLegacyFcmRegistrations/);
+  assert.match(deviceRoute, /notificationDeviceTokens/);
+  assert.match(deviceRoute, /fcmTokens:\s*\[\]/);
 });
 
 test('notify route keeps authorization before shared delivery', async () => {

@@ -1,12 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
 import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 import { hasStaffRole } from '@/lib/staff-position';
+import { registerPushDevice } from '@/lib/client-push-registration';
 
 /**
  * Dispatch push + email notifications to all team members.
@@ -1086,6 +1087,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [claimedSchoolAdminForUid, setClaimedSchoolAdminForUid] = useState<string | null>(null);
+  const pushRegistrationAttemptedForUid = useRef<string | null>(null);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -1217,6 +1219,30 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       } as unknown as UserProfile);
     });
   }, [firebaseUser, db, userRole]);
+
+  useEffect(() => {
+    if (
+      !userProfile?.id ||
+      !userProfile.notificationsEnabled ||
+      typeof window === 'undefined' ||
+      !('Notification' in window) ||
+      Notification.permission !== 'granted' ||
+      pushRegistrationAttemptedForUid.current === userProfile.id
+    ) {
+      return;
+    }
+
+    pushRegistrationAttemptedForUid.current = userProfile.id;
+    void registerPushDevice(userProfile.id).then(transport => {
+      if (!transport) pushRegistrationAttemptedForUid.current = null;
+    }).catch(error => {
+      pushRegistrationAttemptedForUid.current = null;
+      console.warn(
+        '[Web Push] Automatic device registration failed:',
+        error instanceof Error ? error.message : 'unknown error'
+      );
+    });
+  }, [userProfile?.id, userProfile?.notificationsEnabled]);
 
   const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);

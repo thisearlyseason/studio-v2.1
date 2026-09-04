@@ -39,7 +39,11 @@ async function authenticate(req: NextRequest) {
   return rateLimit || auth;
 }
 
-type DeviceRequest = { token?: unknown; subscription?: unknown };
+type DeviceRequest = {
+  token?: unknown;
+  subscription?: unknown;
+  clearLegacyFcmRegistrations?: unknown;
+};
 
 function savedWebPushSubscriptions(value: unknown): WebPushSubscriptionRecord[] {
   if (!Array.isArray(value)) return [];
@@ -124,6 +128,20 @@ async function registerWebPushSubscription(
   });
 }
 
+async function clearLegacyFcmRegistrations(uid: string): Promise<void> {
+  const userRef = adminDb.collection('users').doc(uid);
+  const [userSnapshot, deviceSnapshots] = await Promise.all([
+    userRef.get(),
+    adminDb.collection('notificationDeviceTokens').where('userId', '==', uid).get(),
+  ]);
+  if (!userSnapshot.exists) throw new Error('PROFILE_MISSING');
+
+  const batch = adminDb.batch();
+  batch.update(userRef, { fcmTokens: [] });
+  deviceSnapshots.docs.forEach(deviceSnapshot => batch.delete(deviceSnapshot.ref));
+  await batch.commit();
+}
+
 export async function POST(req: NextRequest) {
   const auth = await authenticate(req);
   if (auth instanceof NextResponse) return auth;
@@ -156,8 +174,16 @@ export async function DELETE(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { token, subscription } = await readJsonBodyWithLimit<DeviceRequest>(req, 12_000);
+    const { token, subscription, clearLegacyFcmRegistrations: clearLegacy } =
+      await readJsonBodyWithLimit<DeviceRequest>(req, 12_000);
     const normalizedSubscription = normalizeWebPushSubscription(subscription);
+    if (clearLegacy === true) {
+      if (token !== undefined || subscription !== undefined) {
+        return NextResponse.json({ error: 'Submit one notification removal operation.' }, { status: 400 });
+      }
+      await clearLegacyFcmRegistrations(auth.uid);
+      return NextResponse.json({ success: true });
+    }
     if (validToken(token) === Boolean(normalizedSubscription)) {
       return NextResponse.json({ error: 'Submit one valid notification device.' }, { status: 400 });
     }

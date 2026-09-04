@@ -2,10 +2,11 @@
 
 import { getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { deleteFCMToken, initFCM } from '@/lib/fcm-client';
 import { registerPrimaryServiceWorker } from '@/lib/service-worker-registration';
 
-export type PushTransport = 'fcm' | 'web-push';
+export type PushTransport = 'web-push';
+
+const WEB_PUSH_MIGRATION_KEY = 'the_squad_web_push_v1';
 
 function decodeVapidPublicKey(value: string | undefined): ArrayBuffer | null {
   if (!value) return null;
@@ -44,10 +45,36 @@ async function updateWebPushSubscription(
   if (!response.ok) throw new Error('Unable to register this device for notifications.');
 }
 
-export async function registerPushDevice(userId: string): Promise<PushTransport | null> {
-  const fcmToken = await initFCM(userId);
-  if (fcmToken) return 'fcm';
+async function clearLegacyFcmRegistrations(userId: string): Promise<void> {
+  const currentUser = getAuth(getApp()).currentUser;
+  if (!currentUser || currentUser.uid !== userId) {
+    throw new Error('A signed-in account is required.');
+  }
 
+  const migrationKey = `${WEB_PUSH_MIGRATION_KEY}:${userId}`;
+  if (localStorage.getItem(migrationKey) === 'complete') return;
+
+  const idToken = await currentUser.getIdToken();
+  const response = await fetch('/api/notifications/device', {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ clearLegacyFcmRegistrations: true }),
+  });
+  if (!response.ok) throw new Error('Unable to migrate this device to Web Push.');
+
+  const existingRegistration = await navigator.serviceWorker.getRegistration('/');
+  const existingSubscription = await existingRegistration?.pushManager.getSubscription();
+  if (existingSubscription) {
+    await updateWebPushSubscription(userId, existingSubscription.toJSON(), 'DELETE').catch(() => {});
+    await existingSubscription.unsubscribe();
+  }
+  localStorage.setItem(migrationKey, 'complete');
+}
+
+export async function registerPushDevice(userId: string): Promise<PushTransport | null> {
   if (
     typeof window === 'undefined' ||
     !('Notification' in window) ||
@@ -62,6 +89,7 @@ export async function registerPushDevice(userId: string): Promise<PushTransport 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return null;
 
+  await clearLegacyFcmRegistrations(userId);
   const registration = await registerPrimaryServiceWorker();
   if (!registration) return null;
 
@@ -86,5 +114,8 @@ export async function deleteWebPushSubscription(userId: string): Promise<void> {
 }
 
 export async function deletePushDevice(userId: string): Promise<void> {
-  await Promise.allSettled([deleteFCMToken(userId), deleteWebPushSubscription(userId)]);
+  await Promise.allSettled([
+    clearLegacyFcmRegistrations(userId),
+    deleteWebPushSubscription(userId),
+  ]);
 }

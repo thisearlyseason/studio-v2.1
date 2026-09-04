@@ -104,12 +104,11 @@ export const metadata: Metadata = {
   // ── Icons ───────────────────────────────────────────────────────────────────
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/favicon-192.png', type: 'image/png', sizes: '192x192' },
-      { url: '/favicon-512.png', type: 'image/png', sizes: '512x512' },
+      { url: '/app-icon-192-v4.png', type: 'image/png', sizes: '192x192' },
+      { url: '/app-icon-512-v4.png', type: 'image/png', sizes: '512x512' },
     ],
-    apple: [{ url: '/favicon-192.png', sizes: '192x192', type: 'image/png' }],
-    shortcut: '/favicon.ico',
+    apple: [{ url: '/app-icon-192-v4.png', sizes: '192x192', type: 'image/png' }],
+    shortcut: '/app-icon-192-v4.png',
   },
 
   // ── App Manifest ────────────────────────────────────────────────────────────
@@ -144,7 +143,7 @@ const organizationSchema = {
   '@type': 'Organization',
   name: 'The Squad',
   url: 'https://www.thesquad.pro',
-  logo: 'https://www.thesquad.pro/favicon-512.png',
+  logo: 'https://www.thesquad.pro/app-icon-512-v4.png',
   contactPoint: {
     '@type': 'ContactPoint',
     email: 'team@thesquad.pro',

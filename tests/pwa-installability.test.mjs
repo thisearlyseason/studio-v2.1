@@ -14,7 +14,7 @@ test('root application registers The Squad service worker', async () => {
   const manifest = JSON.parse(await source('../public/manifest.json'));
   assert.match(layout, /AppServiceWorkerRegistration/);
   assert.match(registration, /registerPrimaryServiceWorker/);
-  assert.match(registrationHelper, /navigator\.serviceWorker\.register\(workerUrl, \{[\s\S]*scope: '\/'/);
+  assert.match(registrationHelper, /navigator\.serviceWorker\.register\('\/sw\.js', \{[\s\S]*scope: '\/'/);
   assert.equal(manifest.name, 'The Squad');
   assert.equal(manifest.start_url, '/dashboard');
   assert.equal(manifest.id, '/');
@@ -27,7 +27,8 @@ test('worker never caches authenticated dashboard HTML', async () => {
   assert.match(worker, /event\.request\.mode === 'navigate'/);
   assert.doesNotMatch(worker, /cache\.addAll\(\[[^\]]*'\/dashboard'/);
   assert.match(worker, /payload\?\.webPush/);
-  assert.match(worker, /messaging\.onBackgroundMessage/);
+  assert.doesNotMatch(worker, /firebase-messaging/);
+  assert.doesNotMatch(worker, /messaging\.onBackgroundMessage/);
 });
 
 test('manifest ships consistent full-frame regular and dedicated maskable artwork', async () => {
@@ -84,7 +85,31 @@ test('install artwork reaches every canvas corner without a baked-in white frame
   }
 });
 
-test('notification click behavior is registered before Firebase messaging loads', async () => {
+test('all browser and operating-system icon discovery paths use full-frame artwork', async () => {
+  const layout = await source('../src/app/layout.tsx');
+  assert.doesNotMatch(layout, /favicon-192\.png|favicon-512\.png|favicon\.ico/);
+  assert.match(layout, /app-icon-192-v4\.png/);
+  assert.match(layout, /app-icon-512-v4\.png/);
+
+  const root = new URL('../public/', import.meta.url);
+  for (const path of ['favicon-192.png', '../src/app/icon.png', '../src/app/apple-icon.png']) {
+    const sourcePath = fileURLToPath(new URL(path, root));
+    const metadata = await sharp(sourcePath).metadata();
+    const expected = await sharp(fileURLToPath(new URL('app-icon-512-v4.png', root)))
+      .resize(metadata.width, metadata.height)
+      .removeAlpha()
+      .raw()
+      .toBuffer();
+    const actual = await sharp(sourcePath).removeAlpha().raw().toBuffer();
+    const meanDifference = actual.reduce(
+      (sum, value, index) => sum + Math.abs(value - expected[index]),
+      0,
+    ) / actual.length;
+    assert.ok(meanDifference < 2, `${path} still advertises inset artwork`);
+  }
+});
+
+test('notification click behavior is registered by the standards-only worker', async () => {
   const worker = await source('../public/sw.js');
   const order = [];
   const context = {
@@ -108,10 +133,8 @@ test('notification click behavior is registered before Firebase messaging loads'
 
   vm.runInNewContext(worker, context);
 
-  assert.ok(
-    order.indexOf('listener:notificationclick') < order.indexOf('firebase-import'),
-    'the app click handler must exist before Firebase Messaging can install its fallback handler'
-  );
+  assert.ok(order.includes('listener:notificationclick'));
+  assert.ok(!order.includes('firebase-import'));
 });
 
 test('web push displays a dedicated monochrome notification badge', async () => {

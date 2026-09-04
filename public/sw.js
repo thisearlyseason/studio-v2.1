@@ -1,13 +1,13 @@
-// The Squad service worker: public PWA shell plus FCM and standards Web Push.
-const CACHE_NAME = 'the-squad-shell-v6';
+// The Squad service worker: public PWA shell plus standards Web Push.
+const CACHE_NAME = 'the-squad-shell-v7';
 const SCHEDULE_SHELL_URL = '/schedule-app';
 const SHELL_URLS = [
   SCHEDULE_SHELL_URL,
   '/offline.html',
   '/manifest.json',
-  '/app-icon-192-v3.png',
-  '/app-icon-512-v3.png',
-  '/app-icon-maskable-512-v3.png',
+  '/app-icon-192-v4.png',
+  '/app-icon-512-v4.png',
+  '/app-icon-maskable-512-v4.png',
   '/notification-badge.png',
 ];
 
@@ -62,7 +62,7 @@ self.addEventListener('fetch', (event) => {
 function showSquadNotification({ title, body, imageUrl, url, tag }) {
   return self.registration.showNotification(title || 'The Squad', {
     body: body || '',
-    icon: '/app-icon-192-v3.png',
+    icon: '/app-icon-192-v4.png',
     badge: '/notification-badge.png',
     image: imageUrl || undefined,
     data: { url: typeof url === 'string' && url.startsWith('/') ? url : '/dashboard' },
@@ -73,7 +73,8 @@ function showSquadNotification({ title, body, imageUrl, url, tag }) {
   });
 }
 
-// Standards Web Push payloads are explicitly marked so they never duplicate FCM.
+// Browser-native Web Push is the only PWA transport. A single transport avoids
+// Firebase token lifecycle conflicts with the browser's PushSubscription.
 self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
@@ -96,8 +97,6 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Firebase Messaging can install its own click handler during import, so the
-// application's route-aware handler must be registered first.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = event.notification.data?.url || '/dashboard';
@@ -115,42 +114,3 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
-
-// Firebase Messaging only supports a subset of browser environments. Keeping
-// its setup guarded lets standards Web Push continue to work where FCM cannot.
-try {
-  importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
-  importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
-
-  const fallbackFirebaseConfig = {
-    apiKey: 'AIzaSyA8G2_7gu0WK8efQ9sl7UJG6tsrC7iOCdU',
-    authDomain: 'studio-6850142148-fe343.firebaseapp.com',
-    projectId: 'studio-6850142148-fe343',
-    storageBucket: 'studio-6850142148-fe343.firebasestorage.app',
-    messagingSenderId: '61782012212',
-    appId: '1:61782012212:web:8913d2b40fd9843148f561',
-  };
-
-  let firebaseConfig = fallbackFirebaseConfig;
-  try {
-    const configured = new URL(self.location.href).searchParams.get('firebaseConfig');
-    if (configured) firebaseConfig = JSON.parse(configured);
-  } catch {
-    // A stale registration uses the fallback config until the client refreshes it.
-  }
-
-  firebase.initializeApp(firebaseConfig);
-  const messaging = firebase.messaging();
-  messaging.onBackgroundMessage((payload) => {
-    const { title, body, image } = payload.notification ?? {};
-    return showSquadNotification({
-      title,
-      body,
-      imageUrl: image,
-      url: payload.fcmOptions?.link || '/dashboard',
-      tag: payload.collapseKey || 'squad-notification',
-    });
-  });
-} catch {
-  console.warn('[FCM] Service worker initialization skipped.');
-}

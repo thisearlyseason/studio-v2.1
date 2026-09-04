@@ -94,7 +94,7 @@ async function sendFcmNotifications(
   if (input.imageUrl) notification.imageUrl = input.imageUrl;
   const webpushConfig: admin.messaging.WebpushConfig = {
     notification: {
-      icon: '/app-icon-192-v3.png',
+      icon: '/app-icon-192-v4.png',
       badge: '/notification-badge.png',
       ...(input.url ? { clickAction: input.url } : {}),
     },
@@ -129,7 +129,7 @@ async function sendWebPushNotifications(
   webpush.setVapidDetails(configuration.subject, configuration.publicKey, configuration.privateKey);
   const payload = JSON.stringify(notificationPayload(input));
   const attempts = await Promise.allSettled(
-    subscriptions.map(subscription => webpush.sendNotification(subscription, payload, { TTL: 60 }))
+    subscriptions.map(subscription => webpush.sendNotification(subscription, payload, { TTL: 3_600 }))
   );
   const expiredSubscriptions = attempts.flatMap((attempt, index) =>
     attempt.status === 'rejected' && isExpiredWebPushError(attempt.reason)

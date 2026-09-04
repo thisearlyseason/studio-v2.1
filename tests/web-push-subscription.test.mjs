@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   normalizeWebPushSubscription,
@@ -24,4 +25,22 @@ test('rejects a non-HTTPS or incomplete web push subscription', () => {
     normalizeWebPushSubscription({ endpoint: valid.endpoint, keys: { auth: valid.keys.auth } }),
     null
   );
+});
+
+test('browser notification registration migrates legacy FCM to standards Web Push', async () => {
+  const client = await readFile(
+    new URL('../src/lib/client-push-registration.ts', import.meta.url),
+    'utf8',
+  );
+  const provider = await readFile(
+    new URL('../src/components/providers/team-provider.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.doesNotMatch(client, /initFCM/);
+  assert.match(client, /clearLegacyFcmRegistrations/);
+  assert.match(client, /pushManager\.subscribe/);
+  assert.match(client, /applicationServerKey: vapidPublicKey/);
+  assert.match(provider, /registerPushDevice\(userProfile\.id\)/);
+  assert.match(provider, /userProfile\?\.notificationsEnabled/);
 });

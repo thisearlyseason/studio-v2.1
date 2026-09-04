@@ -77,7 +77,7 @@ test('notification controls are enforced by the UI, API, rules, and scheduler', 
 test('push opt-in is branded, explicit, and registers the device through a protected route', () => {
   const settings = fs.readFileSync(new URL('../src/app/(dashboard)/settings/page.tsx', import.meta.url), 'utf8');
   const provider = fs.readFileSync(new URL('../src/firebase/provider.tsx', import.meta.url), 'utf8');
-  const client = fs.readFileSync(new URL('../src/lib/fcm-client.ts', import.meta.url), 'utf8');
+  const client = fs.readFileSync(new URL('../src/lib/client-push-registration.ts', import.meta.url), 'utf8');
   const deviceRoute = fs.readFileSync(new URL('../src/app/api/notifications/device/route.ts', import.meta.url), 'utf8');
   const serviceWorker = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
   const signup = fs.readFileSync(new URL('../src/app/signup/page.tsx', import.meta.url), 'utf8');
@@ -93,7 +93,8 @@ test('push opt-in is branded, explicit, and registers the device through a prote
   assert.match(deviceRoute, /assertNonAnonymous/);
   assert.match(deviceRoute, /MAX_DEVICES_PER_ACCOUNT = 10/);
   assert.match(deviceRoute, /notificationDeviceTokens/);
-  assert.match(serviceWorker, /searchParams\.get\('firebaseConfig'\)/);
+  assert.match(serviceWorker, /payload\?\.webPush/);
+  assert.doesNotMatch(serviceWorker, /firebaseConfig|firebase-messaging/);
   assert.match(signup, /notificationsEnabled: false/);
 });
 
