@@ -2,7 +2,39 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-04; twenty defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-04; twenty-two defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-023 — Identity audit API probes used fixed historical fixture IDs (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Local certification runner — identity and tenant-isolation probes |
+| Role | Certification operator |
+| Page or route | Phase 2 emulator audit API probes |
+| Description | The legacy local audit seeded run-unique Team A and Team B documents but probed fixed `qa-team-a` and `qa-team-b` API paths. |
+| Expected behavior | Every API probe targets the exact run-scoped fixture identifiers returned by the seeder. |
+| Actual behavior | The fixed historical identifiers returned false 404s and prevented the identity certification batch from exercising the seeded tenant boundary. |
+| Root cause | The API path strings predated run-scoped fixture IDs and were not derived from the fixture object. |
+| Fix | Added a pure target builder that requires the seeded fixture IDs and constructs every Team A/Team B API path from them. |
+| Verification | A focused regression proves non-default run-scoped IDs are present in every target path and no fixed `qa-team-a` or `qa-team-b` segment remains. The exact local identity batch `final-cert-t3-260904-233419-8ece` on implementation commit `a6b8a410100a956333df8c50e9f4ccac54a2e9b9` then passed all scoped API probes. |
+| Status | RESOLVED |
+
+## BUG-022 — Firestore timestamps crash the member feed (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Team feed — timestamp rendering |
+| Role | Active team member |
+| Page or route | `/feed` |
+| Description | A member opening the seeded feed reached the route error boundary with `RangeError: Invalid time value`. |
+| Expected behavior | Feed posts and comments render valid Firestore, serialized, and ISO timestamps without a route-level exception. |
+| Actual behavior | The page passed a live Firestore `Timestamp` object through `new Date(...)`, producing an invalid date that `date-fns` rejected during render. |
+| Root cause | The feed assumed all timestamps were JavaScript-date-compatible even though the live collection returns Firestore `Timestamp` values. |
+| Fix | Added a shared feed timestamp normalizer for live Firestore timestamps, serialized timestamp shapes, ISO/epoch values, and malformed fallback values; post and comment distance labels now use it. |
+| Verification | Focused timestamp regressions passed for every supported shape and malformed fallback. The first exact browser run `final-cert-t3-260904-231719-6cb6` reproduced the crash; the repaired exact run `final-cert-t3-260904-233419-8ece` on implementation commit `a6b8a410100a956333df8c50e9f4ccac54a2e9b9` loaded the member feed and completed the member remainder sweep with zero application errors, zero console errors, zero failed responses, and zero mobile-fit failures. This is local evidence only and does not close the feed coverage row. |
+| Status | RESOLVED |
 
 ## BUG-021 — Hosted demo cleanup rejects its own public origin (resolved)
 
