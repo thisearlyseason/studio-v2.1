@@ -53,7 +53,7 @@ No repository-level `AGENTS.md` was found. `README.md` remains starter-level and
 | 26 | Sports Hub | Articles/categories/search/bookmarks/preferences; RSS feeds/refresh; resources/templates; PDFs; videos; newsletter | `/sports-hub/**`, admin Sports Hub APIs |
 | 27 | Public and embedded portals | Squad/event/league/tournament registration; spectator; volunteer; donation; recruiting; newsletter/signup/sports/squad embeds | `/register/**`, `/events/register/**`, `/embed/**`, public APIs |
 | 28 | Platform administration | User directory; claims/entitlements/account control; plans/features; beta applications/notifications; bug reports; newsletters; embeds; Sports Hub admin | `/admin`, `/admin/plans`, admin APIs |
-| 29 | PWA, offline companion, Time Out | Manifest/service worker; notification worker registration; local schedule/todo companion; offline sync; local Time Out game | `public/manifest.json`, `public/sw.js`, `/schedule-app`, TimeOut components |
+| 29 | PWA and offline companion | Manifest/service worker; notification worker registration; local schedule/todo companion; offline sync | `public/manifest.json`, `public/sw.js`, `/schedule-app` |
 | 30 | Webhooks, background processing, health, operations | Stripe/Connect/Resend webhooks; idempotency ledgers; public league projection triggers; deletion purge; demo cleanup; reminders; health; CI/deploy/backup/alerts | Webhook APIs, `functions/src`, `/api/health`, workflows/runbooks |
 
 ## Page and route inventory

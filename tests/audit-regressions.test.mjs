@@ -33,3 +33,10 @@ test('alert inbox relies on the standard dialog close control only', async () =>
   assert.doesNotMatch(alerts, /import \{ DialogClose \}/);
   assert.doesNotMatch(alerts, /Close broadcast inbox/);
 });
+
+test('the authenticated shell does not expose the retired Time Out game', async () => {
+  const shell = await source('../src/components/layout/Shell.tsx');
+
+  assert.doesNotMatch(shell, /TimeOutLauncher/);
+  assert.doesNotMatch(shell, /Open Time Out game/);
+});

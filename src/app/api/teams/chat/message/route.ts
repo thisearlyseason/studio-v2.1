@@ -93,27 +93,38 @@ export async function POST(req: NextRequest) {
     const channelName = typeof chat.data()?.name === 'string'
       ? chat.data()!.name.trim().slice(0, 100) || 'Team Chat'
       : 'Team Chat';
-    void Promise.all(
-      chatRecipientIds.map(memberId => findActiveTeamMember(teamId, memberId))
-    ).then(members => {
+    let notificationResult = {
+      fcmSuccessCount: 0,
+      fcmFailureCount: 0,
+      webPushSuccessCount: 0,
+      webPushFailureCount: 0,
+    };
+    try {
+      const members = await Promise.all(
+        chatRecipientIds.map(memberId => findActiveTeamMember(teamId, memberId))
+      );
       const recipientUserIds = members.flatMap((member, index) => {
         if (!member) return [];
-          const linkedUserId = member.data.userId;
-          const resolvedUserId = typeof linkedUserId === 'string' && linkedUserId.trim()
-            ? linkedUserId.trim()
+        const linkedUserId = member.data.userId;
+        const resolvedUserId = typeof linkedUserId === 'string' && linkedUserId.trim()
+          ? linkedUserId.trim()
           : chatRecipientIds[index];
         return resolvedUserId && resolvedUserId !== auth.uid ? [resolvedUserId] : [];
       });
-      return sendNotificationToUsers({
+      notificationResult = await sendNotificationToUsers({
         recipientUserIds,
         title: `New message in ${channelName}`,
         body: content || (type === 'poll' ? 'New poll' : 'Shared an image'),
         url: `/chats/${chatId}`,
       });
-    }).catch(error => {
+    } catch (error) {
       console.warn('[Chat Push] Delivery failed:', error instanceof Error ? error.message : 'unknown error');
+    }
+    return NextResponse.json({
+      ok: true,
+      messageId: messageRef.id,
+      notification: notificationResult,
     });
-    return NextResponse.json({ ok: true, messageId: messageRef.id });
   } catch (error) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

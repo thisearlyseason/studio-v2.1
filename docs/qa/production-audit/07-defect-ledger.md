@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-04; thirteen defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-04; twelve defects are resolved, BUG-011 is retired by product decision, and BUG-005 is reopened after a failed physical Android delivery test. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
 ## BUG-014 — Broadcast inbox renders overlapping close controls (resolved)
 
@@ -52,7 +52,7 @@
 | Verification | Five storage/worker regressions pass. A real Chrome emulator session proved both tenants' correct events, reciprocal event isolation, corrupt/legacy/other-profile todo rejection, CRUD persistence, 390×844 fit, cached-shell offline reload, same-browser Team A to Team B switching, and zero unexpected online or offline console errors. |
 | Status | RESOLVED |
 
-## BUG-011 — Time Out game is unreachable and corrupted preferences can crash it (resolved)
+## BUG-011 — Time Out game is unreachable and corrupted preferences can crash it (retired)
 
 | Field | Evidence |
 |---|---|
@@ -64,9 +64,9 @@
 | Expected behavior | Authenticated users can open the game from the shared header; invalid local preferences fall back safely; documented keyboard/touch controls and persistence work at desktop and mobile sizes. |
 | Actual behavior | `TimeOutLauncher` had no consumer, and corrupted local storage was accepted without validation. |
 | Root cause | The launcher was orphaned during Shell integration and persisted enum values crossed the storage boundary without runtime normalization. |
-| Fix | Rendered the existing launcher in the authenticated header and normalized stored sport/difficulty values. The browser audit handles the independent priority-alert dialog before opening this optional game. |
-| Verification | The core regression first failed on missing normalizers and now passes 6/6. A real Chrome emulator session proved open/play/reset, rapid mobile action recovery, corrupted-state fallback, preference persistence, pointer/keyboard/touch controls, desktop/mobile containment, zero console errors, and zero failed responses. |
-| Status | RESOLVED |
+| Fix | The product owner explicitly rejected the feature on 2026-09-04. The Shell launcher, production game components, active browser-audit path, and dedicated game tests were removed. |
+| Verification | A source regression enforces that the authenticated Shell contains no Time Out launcher or action. |
+| Status | RETIRED — NOT APPLICABLE |
 
 ## BUG-010 — Profile-only superadmin can receive private applicant notifications (resolved)
 
@@ -227,12 +227,12 @@
 | Description | A physical Android test received no notification after another member sent a live chat message. The installed shortcut identified itself as Schedule and did not show the expected Squad icon. |
 | Expected behavior | Other active channel members receive one background notification; the sender does not. Android and iPhone/iPad install The Squad with the Squad icon and open the dashboard. |
 | Actual behavior | The chat write completed without any notification fan-out. Only `/schedule-app` registered the worker globally, and the companion layout carried Schedule-specific Apple metadata. |
-| Reproduction consistency | User-observed on one Android device before repair; code paths deterministically confirmed the missing server send and root worker registration. |
-| Root cause | The chat message route persisted messages but never called notification delivery. The main app did not register `/sw.js`; the worker cached the Schedule companion route and the manifest started at `/`. Firebase JavaScript Messaging also cannot be the sole iPhone/iPad Home Screen transport. |
-| Fix | Added authenticated standards Web Push subscriptions alongside FCM; shared server fan-out; active channel-member resolution with sender exclusion; chat post-write delivery; root worker registration; The Squad manifest identity and icons; a public-only offline shell; and Push API fallback for browsers without Firebase Messaging support. Separate VAPID configuration is mandatory. |
+| Reproduction consistency | User-observed twice on a physical Android device: first before the initial repair and again on the combined staging candidate after chat persistence and device permission were confirmed. |
+| Root cause | The initial repair started active-member resolution and notification delivery in an unawaited promise after persisting the chat. App Hosting could complete the request and terminate that work before FCM or Web Push delivery. The earlier root worker, install identity, and cross-platform transport defects were separate and remain repaired. |
+| Fix | The chat route now awaits member resolution and transport delivery before responding, preserves the successful chat write if a provider fails, and returns FCM/Web Push success and failure counts for exact device diagnosis. Existing sender exclusion, active-membership resolution, root worker registration, The Squad manifest/icons, and standards Web Push fallback remain in place. |
 | Automated verification | Local authoritative `npm run verify` passed: 395 application tests, 38 Firestore/Storage rules tests, app and Functions typechecks, lint with zero errors, and production builds. Protected staging workflow `33760676821` passed verification, infrastructure deployment, App Hosting rollout, and health for application commit `90a600b1`. Hosted manifest, worker, offline page, and both PNG icons returned HTTP 200; a real Chromium session reported a root-scoped active controlling worker and zero console errors/warnings. |
-| Remaining acceptance | Remove the old Schedule shortcut; install The Squad on physical Android and iPhone/iPad Home Screen; enable Tactical Alerts; confirm receipt and click-through from another current channel member; confirm sender exclusion and opt-out. |
-| Status | FIX DEPLOYED TO STAGING; PHYSICAL DEVICE VERIFICATION REQUIRED |
+| Remaining acceptance | Deploy the awaited-delivery repair to staging; remove any old Schedule shortcut; install/reopen The Squad on physical Android and iPhone/iPad Home Screen; enable Tactical Alerts; confirm receipt and click-through from another current channel member; confirm sender exclusion and opt-out. |
+| Status | REOPENED — LOCAL FIX REQUIRES STAGING AND PHYSICAL DEVICE VERIFICATION |
 
 ## BUG-002 — Sports Hub header search collapses at tablet width (resolved)
 

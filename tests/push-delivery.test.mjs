@@ -8,7 +8,9 @@ test('team chat sends only to other channel members', async () => {
   const chat = await source('../src/app/api/teams/chat/message/route.ts');
   const sender = await source('../src/lib/server-notification-delivery.ts');
   assert.match(chat, /memberId !== auth\.uid/);
-  assert.match(chat, /return sendNotificationToUsers/);
+  assert.doesNotMatch(chat, /void Promise\.all/);
+  assert.match(chat, /notificationResult = await sendNotificationToUsers/);
+  assert.match(chat, /notification: notificationResult/);
   assert.match(sender, /sendEachForMulticast/);
   assert.match(sender, /webpush\.sendNotification/);
 });

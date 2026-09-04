@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved thirteen defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved twelve defects, retired one rejected feature, and reopened BUG-005 after failed physical Android delivery; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -11,13 +11,13 @@ The matrix contains 88 rows.
 
 | Status | Count |
 |---|---:|
-| PASS | 7 |
+| PASS | 6 |
 | FAIL | 0 |
 | BLOCKED | 81 |
-| NOT APPLICABLE | 0 |
+| NOT APPLICABLE | 1 |
 | NOT RUN | 0 |
 
-Completed functional-row coverage is `(PASS + FAIL) / all rows = 7 / 88 = 8.0%`. All remaining rows have been explicitly classified BLOCKED rather than left ambiguous. Many blocked rows received partial smoke or automated boundary evidence, but they were not promoted because their complete role, negative, permission, persistence, responsive, provider, or device requirements could not be executed.
+Completed functional-row coverage is `(PASS + FAIL) / all rows = 6 / 88 = 6.8%`; one rejected feature is explicitly `NOT APPLICABLE`. All remaining rows have been explicitly classified BLOCKED rather than left ambiguous. Many blocked rows received partial smoke or automated boundary evidence, but they were not promoted because their complete role, negative, permission, persistence, responsive, provider, or device requirements could not be executed.
 
 ## Tested features and roles
 
@@ -25,24 +25,26 @@ Browser testing covered marketing/legal/audience/sport pages, authentication and
 
 Roles exercised were unauthenticated visitor, anonymous Squad Pro demo coach/staff, anonymous Player demo, one verified synthetic Coach owner in isolated staging, and ephemeral local emulator identities for two Coach owners, team assistant/member, two parents, two adult players, a youth player, trusted and profile-only fake superadmins, unverified, disabled, removed-member, pending-deletion, and multi-team states. These local identities improve authorization evidence but do not replace durable hosted/provider/device journeys required by the strict matrix.
 
+The first physical Android chat test invalidated the earlier notification acceptance: the message persisted and appeared in chat, but no device notification arrived. The root cause was post-response notification fan-out that App Hosting could terminate. The replacement candidate awaits delivery before responding and reports FCM/Web Push transport counts; it still requires a fresh physical-device acceptance test before BUG-005 can close.
+
 ## Resolved audit defects
 
 - BUG-001, P2: Event deletion now presents an event-specific confirmation; Cancel preserves the event.
 - BUG-002, P2: At 768×1024, Sports Hub now presents a named compact search control instead of a clipped input.
 - BUG-003, P1: A newly verified zero-team Coach now reaches `/teams/new` rather than being redirected to Join & Invite.
 - BUG-004, P1: The staging Stripe Connect endpoint now receives signed connected-account test events; the superseded endpoint is disabled after verification.
-- BUG-005, P1: Chat notification fan-out and primary PWA identity are repaired on staging; physical Android and iPhone/iPad acceptance remains mandatory before this defect is closed.
+- BUG-005, P1: Physical Android retesting reopened chat delivery because App Hosting could terminate unawaited post-response fan-out; the local repair awaits delivery and requires staging/device acceptance.
 - BUG-006, P2: Landing support no longer produces repeat Elfsight stylesheet errors; Chrome/Firefox retain the full assistant and Safari/WebKit receives an accessible native support fallback.
 - BUG-007, P1: Global superadmin authority now depends on the verified custom claim, not a profile role string.
 - BUG-008, P1: Admin SDK APIs and protected server rendering now reject blocked account lifecycle states consistently with the rules boundary.
 - BUG-009, P2: Explicit development emulator mode now receives the exact loopback CSP connections required for real-browser audit execution without changing production CSP.
 - BUG-010, P1: Private beta/newsletter administrator notifications now exclude profile-only fake superadmins and accept targets only from verified custom-claim identities.
-- BUG-011, P2: The existing Time Out game is now reachable from the authenticated Shell and rejects corrupted stored sport/difficulty values.
+- BUG-011, P2: Time Out was retired at the product owner's direction; its launcher, implementation, audit path, and dedicated tests were removed.
 - BUG-012, P2: Schedule companion caches and todos are scoped to the current identity/team, selected teams are membership-validated, malformed storage fails closed, and the public shell reloads offline.
 - BUG-013, P2: Desktop and mobile squad switchers now share a stable accessible action name; the two-team transition path is covered in a real browser.
 - BUG-014, P2: The broadcast inbox now has one operable close control rather than overlapping standard and custom controls.
 
-Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 5, P2 8.
+Open severity totals: P0 0, P1 1 pending staging/device acceptance, P2 0, P3 0. Historical findings addressed: P1 5 resolved, P2 7 resolved and 1 retired.
 
 ## Deterministic local identity and tenant follow-up — 2026-09-03
 

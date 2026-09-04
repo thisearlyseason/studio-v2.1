@@ -61,7 +61,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useTeam, Team } from '@/components/providers/team-provider';
 import { CreateAlertButton, AlertsHistoryDialog } from '@/components/layout/AlertOverlay';
-import TimeOutLauncher from '@/components/time-out/TimeOutLauncher';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -987,7 +986,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </div>
               <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>
               <div className="flex items-center gap-2 md:gap-3">
-                <TimeOutLauncher />
                 {isStaff && <CreateAlertButton />}
                 <AlertsHistoryDialog>
                   <Button
