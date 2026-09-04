@@ -38,7 +38,10 @@ test('browser notification registration migrates legacy FCM to standards Web Pus
   );
 
   assert.doesNotMatch(client, /initFCM/);
+  assert.doesNotMatch(client, /localStorage/);
   assert.match(client, /clearLegacyFcmRegistrations/);
+  assert.match(client, /applicationServerKeysMatch/);
+  assert.match(client, /existingSubscription\.options\.applicationServerKey/);
   assert.match(client, /pushManager\.subscribe/);
   assert.match(client, /applicationServerKey: vapidPublicKey/);
   assert.match(provider, /registerPushDevice\(userProfile\.id\)/);

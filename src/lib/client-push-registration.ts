@@ -6,8 +6,6 @@ import { registerPrimaryServiceWorker } from '@/lib/service-worker-registration'
 
 export type PushTransport = 'web-push';
 
-const WEB_PUSH_MIGRATION_KEY = 'the_squad_web_push_v1';
-
 function decodeVapidPublicKey(value: string | undefined): ArrayBuffer | null {
   if (!value) return null;
   try {
@@ -21,6 +19,13 @@ function decodeVapidPublicKey(value: string | undefined): ArrayBuffer | null {
   } catch {
     return null;
   }
+}
+
+function applicationServerKeysMatch(actual: ArrayBuffer | null, expected: ArrayBuffer): boolean {
+  if (!actual || actual.byteLength !== expected.byteLength) return false;
+  const actualBytes = new Uint8Array(actual);
+  const expectedBytes = new Uint8Array(expected);
+  return actualBytes.every((value, index) => value === expectedBytes[index]);
 }
 
 async function updateWebPushSubscription(
@@ -51,9 +56,6 @@ async function clearLegacyFcmRegistrations(userId: string): Promise<void> {
     throw new Error('A signed-in account is required.');
   }
 
-  const migrationKey = `${WEB_PUSH_MIGRATION_KEY}:${userId}`;
-  if (localStorage.getItem(migrationKey) === 'complete') return;
-
   const idToken = await currentUser.getIdToken();
   const response = await fetch('/api/notifications/device', {
     method: 'DELETE',
@@ -64,14 +66,6 @@ async function clearLegacyFcmRegistrations(userId: string): Promise<void> {
     body: JSON.stringify({ clearLegacyFcmRegistrations: true }),
   });
   if (!response.ok) throw new Error('Unable to migrate this device to Web Push.');
-
-  const existingRegistration = await navigator.serviceWorker.getRegistration('/');
-  const existingSubscription = await existingRegistration?.pushManager.getSubscription();
-  if (existingSubscription) {
-    await updateWebPushSubscription(userId, existingSubscription.toJSON(), 'DELETE').catch(() => {});
-    await existingSubscription.unsubscribe();
-  }
-  localStorage.setItem(migrationKey, 'complete');
 }
 
 export async function registerPushDevice(userId: string): Promise<PushTransport | null> {
@@ -89,12 +83,26 @@ export async function registerPushDevice(userId: string): Promise<PushTransport 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return null;
 
-  await clearLegacyFcmRegistrations(userId);
   const registration = await registerPrimaryServiceWorker();
   if (!registration) return null;
 
-  const subscription =
-    (await registration.pushManager.getSubscription()) ??
+  let existingSubscription = await registration.pushManager.getSubscription();
+  if (
+    !existingSubscription ||
+    !applicationServerKeysMatch(
+      existingSubscription.options.applicationServerKey,
+      vapidPublicKey
+    )
+  ) {
+    await clearLegacyFcmRegistrations(userId);
+    if (existingSubscription) {
+      await updateWebPushSubscription(userId, existingSubscription.toJSON(), 'DELETE').catch(() => {});
+      await existingSubscription.unsubscribe();
+      existingSubscription = null;
+    }
+  }
+
+  const subscription = existingSubscription ??
     (await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: vapidPublicKey,
@@ -114,8 +122,6 @@ export async function deleteWebPushSubscription(userId: string): Promise<void> {
 }
 
 export async function deletePushDevice(userId: string): Promise<void> {
-  await Promise.allSettled([
-    clearLegacyFcmRegistrations(userId),
-    deleteWebPushSubscription(userId),
-  ]);
+  await clearLegacyFcmRegistrations(userId).catch(() => {});
+  await deleteWebPushSubscription(userId);
 }
