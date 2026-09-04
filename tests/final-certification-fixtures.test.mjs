@@ -1,12 +1,57 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { build } from 'esbuild';
+import nextEnvironment from '@next/env';
 
 import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
 import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
 import * as fixtureCatalogModule from '../scripts/qa/certification/fixture-catalog.mjs';
 import { prepareTournamentScheduleForDeployment } from '../src/lib/server-tournament-schedule-deployment.ts';
 import * as scheduleDeploymentModule from '../src/lib/server-schedule-deployment.ts';
+
+const { processEnv, resetEnv } = nextEnvironment;
+
+const NEXT_SERVER_STUB = `
+  export class NextResponse extends Response {
+    static json(body, init = {}) {
+      const headers = new Headers(init.headers || {});
+      if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+      return new NextResponse(JSON.stringify(body), { ...init, headers });
+    }
+  }
+  export class NextRequest extends Request {}
+`;
+
+async function importActualRouteWithBoundaryStubs(relativePath, stubs) {
+  const entryPoint = fileURLToPath(new URL(relativePath, import.meta.url));
+  const result = await build({
+    entryPoints: [entryPoint],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node20',
+    write: false,
+    logLevel: 'silent',
+    plugins: [{
+      name: 'certification-provider-boundary',
+      setup(esbuild) {
+        esbuild.onResolve({ filter: /.*/ }, args => (
+          Object.hasOwn(stubs, args.path)
+            ? { path: args.path, namespace: 'certification-provider-boundary' }
+            : null
+        ));
+        esbuild.onLoad({ filter: /.*/, namespace: 'certification-provider-boundary' }, args => ({
+          contents: stubs[args.path],
+          loader: 'js',
+        }));
+      },
+    }],
+  });
+  const source = result.outputFiles[0].text;
+  return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+}
 
 const REQUIRED_ALIASES = [
   'qa-coach-owner-a',
@@ -431,25 +476,266 @@ test('positive Storage fixtures decode as their declared media and the spoof det
 test('fixture event, document, and drill notifications cannot leave the local boundary', async () => {
   const clientDelivery = await import('../src/lib/client-team-notification.ts');
   const fixtureTeam = buildFixtureCatalog('outbound-a1').teams.find(team => team.alias === 'qa-pro-team');
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (...args) => {
+    calls.push(args);
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    for (const source of ['event', 'document', 'drill']) {
+      const result = await clientDelivery.dispatchTeamNotification({
+        source,
+        team: fixtureTeam,
+        idToken: 'synthetic-test-token',
+        teamId: fixtureTeam.id,
+        memberUserIds: ['synthetic-member'],
+        title: 'Synthetic title',
+        body: 'Synthetic body',
+        emailSubject: 'Synthetic subject',
+        emailHtml: '<p>Synthetic body</p>',
+      });
+      assert.deepEqual(result, { status: 'suppressed', requestCount: 0 });
+    }
+    assert.deepEqual(calls, [], 'event, document, and drill must not call the real fetch boundary');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
-  for (const source of ['event', 'document', 'drill']) {
-    const calls = [];
-    const result = await clientDelivery.dispatchTeamNotification({
-      source,
-      team: fixtureTeam,
-      idToken: 'synthetic-test-token',
-      teamId: fixtureTeam.id,
-      memberUserIds: ['synthetic-member'],
-      title: 'Synthetic title',
-      body: 'Synthetic body',
-      emailSubject: 'Synthetic subject',
-      emailHtml: '<p>Synthetic body</p>',
-    }, async (...args) => {
-      calls.push(args);
-      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
-    });
-    assert.deepEqual(result, { status: 'suppressed', requestCount: 0 });
-    assert.deepEqual(calls, [], `${source} must not call even a local delivery endpoint`);
+test('dotenv-loaded credentials cannot escape actual account and team provider entry paths', async () => {
+  const environmentKeys = [
+    'AUDIT_OUTBOUND_PROVIDER_MODE',
+    'RESEND_API_KEY',
+    'RESEND_BASE_URL',
+    'STRIPE_SECRET_KEY',
+    '__NEXT_PROCESSED_ENV',
+  ];
+  const previousEnvironment = Object.fromEntries(environmentKeys.map(key => [key, process.env[key]]));
+  const originalFetch = globalThis.fetch;
+  const originalConsoleError = console.error;
+  const externalAttempts = [];
+
+  try {
+    for (const key of environmentKeys) delete process.env[key];
+    processEnv([{
+      path: '.env.local',
+      contents: [
+        'AUDIT_OUTBOUND_PROVIDER_MODE=block',
+        'RESEND_API_KEY=re_dotenv_synthetic_value',
+        'STRIPE_SECRET_KEY=sk_test_dotenv_synthetic_value',
+      ].join('\n'),
+    }], process.cwd(), { error() {} }, true);
+    assert.equal(process.env.AUDIT_OUTBOUND_PROVIDER_MODE, 'block');
+    assert.match(process.env.RESEND_API_KEY || '', /^re_dotenv_/);
+    assert.match(process.env.STRIPE_SECRET_KEY || '', /^sk_test_dotenv_/);
+
+    globalThis.fetch = async (...args) => {
+      externalAttempts.push(args);
+      return new Response(JSON.stringify({ id: 'intercepted-provider-attempt' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    console.error = () => {};
+
+    const passwordResetRoute = await importActualRouteWithBoundaryStubs(
+      '../src/app/api/email/reset-password/route.ts',
+      {
+        'next/server': NEXT_SERVER_STUB,
+        'firebase-admin': `
+          export function auth() {
+            return { generatePasswordResetLink: async () => 'http://127.0.0.1/reset-link' };
+          }
+        `,
+        '@/lib/firebase-admin': 'export function ensureAdminInit() {}; export const adminDb = {};',
+        '@/lib/email-templates': `
+          export function passwordResetEmail() {
+            return { subject: 'Local reset', html: '<p>Local reset</p>' };
+          }
+        `,
+        '@/lib/server-request-guards': `
+          export class RequestBodyError extends Error {}
+          export async function readJsonBodyWithLimit(request) { return request.json(); }
+          export async function enforcePublicRateLimit() { return null; }
+        `,
+      },
+    );
+    const passwordResponse = await passwordResetRoute.POST(new Request('http://127.0.0.1/api/email/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'fixture-reset@phase2.test' }),
+    }));
+    assert.equal(passwordResponse.status, 500, 'password-reset handler must fail closed in audit mode');
+
+    const genericEmailRoute = await importActualRouteWithBoundaryStubs(
+      '../src/app/api/email/send/route.ts',
+      {
+        'next/server': NEXT_SERVER_STUB,
+        '@/lib/api-auth': `export async function verifyFirebaseToken() { return { uid: 'fixture-coach', role: 'coach' }; }`,
+        '@/lib/firebase-admin': 'export const adminDb = {};',
+        '@/lib/server-team-access': `
+          export async function getTeamAuthority() { return { isStaff: true }; }
+          export async function findActiveTeamMember() {
+            return { data: { email: 'fixture-member@phase2.test', userId: 'fixture-member' } };
+          }
+        `,
+        '@/lib/server-request-guards': `
+          export class RequestBodyError extends Error {}
+          export async function readJsonBodyWithLimit(request) { return request.json(); }
+          export async function enforceUserRateLimit() { return null; }
+        `,
+      },
+    );
+    const genericResponse = await genericEmailRoute.POST(new Request('http://127.0.0.1/api/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        teamId: 'fixture-team',
+        recipientUserIds: ['fixture-member'],
+        subject: 'Fixture notification',
+        html: '<p>Fixture notification</p>',
+      }),
+    }));
+    assert.equal(genericResponse.status, 500, 'generic team-email handler must fail closed in audit mode');
+
+    const stripeClient = await import('../src/lib/stripe-client.ts');
+    assert.throws(() => stripeClient.getStripe(), /Stripe outbound provider access is blocked/);
+    assert.deepEqual(externalAttempts, [], 'no actual provider SDK may reach fetch in audit mode');
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
+    resetEnv();
+    for (const [key, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('audit mode blocks shared and direct notification provider entry paths', async () => {
+  const previousAuditMode = process.env.AUDIT_OUTBOUND_PROVIDER_MODE;
+  const previousInternalSecret = process.env.INTERNAL_API_SECRET;
+  const originalConsoleError = console.error;
+  globalThis.__certificationPushAttempts = [];
+  try {
+    process.env.AUDIT_OUTBOUND_PROVIDER_MODE = 'block';
+    process.env.INTERNAL_API_SECRET = 'synthetic-local-secret';
+    console.error = () => {};
+    const notificationDelivery = await importActualRouteWithBoundaryStubs(
+      '../src/lib/server-notification-delivery.ts',
+      {
+        'firebase-admin': `
+          export function messaging() {
+            return {
+              async sendEachForMulticast() {
+                globalThis.__certificationPushAttempts.push('shared-fcm-multicast');
+                return { successCount: 1, failureCount: 0 };
+              },
+            };
+          }
+        `,
+        'web-push': `
+          export function setVapidDetails() {}
+          export async function sendNotification() {
+            globalThis.__certificationPushAttempts.push('shared-web-push');
+          }
+        `,
+        '@/lib/firebase-admin': `
+          export const adminDb = {
+            collection() {
+              return {
+                doc(userId) {
+                  return {
+                    async get() {
+                      return {
+                        id: userId,
+                        exists: true,
+                        data() {
+                          return { fcmTokens: ['synthetic_fcm_token_1234567890'], webPushSubscriptions: [] };
+                        },
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        `,
+        '@/lib/web-push-subscription': `
+          export function normalizeWebPushSubscription() { return null; }
+          export function webPushSubscriptionId() { return 'synthetic-subscription'; }
+        `,
+      },
+    );
+    await assert.rejects(
+      () => notificationDelivery.sendNotificationToUsers({
+        recipientUserIds: ['fixture-member'],
+        title: 'Local fixture notification',
+        body: 'This must never reach a notification provider.',
+      }),
+      /Notification outbound provider access is blocked/,
+    );
+    assert.deepEqual(globalThis.__certificationPushAttempts, []);
+
+    const notifyRoute = await importActualRouteWithBoundaryStubs(
+      '../src/app/api/notify/route.ts',
+      {
+        'next/server': NEXT_SERVER_STUB,
+        'firebase-admin': `
+          export function messaging() {
+            return {
+              async sendEachForMulticast() {
+                globalThis.__certificationPushAttempts.push('fcm-multicast');
+                return { successCount: 1, failureCount: 0 };
+              },
+              async send() {
+                globalThis.__certificationPushAttempts.push('fcm-send');
+                return 'synthetic-message-id';
+              },
+            };
+          }
+        `,
+        '@/lib/firebase-admin': 'export const adminDb = {};',
+        '@/lib/api-auth': `export async function verifyFirebaseToken() { throw new Error('internal request must not authenticate'); }`,
+        '@/lib/server-team-access': `
+          export async function getTeamAuthority() { throw new Error('internal request must not resolve authority'); }
+          export async function findActiveTeamMember() { throw new Error('internal request must not resolve members'); }
+        `,
+        '@/lib/server-notification-delivery': `
+          export async function sendNotificationToUsers() {
+            throw new Error('internal request must use the direct messaging path');
+          }
+        `,
+        '@/lib/server-request-guards': `
+          export class RequestBodyError extends Error {}
+          export async function readJsonBodyWithLimit(request) { return request.json(); }
+          export async function enforceUserRateLimit() { return null; }
+        `,
+      },
+    );
+    const response = await notifyRoute.POST(new Request('http://127.0.0.1/api/notify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': 'synthetic-local-secret',
+      },
+      body: JSON.stringify({
+        tokens: ['synthetic_fcm_token_1234567890'],
+        title: 'Local fixture notification',
+        body: 'This must never reach FCM.',
+      }),
+    }));
+
+    assert.equal(response.status, 500, 'notify handler must fail closed in audit mode');
+    assert.deepEqual(globalThis.__certificationPushAttempts, []);
+  } finally {
+    console.error = originalConsoleError;
+    delete globalThis.__certificationPushAttempts;
+    if (previousAuditMode === undefined) delete process.env.AUDIT_OUTBOUND_PROVIDER_MODE;
+    else process.env.AUDIT_OUTBOUND_PROVIDER_MODE = previousAuditMode;
+    if (previousInternalSecret === undefined) delete process.env.INTERNAL_API_SECRET;
+    else process.env.INTERNAL_API_SECRET = previousInternalSecret;
   }
 });
 
@@ -484,6 +770,43 @@ test('isolated server provider boundary blocks inherited Stripe and Resend crede
     assert.throws(() => stripeClient.getStripe(), /Stripe outbound provider access is blocked/);
     assert.throws(() => resendClient.getResend(), /Resend outbound provider access is blocked/);
   } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('provider factories retain their configured behavior when audit block mode is absent', async () => {
+  const keys = ['AUDIT_OUTBOUND_PROVIDER_MODE', 'STRIPE_SECRET_KEY', 'RESEND_API_KEY'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  const originalFetch = globalThis.fetch;
+  const interceptedRequests = [];
+  try {
+    delete process.env.AUDIT_OUTBOUND_PROVIDER_MODE;
+    process.env.STRIPE_SECRET_KEY = 'sk_test_synthetic_provider_value';
+    process.env.RESEND_API_KEY = 're_synthetic_provider_value';
+    globalThis.fetch = async (...args) => {
+      interceptedRequests.push(args);
+      return new Response(JSON.stringify({ id: 'synthetic-provider-id' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    const stripeClient = await import('../src/lib/stripe-client.ts');
+    const resendClient = await import('../src/lib/server-resend-client.ts');
+    assert.equal(typeof stripeClient.getStripe().customers.create, 'function');
+    const delivery = await resendClient.getResend().emails.send({
+      from: 'Fixture <fixture@phase2.test>',
+      to: ['recipient@phase2.test'],
+      subject: 'Synthetic delivery',
+      html: '<p>Synthetic delivery</p>',
+    });
+    assert.equal(delivery.data?.id, 'synthetic-provider-id');
+    assert.equal(interceptedRequests.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

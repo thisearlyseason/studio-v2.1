@@ -7,6 +7,7 @@ import {
   webPushSubscriptionId,
   type WebPushSubscriptionRecord,
 } from '@/lib/web-push-subscription';
+import { assertOutboundProviderAllowed } from '@/lib/server-outbound-provider-policy';
 
 type DeliveryInput = {
   recipientUserIds: string[];
@@ -97,6 +98,7 @@ async function sendFcmNotifications(
   input: DeliveryInput
 ): Promise<Pick<NotificationDeliveryResult, 'fcmSuccessCount' | 'fcmFailureCount'>> {
   if (!tokens.length) return { fcmSuccessCount: 0, fcmFailureCount: 0 };
+  assertOutboundProviderAllowed('notification');
 
   const notification: admin.messaging.Notification = { title: input.title, body: input.body };
   if (input.imageUrl) notification.imageUrl = input.imageUrl;
@@ -128,6 +130,7 @@ async function sendWebPushNotifications(
   input: DeliveryInput
 ): Promise<Pick<NotificationDeliveryResult, 'webPushSuccessCount' | 'webPushFailureCount'>> {
   if (!subscriptions.length) return { webPushSuccessCount: 0, webPushFailureCount: 0 };
+  assertOutboundProviderAllowed('notification');
   const configuration = webPushConfiguration();
   if (!configuration) {
     console.warn('[Web Push] Delivery skipped because VAPID configuration is unavailable.');

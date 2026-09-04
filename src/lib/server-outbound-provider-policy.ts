@@ -7,10 +7,14 @@ export function isOutboundProviderBlocked(
 }
 
 export function assertOutboundProviderAllowed(
-  provider: 'stripe' | 'resend',
+  provider: 'stripe' | 'resend' | 'notification',
   environment: ProviderEnvironment = process.env,
 ): void {
   if (!isOutboundProviderBlocked(environment)) return;
-  const label = provider === 'stripe' ? 'Stripe' : 'Resend';
+  const label = provider === 'stripe'
+    ? 'Stripe'
+    : provider === 'resend'
+      ? 'Resend'
+      : 'Notification';
   throw new Error(`${label} outbound provider access is blocked for the isolated emulator audit.`);
 }

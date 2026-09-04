@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import nextEnvironment from '@next/env';
 
 import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
 import * as auditRunner from '../scripts/qa/run-phase2-emulator-audit.mjs';
+
+const { processEnv, resetEnv } = nextEnvironment;
 
 const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
 
@@ -69,6 +72,55 @@ test('emulator audit strips inherited outbound provider credentials and activate
   assert.equal(isolated.AUDIT_OUTBOUND_PROVIDER_MODE, 'block');
   for (const key of Object.keys(inherited).filter(key => key !== 'PATH')) {
     assert.equal(isolated[key], '', `${key} must not survive into the audit process`);
+  }
+});
+
+test('emulator audit shadows absent credentials before Next environment files load', () => {
+  const credentialKeys = [
+    'STRIPE_SECRET_KEY',
+    'STRIPE_WEBHOOK_SECRET',
+    'STRIPE_CONNECT_WEBHOOK_SECRET',
+    'RESEND_API_KEY',
+    'RESEND_WEBHOOK_SECRET',
+    'WEB_PUSH_VAPID_PRIVATE_KEY',
+    'WEB_PUSH_VAPID_SUBJECT',
+    'NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY',
+    'NEXT_PUBLIC_FCM_VAPID_KEY',
+    'OWNER_FCM_TOKEN',
+    'OWNER_NOTIFICATION_EMAIL',
+    'INTERNAL_API_SECRET',
+    'FIREBASE_SERVICE_ACCOUNT_JSON',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+  ];
+  const isolated = auditRunner.buildIsolatedAuditEnvironment({ PATH: '/synthetic/bin' });
+  for (const key of credentialKeys) {
+    assert.equal(Object.hasOwn(isolated, key), true, `${key} must be explicitly shadowed`);
+    assert.equal(isolated[key], '');
+  }
+
+  const environmentKeys = [...credentialKeys, '__NEXT_PROCESSED_ENV'];
+  const previous = Object.fromEntries(environmentKeys.map(key => [key, process.env[key]]));
+  try {
+    for (const key of environmentKeys) delete process.env[key];
+    Object.assign(process.env, isolated);
+    processEnv([{
+      path: '.env.local',
+      contents: [
+        'RESEND_API_KEY=re_dotenv_must_not_load',
+        'STRIPE_SECRET_KEY=sk_test_dotenv_must_not_load',
+        'WEB_PUSH_VAPID_PRIVATE_KEY=dotenv_must_not_load',
+      ].join('\n'),
+    }], process.cwd(), { error() {} }, true);
+
+    assert.equal(process.env.RESEND_API_KEY, '');
+    assert.equal(process.env.STRIPE_SECRET_KEY, '');
+    assert.equal(process.env.WEB_PUSH_VAPID_PRIVATE_KEY, '');
+  } finally {
+    resetEnv();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 

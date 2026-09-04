@@ -4,6 +4,7 @@ import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin'; // Ensures admin app is initialized
 import { findActiveTeamMember, getTeamAuthority } from '@/lib/server-team-access';
 import { sendNotificationToUsers } from '@/lib/server-notification-delivery';
+import { assertOutboundProviderAllowed } from '@/lib/server-outbound-provider-policy';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, successCount: 0, failureCount: 0 });
     }
 
+    assertOutboundProviderAllowed('notification');
     // Use shared admin instance (initialized in lib/firebase-admin.ts)
     void adminDb; // trigger lazy init
     const messaging = admin.messaging();

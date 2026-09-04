@@ -78,8 +78,11 @@ demo aliases intentionally have no registered email/password Auth account.
   present or permitted. Team and profile documents carry coherent local plan
   fields while the consumed `outboundProvidersEnabled=false` boundary blocks
   event, document, and drill delivery. The audit process also strips inherited
-  Stripe, Resend, push, internal-route, and Firebase service credentials and
-  activates provider-factory refusal before spawning its children.
+  Stripe, Resend, push, internal-route, and Firebase service credentials,
+  explicitly shadows those keys when they were absent from the parent shell so
+  Next environment files cannot repopulate them, and activates provider-send
+  refusal before spawning its children. Password reset, verification, welcome,
+  generic team email, FCM/Web Push, and Stripe use guarded provider entries.
 - Tournament selected fields and every game use the same browser-compatible
   qualified field string. Facility bookings use the picker-produced
   `facilityId:fieldName` identity, with overlapping bookings owned by different
@@ -103,8 +106,8 @@ audit runner; no production or staging cleanup was required by this batch.
 
 ## Verification
 
-The combined fixture/audit contract command completed with 39 passes and 0
-failures. The complete repository suite completed with 469 passes and 0
+The combined fixture/audit contract command completed with 43 passes and 0
+failures. The complete repository suite completed with 473 passes and 0
 failures.
 
 `npm run qa:audit-emulator` completed with exit code 0. All 20 active
@@ -143,6 +146,14 @@ object selector was verified absent.
 The event CRUD browser workflow also completed under stripped provider
 credentials with zero console errors and zero failed responses, proving the
 fixture event path did not fall through to email delivery.
+
+Focused boundary probes use Next's actual environment-file processor and the
+actual password-reset and generic-email handlers. Synthetic dotenv credentials
+remain blocked, the real Resend SDK's intercepted fetch transport receives zero
+attempts, the internal notify handler does not reach the intercepted messaging
+SDK, and the Stripe factory refuses access. Removing audit mode preserves the
+normal provider configuration path; production behavior is otherwise
+unchanged.
 
 These results establish local fixture readiness only. They do not promote any
 coverage row, provision durable staging mailboxes, create Stripe/Connect/Resend

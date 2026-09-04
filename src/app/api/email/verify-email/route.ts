@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
-import { Resend } from 'resend';
 import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
 import { verificationEmail } from '@/lib/email-templates';
 import { ensureAdminInit } from '@/lib/firebase-admin';
+import { getResend } from '@/lib/server-resend-client';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -11,12 +11,6 @@ import {
 } from '@/lib/server-request-guards';
 
 const FROM = 'The Squad Pro <noreply@thesquad.pro>';
-
-function getResend() {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error('RESEND_API_KEY env var not set');
-  return new Resend(apiKey);
-}
 
 export async function POST(req: NextRequest) {
   const authResult = await verifyFirebaseToken(req, { allowUnverifiedEmail: true });
