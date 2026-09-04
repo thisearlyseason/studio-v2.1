@@ -47,6 +47,14 @@ test('equipment inventory tracks optional sub-item stock and jersey sizes', asyn
   assert.match(provider, /jerseyNumber: details\?\.jerseyNumber/);
 });
 
+test('assigned equipment cannot be deleted until it is returned', async () => {
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const equipment = await readSource('../src/app/(dashboard)/equipment/page.tsx');
+  assert.match(provider, /Cannot delete equipment while it is assigned/);
+  assert.match(provider, /transaction\.delete\(equipmentRef\)/);
+  assert.match(equipment, /Asset Still Assigned/);
+});
+
 test('competition queries avoid fragile OR filters and isolate tab failures', async () => {
   const leagues = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
   const competition = await readSource('../src/app/(dashboard)/competition/page.tsx');

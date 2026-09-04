@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved thirteen defects, retired one rejected feature, and obtained physical Android closed-app push, tap-through, dot, and adaptive-icon acceptance for BUG-005; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved nineteen defects, retired one rejected feature, and obtained physical Android closed-app push, tap-through, dot, and adaptive-icon acceptance for BUG-005; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -43,8 +43,24 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-012, P2: Schedule companion caches and todos are scoped to the current identity/team, selected teams are membership-validated, malformed storage fails closed, and the public shell reloads offline.
 - BUG-013, P2: Desktop and mobile squad switchers now share a stable accessible action name; the two-team transition path is covered in a real browser.
 - BUG-014, P2: The broadcast inbox now has one operable close control rather than overlapping standard and custom controls.
+- BUG-015, P1: Pending-deletion login now fails cleanly without starting protected provider listeners or leaving Firebase Auth active.
+- BUG-016, P1: Legacy team events inherit their collection team ID and can no longer crash Calendar discovery.
+- BUG-017, P1: Legacy chat-message shapes are normalized before rendering and no longer crash chat detail.
+- BUG-018, P2: Facility enrollment cannot submit until both required trimmed fields are present.
+- BUG-019, P2: Every icon-only facility edit action now has a facility-specific accessible name.
+- BUG-020, P1: Assigned equipment cannot be deleted until all assignments have been returned.
 
-Open severity totals: P0 0, P1 0, P2 0, P3 0. Historical findings addressed: P1 6 resolved, P2 7 resolved and 1 retired.
+Open severity totals: P0 0, P1 0, P2 0, P3 0. Historical findings addressed: P1 10 resolved, P2 9 resolved and 1 retired.
+
+## Final remaining-only local run — 2026-09-04
+
+Run `2026-09-04T170500Z` first excluded the six established PASS rows except for a focused schedule-companion regression after the shared worker changed. The loopback browser audit then exercised every seeded active identity, lifecycle denial, route policy, and remaining role surface. It covered Coach owner, assistant, member, parent, adult player, youth player, multi-team user, trusted superadmin, profile-only fake superadmin, unverified, disabled, removed-member, and pending-deletion states across desktop and representative 390×844 mobile layouts.
+
+Fresh Playwright workflows passed for communication CRUD and cross-tenant isolation; event validation/create/edit/delete and member RSVP; facility validation/CRUD/resource rename/cancel/delete; and equipment stock/search/edit/over-assignment/assignment/guarded delete/return/final delete. The browser reported zero application console errors and zero unexpected application 5xx responses in the successful runs. The focused schedule companion rerun again passed online/offline persistence, corrupt-storage recovery, user/team isolation, and mobile fit.
+
+Final `npm run verify` passed TypeScript, ESLint with zero errors (existing warnings remain), 439 of 439 application tests, 38 of 38 Firestore/Storage rules tests, the optimized Next.js production build, and the Functions TypeScript build. Application and Functions production dependency audits report zero vulnerabilities after pinning patched `fflate` 0.8.3. The local production/provider environment checker remains intentionally blocked because this checkout does not contain deployment secrets.
+
+The strict coverage totals remain unchanged because partial local proof cannot satisfy missing provider, destructive-lifecycle, durable-mailbox, scheduler, full competition-fixture, rollback, Android negative-lifecycle, or iPhone/iPad requirements. These are explicit `BLOCKED` results, not unclassified tests. The newly fixed code has not been deployed as a combined staging candidate, so hosted regression against its exact commit is also outstanding. Therefore the application is **not yet certified production ready** and no production promotion is authorized by this report.
 
 ## Deterministic local identity and tenant follow-up — 2026-09-03
 

@@ -23,3 +23,13 @@ test('Phase 2 fixtures include trusted and fake superadmin plus cross-tenant mar
   assert.match(source, /BLUEBIRD-B/);
   assert.match(source, /qa-removed-member.*status: 'removed'/s);
 });
+
+test('Phase 2 fixtures include one paid squad for premium workflow coverage and one free control', () => {
+  assert.match(source, /const isPaidFixture = teamId === 'qa-team-a'/);
+  assert.match(source, /isPro: isPaidFixture/);
+  assert.match(source, /planId: isPaidFixture \? 'team' : 'free'/);
+});
+
+test('Phase 2 fixture teams suppress outbound notification providers during local browser workflows', () => {
+  assert.match(source, /isDemo:\s*true/);
+});

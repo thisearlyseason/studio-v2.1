@@ -1069,7 +1069,7 @@ export default function MasterCalendarPage() {
 
   const discoveryTeamIds = useMemo(() => {
     const fromTeams = (teams || []).map(t => t.id);
-    const fromEvents = allEvents.map(e => e.teamId);
+    const fromEvents = allEvents.map(e => e.teamId).filter((teamId): teamId is string => typeof teamId === 'string' && teamId.length > 0);
     return Array.from(new Set([...fromTeams, ...fromEvents]));
   }, [teams, allEvents]);
 

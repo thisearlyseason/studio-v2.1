@@ -87,14 +87,17 @@ function member(uid, overrides = {}) {
 }
 
 function team(teamId, ownerUserId, name, accent) {
+  const isPaidFixture = teamId === 'qa-team-a';
   return {
     id: teamId,
     name,
     teamName: name,
     ownerUserId,
-    planId: 'free',
-    plan_type: 'free',
-    isPro: false,
+    planId: isPaidFixture ? 'team' : 'free',
+    plan_type: isPaidFixture ? 'team' : 'free',
+    isPro: isPaidFixture,
+    // Browser workflows must never dispatch real push or email notifications.
+    isDemo: true,
     sport: teamId === 'qa-team-a' ? 'Basketball' : 'Soccer',
     ageGroup: teamId === 'qa-team-a' ? 'U16' : 'U14',
     primaryColor: accent,

@@ -60,6 +60,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { normalizeChatMessage } from '@/lib/chat-message-normalization';
 
 function ChatRoomInner() {
   const { chatId } = useParams();
@@ -110,7 +111,10 @@ function ChatRoomInner() {
   }, [effectiveTeamId, db, chatId]);
 
   const { data: rawMessages, isLoading: isMessagesLoading } = useCollection<Message>(messagesQuery);
-  const messages = useMemo(() => (rawMessages ? [...rawMessages] : []), [rawMessages]);
+  const messages = useMemo(
+    () => (rawMessages ? rawMessages.map(normalizeChatMessage) as Message[] : []),
+    [rawMessages],
+  );
 
   // Scroll to bottom whenever new messages arrive
   useEffect(() => {

@@ -26,6 +26,16 @@ test('facility management remains owner-scoped for super admins', async () => {
   );
 });
 
+test('facility enrollment cannot submit before both required fields are present', async () => {
+  const source = await readSource('../src/app/(dashboard)/facilities/page.tsx');
+  assert.match(source, /disabled=\{isProcessing \|\| !newFac\.name\.trim\(\) \|\| !newFac\.address\.trim\(\)\}/);
+});
+
+test('facility edit control has an accessible name', async () => {
+  const source = await readSource('../src/app/(dashboard)/facilities/page.tsx');
+  assert.match(source, /aria-label=\{`Edit \$\{facility\.name\}`\}/);
+});
+
 test('unused facility deletion scans owner schedules without collection-group indexes', async () => {
   const source = await readSource('../src/app/api/facilities/delete/route.ts');
 

@@ -8,6 +8,7 @@ import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 import { hasStaffRole } from '@/lib/staff-position';
 import { registerPushDevice } from '@/lib/client-push-registration';
+import { normalizeTeamEvent } from '@/lib/team-event-normalization';
 
 /**
  * Dispatch push + email notifications to all team members.
@@ -1081,6 +1082,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const storage = useStorage();
   const router = useRouter();
   const pathname = usePathname();
+  const isAuthGatePath = pathname === '/login' || pathname === '/verify-email';
   
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -1105,7 +1107,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   useEffect(() => {
-    if (!isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
+    if (isAuthGatePath || !isAuthResolved || !firebaseUser?.uid || firebaseUser.isAnonymous || firebaseUser.emailVerified !== true || !firebaseAuth) return;
     if (claimedSchoolAdminForUid === firebaseUser.uid) return;
 
     let cancelled = false;
@@ -1128,7 +1130,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     };
     claimPendingSchoolInvites();
     return () => { cancelled = true; };
-  }, [claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthResolved]);
+  }, [claimedSchoolAdminForUid, firebaseAuth, firebaseUser?.isAnonymous, firebaseUser?.uid, isAuthGatePath, isAuthResolved]);
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
@@ -1154,7 +1156,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!firebaseUser || !db || (!firebaseUser.isAnonymous && firebaseUser.emailVerified !== true)) {
+    if (isAuthGatePath || !firebaseUser || !db || (!firebaseUser.isAnonymous && firebaseUser.emailVerified !== true)) {
       setUserProfile(null);
       return;
     }
@@ -1218,7 +1220,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         role: 'adult_player',
       } as unknown as UserProfile);
     });
-  }, [firebaseUser, db, userRole]);
+  }, [firebaseUser, db, isAuthGatePath, userRole]);
 
   useEffect(() => {
     if (
@@ -1244,7 +1246,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
   }, [userProfile?.id, userProfile?.notificationsEnabled]);
 
-  const teamsQuery = useMemoFirebase(() => (isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
+  const teamsQuery = useMemoFirebase(() => (!isAuthGatePath && isAuthResolved && firebaseUser?.uid && db && (firebaseUser.isAnonymous || firebaseUser.emailVerified === true)) ? query(collection(db, 'users', firebaseUser.uid, 'teamMemberships')) : null, [isAuthGatePath, isAuthResolved, firebaseUser?.uid, firebaseUser?.isAnonymous, firebaseUser?.emailVerified, db]);
   const { data: teamsData, isLoading: isTeamsLoading } = useCollection(teamsQuery);
   
   // ── Shared deterministic invite-code fallback ─────────────────────────
@@ -1363,7 +1365,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc'));
   }, [db, activeTeam?.id]);
   const { data: activeEventsData } = useCollection<TeamEvent>(activeEventsQuery);
-  const activeTeamEvents = useMemo(() => activeEventsData || [], [activeEventsData]);
+  const activeTeamEvents = useMemo(
+    () => (activeEventsData || [])
+      .map(event => normalizeTeamEvent(event, activeTeam?.id))
+      .filter((event): event is TeamEvent => event !== null),
+    [activeEventsData, activeTeam?.id],
+  );
 
   const gamesQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
@@ -1598,14 +1605,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     allTeamIds.forEach(tid => {
        const eu = onSnapshot(collection(db, 'teams', tid, 'events'), (snap) => {
           const docs: TeamEvent[] = [];
-          snap.forEach(d => docs.push({ id: d.id, ...d.data() } as TeamEvent));
+          snap.forEach(d => {
+            const event = normalizeTeamEvent({ id: d.id, ...d.data() }, tid);
+            if (event) docs.push(event as TeamEvent);
+          });
           eventMaps.set(tid, docs);
           flattenAndSet();
        }, (err) => console.error("Event Sync Error:", err));
 
        const gu = onSnapshot(collection(db, 'teams', tid, 'games'), (snap) => {
           const docs: any[] = [];
-          snap.forEach(d => docs.push({ id: d.id, ...d.data() } as any));
+          snap.forEach(d => {
+            const game = normalizeTeamEvent({ id: d.id, ...d.data() }, tid);
+            if (game) docs.push(game);
+          });
           gameMaps.set(tid, docs);
           flattenAndSet();
        }, (err) => console.error("Game Sync Error:", err));
@@ -2568,7 +2581,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }));
     });
   }, [activeTeam, db]);
-  const deleteEquipmentItem = useCallback(async (id: string) => { if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'equipment', id)); }, [activeTeam, db]);
+  const deleteEquipmentItem = useCallback(async (id: string) => {
+    if (!activeTeam?.id || !db) return;
+    const equipmentRef = doc(db, 'teams', activeTeam.id, 'equipment', id);
+    await runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(equipmentRef);
+      if (!snapshot.exists()) return;
+      if (Object.keys(snapshot.data().assignments || {}).length > 0) {
+        throw new Error('Cannot delete equipment while it is assigned. Return every assignment first.');
+      }
+      transaction.delete(equipmentRef);
+    });
+  }, [activeTeam, db]);
   const assignEquipment = useCallback(async (
     id: string,
     uid: string,

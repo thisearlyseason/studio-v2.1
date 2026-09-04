@@ -12,6 +12,18 @@ const runBrowser = process.argv.includes('--browser');
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const teamSwitchOnly = process.argv.includes('--team-switch-only');
 const alertsOnly = process.argv.includes('--alerts-only');
+const identityOnly = process.argv.includes('--identity-only');
+const identityStateOnly = process.argv.includes('--identity-state-only');
+const deletionLoginOnly = process.argv.includes('--deletion-login-only');
+const surfaceSmokeOnly = process.argv.includes('--surface-smoke-only');
+const surfaceRemainderOnly = process.argv.includes('--surface-remainder-only');
+const tournamentDenialOnly = process.argv.includes('--tournament-denial-only');
+const parentAdminSurfaceOnly = process.argv.includes('--parent-admin-surface-only');
+const workflowCommunicationOnly = process.argv.includes('--workflow-communication-only');
+const workflowChatProbeOnly = process.argv.includes('--workflow-chat-probe-only');
+const workflowEventsOnly = process.argv.includes('--workflow-events-only');
+const workflowFacilitiesOnly = process.argv.includes('--workflow-facilities-only');
+const workflowEquipmentOnly = process.argv.includes('--workflow-equipment-only');
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const children = [];
@@ -137,6 +149,11 @@ async function browserLogin(alias, expectedPath, sessionLabel = alias) {
   const session = `phase2-${sessionLabel}`;
   cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
   const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.stack || error.message));
+    page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
     await page.getByLabel('Email Address').fill(${JSON.stringify(`${alias}@phase2.test`)});
     await page.locator('#password').fill(${JSON.stringify(password)});
     await page.getByRole('button', { name: 'Sign In' }).click();
@@ -168,6 +185,839 @@ function browserPath(session, pathname) {
     return { url: page.url() };
   }`;
   return new URL(JSON.parse(cli(session, ['run-code', code])).url).pathname;
+}
+
+function browserRouteAudit(session, pathname, { mobile = false } = {}) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500) failedResponses.push(response.url()); });
+    await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+    await page.goto(${JSON.stringify(`${BASE_URL}${pathname}`)});
+    await page.waitForTimeout(1800);
+    return {
+      pathname: await page.evaluate(() => window.location.pathname),
+      fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expectedTitle, sessionLabel) {
+  const session = `phase2-${sessionLabel}-${process.pid}`;
+  cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.stack || error.message));
+    page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
+    await page.getByLabel('Email Address').fill(${JSON.stringify(`${alias}@phase2.test`)});
+    await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.waitForTimeout(2500);
+    return {
+      pathname: await page.evaluate(() => window.location.pathname),
+      expectedTitle: await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true }).count(),
+      body: (await page.locator('body').innerText()).slice(0, 500),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  const result = JSON.parse(cli(session, ['run-code', code], { sensitive: true }));
+  expectEqual(result.pathname, expectedPath, `${sessionLabel} path`);
+  if (result.expectedTitle !== 1) {
+    console.log(`${sessionLabel} body diagnostic: ${JSON.stringify(result.body)}`);
+    console.log(`${sessionLabel} console diagnostic: ${JSON.stringify(result.consoleErrors)}`);
+    console.log(`${sessionLabel} request diagnostic: ${JSON.stringify(result.failedResponses)}`);
+  }
+  expectEqual(result.expectedTitle, 1, `${sessionLabel} message`);
+}
+
+function browserProtectedReturnAudit() {
+  const session = `phase2-protected-return-${process.pid}`;
+  cli(session, ['open', `${BASE_URL}/facilities`, '--browser', 'chrome']);
+  const code = `async page => {
+    await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
+    await page.getByLabel('Email Address').fill('qa-coach-owner-a@phase2.test');
+    await page.locator('#password').fill(${JSON.stringify(password)});
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.waitForFunction(() => window.location.pathname === '/facilities', null, { timeout: 15000 });
+    return await page.evaluate(() => window.location.pathname);
+  }`;
+  return JSON.parse(cli(session, ['run-code', code], { sensitive: true }));
+}
+
+function browserLogoutAudit(session) {
+  const code = `async page => {
+    const peer = await page.context().newPage();
+    await peer.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+    await peer.waitForTimeout(1200);
+    await page.goto(${JSON.stringify(`${BASE_URL}/settings`)});
+    await page.getByRole('button', { name: 'Sign Out' }).click();
+    await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
+    await peer.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
+    const sessionResponse = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)});
+    return {
+      primaryPath: await page.evaluate(() => window.location.pathname),
+      peerPath: await peer.evaluate(() => window.location.pathname),
+      sessionStatus: sessionResponse.status(),
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runIdentityBrowserAudit() {
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `identity-owner-${process.pid}`);
+  const assistant = await browserLogin('qa-team-assistant', '/dashboard', `identity-assistant-${process.pid}`);
+  const member = await browserLogin('qa-team-member', '/dashboard', `identity-member-${process.pid}`);
+  const parent = await browserLogin('qa-parent-a', '/family', `identity-parent-${process.pid}`);
+  const player = await browserLogin('qa-adult-player-a', '/dashboard', `identity-player-${process.pid}`);
+  await browserLogin('qa-youth-active', '/dashboard', `identity-youth-${process.pid}`);
+  await browserLogin('qa-multi-team', '/dashboard', `identity-multi-${process.pid}`);
+
+  const ownerBilling = browserRouteAudit(owner, '/dashboard/billing');
+  expectEqual(ownerBilling.pathname, '/dashboard/billing', 'owner billing browser route');
+  expectEqual(ownerBilling.fits, true, 'owner billing desktop viewport');
+  expectEqual(ownerBilling.consoleErrors.length, 0, 'owner billing console errors');
+  expectEqual(ownerBilling.failedResponses.length, 0, 'owner billing failed responses');
+
+  const assistantStaff = browserRouteAudit(assistant, '/facilities');
+  expectEqual(assistantStaff.pathname, '/facilities', 'assistant staff route');
+  expectEqual(assistantStaff.consoleErrors.length, 0, 'assistant staff route console errors');
+  expectEqual(assistantStaff.failedResponses.length, 0, 'assistant staff route failed responses');
+
+  const memberStaff = browserRouteAudit(member, '/facilities');
+  expectEqual(memberStaff.pathname, '/dashboard', 'member staff route denial');
+
+  const parentFinance = browserRouteAudit(parent, '/family/payments', { mobile: true });
+  expectEqual(parentFinance.pathname, '/family/payments', 'parent finance browser route');
+  expectEqual(parentFinance.fits, true, 'parent finance mobile viewport');
+  expectEqual(parentFinance.consoleErrors.length, 0, 'parent finance console errors');
+  expectEqual(parentFinance.failedResponses.length, 0, 'parent finance failed responses');
+
+  const playerFinance = browserRouteAudit(player, '/family/payments');
+  expectEqual(playerFinance.pathname, '/dashboard', 'player finance browser route denial');
+
+  expectEqual(browserProtectedReturnAudit(), '/facilities', 'protected deep link resumes after login');
+
+  const logout = browserLogoutAudit(owner);
+  expectEqual(logout.primaryPath, '/login', 'logout revokes the browser session');
+  expectEqual(logout.peerPath, '/login', 'second tab observes logout');
+  expectEqual(logout.sessionStatus, 401, 'logged-out session endpoint denial');
+
+  runIdentityStateBrowserAudit();
+}
+
+function runIdentityStateBrowserAudit() {
+  browserLoginFailureAudit('qa-coach-owner-a', 'definitely-wrong-password', '/login', 'Login Failed', 'wrong-password login uses generic failure copy');
+  browserLoginFailureAudit('qa-suspended', password, '/login', 'Login Failed', 'disabled login uses generic failure copy');
+  browserLoginFailureAudit('qa-unverified', password, '/verify-email', 'Verify Your Email', 'unverified login reaches verification gate');
+  browserLoginFailureAudit('qa-pending-delete', password, '/login', 'Session Setup Failed', 'deletion-pending login is denied');
+}
+
+function browserSurfaceSweep(session, cases, { mobile = false } = {}) {
+  const code = `async page => {
+    const cases = ${JSON.stringify(cases)};
+    const results = [];
+    let activePath = '';
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => {
+      if (message.type() === 'error') consoleErrors.push({ path: activePath, message: message.text() });
+    });
+    page.on('pageerror', error => consoleErrors.push({ path: activePath, message: error.message }));
+    page.on('response', response => {
+      if (response.status() >= 500) failedResponses.push({ path: activePath, status: response.status(), url: response.url() });
+    });
+    await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+    for (const item of cases) {
+      activePath = item.path;
+      await page.goto(${JSON.stringify(BASE_URL)} + item.path);
+      await page.waitForTimeout(1400);
+      if (item.waitForPathChange && await page.evaluate(requested => window.location.pathname === requested, item.path)) {
+        await page.waitForFunction(requested => window.location.pathname !== requested, item.path, { timeout: 10000 }).catch(() => undefined);
+        await page.waitForTimeout(800);
+      }
+      results.push({
+        requested: item.path,
+        expected: item.expected,
+        expectRestricted: item.expectRestricted === true,
+        expectRestrictedOn: item.expectRestrictedOn || '',
+        actual: await page.evaluate(() => window.location.pathname),
+        applicationError: await page.getByText(/Application error: a client-side exception/).count(),
+        restricted: await page.getByText(/Access Restricted|Access Denied|Institutional Hub Locked|Elite Upgrade Required/i).count(),
+        mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      });
+    }
+    return { results, consoleErrors, failedResponses };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function assertSurfaceSweep(result, label) {
+  const routeFailures = result.results.filter(item => {
+    const expectedPaths = Array.isArray(item.expected) ? item.expected : [item.expected];
+    const missingRestriction = item.expectRestricted === true && item.restricted < 1;
+    const missingConditionalRestriction = item.expectRestrictedOn === item.actual && item.restricted < 1;
+    return !expectedPaths.includes(item.actual) || item.applicationError !== 0 || item.mobileFits !== true || missingRestriction || missingConditionalRestriction;
+  });
+  if (routeFailures.length > 0) console.log(`${label} route diagnostics: ${JSON.stringify(routeFailures)}`);
+  if (result.consoleErrors.length > 0) console.log(`${label} console diagnostics: ${JSON.stringify(result.consoleErrors)}`);
+  if (result.failedResponses.length > 0) console.log(`${label} response diagnostics: ${JSON.stringify(result.failedResponses)}`);
+  expectEqual(routeFailures.length, 0, `${label} routes, application errors, and mobileFits`);
+  expectEqual(result.consoleErrors.length, 0, `${label} console errors`);
+  expectEqual(result.failedResponses.length, 0, `${label} failed responses`);
+}
+
+async function runSurfaceSmokeAudit({ remainderOnly = false, includeMember = true } = {}) {
+  if (!remainderOnly) {
+    const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `surface-owner-${process.pid}`);
+    const assistant = await browserLogin('qa-team-assistant', '/dashboard', `surface-assistant-${process.pid}`);
+
+    assertSurfaceSweep(browserSurfaceSweep(owner, [
+      '/team', '/events', '/calendar', '/roster', '/feed', '/chats', '/practice', '/drills',
+      '/files', '/volunteers', '/fundraising', '/facilities', '/equipment', '/games', '/settings',
+      '/dashboard/billing', '/leagues', '/tournaments', '/manage-tournaments', '/coaches-corner',
+      '/teams/join', '/teams/new',
+    ].map(pathname => ({ path: pathname, expected: pathname })).concat([
+      { path: '/club', expected: '/dashboard' },
+      { path: '/competition', expected: '/dashboard' },
+      { path: '/admin', expected: '/dashboard' },
+    ])), 'owner remaining surface sweep');
+
+    assertSurfaceSweep(browserSurfaceSweep(assistant, [
+      '/facilities', '/equipment', '/fundraising', '/volunteers', '/manage-tournaments', '/teams/new',
+    ].map(pathname => ({ path: pathname, expected: pathname })), { mobile: true }), 'assistant remaining surface sweep');
+  }
+
+  const member = includeMember
+    ? await browserLogin('qa-team-member', '/dashboard', `surface-member-${process.pid}`)
+    : null;
+  const parent = await browserLogin('qa-parent-a', '/family', `surface-parent-${process.pid}`);
+  const admin = await browserLogin('qa-superadmin', '/admin', `surface-admin-${process.pid}`);
+
+  if (member) assertSurfaceSweep(browserSurfaceSweep(member, [
+    '/team', '/events', '/calendar', '/roster', '/feed', '/chats', '/practice', '/drills', '/files',
+    '/games', '/settings', '/leagues', '/volunteers',
+  ].map(pathname => ({ path: pathname, expected: pathname })).concat([
+    { path: '/tournaments', expected: ['/manage-tournaments', '/dashboard'], expectRestrictedOn: '/manage-tournaments', waitForPathChange: true },
+  ]).concat([
+    '/facilities', '/equipment', '/fundraising', '/manage-tournaments', '/teams/new',
+    '/dashboard/billing', '/family', '/admin', '/club', '/competition', '/coaches-corner',
+  ].map(pathname => ({ path: pathname, expected: '/dashboard' }))), { mobile: true }), 'member remaining surface sweep');
+
+  assertSurfaceSweep(browserSurfaceSweep(parent, [
+    { path: '/family', expected: '/family' },
+    { path: '/family/payments', expected: '/family/payments' },
+    { path: '/facilities', expected: '/family' },
+    { path: '/admin', expected: '/family' },
+  ], { mobile: true }), 'parent remaining surface sweep');
+
+  assertSurfaceSweep(browserSurfaceSweep(admin, [
+    { path: '/admin', expected: '/admin' },
+    { path: '/admin/plans', expected: '/admin/plans' },
+    { path: '/family', expected: '/family' },
+    { path: '/club', expected: '/club' },
+    { path: '/competition', expected: '/competition' },
+  ], { mobile: true }), 'trusted admin remaining surface sweep');
+}
+
+function browserOwnerCommunicationSetup(session, marker) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    const dismissPriorityAlerts = async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+        const visible = await alert.waitFor({ state: 'visible', timeout: 1800 }).then(() => true).catch(() => false);
+        if (!visible) break;
+        await alert.getByRole('button', { name: 'Got It' }).click();
+        await alert.waitFor({ state: 'hidden' });
+      }
+    };
+    await page.goto(${JSON.stringify(`${BASE_URL}/feed`)});
+    await page.getByPlaceholder(/What's the play/).waitFor({ timeout: 10000 });
+    await dismissPriorityAlerts();
+
+    await page.getByRole('button', { name: 'Create poll' }).click();
+    await page.getByRole('button', { name: 'Launch Poll' }).click();
+    await page.getByText('Poll Incomplete', { exact: true }).waitFor();
+    const incompletePoll = await page.getByText('Poll Incomplete', { exact: true }).count();
+    await dismissPriorityAlerts();
+    await page.locator('[toast-close]').click({ force: true });
+    await page.getByPlaceholder('e.g. Best time for training?').fill(${JSON.stringify(`QA Poll ${marker}`)});
+    await page.getByPlaceholder('Option 1').fill('Morning');
+    await page.getByPlaceholder('Option 2').fill('Evening');
+    await page.getByRole('button', { name: 'Launch Poll' }).click();
+    await page.getByText(${JSON.stringify(`QA Poll ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    await dismissPriorityAlerts();
+
+    let postButtonCount = 0;
+    let postButtonEnabled = false;
+    let composerValue = '';
+    for (let attempt = 0; attempt < 5 && !postButtonEnabled; attempt += 1) {
+      const composer = page.getByPlaceholder(/What's the play/);
+      await composer.waitFor({ state: 'visible', timeout: 10000 });
+      await composer.fill(${JSON.stringify(`QA Feed ${marker}`)});
+      await page.waitForTimeout(350);
+      const postButton = page.getByRole('button', { name: 'Post to Squad' });
+      postButtonCount = await postButton.count();
+      postButtonEnabled = postButtonCount === 1 ? await postButton.isEnabled() : false;
+      composerValue = await page.getByPlaceholder(/What's the play/).inputValue().catch(() => '');
+      if (postButtonEnabled) await postButton.click();
+    }
+    if (!postButtonEnabled) {
+      throw new Error('feed composer diagnostic: ' + JSON.stringify({
+        postButtonCount,
+        postButtonEnabled,
+        composerValue,
+        pathname: await page.evaluate(() => window.location.pathname),
+        body: (await page.locator('body').innerText()).slice(0, 1200),
+        buttons: await page.getByRole('button').allTextContents(),
+        activeTeamId: await page.evaluate(() => localStorage.getItem('sf_session_team_id')),
+      }));
+    }
+    await page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    return {
+      incompletePoll,
+      postAfterReload: await page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true }).count(),
+      pollAfterReload: await page.getByText(${JSON.stringify(`QA Poll ${marker}`)}, { exact: true }).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserMemberCommunication(session, marker) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.goto(${JSON.stringify(`${BASE_URL}/feed`)});
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+      const visible = await alert.waitFor({ state: 'visible', timeout: 1200 }).then(() => true).catch(() => false);
+      if (!visible) break;
+      await alert.getByRole('button', { name: 'Got It' }).click();
+      await alert.waitFor({ state: 'hidden' });
+    }
+    const postText = page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true });
+    await postText.waitFor({ timeout: 10000 });
+    const ownerPostVisible = await postText.count();
+    const postCard = postText.locator('xpath=ancestor::div[.//button[@aria-label="Post comment"]][1]');
+    await postCard.getByPlaceholder('Write to squad...').fill(${JSON.stringify(`QA Comment ${marker}`)});
+    await postCard.getByRole('button', { name: 'Post comment' }).click();
+    await page.getByText(${JSON.stringify(`QA Comment ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+
+    const pollQuestion = page.getByText(${JSON.stringify(`QA Poll ${marker}`)}, { exact: true });
+    await pollQuestion.waitFor();
+    const pollCard = pollQuestion.locator('xpath=ancestor::div[.//button[.//span[normalize-space()="Morning"]]][1]');
+    await pollCard.getByText('Morning', { exact: true }).click();
+    await page.waitForTimeout(800);
+    await page.reload();
+    await page.getByText(${JSON.stringify(`QA Comment ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    const commentAfterReload = await page.getByText(${JSON.stringify(`QA Comment ${marker}`)}, { exact: true }).count();
+    const reloadedPoll = page.getByText(${JSON.stringify(`QA Poll ${marker}`)}, { exact: true });
+    await reloadedPoll.waitFor();
+    const reloadedPollCard = reloadedPoll.locator('xpath=ancestor::div[.//button[.//span[normalize-space()="Morning"]]][1]');
+    const voteAfterReload = await reloadedPollCard.getByText('1 v', { exact: true }).count();
+
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats/qa-team-chat?teamId=qa-team-a`)});
+    const chatInput = page.getByPlaceholder('Tactical update...');
+    const chatReady = await chatInput.waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+    if (!chatReady) {
+      throw new Error('chat detail diagnostic: ' + JSON.stringify({
+        pathname: await page.evaluate(() => window.location.pathname),
+        body: (await page.locator('body').innerText()).slice(0, 1200),
+        consoleErrors,
+        failedResponses,
+      }));
+    }
+    await chatInput.fill(${JSON.stringify(`QA Chat ${marker}`)});
+    await page.getByRole('button', { name: 'Send message' }).click();
+    await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    return {
+      ownerPostVisible,
+      commentAfterReload,
+      voteAfterReload,
+      chatAfterReload: await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).count(),
+      teamBLeak: await page.getByText(/BLUEBIRD-B/).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserOwnerCommunicationVerify(session, marker) {
+  const code = `async page => {
+    await page.goto(${JSON.stringify(`${BASE_URL}/feed`)});
+    await page.getByText(${JSON.stringify(`QA Comment ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    const memberComment = await page.getByText(${JSON.stringify(`QA Comment ${marker}`)}, { exact: true }).count();
+    const postText = page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true });
+    const postCard = postText.locator('xpath=ancestor::div[.//button[starts-with(@aria-label,"Delete post by")]][1]');
+    await postCard.getByRole('button', { name: /Delete post by/ }).click();
+    await postText.waitFor({ state: 'detached', timeout: 10000 });
+    await page.reload();
+    const deletedAfterReload = await page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true }).count();
+
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats/qa-team-chat?teamId=qa-team-a`)});
+    await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    return {
+      memberComment,
+      deletedAfterReload,
+      chatVisible: await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).count(),
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runCommunicationWorkflowAudit() {
+  const marker = `phase2-${process.pid}`;
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `communication-owner-${process.pid}`);
+  const member = await browserLogin('qa-team-member', '/dashboard', `communication-member-${process.pid}`);
+  const setup = browserOwnerCommunicationSetup(owner, marker);
+  expectEqual(setup.incompletePoll, 1, 'feed rejects incomplete poll');
+  expectEqual(setup.postAfterReload, 1, 'owner feed post persists after reload');
+  expectEqual(setup.pollAfterReload, 1, 'owner poll persists after reload');
+  expectEqual(setup.consoleErrors.length, 0, 'owner feed workflow console errors');
+  expectEqual(setup.failedResponses.length, 0, 'owner feed workflow failed responses');
+
+  const memberResult = browserMemberCommunication(member, marker);
+  expectEqual(memberResult.ownerPostVisible, 1, 'member sees owner feed post');
+  expectEqual(memberResult.commentAfterReload, 1, 'member comment persists for owner');
+  expectEqual(memberResult.voteAfterReload, 1, 'member poll vote persists after reload');
+  expectEqual(memberResult.chatAfterReload, 1, 'member chat message persists after reload');
+  expectEqual(memberResult.teamBLeak, 0, 'Team B chat content is absent from Team A UI');
+  expectEqual(memberResult.consoleErrors.length, 0, 'member communication workflow console errors');
+  expectEqual(memberResult.failedResponses.length, 0, 'member communication workflow failed responses');
+
+  const ownerResult = browserOwnerCommunicationVerify(owner, marker);
+  expectEqual(ownerResult.memberComment, 1, 'member comment persists for owner');
+  expectEqual(ownerResult.deletedAfterReload, 0, 'owner feed post delete persists after reload');
+  expectEqual(ownerResult.chatVisible, 1, 'member chat message persists for owner');
+}
+
+function browserOwnerEventCreate(session, marker) {
+  const title = `QA Event ${marker}`;
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+      const visible = await alert.waitFor({ state: 'visible', timeout: 1200 }).then(() => true).catch(() => false);
+      if (!visible) break;
+      await alert.getByRole('button', { name: 'Got It' }).click();
+      await alert.waitFor({ state: 'hidden' });
+    }
+    await page.getByRole('button', { name: '+ New Activity' }).click();
+    const form = page.getByRole('dialog', { name: 'Schedule New Team Activity' });
+    await form.getByRole('button', { name: 'Deploy Activity' }).click();
+    await page.getByText('Activity Incomplete', { exact: true }).waitFor();
+    const incomplete = await page.getByText('Activity Incomplete', { exact: true }).count();
+    await page.locator('[toast-close]').click({ force: true });
+    await form.getByPlaceholder('e.g. Squad Match vs Tigers').fill(${JSON.stringify(title)});
+    await form.getByRole('button', { name: 'Pick Date' }).first().click();
+    const dateButton = page.getByRole('button', { name: /September 20/ }).first();
+    await dateButton.waitFor({ timeout: 5000 });
+    await dateButton.click();
+    await form.locator('input[type="time"]').fill('18:30');
+    await form.locator('textarea').fill('Synthetic browser-audit event');
+    await form.getByRole('button', { name: 'Deploy Activity' }).click();
+    await page.getByText(${JSON.stringify(title)}, { exact: true }).first().waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(title)}, { exact: true }).first().waitFor({ timeout: 10000 });
+    return {
+      incomplete,
+      createdAfterReload: await page.getByText(${JSON.stringify(title)}, { exact: true }).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserMemberEventRsvp(session, marker) {
+  const title = `QA Event ${marker}`;
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+      const visible = await alert.waitFor({ state: 'visible', timeout: 1200 }).then(() => true).catch(() => false);
+      if (!visible) break;
+      await alert.getByRole('button', { name: 'Got It' }).click();
+      await alert.waitFor({ state: 'hidden' });
+    }
+    const eventTitle = page.getByText(${JSON.stringify(title)}, { exact: true }).last();
+    await eventTitle.waitFor({ timeout: 10000 });
+    await eventTitle.click();
+    const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+    const editControls = await details.getByRole('button', { name: 'Edit Activity' }).count();
+    const goingControls = await details.getByRole('button', { name: 'Going' }).count();
+    if (goingControls === 0) {
+      throw new Error('member event RSVP diagnostic: ' + JSON.stringify({
+        body: (await details.innerText()).slice(0, 1800),
+        buttons: await details.getByRole('button').allTextContents(),
+        pathname: await page.evaluate(() => window.location.pathname),
+      }));
+    }
+    await details.getByRole('button', { name: 'Going' }).click();
+    await details.getByText('GOING', { exact: true }).first().waitFor({ timeout: 10000 });
+    await details.getByRole('button', { name: 'Close event details' }).click();
+    await page.reload();
+    await page.getByText(${JSON.stringify(title)}, { exact: true }).last().click();
+    const reloaded = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+    await reloaded.getByText('GOING', { exact: true }).first().waitFor({ timeout: 10000 });
+    return {
+      eventVisible: await page.getByText(${JSON.stringify(title)}, { exact: true }).count(),
+      editControls,
+      rsvpAfterReload: await reloaded.getByText('GOING', { exact: true }).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserOwnerEventEditDelete(session, marker) {
+  const original = `QA Event ${marker}`;
+  const updated = `QA Event Updated ${marker}`;
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
+    await page.getByText(${JSON.stringify(original)}, { exact: true }).last().click();
+    const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${original}`)} });
+    await details.getByRole('button', { name: 'Edit Activity' }).click();
+    const form = page.getByRole('dialog', { name: 'Schedule New Team Activity' });
+    await form.getByPlaceholder('e.g. Squad Match vs Tigers').fill(${JSON.stringify(updated)});
+    await form.getByRole('button', { name: 'Deploy Activity' }).click();
+    await page.getByText(${JSON.stringify(updated)}, { exact: true }).first().waitFor({ timeout: 10000 });
+    const close = page.getByRole('button', { name: 'Close event details' });
+    if (await close.count()) await close.click();
+    await page.reload();
+    await page.getByText(${JSON.stringify(updated)}, { exact: true }).first().waitFor({ timeout: 10000 });
+    const editedAfterReload = await page.getByText(${JSON.stringify(updated)}, { exact: true }).count();
+    await page.getByText(${JSON.stringify(updated)}, { exact: true }).last().click();
+    const updatedDetails = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${updated}`)} });
+    await updatedDetails.getByRole('button', { name: ${JSON.stringify(`Delete ${updated}`)} }).click();
+    const confirmation = page.getByRole('alertdialog');
+    await confirmation.getByRole('button', { name: 'Delete Activity' }).click();
+    await page.getByText(${JSON.stringify(updated)}, { exact: true }).first().waitFor({ state: 'detached', timeout: 10000 });
+    await page.reload();
+    return {
+      editedAfterReload,
+      deletedAfterReload: await page.getByText(${JSON.stringify(updated)}, { exact: true }).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runEventWorkflowAudit() {
+  const marker = `phase2-${process.pid}`;
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `events-owner-${process.pid}`);
+  const member = await browserLogin('qa-team-member', '/dashboard', `events-member-${process.pid}`);
+  const created = browserOwnerEventCreate(owner, marker);
+  expectEqual(created.incomplete, 1, 'event rejects incomplete activity');
+  expectEqual(created.createdAfterReload > 0, true, 'owner event create persists after reload');
+  expectEqual(created.consoleErrors.length, 0, 'owner event create console errors');
+  expectEqual(created.failedResponses.length, 0, 'owner event create failed responses');
+  const memberResult = browserMemberEventRsvp(member, marker);
+  expectEqual(memberResult.eventVisible > 0, true, 'member sees owner event');
+  expectEqual(memberResult.editControls, 0, 'member cannot edit team event');
+  expectEqual(memberResult.rsvpAfterReload > 0, true, 'member RSVP persists after reload');
+  expectEqual(memberResult.consoleErrors.length, 0, 'member event workflow console errors');
+  expectEqual(memberResult.failedResponses.length, 0, 'member event workflow failed responses');
+  const ownerResult = browserOwnerEventEditDelete(owner, marker);
+  expectEqual(ownerResult.editedAfterReload > 0, true, 'owner event edit persists after reload');
+  expectEqual(ownerResult.deletedAfterReload, 0, 'owner event delete persists after reload');
+  expectEqual(ownerResult.consoleErrors.length, 0, 'owner event edit/delete console errors');
+  expectEqual(ownerResult.failedResponses.length, 0, 'owner event edit/delete failed responses');
+}
+
+function browserFacilityWorkflow(session, marker) {
+  const facility = `QA Facility ${marker}`;
+  const updatedFacility = `QA Facility Updated ${marker}`;
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.goto(${JSON.stringify(`${BASE_URL}/facilities`)});
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+      const visible = await alert.waitFor({ state: 'visible', timeout: 1200 }).then(() => true).catch(() => false);
+      if (!visible) break;
+      await alert.getByRole('button', { name: 'Got It' }).click();
+      await alert.waitFor({ state: 'hidden' });
+    }
+    await page.getByRole('button', { name: 'Enroll Facility' }).click();
+    const enrollment = page.getByRole('dialog', { name: 'Facility Registration' });
+    const commit = enrollment.getByRole('button', { name: 'Commit Facility Enrollment' });
+    const initiallyDisabled = await commit.isDisabled();
+    await enrollment.getByPlaceholder('e.g. Metro Sports Complex').fill(${JSON.stringify(facility)});
+    const nameOnlyDisabled = await commit.isDisabled();
+    await enrollment.getByPlaceholder('123 Stadium Way, City, State…').fill('100 QA Avenue');
+    const completeEnabled = await commit.isEnabled();
+    await commit.click();
+    await page.getByText(${JSON.stringify(facility)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(facility)}, { exact: true }).waitFor({ timeout: 10000 });
+    const createdAfterReload = await page.getByText(${JSON.stringify(facility)}, { exact: true }).count();
+
+    await page.getByRole('button', { name: ${JSON.stringify(`Edit ${facility}`)} }).click();
+    const edit = page.getByRole('dialog', { name: 'Edit Facility' });
+    await edit.getByPlaceholder('e.g. Metro Sports Complex').fill(${JSON.stringify(updatedFacility)});
+    await edit.getByRole('button', { name: 'Save Changes' }).click();
+    await page.getByText(${JSON.stringify(updatedFacility)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(updatedFacility)}, { exact: true }).waitFor({ timeout: 10000 });
+    const editedAfterReload = await page.getByText(${JSON.stringify(updatedFacility)}, { exact: true }).count();
+    return {
+      initiallyDisabled,
+      nameOnlyDisabled,
+      completeEnabled,
+      createdAfterReload,
+      editedAfterReload,
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserFacilityResourceWorkflow(session, marker) {
+  const updatedFacility = `QA Facility Updated ${marker}`;
+  const resource = `QA Court ${marker}`;
+  const updatedResource = `QA Court Updated ${marker}`;
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.getByPlaceholder('e.g. Field A, Court 1...').fill(${JSON.stringify(resource)});
+    await page.getByRole('button', { name: 'Add Resource' }).click();
+    await page.getByText(${JSON.stringify(resource)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.getByRole('button', { name: ${JSON.stringify(`Rename ${resource}`)} }).click();
+    const rename = page.getByRole('textbox', { name: ${JSON.stringify(`Rename ${resource}`)} });
+    await rename.fill(${JSON.stringify(updatedResource)});
+    await page.getByRole('button', { name: ${JSON.stringify(`Save ${resource} name`)} }).click();
+    await page.getByText(${JSON.stringify(updatedResource)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(updatedResource)}, { exact: true }).waitFor({ timeout: 10000 });
+    const resourceRenamedAfterReload = await page.getByText(${JSON.stringify(updatedResource)}, { exact: true }).count();
+    await page.evaluate(() => { window.confirm = () => false; });
+    await page.getByRole('button', { name: ${JSON.stringify(`Delete ${updatedResource}`)} }).click();
+    const resourceAfterCancel = await page.getByText(${JSON.stringify(updatedResource)}, { exact: true }).count();
+    await page.evaluate(() => { window.confirm = () => true; });
+    await page.getByRole('button', { name: ${JSON.stringify(`Delete ${updatedResource}`)} }).click();
+    await page.getByText(${JSON.stringify(updatedResource)}, { exact: true }).waitFor({ state: 'detached', timeout: 10000 });
+    const resourceAfterDelete = await page.getByText(${JSON.stringify(updatedResource)}, { exact: true }).count();
+    await page.getByRole('button', { name: ${JSON.stringify(`Decommission ${updatedFacility}`)} }).click();
+    await page.getByText(${JSON.stringify(updatedFacility)}, { exact: true }).waitFor({ state: 'detached', timeout: 10000 });
+    return {
+      resourceRenamedAfterReload,
+      resourceAfterCancel,
+      resourceAfterDelete,
+      facilityAfterDelete: await page.getByText(${JSON.stringify(updatedFacility)}, { exact: true }).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runFacilityWorkflowAudit() {
+  const marker = `phase2-${process.pid}`;
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `facilities-owner-${process.pid}`);
+  const result = browserFacilityWorkflow(owner, marker);
+  expectEqual(result.initiallyDisabled && result.nameOnlyDisabled && result.completeEnabled, true, 'facility requires name and address');
+  expectEqual(result.createdAfterReload, 1, 'facility create persists after reload');
+  expectEqual(result.editedAfterReload, 1, 'facility edit persists after reload');
+  expectEqual(result.consoleErrors.length, 0, 'facility workflow console errors');
+  expectEqual(result.failedResponses.length, 0, 'facility workflow failed responses');
+  const resources = browserFacilityResourceWorkflow(owner, marker);
+  expectEqual(resources.resourceRenamedAfterReload, 1, 'resource rename persists after reload');
+  expectEqual(resources.resourceAfterCancel, 1, 'resource delete cancel preserves record');
+  expectEqual(resources.resourceAfterDelete, 0, 'resource delete persists after reload');
+  expectEqual(resources.facilityAfterDelete, 0, 'facility delete persists after reload');
+  expectEqual(resources.consoleErrors.length, 0, 'facility resource workflow console errors');
+  expectEqual(resources.failedResponses.length, 0, 'facility resource workflow failed responses');
+}
+
+function browserEquipmentCreateEdit(session, marker) {
+  const asset = `QA Cones ${marker}`;
+  const updated = `QA Training Cones ${marker}`;
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.goto(${JSON.stringify(`${BASE_URL}/equipment`)});
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+      const visible = await alert.waitFor({ state: 'visible', timeout: 1200 }).then(() => true).catch(() => false);
+      if (!visible) break;
+      await alert.getByRole('button', { name: 'Got It' }).click();
+      await alert.waitFor({ state: 'hidden' });
+    }
+    await page.getByRole('button', { name: 'Add Asset' }).click();
+    const enrollment = page.getByRole('dialog', { name: 'Enroll Equipment Asset' });
+    await enrollment.getByPlaceholder('e.g. Away Jerseys').fill(${JSON.stringify(asset)});
+    await enrollment.getByRole('combobox').click();
+    await page.getByRole('option', { name: 'Training Gear' }).click();
+    await enrollment.locator('input[type="number"]').first().fill('3');
+    await enrollment.getByRole('button', { name: 'Commit Asset to Vault' }).click();
+    await page.getByText(${JSON.stringify(asset)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(asset)}, { exact: true }).waitFor({ timeout: 10000 });
+    const createdAfterReload = await page.getByText(${JSON.stringify(asset)}, { exact: true }).count();
+    const search = page.getByPlaceholder('Search inventory ledger...');
+    await search.fill('not-present-' + ${JSON.stringify(marker)});
+    const hiddenBySearch = await page.getByText(${JSON.stringify(asset)}, { exact: true }).count();
+    await search.fill('QA Cones');
+    await page.getByText(${JSON.stringify(asset)}, { exact: true }).waitFor();
+    const foundBySearch = await page.getByText(${JSON.stringify(asset)}, { exact: true }).count();
+    await page.getByRole('button', { name: ${JSON.stringify(`Edit ${asset}`)} }).click();
+    const edit = page.getByRole('dialog', { name: 'Edit Equipment Asset' });
+    await edit.locator('input').first().fill(${JSON.stringify(updated)});
+    await edit.getByRole('button', { name: 'Commit Synchronization' }).click();
+    await search.fill('');
+    await page.getByText(${JSON.stringify(updated)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(updated)}, { exact: true }).waitFor({ timeout: 10000 });
+    return {
+      createdAfterReload,
+      hiddenBySearch,
+      foundBySearch,
+      editedAfterReload: await page.getByText(${JSON.stringify(updated)}, { exact: true }).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserEquipmentAssignReturnDelete(session, marker) {
+  const asset = `QA Training Cones ${marker}`;
+  const memberName = 'qa team member';
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    await page.getByRole('button', { name: 'Assign to Player' }).click();
+    const assignment = page.getByRole('dialog', { name: 'Deploy Asset' });
+    await assignment.getByRole('combobox').click();
+    await page.getByRole('option', { name: /qa team member/i }).click();
+    await assignment.locator('input[type="number"]').fill('4');
+    await assignment.getByRole('button', { name: 'Dispatch Asset' }).click();
+    await page.getByText('Quota Exceeded', { exact: true }).waitFor();
+    const rejectedOverAssignment = await page.getByText('Quota Exceeded', { exact: true }).count();
+    await page.locator('[toast-close]').click({ force: true });
+    await assignment.locator('input[type="number"]').fill('1');
+    await assignment.getByRole('button', { name: 'Dispatch Asset' }).click();
+    await page.getByText(${JSON.stringify(memberName)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(memberName)}, { exact: true }).waitFor({ timeout: 10000 });
+    const assignmentAfterReload = await page.getByText(${JSON.stringify(memberName)}, { exact: true }).count();
+    await page.getByRole('button', { name: ${JSON.stringify(`Delete ${asset}`)} }).click();
+    await page.getByText('Asset Still Assigned', { exact: true }).waitFor({ timeout: 10000 });
+    const blockedDelete = await page.getByText(${JSON.stringify(asset)}, { exact: true }).count();
+    await page.locator('[toast-close]').click({ force: true });
+    await page.getByRole('button', { name: new RegExp('Return ' + ${JSON.stringify(asset)} + ' from', 'i') }).click();
+    await page.getByText(${JSON.stringify(memberName)}, { exact: true }).waitFor({ state: 'detached', timeout: 10000 });
+    const availableAfterReturn = await page.locator('div').filter({ hasText: /^Available3$/ }).count();
+    await page.getByRole('button', { name: ${JSON.stringify(`Delete ${asset}`)} }).click();
+    await page.getByText(${JSON.stringify(asset)}, { exact: true }).waitFor({ state: 'detached', timeout: 10000 });
+    await page.reload();
+    return {
+      rejectedOverAssignment,
+      assignmentAfterReload,
+      blockedDelete,
+      availableAfterReturn,
+      deletedAfterReload: await page.getByText(${JSON.stringify(asset)}, { exact: true }).count(),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runEquipmentWorkflowAudit() {
+  const marker = `phase2-${process.pid}`;
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `equipment-owner-${process.pid}`);
+  const first = browserEquipmentCreateEdit(owner, marker);
+  expectEqual(first.createdAfterReload, 1, 'equipment create persists after reload');
+  expectEqual(first.hiddenBySearch === 0 && first.foundBySearch === 1, true, 'equipment search filters inventory');
+  expectEqual(first.editedAfterReload, 1, 'equipment edit persists after reload');
+  expectEqual(first.consoleErrors.length, 0, 'equipment create/edit console errors');
+  expectEqual(first.failedResponses.length, 0, 'equipment create/edit failed responses');
+  const second = browserEquipmentAssignReturnDelete(owner, marker);
+  expectEqual(second.rejectedOverAssignment, 1, 'equipment rejects over-assignment');
+  expectEqual(second.assignmentAfterReload, 1, 'equipment assignment persists after reload');
+  expectEqual(second.blockedDelete, 1, 'assigned equipment deletion is blocked');
+  expectEqual(second.availableAfterReturn > 0, true, 'equipment return restores availability');
+  expectEqual(second.deletedAfterReload, 0, 'equipment delete persists after reload');
+  expectEqual(second.consoleErrors.length, 0, 'equipment assignment workflow console errors');
+  expectEqual(second.failedResponses.length, 0, 'equipment assignment workflow failed responses');
+}
+
+async function runChatProbeAudit() {
+  const member = await browserLogin('qa-team-member', '/dashboard', `chat-probe-${process.pid}`);
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 400 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push({ status: response.status(), url: response.url() }); });
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats/qa-team-chat?teamId=qa-team-a`)});
+    const input = page.getByPlaceholder('Tactical update...');
+    const ready = await input.waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+    return {
+      ready,
+      pathname: await page.evaluate(() => window.location.pathname),
+      body: (await page.locator('body').innerText()).slice(0, 1500),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  const result = JSON.parse(cli(member, ['run-code', code]));
+  if (!result.ready) console.log(`chat probe diagnostic: ${JSON.stringify(result)}`);
+  expectEqual(result.ready, true, 'seeded member chat detail loads');
 }
 
 function browserScheduleAppAudit(session) {
@@ -553,6 +1403,57 @@ async function runApiAudit() {
 
 async function runBrowserAudit() {
   if (!playwrightCli) throw new Error('PLAYWRIGHT_CLI is required with --browser.');
+  if (workflowChatProbeOnly) {
+    await runChatProbeAudit();
+    return;
+  }
+  if (workflowEventsOnly) {
+    await runEventWorkflowAudit();
+    return;
+  }
+  if (workflowFacilitiesOnly) {
+    await runFacilityWorkflowAudit();
+    return;
+  }
+  if (workflowEquipmentOnly) {
+    await runEquipmentWorkflowAudit();
+    return;
+  }
+  if (workflowCommunicationOnly) {
+    await runCommunicationWorkflowAudit();
+    return;
+  }
+  if (tournamentDenialOnly) {
+    const member = await browserLogin('qa-team-member', '/dashboard', `tournament-denial-${process.pid}`);
+    assertSurfaceSweep(browserSurfaceSweep(member, [
+      { path: '/tournaments', expected: ['/manage-tournaments', '/dashboard'], expectRestrictedOn: '/manage-tournaments', waitForPathChange: true },
+    ], { mobile: true }), 'member tournament route denial');
+    return;
+  }
+  if (parentAdminSurfaceOnly) {
+    await runSurfaceSmokeAudit({ remainderOnly: true, includeMember: false });
+    return;
+  }
+  if (surfaceRemainderOnly) {
+    await runSurfaceSmokeAudit({ remainderOnly: true });
+    return;
+  }
+  if (surfaceSmokeOnly) {
+    await runSurfaceSmokeAudit();
+    return;
+  }
+  if (deletionLoginOnly) {
+    browserLoginFailureAudit('qa-pending-delete', password, '/login', 'Session Setup Failed', 'deletion-pending login is denied');
+    return;
+  }
+  if (identityStateOnly) {
+    runIdentityStateBrowserAudit();
+    return;
+  }
+  if (identityOnly) {
+    await runIdentityBrowserAudit();
+    return;
+  }
   if (scheduleAppOnly) {
     const player = await browserLogin('qa-adult-player-a', '/dashboard', `schedule-app-player-${process.pid}`);
     assertScheduleAppAudit(browserScheduleAppAudit(player));
@@ -601,7 +1502,7 @@ async function main() {
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly) await runApiAudit();
+  if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
   if (runBrowser) await runBrowserAudit();
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
 }

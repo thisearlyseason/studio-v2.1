@@ -2,7 +2,103 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-04; thirteen defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-04; nineteen defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-020 — Assigned equipment can be deleted (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Equipment — inventory integrity |
+| Role | Team owner or authorized staff |
+| Page or route | `/equipment` |
+| Description | The delete action removed an equipment document even when active member assignments still existed. |
+| Expected behavior | An assigned asset cannot be deleted until every assignment is returned. |
+| Actual behavior | The provider called `deleteDoc` without reading assignment state. |
+| Root cause | Equipment deletion had no transactional invariant and the UI had no failure handling. |
+| Fix | Deletion now runs in a transaction, rejects any non-empty assignment map, and reports `Asset Still Assigned` in the UI. |
+| Verification | The regression test fails without the transaction. Real Chrome created stock, rejected an over-assignment, persisted an assignment, blocked deletion, restored stock on return, and then deleted successfully after reload with zero console errors or 5xx responses. |
+| Status | RESOLVED |
+
+## BUG-019 — Facility edit control has no accessible name (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Facilities — venue editing |
+| Role | Team owner or authorized staff |
+| Page or route | `/facilities` |
+| Description | The icon-only facility edit button exposed no stable accessible name. |
+| Expected behavior | Assistive technology identifies the specific facility edit action. |
+| Actual behavior | Only a pencil icon and hover tooltip described the action. |
+| Root cause | The trigger omitted `aria-label`. |
+| Fix | Added the facility-specific accessible name `Edit {facility name}`. |
+| Verification | Source regression and the real Chrome edit/persistence workflow both passed. |
+| Status | RESOLVED |
+
+## BUG-018 — Incomplete facility form submits as a silent no-op (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Facilities — enrollment validation |
+| Role | Team owner or authorized staff |
+| Page or route | `/facilities` |
+| Description | Entering only a venue name enabled the submit button, but clicking it returned silently because the address was absent. |
+| Expected behavior | Both required fields are identified and incomplete enrollment cannot be submitted. |
+| Actual behavior | An enabled action performed no work and displayed no validation state. |
+| Root cause | The button checked only `newFac.name` while the handler required name and address. |
+| Fix | Required markers and trimmed name/address checks now control both the handler and disabled state. |
+| Verification | Source regression plus real Chrome proved disabled-empty, disabled-name-only, enabled-complete, and persisted creation. |
+| Status | RESOLVED |
+
+## BUG-017 — Legacy chat messages crash the conversation detail (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Team Chat — message rendering |
+| Role | Active team member |
+| Page or route | `/chats/[chatId]` |
+| Description | A valid legacy message using `senderId`, `text`, and a Firestore timestamp reached the renderer without the newer `author`, `content`, and ISO timestamp fields. |
+| Expected behavior | Supported historical messages render safely while current messages retain their data. |
+| Actual behavior | The detail page read `msg.author[0]` and crashed when `author` was absent. |
+| Root cause | The Firestore boundary did not normalize legacy message shapes. |
+| Fix | Added a bounded chat-message normalizer for identity, content, type, and timestamp fields before rendering. |
+| Verification | Unit regressions cover legacy, current, and missing-field shapes. Real Chrome loaded the seeded legacy conversation and then completed cross-role message persistence with zero console errors or 5xx responses. |
+| Status | RESOLVED |
+
+## BUG-016 — Legacy events can crash Calendar (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Calendar — team event discovery |
+| Role | Active team user |
+| Page or route | `/calendar` |
+| Description | Legacy team-subcollection events without an embedded `teamId` reached Calendar discovery, which called `.slice()` on the missing value. |
+| Expected behavior | A team-subcollection event inherits its containing team and renders safely. |
+| Actual behavior | Calendar entered its error boundary with `Cannot read properties of undefined`. |
+| Root cause | Provider hydration trusted duplicated document fields instead of applying collection context. |
+| Fix | Event hydration now normalizes the containing team ID, Calendar filters invalid identifiers, and context-free malformed events fail closed. |
+| Verification | Unit regressions cover inheritance, explicit IDs, and fail-closed input. The exact owner surface sweep then rendered Calendar with zero console errors and zero 5xx responses. |
+| Status | RESOLVED |
+
+## BUG-015 — Pending-deletion login crashes behind the sign-in screen (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Authentication — blocked account admission |
+| Role | Deletion-pending account |
+| Page or route | `/login` |
+| Description | Before the secure session API completed its denial, the root team provider started protected profile, membership, and school-invite Firestore work. Rules rejected those listeners and the login screen crashed. |
+| Expected behavior | The account stays on `/login`, receives the generic session-setup failure, and starts no protected team work. |
+| Actual behavior | Firestore permission errors reached the application error boundary. |
+| Root cause | Root provider effects were not gated on authentication routes and the failed login left the Firebase client signed in. |
+| Fix | Authentication-gate routes suppress protected provider effects; failed session establishment clears the browser session and signs out Firebase Auth. |
+| Verification | Regression coverage plus the focused real Chrome pending-deletion login test passed without a crash. |
+| Status | RESOLVED |
 
 ## BUG-014 — Broadcast inbox renders overlapping close controls (resolved)
 

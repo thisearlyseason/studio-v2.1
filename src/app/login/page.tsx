@@ -65,6 +65,8 @@ export default function LoginPage() {
         try {
           await establishBrowserSession(user);
         } catch {
+          await clearBrowserSession();
+          await signOut(auth).catch(() => undefined);
           setIsLoading(false);
           toast({
             title: 'Session Setup Failed',
