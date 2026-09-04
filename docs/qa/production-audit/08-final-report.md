@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved nine defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with 2026-09-02 and 2026-09-03 follow-ups that resolved ten defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -11,13 +11,13 @@ The matrix contains 88 rows.
 
 | Status | Count |
 |---|---:|
-| PASS | 3 |
+| PASS | 4 |
 | FAIL | 0 |
-| BLOCKED | 85 |
+| BLOCKED | 84 |
 | NOT APPLICABLE | 0 |
 | NOT RUN | 0 |
 
-Completed functional-row coverage is `(PASS + FAIL) / all rows = 3 / 88 = 3.4%`. All remaining rows have been explicitly classified BLOCKED rather than left ambiguous. Many blocked rows received partial smoke or automated boundary evidence, but they were not promoted because their complete role, negative, permission, persistence, responsive, provider, or device requirements could not be executed.
+Completed functional-row coverage is `(PASS + FAIL) / all rows = 4 / 88 = 4.5%`. All remaining rows have been explicitly classified BLOCKED rather than left ambiguous. Many blocked rows received partial smoke or automated boundary evidence, but they were not promoted because their complete role, negative, permission, persistence, responsive, provider, or device requirements could not be executed.
 
 ## Tested features and roles
 
@@ -37,8 +37,9 @@ Roles exercised were unauthenticated visitor, anonymous Squad Pro demo coach/sta
 - BUG-008, P1: Admin SDK APIs and protected server rendering now reject blocked account lifecycle states consistently with the rules boundary.
 - BUG-009, P2: Explicit development emulator mode now receives the exact loopback CSP connections required for real-browser audit execution without changing production CSP.
 - BUG-010, P1: Private beta/newsletter administrator notifications now exclude profile-only fake superadmins and accept targets only from verified custom-claim identities.
+- BUG-011, P2: The existing Time Out game is now reachable from the authenticated Shell and rejects corrupted stored sport/difficulty values.
 
-Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 5, P2 4.
+Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 5, P2 5.
 
 ## Deterministic local identity and tenant follow-up — 2026-09-03
 

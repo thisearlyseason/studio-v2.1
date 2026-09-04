@@ -20,6 +20,14 @@ export const STORAGE = {
   sound: 'the-squad:time-out:sound', baseballBest: 'the-squad:time-out:baseball-best',
 } as const;
 
+export function normalizeSport(value: string): Sport {
+  return SPORTS.some(sport => sport.id === value) ? value as Sport : 'soccer';
+}
+
+export function normalizeDifficulty(value: string): Difficulty {
+  return Object.hasOwn(DIFFICULTY, value) ? value as Difficulty : 'easy';
+}
+
 export function firstToFive(home: number, away: number) { return home >= 5 || away >= 5; }
 export function volleyballPoint(ballOnLeft: boolean, lastTouch: 'player' | 'ai') { return ballOnLeft ? (lastTouch === 'ai' ? 'player' : 'ai') : (lastTouch === 'player' ? 'ai' : 'player'); }
 export function baseballContact(timing: number, difficulty: Difficulty) {
@@ -35,4 +43,4 @@ export function baseballContact(timing: number, difficulty: Difficulty) {
 export function storageGet(key: string, fallback: string) { try { return window.localStorage.getItem(key) ?? fallback; } catch { return fallback; } }
 export function storageSet(key: string, value: string) { try { window.localStorage.setItem(key, value); } catch { /* private browsing can deny storage */ } }
 
-export default { SPORTS, DIFFICULTY, STORAGE, firstToFive, volleyballPoint, baseballContact, storageGet, storageSet };
+export default { SPORTS, DIFFICULTY, STORAGE, normalizeSport, normalizeDifficulty, firstToFive, volleyballPoint, baseballContact, storageGet, storageSet };

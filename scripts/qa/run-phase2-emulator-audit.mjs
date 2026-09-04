@@ -9,6 +9,7 @@ import process from 'node:process';
 const PROJECT_ID = 'demo-the-squad-audit';
 const BASE_URL = 'http://127.0.0.1:9001';
 const runBrowser = process.argv.includes('--browser');
+const timeOutOnly = process.argv.includes('--time-out-only');
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const children = [];
@@ -130,8 +131,8 @@ function cli(session, args, { sensitive = false } = {}) {
   return output;
 }
 
-async function browserLogin(alias, expectedPath) {
-  const session = `phase2-${alias}`;
+async function browserLogin(alias, expectedPath, sessionLabel = alias) {
+  const session = `phase2-${sessionLabel}`;
   cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
   const code = `async page => {
     await page.getByLabel('Email Address').fill(${JSON.stringify(`${alias}@phase2.test`)});
@@ -165,6 +166,116 @@ function browserPath(session, pathname) {
     return { url: page.url() };
   }`;
   return new URL(JSON.parse(cli(session, ['run-code', code])).url).pathname;
+}
+
+function browserTimeOutAudit(session) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500) failedResponses.push(response.url()); });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(() => {
+      localStorage.setItem('the-squad:time-out:sport', 'curling');
+      localStorage.setItem('the-squad:time-out:difficulty', 'impossible');
+    });
+    await page.reload();
+    const priorityAlert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+    const alertOpened = await priorityAlert.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+    if (alertOpened) {
+      await priorityAlert.getByRole('button', { name: 'Got It' }).click();
+      await priorityAlert.waitFor({ state: 'hidden' });
+    }
+    await page.getByRole('button', { name: 'Open Time Out game' }).click();
+    const dialog = page.getByRole('dialog', { name: 'TIME OUT' });
+    await dialog.waitFor();
+    await dialog.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    const desktopBox = await dialog.boundingBox();
+    const initial = {
+      title: await dialog.getByText('TIME OUT', { exact: true }).count(),
+      soccerSelected: (await dialog.getByRole('button', { name: 'Soccer' }).getAttribute('class'))?.includes('border-primary'),
+      easySelected: (await dialog.getByRole('button', { name: 'Easy' }).getAttribute('class'))?.includes('border-primary'),
+      desktopBox,
+      desktopFits: Boolean(desktopBox && desktopBox.x >= -0.5 && desktopBox.y >= -0.5 && desktopBox.x + desktopBox.width <= 1440.5 && desktopBox.y + desktopBox.height <= 900.5),
+    };
+
+    const closeButton = dialog.getByRole('button', { name: 'Close Time Out' });
+    const closeBox = await closeButton.boundingBox();
+    const closeHitTarget = closeBox
+      ? await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label') || '', {
+          x: closeBox.x + closeBox.width / 2,
+          y: closeBox.y + closeBox.height / 2,
+        })
+      : '';
+    await dialog.getByRole('button', { name: 'Baseball' }).evaluate(element => element.click());
+    await dialog.getByRole('button', { name: 'Hard' }).evaluate(element => element.click());
+    await dialog.getByRole('button', { name: 'Enable sound' }).evaluate(element => element.click());
+    await dialog.getByLabel(/baseball game canvas/i).focus();
+    await page.keyboard.press('Space');
+    const actionStatus = await dialog.getByText(/MISS|CONTACT/).count();
+    await page.keyboard.press('r');
+    const resetScore = await dialog.getByText(/YOU 0 — 0 CPU/).count();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const mobileBox = await dialog.boundingBox();
+    const touchControls = await dialog.getByLabel('Touch controls').count();
+    await dialog.getByRole('button', { name: 'Game action' }).evaluate(element => {
+      for (let attempt = 0; attempt < 10; attempt += 1) element.click();
+    });
+    await dialog.getByRole('button', { name: 'Restart game' }).evaluate(element => element.click());
+    const rapidResetScore = await dialog.getByText(/YOU 0 — 0 CPU/).count();
+    await dialog.getByRole('button', { name: 'Close Time Out' }).evaluate(element => element.click());
+    await dialog.waitFor({ state: 'hidden' });
+
+    await page.reload();
+    await page.getByRole('button', { name: 'Open Time Out game' }).click();
+    const reopened = page.getByRole('dialog', { name: 'TIME OUT' });
+    await reopened.waitFor();
+    await reopened.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    const persisted = {
+      baseballSelected: (await reopened.getByRole('button', { name: 'Baseball' }).getAttribute('class'))?.includes('border-primary'),
+      hardSelected: (await reopened.getByRole('button', { name: 'Hard' }).getAttribute('class'))?.includes('border-primary'),
+      muteControl: await reopened.getByRole('button', { name: 'Mute sound' }).count(),
+    };
+    return {
+      ...initial,
+      ...persisted,
+      actionStatus,
+      resetScore,
+      rapidResetScore,
+      closeHitTarget,
+      touchControls,
+      mobileBox,
+      mobileFits: Boolean(mobileBox && mobileBox.x >= -0.5 && mobileBox.y >= -0.5 && mobileBox.x + mobileBox.width <= 390.5 && mobileBox.y + mobileBox.height <= 844.5),
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function assertTimeOutAudit(timeOut) {
+  if (!timeOut.desktopFits || !timeOut.mobileFits) {
+    console.log(`Time Out bounds: ${JSON.stringify({ desktop: timeOut.desktopBox, mobile: timeOut.mobileBox })}`);
+  }
+  expectEqual(timeOut.title, 1, 'Time Out opens after corrupted local state');
+  expectEqual(timeOut.soccerSelected, true, 'Time Out normalizes invalid stored sport');
+  expectEqual(timeOut.easySelected, true, 'Time Out normalizes invalid stored difficulty');
+  expectEqual(timeOut.desktopFits, true, 'Time Out desktop dialog fits viewport');
+  expectEqual(timeOut.actionStatus, 1, 'Time Out action changes game status');
+  expectEqual(timeOut.resetScore, 1, 'Time Out keyboard reset restores score');
+  expectEqual(timeOut.closeHitTarget, 'Close Time Out', 'Time Out close button receives pointer input');
+  expectEqual(timeOut.baseballSelected, true, 'Time Out sport preference persists');
+  expectEqual(timeOut.hardSelected, true, 'Time Out difficulty preference persists');
+  expectEqual(timeOut.muteControl, 1, 'Time Out sound preference persists');
+  expectEqual(timeOut.touchControls, 1, 'Time Out exposes mobile touch controls');
+  expectEqual(timeOut.rapidResetScore, 1, 'Time Out recovers from rapid mobile actions');
+  expectEqual(timeOut.mobileFits, true, 'Time Out mobile dialog fits viewport');
+  expectEqual(timeOut.consoleErrors.length, 0, 'Time Out browser console errors');
+  expectEqual(timeOut.failedResponses.length, 0, 'Time Out failed network responses');
 }
 
 async function runApiAudit() {
@@ -227,6 +338,11 @@ async function runApiAudit() {
 
 async function runBrowserAudit() {
   if (!playwrightCli) throw new Error('PLAYWRIGHT_CLI is required with --browser.');
+  if (timeOutOnly) {
+    const player = await browserLogin('qa-adult-player-a', '/dashboard');
+    assertTimeOutAudit(browserTimeOutAudit(player));
+    return;
+  }
   const trusted = await browserLogin('qa-superadmin', '/admin');
   const fake = await browserLogin('qa-fake-superadmin', '/dashboard');
   const parent = await browserLogin('qa-parent-a', '/family');
@@ -236,6 +352,9 @@ async function runBrowserAudit() {
   expectEqual(browserPath(fake, '/admin'), '/dashboard', 'fake superadmin browser route denial');
   expectEqual(browserPath(parent, '/family'), '/family', 'parent family browser route');
   expectEqual(browserPath(player, '/family'), '/dashboard', 'adult player family browser route denial');
+
+  const timeOutPlayer = await browserLogin('qa-adult-player-a', '/dashboard', 'time-out-player');
+  assertTimeOutAudit(browserTimeOutAudit(timeOutPlayer));
 }
 
 async function cleanup() {
@@ -259,7 +378,7 @@ async function main() {
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  await runApiAudit();
+  if (!timeOutOnly) await runApiAudit();
   if (runBrowser) await runBrowserAudit();
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
 }

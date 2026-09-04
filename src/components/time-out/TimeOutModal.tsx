@@ -4,12 +4,12 @@ import { Pause, Play, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import GameCanvas from './GameCanvas';
-import { DIFFICULTY, SPORTS, STORAGE, storageGet, storageSet, type Difficulty, type Sport } from './game-core';
+import { DIFFICULTY, SPORTS, STORAGE, normalizeDifficulty, normalizeSport, storageGet, storageSet, type Difficulty, type Sport } from './game-core';
 
 type ScoreState = { player: number; opponent: number; status: string; over: boolean; pitches?: number; distance?: number };
 export default function TimeOutModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [sport,setSport]=useState<Sport>('soccer'); const [difficulty,setDifficulty]=useState<Difficulty>('easy'); const [paused,setPaused]=useState(false); const [sound,setSound]=useState(false); const [score,setScore]=useState<ScoreState>({player:0,opponent:0,status:'KICK OFF',over:false}); const api=useRef<{action:()=>void;reset:()=>void}|null>(null);
-  useEffect(()=>{setSport(storageGet(STORAGE.sport,'soccer') as Sport);setDifficulty(storageGet(STORAGE.difficulty,'easy') as Difficulty);setSound(storageGet(STORAGE.sound,'false')==='true')},[]);
+  useEffect(()=>{setSport(normalizeSport(storageGet(STORAGE.sport,'soccer')));setDifficulty(normalizeDifficulty(storageGet(STORAGE.difficulty,'easy')));setSound(storageGet(STORAGE.sound,'false')==='true')},[]);
   useEffect(()=>{const v=()=>setPaused(true); document.addEventListener('visibilitychange',v); return()=>document.removeEventListener('visibilitychange',v)},[]);
   const chooseSport=(v:Sport)=>{setSport(v);storageSet(STORAGE.sport,v);setPaused(false)}; const chooseDifficulty=(v:Difficulty)=>{setDifficulty(v);storageSet(STORAGE.difficulty,v);setPaused(false)};
   const setAudio=(v:boolean)=>{setSound(v);storageSet(STORAGE.sound,String(v))}; const sportInfo=SPORTS.find(x=>x.id===sport)!;

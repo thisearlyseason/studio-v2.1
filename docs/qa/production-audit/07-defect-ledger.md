@@ -2,7 +2,23 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-03; nine defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-03; ten defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-011 — Time Out game is unreachable and corrupted preferences can crash it (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Time Out local game |
+| Role | Authenticated user |
+| Page or route | Shared dashboard Shell |
+| Description | The complete Time Out launcher/modal implementation was never rendered anywhere, so users could not open it. If exposed, arbitrary stored sport or difficulty strings were cast as valid enum values and could leave the modal without matching sport metadata. |
+| Expected behavior | Authenticated users can open the game from the shared header; invalid local preferences fall back safely; documented keyboard/touch controls and persistence work at desktop and mobile sizes. |
+| Actual behavior | `TimeOutLauncher` had no consumer, and corrupted local storage was accepted without validation. |
+| Root cause | The launcher was orphaned during Shell integration and persisted enum values crossed the storage boundary without runtime normalization. |
+| Fix | Rendered the existing launcher in the authenticated header and normalized stored sport/difficulty values. The browser audit handles the independent priority-alert dialog before opening this optional game. |
+| Verification | The core regression first failed on missing normalizers and now passes 6/6. A real Chrome emulator session proved open/play/reset, rapid mobile action recovery, corrupted-state fallback, preference persistence, pointer/keyboard/touch controls, desktop/mobile containment, zero console errors, and zero failed responses. |
+| Status | RESOLVED |
 
 ## BUG-010 — Profile-only superadmin can receive private applicant notifications (resolved)
 
