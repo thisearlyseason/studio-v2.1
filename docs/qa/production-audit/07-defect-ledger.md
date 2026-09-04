@@ -17,7 +17,7 @@
 | Actual behavior | The route compared the browser `Origin` header with `request.nextUrl.origin`, which reflects the internal proxy origin in App Hosting rather than the configured public origin. |
 | Root cause | The CSRF boundary trusted proxy-derived URL state instead of the configured application origin already used by server request guards. |
 | Fix | Demo cleanup now compares the request origin with `getTrustedAppOrigin(request)`, retaining production configured-origin and local-development loopback restrictions. |
-| Verification | The regression was observed failing before the repair and passing after it. Hosted Playwright retest is recorded in `runs/2026-09-04T170500Z/04-hosted-live-demo.md`. |
+| Verification | The regression was observed failing before the repair and passing after it. Protected release gate `33911442472` and staging workflow `33911749713` passed for commit `e796fde6aafd478d8f25855ed10f7cdabad79c5d`; App Hosting revision `studio-build-2026-09-04-012` returned HTTP 204 to the same hosted Playwright cleanup request. The deleted Auth identity could no longer be looked up, `/dashboard` redirected to expired login, and direct checks returned HTTP 404 for the user, team, team children, league, facility, and player roots. |
 | Status | RESOLVED |
 
 ## BUG-020 — Assigned equipment can be deleted (resolved)
