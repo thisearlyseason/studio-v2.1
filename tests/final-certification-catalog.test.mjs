@@ -361,3 +361,35 @@ test('gives every selected row a runnable assertion contract and cleanup owner',
   }
 });
 
+test('prevents callers from mutating a scenario contract', () => {
+  const scenario = CERTIFICATION_SCENARIOS[0];
+
+  assert.ok(Object.isFrozen(CERTIFICATION_SCENARIOS));
+  assert.ok(Object.isFrozen(scenario));
+  assert.ok(Object.isFrozen(scenario.roles));
+  assert.ok(Object.isFrozen(scenario.environments));
+  assert.ok(Object.isFrozen(scenario.assertions));
+
+  assert.throws(() => {
+    scenario.feature = 'Changed feature';
+  }, TypeError);
+  assert.throws(() => {
+    scenario.roles.push('Changed role');
+  }, TypeError);
+  assert.throws(() => {
+    scenario.environments.push('Changed environment');
+  }, TypeError);
+  assert.throws(() => {
+    scenario.assertions.happyPath = 'Changed assertion';
+  }, TypeError);
+});
+
+test('assigns physical reminder cleanup to the physical-device batch', () => {
+  const reminder = CERTIFICATION_SCENARIOS.find(({ id }) => id === 'reminders-same-day-fcm-scheduler');
+  const accountLifecycle = CERTIFICATION_SCENARIOS.find(({ id }) => id === 'account-lifecycle-disable-delete-cancel-purge');
+
+  assert.ok(reminder);
+  assert.ok(reminder.environments.includes('physical-device'));
+  assert.equal(reminder.cleanupOwner, 'physical-device-batch');
+  assert.equal(accountLifecycle.cleanupOwner, 'background-batch');
+});

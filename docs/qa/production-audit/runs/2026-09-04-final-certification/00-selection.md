@@ -29,7 +29,9 @@ targeted regression.
   mailbox records.
 - `background-batch` owns isolated scheduler, function, and staging data.
 - `physical-device-batch` owns staging-only subscriptions and device test
-  records.
+  records, including complete cleanup for `reminders-same-day-fcm-scheduler`.
+  The background batch may invoke its scheduler but must hand every resulting
+  subscription and device record to this owner and must not close that scenario.
 
 Each scenario has exactly one owner. That owner records cleanup or an explicit
 cleanup failure in its batch evidence; no other batch may silently retain the

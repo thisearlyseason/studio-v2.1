@@ -2,8 +2,14 @@
  * Frozen selection of the 81 rows that were BLOCKED in the 77da392b coverage matrix.
  * Later certification runners select scenarios exclusively by id.
  */
-export const CERTIFICATION_SCENARIOS = Object.freeze(
-[
+const freezeScenario = ({ roles, environments, assertions, ...scenario }) => Object.freeze({
+  ...scenario,
+  roles: Object.freeze([...roles]),
+  environments: Object.freeze([...environments]),
+  assertions: Object.freeze({ ...assertions }),
+});
+
+export const CERTIFICATION_SCENARIOS = Object.freeze([
   {
     "feature": "Marketing/legal",
     "subFeature": "Contact, beta, coach referral",
@@ -614,7 +620,7 @@ export const CERTIFICATION_SCENARIOS = Object.freeze(
       "network": "Function/FCM",
       "responsive": "Real device"
     },
-    "cleanupOwner": "background-batch",
+    "cleanupOwner": "physical-device-batch",
     "id": "reminders-same-day-fcm-scheduler"
   },
   {
@@ -1726,6 +1732,4 @@ export const CERTIFICATION_SCENARIOS = Object.freeze(
     "cleanupOwner": "background-batch",
     "id": "operations-health-ci-deploy-rules-drift-rollback"
   }
-]
-);
-
+].map(freezeScenario));
