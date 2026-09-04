@@ -77,6 +77,16 @@ type Interval = {
   endMinute: number;
 };
 
+export type ExternalScheduleBooking = {
+  id?: string;
+  sourceId?: unknown;
+  resourceId?: unknown;
+  teamIds?: unknown;
+  date?: unknown;
+  startMinute?: unknown;
+  endMinute?: unknown;
+};
+
 type DeploymentActor = {
   uid: string;
   role?: string;
@@ -677,23 +687,17 @@ function eventInterval(data: FirebaseFirestore.DocumentData): Interval | null {
   return { date, startMinute, endMinute };
 }
 
-async function validateExternalConflicts(
+export function findExternalBookingConflicts(
   leagueId: string,
   games: NormalizedLeagueGame[],
-  teamEventSnapshots: FirebaseFirestore.QuerySnapshot[]
-): Promise<void> {
+  bookings: ExternalScheduleBooking[]
+): string[] {
   const sourceId = `league:${leagueId}`;
-  const dates = games.map(game => game.date).sort();
-  const bookingSnapshot = await adminDb.collection('scheduleBookings')
-    .where('date', '>=', dates[0])
-    .where('date', '<=', dates[dates.length - 1])
-    .get();
   const conflicts: string[] = [];
 
   for (const game of games) {
     const interval = intervalForGame(game);
-    for (const booking of bookingSnapshot.docs) {
-      const data = booking.data();
+    for (const data of bookings) {
       if (data.sourceId === sourceId) continue;
       const other: Interval = {
         date: cleanDate(data.date),
@@ -711,6 +715,25 @@ async function validateExternalConflicts(
       }
     }
   }
+
+  return [...new Set(conflicts)].slice(0, 25);
+}
+
+async function validateExternalConflicts(
+  leagueId: string,
+  games: NormalizedLeagueGame[],
+  teamEventSnapshots: FirebaseFirestore.QuerySnapshot[]
+): Promise<void> {
+  const dates = games.map(game => game.date).sort();
+  const bookingSnapshot = await adminDb.collection('scheduleBookings')
+    .where('date', '>=', dates[0])
+    .where('date', '<=', dates[dates.length - 1])
+    .get();
+  const conflicts = findExternalBookingConflicts(
+    leagueId,
+    games,
+    bookingSnapshot.docs.map(booking => ({ id: booking.id, ...booking.data() })),
+  );
 
   for (const snapshot of teamEventSnapshots) {
     for (const event of snapshot.docs) {

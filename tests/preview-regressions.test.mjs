@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { dispatchTeamNotification } from '../src/lib/client-team-notification.ts';
+
 const readSource = path => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('facility rename scans owner-scoped schedules without collection-group indexes', async () => {
@@ -251,12 +253,28 @@ test('demo organization hubs do not call Stripe Connect', async () => {
 });
 
 test('demo workspaces never dispatch external team notifications', async () => {
-  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const attemptedRequests = [];
+  const recordingFetch = async (...request) => {
+    attemptedRequests.push(request);
+    return new Response(null, { status: 204 });
+  };
 
-  assert.equal(
-    (provider.match(/if \(!activeTeam\.isDemo\) Promise\.resolve\(\)\.then/g) || []).length,
-    3
-  );
+  for (const source of ['event', 'document', 'drill']) {
+    const result = await dispatchTeamNotification({
+      source,
+      team: { isDemo: true },
+      idToken: 'local-test-token',
+      teamId: 'demo-team',
+      memberUserIds: ['demo-member'],
+      title: 'Demo notification',
+      body: 'This request must remain local.',
+      emailSubject: 'Demo email',
+      emailHtml: '<p>This request must remain local.</p>',
+    }, recordingFetch);
+
+    assert.deepEqual(result, { status: 'suppressed', requestCount: 0 });
+  }
+  assert.deepEqual(attemptedRequests, []);
 });
 
 test('production feed does not ship the retired Tenor integration', async () => {

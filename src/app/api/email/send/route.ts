@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { findActiveTeamMember, getTeamAuthority } from '@/lib/server-team-access';
@@ -8,16 +7,11 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { getResend } from '@/lib/server-resend-client';
 
 const FROM = 'The Squad Pro <noreply@thesquad.pro>';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
 const RESEND_BATCH_SIZE = 100;
-
-function getResend() {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error('RESEND_API_KEY env var not set');
-  return new Resend(apiKey);
-}
 
 export interface SendEmailPayload {
   teamId: string;

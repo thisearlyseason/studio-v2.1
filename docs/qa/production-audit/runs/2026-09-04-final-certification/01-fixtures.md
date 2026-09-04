@@ -64,8 +64,10 @@ demo aliases intentionally have no registered email/password Auth account.
   compliance, competition, facility, equipment, public, and billing domains.
 - The file fixtures materialize deterministic public and private emulator
   Storage objects, create then delete the deleted-file object, preserve the
-  pending-delete object, and retain bounded generators for oversized and
-  MIME-spoofed negative uploads without allocating those payloads during the
+  pending-delete object, and use decodable 16×16 PNG/JPEG plus one-second H.264
+  MP4 positive media. The MIME-spoof case contains a deterministic executable
+  signature behind an image declaration, and the oversized case retains a
+  bounded exact-size generator without allocating that payload during the
   default seed. Time and concurrency fixtures cover past/current/future,
   cross-midnight, both DST boundaries, and deterministic two-participant
   barriers for capacity, join, RSVP, poll, booking, and public-registration
@@ -74,8 +76,14 @@ demo aliases intentionally have no registered email/password Auth account.
   past-due, canceled, add-on, and deleted-customer states. Every subscription,
   Stripe, and Connect descriptor has `livemode=false`; no live operation is
   present or permitted. Team and profile documents carry coherent local plan
-  fields while `outboundProvidersEnabled=false`, notification destinations are
-  empty, and provider provisioning remains explicitly unconfigured.
+  fields while the consumed `outboundProvidersEnabled=false` boundary blocks
+  event, document, and drill delivery. The audit process also strips inherited
+  Stripe, Resend, push, internal-route, and Firebase service credentials and
+  activates provider-factory refusal before spawning its children.
+- Tournament selected fields and every game use the same browser-compatible
+  qualified field string. Facility bookings use the picker-produced
+  `facilityId:fieldName` identity, with overlapping bookings owned by different
+  teams so resource conflict detection is independent of team overlap.
 
 ## Cleanup boundary
 
@@ -95,8 +103,8 @@ audit runner; no production or staging cleanup was required by this batch.
 
 ## Verification
 
-The combined fixture/audit contract command completed with 34 passes and 0
-failures. The complete repository suite completed with 464 passes and 0
+The combined fixture/audit contract command completed with 39 passes and 0
+failures. The complete repository suite completed with 469 passes and 0
 failures.
 
 `npm run qa:audit-emulator` completed with exit code 0. All 20 active
@@ -118,11 +126,23 @@ denied. Emulator Storage HTTP checks proved public anonymous read, private
 owner read, cross-tenant denial, pending-delete denial, and deleted-object
 absence before exact cleanup.
 
+Persisted Storage bytes were read back through the emulator: the public object
+decoded as JPEG, the allowed private thumbnail decoded as PNG, and the private
+video exposed valid one-second H.264 MP4 metadata. Focused tests also decode the
+deleted PNG before its lifecycle removal and confirm the intentional
+image-declared executable mismatch. The application tournament preparer and
+the browser field de-duplication contract accept the same selected-field
+strings, while the production conflict helper rejects a different-team game
+on the fixture's occupied resource.
+
 The browser-enabled command completed its full route smoke with all 20 active
 aliases at their cataloged destinations, all three blocked identities at their
 expected pages and titles, and the trusted/fake-admin and parent/player
 direct-route boundaries intact. Cleanup completed and every exact Storage
 object selector was verified absent.
+The event CRUD browser workflow also completed under stripped provider
+credentials with zero console errors and zero failed responses, proving the
+fixture event path did not fall through to email delivery.
 
 These results establish local fixture readiness only. They do not promote any
 coverage row, provision durable staging mailboxes, create Stripe/Connect/Resend

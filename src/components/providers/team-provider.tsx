@@ -9,74 +9,7 @@ import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/househo
 import { hasStaffRole } from '@/lib/staff-position';
 import { registerPushDevice } from '@/lib/client-push-registration';
 import { normalizeTeamEvent } from '@/lib/team-event-normalization';
-
-/**
- * Dispatch push + email notifications to all team members.
- * Called after addEvent, addDrill, addTeamDocument.
- * Fire-and-forget — errors are logged but never block the main action.
- */
-async function dispatchNotification({
-  idToken,
-  db,
-  teamId,
-  memberUserIds,
-  title,
-  body,
-  url,
-  emailSubject,
-  emailHtml,
-}: {
-  idToken: string;
-  db: any;
-  teamId: string;
-  memberUserIds: string[];
-  title: string;
-  body: string;
-  url?: string;
-  emailSubject?: string;
-  emailHtml?: string;
-}) {
-  try {
-    const headers = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    };
-
-    // 1. The server resolves member device tokens so clients never need access
-    // to other users' notification data.
-    void fetch('/api/notify', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ teamId, recipientUserIds: memberUserIds, title, body, url }),
-    }).then(async response => {
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'Push notification request failed.');
-      }
-    }).catch((e) => console.warn('[Push] dispatch error:', e));
-
-    // 2. The server likewise resolves member email addresses from membership data.
-    if (emailSubject && emailHtml) {
-      void fetch('/api/email/send', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          teamId,
-          recipientUserIds: memberUserIds,
-          subject: emailSubject,
-          html: emailHtml,
-        }),
-      }).then(async response => {
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || 'Email notification request failed.');
-        }
-      }).catch((e) => console.warn('[Email] dispatch error:', e));
-    }
-  } catch (e) {
-    console.warn('[dispatchNotification] Error:', e);
-  }
-}
+import { dispatchTeamNotification, shouldDispatchTeamOutbound } from '@/lib/client-team-notification';
 
 import { 
   collection, 
@@ -312,6 +245,7 @@ export type Team = {
   registrationProtocolId?: string;
   leagueIds?: Record<string, boolean>;
   isDemo?: boolean;
+  outboundProvidersEnabled?: boolean;
   rosterLimit?: number;
   isArchived?: boolean;
   division?: string;
@@ -2189,7 +2123,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await setDoc(doc(db, 'teams', activeTeam.id, 'documents', data.id), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, createdAt: new Date().toISOString() }));
 
       // Fire push + email to all team members
-      if (!activeTeam.isDemo) Promise.resolve().then(async () => {
+      if (shouldDispatchTeamOutbound(activeTeam)) Promise.resolve().then(async () => {
         try {
           const { getAuth } = await import('firebase/auth');
           const { getApp } = await import('firebase/app');
@@ -2206,9 +2140,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             ctaLabel: 'View Document',
             ctaUrl: `${process.env.NEXT_PUBLIC_APP_URL || ''}/dashboard/team`,
           });
-          dispatchNotification({
+          void dispatchTeamNotification({
+            source: 'document',
+            team: activeTeam,
             idToken,
-            db,
             teamId: activeTeam.id,
             memberUserIds,
             title: 'Document Added',
@@ -2250,7 +2185,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error(payload.error || 'Unable to create this event.');
 
       // Fire push + email to all team members
-      if (!activeTeam.isDemo) Promise.resolve().then(async () => {
+      if (shouldDispatchTeamOutbound(activeTeam)) Promise.resolve().then(async () => {
         try {
           const { getAuth } = await import('firebase/auth');
           const { getApp } = await import('firebase/app');
@@ -2271,9 +2206,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             location: data.location,
             eventType,
           });
-          dispatchNotification({
+          void dispatchTeamNotification({
+            source: 'event',
+            team: activeTeam,
             idToken,
-            db,
             teamId: activeTeam.id,
             memberUserIds,
             title: `${eventType === 'game' ? '⚽ Game Day' : eventType === 'practice' ? '🏃 Practice' : '📅 Event'}: ${eventTitle}`,
@@ -2666,7 +2602,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await addDoc(collection(db, 'teams', activeTeam.id, 'drills'), { ...clean(d), createdAt: new Date().toISOString() });
 
       // Fire push + email to all team members
-      if (!activeTeam.isDemo) Promise.resolve().then(async () => {
+      if (shouldDispatchTeamOutbound(activeTeam)) Promise.resolve().then(async () => {
         try {
           const { getAuth } = await import('firebase/auth');
           const { getApp } = await import('firebase/app');
@@ -2681,9 +2617,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             drillTitle: d.title || d.name || 'New Drill',
             drillDescription: d.description,
           });
-          dispatchNotification({
+          void dispatchTeamNotification({
+            source: 'drill',
+            team: activeTeam,
             idToken,
-            db,
             teamId: activeTeam.id,
             memberUserIds,
             title: `New Drill: ${d.title || d.name || 'Playbook Update'}`,

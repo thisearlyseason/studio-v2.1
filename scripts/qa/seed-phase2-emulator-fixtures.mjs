@@ -1,10 +1,14 @@
 import process from 'node:process';
-import { applicationDefault, deleteApp, getApps, initializeApp } from 'firebase-admin/app';
+import { deleteApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 
-import { buildFixtureCatalog } from './certification/fixture-catalog.mjs';
+import {
+  buildFixtureCatalog,
+  inspectFixtureMedia,
+  materializeFixtureMediaBytes,
+} from './certification/fixture-catalog.mjs';
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
 const PASSWORD = process.env.AUDIT_FIXTURE_PASSWORD || '';
@@ -94,15 +98,6 @@ async function cleanupAuth(auth) {
   }));
 }
 
-function deterministicFixtureBytes(object) {
-  const seed = Buffer.from(object.payloadSeed, 'utf8');
-  const bytes = Buffer.alloc(object.sizeBytes);
-  for (let offset = 0; offset < bytes.length; offset += seed.length) {
-    seed.copy(bytes, offset, 0, Math.min(seed.length, bytes.length - offset));
-  }
-  return bytes;
-}
-
 async function cleanupStorage(bucket) {
   await Promise.all(CATALOG.cleanupSelectors.storage.objectPaths.map(path => (
     bucket.file(path).delete({ ignoreNotFound: true })
@@ -118,8 +113,14 @@ async function assertStorageAbsent(bucket) {
 
 async function seedStorage(bucket) {
   for (const object of CATALOG.storageObjects) {
+    if (object.payloadGenerator === 'exact-size-v1') continue;
+    const bytes = materializeFixtureMediaBytes(object);
+    const inspection = await inspectFixtureMedia(bytes);
+    if (bytes.length !== object.sizeBytes || inspection.detectedMime !== object.detectedMime) {
+      throw new Error(`Fixture media mismatch for ${object.alias}.`);
+    }
     if (object.lifecycle === 'negative-upload-only') continue;
-    await bucket.file(object.path).save(deterministicFixtureBytes(object), {
+    await bucket.file(object.path).save(bytes, {
       resumable: false,
       metadata: {
         contentType: object.contentType,
@@ -216,7 +217,6 @@ async function main() {
   }
 
   const app = getApps()[0] || initializeApp({
-    credential: applicationDefault(),
     projectId: PROJECT_ID,
     storageBucket: `${PROJECT_ID}.appspot.com`,
   });

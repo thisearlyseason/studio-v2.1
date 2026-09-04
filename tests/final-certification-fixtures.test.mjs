@@ -4,7 +4,9 @@ import test from 'node:test';
 
 import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
 import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
+import * as fixtureCatalogModule from '../scripts/qa/certification/fixture-catalog.mjs';
 import { prepareTournamentScheduleForDeployment } from '../src/lib/server-tournament-schedule-deployment.ts';
+import * as scheduleDeploymentModule from '../src/lib/server-schedule-deployment.ts';
 
 const REQUIRED_ALIASES = [
   'qa-coach-owner-a',
@@ -236,6 +238,7 @@ test('application readers receive tournament, feed, waiver, and conflict records
     fixture.data.resourceId && fixture.data.teamIds.length > 0
   )));
   assert.equal(bookings[0].data.resourceId, bookings[1].data.resourceId);
+  assert.notDeepEqual(bookings[0].data.teamIds, bookings[1].data.teamIds);
   assert.ok(bookings[0].data.startMinute < bookings[1].data.endMinute);
   assert.ok(bookings[1].data.startMinute < bookings[0].data.endMinute);
 });
@@ -243,11 +246,48 @@ test('application readers receive tournament, feed, waiver, and conflict records
 test('seeded tournament bracket passes the application schedule preparer with a real dependency target', () => {
   const catalog = buildFixtureCatalog('topology-a1');
   const event = fixtureByAlias(catalog, 'qa-tournament-a').data;
+  const selectedFields = event.selectedFields;
+  assert.ok(selectedFields.every(field => typeof field === 'string'));
+  const browserUniqueFields = selectedFields.filter((fieldId, index, fields) => (
+    fields.findIndex(candidate => candidate.toLowerCase() === fieldId.toLowerCase()) === index
+  ));
   const prepared = prepareTournamentScheduleForDeployment(event, event.tournamentGames);
   const ids = new Set(prepared.map(game => game.id));
 
+  assert.deepEqual(browserUniqueFields, [
+    'qa-facility-a-topology-a1:FALCON-A-TOPOLOGY-A1 Main Field',
+  ]);
   assert.equal(prepared.length, 3);
+  assert.ok(prepared.every(game => browserUniqueFields.includes(game.resourceId)));
   assert.ok(prepared.some(game => game.winnerTo && ids.has(game.winnerTo)));
+});
+
+test('facility booking identity matches the picker and rejects a different-team overlap on the shared field', () => {
+  const catalog = buildFixtureCatalog('facility-a1');
+  const booking = fixtureByAlias(catalog, 'qa-facility-a-booking-primary').data;
+  const expectedPickerResource = 'qa-facility-a-facility-a1:FALCON-A-FACILITY-A1 Main Field';
+
+  assert.equal(booking.resourceId, expectedPickerResource);
+  assert.equal(typeof scheduleDeploymentModule.findExternalBookingConflicts, 'function');
+
+  const conflicts = scheduleDeploymentModule.findExternalBookingConflicts(
+    'qa-league-a-facility-a1',
+    [{
+      id: 'different-team-game',
+      team1Id: 'unrelated-team-1',
+      team2Id: 'unrelated-team-2',
+      date: '2026-10-15',
+      time: '6:15 PM',
+      location: 'FALCON-A-FACILITY-A1 Facility - FALCON-A-FACILITY-A1 Main Field',
+      resourceId: expectedPickerResource,
+      durationMinutes: 60,
+    }],
+    [{ id: 'fixture-booking', ...booking }],
+  );
+
+  assert.deepEqual(conflicts, [
+    'FALCON-A-FACILITY-A1 Facility - FALCON-A-FACILITY-A1 Main Field is already booked at 2026-10-15 6:15 PM.',
+  ]);
 });
 
 test('game and public portal fixtures satisfy their list and visibility contracts', () => {
@@ -346,13 +386,109 @@ test('storage fixtures have deterministic payload generators, real policy paths,
   assert.ok(present.some(object => object.ownerAlias === 'qa-pending-delete'));
   assert.ok(deleted.length >= 1);
   assert.deepEqual(new Set(negative.map(object => object.case)), new Set(['oversized', 'mime-spoofed']));
-  assert.ok(catalog.storageObjects.every(object => object.payloadGenerator === 'repeat-seed-v1'));
+  assert.deepEqual(
+    new Set(catalog.storageObjects.map(object => object.payloadGenerator)),
+    new Set(['solid-png-v1', 'solid-jpeg-v1', 'tiny-mp4-v1', 'exact-size-v1', 'mime-spoof-pe-v1']),
+  );
   assert.ok(catalog.storageObjects.every(object => Number.isInteger(object.sizeBytes) && object.sizeBytes > 0));
   assert.deepEqual(
     catalog.cleanupSelectors.storage.objectPaths,
     catalog.storageObjects.map(object => object.path).sort(),
   );
   assert.ok(catalog.cleanupSelectors.storage.objectPaths.every(path => !path.includes('*')));
+});
+
+test('positive Storage fixtures decode as their declared media and the spoof detects as an executable', async () => {
+  assert.equal(typeof fixtureCatalogModule.materializeFixtureMediaBytes, 'function');
+  assert.equal(typeof fixtureCatalogModule.inspectFixtureMedia, 'function');
+  const catalog = buildFixtureCatalog('media-a1');
+  const expected = new Map([
+    ['qa-file-allowed', { detectedMime: 'image/png', width: 16, height: 16 }],
+    ['qa-file-deleted', { detectedMime: 'image/png', width: 16, height: 16 }],
+    ['qa-file-public', { detectedMime: 'image/jpeg', width: 16, height: 16 }],
+    ['qa-file-private', { detectedMime: 'video/mp4', durationSeconds: 1, videoCodec: 'avc1' }],
+    ['qa-file-pending-delete', { detectedMime: 'video/mp4', durationSeconds: 1, videoCodec: 'avc1' }],
+  ]);
+
+  for (const [alias, expectedMetadata] of expected) {
+    const object = catalog.storageObjects.find(candidate => candidate.alias === alias);
+    const first = fixtureCatalogModule.materializeFixtureMediaBytes(object);
+    const second = fixtureCatalogModule.materializeFixtureMediaBytes(object);
+    assert.deepEqual(first, second, `${alias} bytes must be deterministic`);
+    assert.equal(first.length, object.sizeBytes, `${alias} descriptor must match actual bytes`);
+    assert.deepEqual(await fixtureCatalogModule.inspectFixtureMedia(first), expectedMetadata);
+  }
+
+  const spoof = catalog.storageObjects.find(object => object.alias === 'qa-file-mime-spoofed');
+  const spoofBytes = fixtureCatalogModule.materializeFixtureMediaBytes(spoof);
+  const spoofMetadata = await fixtureCatalogModule.inspectFixtureMedia(spoofBytes);
+  assert.equal(spoof.contentType, 'image/png');
+  assert.equal(spoofMetadata.detectedMime, 'application/x-msdownload');
+  assert.equal(spoofMetadata.detectedMime, spoof.detectedMime);
+  assert.notEqual(spoofMetadata.detectedMime, spoof.contentType);
+});
+
+test('fixture event, document, and drill notifications cannot leave the local boundary', async () => {
+  const clientDelivery = await import('../src/lib/client-team-notification.ts');
+  const fixtureTeam = buildFixtureCatalog('outbound-a1').teams.find(team => team.alias === 'qa-pro-team');
+
+  for (const source of ['event', 'document', 'drill']) {
+    const calls = [];
+    const result = await clientDelivery.dispatchTeamNotification({
+      source,
+      team: fixtureTeam,
+      idToken: 'synthetic-test-token',
+      teamId: fixtureTeam.id,
+      memberUserIds: ['synthetic-member'],
+      title: 'Synthetic title',
+      body: 'Synthetic body',
+      emailSubject: 'Synthetic subject',
+      emailHtml: '<p>Synthetic body</p>',
+    }, async (...args) => {
+      calls.push(args);
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    assert.deepEqual(result, { status: 'suppressed', requestCount: 0 });
+    assert.deepEqual(calls, [], `${source} must not call even a local delivery endpoint`);
+  }
+});
+
+test('isolated server provider boundary blocks inherited Stripe and Resend credentials', async () => {
+  const serverBoundary = await import('../src/lib/server-outbound-provider-policy.ts');
+  const isolatedEnvironment = {
+    AUDIT_OUTBOUND_PROVIDER_MODE: 'block',
+    STRIPE_SECRET_KEY: 'sk_live_inherited_value',
+    RESEND_API_KEY: 're_inherited_value',
+  };
+  assert.equal(serverBoundary.isOutboundProviderBlocked(isolatedEnvironment), true);
+  assert.throws(
+    () => serverBoundary.assertOutboundProviderAllowed('stripe', isolatedEnvironment),
+    /blocked for the isolated emulator audit/,
+  );
+  assert.throws(
+    () => serverBoundary.assertOutboundProviderAllowed('resend', isolatedEnvironment),
+    /blocked for the isolated emulator audit/,
+  );
+
+  const previous = {
+    AUDIT_OUTBOUND_PROVIDER_MODE: process.env.AUDIT_OUTBOUND_PROVIDER_MODE,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+  };
+  try {
+    process.env.AUDIT_OUTBOUND_PROVIDER_MODE = 'block';
+    process.env.STRIPE_SECRET_KEY = isolatedEnvironment.STRIPE_SECRET_KEY;
+    process.env.RESEND_API_KEY = isolatedEnvironment.RESEND_API_KEY;
+    const stripeClient = await import('../src/lib/stripe-client.ts');
+    const resendClient = await import('../src/lib/server-resend-client.ts');
+    assert.throws(() => stripeClient.getStripe(), /Stripe outbound provider access is blocked/);
+    assert.throws(() => resendClient.getResend(), /Resend outbound provider access is blocked/);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('provider fixtures are explicit test or safe-sink records and never live mode', () => {

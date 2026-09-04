@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
-import { buildBlockedAuditPlan } from '../scripts/qa/run-phase2-emulator-audit.mjs';
+import * as auditRunner from '../scripts/qa/run-phase2-emulator-audit.mjs';
 
 const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
 
@@ -24,7 +24,7 @@ test('emulator audit covers tenant, lifecycle, and trusted-claim boundaries', ()
 
 test('default API and browser audits consume every blocked session expectation', () => {
   const catalog = buildFixtureCatalog('blocked-audit-a1');
-  const plan = buildBlockedAuditPlan(catalog.blockedAliases);
+  const plan = auditRunner.buildBlockedAuditPlan(catalog.blockedAliases);
 
   assert.deepEqual(plan.api.map(identity => identity.alias), [
     'qa-unverified',
@@ -40,6 +40,36 @@ test('default API and browser audits consume every blocked session expectation',
   ]);
   assert.throws(() => { plan.api.push(catalog.blockedAliases[0]); }, TypeError);
   assert.throws(() => { plan.api[0].alias = 'mutated'; }, TypeError);
+});
+
+test('emulator audit strips inherited outbound provider credentials and activates the server boundary', () => {
+  assert.equal(typeof auditRunner.buildIsolatedAuditEnvironment, 'function');
+  const inherited = {
+    PATH: '/synthetic/bin',
+    STRIPE_SECRET_KEY: 'sk_live_inherited_value',
+    STRIPE_WEBHOOK_SECRET: 'whsec_inherited_value',
+    STRIPE_CONNECT_WEBHOOK_SECRET: 'whsec_connect_inherited_value',
+    RESEND_API_KEY: 're_inherited_value',
+    RESEND_WEBHOOK_SECRET: 'whsec_resend_inherited_value',
+    WEB_PUSH_VAPID_PRIVATE_KEY: 'inherited_private_key',
+    WEB_PUSH_VAPID_SUBJECT: 'mailto:real@example.test',
+    OWNER_FCM_TOKEN: 'inherited_fcm_token',
+    OWNER_NOTIFICATION_EMAIL: 'real@example.test',
+    INTERNAL_API_SECRET: 'inherited_internal_secret',
+    FIREBASE_SERVICE_ACCOUNT_JSON: '{"private_key":"inherited"}',
+    GOOGLE_APPLICATION_CREDENTIALS: '/synthetic/real-service-account.json',
+  };
+
+  const isolated = auditRunner.buildIsolatedAuditEnvironment(inherited, {
+    AUDIT_FIXTURE_PASSWORD: 'runtime-only-test-value',
+  });
+
+  assert.equal(isolated.PATH, inherited.PATH);
+  assert.equal(isolated.AUDIT_FIXTURE_PASSWORD, 'runtime-only-test-value');
+  assert.equal(isolated.AUDIT_OUTBOUND_PROVIDER_MODE, 'block');
+  for (const key of Object.keys(inherited).filter(key => key !== 'PATH')) {
+    assert.equal(isolated[key], '', `${key} must not survive into the audit process`);
+  }
 });
 
 test('emulator audit exercises real fixture readers, public visibility, entitlements, delegation, and Storage lifecycle', () => {

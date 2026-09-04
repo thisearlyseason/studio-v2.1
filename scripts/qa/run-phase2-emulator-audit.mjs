@@ -7,7 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-import { buildFixtureCatalog } from './certification/fixture-catalog.mjs';
+import { buildFixtureCatalog, inspectFixtureMedia } from './certification/fixture-catalog.mjs';
 
 const PROJECT_ID = 'demo-the-squad-audit';
 const BASE_URL = 'http://127.0.0.1:9001';
@@ -45,8 +45,18 @@ const firebaseConfig = JSON.stringify({
   messagingSenderId: '123456789',
 });
 
-const env = {
-  ...process.env,
+const OUTBOUND_CREDENTIAL_PATTERN = /^(?:STRIPE_|NEXT_PUBLIC_STRIPE_|RESEND_|WEB_PUSH_|NEXT_PUBLIC_WEB_PUSH_|NEXT_PUBLIC_FCM_|OWNER_FCM_TOKEN$|OWNER_NOTIFICATION_EMAIL$|INTERNAL_API_SECRET$|FIREBASE_SERVICE_ACCOUNT_JSON$|GOOGLE_APPLICATION_CREDENTIALS$)/;
+
+export function buildIsolatedAuditEnvironment(baseEnvironment, overrides = {}) {
+  const isolated = { ...baseEnvironment, ...overrides };
+  for (const key of Object.keys(isolated)) {
+    if (OUTBOUND_CREDENTIAL_PATTERN.test(key)) isolated[key] = '';
+  }
+  isolated.AUDIT_OUTBOUND_PROVIDER_MODE = 'block';
+  return isolated;
+}
+
+const env = buildIsolatedAuditEnvironment(process.env, {
   AUDIT_FIXTURE_PASSWORD: password,
   AUDIT_FIXTURE_RUN_SUFFIX: FIXTURE_RUN_SUFFIX,
   FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
@@ -56,7 +66,7 @@ const env = {
   GOOGLE_CLOUD_PROJECT: PROJECT_ID,
   NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG: firebaseConfig,
   NEXT_PUBLIC_USE_FIREBASE_EMULATORS: 'true',
-};
+});
 
 const identityByAlias = new Map(FIXTURES.identities.map(identity => [identity.alias, identity]));
 
@@ -1497,14 +1507,38 @@ async function runApiAudit() {
   );
 
   const publicObject = FIXTURES.storageObjects.find(object => object.access === 'public' && object.lifecycle === 'present');
+  const allowedObject = FIXTURES.storageObjects.find(object => object.case === 'allowed');
   const privateObject = FIXTURES.storageObjects.find(object => object.case === 'private');
   const pendingObject = FIXTURES.storageObjects.find(object => object.case === 'pending-delete');
   const deletedObject = FIXTURES.storageObjects.find(object => object.lifecycle === 'delete-after-write');
-  expectEqual((await fetch(storageObjectUrl(publicObject.path))).status, 200, 'public Storage object is anonymously readable');
+  const publicResponse = await fetch(storageObjectUrl(publicObject.path));
+  expectEqual(publicResponse.status, 200, 'public Storage object is anonymously readable');
   expectEqual(
-    (await fetch(storageObjectUrl(privateObject.path), { headers: { Authorization: `Bearer ${tokens.get('qa-adult-player-a')}` } })).status,
+    (await inspectFixtureMedia(Buffer.from(await publicResponse.arrayBuffer()))).detectedMime,
+    'image/jpeg',
+    'persisted public Storage object decodes as JPEG',
+  );
+  const allowedResponse = await fetch(storageObjectUrl(allowedObject.path), {
+    headers: { Authorization: `Bearer ${tokens.get('qa-adult-player-a')}` },
+  });
+  expectEqual(allowedResponse.status, 200, 'allowed Storage object is readable by its owner');
+  expectEqual(
+    (await inspectFixtureMedia(Buffer.from(await allowedResponse.arrayBuffer()))).detectedMime,
+    'image/png',
+    'persisted allowed Storage object decodes as PNG',
+  );
+  const privateResponse = await fetch(storageObjectUrl(privateObject.path), {
+    headers: { Authorization: `Bearer ${tokens.get('qa-adult-player-a')}` },
+  });
+  expectEqual(
+    privateResponse.status,
     200,
     'private Storage object is readable by its owner',
+  );
+  expectEqual(
+    (await inspectFixtureMedia(Buffer.from(await privateResponse.arrayBuffer()))).detectedMime,
+    'video/mp4',
+    'persisted private Storage object has playable MP4 metadata',
   );
   expectEqual(
     (await fetch(storageObjectUrl(privateObject.path), { headers: { Authorization: `Bearer ${tokens.get('qa-coach-owner-b')}` } })).status,

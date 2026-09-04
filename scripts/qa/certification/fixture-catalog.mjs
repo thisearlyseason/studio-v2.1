@@ -1,4 +1,77 @@
 import { CERTIFICATION_SCENARIOS } from './scenario-catalog.mjs';
+import sharp from 'sharp';
+
+const FIXTURE_MEDIA_BASE64 = Object.freeze({
+  'solid-png-v1': 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAGUlEQVQ4y2MQilnwnxLMMGrAqAGjBgwXAwAk9w0fJ+vjCgAAAABJRU5ErkJggg==',
+  'solid-jpeg-v1': '/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAQABADAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAYH/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AoDDluAAA/9k=',
+  'tiny-mp4-v1': 'AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAALqbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAjl0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAGxbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABXG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAARxzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABDExhdmMgbGlieDI2NAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAK/+EAFmdCwArZHsBEAAADAAQAAAMACDxImSABAAVoy4PLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABQwAAAUMAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAAKGAAAAAQAAABRzdGNvAAAAAAAAAAEAAAMaAAAAPXVkdGEAAAA1bWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAIaWxzdAAAAAhmcmVlAAACjm1kYXQAAAJwBgX//2zcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTkwIDdlZDc1M2IgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI0IC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MTExIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0xIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAADmWIhAV///8PRQABQt+A',
+});
+
+function mp4Boxes(bytes, start = 0, end = bytes.length) {
+  const boxes = [];
+  for (let offset = start; offset + 8 <= end;) {
+    const size = bytes.readUInt32BE(offset);
+    if (size < 8 || offset + size > end) break;
+    boxes.push({ type: bytes.toString('ascii', offset + 4, offset + 8), offset, size });
+    offset += size;
+  }
+  return boxes;
+}
+
+export function materializeFixtureMediaBytes(object) {
+  const encoded = FIXTURE_MEDIA_BASE64[object.payloadGenerator];
+  if (encoded) return Buffer.from(encoded, 'base64');
+
+  const bytes = Buffer.alloc(object.sizeBytes);
+  const seed = Buffer.from(object.payloadSeed, 'utf8');
+  for (let offset = 0; offset < bytes.length; offset += seed.length) {
+    seed.copy(bytes, offset, 0, Math.min(seed.length, bytes.length - offset));
+  }
+  if (object.payloadGenerator === 'mime-spoof-pe-v1') {
+    bytes.write('MZ', 0, 'ascii');
+    bytes.writeUInt32LE(64, 0x3c);
+    bytes.write('PE\0\0', 64, 'binary');
+  }
+  return bytes;
+}
+
+export async function inspectFixtureMedia(bytes) {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
+    const metadata = await sharp(bytes).metadata();
+    return { detectedMime: 'image/png', width: metadata.width, height: metadata.height };
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    const metadata = await sharp(bytes).metadata();
+    return { detectedMime: 'image/jpeg', width: metadata.width, height: metadata.height };
+  }
+  if (bytes.length >= 68 && bytes.toString('ascii', 0, 2) === 'MZ' &&
+      bytes.readUInt32LE(0x3c) + 4 <= bytes.length &&
+      bytes.toString('binary', bytes.readUInt32LE(0x3c), bytes.readUInt32LE(0x3c) + 4) === 'PE\0\0') {
+    return { detectedMime: 'application/x-msdownload' };
+  }
+  const topLevel = mp4Boxes(bytes);
+  const ftyp = topLevel.find(box => box.type === 'ftyp');
+  const moov = topLevel.find(box => box.type === 'moov');
+  const mdat = topLevel.find(box => box.type === 'mdat');
+  if (ftyp && moov && mdat) {
+    const movieHeader = mp4Boxes(bytes, moov.offset + 8, moov.offset + moov.size)
+      .find(box => box.type === 'mvhd');
+    if (movieHeader) {
+      const dataOffset = movieHeader.offset + 8;
+      const version = bytes[dataOffset];
+      const timescaleOffset = dataOffset + (version === 1 ? 20 : 12);
+      const durationOffset = dataOffset + (version === 1 ? 24 : 16);
+      const timescale = bytes.readUInt32BE(timescaleOffset);
+      const duration = version === 1
+        ? Number(bytes.readBigUInt64BE(durationOffset))
+        : bytes.readUInt32BE(durationOffset);
+      if (timescale > 0 && duration > 0 && bytes.includes(Buffer.from('avc1'))) {
+        return { detectedMime: 'video/mp4', durationSeconds: duration / timescale, videoCodec: 'avc1' };
+      }
+    }
+  }
+  return { detectedMime: 'application/octet-stream' };
+}
 
 const RUN_SUFFIX_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 const FIXED_NOW = '2026-09-04T18:00:00.000Z';
@@ -308,13 +381,13 @@ export function buildFixtureCatalog(runSuffix) {
   }));
 
   const files = [
-    ['qa-file-allowed', 'allowed', 'qa-team-a', 'image/png', 'image/png', 128_000, false, false],
-    ['qa-file-oversized', 'oversized', 'qa-team-a', 'video/mp4', 'video/mp4', 52_428_801, false, false],
-    ['qa-file-mime-spoofed', 'mime-spoofed', 'qa-team-b', 'image/png', 'application/x-msdownload', 24_000, false, false],
-    ['qa-file-deleted', 'deleted', 'qa-team-b', 'image/png', 'image/png', 64_000, false, true],
-    ['qa-file-public', 'public', 'qa-team-c', 'image/jpeg', 'image/jpeg', 96_000, true, false],
-    ['qa-file-private', 'private', 'qa-team-a', 'video/mp4', 'video/mp4', 72_000, false, false],
-  ].map(([alias, fixtureCase, teamAlias, declaredMime, detectedMime, sizeBytes, isPublic, deleted]) => {
+    ['qa-file-allowed', 'allowed', 'qa-team-a', 'image/png', 'image/png', 103, false, false, 'solid-png-v1'],
+    ['qa-file-oversized', 'oversized', 'qa-team-a', 'video/mp4', 'video/mp4', 52_428_801, false, false, 'exact-size-v1'],
+    ['qa-file-mime-spoofed', 'mime-spoofed', 'qa-team-b', 'image/png', 'application/x-msdownload', 512, false, false, 'mime-spoof-pe-v1'],
+    ['qa-file-deleted', 'deleted', 'qa-team-b', 'image/png', 'image/png', 103, false, true, 'solid-png-v1'],
+    ['qa-file-public', 'public', 'qa-team-c', 'image/jpeg', 'image/jpeg', 272, true, false, 'solid-jpeg-v1'],
+    ['qa-file-private', 'private', 'qa-team-a', 'video/mp4', 'video/mp4', 1_440, false, false, 'tiny-mp4-v1'],
+  ].map(([alias, fixtureCase, teamAlias, declaredMime, detectedMime, sizeBytes, isPublic, deleted, payloadGenerator]) => {
     const extension = declaredMime === 'video/mp4' ? 'mp4' : declaredMime === 'image/jpeg' ? 'jpg' : 'png';
     const storagePath = fixtureCase === 'allowed'
       ? `players/${scopedId('qa-player-adult-a')}/thumbnails/${scopedId(alias)}.${extension}`
@@ -343,7 +416,7 @@ export function buildFixtureCatalog(runSuffix) {
       isPublic,
       deleted,
       storagePath,
-      payloadGenerator: 'repeat-seed-v1',
+      payloadGenerator,
       payloadSeed: `${runId}:${alias}`,
     };
   });
@@ -372,8 +445,8 @@ export function buildFixtureCatalog(runSuffix) {
     access: 'private',
     contentType: 'video/mp4',
     detectedMime: 'video/mp4',
-    sizeBytes: 48_000,
-    payloadGenerator: 'repeat-seed-v1',
+    sizeBytes: 1_440,
+    payloadGenerator: 'tiny-mp4-v1',
     payloadSeed: `${runId}:qa-file-pending-delete`,
     lifecycle: 'present',
   });
@@ -883,8 +956,14 @@ export function buildFixtureCatalog(runSuffix) {
     const semiFinalA = 'wb_r0_m0_1';
     const semiFinalB = 'wb_r0_m1_2';
     const finalId = 'wb_r1_m0_3';
-    const resourceId = `fixture:${scopedId(`${tournament.alias}-field`)}`;
-    const location = `${tournament.visibleMarker} Main Field`;
+    const facilityAlias = tournament.alias === 'qa-tournament-a' ? 'qa-facility-a' : 'qa-facility-b';
+    const facilityMarker = tournament.alias === 'qa-tournament-a'
+      ? visibleMarker('FALCON-A')
+      : visibleMarker('BLUEBIRD-B');
+    const facilityId = scopedId(facilityAlias);
+    const fieldName = `${facilityMarker} Main Field`;
+    const resourceId = `${facilityId}:${fieldName}`;
+    const location = `${facilityMarker} Facility - ${fieldName}`;
     const tournamentGames = [
       {
         id: semiFinalA,
@@ -961,11 +1040,11 @@ export function buildFixtureCatalog(runSuffix) {
         startTime: '09:00',
         endTime: '14:00',
         location,
-        manualVenue: location,
+        manualVenue: '',
         tournamentType: 'single_elimination',
         tournamentTeams: entrants.map(entrant => entrant.name),
         tournamentTeamsData: entrants,
-        selectedFields: [{ id: resourceId, name: location }],
+        selectedFields: [resourceId],
         gameLength: 60,
         breakLength: 15,
         maxDailyGamesPerTeam: 3,
@@ -1006,6 +1085,8 @@ export function buildFixtureCatalog(runSuffix) {
   for (const [alias, ownerAlias, teamAlias, marker, address] of facilityDefinitions) {
     const facilityId = scopedId(alias);
     const fieldId = scopedId(`${alias}-field`);
+    const resourceId = `${facilityId}:${marker} Main Field`;
+    const overlappingTeamAlias = teamAlias === 'qa-team-a' ? 'qa-team-b' : 'qa-team-a';
     addDocument('facility', {
       alias,
       path: `facilities/${facilityId}`,
@@ -1022,7 +1103,7 @@ export function buildFixtureCatalog(runSuffix) {
       data: {
         sourceType: 'team-event',
         sourceId: `fixture:${runId}:${alias}:primary`,
-        resourceId: fieldId,
+        resourceId,
         teamIds: [teamIdFor(teamAlias)],
         date: '2026-10-15',
         startMinute: 1080,
@@ -1038,8 +1119,8 @@ export function buildFixtureCatalog(runSuffix) {
       data: {
         sourceType: 'fixture-conflict',
         sourceId: `fixture:${runId}:${alias}:overlap`,
-        resourceId: fieldId,
-        teamIds: [teamIdFor(teamAlias)],
+        resourceId,
+        teamIds: [teamIdFor(overlappingTeamAlias)],
         date: '2026-10-15',
         startMinute: 1110,
         endMinute: 1200,
