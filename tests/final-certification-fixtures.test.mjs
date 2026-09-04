@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
 import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
+import { prepareTournamentScheduleForDeployment } from '../src/lib/server-tournament-schedule-deployment.ts';
 
 const REQUIRED_ALIASES = [
   'qa-coach-owner-a',
@@ -54,6 +55,10 @@ const REQUIRED_DOMAINS = [
 
 function byAlias(catalog, alias) {
   return catalog.identities.find(identity => identity.alias === alias);
+}
+
+function fixtureByAlias(catalog, alias) {
+  return catalog.firestoreDocuments.find(document => document.data.fixtureAlias === alias);
 }
 
 function validateEnvironment(environment) {
@@ -193,6 +198,163 @@ test('catalog supplies every requested data domain plus file, time, and race neg
   assert.ok(catalog.organizations.some(organization => organization.kind === 'school'));
 });
 
+test('application readers receive tournament, feed, waiver, and conflict records at their real paths', () => {
+  const catalog = buildFixtureCatalog('reader-a1');
+  const tournament = fixtureByAlias(catalog, 'qa-tournament-a');
+  const gameIds = new Set(tournament.data.tournamentGames.map(game => game.id));
+
+  assert.match(tournament.path, /^teams\/[^/]+\/events\/[^/]+$/);
+  assert.equal(tournament.data.isTournament, true);
+  assert.equal(tournament.data.isArchived, false);
+  assert.ok(tournament.data.tournamentTeamsData.length >= 4);
+  assert.ok(['single_elimination', 'double_elimination', 'round_robin', 'pool_play_knockout'].includes(tournament.data.tournamentType));
+  assert.ok(tournament.data.tournamentGames.length >= 3);
+  assert.ok(tournament.data.tournamentGames.some(game => game.winnerTo));
+  for (const game of tournament.data.tournamentGames) {
+    for (const target of [game.winnerTo, game.loserTo].filter(Boolean)) assert.ok(gameIds.has(target));
+  }
+
+  assert.ok(catalog.fixtures.chat.filter(fixture => fixture.alias.endsWith('-feed-post'))
+    .every(fixture => fixture.path.includes('/feedPosts/')));
+  const waivers = catalog.fixtures.compliance.filter(fixture => fixture.path.startsWith('teams/') && fixture.alias.endsWith('-waiver'));
+  assert.ok(waivers.every(fixture => (
+    fixture.path.includes('/documents/') &&
+    fixture.data.type === 'waiver' &&
+    typeof fixture.data.isActive === 'boolean'
+  )));
+  assert.ok(waivers.some(fixture => fixture.data.isActive === true));
+  assert.ok(waivers.some(fixture => fixture.data.isActive === false));
+
+  const bookings = catalog.fixtures.facility.filter(fixture => fixture.alias.includes('-booking-'));
+  assert.ok(bookings.length >= 2);
+  assert.ok(bookings.every(fixture => fixture.path.startsWith('scheduleBookings/')));
+  assert.ok(bookings.every(fixture => (
+    /^\d{4}-\d{2}-\d{2}$/.test(fixture.data.date) &&
+    Number.isInteger(fixture.data.startMinute) &&
+    Number.isInteger(fixture.data.endMinute) &&
+    fixture.data.endMinute > fixture.data.startMinute &&
+    fixture.data.resourceId && fixture.data.teamIds.length > 0
+  )));
+  assert.equal(bookings[0].data.resourceId, bookings[1].data.resourceId);
+  assert.ok(bookings[0].data.startMinute < bookings[1].data.endMinute);
+  assert.ok(bookings[1].data.startMinute < bookings[0].data.endMinute);
+});
+
+test('seeded tournament bracket passes the application schedule preparer with a real dependency target', () => {
+  const catalog = buildFixtureCatalog('topology-a1');
+  const event = fixtureByAlias(catalog, 'qa-tournament-a').data;
+  const prepared = prepareTournamentScheduleForDeployment(event, event.tournamentGames);
+  const ids = new Set(prepared.map(game => game.id));
+
+  assert.equal(prepared.length, 3);
+  assert.ok(prepared.some(game => game.winnerTo && ids.has(game.winnerTo)));
+});
+
+test('game and public portal fixtures satisfy their list and visibility contracts', () => {
+  const catalog = buildFixtureCatalog('portal-a1');
+  const games = catalog.fixtures.competition.filter(fixture => fixture.path.includes('/games/'));
+  const publicVolunteer = fixtureByAlias(catalog, 'qa-volunteer-opportunity-a');
+  const privateVolunteer = fixtureByAlias(catalog, 'qa-volunteer-opportunity-b');
+  const publicFundraiser = fixtureByAlias(catalog, 'qa-fundraiser-a');
+  const privateFundraiser = fixtureByAlias(catalog, 'qa-fundraiser-b');
+  const donation = fixtureByAlias(catalog, 'qa-donation-a');
+
+  assert.ok(games.length >= 3);
+  assert.ok(games.every(game => typeof game.data.date === 'string' && !Number.isNaN(Date.parse(game.data.date))));
+  assert.deepEqual(
+    [publicVolunteer.data.isShareable, privateVolunteer.data.isShareable],
+    [true, false],
+  );
+  assert.ok(publicVolunteer.data.date && publicVolunteer.data.spots > 0);
+  assert.ok(privateVolunteer.data.date && privateVolunteer.data.spots > 0);
+  assert.ok(Object.values(publicVolunteer.data.signups).some(signup => signup.source === 'public_portal'));
+  assert.deepEqual(
+    [publicFundraiser.data.isShareable, privateFundraiser.data.isShareable],
+    [true, false],
+  );
+  assert.ok(publicFundraiser.data.deadline && publicFundraiser.data.goalAmount > 0);
+  assert.ok(Number.isFinite(publicFundraiser.data.currentAmount));
+  assert.ok(privateFundraiser.data.deadline && privateFundraiser.data.goalAmount > 0);
+  assert.equal(donation.path.startsWith(`${publicFundraiser.path}/donations/`), true);
+  assert.equal(donation.data.source, 'public_portal');
+  assert.equal(typeof donation.data.amount, 'number');
+});
+
+test('school hub and projections carry real squad links and delegated authority', () => {
+  const catalog = buildFixtureCatalog('school-a1');
+  const owner = byAlias(catalog, 'qa-school-owner');
+  const delegate = byAlias(catalog, 'qa-school-delegate');
+  const outsider = byAlias(catalog, 'qa-coach-owner-b');
+  const hub = fixtureByAlias(catalog, 'qa-school-hub');
+  const squads = catalog.teams.filter(team => team.type === 'school_squad');
+
+  assert.match(hub.path, /^teams\/[^/]+$/);
+  assert.equal(hub.data.type, 'school_hub');
+  assert.equal(hub.data.ownerUserId, owner.uid);
+  assert.deepEqual(hub.data.schoolAdminIds, [delegate.uid]);
+  assert.ok(!hub.data.schoolAdminIds.includes(outsider.uid));
+  assert.equal(squads.length, 3);
+  assert.ok(squads.every(squad => squad.schoolId === hub.data.id));
+
+  for (const identity of [owner, delegate]) {
+    const projections = catalog.fixtures.roster.filter(fixture => (
+      fixture.path.startsWith(`users/${identity.uid}/teamMemberships/`)
+    ));
+    assert.ok(projections.some(fixture => fixture.data.type === 'school_hub' && fixture.data.teamId === hub.data.id));
+    assert.equal(projections.filter(fixture => fixture.data.type === 'school_squad').length, identity === owner ? 3 : 1);
+    assert.ok(projections.filter(fixture => fixture.data.type === 'school_squad')
+      .every(fixture => fixture.data.schoolId === hub.data.id));
+  }
+});
+
+test('real user and team records expose coherent local entitlements without outbound recipients', () => {
+  const catalog = buildFixtureCatalog('entitlement-a1');
+  const expectedProfiles = new Map([
+    ['qa-pro-owner', ['team', 'trialing', 1]],
+    ['qa-elite-owner', ['elite', 'active', 8]],
+    ['qa-school-owner', ['school', 'active', 15]],
+    ['qa-league-owner-a', ['league', 'active', 17]],
+    ['qa-coach-owner-a', ['team', 'past_due', 1]],
+    ['qa-league-owner-b', ['league', 'canceled', 1]],
+  ]);
+
+  for (const [alias, [planType, status, limit]] of expectedProfiles) {
+    const profile = fixtureByAlias(catalog, alias).data;
+    assert.equal(profile.plan_type, planType);
+    assert.equal(profile.subscription_status, status);
+    assert.equal(profile.team_limit, limit);
+    assert.equal(profile.notificationsEnabled, false);
+    assert.deepEqual(profile.fcmTokens, []);
+    assert.deepEqual(profile.webPushSubscriptions, []);
+    assert.equal(profile.providerProvisioning, 'unprovisioned-test-descriptor');
+  }
+
+  assert.ok(catalog.teams.every(team => team.isDemo !== true));
+  assert.ok(catalog.teams.every(team => team.outboundProvidersEnabled === false));
+  assert.equal(fixtureByAlias(catalog, 'qa-pro-owner').data.subscription_status, 'trialing');
+  assert.equal(fixtureByAlias(catalog, 'qa-coach-owner-a').data.subscription_status, 'past_due');
+});
+
+test('storage fixtures have deterministic payload generators, real policy paths, and exact lifecycle cleanup', () => {
+  const catalog = buildFixtureCatalog('storage-a1');
+  const present = catalog.storageObjects.filter(object => object.lifecycle === 'present');
+  const deleted = catalog.storageObjects.filter(object => object.lifecycle === 'delete-after-write');
+  const negative = catalog.storageObjects.filter(object => object.lifecycle === 'negative-upload-only');
+
+  assert.ok(present.some(object => object.access === 'public' && object.path.startsWith('teams/') && object.path.includes('/branding/')));
+  assert.ok(present.some(object => object.access === 'private' && object.path.startsWith('players/') && object.path.includes('/videos/')));
+  assert.ok(present.some(object => object.ownerAlias === 'qa-pending-delete'));
+  assert.ok(deleted.length >= 1);
+  assert.deepEqual(new Set(negative.map(object => object.case)), new Set(['oversized', 'mime-spoofed']));
+  assert.ok(catalog.storageObjects.every(object => object.payloadGenerator === 'repeat-seed-v1'));
+  assert.ok(catalog.storageObjects.every(object => Number.isInteger(object.sizeBytes) && object.sizeBytes > 0));
+  assert.deepEqual(
+    catalog.cleanupSelectors.storage.objectPaths,
+    catalog.storageObjects.map(object => object.path).sort(),
+  );
+  assert.ok(catalog.cleanupSelectors.storage.objectPaths.every(path => !path.includes('*')));
+});
+
 test('provider fixtures are explicit test or safe-sink records and never live mode', () => {
   const { providers, subscriptions } = buildFixtureCatalog('provider-a1');
 
@@ -253,7 +415,7 @@ test('cleanup selectors are exact, run-bounded, and cover every seeded document 
   assert.ok(selectors.firestore.recursiveRoots.every(path => path.split('/').length >= 2));
   assert.ok(selectors.firestore.recursiveRoots.every(path => path.includes('cleanup-a1')));
   assert.ok(selectors.auth.uids.every(uid => uid.includes('cleanup-a1')));
-  assert.ok(selectors.storage.prefixes.every(prefix => prefix.startsWith(`qa-fixtures/${catalog.runId}/`)));
+  assert.deepEqual(selectors.storage.objectPaths, catalog.storageObjects.map(object => object.path).sort());
   assert.deepEqual(selectors.stripe.metadata, { fixture_run_id: catalog.runId, livemode: 'false' });
   assert.ok(selectors.firestore.recursiveRoots.includes(`auditFixtureMetadata/${catalog.runId}`));
 
@@ -295,6 +457,29 @@ test('seeder refuses production and every non-loopback emulator target before co
     const result = validateEnvironment({ [variable]: value });
     assert.notEqual(result.status, 0, `${variable} must be rejected`);
     assert.match(`${result.stdout}${result.stderr}`, new RegExp(`${variable} must be loopback`));
+  }
+});
+
+test('seeder rejects authority suffix, userinfo, path, missing port, and invalid port tricks', () => {
+  const invalidAuthorities = [
+    '[::1]@example.test:9099',
+    'user@127.0.0.1:9099',
+    '127.0.0.1:9099/path',
+    'localhost',
+    'localhost:not-a-port',
+    '127.0.0.1:0',
+    '[::1]:65536',
+  ];
+  for (const variable of [
+    'FIREBASE_AUTH_EMULATOR_HOST',
+    'FIRESTORE_EMULATOR_HOST',
+    'FIREBASE_STORAGE_EMULATOR_HOST',
+  ]) {
+    for (const authority of invalidAuthorities) {
+      const result = validateEnvironment({ [variable]: authority });
+      assert.notEqual(result.status, 0, `${variable} must reject ${authority}`);
+      assert.match(`${result.stdout}${result.stderr}`, new RegExp(`${variable} must be loopback`));
+    }
   }
 });
 

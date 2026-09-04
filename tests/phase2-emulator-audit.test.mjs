@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
+import { buildBlockedAuditPlan } from '../scripts/qa/run-phase2-emulator-audit.mjs';
+
 const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
 
 test('emulator audit creates runtime-only credentials and redacts failures', () => {
@@ -17,6 +20,42 @@ test('emulator audit covers tenant, lifecycle, and trusted-claim boundaries', ()
   assert.match(source, /deletion-pending account denied server API/);
   assert.match(source, /profile-only fake superadmin denied admin API/);
   assert.match(source, /fake superadmin browser route denial/);
+});
+
+test('default API and browser audits consume every blocked session expectation', () => {
+  const catalog = buildFixtureCatalog('blocked-audit-a1');
+  const plan = buildBlockedAuditPlan(catalog.blockedAliases);
+
+  assert.deepEqual(plan.api.map(identity => identity.alias), [
+    'qa-unverified',
+    'qa-suspended',
+    'qa-pending-delete',
+  ]);
+  assert.deepEqual(plan.browser.map(identity => identity.alias), plan.api.map(identity => identity.alias));
+  assert.deepEqual(plan.api.map(identity => identity.sessionStatus), [403, undefined, 403]);
+  assert.deepEqual(plan.browser.map(identity => [identity.browserPath, identity.browserTitle]), [
+    ['/verify-email', 'Verify Your Email'],
+    ['/login', 'Login Failed'],
+    ['/login', 'Session Setup Failed'],
+  ]);
+  assert.throws(() => { plan.api.push(catalog.blockedAliases[0]); }, TypeError);
+  assert.throws(() => { plan.api[0].alias = 'mutated'; }, TypeError);
+});
+
+test('emulator audit exercises real fixture readers, public visibility, entitlements, delegation, and Storage lifecycle', () => {
+  assert.match(source, /seeded tournament reader returns published bracket/);
+  assert.match(source, /published volunteer public GET/);
+  assert.match(source, /unpublished volunteer public GET denial/);
+  assert.match(source, /published fundraiser public GET/);
+  assert.match(source, /unpublished fundraiser public GET denial/);
+  assert.match(source, /active local entitlement reaches Connect status without provider call/);
+  assert.match(source, /school delegate reaches hub-backed entitlement/);
+  assert.match(source, /school outsider denied hub-backed entitlement/);
+  assert.match(source, /public Storage object is anonymously readable/);
+  assert.match(source, /private Storage object rejects cross-tenant reader/);
+  assert.match(source, /pending-delete Storage object is denied/);
+  assert.match(source, /deleted Storage lifecycle object is absent/);
+  assert.match(source, /post-cleanup Storage object is absent/);
 });
 
 test('emulator audit drives every seeded active persona and session boundary in a browser', () => {

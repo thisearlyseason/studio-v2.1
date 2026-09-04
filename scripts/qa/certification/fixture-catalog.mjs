@@ -36,8 +36,8 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-coach-owner-b', 'registered', 'coach', 'active', ['qa-team-b'], 'free', '/dashboard'],
     ['qa-pro-owner', 'registered', 'coach', 'active', ['qa-pro-team'], 'team', '/dashboard'],
     ['qa-elite-owner', 'registered', 'coach', 'active', ['qa-elite-squad-1', 'qa-elite-squad-2', 'qa-elite-squad-3'], 'elite', '/club'],
-    ['qa-school-owner', 'registered', 'admin', 'active', ['qa-school-squad-1', 'qa-school-squad-2', 'qa-school-squad-3'], 'school', '/club'],
-    ['qa-school-delegate', 'registered', 'admin', 'active', ['qa-school-squad-1'], 'school', '/club'],
+    ['qa-school-owner', 'registered', 'admin', 'active', ['qa-school-hub', 'qa-school-squad-1', 'qa-school-squad-2', 'qa-school-squad-3'], 'school', '/club'],
+    ['qa-school-delegate', 'registered', 'admin', 'active', ['qa-school-hub', 'qa-school-squad-1'], 'school', '/club'],
     ['qa-league-owner-a', 'registered', 'league_creator', 'active', ['qa-team-c'], 'league', '/competition'],
     ['qa-league-owner-b', 'registered', 'league_creator', 'active', [], 'league', '/competition'],
     ['qa-team-assistant', 'registered', 'coach', 'active', ['qa-team-a'], 'free', '/dashboard'],
@@ -100,17 +100,18 @@ export function buildFixtureCatalog(runSuffix) {
   const teamIdFor = alias => scopedId(alias);
 
   const teamDefinitions = [
-    ['qa-team-a', 'qa-coach-owner-a', visibleMarker('FALCON-A'), 'Phase 2 Falcons', 'Basketball', 'team', '#C81E1E', null],
-    ['qa-team-b', 'qa-coach-owner-b', visibleMarker('BLUEBIRD-B'), 'Phase 2 Bluebirds', 'Soccer', 'free', '#1D4ED8', null],
-    ['qa-team-c', 'qa-league-owner-a', visibleMarker('GOLDEN-C'), 'Phase 2 Goldens', 'Volleyball', 'free', '#B7791F', null],
-    ['qa-pro-team', 'qa-pro-owner', visibleMarker('CRIMSON-PRO'), 'Crimson Pro', 'Basketball', 'team', '#991B1B', null],
-    ['qa-elite-squad-1', 'qa-elite-owner', visibleMarker('ELITE-ONE'), 'Elite North', 'Hockey', 'elite', '#6D28D9', 'qa-club-elite'],
-    ['qa-elite-squad-2', 'qa-elite-owner', visibleMarker('ELITE-TWO'), 'Elite Central', 'Hockey', 'elite', '#7C3AED', 'qa-club-elite'],
-    ['qa-elite-squad-3', 'qa-elite-owner', visibleMarker('ELITE-THREE'), 'Elite South', 'Hockey', 'elite', '#8B5CF6', 'qa-club-elite'],
-    ['qa-school-squad-1', 'qa-school-owner', visibleMarker('SCHOOL-VARSITY'), 'School Varsity', 'Basketball', 'school', '#065F46', 'qa-school'],
-    ['qa-school-squad-2', 'qa-school-owner', visibleMarker('SCHOOL-JV'), 'School Junior Varsity', 'Basketball', 'school', '#047857', 'qa-school'],
-    ['qa-school-squad-3', 'qa-school-owner', visibleMarker('SCHOOL-FRESHMAN'), 'School Freshman', 'Basketball', 'school', '#059669', 'qa-school'],
-    ['qa-disposable-team', 'qa-owner-delete-blocked', visibleMarker('DISPOSABLE-OWNER'), 'Disposable Owner Guard', 'Soccer', 'free', '#374151', null],
+    ['qa-team-a', 'qa-coach-owner-a', visibleMarker('FALCON-A'), 'Phase 2 Falcons', 'Basketball', 'team', '#C81E1E', null, 'youth'],
+    ['qa-team-b', 'qa-coach-owner-b', visibleMarker('BLUEBIRD-B'), 'Phase 2 Bluebirds', 'Soccer', 'free', '#1D4ED8', null, 'youth'],
+    ['qa-team-c', 'qa-league-owner-a', visibleMarker('GOLDEN-C'), 'Phase 2 Goldens', 'Volleyball', 'free', '#B7791F', null, 'youth'],
+    ['qa-pro-team', 'qa-pro-owner', visibleMarker('CRIMSON-PRO'), 'Crimson Pro', 'Basketball', 'team', '#991B1B', null, 'youth'],
+    ['qa-elite-squad-1', 'qa-elite-owner', visibleMarker('ELITE-ONE'), 'Elite North', 'Hockey', 'elite', '#6D28D9', 'qa-club-elite', 'youth'],
+    ['qa-elite-squad-2', 'qa-elite-owner', visibleMarker('ELITE-TWO'), 'Elite Central', 'Hockey', 'elite', '#7C3AED', 'qa-club-elite', 'youth'],
+    ['qa-elite-squad-3', 'qa-elite-owner', visibleMarker('ELITE-THREE'), 'Elite South', 'Hockey', 'elite', '#8B5CF6', 'qa-club-elite', 'youth'],
+    ['qa-school-hub', 'qa-school-owner', visibleMarker('SCHOOL-HUB'), 'School Athletics', 'Basketball', 'school', '#064E3B', 'qa-school', 'school_hub'],
+    ['qa-school-squad-1', 'qa-school-owner', visibleMarker('SCHOOL-VARSITY'), 'School Varsity', 'Basketball', 'school', '#065F46', 'qa-school', 'school_squad'],
+    ['qa-school-squad-2', 'qa-school-owner', visibleMarker('SCHOOL-JV'), 'School Junior Varsity', 'Basketball', 'school', '#047857', 'qa-school', 'school_squad'],
+    ['qa-school-squad-3', 'qa-school-owner', visibleMarker('SCHOOL-FRESHMAN'), 'School Freshman', 'Basketball', 'school', '#059669', 'qa-school', 'school_squad'],
+    ['qa-disposable-team', 'qa-owner-delete-blocked', visibleMarker('DISPOSABLE-OWNER'), 'Disposable Owner Guard', 'Soccer', 'free', '#374151', null, 'youth'],
   ];
 
   const teams = teamDefinitions.map(([
@@ -122,6 +123,7 @@ export function buildFixtureCatalog(runSuffix) {
     planId,
     primaryColor,
     organizationAlias,
+    type,
   ]) => ({
     alias,
     id: teamIdFor(alias),
@@ -130,14 +132,17 @@ export function buildFixtureCatalog(runSuffix) {
     visibleMarker: marker,
     name: `${marker} ${name}`,
     sport,
-    type: alias.startsWith('qa-school-squad-') ? 'school_squad' : 'youth',
+    type,
     ageGroup: alias.includes('school') ? 'High School' : 'U16',
     planId,
     plan_type: planId,
     isPro: planId !== 'free',
-    isDemo: true,
+    isDemo: false,
+    outboundProvidersEnabled: false,
     organizationAlias,
     organizationId: organizationAlias ? scopedId(organizationAlias) : null,
+    schoolId: type === 'school_squad' ? scopedId('qa-school-hub') : null,
+    schoolAdminIds: type === 'school_hub' ? [uidFor('qa-school-delegate')] : [],
     primaryColor,
     createdAt: timestamp('2026-08-01T12:00:00.000Z'),
     moduleVisibility: {
@@ -303,26 +308,75 @@ export function buildFixtureCatalog(runSuffix) {
   }));
 
   const files = [
-    ['qa-file-allowed', 'allowed', 'qa-team-a', 'application/pdf', 'application/pdf', 128_000, false, false],
+    ['qa-file-allowed', 'allowed', 'qa-team-a', 'image/png', 'image/png', 128_000, false, false],
     ['qa-file-oversized', 'oversized', 'qa-team-a', 'video/mp4', 'video/mp4', 52_428_801, false, false],
     ['qa-file-mime-spoofed', 'mime-spoofed', 'qa-team-b', 'image/png', 'application/x-msdownload', 24_000, false, false],
-    ['qa-file-deleted', 'deleted', 'qa-team-b', 'application/pdf', 'application/pdf', 64_000, false, true],
+    ['qa-file-deleted', 'deleted', 'qa-team-b', 'image/png', 'image/png', 64_000, false, true],
     ['qa-file-public', 'public', 'qa-team-c', 'image/jpeg', 'image/jpeg', 96_000, true, false],
-    ['qa-file-private', 'private', 'qa-team-a', 'application/pdf', 'application/pdf', 72_000, false, false],
-  ].map(([alias, fixtureCase, teamAlias, declaredMime, detectedMime, sizeBytes, isPublic, deleted]) => ({
-    alias,
-    id: scopedId(alias),
-    case: fixtureCase,
-    teamAlias,
-    teamId: teamIdFor(teamAlias),
-    name: `${visibleMarker(teamAlias.toUpperCase())}-${fixtureCase}.bin`,
-    declaredMime,
-    detectedMime,
-    sizeBytes,
-    isPublic,
-    deleted,
-    storagePath: `qa-fixtures/${runId}/${teamAlias}/${scopedId(alias)}`,
-  }));
+    ['qa-file-private', 'private', 'qa-team-a', 'video/mp4', 'video/mp4', 72_000, false, false],
+  ].map(([alias, fixtureCase, teamAlias, declaredMime, detectedMime, sizeBytes, isPublic, deleted]) => {
+    const extension = declaredMime === 'video/mp4' ? 'mp4' : declaredMime === 'image/jpeg' ? 'jpg' : 'png';
+    const storagePath = fixtureCase === 'allowed'
+      ? `players/${scopedId('qa-player-adult-a')}/thumbnails/${scopedId(alias)}.${extension}`
+      : fixtureCase === 'oversized'
+        ? `players/${scopedId('qa-player-adult-a')}/videos/${scopedId(alias)}.${extension}`
+        : fixtureCase === 'mime-spoofed'
+          ? `players/${scopedId('qa-player-adult-b')}/avatar/${scopedId(alias)}.${extension}`
+          : fixtureCase === 'private'
+            ? `players/${scopedId('qa-player-adult-a')}/videos/${scopedId(alias)}.${extension}`
+            : `teams/${teamIdFor(teamAlias)}/branding/${scopedId(alias)}.${extension}`;
+    return {
+      alias,
+      id: scopedId(alias),
+      case: fixtureCase,
+      teamAlias,
+      teamId: teamIdFor(teamAlias),
+      ownerAlias: teamAlias === 'qa-team-b'
+        ? 'qa-coach-owner-b'
+        : teamAlias === 'qa-team-c'
+          ? 'qa-league-owner-a'
+          : 'qa-coach-owner-a',
+      name: `${visibleMarker(teamAlias.toUpperCase())}-${fixtureCase}.${extension}`,
+      declaredMime,
+      detectedMime,
+      sizeBytes,
+      isPublic,
+      deleted,
+      storagePath,
+      payloadGenerator: 'repeat-seed-v1',
+      payloadSeed: `${runId}:${alias}`,
+    };
+  });
+
+  const storageObjects = files.map(file => ({
+    alias: file.alias,
+    case: file.case,
+    path: file.storagePath,
+    ownerAlias: file.ownerAlias,
+    access: file.isPublic ? 'public' : 'private',
+    contentType: file.declaredMime,
+    detectedMime: file.detectedMime,
+    sizeBytes: file.sizeBytes,
+    payloadGenerator: file.payloadGenerator,
+    payloadSeed: file.payloadSeed,
+    lifecycle: file.case === 'oversized' || file.case === 'mime-spoofed'
+      ? 'negative-upload-only'
+      : file.deleted
+        ? 'delete-after-write'
+        : 'present',
+  })).concat({
+    alias: 'qa-file-pending-delete',
+    case: 'pending-delete',
+    path: `players/${scopedId('qa-player-pending-delete')}/videos/${scopedId('qa-file-pending-delete')}.mp4`,
+    ownerAlias: 'qa-pending-delete',
+    access: 'private',
+    contentType: 'video/mp4',
+    detectedMime: 'video/mp4',
+    sizeBytes: 48_000,
+    payloadGenerator: 'repeat-seed-v1',
+    payloadSeed: `${runId}:qa-file-pending-delete`,
+    lifecycle: 'present',
+  });
 
   const timeFixtures = [
     ['qa-time-past', 'past', 'qa-team-a', '2026-08-15T18:00:00.000Z', '2026-08-15T19:30:00.000Z'],
@@ -383,15 +437,27 @@ export function buildFixtureCatalog(runSuffix) {
     });
   };
 
+  const subscriptionByOwner = new Map(subscriptions.map(subscription => [subscription.ownerAlias, subscription]));
   for (const identity of identities.filter(value => value.accountKind === 'registered')) {
+    const subscription = subscriptionByOwner.get(identity.alias);
     const profile = {
       id: identity.uid,
       uid: identity.uid,
       email: identity.email,
       name: identity.alias.replaceAll('-', ' '),
       role: identity.role,
-      plan_type: identity.planId,
-      planId: identity.planId,
+      plan_type: subscription?.planId || identity.planId,
+      planId: subscription?.planId || identity.planId,
+      subscription_status: subscription?.status || 'none',
+      subscription_interval: subscription?.interval || null,
+      subscription_fixture_id: subscription?.id || null,
+      team_limit: subscription?.capacity || 1,
+      proTeamLimit: subscription?.capacity || 1,
+      providerProvisioning: 'unprovisioned-test-descriptor',
+      outboundProvidersEnabled: false,
+      notificationsEnabled: false,
+      fcmTokens: [],
+      webPushSubscriptions: [],
       emailVerified: identity.verified,
       createdAt: timestamp(FIXED_NOW),
       updatedAt: timestamp(FIXED_NOW),
@@ -437,6 +503,8 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-elite-squad-1', 'qa-elite-owner', 'Admin', 'Club Owner', 'active'],
     ['qa-elite-squad-2', 'qa-elite-owner', 'Admin', 'Club Owner', 'active'],
     ['qa-elite-squad-3', 'qa-elite-owner', 'Admin', 'Club Owner', 'active'],
+    ['qa-school-hub', 'qa-school-owner', 'Admin', 'Athletic Director', 'active'],
+    ['qa-school-hub', 'qa-school-delegate', 'Admin', 'School Admin', 'active'],
     ['qa-school-squad-1', 'qa-school-owner', 'Admin', 'Athletic Director', 'active'],
     ['qa-school-squad-1', 'qa-school-delegate', 'Admin', 'School Admin', 'active'],
     ['qa-school-squad-2', 'qa-school-owner', 'Admin', 'Athletic Director', 'active'],
@@ -481,9 +549,10 @@ export function buildFixtureCatalog(runSuffix) {
           planId: team.planId,
           plan_type: team.plan_type,
           isPro: team.isPro,
-          isDemo: true,
+          isDemo: false,
+          outboundProvidersEnabled: false,
           type: team.type,
-          ...(team.organizationAlias === 'qa-school' ? { schoolId: team.organizationId } : {}),
+          ...(team.schoolId ? { schoolId: team.schoolId } : {}),
           joinedAt: timestamp('2026-08-01T12:00:00.000Z'),
         },
       });
@@ -693,8 +762,14 @@ export function buildFixtureCatalog(runSuffix) {
     });
     addDocument('chat', {
       alias: `${teamAlias}-feed-post`,
-      path: `teams/${teamIdFor(teamAlias)}/feed/${scopedId(`${teamAlias}-feed-post`)}`,
-      data: { authorId: uidFor(ownerAlias), text: `${marker} synthetic private feed post`, createdAt: timestamp(FIXED_NOW) },
+      path: `teams/${teamIdFor(teamAlias)}/feedPosts/${scopedId(`${teamAlias}-feed-post`)}`,
+      data: {
+        authorId: uidFor(ownerAlias),
+        authorName: ownerAlias.replaceAll('-', ' '),
+        content: `${marker} synthetic private feed post`,
+        type: 'text',
+        createdAt: timestamp(FIXED_NOW),
+      },
     });
     addDocument('chat', {
       alias: `${teamAlias}-poll`,
@@ -709,7 +784,7 @@ export function buildFixtureCatalog(runSuffix) {
       path: `teams/${file.teamId}/files/${file.id}`,
       data: {
         ...file,
-        url: `https://example.test/${runId}/${file.teamAlias}/${file.id}`,
+        url: { __fixtureStorageObject: file.storagePath },
         createdAt: timestamp(FIXED_NOW),
       },
     });
@@ -721,8 +796,17 @@ export function buildFixtureCatalog(runSuffix) {
   ]) {
     addDocument('compliance', {
       alias: `${teamAlias}-waiver`,
-      path: `teams/${teamIdFor(teamAlias)}/waivers/${scopedId(`${teamAlias}-waiver-v1`)}`,
-      data: { title: `${marker} Waiver`, version: 1, status: teamAlias === 'qa-team-b' ? 'draft' : 'published', ownerId: uidFor(ownerAlias) },
+      path: `teams/${teamIdFor(teamAlias)}/documents/${scopedId(`${teamAlias}-waiver-v1`)}`,
+      data: {
+        title: `${marker} Waiver`,
+        content: `${marker} synthetic waiver terms`,
+        type: 'waiver',
+        version: 1,
+        isActive: teamAlias !== 'qa-team-b',
+        assignedTo: ['all'],
+        ownerUserId: uidFor(ownerAlias),
+        createdAt: timestamp(FIXED_NOW),
+      },
     });
     addDocument('compliance', {
       alias: `${teamAlias}-incident`,
@@ -789,26 +873,129 @@ export function buildFixtureCatalog(runSuffix) {
     });
   }
   for (const tournament of tournaments) {
+    const entrantAliases = tournament.alias === 'qa-tournament-a'
+      ? ['qa-team-a', 'qa-team-b', 'qa-team-c', 'qa-pro-team']
+      : ['qa-team-b', 'qa-team-c', 'qa-pro-team', 'qa-elite-squad-1'];
+    const entrants = entrantAliases.map(alias => {
+      const team = teams.find(value => value.alias === alias);
+      return { id: team.id, name: team.name, teamName: team.name };
+    });
+    const semiFinalA = 'wb_r0_m0_1';
+    const semiFinalB = 'wb_r0_m1_2';
+    const finalId = 'wb_r1_m0_3';
+    const resourceId = `fixture:${scopedId(`${tournament.alias}-field`)}`;
+    const location = `${tournament.visibleMarker} Main Field`;
+    const tournamentGames = [
+      {
+        id: semiFinalA,
+        team1: entrants[0].name,
+        team2: entrants[3].name,
+        team1Id: entrants[0].id,
+        team2Id: entrants[3].id,
+        score1: 2,
+        score2: 1,
+        date: '2026-10-18',
+        time: '9:00 AM',
+        location,
+        resourceId,
+        round: 'Semi-Finals',
+        stage: 'Main',
+        winnerTo: finalId,
+        winnerToSlot: 'team1',
+        isCompleted: true,
+        isConditional: false,
+        updatedAt: FIXED_NOW,
+      },
+      {
+        id: semiFinalB,
+        team1: entrants[1].name,
+        team2: entrants[2].name,
+        team1Id: entrants[1].id,
+        team2Id: entrants[2].id,
+        score1: 0,
+        score2: 0,
+        date: '2026-10-18',
+        time: '10:15 AM',
+        location,
+        resourceId,
+        round: 'Semi-Finals',
+        stage: 'Main',
+        winnerTo: finalId,
+        winnerToSlot: 'team2',
+        isCompleted: false,
+        isConditional: false,
+        updatedAt: FIXED_NOW,
+      },
+      {
+        id: finalId,
+        team1: 'TBD',
+        team2: 'TBD',
+        team1Id: 'tbd',
+        team2Id: 'tbd',
+        score1: 0,
+        score2: 0,
+        date: '2026-10-18',
+        time: '12:00 PM',
+        location,
+        resourceId,
+        round: 'Championship',
+        stage: 'Main',
+        isCompleted: false,
+        isConditional: false,
+        updatedAt: FIXED_NOW,
+      },
+    ];
     addDocument('competition', {
       alias: tournament.alias,
-      path: `teams/${teamIdFor(tournament.teamAlias)}/tournaments/${tournament.id}`,
-      data: { ...tournament, teamId: teamIdFor(tournament.teamAlias), createdAt: timestamp(FIXED_NOW) },
+      path: `teams/${teamIdFor(tournament.teamAlias)}/events/${tournament.id}`,
+      data: {
+        ...tournament,
+        teamId: teamIdFor(tournament.teamAlias),
+        title: tournament.name,
+        type: 'tournament',
+        eventType: 'tournament',
+        isTournament: true,
+        isArchived: tournament.alias === 'qa-tournament-b',
+        date: '2026-10-18',
+        endDate: '2026-10-18',
+        startTime: '09:00',
+        endTime: '14:00',
+        location,
+        manualVenue: location,
+        tournamentType: 'single_elimination',
+        tournamentTeams: entrants.map(entrant => entrant.name),
+        tournamentTeamsData: entrants,
+        selectedFields: [{ id: resourceId, name: location }],
+        gameLength: 60,
+        breakLength: 15,
+        maxDailyGamesPerTeam: 3,
+        tournamentGames,
+        setupStatus: 'complete',
+        bracketStatus: 'ready',
+        scheduleStatus: 'ready',
+        createdAt: timestamp(FIXED_NOW),
+      },
     });
   }
   addDocument('competition', {
     alias: 'qa-game-active-a',
     path: `teams/${teamIdFor('qa-team-a')}/games/${scopedId('qa-game-active-a')}`,
-    data: { status: 'active', homeScore: 2, awayScore: 1, title: `${visibleMarker('FALCON-A')} Active Game` },
+    data: { date: '2026-10-15T18:00:00.000Z', status: 'active', homeScore: 2, awayScore: 1, title: `${visibleMarker('FALCON-A')} Active Game` },
   });
   addDocument('competition', {
     alias: 'qa-game-completed-a',
     path: `teams/${teamIdFor('qa-team-a')}/games/${scopedId('qa-game-completed-a')}`,
-    data: { status: 'completed', homeScore: 4, awayScore: 3, downstreamGameId: scopedId('qa-game-final-a'), title: `${visibleMarker('FALCON-A')} Completed Game` },
+    data: { date: '2026-10-16T18:00:00.000Z', status: 'completed', homeScore: 4, awayScore: 3, downstreamGameId: scopedId('qa-game-final-a'), title: `${visibleMarker('FALCON-A')} Completed Game` },
+  });
+  addDocument('competition', {
+    alias: 'qa-game-final-a',
+    path: `teams/${teamIdFor('qa-team-a')}/games/${scopedId('qa-game-final-a')}`,
+    data: { date: '2026-10-18T18:00:00.000Z', status: 'scheduled', homeScore: 0, awayScore: 0, upstreamGameId: scopedId('qa-game-completed-a'), title: `${visibleMarker('FALCON-A')} Final Game` },
   });
   addDocument('competition', {
     alias: 'qa-game-cancelled-b',
     path: `teams/${teamIdFor('qa-team-b')}/games/${scopedId('qa-game-cancelled-b')}`,
-    data: { status: 'cancelled', homeScore: 0, awayScore: 0, title: `${visibleMarker('BLUEBIRD-B')} Cancelled Game` },
+    data: { date: '2026-10-17T18:00:00.000Z', status: 'cancelled', homeScore: 0, awayScore: 0, title: `${visibleMarker('BLUEBIRD-B')} Cancelled Game` },
   });
 
   const facilityDefinitions = [
@@ -831,13 +1018,35 @@ export function buildFixtureCatalog(runSuffix) {
     });
     addDocument('facility', {
       alias: `${alias}-booking-primary`,
-      path: `facilities/${facilityId}/bookings/${scopedId(`${alias}-booking-primary`)}`,
-      data: { fieldId, teamId: teamIdFor(teamAlias), startsAt: '2026-10-15T18:00:00.000Z', endsAt: '2026-10-15T19:30:00.000Z', status: 'confirmed' },
+      path: `scheduleBookings/${scopedId(`${alias}-booking-primary`)}`,
+      data: {
+        sourceType: 'team-event',
+        sourceId: `fixture:${runId}:${alias}:primary`,
+        resourceId: fieldId,
+        teamIds: [teamIdFor(teamAlias)],
+        date: '2026-10-15',
+        startMinute: 1080,
+        endMinute: 1170,
+        startTime: '18:00',
+        durationMinutes: 90,
+        status: 'confirmed',
+      },
     });
     addDocument('facility', {
       alias: `${alias}-booking-overlap`,
-      path: `facilities/${facilityId}/bookings/${scopedId(`${alias}-booking-overlap`)}`,
-      data: { fieldId, teamId: teamIdFor(teamAlias), startsAt: '2026-10-15T18:30:00.000Z', endsAt: '2026-10-15T20:00:00.000Z', status: 'conflict-candidate' },
+      path: `scheduleBookings/${scopedId(`${alias}-booking-overlap`)}`,
+      data: {
+        sourceType: 'fixture-conflict',
+        sourceId: `fixture:${runId}:${alias}:overlap`,
+        resourceId: fieldId,
+        teamIds: [teamIdFor(teamAlias)],
+        date: '2026-10-15',
+        startMinute: 1110,
+        endMinute: 1200,
+        startTime: '18:30',
+        durationMinutes: 90,
+        status: 'conflict-candidate',
+      },
     });
   }
   for (const [teamAlias, marker, quantity] of [
@@ -880,22 +1089,75 @@ export function buildFixtureCatalog(runSuffix) {
   addDocument('public', {
     alias: 'qa-volunteer-opportunity-a',
     path: `teams/${teamIdFor('qa-team-a')}/volunteers/${scopedId('qa-volunteer-opportunity-a')}`,
-    data: { title: `${visibleMarker('FALCON-A')} Gate Duty`, status: 'published', capacity: 2, signups: {} },
+    data: {
+      title: `${visibleMarker('FALCON-A')} Gate Duty`,
+      description: 'Synthetic public volunteer opportunity',
+      date: '2027-01-15',
+      endDate: '2027-01-15T23:59:59.000Z',
+      startTime: '17:00',
+      location: 'FALCON-A Main Gate',
+      status: 'published',
+      isShareable: true,
+      spots: 2,
+      hoursPerSlot: 2,
+      signups: {
+        [scopedId('qa-volunteer-submission-a')]: {
+          userId: `public_${scopedId('qa-volunteer-submission-a')}`,
+          userName: 'Synthetic Volunteer',
+          name: 'Synthetic Volunteer',
+          email: `qa-public-submitter+volunteer.${runSuffix}@phase2.test`,
+          phone: '+15550100005',
+          relationship: 'friend',
+          isConfirmed: false,
+          status: 'pending',
+          source: 'public_portal',
+          createdAt: FIXED_NOW,
+        },
+      },
+    },
   });
   addDocument('public', {
     alias: 'qa-volunteer-opportunity-b',
     path: `teams/${teamIdFor('qa-team-b')}/volunteers/${scopedId('qa-volunteer-opportunity-b')}`,
-    data: { title: `${visibleMarker('BLUEBIRD-B')} Field Duty`, status: 'draft', capacity: 3, signups: {} },
+    data: {
+      title: `${visibleMarker('BLUEBIRD-B')} Field Duty`,
+      description: 'Synthetic private volunteer opportunity',
+      date: '2027-01-16',
+      startTime: '17:00',
+      location: 'BLUEBIRD-B Field',
+      status: 'draft',
+      isShareable: false,
+      spots: 3,
+      hoursPerSlot: 2,
+      signups: {},
+    },
   });
   addDocument('public', {
     alias: 'qa-volunteer-submission-a',
-    path: `teams/${teamIdFor('qa-team-a')}/volunteers/${scopedId('qa-volunteer-opportunity-a')}/submissions/${scopedId('qa-volunteer-submission-a')}`,
+    path: `publicSubmissions/${scopedId('qa-volunteer-submission-a')}`,
     data: { kind: 'volunteer', submitterAlias: 'qa-public-submitter', email: `qa-public-submitter+volunteer.${runSuffix}@phase2.test`, phone: '+15550100005', status: 'pending', idempotencyKey: `${runId}:volunteer` },
   });
   addDocument('public', {
     alias: 'qa-donation-a',
     path: `teams/${teamIdFor('qa-team-a')}/fundraising/${scopedId('qa-fundraiser-a')}/donations/${scopedId('qa-donation-a')}`,
-    data: { kind: 'donation', submitterAlias: 'qa-public-submitter', email: `qa-public-submitter+donation.${runSuffix}@phase2.test`, phone: '+15550100006', amountCents: 2500, currency: 'cad', status: 'test-succeeded', livemode: false, idempotencyKey: `${runId}:donation` },
+    data: {
+      kind: 'donation',
+      submitterAlias: 'qa-public-submitter',
+      donorName: 'Synthetic Donor',
+      donorEmail: `qa-public-submitter+donation.${runSuffix}@phase2.test`,
+      donorPhone: '+15550100006',
+      email: `qa-public-submitter+donation.${runSuffix}@phase2.test`,
+      phone: '+15550100006',
+      relationship: 'friend',
+      amount: 25,
+      method: 'external',
+      currency: 'cad',
+      status: 'pending',
+      source: 'public_portal',
+      livemode: false,
+      idempotencyKey: `${runId}:donation`,
+      createdAt: FIXED_NOW,
+    },
   });
 
   for (const subscription of subscriptions) {
@@ -908,12 +1170,34 @@ export function buildFixtureCatalog(runSuffix) {
   addDocument('billing', {
     alias: 'qa-fundraiser-a',
     path: `teams/${teamIdFor('qa-team-a')}/fundraising/${scopedId('qa-fundraiser-a')}`,
-    data: { title: `${visibleMarker('FALCON-A')} Travel Fund`, goalCents: 100000, raisedCents: 2500, status: 'published', livemode: false },
+    data: {
+      title: `${visibleMarker('FALCON-A')} Travel Fund`,
+      description: 'Synthetic public fundraiser',
+      goalAmount: 1000,
+      currentAmount: 25,
+      deadline: '2027-02-01T23:59:59.000Z',
+      isShareable: true,
+      status: 'published',
+      externalLink: '',
+      eTransferDetails: 'Synthetic test instructions',
+      livemode: false,
+    },
   });
   addDocument('billing', {
     alias: 'qa-fundraiser-b',
     path: `teams/${teamIdFor('qa-team-b')}/fundraising/${scopedId('qa-fundraiser-b')}`,
-    data: { title: `${visibleMarker('BLUEBIRD-B')} Equipment Fund`, goalCents: 75000, raisedCents: 0, status: 'draft', livemode: false },
+    data: {
+      title: `${visibleMarker('BLUEBIRD-B')} Equipment Fund`,
+      description: 'Synthetic private fundraiser',
+      goalAmount: 750,
+      currentAmount: 0,
+      deadline: '2027-02-02T23:59:59.000Z',
+      isShareable: false,
+      status: 'draft',
+      externalLink: '',
+      eTransferDetails: '',
+      livemode: false,
+    },
   });
   addDocument('billing', {
     alias: 'qa-connect-account-selector',
@@ -963,8 +1247,7 @@ export function buildFixtureCatalog(runSuffix) {
   const authUids = identities
     .filter(identity => identity.accountKind === 'registered')
     .map(identity => identity.uid);
-  const storagePrefixes = unique(files.map(file => `${file.storagePath.split('/').slice(0, 3).join('/')}/`)
-    .concat(`qa-fixtures/${runId}/practice/`, `qa-fixtures/${runId}/pending-delete/`));
+  const storageObjectPaths = storageObjects.map(object => object.path).sort();
 
   const providers = {
     firebase: {
@@ -1025,7 +1308,7 @@ export function buildFixtureCatalog(runSuffix) {
       metadata: { field: 'fixtureRunId', equals: runId },
     },
     auth: { uids: authUids },
-    storage: { prefixes: storagePrefixes },
+    storage: { objectPaths: storageObjectPaths },
     stripe: { metadata: { fixture_run_id: runId, livemode: 'false' } },
     stripeConnect: { metadata: { fixture_run_id: runId, livemode: 'false' } },
     resend: { tag: `fixture-run-id:${runId}`, retainActionLinks: false },
@@ -1036,9 +1319,9 @@ export function buildFixtureCatalog(runSuffix) {
     .filter(identity => identity.accountKind === 'registered' && identity.verified && !identity.disabled && identity.state !== 'pending-delete')
     .map(identity => identity.alias);
   const blockedAliases = [
-    { alias: 'qa-unverified', signInStatus: 200, sessionStatus: 403, reason: 'verification-required' },
-    { alias: 'qa-suspended', signInStatus: 400, authError: 'USER_DISABLED', reason: 'account-suspended' },
-    { alias: 'qa-pending-delete', signInStatus: 200, sessionStatus: 403, reason: 'deletion-pending' },
+    { alias: 'qa-unverified', signInStatus: 200, sessionStatus: 403, reason: 'verification-required', browserPath: '/verify-email', browserTitle: 'Verify Your Email' },
+    { alias: 'qa-suspended', signInStatus: 400, authError: 'USER_DISABLED', reason: 'account-suspended', browserPath: '/login', browserTitle: 'Login Failed' },
+    { alias: 'qa-pending-delete', signInStatus: 200, sessionStatus: 403, reason: 'deletion-pending', browserPath: '/login', browserTitle: 'Session Setup Failed' },
   ];
 
   return deepFreeze({
@@ -1056,6 +1339,7 @@ export function buildFixtureCatalog(runSuffix) {
     tournaments,
     subscriptions,
     files,
+    storageObjects,
     timeFixtures,
     raceFixtures,
     fixtures,

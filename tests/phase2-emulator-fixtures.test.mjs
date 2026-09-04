@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
+
 const source = await readFile(new URL('../scripts/qa/seed-phase2-emulator-fixtures.mjs', import.meta.url), 'utf8');
 
 test('Phase 2 fixture seeding is restricted to loopback demo projects', () => {
@@ -17,19 +19,39 @@ test('Phase 2 fixture credentials are runtime-only', () => {
 });
 
 test('Phase 2 fixtures include trusted and fake superadmin plus cross-tenant markers', () => {
-  assert.match(source, /qa-superadmin.*claims: \{ role: 'superadmin' \}/);
-  assert.match(source, /qa-fake-superadmin.*role: 'superadmin'.*verified: true \}/);
-  assert.match(source, /FALCON-A/);
-  assert.match(source, /BLUEBIRD-B/);
-  assert.match(source, /qa-removed-member.*status: 'removed'/s);
+  const catalog = buildFixtureCatalog('phase2');
+  const trusted = catalog.identities.find(identity => identity.alias === 'qa-superadmin');
+  const fake = catalog.identities.find(identity => identity.alias === 'qa-fake-superadmin');
+  const removed = catalog.fixtures.roster.find(fixture => fixture.alias === 'qa-team-a-qa-removed-member-member');
+
+  assert.deepEqual(trusted.claims, { role: 'superadmin' });
+  assert.equal(fake.role, 'superadmin');
+  assert.equal(fake.verified, true);
+  assert.equal(fake.claims, null);
+  assert.ok(catalog.teams.some(team => team.visibleMarker === 'FALCON-A'));
+  assert.ok(catalog.teams.some(team => team.visibleMarker === 'BLUEBIRD-B'));
+  assert.equal(removed.data.status, 'removed');
 });
 
 test('Phase 2 fixtures include one paid squad for premium workflow coverage and one free control', () => {
-  assert.match(source, /const isPaidFixture = teamId === 'qa-team-a'/);
-  assert.match(source, /isPro: isPaidFixture/);
-  assert.match(source, /planId: isPaidFixture \? 'team' : 'free'/);
+  const catalog = buildFixtureCatalog('phase2');
+  const paid = catalog.teams.find(team => team.alias === 'qa-pro-team');
+  const free = catalog.teams.find(team => team.alias === 'qa-team-b');
+  const paidOwner = catalog.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-pro-owner');
+
+  assert.equal(paid.isPro, true);
+  assert.equal(paid.planId, 'team');
+  assert.equal(paidOwner.data.subscription_status, 'trialing');
+  assert.equal(free.isPro, false);
+  assert.equal(free.planId, 'free');
 });
 
 test('Phase 2 fixture teams suppress outbound notification providers during local browser workflows', () => {
-  assert.match(source, /isDemo:\s*true/);
+  const catalog = buildFixtureCatalog('phase2');
+  const profiles = catalog.firestoreDocuments.filter(document => /^users\/[^/]+$/.test(document.path));
+
+  assert.ok(catalog.teams.every(team => team.outboundProvidersEnabled === false));
+  assert.ok(profiles.every(profile => profile.data.notificationsEnabled === false));
+  assert.ok(profiles.every(profile => profile.data.fcmTokens.length === 0));
+  assert.ok(profiles.every(profile => profile.data.webPushSubscriptions.length === 0));
 });

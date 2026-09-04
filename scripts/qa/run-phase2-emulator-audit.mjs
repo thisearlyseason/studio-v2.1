@@ -5,6 +5,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 import { buildFixtureCatalog } from './certification/fixture-catalog.mjs';
 
@@ -32,6 +33,8 @@ const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const children = [];
 const logDir = path.join(os.tmpdir(), `the-squad-phase2-${process.pid}`);
+let fixturesSeeded = false;
+let cleanupStarted = false;
 
 const firebaseConfig = JSON.stringify({
   projectId: PROJECT_ID,
@@ -57,10 +60,24 @@ const env = {
 
 const identityByAlias = new Map(FIXTURES.identities.map(identity => [identity.alias, identity]));
 
+export function buildBlockedAuditPlan(blockedAliases) {
+  const entries = blockedAliases.map(identity => Object.freeze({ ...identity }));
+  return Object.freeze({
+    api: Object.freeze(entries),
+    browser: Object.freeze(entries.filter(identity => identity.browserPath && identity.browserTitle)),
+  });
+}
+
+const BLOCKED_AUDIT_PLAN = buildBlockedAuditPlan(FIXTURES.blockedAliases);
+
 function emailForAlias(alias) {
   const email = identityByAlias.get(alias)?.email;
   if (!email) throw new Error(`Fixture alias ${alias} does not have a registered email identity.`);
   return email;
+}
+
+function storageObjectUrl(objectPath) {
+  return `http://127.0.0.1:9199/v0/b/${PROJECT_ID}.appspot.com/o/${encodeURIComponent(objectPath)}?alt=media`;
 }
 
 function redact(value) {
@@ -232,7 +249,8 @@ function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expecte
     await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias(alias))});
     await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
     await page.getByRole('button', { name: 'Sign In' }).click();
-    await page.waitForTimeout(2500);
+    await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true })
+      .waitFor({ state: 'visible', timeout: 15000 });
     return {
       pathname: await page.evaluate(() => window.location.pathname),
       expectedTitle: await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true }).count(),
@@ -1357,22 +1375,30 @@ function assertAlertsAudit(result) {
 }
 
 async function runApiAudit() {
-  const aliases = [...new Set([
-    ...FIXTURES.activeAliases,
-    ...FIXTURES.blockedAliases
-      .filter(identity => identity.signInStatus === 200)
-      .map(identity => identity.alias),
-  ])];
   const tokens = new Map();
-  for (const alias of aliases) {
+  for (const alias of FIXTURES.activeAliases) {
     const result = await signIn(alias);
     expectEqual(result.status, 200, `${alias} emulator sign-in`);
     tokens.set(alias, result.body.idToken);
   }
 
-  const disabled = await signIn('qa-suspended');
-  expectEqual(disabled.status, 400, 'disabled account sign-in denial');
-  expectEqual(disabled.body?.error?.message, 'USER_DISABLED', 'disabled account error code');
+  for (const blockedIdentity of BLOCKED_AUDIT_PLAN.api) {
+    const result = await signIn(blockedIdentity.alias);
+    expectEqual(result.status, blockedIdentity.signInStatus, `${blockedIdentity.alias} blocked sign-in expectation`);
+    if (blockedIdentity.authError) {
+      expectEqual(result.body?.error?.message, blockedIdentity.authError, `${blockedIdentity.alias} blocked Auth error`);
+    }
+    if (blockedIdentity.signInStatus === 200) tokens.set(blockedIdentity.alias, result.body.idToken);
+    if (blockedIdentity.sessionStatus) {
+      expectEqual(
+        await apiStatus('/api/auth/session', result.body.idToken, { method: 'POST' }),
+        blockedIdentity.sessionStatus,
+        blockedIdentity.alias === 'qa-pending-delete'
+          ? 'pending-delete blocked session creation'
+          : `${blockedIdentity.alias} blocked session creation`,
+      );
+    }
+  }
 
   for (const alias of FIXTURES.activeAliases) {
     const fixture = identityByAlias.get(alias);
@@ -1418,11 +1444,79 @@ async function runApiAudit() {
     200,
     'claim-controlled superadmin reaches admin API',
   );
+
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+  const proTeam = FIXTURES.teams.find(team => team.alias === 'qa-pro-team');
+  const schoolSquad = FIXTURES.teams.find(team => team.alias === 'qa-school-squad-1');
+  const tournament = FIXTURES.tournaments.find(value => value.alias === 'qa-tournament-a');
+  const volunteerA = FIXTURES.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-volunteer-opportunity-a');
+  const volunteerB = FIXTURES.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-volunteer-opportunity-b');
+  const fundraiserA = FIXTURES.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-fundraiser-a');
+  const fundraiserB = FIXTURES.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-fundraiser-b');
+
   expectEqual(
-    await apiStatus('/api/auth/session', tokens.get('qa-unverified'), { method: 'POST' }),
-    403,
-    'unverified account denied browser session',
+    (await fetch(`${BASE_URL}/api/public/tournaments/${teamA.id}/${tournament.id}`)).status,
+    200,
+    'seeded tournament reader returns published bracket',
   );
+  expectEqual(
+    (await fetch(`${BASE_URL}/api/public/volunteer?teamId=${teamA.id}&oppId=${volunteerA.path.split('/').at(-1)}`)).status,
+    200,
+    'published volunteer public GET',
+  );
+  expectEqual(
+    (await fetch(`${BASE_URL}/api/public/volunteer?teamId=${teamB.id}&oppId=${volunteerB.path.split('/').at(-1)}`)).status,
+    404,
+    'unpublished volunteer public GET denial',
+  );
+  expectEqual(
+    (await fetch(`${BASE_URL}/api/public/fundraising?teamId=${teamA.id}&fundId=${fundraiserA.path.split('/').at(-1)}`)).status,
+    200,
+    'published fundraiser public GET',
+  );
+  expectEqual(
+    (await fetch(`${BASE_URL}/api/public/fundraising?teamId=${teamB.id}&fundId=${fundraiserB.path.split('/').at(-1)}`)).status,
+    404,
+    'unpublished fundraiser public GET denial',
+  );
+  expectEqual(
+    await apiStatus(`/api/stripe/connect/status?userId=${identityByAlias.get('qa-pro-owner').uid}&teamId=${proTeam.id}`, tokens.get('qa-pro-owner')),
+    200,
+    'active local entitlement reaches Connect status without provider call',
+  );
+  expectEqual(
+    await apiStatus(`/api/stripe/connect/status?userId=${identityByAlias.get('qa-school-delegate').uid}&teamId=${schoolSquad.id}`, tokens.get('qa-school-delegate')),
+    200,
+    'school delegate reaches hub-backed entitlement',
+  );
+  expectEqual(
+    await apiStatus(`/api/stripe/connect/status?userId=${identityByAlias.get('qa-coach-owner-b').uid}&teamId=${schoolSquad.id}`, tokens.get('qa-coach-owner-b')),
+    403,
+    'school outsider denied hub-backed entitlement',
+  );
+
+  const publicObject = FIXTURES.storageObjects.find(object => object.access === 'public' && object.lifecycle === 'present');
+  const privateObject = FIXTURES.storageObjects.find(object => object.case === 'private');
+  const pendingObject = FIXTURES.storageObjects.find(object => object.case === 'pending-delete');
+  const deletedObject = FIXTURES.storageObjects.find(object => object.lifecycle === 'delete-after-write');
+  expectEqual((await fetch(storageObjectUrl(publicObject.path))).status, 200, 'public Storage object is anonymously readable');
+  expectEqual(
+    (await fetch(storageObjectUrl(privateObject.path), { headers: { Authorization: `Bearer ${tokens.get('qa-adult-player-a')}` } })).status,
+    200,
+    'private Storage object is readable by its owner',
+  );
+  expectEqual(
+    (await fetch(storageObjectUrl(privateObject.path), { headers: { Authorization: `Bearer ${tokens.get('qa-coach-owner-b')}` } })).status,
+    403,
+    'private Storage object rejects cross-tenant reader',
+  );
+  expectEqual(
+    (await fetch(storageObjectUrl(pendingObject.path), { headers: { Authorization: `Bearer ${tokens.get('qa-pending-delete')}` } })).status,
+    403,
+    'pending-delete Storage object is denied',
+  );
+  expectEqual((await fetch(storageObjectUrl(deletedObject.path))).status, 404, 'deleted Storage lifecycle object is absent');
 }
 
 async function runBrowserAudit() {
@@ -1511,11 +1605,34 @@ async function runBrowserAudit() {
     await browserLogin(alias, fixture.expectedLanding, `catalog-${alias}-${process.pid}`);
   }
 
+  for (const blockedIdentity of BLOCKED_AUDIT_PLAN.browser) {
+    browserLoginFailureAudit(blockedIdentity.alias,
+      password,
+      blockedIdentity.browserPath,
+      blockedIdentity.browserTitle,
+      `catalog-blocked-${blockedIdentity.alias}`,
+    );
+  }
 }
 
 async function cleanup() {
+  if (cleanupStarted) return;
+  cleanupStarted = true;
   if (runBrowser && playwrightCli) {
     spawnSync(playwrightCli, ['close-all'], { cwd: process.cwd(), env, stdio: 'ignore' });
+  }
+  if (fixturesSeeded) {
+    try {
+      const cleanupOutput = run(process.execPath, ['scripts/qa/seed-phase2-emulator-fixtures.mjs', '--cleanup-only']);
+      expectEqual(
+        cleanupOutput.includes(`Cleaned exact Auth, Firestore, and Storage selectors for ${FIXTURES.runId}.`),
+        true,
+        'post-cleanup Storage object is absent',
+      );
+    } catch (error) {
+      console.error(redact(error instanceof Error ? error.message : error));
+      process.exitCode = 1;
+    }
   }
   for (const child of children.reverse()) {
     if (!child.killed) child.kill('SIGTERM');
@@ -1530,6 +1647,7 @@ async function main() {
   startProcess('npx', ['firebase', '--project', PROJECT_ID, 'emulators:start', '--only', 'auth,firestore,storage'], 'firebase.log');
   await Promise.all([waitForPort(9099), waitForPort(8080), waitForPort(9199)]);
   run(process.execPath, ['scripts/qa/seed-phase2-emulator-fixtures.mjs']);
+  fixturesSeeded = true;
 
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
@@ -1539,9 +1657,11 @@ async function main() {
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
 }
 
-main()
-  .catch(error => {
-    console.error(redact(error instanceof Error ? error.message : error));
-    process.exitCode = 1;
-  })
-  .finally(cleanup);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .catch(error => {
+      console.error(redact(error instanceof Error ? error.message : error));
+      process.exitCode = 1;
+    })
+    .finally(cleanup);
+}
