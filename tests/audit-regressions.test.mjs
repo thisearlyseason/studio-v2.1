@@ -18,3 +18,18 @@ test('Sports Hub uses its compact search affordance at tablet widths', async () 
   assert.match(layout, /hidden lg:flex flex-1 max-w-sm/);
   assert.match(layout, /href="\/sports-hub\/search" className="lg:hidden"/);
 });
+
+test('desktop and mobile squad switchers share a stable accessible name', async () => {
+  const shell = await source('../src/components/layout/Shell.tsx');
+  const labels = shell.match(/aria-label="Switch squad"/g) || [];
+
+  assert.equal(labels.length, 3);
+  assert.match(shell, /data-team-switch-id=\{team\.id\}/);
+});
+
+test('alert inbox relies on the standard dialog close control only', async () => {
+  const alerts = await source('../src/components/layout/AlertOverlay.tsx');
+
+  assert.doesNotMatch(alerts, /import \{ DialogClose \}/);
+  assert.doesNotMatch(alerts, /Close broadcast inbox/);
+});

@@ -176,8 +176,11 @@ async function seedFirestore(db) {
     ['qa-adult-player-b', 'qa-team-b'], ['qa-multi-team', 'qa-team-b'],
   ];
   for (const [uid, teamId] of membershipPairs) {
+    const membershipTeamName = teamId === 'qa-team-a' ? 'Phase 2 Falcons' : 'Phase 2 Bluebirds';
     batch.set(db.collection('users').doc(uid).collection('teamMemberships').doc(teamId), {
       teamId,
+      name: membershipTeamName,
+      teamName: membershipTeamName,
       userId: uid,
       status: 'active',
       joinedAt: now,
@@ -203,11 +206,11 @@ async function seedFirestore(db) {
   for (const [teamId, marker] of [['qa-team-a', 'FALCON-A'], ['qa-team-b', 'BLUEBIRD-B']]) {
     const owner = teamId === 'qa-team-a' ? 'qa-coach-owner-a' : 'qa-coach-owner-b';
     batch.set(db.collection('teams').doc(teamId).collection('events').doc('qa-future-event'), {
-      id: 'qa-future-event', title: `${marker} Future Practice`, type: 'practice',
+      id: 'qa-future-event', title: `${marker} Future Practice`, type: 'practice', eventType: 'practice',
       date: '2026-10-15', startTime: '18:00', endTime: '19:30', createdBy: owner,
     });
     batch.set(db.collection('teams').doc(teamId).collection('events').doc('qa-cross-midnight'), {
-      id: 'qa-cross-midnight', title: `${marker} Overnight Tournament`, type: 'tournament',
+      id: 'qa-cross-midnight', title: `${marker} Overnight Tournament`, type: 'tournament', eventType: 'tournament',
       date: '2026-11-01', endDate: '2026-11-02', startTime: '23:30', endTime: '01:30', createdBy: owner,
     });
     batch.set(db.collection('teams').doc(teamId).collection('groupChats').doc('qa-team-chat'), {
@@ -229,8 +232,23 @@ async function seedFirestore(db) {
       id: 'qa-field', name: `${marker} Field`, address: `${marker} synthetic address`, createdAt: now,
     });
     batch.set(db.collection('teams').doc(teamId).collection('alerts').doc('qa-alert'), {
-      id: 'qa-alert', title: `${marker} Tactical Alert`, audience: 'everyone', createdBy: owner, createdAt: now,
+      id: 'qa-alert', title: `${marker} Everyone Alert`, message: `${marker} synthetic everyone message`,
+      audience: 'everyone', createdBy: owner, createdAt: Timestamp.fromDate(new Date('2026-09-03T12:00:00Z')),
     });
+    if (teamId === 'qa-team-a') {
+      batch.set(db.collection('teams').doc(teamId).collection('alerts').doc('qa-player-alert'), {
+        id: 'qa-player-alert', title: `${marker} Player Alert`, message: `${marker} synthetic player message`,
+        audience: 'players', createdBy: owner, createdAt: Timestamp.fromDate(new Date('2026-09-03T12:01:00Z')),
+      });
+      batch.set(db.collection('teams').doc(teamId).collection('alerts').doc('qa-coach-alert'), {
+        id: 'qa-coach-alert', title: `${marker} Coach Alert`, message: `${marker} synthetic coach message`,
+        audience: 'coaches', createdBy: owner, createdAt: Timestamp.fromDate(new Date('2026-09-03T12:02:00Z')),
+      });
+      batch.set(db.collection('teams').doc(teamId).collection('alerts').doc('qa-parent-alert'), {
+        id: 'qa-parent-alert', title: `${marker} Parent Alert`, message: `${marker} synthetic parent message`,
+        audience: 'parents', createdBy: owner, createdAt: Timestamp.fromDate(new Date('2026-09-03T12:03:00Z')),
+      });
+    }
   }
 
   batch.set(db.collection('auditFixtureMetadata').doc('phase2'), {

@@ -11,6 +11,8 @@ const BASE_URL = 'http://127.0.0.1:9001';
 const runBrowser = process.argv.includes('--browser');
 const timeOutOnly = process.argv.includes('--time-out-only');
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
+const teamSwitchOnly = process.argv.includes('--team-switch-only');
+const alertsOnly = process.argv.includes('--alerts-only');
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const children = [];
@@ -426,6 +428,182 @@ function assertScheduleAppAudit(result) {
   expectEqual(unexpectedOfflineErrors.length, 0, 'schedule companion unexpected offline console errors');
 }
 
+function browserTeamSwitchAudit(session) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500) failedResponses.push(response.url()); });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByText(/Phase 2 Falcons • coach/i).waitFor();
+    const priorityAlert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+    if (await priorityAlert.count()) {
+      await priorityAlert.getByRole('button', { name: 'Got It' }).click();
+      await priorityAlert.waitFor({ state: 'hidden' });
+    }
+    await page.getByText('FALCON-A Future Practice', { exact: true }).waitFor();
+    const initialTeamBLeak = await page.getByText('BLUEBIRD-B Future Practice', { exact: true }).count();
+
+    const switchDesktop = async teamId => {
+      const clickVisibleTeam = id => page.evaluate(teamId => {
+        const row = Array.from(document.querySelectorAll('button[data-team-switch-id="' + teamId + '"]'))
+          .find(element => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; });
+        if (!row) return false;
+        row.click();
+        return true;
+      }, id);
+      if (await clickVisibleTeam(teamId)) return;
+      const trigger = page.locator('button[data-testid="squad-switcher-trigger"]:visible').first();
+      await trigger.click();
+      await page.waitForFunction(id => Array.from(document.querySelectorAll('button[data-team-switch-id="' + id + '"]'))
+        .some(element => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }), teamId);
+      if (!await clickVisibleTeam(teamId)) throw new Error('visible team row disappeared before selection: ' + teamId);
+    };
+    await switchDesktop('qa-team-b');
+    await page.getByText(/Phase 2 Bluebirds • coach/i).waitFor();
+    await page.getByText('BLUEBIRD-B Future Practice', { exact: true }).waitFor();
+    await page.waitForFunction(() => !document.body.innerText.includes('FALCON-A Future Practice'));
+    const teamAAfterSwitch = await page.getByText('FALCON-A Future Practice', { exact: true }).count();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await switchDesktop('qa-team-a');
+      await page.getByText(/Phase 2 Falcons • coach/i).waitFor();
+      await switchDesktop('qa-team-b');
+      await page.getByText(/Phase 2 Bluebirds • coach/i).waitFor();
+    }
+    await page.getByText('BLUEBIRD-B Future Practice', { exact: true }).waitFor();
+    const selectedAfterRapidSwitch = await page.evaluate(() => localStorage.getItem('sf_session_team_id'));
+
+    await page.reload();
+    await page.getByText(/Phase 2 Bluebirds • coach/i).waitFor();
+    await page.getByText('BLUEBIRD-B Future Practice', { exact: true }).waitFor();
+    const teamAAfterReload = await page.getByText('FALCON-A Future Practice', { exact: true }).count();
+
+    await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+    await page.getByRole('heading', { name: 'Master Calendar' }).waitFor();
+    await page.goBack();
+    await page.getByText(/Phase 2 Bluebirds • coach/i).waitFor();
+    const selectedAfterBack = await page.evaluate(() => localStorage.getItem('sf_session_team_id'));
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('button[data-testid="squad-switcher-trigger"]:visible').first().click();
+    await page.waitForTimeout(150);
+    await page.evaluate(() => {
+      const row = Array.from(document.querySelectorAll('button[data-team-switch-id="qa-team-a"]'))
+        .find(element => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; });
+      if (!row) throw new Error('mobile Team A switch row is not visible');
+      row.click();
+    });
+    await page.getByText(/Phase 2 Falcons • coach/i).waitFor();
+    await page.getByText('FALCON-A Future Practice', { exact: true }).waitFor();
+    await page.waitForFunction(() => !document.body.innerText.includes('BLUEBIRD-B Future Practice'));
+    const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+
+    return {
+      initialTeamBLeak,
+      teamAAfterSwitch,
+      selectedAfterRapidSwitch,
+      teamAAfterReload,
+      selectedAfterBack,
+      mobileFits,
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function assertTeamSwitchAudit(result) {
+  if (result.consoleErrors.length > 0) console.log(`Team switch console errors: ${JSON.stringify(result.consoleErrors)}`);
+  if (result.failedResponses.length > 0) console.log(`Team switch failed responses: ${JSON.stringify(result.failedResponses)}`);
+  expectEqual(result.initialTeamBLeak, 0, 'active Team A view excludes Team B event');
+  expectEqual(result.teamAAfterSwitch, 0, 'active Team B view removes Team A event');
+  expectEqual(result.selectedAfterRapidSwitch, 'qa-team-b', 'rapid switching settles on requested team');
+  expectEqual(result.teamAAfterReload, 0, 'Team B selection persists without Team A event after reload');
+  expectEqual(result.selectedAfterBack, 'qa-team-b', 'Team B selection survives navigation back');
+  expectEqual(result.mobileFits, true, 'active-team switcher fits mobile viewport');
+  expectEqual(result.consoleErrors.length, 0, 'active-team switching browser console errors');
+  expectEqual(result.failedResponses.length, 0, 'active-team switching failed responses');
+}
+
+function browserAlertsAudit(session) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 500) failedResponses.push(response.url()); });
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const receivedTitles = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+      const appeared = await alert.waitFor({ state: 'visible', timeout: 2500 }).then(() => true).catch(() => false);
+      if (!appeared) break;
+      receivedTitles.push((await alert.locator('h2:not(.sr-only)').textContent()) || '');
+      await alert.getByRole('button', { name: 'Got It' }).click();
+      await alert.waitFor({ state: 'hidden' });
+    }
+
+    const alertButton = page.getByRole('button', { name: /^Open alerts/ });
+    const alertButtonName = await alertButton.getAttribute('aria-label');
+    await alertButton.click();
+    const inbox = page.getByRole('dialog', { name: 'Squad Alert Inbox' });
+    await inbox.waitFor();
+    await inbox.getByRole('button', { name: 'Show History' }).click();
+    const historyEveryone = await inbox.getByText('FALCON-A Everyone Alert', { exact: true }).count();
+    const historyPlayer = await inbox.getByText('FALCON-A Player Alert', { exact: true }).count();
+    const wrongCoach = await inbox.getByText('FALCON-A Coach Alert', { exact: true }).count();
+    const wrongParent = await inbox.getByText('FALCON-A Parent Alert', { exact: true }).count();
+    const otherTenant = await inbox.getByText('BLUEBIRD-B Everyone Alert', { exact: true }).count();
+    await inbox.getByRole('button', { name: 'Close' }).click();
+
+    await page.reload();
+    const reopened = await page.getByRole('dialog', { name: 'High Priority Team Alert' })
+      .waitFor({ state: 'visible', timeout: 1500 }).then(() => true).catch(() => false);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: /^Open alerts/ }).click();
+    const mobileInbox = page.getByRole('dialog', { name: 'Squad Alert Inbox' });
+    await mobileInbox.waitFor();
+    const mobileBox = await mobileInbox.boundingBox();
+    const mobileFits = Boolean(mobileBox && mobileBox.x >= -0.5 && mobileBox.y >= -0.5 && mobileBox.x + mobileBox.width <= 390.5 && mobileBox.y + mobileBox.height <= 844.5);
+
+    return {
+      receivedTitles,
+      alertButtonName,
+      historyEveryone,
+      historyPlayer,
+      wrongCoach,
+      wrongParent,
+      otherTenant,
+      reopened,
+      mobileFits,
+      consoleErrors,
+      failedResponses,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function assertAlertsAudit(result) {
+  expectEqual(result.receivedTitles.length, 2, 'adult player receives exactly two eligible alerts');
+  expectEqual(result.receivedTitles.includes('FALCON-A Everyone Alert'), true, 'everyone alert reaches adult player');
+  expectEqual(result.receivedTitles.includes('FALCON-A Player Alert'), true, 'player alert reaches adult player');
+  expectEqual(result.alertButtonName, 'Open alerts', 'unread alert count clears after acknowledgement');
+  expectEqual(result.historyEveryone, 1, 'acknowledged everyone alert appears once in history');
+  expectEqual(result.historyPlayer, 1, 'acknowledged player alert appears once in history');
+  expectEqual(result.wrongCoach, 0, 'coach-only alert is hidden from player');
+  expectEqual(result.wrongParent, 0, 'parent-only alert is hidden from player');
+  expectEqual(result.otherTenant, 0, 'other-tenant alert is hidden from player');
+  expectEqual(result.reopened, false, 'acknowledged alerts stay cleared after reload');
+  expectEqual(result.mobileFits, true, 'alert history fits mobile viewport');
+  expectEqual(result.consoleErrors.length, 0, 'alert lifecycle browser console errors');
+  expectEqual(result.failedResponses.length, 0, 'alert lifecycle failed responses');
+}
+
 async function runApiAudit() {
   const aliases = [
     'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-superadmin', 'qa-fake-superadmin',
@@ -491,6 +669,16 @@ async function runBrowserAudit() {
     assertScheduleAppAudit(browserScheduleAppAudit(player));
     return;
   }
+  if (teamSwitchOnly) {
+    const multiTeam = await browserLogin('qa-multi-team', '/dashboard', `team-switch-${process.pid}`);
+    assertTeamSwitchAudit(browserTeamSwitchAudit(multiTeam));
+    return;
+  }
+  if (alertsOnly) {
+    const player = await browserLogin('qa-adult-player-a', '/dashboard', `alerts-${process.pid}`);
+    assertAlertsAudit(browserAlertsAudit(player));
+    return;
+  }
   if (timeOutOnly) {
     const player = await browserLogin('qa-adult-player-a', '/dashboard');
     assertTimeOutAudit(browserTimeOutAudit(player));
@@ -531,7 +719,7 @@ async function main() {
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (!timeOutOnly && !scheduleAppOnly) await runApiAudit();
+  if (!timeOutOnly && !scheduleAppOnly && !teamSwitchOnly && !alertsOnly) await runApiAudit();
   if (runBrowser) await runBrowserAudit();
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
 }

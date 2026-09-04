@@ -2,7 +2,39 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-04; eleven defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-04; thirteen defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-014 — Broadcast inbox renders overlapping close controls (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Dashboard Shell — alert inbox and history |
+| Role | Any alert recipient |
+| Page or route | Shared authenticated Shell |
+| Description | `Squad Alert Inbox` added a custom top-right close button even though the shared dialog component already renders one in the same position. The built-in control intercepted pointer input intended for the custom control. |
+| Expected behavior | The inbox exposes one keyboard- and pointer-operable close action. |
+| Actual behavior | Two overlapping controls competed for the same hit area. |
+| Root cause | The feature duplicated behavior supplied by `DialogContent`. |
+| Fix | Removed the redundant feature-level `DialogClose` and retained the standard dialog close control. |
+| Verification | Source regression enforces a single close implementation. A real Chrome session acknowledged the two eligible Team A alerts, verified history and audience/tenant exclusions, reopened on mobile, and operated the standard close path with zero console errors or 5xx responses. |
+| Status | RESOLVED |
+
+## BUG-013 — Desktop squad switcher lacks an accessible name (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Dashboard Shell — active squad switching |
+| Role | Multi-team user |
+| Page or route | Shared authenticated Shell |
+| Description | The mobile lightning control was named `Switch squad`, but the two desktop selector variants exposed only their changing visual contents. Assistive technology and stable UI automation had no consistent action name. |
+| Expected behavior | Every responsive switcher trigger has the same stable, descriptive accessible name while preserving visible team context. |
+| Actual behavior | Desktop triggers had no explicit accessible label. |
+| Root cause | The desktop `DropdownMenuTrigger` buttons omitted the label already present on the mobile trigger. |
+| Fix | Added `aria-label="Switch squad"` to both desktop variants and stable non-secret element identifiers for deterministic tenant-switch regression coverage. |
+| Verification | A real Chrome session switched an identity belonging to two isolated teams in both desktop and 390×844 mobile layouts. It proved reciprocal event exclusion, three rapid switch round trips, final selection persistence across reload and Back navigation, mobile containment, zero console errors, and zero 5xx responses. |
+| Status | RESOLVED |
 
 ## BUG-012 — Schedule companion leaks browser-local data across profiles and does not reliably reload offline (resolved)
 

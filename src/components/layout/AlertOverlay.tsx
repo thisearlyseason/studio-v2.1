@@ -30,7 +30,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2, Zap, Shield, CheckCircle2, Loader2 } from 'lucide-react';
-import { DialogClose } from '@/components/ui/dialog';
 import { useTeam, TeamAlert } from '@/components/providers/team-provider';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -181,11 +180,6 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
         <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
-        <DialogClose asChild>
-          <Button aria-label="Close broadcast inbox" variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
-            <X className="h-5 w-5" />
-          </Button>
-        </DialogClose>
         <DialogDescription className="sr-only">History of all broadcasts dispatched to you</DialogDescription>
         <div className="h-2 bg-primary w-full" />
         <DialogHeader className="p-8 pb-2">

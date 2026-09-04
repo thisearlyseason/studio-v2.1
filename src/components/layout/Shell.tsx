@@ -202,6 +202,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
     const tier = tierOverride ?? squadTier(team);
     return (
       <button
+        data-team-switch-id={team.id}
         onClick={onClick}
         className={cn(
           "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all text-left",
@@ -738,7 +739,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 /* League Creator — has a team: show normal squad switcher */
                 <DropdownMenu open={sidebarSwitcherOpen} onOpenChange={setSidebarSwitcherOpen}>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between h-14 px-3 border-2 border-muted-foreground/10 bg-background rounded-2xl shadow-sm hover:bg-muted/50 transition-all">
+                    <Button data-testid="squad-switcher-trigger" aria-label="Switch squad" variant="outline" className="w-full justify-between h-14 px-3 border-2 border-muted-foreground/10 bg-background rounded-2xl shadow-sm hover:bg-muted/50 transition-all">
                       <div className="flex items-center gap-3 min-w-0">
                         <Avatar className="h-9 w-9 rounded-xl border-2 border-background shadow-md">
                           <AvatarImage src={activeTeam?.teamLogoUrl} className="object-cover" />
@@ -757,7 +758,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               ) : (
                 <DropdownMenu open={sidebarSwitcherOpen} onOpenChange={setSidebarSwitcherOpen}>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between h-14 px-3 border-2 border-muted-foreground/10 bg-background rounded-2xl shadow-sm hover:bg-muted/50 transition-all">
+                    <Button data-testid="squad-switcher-trigger" aria-label="Switch squad" variant="outline" className="w-full justify-between h-14 px-3 border-2 border-muted-foreground/10 bg-background rounded-2xl shadow-sm hover:bg-muted/50 transition-all">
                       <div className="flex items-center gap-3 min-w-0">
                         <Avatar className="h-9 w-9 rounded-xl border-2 border-background shadow-md">
                           {isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school' ? (
@@ -961,6 +962,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                               variant="ghost"
                               size="icon"
                               aria-label="Switch squad"
+                              data-testid="squad-switcher-trigger"
                               className="h-10 w-10 rounded-2xl hover:bg-primary/5 text-primary relative transition-all active:scale-95 border-2 border-primary/10"
                             >
                               <Zap className="h-5 w-5 fill-current" />

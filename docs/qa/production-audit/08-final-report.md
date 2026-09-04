@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved eleven defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved thirteen defects and deployed the BUG-005 PWA/push repair for device acceptance; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -11,13 +11,13 @@ The matrix contains 88 rows.
 
 | Status | Count |
 |---|---:|
-| PASS | 5 |
+| PASS | 7 |
 | FAIL | 0 |
-| BLOCKED | 83 |
+| BLOCKED | 81 |
 | NOT APPLICABLE | 0 |
 | NOT RUN | 0 |
 
-Completed functional-row coverage is `(PASS + FAIL) / all rows = 5 / 88 = 5.7%`. All remaining rows have been explicitly classified BLOCKED rather than left ambiguous. Many blocked rows received partial smoke or automated boundary evidence, but they were not promoted because their complete role, negative, permission, persistence, responsive, provider, or device requirements could not be executed.
+Completed functional-row coverage is `(PASS + FAIL) / all rows = 7 / 88 = 8.0%`. All remaining rows have been explicitly classified BLOCKED rather than left ambiguous. Many blocked rows received partial smoke or automated boundary evidence, but they were not promoted because their complete role, negative, permission, persistence, responsive, provider, or device requirements could not be executed.
 
 ## Tested features and roles
 
@@ -39,8 +39,10 @@ Roles exercised were unauthenticated visitor, anonymous Squad Pro demo coach/sta
 - BUG-010, P1: Private beta/newsletter administrator notifications now exclude profile-only fake superadmins and accept targets only from verified custom-claim identities.
 - BUG-011, P2: The existing Time Out game is now reachable from the authenticated Shell and rejects corrupted stored sport/difficulty values.
 - BUG-012, P2: Schedule companion caches and todos are scoped to the current identity/team, selected teams are membership-validated, malformed storage fails closed, and the public shell reloads offline.
+- BUG-013, P2: Desktop and mobile squad switchers now share a stable accessible action name; the two-team transition path is covered in a real browser.
+- BUG-014, P2: The broadcast inbox now has one operable close control rather than overlapping standard and custom controls.
 
-Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 5, P2 6.
+Open severity totals: P0 0, P1 1 pending device acceptance, P2 0, P3 0. Historical resolved findings: P1 5, P2 8.
 
 ## Deterministic local identity and tenant follow-up — 2026-09-03
 
@@ -49,6 +51,10 @@ A loopback-only Firebase fixture seeder now builds 16 synthetic identities and t
 The complete emulator audit exercised real Auth, Firestore, Storage, Next.js APIs, and Chrome routes. It proved own-team chat access and reciprocal cross-tenant denial, removed-member denial, deletion-pending API denial, disabled Auth denial, unverified browser-session denial, trusted custom-claim superadmin access, profile-only fake-superadmin denial, parent `/family` routing, and adult-player family denial. The focused regression suite passed 18 of 18 checks, typecheck completed successfully, and scoped lint reported zero errors. These results add partial evidence to strict rows; they do not turn any row PASS where lifecycle transitions, full feature behavior, responsive/device coverage, provider delivery, or hosted persistence remain unexecuted.
 
 The schedule companion follow-up used the same loopback-only identities and two-team fixture. A real Chrome session proved scoped event sync for each tenant, reciprocal cross-tenant exclusion, same-browser profile switching, todo persistence without legacy or other-profile disclosure, corrupt-storage recovery, offline shell/data reload, and mobile containment. The service worker caches only the public companion shell and same-origin static bundles; authenticated HTML and API responses remain excluded. This closes the companion row without making any provider call.
+
+The multi-team follow-up exercised the shared authenticated Shell rather than directly changing browser storage. The synthetic multi-team Coach switched between both isolated tenants on desktop and mobile; tenant-marked event content changed cleanly, never overlapped, survived reload and Back navigation, and remained stable after three rapid round trips. No browser console error or 5xx response occurred. This closes the active-team switch row and also resolved the desktop trigger's missing accessible name.
+
+The alert follow-up used four Team A audiences and a distinct Team B marker. An adult-player Chrome session received only the Team A everyone/player alerts, acknowledged each exactly once, cleared the unread badge, retained the acknowledgment after reload, and found each once in history. Coach-only, parent-only, and Team B alerts remained absent. The inbox fit 390×844, and the run reported zero console errors and zero 5xx responses. Existing rules coverage supplies the removed-member and unauthorized-tenant denial evidence. The journey also exposed and resolved overlapping close controls.
 
 Post-recovery application console-error count: 0. Unexpected network-failure count: 0. One expected HTML time-format warning was generated deliberately during negative testing. Transient Next.js 500s caused by an identified test-harness build/dev collision were discarded and all affected checks rerun.
 
