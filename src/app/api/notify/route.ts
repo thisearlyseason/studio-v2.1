@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     const webpush: admin.messaging.WebpushConfig = {
       notification: {
-        icon: '/app-icon-192-v2.png',
+        icon: '/app-icon-192-v3.png',
         badge: '/notification-badge.png',
         ...(url ? { clickAction: url } : {}),
       },

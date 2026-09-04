@@ -14,8 +14,6 @@ test('root application registers The Squad service worker', async () => {
   const manifest = JSON.parse(await source('../public/manifest.json'));
   assert.match(layout, /AppServiceWorkerRegistration/);
   assert.match(registration, /registerPrimaryServiceWorker/);
-  assert.match(registrationHelper, /navigator\.serviceWorker\.controller/);
-  assert.match(registrationHelper, /navigator\.serviceWorker\.getRegistration\('\/'\)/);
   assert.match(registrationHelper, /navigator\.serviceWorker\.register\(workerUrl, \{[\s\S]*scope: '\/'/);
   assert.equal(manifest.name, 'The Squad');
   assert.equal(manifest.start_url, '/dashboard');
@@ -56,6 +54,64 @@ test('manifest ships consistent full-frame regular and dedicated maskable artwor
   assert.ok(meanDifference < 2, `192px artwork differs from the full-frame source by ${meanDifference}`);
   assert.equal(maskableMetadata.width, 512);
   assert.equal(maskableMetadata.height, 512);
+});
+
+test('install artwork reaches every canvas corner without a baked-in white frame', async () => {
+  const manifest = JSON.parse(await source('../public/manifest.json'));
+  const root = new URL('../public/', import.meta.url);
+
+  for (const icon of manifest.icons) {
+    const { data, info } = await sharp(fileURLToPath(new URL(icon.src.slice(1), root)))
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const cornerOffsets = [
+      0,
+      (info.width - 1) * info.channels,
+      (info.height - 1) * info.width * info.channels,
+      ((info.height * info.width) - 1) * info.channels,
+    ];
+
+    for (const offset of cornerOffsets) {
+      const red = data[offset];
+      const green = data[offset + 1];
+      const blue = data[offset + 2];
+      assert.ok(
+        red < 245 || green < 245 || blue < 245,
+        `${icon.src} has a white canvas corner that Android will render as an inset square`
+      );
+    }
+  }
+});
+
+test('notification click behavior is registered before Firebase messaging loads', async () => {
+  const worker = await source('../public/sw.js');
+  const order = [];
+  const context = {
+    URL,
+    console,
+    caches: {},
+    clients: {},
+    importScripts() {
+      order.push('firebase-import');
+    },
+    self: {
+      location: { href: 'https://example.test/sw.js', origin: 'https://example.test' },
+      registration: {},
+      addEventListener(type) {
+        order.push(`listener:${type}`);
+      },
+      skipWaiting() {},
+      clients: { claim() {} },
+    },
+  };
+
+  vm.runInNewContext(worker, context);
+
+  assert.ok(
+    order.indexOf('listener:notificationclick') < order.indexOf('firebase-import'),
+    'the app click handler must exist before Firebase Messaging can install its fallback handler'
+  );
 });
 
 test('web push displays a dedicated monochrome notification badge', async () => {

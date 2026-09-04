@@ -31,3 +31,49 @@ test('FCM waits for an active service worker before subscribing for a token', as
   markReady(activeRegistration);
   assert.equal(await resultPromise, activeRegistration);
 });
+
+test('FCM does not reuse an active worker configured for a different Firebase project', async () => {
+  assert.equal(
+    typeof serviceWorkerModule.waitForConfiguredServiceWorker,
+    'function',
+    'waitForConfiguredServiceWorker must exist'
+  );
+
+  const expectedScriptUrl = 'https://example.test/sw.js?firebaseConfig=staging';
+  const staleWorker = {
+    state: 'activated',
+    scriptURL: 'https://example.test/sw.js?firebaseConfig=production',
+  };
+  const listeners = new Map();
+  const installingWorker = {
+    state: 'installing',
+    scriptURL: expectedScriptUrl,
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    removeEventListener(type) {
+      listeners.delete(type);
+    },
+  };
+  const registration = {
+    active: staleWorker,
+    installing: installingWorker,
+    waiting: null,
+  };
+  let settled = false;
+  const resultPromise = serviceWorkerModule
+    .waitForConfiguredServiceWorker(registration, expectedScriptUrl)
+    .then(result => {
+      settled = true;
+      return result;
+    });
+
+  await Promise.resolve();
+  assert.equal(settled, false, 'the stale active worker must not be returned');
+
+  installingWorker.state = 'activated';
+  registration.active = installingWorker;
+  listeners.get('statechange')();
+
+  assert.equal(await resultPromise, registration);
+});

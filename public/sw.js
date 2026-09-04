@@ -1,13 +1,13 @@
 // The Squad service worker: public PWA shell plus FCM and standards Web Push.
-const CACHE_NAME = 'the-squad-shell-v5';
+const CACHE_NAME = 'the-squad-shell-v6';
 const SCHEDULE_SHELL_URL = '/schedule-app';
 const SHELL_URLS = [
   SCHEDULE_SHELL_URL,
   '/offline.html',
   '/manifest.json',
-  '/app-icon-192-v2.png',
-  '/app-icon-512-v2.png',
-  '/app-icon-maskable-512-v2.png',
+  '/app-icon-192-v3.png',
+  '/app-icon-512-v3.png',
+  '/app-icon-maskable-512-v3.png',
   '/notification-badge.png',
 ];
 
@@ -62,7 +62,7 @@ self.addEventListener('fetch', (event) => {
 function showSquadNotification({ title, body, imageUrl, url, tag }) {
   return self.registration.showNotification(title || 'The Squad', {
     body: body || '',
-    icon: '/app-icon-192-v2.png',
+    icon: '/app-icon-192-v3.png',
     badge: '/notification-badge.png',
     image: imageUrl || undefined,
     data: { url: typeof url === 'string' && url.startsWith('/') ? url : '/dashboard' },
@@ -93,6 +93,26 @@ self.addEventListener('push', (event) => {
         tag: 'squad-web-push',
       });
     })()
+  );
+});
+
+// Firebase Messaging can install its own click handler during import, so the
+// application's route-aware handler must be registered first.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/dashboard';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          client.focus();
+          if ('navigate' in client) client.navigate(targetUrl);
+          return;
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+    })
   );
 });
 
@@ -134,21 +154,3 @@ try {
 } catch {
   console.warn('[FCM] Service worker initialization skipped.');
 }
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const targetUrl = event.notification.data?.url || '/dashboard';
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (const client of windowClients) {
-        if ('focus' in client) {
-          client.focus();
-          if ('navigate' in client) client.navigate(targetUrl);
-          return;
-        }
-      }
-      if (clients.openWindow) return clients.openWindow(targetUrl);
-    })
-  );
-});

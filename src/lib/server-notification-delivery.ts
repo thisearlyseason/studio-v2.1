@@ -94,7 +94,7 @@ async function sendFcmNotifications(
   if (input.imageUrl) notification.imageUrl = input.imageUrl;
   const webpushConfig: admin.messaging.WebpushConfig = {
     notification: {
-      icon: '/app-icon-192-v2.png',
+      icon: '/app-icon-192-v3.png',
       badge: '/notification-badge.png',
       ...(input.url ? { clickAction: input.url } : {}),
     },
