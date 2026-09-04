@@ -6,8 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
+import { buildFixtureCatalog } from './certification/fixture-catalog.mjs';
+
 const PROJECT_ID = 'demo-the-squad-audit';
 const BASE_URL = 'http://127.0.0.1:9001';
+const FIXTURE_RUN_SUFFIX = 'phase2';
+const FIXTURES = buildFixtureCatalog(FIXTURE_RUN_SUFFIX);
 const runBrowser = process.argv.includes('--browser');
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const teamSwitchOnly = process.argv.includes('--team-switch-only');
@@ -41,6 +45,7 @@ const firebaseConfig = JSON.stringify({
 const env = {
   ...process.env,
   AUDIT_FIXTURE_PASSWORD: password,
+  AUDIT_FIXTURE_RUN_SUFFIX: FIXTURE_RUN_SUFFIX,
   FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
   FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080',
   FIREBASE_STORAGE_EMULATOR_HOST: '127.0.0.1:9199',
@@ -49,6 +54,14 @@ const env = {
   NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG: firebaseConfig,
   NEXT_PUBLIC_USE_FIREBASE_EMULATORS: 'true',
 };
+
+const identityByAlias = new Map(FIXTURES.identities.map(identity => [identity.alias, identity]));
+
+function emailForAlias(alias) {
+  const email = identityByAlias.get(alias)?.email;
+  if (!email) throw new Error(`Fixture alias ${alias} does not have a registered email identity.`);
+  return email;
+}
 
 function redact(value) {
   return String(value || '').replaceAll(password, '[redacted]');
@@ -115,7 +128,7 @@ async function signIn(alias) {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: `${alias}@phase2.test`, password, returnSecureToken: true }),
+      body: JSON.stringify({ email: emailForAlias(alias), password, returnSecureToken: true }),
     },
   );
   const body = await response.json();
@@ -154,7 +167,7 @@ async function browserLogin(alias, expectedPath, sessionLabel = alias) {
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.stack || error.message));
     page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
-    await page.getByLabel('Email Address').fill(${JSON.stringify(`${alias}@phase2.test`)});
+    await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias(alias))});
     await page.locator('#password').fill(${JSON.stringify(password)});
     await page.getByRole('button', { name: 'Sign In' }).click();
     await page.waitForTimeout(5000);
@@ -216,7 +229,7 @@ function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expecte
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.stack || error.message));
     page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
-    await page.getByLabel('Email Address').fill(${JSON.stringify(`${alias}@phase2.test`)});
+    await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias(alias))});
     await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
     await page.getByRole('button', { name: 'Sign In' }).click();
     await page.waitForTimeout(2500);
@@ -243,7 +256,7 @@ function browserProtectedReturnAudit() {
   cli(session, ['open', `${BASE_URL}/facilities`, '--browser', 'chrome']);
   const code = `async page => {
     await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
-    await page.getByLabel('Email Address').fill('qa-coach-owner-a@phase2.test');
+    await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias('qa-coach-owner-a'))});
     await page.locator('#password').fill(${JSON.stringify(password)});
     await page.getByRole('button', { name: 'Sign In' }).click();
     await page.waitForFunction(() => window.location.pathname === '/facilities', null, { timeout: 15000 });
@@ -278,7 +291,7 @@ async function runIdentityBrowserAudit() {
   const parent = await browserLogin('qa-parent-a', '/family', `identity-parent-${process.pid}`);
   const player = await browserLogin('qa-adult-player-a', '/dashboard', `identity-player-${process.pid}`);
   await browserLogin('qa-youth-active', '/dashboard', `identity-youth-${process.pid}`);
-  await browserLogin('qa-multi-team', '/dashboard', `identity-multi-${process.pid}`);
+  await browserLogin('qa-multi-org', '/dashboard', `identity-multi-${process.pid}`);
 
   const ownerBilling = browserRouteAudit(owner, '/dashboard/billing');
   expectEqual(ownerBilling.pathname, '/dashboard/billing', 'owner billing browser route');
@@ -1098,7 +1111,7 @@ function browserScheduleAppAudit(session) {
     await page.getByRole('button', { name: 'Sign Out' }).click();
     await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 })
       .catch(() => { throw new Error('profile switch did not reach login: ' + page.url()); });
-    await page.getByLabel('Email Address').fill('qa-adult-player-b@phase2.test');
+    await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias('qa-adult-player-b'))});
     await page.locator('#password').fill(${JSON.stringify(password)});
     await page.getByRole('button', { name: 'Sign In' }).click();
     await page.waitForTimeout(5000);
@@ -1344,10 +1357,12 @@ function assertAlertsAudit(result) {
 }
 
 async function runApiAudit() {
-  const aliases = [
-    'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-superadmin', 'qa-fake-superadmin',
-    'qa-unverified', 'qa-removed-member', 'qa-pending-delete',
-  ];
+  const aliases = [...new Set([
+    ...FIXTURES.activeAliases,
+    ...FIXTURES.blockedAliases
+      .filter(identity => identity.signInStatus === 200)
+      .map(identity => identity.alias),
+  ])];
   const tokens = new Map();
   for (const alias of aliases) {
     const result = await signIn(alias);
@@ -1358,6 +1373,15 @@ async function runApiAudit() {
   const disabled = await signIn('qa-suspended');
   expectEqual(disabled.status, 400, 'disabled account sign-in denial');
   expectEqual(disabled.body?.error?.message, 'USER_DISABLED', 'disabled account error code');
+
+  for (const alias of FIXTURES.activeAliases) {
+    const fixture = identityByAlias.get(alias);
+    expectEqual(
+      await apiStatus('/api/auth/session', tokens.get(alias), { method: 'POST' }),
+      200,
+      `${alias} active session for ${fixture.expectedLanding}`,
+    );
+  }
 
   expectEqual(
     await apiStatus('/api/teams/chat?teamId=qa-team-a', tokens.get('qa-coach-owner-a')),
@@ -1460,7 +1484,7 @@ async function runBrowserAudit() {
     return;
   }
   if (teamSwitchOnly) {
-    const multiTeam = await browserLogin('qa-multi-team', '/dashboard', `team-switch-${process.pid}`);
+    const multiTeam = await browserLogin('qa-multi-org', '/dashboard', `team-switch-${process.pid}`);
     assertTeamSwitchAudit(browserTeamSwitchAudit(multiTeam));
     return;
   }
@@ -1478,6 +1502,14 @@ async function runBrowserAudit() {
   expectEqual(browserPath(fake, '/admin'), '/dashboard', 'fake superadmin browser route denial');
   expectEqual(browserPath(parent, '/family'), '/family', 'parent family browser route');
   expectEqual(browserPath(player, '/family'), '/dashboard', 'adult player family browser route denial');
+
+  const alreadyCovered = new Set([
+    'qa-superadmin', 'qa-fake-superadmin', 'qa-parent-a', 'qa-adult-player-a',
+  ]);
+  for (const alias of FIXTURES.activeAliases.filter(value => !alreadyCovered.has(value))) {
+    const fixture = identityByAlias.get(alias);
+    await browserLogin(alias, fixture.expectedLanding, `catalog-${alias}-${process.pid}`);
+  }
 
 }
 
