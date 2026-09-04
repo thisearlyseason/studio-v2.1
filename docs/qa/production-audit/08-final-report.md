@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved twelve defects, retired one rejected feature, and reopened BUG-005 after failed physical Android delivery; this report does not declare the application production ready.
+**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved twelve defects, retired one rejected feature, and obtained partial physical Android acceptance for BUG-005; this report does not declare the application production ready.
 
 ## Coverage totals
 
@@ -25,7 +25,7 @@ Browser testing covered marketing/legal/audience/sport pages, authentication and
 
 Roles exercised were unauthenticated visitor, anonymous Squad Pro demo coach/staff, anonymous Player demo, one verified synthetic Coach owner in isolated staging, and ephemeral local emulator identities for two Coach owners, team assistant/member, two parents, two adult players, a youth player, trusted and profile-only fake superadmins, unverified, disabled, removed-member, pending-deletion, and multi-team states. These local identities improve authorization evidence but do not replace durable hosted/provider/device journeys required by the strict matrix.
 
-The first physical Android chat test invalidated the earlier notification acceptance: the message persisted and appeared in chat, but no device notification arrived. The root cause was post-response notification fan-out that App Hosting could terminate. The replacement candidate awaits delivery before responding and reports FCM/Web Push transport counts; it still requires a fresh physical-device acceptance test before BUG-005 can close.
+The first physical Android chat test invalidated the earlier notification acceptance: the message persisted and appeared in chat, but no device notification arrived. The root cause was post-response notification fan-out that App Hosting could terminate. After deploying the awaited-delivery replacement, physical Android retest produced an audible notification and visible notification card while the cross-account message persisted. The launcher dot remained absent despite the active card, which is an Android launcher/channel behavior the PWA cannot force. The installed icon remained visually inset; a distinct versioned regular/maskable icon set and monochrome notification badge are now deployed and await reinstall confirmation.
 
 ## Resolved audit defects
 
@@ -33,7 +33,7 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-002, P2: At 768×1024, Sports Hub now presents a named compact search control instead of a clipped input.
 - BUG-003, P1: A newly verified zero-team Coach now reaches `/teams/new` rather than being redirected to Join & Invite.
 - BUG-004, P1: The staging Stripe Connect endpoint now receives signed connected-account test events; the superseded endpoint is disabled after verification.
-- BUG-005, P1: Physical Android retesting reopened chat delivery because App Hosting could terminate unawaited post-response fan-out; the local repair awaits delivery and requires staging/device acceptance.
+- BUG-005, P1: Awaited chat delivery now has physical Android receipt/card evidence; separate adaptive icon and notification-badge assets are deployed, with reinstall, click-through, negative preference/token/logout cases, and iPhone/iPad acceptance still required.
 - BUG-006, P2: Landing support no longer produces repeat Elfsight stylesheet errors; Chrome/Firefox retain the full assistant and Safari/WebKit receives an accessible native support fallback.
 - BUG-007, P1: Global superadmin authority now depends on the verified custom claim, not a profile role string.
 - BUG-008, P1: Admin SDK APIs and protected server rendering now reject blocked account lifecycle states consistently with the rules boundary.
@@ -44,7 +44,7 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-013, P2: Desktop and mobile squad switchers now share a stable accessible action name; the two-team transition path is covered in a real browser.
 - BUG-014, P2: The broadcast inbox now has one operable close control rather than overlapping standard and custom controls.
 
-Open severity totals: P0 0, P1 1 pending staging/device acceptance, P2 0, P3 0. Historical findings addressed: P1 5 resolved, P2 7 resolved and 1 retired.
+Open severity totals: P0 0, P1 1 with partial device acceptance, P2 0, P3 0. Historical findings addressed: P1 5 resolved, P2 7 resolved and 1 retired.
 
 ## Deterministic local identity and tenant follow-up — 2026-09-03
 
@@ -99,6 +99,8 @@ Protected staging workflow `33789859140` deployed application commit `febfbf2002
 Application commit `1cc896d472596face256729146eea1566c1a02b0` combines the prior authorization, PWA/push, schedule companion, active-team switching, and alert-inbox repairs with the awaited chat-delivery correction and complete Time Out retirement. Protected staging workflow `33834994579` passed 412 application tests, 38 Firestore/Storage rules tests, typecheck, lint with zero errors, both production builds, configuration and App Hosting ownership validation, Firestore index deployment, Functions deployment, Firestore/Storage rules deployment, exact App Hosting rollout, and its staging health check.
 
 Fresh no-cache checks against the resulting staging release returned `status: ok` with revision `studio-build-2026-09-04-003` from `/api/health` and HTTP 200 from both `/manifest.json` and `/sw.js`. Earlier hosted inspection on this staging line confirmed the standalone manifest is named and short-named `The Squad`, starts at `/dashboard`, and supplies 192×192 and 512×512 PNG icons. These checks certify the exact combined candidate's automated release path and public PWA surfaces. They do not replace the physical Android and iPhone/iPad acceptance or the remaining strict matrix journeys.
+
+The subsequent physical Android check confirmed the awaited chat path with an audible notification and visible notification card while preserving the cross-account message. It did not show a launcher dot even though the card remained active; that indicator is controlled by the supporting Android launcher and notification-channel setting. The installed icon appeared inset, so commit `71bd8ca1e17662485cf791a74ae528cb387b62bb` separated versioned `any` and `maskable` icon assets, added a monochrome notification badge, and advanced the public-worker cache to v5. Local verification passed 414 application tests, 38 rules tests, typecheck, lint with zero errors, and both production builds. Protected workflow `33871399182` passed the same verification and exact deployment chain. No-cache hosted checks reported revision `studio-build-2026-09-04-004`, confirmed the new manifest/worker references, and returned HTTP 200 for all four new assets. Android uninstall/reinstall appearance, the remaining push negative cases, and iPhone/iPad acceptance remain required.
 
 ## Blocked and untested depth
 
