@@ -11,6 +11,8 @@ test('root application registers The Squad service worker', async () => {
   const manifest = JSON.parse(await source('../public/manifest.json'));
   assert.match(layout, /AppServiceWorkerRegistration/);
   assert.match(registration, /registerPrimaryServiceWorker/);
+  assert.match(registrationHelper, /navigator\.serviceWorker\.controller/);
+  assert.match(registrationHelper, /navigator\.serviceWorker\.getRegistration\('\/'\)/);
   assert.match(registrationHelper, /navigator\.serviceWorker\.register\(workerUrl, \{[\s\S]*scope: '\/'/);
   assert.equal(manifest.name, 'The Squad');
   assert.equal(manifest.start_url, '/dashboard');

@@ -1,6 +1,8 @@
 // The Squad service worker: public PWA shell plus FCM and standards Web Push.
-const CACHE_NAME = 'the-squad-shell-v3';
+const CACHE_NAME = 'the-squad-shell-v4';
+const SCHEDULE_SHELL_URL = '/schedule-app';
 const SHELL_URLS = [
+  SCHEDULE_SHELL_URL,
   '/offline.html',
   '/manifest.json',
   '/favicon-192.png',
@@ -23,7 +25,34 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const requestedUrl = new URL(event.request.url);
+  if (requestedUrl.origin === self.location.origin && requestedUrl.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        const response = await fetch(event.request);
+        if (response.ok) await cache.put(event.request, response.clone());
+        return response;
+      })
+    );
+    return;
+  }
   if (event.request.mode === 'navigate') {
+    if (requestedUrl.origin === self.location.origin && requestedUrl.pathname === SCHEDULE_SHELL_URL) {
+      event.respondWith(
+        fetch(event.request)
+          .then(async (response) => {
+            if (response.ok) {
+              const cache = await caches.open(CACHE_NAME);
+              await cache.put(SCHEDULE_SHELL_URL, response.clone());
+            }
+            return response;
+          })
+          .catch(async () => (await caches.match(SCHEDULE_SHELL_URL)) || caches.match('/offline.html'))
+      );
+      return;
+    }
     event.respondWith(fetch(event.request).catch(() => caches.match('/offline.html')));
   }
 });

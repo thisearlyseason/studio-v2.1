@@ -1,6 +1,7 @@
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, type User } from 'firebase/auth';
 import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { getOrInitializeFirebaseApp } from '@/firebase/config';
+import { loadScopedEvents, saveScopedEvents, scopedLastTeamKey } from './storage';
 
 export interface SyncEvent {
   id: string;
@@ -27,10 +28,10 @@ export interface SyncResult {
   source: 'firestore' | 'cache' | 'none';
   teamName?: string;
   teamId?: string;
+  userId?: string;
   error?: string;
 }
 
-const EVENTS_KEY = 'squad_schedule_events';
 const TEAM_KEY   = 'sf_session_team_id';
 
 function normaliseDate(raw: unknown): string {
@@ -42,36 +43,64 @@ function normaliseDate(raw: unknown): string {
   return '';
 }
 
-function getCached(): SyncEvent[] {
-  try { return JSON.parse(localStorage.getItem(EVENTS_KEY) || '[]'); } catch { return []; }
+export function watchScheduleUser(callback: (user: User | null) => void): () => void {
+  const app = getOrInitializeFirebaseApp();
+  return onAuthStateChanged(getAuth(app), callback);
+}
+
+function waitForScheduleUser(): Promise<User | null> {
+  const app = getOrInitializeFirebaseApp();
+  const auth = getAuth(app);
+  return new Promise(resolve => {
+    let settled = false;
+    let unsubscribe = () => {};
+    const finish = (user: User | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      unsubscribe();
+      resolve(user);
+    };
+    const timeout = setTimeout(() => finish(null), 6000);
+    unsubscribe = onAuthStateChanged(auth, finish);
+  });
 }
 
 export async function syncFromFirestore(): Promise<SyncResult> {
+  let userId = '';
   try {
     const app = getOrInitializeFirebaseApp();
-    const auth = getAuth(app);
     const db   = getFirestore(app);
-
-    const user = await new Promise<any>((resolve) => {
-      const unsub = onAuthStateChanged(auth, (u) => { unsub(); resolve(u); });
-      setTimeout(() => resolve(null), 6000);
-    });
+    const user = await waitForScheduleUser();
 
     if (!user) {
-      const cached = getCached();
-      return { events: cached, source: cached.length ? 'cache' : 'none', error: 'Not signed in' };
+      return { events: [], source: 'none', error: 'Not signed in' };
     }
+    userId = user.uid;
 
-    let targetTeamId = localStorage.getItem(TEAM_KEY) || '';
+    const selectedTeamId = localStorage.getItem(TEAM_KEY) || '';
+    let targetTeamId = '';
     let teamName = '';
 
-    if (!targetTeamId) {
+    try {
       const membershipsSnap = await getDocs(collection(db, 'users', user.uid, 'teamMemberships'));
       if (membershipsSnap.empty) {
-        const cached = getCached();
-        return { events: cached, source: cached.length ? 'cache' : 'none', error: 'No team memberships found' };
+        localStorage.removeItem(scopedLastTeamKey(user.uid));
+        return { events: [], source: 'none', userId: user.uid, error: 'No team memberships found' };
       }
-      targetTeamId = membershipsSnap.docs[0].id;
+      const membershipIds = membershipsSnap.docs.map(membership => membership.id);
+      targetTeamId = membershipIds.includes(selectedTeamId) ? selectedTeamId : membershipIds[0];
+      localStorage.setItem(scopedLastTeamKey(user.uid), targetTeamId);
+    } catch (membershipError: any) {
+      targetTeamId = localStorage.getItem(scopedLastTeamKey(user.uid)) || '';
+      const cached = loadScopedEvents(localStorage, user.uid, targetTeamId);
+      return {
+        events: cached,
+        source: cached.length ? 'cache' : 'none',
+        teamId: targetTeamId || undefined,
+        userId: user.uid,
+        error: membershipError?.message || 'Offline — membership could not be verified',
+      };
     }
 
     try {
@@ -119,12 +148,19 @@ export async function syncFromFirestore(): Promise<SyncResult> {
     });
 
     events.sort((a, b) => a.date.localeCompare(b.date));
-    try { localStorage.setItem(EVENTS_KEY, JSON.stringify(events)); } catch {}
+    try { saveScopedEvents(localStorage, user.uid, targetTeamId, events); } catch {}
 
-    return { events, source: 'firestore', teamName, teamId: targetTeamId };
+    return { events, source: 'firestore', teamName, teamId: targetTeamId, userId: user.uid };
   } catch (err: any) {
     console.error('[ScheduleSync] Firestore error:', err?.message || err);
-    const cached = getCached();
-    return { events: cached, source: cached.length ? 'cache' : 'none', error: err?.message || 'Sync failed' };
+    const targetTeamId = userId ? localStorage.getItem(scopedLastTeamKey(userId)) || '' : '';
+    const cached = userId ? loadScopedEvents(localStorage, userId, targetTeamId) : [];
+    return {
+      events: cached,
+      source: cached.length ? 'cache' : 'none',
+      teamId: targetTeamId || undefined,
+      userId: userId || undefined,
+      error: err?.message || 'Sync failed',
+    };
   }
 }

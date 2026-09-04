@@ -2,7 +2,23 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-03; ten defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-04; eleven defects are resolved and BUG-005 is fixed on staging pending physical-device acceptance. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-012 — Schedule companion leaks browser-local data across profiles and does not reliably reload offline (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Schedule companion sync, personal todos, and offline shell |
+| Role | Any signed-in user sharing a browser or installed PWA |
+| Page or route | `/schedule-app`, `/sw.js` |
+| Description | Events and todos used global localStorage keys, so a different signed-in profile could inherit the prior profile's cached schedule or tasks. The worker cached only a generic offline page, leaving the client-rendered companion unable to reload reliably offline. The companion also registered a second plain worker despite the root configured registration. |
+| Expected behavior | Cached schedules are scoped to user and team, personal todos are scoped to user, selected teams are revalidated against current memberships, malformed storage fails closed, and the public companion shell reloads offline without caching authenticated HTML or API data. |
+| Actual behavior | Global cache keys crossed the profile boundary; stale selected-team state was trusted until Firestore denied it; and offline navigation lost the companion UI. |
+| Root cause | Browser storage lacked identity namespaces and runtime validation. The service worker had no schedule-shell or static-client-bundle cache path, and duplicate registration could race the configured primary worker. |
+| Fix | Added versioned user/team storage keys with runtime shape validation, membership-validated team selection, same-profile offline fallback only, live auth-driven todo swapping, one primary worker registration, a public schedule-shell cache, and same-origin `/_next/static/` caching. Authenticated pages and APIs remain network-only. |
+| Verification | Five storage/worker regressions pass. A real Chrome emulator session proved both tenants' correct events, reciprocal event isolation, corrupt/legacy/other-profile todo rejection, CRUD persistence, 390×844 fit, cached-shell offline reload, same-browser Team A to Team B switching, and zero unexpected online or offline console errors. |
+| Status | RESOLVED |
 
 ## BUG-011 — Time Out game is unreachable and corrupted preferences can crash it (resolved)
 

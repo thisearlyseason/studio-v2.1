@@ -26,6 +26,11 @@ export function firebaseServiceWorkerUrl(options: FirebaseOptions): string {
 export async function registerPrimaryServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
 
+  if (navigator.serviceWorker.controller) {
+    const controllingRegistration = await navigator.serviceWorker.getRegistration('/');
+    if (controllingRegistration?.active) return controllingRegistration;
+  }
+
   const workerUrl = firebaseServiceWorkerUrl((await import('firebase/app')).getApp().options);
   const installingRegistration = await navigator.serviceWorker.register(workerUrl, {
     scope: '/',

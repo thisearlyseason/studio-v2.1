@@ -10,6 +10,7 @@ const PROJECT_ID = 'demo-the-squad-audit';
 const BASE_URL = 'http://127.0.0.1:9001';
 const runBrowser = process.argv.includes('--browser');
 const timeOutOnly = process.argv.includes('--time-out-only');
+const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const children = [];
@@ -278,6 +279,153 @@ function assertTimeOutAudit(timeOut) {
   expectEqual(timeOut.failedResponses.length, 0, 'Time Out failed network responses');
 }
 
+function browserScheduleAppAudit(session) {
+  const code = `async page => {
+    const onlineConsoleErrors = [];
+    const offlineConsoleErrors = [];
+    let offlinePhase = false;
+    const recordConsoleError = text => (offlinePhase ? offlineConsoleErrors : onlineConsoleErrors).push(text);
+    page.on('console', message => { if (message.type() === 'error') recordConsoleError(message.text()); });
+    page.on('pageerror', error => recordConsoleError(error.message));
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(${JSON.stringify(`${BASE_URL}/schedule-app`)});
+    await page.getByRole('heading', { name: 'My Schedule' }).waitFor();
+    await page.getByText(/Live ·/).waitFor({ timeout: 10000 });
+    const teamAEvent = await page.getByText(/FALCON-A Future Practice/).count();
+    const leakedTeamBEvent = await page.getByText(/BLUEBIRD-B Future Practice/).count();
+
+    await page.evaluate(() => {
+      localStorage.setItem('squad_schedule_todos', JSON.stringify([{ id: 'legacy-secret', text: 'LEGACY PROFILE SECRET', dueDate: '2026-09-04', completed: false, createdAt: 'x' }]));
+      localStorage.setItem('squad_schedule_v2:user:qa-adult-player-a:todos', '{broken');
+      localStorage.setItem('squad_schedule_v2:user:qa-adult-player-b:todos', JSON.stringify([{ id: 'other-secret', text: 'OTHER PROFILE SECRET', dueDate: '2026-09-04', completed: false, createdAt: 'x' }]));
+    });
+    await page.reload();
+    await page.getByRole('button', { name: /To-Do List/ }).click();
+    const corruptionRecovered = await page.getByText('All Clear', { exact: true }).count();
+    const legacyLeak = await page.getByText('LEGACY PROFILE SECRET', { exact: true }).count();
+    const otherProfileLeak = await page.getByText('OTHER PROFILE SECRET', { exact: true }).count();
+
+    await page.getByRole('button', { name: 'Add Task' }).click();
+    await page.getByPlaceholder('What needs to get done?').fill('Bring audit cones');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByText('Bring audit cones', { exact: true }).waitFor();
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem('squad_schedule_v2:user:qa-adult-player-a:todos');
+      return typeof raw === 'string' && raw.includes('Bring audit cones');
+    });
+    await page.reload();
+    await page.getByRole('button', { name: /To-Do List/ }).click();
+    await page.getByText('Bring audit cones', { exact: true }).waitFor();
+    const persistedTodo = await page.getByText('Bring audit cones', { exact: true }).count();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await page.reload();
+    const serviceWorkerState = await page.evaluate(async () => ({
+      scheduleShellCached: Boolean(await caches.match('/schedule-app')),
+      controller: navigator.serviceWorker.controller?.scriptURL || '',
+      registrations: (await navigator.serviceWorker.getRegistrations()).map(registration => ({
+        active: registration.active?.scriptURL || '',
+        installing: registration.installing?.scriptURL || '',
+        waiting: registration.waiting?.scriptURL || '',
+      })),
+      cacheNames: await caches.keys(),
+    }));
+    if (!serviceWorkerState.scheduleShellCached) {
+      throw new Error('schedule shell cache diagnostic: ' + JSON.stringify(serviceWorkerState));
+    }
+    const scheduleShellCached = serviceWorkerState.scheduleShellCached;
+    offlinePhase = true;
+    await page.context().setOffline(true);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'My Schedule' }).waitFor({ timeout: 10000 })
+      .catch(() => { throw new Error('offline schedule shell did not render'); });
+    await page.getByRole('button', { name: /To-Do List/ }).click();
+    await page.getByText('Bring audit cones', { exact: true }).waitFor();
+    const offlineTodo = await page.getByText('Bring audit cones', { exact: true }).count();
+    await page.context().setOffline(false);
+    await page.waitForTimeout(250);
+    offlinePhase = false;
+
+    await page.goto(${JSON.stringify(`${BASE_URL}/settings`)});
+    await page.getByRole('button', { name: 'Sign Out' }).click();
+    await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 })
+      .catch(() => { throw new Error('profile switch did not reach login: ' + page.url()); });
+    await page.getByLabel('Email Address').fill('qa-adult-player-b@phase2.test');
+    await page.locator('#password').fill(${JSON.stringify(password)});
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.waitForTimeout(5000);
+    if (await page.evaluate(() => window.location.pathname) === '/login') {
+      throw new Error('Team B login remained unauthenticated: ' + JSON.stringify({
+        url: page.url(),
+        loginFailed: await page.getByText('Login Failed', { exact: true }).count(),
+        sessionFailed: await page.getByText('Session Setup Failed', { exact: true }).count(),
+      }));
+    }
+    await page.goto(${JSON.stringify(`${BASE_URL}/schedule-app`)});
+    await page.getByText(/Live ·/).waitFor({ timeout: 10000 });
+    const teamBEvent = await page.getByText(/BLUEBIRD-B Future Practice/).count();
+    const switchedTeamALeak = await page.getByText(/FALCON-A Future Practice/).count();
+    await page.getByRole('button', { name: /To-Do List/ }).click();
+    const switchedTodoLeak = await page.getByText('Bring audit cones', { exact: true }).count();
+
+    return {
+      teamAEvent,
+      leakedTeamBEvent,
+      corruptionRecovered,
+      legacyLeak,
+      otherProfileLeak,
+      persistedTodo,
+      mobileFits,
+      scheduleShellCached,
+      offlineTodo,
+      teamBEvent,
+      switchedTeamALeak,
+      switchedTodoLeak,
+      onlineConsoleErrors,
+      offlineConsoleErrors,
+    };
+  }`;
+  return JSON.parse(cli(session, ['run-code', code], { sensitive: true }));
+}
+
+function assertScheduleAppAudit(result) {
+  // Chromium can deliver this native registration error after connectivity is
+  // restored even though the update request began during the offline interval.
+  const unexpectedOnlineErrors = result.onlineConsoleErrors.filter(message =>
+    message !== 'A bad HTTP response code (404) was received when fetching the script.'
+  );
+  if (unexpectedOnlineErrors.length > 0) {
+    console.log(`Schedule companion unexpected online console errors: ${JSON.stringify(unexpectedOnlineErrors)}`);
+  }
+  const unexpectedOfflineErrors = result.offlineConsoleErrors.filter(message =>
+    !/ERR_INTERNET_DISCONNECTED|webpack-hmr|Failed to fetch|bad HTTP response code \(404\)/.test(message)
+  );
+  if (unexpectedOfflineErrors.length > 0) {
+    console.log(`Schedule companion unexpected offline console errors: ${JSON.stringify(unexpectedOfflineErrors)}`);
+  }
+  expectEqual(result.teamAEvent, 1, 'schedule companion loads current Team A event');
+  expectEqual(result.leakedTeamBEvent, 0, 'schedule companion hides Team B event from Team A user');
+  expectEqual(result.corruptionRecovered, 1, 'schedule companion recovers from corrupt todo storage');
+  expectEqual(result.legacyLeak, 0, 'schedule companion ignores unscoped legacy todo data');
+  expectEqual(result.otherProfileLeak, 0, 'schedule companion ignores another profile todo data');
+  expectEqual(result.persistedTodo, 1, 'schedule companion todo CRUD persists after reload');
+  expectEqual(result.mobileFits, true, 'schedule companion fits mobile viewport');
+  expectEqual(result.scheduleShellCached, true, 'schedule companion shell is present in service-worker cache');
+  expectEqual(result.offlineTodo, 1, 'schedule companion shell and todos reload offline');
+  expectEqual(result.teamBEvent, 1, 'schedule companion switches to current Team B event');
+  expectEqual(result.switchedTeamALeak, 0, 'schedule companion removes Team A events after profile switch');
+  expectEqual(result.switchedTodoLeak, 0, 'schedule companion removes Team A todos after profile switch');
+  expectEqual(unexpectedOnlineErrors.length, 0, 'schedule companion unexpected online console errors');
+  expectEqual(unexpectedOfflineErrors.length, 0, 'schedule companion unexpected offline console errors');
+}
+
 async function runApiAudit() {
   const aliases = [
     'qa-coach-owner-a', 'qa-coach-owner-b', 'qa-superadmin', 'qa-fake-superadmin',
@@ -338,6 +486,11 @@ async function runApiAudit() {
 
 async function runBrowserAudit() {
   if (!playwrightCli) throw new Error('PLAYWRIGHT_CLI is required with --browser.');
+  if (scheduleAppOnly) {
+    const player = await browserLogin('qa-adult-player-a', '/dashboard', `schedule-app-player-${process.pid}`);
+    assertScheduleAppAudit(browserScheduleAppAudit(player));
+    return;
+  }
   if (timeOutOnly) {
     const player = await browserLogin('qa-adult-player-a', '/dashboard');
     assertTimeOutAudit(browserTimeOutAudit(player));
@@ -378,7 +531,7 @@ async function main() {
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (!timeOutOnly) await runApiAudit();
+  if (!timeOutOnly && !scheduleAppOnly) await runApiAudit();
   if (runBrowser) await runBrowserAudit();
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
 }
