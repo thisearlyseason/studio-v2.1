@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import * as webpush from 'web-push';
+import type { RequestOptions } from 'web-push';
 import { adminDb } from '@/lib/firebase-admin';
 import {
   normalizeWebPushSubscription,
@@ -61,6 +62,13 @@ function isExpiredWebPushError(error: unknown): boolean {
     ((error as { statusCode?: unknown }).statusCode === 404 ||
       (error as { statusCode?: unknown }).statusCode === 410)
   );
+}
+
+export function webPushDeliveryOptions(): RequestOptions {
+  return {
+    TTL: 3_600,
+    urgency: 'high',
+  };
 }
 
 async function removeExpiredWebPushSubscription(subscription: StoredWebPushSubscription): Promise<void> {
@@ -129,7 +137,9 @@ async function sendWebPushNotifications(
   webpush.setVapidDetails(configuration.subject, configuration.publicKey, configuration.privateKey);
   const payload = JSON.stringify(notificationPayload(input));
   const attempts = await Promise.allSettled(
-    subscriptions.map(subscription => webpush.sendNotification(subscription, payload, { TTL: 3_600 }))
+    subscriptions.map(subscription =>
+      webpush.sendNotification(subscription, payload, webPushDeliveryOptions())
+    )
   );
   const expiredSubscriptions = attempts.flatMap((attempt, index) =>
     attempt.status === 'rejected' && isExpiredWebPushError(attempt.reason)

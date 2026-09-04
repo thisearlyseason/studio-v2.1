@@ -4,6 +4,15 @@ import test from 'node:test';
 
 const source = path => readFile(new URL(path, import.meta.url), 'utf8');
 
+test('web push alerts request a high-priority Android wake-up', async () => {
+  const delivery = await import('../src/lib/server-notification-delivery.ts');
+
+  assert.deepEqual(delivery.webPushDeliveryOptions(), {
+    TTL: 3_600,
+    urgency: 'high',
+  });
+});
+
 test('team chat sends only to other channel members', async () => {
   const chat = await source('../src/app/api/teams/chat/message/route.ts');
   const sender = await source('../src/lib/server-notification-delivery.ts');
