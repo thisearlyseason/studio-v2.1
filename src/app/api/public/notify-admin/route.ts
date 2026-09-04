@@ -136,8 +136,8 @@ export async function POST(req: NextRequest) {
         const messaging = admin.messaging();
         const webpush = {
           notification: {
-            icon: '/favicon-192.png',
-            badge: '/favicon-192.png',
+            icon: '/app-icon-192-v2.png',
+            badge: '/notification-badge.png',
             click_action: clickUrl,
           },
           fcmOptions: { link: clickUrl },

@@ -1,12 +1,14 @@
 // The Squad service worker: public PWA shell plus FCM and standards Web Push.
-const CACHE_NAME = 'the-squad-shell-v4';
+const CACHE_NAME = 'the-squad-shell-v5';
 const SCHEDULE_SHELL_URL = '/schedule-app';
 const SHELL_URLS = [
   SCHEDULE_SHELL_URL,
   '/offline.html',
   '/manifest.json',
-  '/favicon-192.png',
-  '/favicon-512.png',
+  '/app-icon-192-v2.png',
+  '/app-icon-512-v2.png',
+  '/app-icon-maskable-512-v2.png',
+  '/notification-badge.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -60,8 +62,8 @@ self.addEventListener('fetch', (event) => {
 function showSquadNotification({ title, body, imageUrl, url, tag }) {
   return self.registration.showNotification(title || 'The Squad', {
     body: body || '',
-    icon: '/favicon-192.png',
-    badge: '/favicon-192.png',
+    icon: '/app-icon-192-v2.png',
+    badge: '/notification-badge.png',
     image: imageUrl || undefined,
     data: { url: typeof url === 'string' && url.startsWith('/') ? url : '/dashboard' },
     tag: tag || 'squad-notification',
