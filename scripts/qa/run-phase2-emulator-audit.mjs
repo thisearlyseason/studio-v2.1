@@ -6636,6 +6636,13 @@ async function runCertificationOperationsScenarios() {
         }
         continue;
       }
+      if (scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser) {
+        await runSportsHubBrowseWorkflowAudit();
+        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
+          recordObservedOperationsCase(scenarioId, dimension, 'two-session Sports Hub browse workflow completed');
+        }
+        continue;
+      }
       // The operations dispatcher is deliberately explicit. Until a domain
       // handler supplies case-owned browser/API evidence, every dimension is
       // reported as NOT_OBSERVED instead of allowing the old generic audit to
@@ -7167,6 +7174,158 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(ownerResult.mobileFits, true, 'chat channel list remains within the mobile viewport');
   expectEqual(ownerResult.consoleErrors.length, 0, 'owner chat verification console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'owner chat verification failed responses');
+}
+
+function sportsHubStorageKey(kind, userId) {
+  return `sh:${kind}:${userId}`;
+}
+
+function browserMemberSportsHubWorkflow(session, memberUid) {
+  const bookmarksKey = sportsHubStorageKey('bookmarks', memberUid);
+  const preferencesKey = sportsHubStorageKey('preferences', memberUid);
+  const code = `async page => {
+    const bookmarksKey = ${JSON.stringify(bookmarksKey)};
+    const preferencesKey = ${JSON.stringify(preferencesKey)};
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) {
+        failedResponses.push({ status: response.status(), path: response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0] });
+      }
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/news`)});
+      const bookmark = page.getByTitle('Bookmark').first();
+      await bookmark.waitFor({ state: 'visible', timeout: 15000 });
+      await bookmark.click();
+      const bookmarked = page.getByTitle('Remove bookmark').first();
+      await bookmarked.waitFor({ state: 'visible', timeout: 10000 });
+      const memberBookmarksAfterClick = await page.evaluate(key => localStorage.getItem(key), bookmarksKey);
+      await page.getByRole('button', { name: /^Saved/ }).click();
+      await page.getByText('Bookmarked only', { exact: true }).waitFor({ timeout: 10000 });
+      await page.reload();
+      await page.getByTitle('Remove bookmark').first().waitFor({ state: 'visible', timeout: 15000 });
+      const memberBookmarksAfterReload = await page.evaluate(key => localStorage.getItem(key), bookmarksKey);
+
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/search?q=championship`)});
+      await page.getByText(/result.*for.*championship/i).waitFor({ timeout: 10000 });
+      const championshipResults = await page.getByText(/result.*for.*championship/i).count();
+      await page.getByRole('button', { name: 'Resources', exact: true }).click();
+      await page.getByText(/No results for/i).waitFor({ timeout: 10000 });
+      const resourceFilterEmpty = await page.getByText(/No results for/i).count();
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/search?q=not-a-real-sports-hub-query`)});
+      await page.getByText(/No results for/i).waitFor({ timeout: 10000 });
+      const invalidQueryEmpty = await page.getByText(/No results for/i).count();
+
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/preferences`)});
+      await page.getByRole('button', { name: 'Soccer', exact: true }).click();
+      await page.getByRole('button', { name: 'High School', exact: true }).click();
+      await page.getByRole('button', { name: 'U12', exact: true }).click();
+      await page.getByRole('button', { name: 'Competitive', exact: true }).click();
+      await page.getByRole('button', { name: 'Save Preferences', exact: true }).click();
+      await page.getByText('Preferences Saved', { exact: true }).waitFor({ timeout: 10000 });
+      const preferencesAfterSave = await page.evaluate(key => localStorage.getItem(key), preferencesKey);
+      await page.reload();
+      await page.getByRole('button', { name: 'Soccer', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+      const preferencesAfterReload = await page.evaluate(key => localStorage.getItem(key), preferencesKey);
+
+      await page.evaluate(key => localStorage.setItem(key, '{malformed'), bookmarksKey);
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/news`)});
+      await page.getByTitle('Bookmark').first().waitFor({ state: 'visible', timeout: 15000 });
+      const malformedRecovered = await page.evaluate(key => localStorage.getItem(key), bookmarksKey);
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/news`)});
+      await page.getByRole('heading', { name: 'Articles', exact: true }).waitFor({ timeout: 15000 });
+      const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      await page.evaluate(keys => keys.forEach(key => localStorage.removeItem(key)), [bookmarksKey, preferencesKey]);
+      return {
+        memberBookmarksAfterClick, memberBookmarksAfterReload, championshipResults,
+        resourceFilterEmpty, invalidQueryEmpty, preferencesAfterSave, preferencesAfterReload,
+        malformedRecovered, mobileFits, consoleErrors, failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserOwnerSportsHubIsolation(session, memberUid, ownerUid) {
+  const memberBookmarksKey = sportsHubStorageKey('bookmarks', memberUid);
+  const ownerBookmarksKey = sportsHubStorageKey('bookmarks', ownerUid);
+  const ownerPreferencesKey = sportsHubStorageKey('preferences', ownerUid);
+  const code = `async page => {
+    const memberBookmarksKey = ${JSON.stringify(memberBookmarksKey)};
+    const ownerBookmarksKey = ${JSON.stringify(ownerBookmarksKey)};
+    const ownerPreferencesKey = ${JSON.stringify(ownerPreferencesKey)};
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) {
+        failedResponses.push({ status: response.status(), path: response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0] });
+      }
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/news`)});
+      await page.getByTitle('Bookmark').first().waitFor({ state: 'visible', timeout: 15000 });
+      const ownerInitialBookmarkButtons = await page.getByTitle('Bookmark').count();
+      const storage = await page.evaluate(keys => Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)])), [memberBookmarksKey, ownerBookmarksKey, ownerPreferencesKey]);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/sports-hub/preferences`)});
+      await page.getByRole('heading', { name: 'My Preferences', exact: true }).waitFor({ timeout: 15000 });
+      const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      await page.evaluate(keys => keys.forEach(key => localStorage.removeItem(key)), [memberBookmarksKey, ownerBookmarksKey, ownerPreferencesKey]);
+      return { ownerInitialBookmarkButtons, storage, mobileFits, consoleErrors, failedResponses };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runSportsHubBrowseWorkflowAudit() {
+  const memberUid = identityByAlias.get('qa-team-member').uid;
+  const ownerUid = identityByAlias.get('qa-coach-owner-a').uid;
+  const member = await browserLogin('qa-team-member', '/dashboard', `sports-hub-member-${process.pid}`);
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `sports-hub-owner-${process.pid}`);
+  const memberResult = browserMemberSportsHubWorkflow(member, memberUid);
+  expectEqual(Array.isArray(JSON.parse(memberResult.memberBookmarksAfterClick || 'null')), true, 'Sports Hub bookmark is stored under the signed-in member scope');
+  expectEqual(memberResult.memberBookmarksAfterClick, memberResult.memberBookmarksAfterReload, 'Sports Hub bookmark persists after member reload');
+  expectEqual(memberResult.championshipResults > 0, true, 'Sports Hub keyword search returns relevant content');
+  expectEqual(memberResult.resourceFilterEmpty, 1, 'Sports Hub content-type filter excludes non-resource results');
+  expectEqual(memberResult.invalidQueryEmpty, 1, 'Sports Hub invalid query returns an empty state');
+  expectEqual(memberResult.preferencesAfterSave, memberResult.preferencesAfterReload, 'Sports Hub member preferences persist after reload');
+  expectEqual(memberResult.preferencesAfterReload.includes('Soccer') && memberResult.preferencesAfterReload.includes('high-school'), true, 'Sports Hub saved preferences preserve selected values');
+  expectEqual(memberResult.malformedRecovered, '{malformed', 'Sports Hub ignores malformed scoped bookmarks without rewriting user data');
+  expectEqual(memberResult.mobileFits, true, 'Sports Hub news fits the mobile viewport');
+  expectEqual(memberResult.consoleErrors.length, 0, 'Sports Hub member workflow console errors');
+  expectEqual(memberResult.failedResponses.length, 0, 'Sports Hub member workflow failed responses');
+
+  const ownerResult = browserOwnerSportsHubIsolation(owner, memberUid, ownerUid);
+  expectEqual(ownerResult.ownerInitialBookmarkButtons > 0, true, 'Sports Hub owner starts without the member bookmark state');
+  expectEqual(ownerResult.storage[`sh:bookmarks:${memberUid}`], null, 'Sports Hub owner session cannot read member scoped bookmarks');
+  expectEqual(ownerResult.storage[`sh:bookmarks:${ownerUid}`], null, 'Sports Hub owner has an independent bookmark scope');
+  expectEqual(ownerResult.storage[`sh:preferences:${ownerUid}`], null, 'Sports Hub owner has an independent preference scope');
+  expectEqual(ownerResult.mobileFits, true, 'Sports Hub preferences fit the mobile viewport');
+  expectEqual(ownerResult.consoleErrors.length, 0, 'Sports Hub owner workflow console errors');
+  expectEqual(ownerResult.failedResponses.length, 0, 'Sports Hub owner workflow failed responses');
 }
 
 function browserOwnerEventCreate(session, marker) {

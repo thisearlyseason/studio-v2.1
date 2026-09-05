@@ -200,6 +200,20 @@ test('managed operations chat dispatch emits one attributable result for each lo
   assert.match(source, /page\.waitForResponse\(response => response\.request\(\)\.method\(\) === 'PATCH' && response\.url\(\)\.includes\('\/api\/teams\/chat'\)\)/);
 });
 
+test('Sports Hub operations dispatch is a dedicated authenticated browser workflow with user-scoped persistence', () => {
+  const start = source.indexOf('async function runCertificationOperationsScenarios()');
+  const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
+  const operationsBlock = source.slice(start, end);
+  assert.match(operationsBlock, /scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser/);
+  assert.match(operationsBlock, /await runSportsHubBrowseWorkflowAudit\(\)/);
+  assert.match(source, /async function runSportsHubBrowseWorkflowAudit\(\)/);
+  assert.match(source, /sportsHubStorageKey\('bookmarks', memberUid\)/);
+  assert.match(source, /sportsHubStorageKey\('preferences', memberUid\)/);
+  assert.match(source, /sportsHubStorageKey\('bookmarks', ownerUid\)/);
+  assert.match(source, /No results for/);
+  assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
+});
+
 test('communication browser workflow uses the run-scoped Team A identifier for its chat target', () => {
   const start = source.indexOf('function browserMemberCommunication(');
   const end = source.indexOf('async function runCommunicationWorkflowAudit()', start);
