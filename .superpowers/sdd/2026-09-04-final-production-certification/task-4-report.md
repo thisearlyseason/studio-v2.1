@@ -3,114 +3,113 @@
 ## Result
 
 Task 4 owns exactly the 16 frozen tenant/family scenarios. The immutable local
-Chrome run `final-cert-t4-260905-162439-71a0` executed implementation commit
-`f9ebd7e4ef84ea581e6714333616a9a75da66783`: 16 scenarios, 176/176 required
-case records observed, zero failed cases, zero run errors, and zero missing
-local dimensions. Cleanup was `OBSERVED` with 301 measured deletions, 31
-verified restorations, and zero retained audit records.
+Chrome run `final-cert-t4-260905-175331-3198` executed implementation commit
+`9214352c93d5cf59b56aca0b893ef07988dc48a5`: 16 scenarios, 176/176 required
+case records observed, 112/112 local dimensions observed, zero failed cases,
+and zero run errors. Cleanup was `OBSERVED` with 301 measured deletions, 32
+verified restorations, zero residuals, and zero retained audit records.
 
 Every row remains `BLOCKED`, not `PASS`, pending execution on the exact staging
 revision. Youth activation additionally needs approved QA mailbox delivery and
 receipt. The run used only loopback Firebase emulators and the local Next
-server; production remained read-only and no provider call was made.
+server; production remained read-only and provider delivery was not invoked.
 
-## Scenario Workflows
+## Implemented and Executed Work
 
-- Team creation uses the real route with fresh coach, organization-admin, and
-  league-creator identities; validates server-derived ownership/projections,
-  capacity and concurrent boundaries, rejects type/owner/plan tampering, and
-  verifies persistence and dynamic cleanup.
-- Join-by-code uses public preview and authenticated POST flows, a two-party
-  linked-child race, inactive-current-state denial, wrong-guardian denial,
-  accountless child preservation, digest/session persistence, and exact
-  overlay restoration.
-- Team settings performs owner edits plus Firebase Storage upload, replace, and
-  delete with type/authority denials. Module visibility toggles all eight
-  application module keys and checks hidden navigation and direct-route denial
-  in both viewports.
-- Seasonal reset runs only on a fresh sacrificial team. Selected and complete
-  resets prove category isolation, active-team-only removal, durable retry,
-  concurrent companion-team preservation, primary-team reconciliation,
-  Storage cleanup, and root/owner preservation.
-- Organization overview refreshes after a constituent change. Squad allocation
-  releases and reallocates a real seat while preserving organization authority.
-  Waiver/admin flows use consumer-valid master/copy documents, real APIs,
-  exact staff authority, guardian participant signing, and outsider denials.
-- Roster workflows cover remove/reinstate projections, accented and removed
-  search, actual CSV download, and guardian/player self-view boundaries.
-- Recruiting workflows edit profile, metrics, contact, and video data; enforce
-  tenant/privacy boundaries; and drive hidden-active-committed-hidden public
-  transitions through the canonical editor while recursively allowlisting
-  public media.
-- Family workflows edit and refresh two child cards, reconcile schedule/waiver/
-  payment consumers, bind guardian signatures to the child participant, and
-  activate a distinct youth Auth identity. The activated youth opens and
-  refreshes its own roster view at 1440x900 and 390x844.
+- The tenant runner requires scenario-specific assertion sets for all 16 rows;
+  generic case counts or renamed lifecycle labels cannot satisfy a row.
+- Team creation executes three creator roles and a concurrent one-seat race,
+  with server-derived ownership and member/user projections. Join executes
+  preview/session and POST flows, linked-child concurrency, inactive-current-
+  state denial, and wrong-guardian denial.
+- Settings performs an actual owner UI edit and verifies the saved value after
+  desktop/mobile reloads. Branding executes owner upload/replacement/removal
+  plus outsider and unsafe-type denials. Module visibility persists the frozen
+  eight-key set and checks all eight navigation/direct-route denials in both
+  viewports.
+- Seasonal reset uses a fresh run-owned squad. It executes selected and repeated
+  complete reset routes, while behavioral tests fault every durable obligation:
+  Storage, player projection, user membership, recursive member descendants,
+  and atomic primary-team reconciliation with a concurrent companion-team join.
+- Organization flows execute school owner/delegate/outsider reads, constituent
+  mutation, seat release/reallocation, global waiver copy reconciliation, and
+  administrator add/remove projections. Guardian participant signing remains
+  distinct from the exact staff-only coach-signature contract.
+- Roster work executes remove/reinstate mutation and accented/removed filtering.
+  The browser downloads the real TXT manifest at both viewports, reads its
+  bytes, proves stable content, and rejects private fields.
+- Recruiting executes authenticated private document mutations and canonical
+  hidden-active-committed-hidden public transitions, with recursive public-media
+  allowlisting and private/cross-tenant denials.
+- Family work uses two linked children across Team A and Team C, exercises the
+  schedule/waiver/payment consumer graph and guardian signature route, and
+  activates a separate youth Auth identity. Youth reuse is denied and the
+  activated child opens its own roster view in both viewports.
 
 ## Product Defects Repaired
 
-- **BUG-032:** the compatibility youth-invite endpoint now delegates all methods
-  to the canonical Family contract.
-- **BUG-033:** recruiting status has one canonical writer and preserves the
-  committed state.
+- **BUG-032:** the compatibility youth-invite endpoint delegates to the
+  canonical Family contract.
+- **BUG-033:** recruiting status has one canonical writer and preserves
+  `committed`.
 - **BUG-034:** inactive code-only preview and POST paths recheck current squad
   state, including at the transaction boundary.
-- **BUG-035:** reset categories are server-scoped; complete reset durably
-  reconciles only the active team's members, user/player projections, primary
-  team, descendants, and Storage.
-- **BUG-036:** guardian-managed child enrollment preserves the child's separate
+- **BUG-035:** reset categories are server-scoped and complete reset retains a
+  durable exact obligation plan until every projection, descendant, and Storage
+  postcondition is proven.
+- **BUG-036:** guardian-managed enrollment preserves the child's separate
   identity until youth activation.
-- **BUG-037:** public video segments are recursively projected onto a bounded
-  field allowlist.
-- **BUG-038:** a guardian can no longer write a privileged coach waiver
-  signature; staff signatures and guardian participant signatures now use
+- **BUG-037:** public video segments use a recursive bounded allowlist.
+- **BUG-038:** staff coach signatures and guardian participant signatures have
   separate exact schemas and authority paths.
-- **BUG-039:** releasing an organization squad seat retains the organization
-  association needed for a legitimate owner to reallocate the squad.
+- **BUG-039:** releasing a squad seat preserves the organization relationship
+  needed for legitimate reallocation.
 
-The exact runs also exposed audit defects in fail-fast propagation, combined
-batch continuation, duplicate case ownership, Storage upload protocol, global
-waiver copy counting, youth route selection, pending-waiver modal settlement,
-fixture consumer validity, dynamic-resource cleanup, and race cancellation.
-Each was reproduced, covered by a regression, repaired at its root, and
-retested through the affected route/helper/browser flow.
+The round-three work also repaired audit defects in exact mandatory-operation
+enforcement, runtime actor/target/request provenance, allowlisted sensitive-data
+evidence, recursive missing-intermediate cleanup, pre-response join-session
+ownership, bounded race termination, structured original/restoration failure
+diagnostics, settings hydration waits, download-stream decoding, and owned
+Radix overlay/toast settlement.
 
-## Safety, Evidence, and Cleanup
+## Safety and Evidence
 
-Preflight validates persisted consumer roots and relationships before mutation.
-The mutation layer rejects client identity/authority fields and non-demo
-projects. Evidence is bound to the runtime actor, target, operation, request,
-batch artifact root, and cleanup reference; prohibited UID/token field variants
-are rejected.
+Preflight validates real consumer capabilities and referential fixtures before
+mutation. Authority is derived only from verified server state; request identity
+fields are rejected. Tenant evidence is allowlisted and records the runtime
+executor, target, operation, sanitized request, separate Admin reconciliation,
+artifact root, and cleanup reference. UID/token/private-contact field variants
+and their normalized forms are rejected.
 
-Server-created Auth, Firestore, member/user, invitation, Storage, browser
-session, process, and artifact resources are registered before mutation or by
-run-scoped discovery through ambiguous responses. Cleanup verifies roots and
-descendants recursively, preserves original and restoration diagnostics,
-retries retained obligations, and reports exact measured results. Two-party
-races propagate cancellation and cannot return while an owned callback remains
-live.
+Server-created Auth, Firestore, Storage, preview, browser-session, process, and
+artifact resources are registered before mutation or discovered with exact
+run/time bounds through ambiguous responses. Cleanup recursively proves both
+roots and missing-intermediate descendants absent. Race helpers require an owned
+terminator before callbacks start and do not return while late mutation remains
+possible.
 
 ## Verification
 
-- Focused tenant/regression suite: 272 passed, 0 failed.
-- Full application suite: 661 passed, 0 failed.
+- Focused Task 4 and runner suite: 125 passed, 0 failed.
+- Full application suite: 671 passed, 0 failed.
 - Firestore/Storage rules suite: 42 passed, 0 failed.
-- `npm run typecheck`: exit 0.
+- `npm run typecheck`: exit 0 (serial rerun after the build regenerated types).
 - `npm run build`: exit 0.
-- Full 16-row no-browser batch: exit 0.
-- Focused youth browser regression after the modal-race repair: exit 0;
+- Task 3 team-switch browser regression: exit 0; cleanup 299/0/0.
+- Task 3 Alerts browser regression: exit 0; exactly two eligible alerts,
+  exclusions/persistence/mobile checks observed; cleanup 299/0/0.
+- Focused roster browser run `final-cert-t4-260905-173946-f49e`: exit 0;
   cleanup 299 deleted / 1 restored / 0 retained.
-- Immutable Chrome batch: `final-cert-t4-260905-162439-71a0` on
-  `f9ebd7e4ef84ea581e6714333616a9a75da66783`; 176/176 cases observed, 0
-  failures, 0 run errors, 0 missing local dimensions; cleanup 301 deleted / 31
-  restored / 0 retained.
-- `git diff --check`: exit 0 before evidence finalization.
+- Immutable Chrome batch `final-cert-t4-260905-175331-3198` on
+  `9214352c93d5cf59b56aca0b893ef07988dc48a5`: 16 scenarios, 176/176 cases,
+  112/112 local dimensions, zero failures/run errors; cleanup 301 deleted / 32
+  restored / 0 retained, with zero residuals.
 
 ## Remaining External Gates
 
-1. Deploy the exact implementation commit to the authorized staging companion
-   and repeat the 16 rows with disposable run-prefixed data and exact cleanup.
+1. Deploy exact implementation commit `9214352c93d5cf59b56aca0b893ef07988dc48a5`
+   to the authorized staging companion and repeat the 16 rows with disposable
+   run-prefixed data and exact cleanup.
 2. Observe approved mailbox delivery and receipt for the youth invitation.
-3. Keep production read-only. Stripe/provider and physical-device work remains
-   owned by later certification batches and is not inferred here.
+3. Keep production read-only. Stripe/provider and physical-device work belongs
+   to later certification batches and is not inferred here.
