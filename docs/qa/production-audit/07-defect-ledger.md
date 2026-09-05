@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-05; thirty defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-05; thirty-three defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
 ## Task 11 audit runner — Demo discovery failure loses Firestore cleanup ownership (resolved)
 
@@ -16,6 +16,54 @@
 | Fix | The live path now registers `users/{uid}` and an unmeasured UID-scoped discovery obligation before the first read. Cleanup can add newly discovered exact resources while active and gives each its own bounded retries and measured postcondition. Auth deletion is gated on completed discovery and all registered roots verifying absent. |
 | Verification | Red/green tests cover identity-only and partial setup, recovered UID with transient discovery, exact root and public-view retries after parent deletion, original-error preservation, exhausted discovery with discovery/Auth residuals, unchanged exact counts, and sequential all-root verification. Exact local Chrome run `final-cert-t3-260905-122645-90d8` on implementation candidate `93b769b7` recorded 5 observed / 2 truthful not-observed / 0 failed demo cases, zero run errors, and cleanup 249 deleted / 0 restored / 0 retained; 39 dynamic selectors reconciled with zero diagnostics. |
 | Status | RESOLVED LOCALLY — HOSTED/WORKER ROW REMAINS BLOCKED |
+
+## BUG-034 — Inactive squad invitation codes expose a join preview (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Teams — join by code |
+| Role | Anonymous visitor; prospective member |
+| Page or route | `GET /api/teams/join`; `/register/squad/{teamId}` |
+| Description | A valid invitation code for an inactive, deleted, or otherwise non-registerable squad still returned its squad identifier and name from the public preview endpoint. |
+| Expected behavior | Public preview and authenticated consumption enforce the same current registration state and return a nondisclosing not-found response when the squad no longer accepts registrations. |
+| Actual behavior | `POST` called `teamAcceptsRegistrations`, while `GET` returned the minimal squad projection immediately after code resolution without applying that guard. |
+| Root cause | The preview and consumption branches shared code lookup but not the active-registration predicate. |
+| Fix | `GET /api/teams/join` now applies `teamAcceptsRegistrations(team)` before returning any squad projection and uses the same 404 copy as an unknown code. |
+| Verification | The route regression now requires the inactive-state guard. Immutable local Task 4 run `final-cert-t4-260905-132028-6969` on candidate `c8235cf6` observed active and modified-code preview behavior, anonymous direct-read denial, minimal response fields, both viewports, zero console errors, and zero 5xx responses. Inactive-preview runtime, authenticated join consumption, reuse/race/escalation, and exact-revision staging remain blocked coverage rather than claimed evidence. |
+| Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
+
+## BUG-033 — Public recruiting activation had two conflicting authority sources (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Recruiting — public scout projection |
+| Role | Player/guardian/staff publisher; anonymous visitor |
+| Page or route | Recruiting provider; `/recruit/player/{playerId}` metadata; `/api/public/recruiting/{playerId}` |
+| Description | The public API used canonical `recruitingProfile/profile.status`, page metadata used the legacy root `recruitingProfileEnabled`, and the visible toggle updated only that legacy root field. A hidden profile could therefore leak player metadata, while an enabled toggle could leave the actual public route unavailable. |
+| Expected behavior | One server-consumed canonical state controls API data, route metadata, and publishing transitions; the legacy root flag is only a synchronized compatibility projection. |
+| Actual behavior | Three consumers disagreed about whether the profile was active. |
+| Root cause | The earlier public-API hardening moved authority to the canonical profile document without migrating the metadata reader and write path. |
+| Fix | Metadata now reads `recruitingProfile/profile` and calls `isProspectActivated`. The provider commits canonical `status: active|hidden` and the legacy projection atomically in one Firestore batch. |
+| Verification | The source regression proves metadata and the public API share the canonical status and that the toggle writes the canonical profile document. Immutable local Task 4 run `final-cert-t4-260905-132028-6969` observed active/hidden API behavior, public private-contact denial, allowlisted payload, both viewports, zero console errors, and zero 5xx responses. The visible toggle/cache lifecycle, unsafe/private media matrix, and exact-revision staging remain blocked coverage. |
+| Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
+
+## BUG-032 — Duplicate youth-invite endpoint diverged from the Family contract (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Family — enable youth login |
+| Role | Linked guardian; invited youth player |
+| Page or route | `/api/invites/youth`; `/api/youth-invites` |
+| Description | Two independently implemented public youth-invitation routes used different token formats, response shapes, methods, error semantics, rate-limit boundaries, and redemption authority. Clients could reach different invitation behavior depending on which historical route they called. |
+| Expected behavior | The compatibility path and canonical Family Hub path expose one implementation and one authorization/redemption contract. |
+| Actual behavior | The legacy route maintained a separate 64-character-token implementation while the canonical route had the current 48-character invitation and activation contract. |
+| Root cause | The compatibility endpoint was copied rather than delegated when the canonical Family flow evolved. |
+| Fix | `/api/youth-invites` now re-exports canonical `GET`, `POST`, and `PUT` handlers from `/api/invites/youth`; there is no second invitation implementation. |
+| Verification | A bundled route regression compares canonical and compatibility GET status/body behavior and requires all three exports. Immutable local Task 4 run `final-cert-t4-260905-132028-6969` created/revoked a guardian-owned invite, observed cross-guardian and modified-token denial, denied anonymous Firestore reads, confirmed exact guardian/child persistence, and compared both live route responses. Existing-child Auth activation, reuse/duplicate-Auth/session isolation, responsive/console, approved mailbox delivery, and exact-revision staging remain blocked coverage. |
+| Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
 
 ## BUG-031 — Linked player identity can inherit unrelated tenant and staff authority (resolved)
 
