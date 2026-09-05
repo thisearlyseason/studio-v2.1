@@ -1,7 +1,7 @@
 # Task 4 tenant and family local certification observations
 
-- Run: `final-cert-t4-260905-205845-c3ee`
-- Commit: `d89bcf833e6d0f32073925b585ba0a6b1d86f93f`
+- Run: `final-cert-t4-260905-213153-2d44`
+- Commit: `fcd4e2688960c746fca8171d2d9152e592d2e42e`
 - Environment: loopback Firebase emulators and local Next server only
 - Result boundary: local observations do not constitute final coverage-matrix PASS
 
@@ -45,7 +45,7 @@
 
 ## Cleanup
 
-- Shared proof `fixture-cleanup-final-cert-t4-260905-205845-c3ee`: OBSERVED; deleted 301, restored 72, retained audit records 0.
+- Shared proof `fixture-cleanup-final-cert-t4-260905-213153-2d44`: OBSERVED; deleted 301, restored 72, retained audit records 0.
   - `teams-create-and-capacity` (local-batch): OBSERVED.
   - `teams-join-by-code` (local-batch): OBSERVED.
   - `teams-profile-branding-settings` (local-batch): OBSERVED.
