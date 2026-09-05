@@ -149,6 +149,7 @@ function AuthorizedClubManagementPage() {
   // totals must use the authoritative team documents or ownership/school links
   // can be missing and the dashboard will count only the currently active team.
   const [resolvedTeams, setResolvedTeams] = useState<Team[]>([]);
+  const [organizationTeams, setOrganizationTeams] = useState<Team[]>([]);
   const [isHubDataLoading, setIsHubDataLoading] = useState(true);
 
   useEffect(() => {
@@ -187,6 +188,14 @@ function AuthorizedClubManagementPage() {
     return () => { cancelled = true; };
   }, [db, teams]);
 
+  const resolvedOrganizationTeams = useMemo(() => {
+    const merged = new Map(resolvedTeams.map(team => [team.id, team]));
+    for (const team of organizationTeams) {
+      merged.set(team.id, { ...(merged.get(team.id) || {}), ...team } as Team);
+    }
+    return [...merged.values()];
+  }, [resolvedTeams, organizationTeams]);
+
   const schoolHub = useMemo(() => {
     const explicit = resolvedTeams.find(t => t.type === 'school' || t.type === 'school_hub');
     if (explicit) return explicit;
@@ -205,22 +214,23 @@ function AuthorizedClubManagementPage() {
   const organizationOwnerId = schoolHub?.ownerUserId || user?.id;
   const organizationSquadCandidates = useMemo(() => {
     return Array.from(new Map(
-      resolvedTeams
+      resolvedOrganizationTeams
         .filter(t =>
           isBillableSquadSeat(t) &&
           (!isSchoolMode || !schoolHub?.id || t.schoolId === schoolHub.id)
         )
         .map(t => [t.id, t])
     ).values());
-  }, [resolvedTeams, isSchoolMode, schoolHub?.id]);
+  }, [resolvedOrganizationTeams, isSchoolMode, schoolHub?.id]);
 
   // Use the organizer's membership projections for seat allocation so the Hub
   // agrees with the squad switcher. The resolved team documents still provide
   // authoritative squad details for members, incidents, and operations.
-  const allocatedMembershipIds = useMemo(
-    () => new Set(teams.filter(team => team.isPro === true).map(team => team.id)),
-    [teams]
-  );
+  const allocatedMembershipIds = useMemo(() => {
+    const allocated = new Set(teams.filter(team => team.isPro === true).map(team => team.id));
+    for (const team of organizationTeams.filter(team => team.isPro === true)) allocated.add(team.id);
+    return allocated;
+  }, [teams, organizationTeams]);
   const clubTeams = useMemo(() => organizationSquadCandidates.filter(team => {
     if (!allocatedMembershipIds.has(team.id)) return false;
     if (isSchoolMode && schoolHub?.id) return team.schoolId === schoolHub.id;
@@ -238,7 +248,7 @@ function AuthorizedClubManagementPage() {
   const remainingSquadSeats = Math.max(0, organizationSeatLimit - allocatedSquadCount);
 
   useEffect(() => {
-    if (!firebaseAuth || !organizationOwnerId || isHubDataLoading) return;
+    if (!firebaseAuth || !organizationOwnerId) return;
     let cancelled = false;
     const loadCapacity = async () => {
       try {
@@ -253,6 +263,7 @@ function AuthorizedClubManagementPage() {
         if (!response.ok) return;
         const payload = await response.json();
         if (!cancelled) {
+          setOrganizationTeams(Array.isArray(payload.teams) ? payload.teams : []);
           const limit = Number(payload.limit);
           const remaining = Number(payload.remaining);
           const allocated = Number.isInteger(payload.allocated)
@@ -267,7 +278,7 @@ function AuthorizedClubManagementPage() {
     };
     loadCapacity();
     return () => { cancelled = true; };
-  }, [firebaseAuth, organizationOwnerId, isHubDataLoading, isSchoolMode, schoolHub?.id, schoolHub?.type, clubTeams.length]);
+  }, [firebaseAuth, organizationOwnerId, isSchoolMode, schoolHub?.id, schoolHub?.type, clubTeams.length]);
 
   // Fetch members from ALL squad sub-collections independently so we don't
   // rely on a collectionGroup+in composite index (which causes partial results).

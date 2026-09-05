@@ -31,8 +31,26 @@ const PROTECTED_NORMALIZED_KEYS = new Set([
 const PROTECTED_VALUE_PATTERN = /(?:password\s*[=:]|cookie\s*[=:]|authorization\s*[=:]|bearer\s+[a-z0-9._~-]+|oobcode=|mode=(?:resetpassword|verifyemail)|sk_live_[a-z0-9]+|rk_live_[a-z0-9]+|synthetic-private-[a-z0-9_-]+|\b[a-f0-9]{48}\b)/i;
 const URL_QUERY_PATTERN = /(?:https?:\/\/|\/)\S*\?\S+/i;
 
+export function serializeEvidenceFailure(error, redact = value => String(value), maxLength = 500) {
+  const nested = error instanceof AggregateError ? [...error.errors] : [];
+  const original = nested[0] || error?.cause || error;
+  const restoration = nested.slice(1);
+  const clean = value => redact(value instanceof Error ? value.message : String(value)).slice(0, maxLength);
+  return Object.freeze({
+    diagnostic: clean(error),
+    originalDiagnostic: clean(original),
+    restorationDiagnostics: Object.freeze(restoration.map(clean)),
+  });
+}
+
 function assertPlainString(value, label) {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`Scenario result requires ${label}.`);
+}
+
+function assertClosedObject(value, allowedKeys, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  const unexpected = Object.keys(value).filter(key => !allowedKeys.includes(key));
+  if (unexpected.length > 0) throw new Error(`${label} contains non-allowlisted ${label.toLowerCase()} fields: ${unexpected.join(', ')}.`);
 }
 
 function parseTimestamp(value, label) {
@@ -90,6 +108,7 @@ export function makeDimension(state, caseIds = [], note = '') {
 function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expectedCommit } = {}) {
   const cleanup = result.cleanup;
   if (!cleanup || typeof cleanup !== 'object') throw new Error(`${result.scenarioId} requires cleanup metadata.`);
+  assertClosedObject(cleanup, ['owner', 'reference', 'selectors', 'counts', 'state', 'proof'], 'Cleanup');
   if (cleanup.owner !== scenario.cleanupOwner) {
     throw new Error(`${result.scenarioId} cleanup owner must remain ${scenario.cleanupOwner}.`);
   }
@@ -98,6 +117,7 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
       !Number.isInteger(cleanup.counts.retainedAuditRecords)) {
     throw new Error(`${result.scenarioId} requires cleanup counts.`);
   }
+  assertClosedObject(cleanup.counts, ['deleted', 'restored', 'retainedAuditRecords'], 'Cleanup count');
   if (Object.values(cleanup.counts).some(value => value < 0)) {
     throw new Error(`${result.scenarioId} requires nonnegative cleanup counts.`);
   }
@@ -119,6 +139,21 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
       const proofPath = resolveContainedArtifact(artifactRoot, proof);
       const parsed = JSON.parse(readFileSync(proofPath, 'utf8'));
       assertNoProtectedEvidence(parsed, `cleanup artifact ${proof}`);
+      assertClosedObject(parsed, ['runId', 'commit', 'fixtureRunId', 'state', 'counts', 'measured', 'capturedAt'], 'Cleanup artifact');
+      assertClosedObject(parsed.counts, ['deleted', 'restored', 'retainedAuditRecords'], 'Cleanup artifact count');
+      if (parsed.measured !== undefined) {
+        assertClosedObject(parsed.measured, ['fixture', 'dynamic'], 'Cleanup measurement');
+        assertClosedObject(parsed.measured.fixture, ['firestore', 'auth', 'storage'], 'Fixture cleanup measurement');
+        const dynamic = parsed.measured.dynamic;
+        assertClosedObject(dynamic, ['state', 'counts', 'reconciled', 'selectors', 'residuals', 'diagnostics'], 'Dynamic cleanup measurement');
+        assertClosedObject(dynamic.counts, ['deleted', 'restored', 'retainedAuditRecords'], 'Dynamic cleanup count');
+        assertClosedObject(dynamic.reconciled, ['deleted', 'restored', 'retainedAuditRecords'], 'Dynamic cleanup reconciliation');
+        if (!Array.isArray(dynamic.selectors) || !Array.isArray(dynamic.residuals) || !Array.isArray(dynamic.diagnostics)) {
+          throw new Error(`${result.scenarioId} cleanup measurement arrays are invalid.`);
+        }
+        for (const residual of dynamic.residuals) assertClosedObject(residual, ['id', 'kind'], 'Cleanup residual');
+        for (const diagnostic of dynamic.diagnostics) assertClosedObject(diagnostic, ['id', 'attempt', 'diagnostic'], 'Cleanup diagnostic');
+      }
       if ((expectedRunId && parsed.runId !== expectedRunId) || (expectedCommit && parsed.commit !== expectedCommit)) {
         throw new Error(`${result.scenarioId} cleanup proof run/candidate provenance does not match.`);
       }
@@ -137,6 +172,11 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
 
 function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape, caseAssociationResolver, operationContracts } = {}) {
   assertNoProtectedEvidence(result);
+  assertClosedObject(result, [
+    'scenarioId', 'environment', 'environmentGaps', 'commit', 'revision', 'startedAt', 'completedAt',
+    'role', 'tenantAlias', 'dimensions', 'cases', 'cleanup', 'artifacts', 'missingDimensions',
+    'externalRequirements', 'outcome',
+  ], 'Result');
   assertPlainString(result.environment, 'environment');
   if (!scenario.environments.includes(result.environment)) {
     throw new Error(`${result.scenarioId} environment is outside its frozen contract.`);
@@ -160,6 +200,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
   if (!result.dimensions || typeof result.dimensions !== 'object') {
     throw new Error(`${result.scenarioId} requires dimensions.`);
   }
+  assertClosedObject(result.dimensions, DIMENSION_NAMES, 'Dimensions');
   if (!Array.isArray(result.cases) || !Array.isArray(result.artifacts) ||
       !Array.isArray(result.missingDimensions) || !Array.isArray(result.externalRequirements)) {
     throw new Error(`${result.scenarioId} requires case, artifact, missing-dimension, and external-requirement arrays.`);
@@ -168,6 +209,12 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
   const observedAssertionLabels = new Set();
   const requiredByDimension = caseRequirements?.[scenario.id] || {};
   for (const caseRecord of result.cases) {
+    assertClosedObject(caseRecord, [
+      'actorAliases', 'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive',
+      'cleanupRefs', 'execution', 'caseId', 'dimension', 'role', 'tenantAlias', 'expected', 'observed',
+      'state', 'startedAt', 'completedAt', 'artifacts', 'artifactEvents', 'type', 'scenarioId', 'runId', 'commit',
+      'diagnostic', 'diagnostics', 'originalDiagnostic', 'restorationDiagnostics',
+    ], 'Case');
     assertPlainString(caseRecord.caseId, 'caseId');
     if (casesById.has(caseRecord.caseId)) throw new Error(`${result.scenarioId} has duplicate case ID ${caseRecord.caseId}.`);
     assertPlainString(caseRecord.dimension, 'case dimension');
@@ -179,6 +226,10 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     }
     assertPlainString(caseRecord.expected, 'case expected');
     assertPlainString(caseRecord.observed, 'case observed');
+    if (caseRecord.diagnostics !== undefined && (!Array.isArray(caseRecord.diagnostics) ||
+        caseRecord.diagnostics.some(value => typeof value !== 'string' || value.length === 0))) {
+      throw new Error(`${caseRecord.caseId} diagnostics must contain non-empty strings.`);
+    }
     const caseStartedAt = parseTimestamp(caseRecord.startedAt, 'case startedAt');
     const caseCompletedAt = parseTimestamp(caseRecord.completedAt, 'case completedAt');
     if (caseCompletedAt < caseStartedAt || caseStartedAt < resultStartedAt || caseCompletedAt > resultCompletedAt) {
@@ -188,15 +239,6 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (!DIMENSION_NAMES.includes(caseRecord.dimension)) throw new Error(`${caseRecord.caseId} has invalid case dimension.`);
     if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
     if (caseShape === 'tenant') {
-      if (operationContracts) {
-        const allowedCaseKeys = new Set([
-          'actorAliases', 'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive',
-          'cleanupRefs', 'execution', 'caseId', 'dimension', 'role', 'tenantAlias', 'expected', 'observed',
-          'state', 'startedAt', 'completedAt', 'artifacts', 'artifactEvents', 'type', 'scenarioId', 'runId', 'commit',
-        ]);
-        const unexpected = Object.keys(caseRecord).filter(key => !allowedCaseKeys.has(key));
-        if (unexpected.length > 0) throw new Error(`${caseRecord.caseId} contains non-allowlisted evidence fields: ${unexpected.join(', ')}.`);
-      }
       assertPlainString(caseRecord.actorAlias, 'case actorAlias');
       assertPlainString(caseRecord.targetAlias, 'case targetAlias');
       if (!['create', 'read', 'update', 'delete', 'permission', 'persistence'].includes(caseRecord.operation)) {
@@ -208,30 +250,78 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           !Array.isArray(caseRecord.cleanupRefs) || caseRecord.cleanupRefs.length === 0) {
         throw new Error(`${caseRecord.caseId} requires tenant network, console, responsive, and cleanup associations.`);
       }
+      assertClosedObject(caseRecord.network, ['transport', 'observed', 'reason'], 'Network observation');
+      assertClosedObject(caseRecord.console, ['observed', 'reason'], 'Console observation');
+      assertClosedObject(caseRecord.responsive, ['observed', 'reason'], 'Responsive observation');
       if (operationContracts && caseRecord.state === 'OBSERVED') {
         const execution = caseRecord.execution;
-        if (!execution || !Array.isArray(execution.requests) || !Array.isArray(execution.adminTargets)) {
+        if (!execution || !Array.isArray(execution.requests) || !Array.isArray(execution.adminTargets) ||
+            !Array.isArray(execution.observations) || !Array.isArray(execution.reconciliations)) {
           throw new Error(`${caseRecord.caseId} requires runtime request and Admin-reconciliation evidence.`);
         }
+        assertClosedObject(execution, [
+          'startedAt', 'completedAt', 'requests', 'adminTargets', 'observations', 'reconciliations',
+        ], 'Execution');
+        const executionStartedAt = parseTimestamp(execution.startedAt, 'execution startedAt');
+        const executionCompletedAt = parseTimestamp(execution.completedAt, 'execution completedAt');
+        if (executionStartedAt < caseStartedAt || executionCompletedAt > caseCompletedAt || executionCompletedAt < executionStartedAt) {
+          throw new Error(`${caseRecord.caseId} execution interval is outside its case interval.`);
+        }
         for (const request of execution.requests) {
-          const allowed = new Set(['transport', 'method', 'route', 'status', 'executorAlias', 'targetAlias']);
+          const allowed = new Set([
+            'transport', 'method', 'route', 'status', 'executorAlias', 'targetAlias', 'operation', 'startedAt', 'completedAt',
+          ]);
           if (!request || Object.keys(request).some(key => !allowed.has(key)) ||
               request.transport !== 'loopback-http' || !/^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method) ||
               !request.route?.startsWith('/') || request.route.includes('?') || !Number.isInteger(request.status) ||
-              typeof request.executorAlias !== 'string') {
+              typeof request.executorAlias !== 'string' ||
+              !['create', 'read', 'update', 'delete', 'permission', 'persistence'].includes(request.operation)) {
             throw new Error(`${caseRecord.caseId} has invalid allowlisted runtime request evidence.`);
           }
+          const startedAt = parseTimestamp(request.startedAt, 'request startedAt');
+          const completedAt = parseTimestamp(request.completedAt, 'request completedAt');
+          if (completedAt < startedAt || startedAt < executionStartedAt || completedAt > executionCompletedAt) {
+            throw new Error(`${caseRecord.caseId} request interval is outside its execution interval.`);
+          }
         }
-        const executors = new Set(execution.requests.map(request => request.executorAlias));
-        if (executors.size > 0 && !executors.has(caseRecord.actorAlias)) {
-          throw new Error(`${caseRecord.caseId} runtime executor does not include its claimed actorAlias.`);
+        for (const target of execution.adminTargets) {
+          assertClosedObject(target, ['targetAlias', 'actorAlias', 'operation', 'observedAt', 'sourceCaseId'], 'Admin target');
+          assertPlainString(target.targetAlias, 'Admin target alias');
+          assertPlainString(target.actorAlias, 'Admin target actor alias');
+          if (!['read', 'persistence'].includes(target.operation)) throw new Error(`${caseRecord.caseId} has invalid Admin target operation.`);
+          const observedAt = parseTimestamp(target.observedAt, 'Admin target observedAt');
+          if (observedAt < executionStartedAt || observedAt > executionCompletedAt) throw new Error(`${caseRecord.caseId} Admin target is outside its execution interval.`);
         }
-        const targets = new Set([
-          ...execution.requests.flatMap(request => request.targetAlias ? [request.targetAlias] : []),
-          ...execution.adminTargets,
-        ]);
-        if (targets.size > 0 && !targets.has(caseRecord.targetAlias) && !targets.has('run-owned-consumer-root')) {
-          throw new Error(`${caseRecord.caseId} runtime target does not include its claimed targetAlias.`);
+        for (const [kind, records] of [['observation', execution.observations], ['reconciliation', execution.reconciliations]]) {
+          for (const record of records) {
+            assertClosedObject(record, [
+              ...(kind === 'reconciliation' ? ['sourceCaseId'] : ['kind']),
+              'actorAlias', 'targetAlias', 'operation', 'startedAt', 'completedAt',
+            ], `${kind[0].toUpperCase()}${kind.slice(1)}`);
+            if (kind === 'reconciliation') assertPlainString(record.sourceCaseId, 'reconciliation sourceCaseId');
+            else assertPlainString(record.kind, 'observation kind');
+            assertPlainString(record.actorAlias, `${kind} actorAlias`);
+            assertPlainString(record.targetAlias, `${kind} targetAlias`);
+            if (!['create', 'read', 'update', 'delete', 'permission', 'persistence'].includes(record.operation)) {
+              throw new Error(`${caseRecord.caseId} has invalid ${kind} operation.`);
+            }
+            const startedAt = parseTimestamp(record.startedAt, `${kind} startedAt`);
+            const completedAt = parseTimestamp(record.completedAt, `${kind} completedAt`);
+            if (completedAt < startedAt || startedAt < executionStartedAt || completedAt > executionCompletedAt) {
+              throw new Error(`${caseRecord.caseId} ${kind} interval is outside its execution interval.`);
+            }
+          }
+        }
+        const runtimeOperations = [
+          ...execution.requests.map(request => ({ ...request, actorAlias: request.executorAlias })),
+          ...execution.adminTargets.map(target => ({ ...target, startedAt: target.observedAt, completedAt: target.observedAt })),
+          ...execution.observations,
+          ...execution.reconciliations,
+        ];
+        if (runtimeOperations.length === 0) throw new Error(`${caseRecord.caseId} requires runtime operation evidence.`);
+        if (!runtimeOperations.some(item => item.actorAlias === caseRecord.actorAlias &&
+            item.targetAlias === caseRecord.targetAlias && item.operation === caseRecord.operation)) {
+          throw new Error(`${caseRecord.caseId} runtime operation does not match its claimed actor, target, and operation.`);
         }
       }
       if (!caseRecord.actorAliases.includes(caseRecord.actorAlias)) {
@@ -252,6 +342,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           artifacts: caseRecord.artifacts,
         }];
     for (const event of artifactEvents) {
+      assertClosedObject(event, ['expected', 'observed', 'state', 'artifacts'], 'Artifact event');
       assertPlainString(event.expected, 'artifact event expected');
       assertPlainString(event.observed, 'artifact event observed');
       if (!['OBSERVED', 'NOT_OBSERVED', 'FAIL'].includes(event.state) || !Array.isArray(event.artifacts) ||
@@ -286,6 +377,12 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         const artifactPath = resolveContainedArtifact(artifactRoot, artifact);
         const parsed = JSON.parse(readFileSync(artifactPath, 'utf8'));
         assertNoProtectedEvidence(parsed, `artifact ${artifact}`);
+        assertClosedObject(parsed, [
+          'runId', 'commit', 'scenarioId', 'caseId', 'dimension', 'actorAliases', 'role', 'tenantAlias',
+          'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs',
+          'execution', 'expected', 'observed', 'diagnostic', 'originalDiagnostic', 'restorationDiagnostics',
+          'assertions', 'capturedAt',
+        ], 'Artifact');
         if ((expectedRunId && parsed.runId !== expectedRunId) || (expectedCommit && parsed.commit !== expectedCommit)) {
           throw new Error(`${caseRecord.caseId} artifact run/candidate provenance does not match.`);
         }
@@ -313,6 +410,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           throw new Error(`${caseRecord.caseId} observed artifact requires exact assertions.`);
         }
         for (const assertion of parsed.assertions || []) {
+          assertClosedObject(assertion, ['label', 'expected', 'observed', 'capturedAt'], 'Assertion');
           assertPlainString(assertion.label, 'artifact assertion label');
           if (String(assertion.expected) !== String(assertion.observed)) {
             throw new Error(`${caseRecord.caseId} artifact assertion mismatch for ${assertion.label}.`);
@@ -331,6 +429,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
   for (const name of DIMENSION_NAMES) {
     const dimension = result.dimensions[name];
     if (!dimension) throw new Error(`${result.scenarioId} is missing dimension ${name}.`);
+    assertClosedObject(dimension, ['state', 'caseIds', 'note'], 'Dimension');
     if (!OBSERVATION_STATES.includes(dimension.state)) {
       throw new Error(`${result.scenarioId} dimension ${name} has invalid state ${dimension.state}.`);
     }
@@ -466,8 +565,13 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
       recorded.push(result);
     },
     recordRunError(error) {
+      const unexpected = Object.keys(error || {}).filter(key => ![
+        'scenarioId', 'stage', 'diagnostic', 'originalDiagnostic', 'restorationDiagnostics',
+      ].includes(key));
+      if (unexpected.length > 0) throw new Error(`Run error contains non-allowlisted fields: ${unexpected.join(', ')}.`);
       assertPlainString(error?.stage, 'run error stage');
       assertPlainString(error?.diagnostic, 'run error diagnostic');
+      if (error.scenarioId !== undefined) assertPlainString(error.scenarioId, 'run error scenarioId');
       assertNoProtectedEvidence(error);
       if (error.originalDiagnostic !== undefined) assertPlainString(error.originalDiagnostic, 'run error originalDiagnostic');
       if (error.restorationDiagnostics !== undefined && (!Array.isArray(error.restorationDiagnostics) ||
@@ -475,6 +579,7 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
         throw new Error('Run error restorationDiagnostics must be nonempty strings.');
       }
       runErrors.push({
+        ...(error.scenarioId ? { scenarioId: error.scenarioId } : {}),
         stage: error.stage,
         diagnostic: error.diagnostic,
         ...(error.originalDiagnostic ? { originalDiagnostic: error.originalDiagnostic } : {}),

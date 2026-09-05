@@ -1205,7 +1205,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return { 
       ...m, 
       id: tid, 
-      name: m.name || m.teamName || 'Squad',
+      // Membership `name` identifies the member; `teamName` identifies this
+      // projected squad and must win when both legacy fields are present.
+      name: m.teamName || m.name || 'Squad',
       code: finalCode,
       teamCode: finalCode,
       inviteCode: finalCode

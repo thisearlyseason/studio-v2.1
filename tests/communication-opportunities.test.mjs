@@ -60,6 +60,10 @@ test('institution hub stats resolve authoritative squads and stay team-scoped', 
   const hub = read('../src/app/(dashboard)/club/page.tsx');
 
   assert.match(hub, /getDoc\(doc\(db, 'teams', membership\.id\)\)/);
+  assert.match(hub, /setOrganizationTeams\(Array\.isArray\(payload\.teams\) \? payload\.teams : \[\]\)/);
+  assert.match(hub, /const resolvedOrganizationTeams = useMemo/);
+  assert.match(hub, /organizationTeams\.filter\(team => team\.isPro === true\)/);
+  assert.doesNotMatch(hub, /if \(!firebaseAuth \|\| !organizationOwnerId \|\| isHubDataLoading\) return/);
   assert.match(hub, /const clubTeams = useMemo\(\(\) => organizationSquadCandidates\.filter/);
   assert.match(hub, /isBillableSquadSeat\(t\)/);
   assert.doesNotMatch(hub, /t\.ownerUserId === organizationOwnerId/);

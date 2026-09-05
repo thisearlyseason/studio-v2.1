@@ -56,7 +56,7 @@ function normalizeCategories(value: unknown): string[] {
   if (categories.some(category => !Object.hasOwn(CATEGORY_COLLECTIONS, category))) {
     throw new SeasonResetError('INVALID_CATEGORIES', 'Choose only supported reset categories.');
   }
-  return categories;
+  return categories.sort();
 }
 
 async function retry(label: string, operation: () => Promise<void>, maxAttempts: number) {
@@ -115,7 +115,24 @@ export async function executeTeamSeasonReset({
   const obligations = new Map<string, ResetObligation>();
 
   for (const record of await adapter.list(obligationCollection)) {
-    if (record.data.operationKey !== operationKey || record.data.teamId !== teamId) continue;
+    if (record.data.teamId !== teamId) continue;
+    let priorCategories: string[];
+    try {
+      priorCategories = normalizeCategories(
+        Array.isArray(record.data.categories)
+          ? record.data.categories
+          : String(record.data.operationKey || '').split('+'),
+      );
+    } catch {
+      throw new SeasonResetError('INVALID_OBLIGATION', 'Reset recovery state is invalid.');
+    }
+    const compatible = categories[0] === 'complete' || priorCategories.join('+') === operationKey;
+    if (!compatible) {
+      throw new SeasonResetError(
+        'UNRESOLVED_OBLIGATIONS',
+        'Finish the earlier reset recovery before changing reset categories.',
+      );
+    }
     const kind = record.data.kind;
     const targetPath = record.data.targetPath;
     if (!['storage', 'player', 'userMembership', 'firestore', 'member'].includes(kind) || typeof targetPath !== 'string') {
@@ -155,6 +172,7 @@ export async function executeTeamSeasonReset({
     await retry(`obligation:${obligation.path}`, () => adapter.update(obligation.path, {
       teamId,
       operationKey,
+      categories,
       kind: obligation.kind,
       targetPath: obligation.targetPath,
     }), maxAttempts);

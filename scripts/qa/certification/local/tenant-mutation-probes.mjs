@@ -24,6 +24,7 @@ export async function patchFirestoreFields({
   documentPath,
   idToken,
   fields,
+  signal,
   fetchImpl = fetch,
 }) {
   if (typeof projectId !== 'string' || !projectId.startsWith('demo-')) {
@@ -48,6 +49,7 @@ export async function patchFirestoreFields({
     `http://127.0.0.1:8080/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/${documentPath}?${query}`,
     {
       method: 'PATCH',
+      ...(signal ? { signal } : {}),
       headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json', Connection: 'close' },
       body: JSON.stringify({ fields: Object.fromEntries(entries.map(([field, value]) => [field, encodeFirestoreValue(value)])) }),
     },

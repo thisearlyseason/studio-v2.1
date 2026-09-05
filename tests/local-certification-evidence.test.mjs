@@ -11,6 +11,7 @@ import {
   createEvidenceRecorder,
   makeDimension,
   markdownForSummary,
+  serializeEvidenceFailure,
   validateScenarioResults,
 } from '../scripts/qa/certification/local/evidence.mjs';
 import { tenantCaseAssociationFor } from '../scripts/qa/certification/local/batches/tenants.mjs';
@@ -59,6 +60,19 @@ test('evidence states and dimensions match the strict local observation schema',
     state: 'OBSERVED', caseIds: ['case-a'], note: 'sanitized note',
   });
   assert.ok(Object.isFrozen(makeDimension('OBSERVED')));
+});
+
+test('aggregate failure serialization preserves the original and every restoration cause', () => {
+  const error = new AggregateError([
+    new Error('operation failed'),
+    new Error('restore team failed'),
+    new Error('verify Storage failed'),
+  ], 'operation and restoration failed');
+  assert.deepEqual(serializeEvidenceFailure(error, value => String(value)), {
+    diagnostic: 'operation and restoration failed',
+    originalDiagnostic: 'operation failed',
+    restorationDiagnostics: ['restore team failed', 'verify Storage failed'],
+  });
 });
 
 test('validation rejects internally inconsistent observed dimensions, cases, gaps, and cleanup', () => {
@@ -169,6 +183,14 @@ test('validation enforces required case IDs and inspectable contained artifact p
     }));
     result.cleanup.proof = ['cleanup/marker.json'];
     assert.equal(validateScenarioResults([scenario], [result], options)[0].scenarioId, scenario.id);
+    await writeFile(path.join(directory, 'cleanup/marker.json'), JSON.stringify({
+      state: 'OBSERVED', counts: result.cleanup.counts, capturedAt: '2026-09-04T18:02:00.000Z',
+      nestedPrivateEnvelope: { dateOfBirth: 'synthetic-alias-value' },
+    }));
+    assert.throws(() => validateScenarioResults([scenario], [result], options), /non-allowlisted cleanup artifact fields/i);
+    await writeFile(path.join(directory, 'cleanup/marker.json'), JSON.stringify({
+      state: 'OBSERVED', counts: result.cleanup.counts, capturedAt: '2026-09-04T18:02:00.000Z',
+    }));
     assert.throws(() => validateScenarioResults([scenario], [{
       ...result,
       cases: [{ ...caseRecord, caseId: 'uncontracted-case' }],
@@ -334,6 +356,25 @@ test('evidence refuses credentials, session material, action links, query string
   }
 });
 
+test('evidence uses closed result and nested metadata shapes instead of private-field denylists', () => {
+  assert.throws(
+    () => validateScenarioResults([scenario], [validResult({ extra: { dateOfBirth: 'alias-value' } })]),
+    /non-allowlisted result fields/,
+  );
+  assert.throws(
+    () => validateScenarioResults([scenario], [validResult({
+      dimensions: { ...validResult().dimensions, happyPath: { ...validResult().dimensions.happyPath, phoneNumber: 'alias-value' } },
+    })]),
+    /non-allowlisted dimension fields/,
+  );
+  assert.throws(
+    () => validateScenarioResults([scenario], [validResult({
+      cleanup: { ...validResult().cleanup, counts: { ...validResult().cleanup.counts, homeAddress: 'alias-value' } },
+    })]),
+    /non-allowlisted cleanup count fields/,
+  );
+});
+
 test('tenant evidence binds exact actor, target, operation, observations, and cleanup reference', () => {
   const tenantScenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'teams-join-by-code');
   const association = tenantCaseAssociationFor(tenantScenario.id, 'happyPath');
@@ -355,6 +396,15 @@ test('tenant evidence binds exact actor, target, operation, observations, and cl
     console: { observed: false, reason: 'separate browser case' },
     responsive: { observed: false, reason: 'separate browser case' },
     cleanupRefs: ['fixture-cleanup-final-cert-t4-evidence-a1'],
+    execution: {
+      startedAt: '2026-09-04T18:00:01.000Z', completedAt: '2026-09-04T18:00:02.000Z',
+      requests: [{
+        transport: 'loopback-http', method: 'GET', route: '/api/teams/resolve', status: 200,
+        executorAlias: 'qa-public-submitter', targetAlias: 'qa-team-a', operation: 'read',
+        startedAt: '2026-09-04T18:00:01.100Z', completedAt: '2026-09-04T18:00:01.900Z',
+      }],
+      adminTargets: [], observations: [], reconciliations: [],
+    },
   };
   const result = {
     scenarioId: tenantScenario.id,
@@ -380,14 +430,24 @@ test('tenant evidence binds exact actor, target, operation, observations, and cl
     caseShape: 'tenant',
     caseRequirements: { [tenantScenario.id]: { happyPath: [caseId] } },
     caseAssociationResolver: tenantCaseAssociationFor,
+    operationContracts: { [tenantScenario.id]: [] },
   };
   assert.equal(validateScenarioResults([tenantScenario], [result], options)[0].cases[0].actorAlias, association.actorAlias);
   const replaceCase = replacement => [{ ...result, cases: [{ ...caseRecord, ...replacement }] }];
-  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ actorAlias: 'qa-parent-b' }), options), /actorAlias|association/);
-  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ targetAlias: 'qa-team-b' }), options), /association/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ actorAlias: 'qa-parent-b' }), options), /actorAlias|association|runtime operation/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ targetAlias: 'qa-team-b' }), options), /association|runtime operation/);
   assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ cleanupRefs: [] }), options), /associations/);
   assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ network: {} }), options), /associations/);
   assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ cleanupRefs: ['unrelated-cleanup'] }), options), /exact scenario cleanup/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({
+    operation: 'create',
+  }), options), /runtime operation/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({
+    execution: { ...caseRecord.execution, requests: [], adminTargets: [], observations: [], reconciliations: [] },
+  }), options), /runtime operation evidence/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({
+    execution: { ...caseRecord.execution, extra: { phoneNumber: 'alias-value' } },
+  }), options), /non-allowlisted execution fields/i);
 });
 
 test('recorder writes sanitized JSON and Markdown with explicit external blockers', async () => {
@@ -409,7 +469,7 @@ test('recorder writes sanitized JSON and Markdown with explicit external blocker
     recorder.recordScenario(validResult());
     recorder.recordRunError({ stage: 'preflight', diagnostic: 'sanitized shared failure' });
     recorder.recordRunError({
-      stage: 'scenario-cleanup-or-runner', diagnostic: 'combined failure',
+      scenarioId: scenario.id, stage: 'scenario-cleanup-or-runner', diagnostic: 'combined failure',
       originalDiagnostic: 'operation failure', restorationDiagnostics: ['restoration failure'],
     });
     const written = await recorder.writeSummary({ markdownPath: path.join(directory, '02-identity.md') });
@@ -420,7 +480,7 @@ test('recorder writes sanitized JSON and Markdown with explicit external blocker
     assert.deepEqual(json.runErrors, [
       { stage: 'preflight', diagnostic: 'sanitized shared failure' },
       {
-        stage: 'scenario-cleanup-or-runner', diagnostic: 'combined failure',
+        scenarioId: scenario.id, stage: 'scenario-cleanup-or-runner', diagnostic: 'combined failure',
         originalDiagnostic: 'operation failure', restorationDiagnostics: ['restoration failure'],
       },
     ]);

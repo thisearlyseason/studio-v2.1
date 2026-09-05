@@ -80,7 +80,11 @@ import { deletePushDevice, registerPushDevice } from '@/lib/client-push-registra
 import { clearBrowserSession } from '@/lib/client-auth';
 import { isStaffPosition } from '@/lib/staff-position';
 import { canManageActiveTeamModules } from '@/lib/team-settings-authority';
-import { TEAM_MODULE_DEFINITIONS } from '@/lib/team-module-visibility';
+import {
+  TEAM_MODULE_SETTINGS_DEFINITIONS,
+  isTeamModuleEnabled,
+  teamModuleFeaturePatch,
+} from '@/lib/team-module-visibility';
 
 const TEAM_MODULE_ICONS = {
   attendance: Users,
@@ -91,6 +95,9 @@ const TEAM_MODULE_ICONS = {
   fundraising: PiggyBank,
   practice: Dumbbell,
   volunteers: HandHelping,
+  roster: Users,
+  playbook: BookOpen,
+  tacticalChat: MessageCircle,
 } as const;
 
 export default function SettingsPage() {
@@ -717,18 +724,19 @@ export default function SettingsPage() {
             Toggle which squad modules are visible in the sidebar. Disabled modules are completely hidden and inaccessible to all users in this squad.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {TEAM_MODULE_DEFINITIONS.map(module => {
+            {TEAM_MODULE_SETTINGS_DEFINITIONS.map(module => {
               const Icon = TEAM_MODULE_ICONS[module.key];
               // features is undefined by default, so we treat undefined as true (enabled)
-              const isEnabled = activeTeam.features?.[module.key] !== false;
+              const isEnabled = isTeamModuleEnabled(module, activeTeam.features);
               
               const handleToggle = async (checked: boolean) => {
                 if (!db) return;
                 try {
                   const teamRef = doc(db, 'teams', activeTeam.id);
-                  await updateDoc(teamRef, {
-                    [`features.${module.key}`]: checked
-                  });
+                  const patch = teamModuleFeaturePatch(module, checked);
+                  await updateDoc(teamRef, Object.fromEntries(
+                    Object.entries(patch).map(([key, value]) => [`features.${key}`, value]),
+                  ));
                   toast({ title: 'Module Updated', description: `${module.name} is now ${checked ? 'visible' : 'hidden'}.` });
                 } catch (e) {
                   console.error('Failed to update feature', e);

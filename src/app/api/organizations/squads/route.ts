@@ -14,6 +14,11 @@ type OrganizationContext = {
   teamLimit: number;
 };
 
+function isActiveOrganizationSquad(team: FirebaseFirestore.DocumentData) {
+  return isBillableSquadSeat(team) && team.isArchived !== true && team.isActive !== false &&
+    !['removed', 'deleted', 'inactive'].includes(String(team.status || '').toLowerCase());
+}
+
 function includesUser(value: unknown, userId: string): boolean {
   return Array.isArray(value) && value.includes(userId);
 }
@@ -112,7 +117,7 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
       ]);
       if (!teamSnapshot.exists) throw new Error('TEAM_NOT_FOUND');
       const team = teamSnapshot.data() || {};
-      if (team.ownerUserId !== organization.ownerId || !isBillableSquadSeat(team)) {
+      if (team.ownerUserId !== organization.ownerId || !isActiveOrganizationSquad(team)) {
         throw new Error('INVALID_SQUAD');
       }
       if (
@@ -126,7 +131,7 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
       const otherAllocated = ownedTeams.docs.filter(snapshot =>
         snapshot.id !== teamId &&
         snapshot.data().isPro === true &&
-        isBillableSquadSeat(snapshot.data()) &&
+        isActiveOrganizationSquad(snapshot.data()) &&
         (!organization.hubId ||
           snapshot.data().schoolId === organization.hubId ||
           snapshot.data().organizationHubId === organization.hubId)
@@ -198,7 +203,7 @@ export async function GET(req: NextRequest) {
       );
       const organizationTeams = ownedTeams.docs.filter(snapshot => {
         const team = snapshot.data();
-        return isBillableSquadSeat(team) &&
+        return isActiveOrganizationSquad(team) &&
           (!organization.hubId || team.schoolId === organization.hubId || team.organizationHubId === organization.hubId);
       });
       const allocatedSnapshots = organizationTeams.filter(snapshot =>

@@ -2,12 +2,14 @@
 
 ## Result
 
-Task 4 owns exactly the 16 frozen tenant/family scenarios. The immutable local
-Chrome run `final-cert-t4-260905-175331-3198` executed implementation commit
-`9214352c93d5cf59b56aca0b893ef07988dc48a5`: 16 scenarios, 176/176 required
-case records observed, 112/112 local dimensions observed, zero failed cases,
-and zero run errors. Cleanup was `OBSERVED` with 301 measured deletions, 32
-verified restorations, zero residuals, and zero retained audit records.
+Task 4 owns exactly the 16 frozen tenant/family scenarios. The final immutable
+local Chrome run `final-cert-t4-260905-195812-03c6` exercised the complete
+round-four candidate tree: 16 scenarios, 177/177 required case records
+observed, 112/112 local dimensions observed, zero failed cases, and zero run
+errors. Cleanup was `OBSERVED` with 301 measured deletions, 46 verified
+restorations, zero residuals, and zero retained audit records. The evidence
+recorder names baseline commit `58a207fb` because the reviewed round-four diff
+and this report are committed together after immutable execution.
 
 Every row remains `BLOCKED`, not `PASS`, pending execution on the exact staging
 revision. Youth activation additionally needs approved QA mailbox delivery and
@@ -27,6 +29,10 @@ server; production remained read-only and provider delivery was not invoked.
   plus outsider and unsafe-type denials. Module visibility persists the frozen
   eight-key set and checks all eight navigation/direct-route denials in both
   viewports.
+- Canonical and legacy module flags now share one route policy. Mixed records
+  give canonical values precedence, and settings writes migrate the
+  `volunteer`/`library` aliases without reopening legacy `roster`, `playbook`,
+  or `tacticalChat` routes.
 - Seasonal reset uses a fresh run-owned squad. It executes selected and repeated
   complete reset routes, while behavioral tests fault every durable obligation:
   Storage, player projection, user membership, recursive member descendants,
@@ -45,6 +51,11 @@ server; production remained read-only and provider delivery was not invoked.
   schedule/waiver/payment consumer graph and guardian signature route, and
   activates a separate youth Auth identity. Youth reuse is denied and the
   activated child opens its own roster view in both viewports.
+- Family squad metadata is now derived by a verified guardian endpoint instead
+  of direct guardian memberships, so the exact Team A and Team C names render
+  in cards and aggregate consumers. The organization overview similarly merges
+  the server-scoped squad aggregate and cannot substitute a member's name for a
+  squad's `teamName`.
 
 ## Product Defects Repaired
 
@@ -64,13 +75,22 @@ server; production remained read-only and provider delivery was not invoked.
   separate exact schemas and authority paths.
 - **BUG-039:** releasing a squad seat preserves the organization relationship
   needed for legitimate reallocation.
+- **BUG-040:** family cards resolve safe metadata for child-only squads through
+  a server-derived guardian scope.
+- **BUG-041:** organization aggregates include every authorized constituent
+  squad and preserve the squad name projection.
+- **BUG-042:** adult self-enrollment reuses the single server-bound player
+  identity instead of inventing `p_<uid>` or trusting client hints.
+- **BUG-043:** canonical and legacy module flags enforce one migration-safe
+  route and persistence policy.
 
-The round-three work also repaired audit defects in exact mandatory-operation
+The round-four work also repaired audit defects in exact mandatory-operation
 enforcement, runtime actor/target/request provenance, allowlisted sensitive-data
 evidence, recursive missing-intermediate cleanup, pre-response join-session
 ownership, bounded race termination, structured original/restoration failure
-diagnostics, settings hydration waits, download-stream decoding, and owned
-Radix overlay/toast settlement.
+diagnostics, settings/family/organization hydration waits, generated Playwright
+regex escaping, roster download row-count validation, and owned Radix
+overlay/toast settlement.
 
 ## Safety and Evidence
 
@@ -90,26 +110,27 @@ possible.
 
 ## Verification
 
-- Focused Task 4 and runner suite: 125 passed, 0 failed.
-- Full application suite: 671 passed, 0 failed.
+- Focused Task 4 and runner suite: 163 passed, 0 failed.
+- Full application suite: 697 passed, 0 failed.
 - Firestore/Storage rules suite: 42 passed, 0 failed.
-- `npm run typecheck`: exit 0 (serial rerun after the build regenerated types).
+- `npm run typecheck`: exit 0.
 - `npm run build`: exit 0.
 - Task 3 team-switch browser regression: exit 0; cleanup 299/0/0.
 - Task 3 Alerts browser regression: exit 0; exactly two eligible alerts,
   exclusions/persistence/mobile checks observed; cleanup 299/0/0.
-- Focused roster browser run `final-cert-t4-260905-173946-f49e`: exit 0;
+- Focused roster browser run `final-cert-t4-260905-194710-cfa9`: exit 0;
   cleanup 299 deleted / 1 restored / 0 retained.
-- Immutable Chrome batch `final-cert-t4-260905-175331-3198` on
-  `9214352c93d5cf59b56aca0b893ef07988dc48a5`: 16 scenarios, 176/176 cases,
-  112/112 local dimensions, zero failures/run errors; cleanup 301 deleted / 32
-  restored / 0 retained, with zero residuals.
+- Final non-browser batch `final-cert-t4-260905-195740-66ec`: exit 0; 16
+  scenarios; cleanup 301 deleted / 44 restored / 0 retained.
+- Immutable Chrome batch `final-cert-t4-260905-195812-03c6`: 16 scenarios,
+  177/177 cases, 112/112 local dimensions, zero failures/run errors; cleanup
+  301 deleted / 46 restored / 0 retained, with zero residuals.
 
 ## Remaining External Gates
 
-1. Deploy exact implementation commit `9214352c93d5cf59b56aca0b893ef07988dc48a5`
-   to the authorized staging companion and repeat the 16 rows with disposable
-   run-prefixed data and exact cleanup.
+1. Deploy the Task 4 completion commit containing this report to the authorized
+   staging companion and repeat the 16 rows with disposable run-prefixed data
+   and exact cleanup.
 2. Observe approved mailbox delivery and receipt for the youth invitation.
 3. Keep production read-only. Stripe/provider and physical-device work belongs
    to later certification batches and is not inferred here.

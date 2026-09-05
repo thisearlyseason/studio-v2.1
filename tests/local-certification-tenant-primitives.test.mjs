@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
-import { awaitEventually, runTwoParty } from '../scripts/qa/certification/local/assertions.mjs';
+import { awaitEventually, runTwoParty, terminateOwnedProcess } from '../scripts/qa/certification/local/assertions.mjs';
 import { createFixtureMutations } from '../scripts/qa/certification/local/fixture-mutations.mjs';
 
 test('dynamic cleanup fails closed when recursive Firestore proof is unavailable', () => {
@@ -187,6 +188,33 @@ test('two-party timeout aborts and settles both participants before returning', 
   assert.equal(lateMutation, false);
 });
 
+test('two-party timeout terminates the owned server even when aborted clients reject promptly', async () => {
+  let serverCommit = 0;
+  let serverStopped = false;
+  let terminatorCalls = 0;
+  const serverJobs = [];
+  const callbacks = [1, 2].map(() => signal => new Promise((resolve, reject) => {
+    const serverJob = new Promise(jobDone => setTimeout(() => {
+      if (!serverStopped) serverCommit += 1;
+      jobDone();
+    }, 25));
+    serverJobs.push(serverJob);
+    signal.addEventListener('abort', () => reject(new Error('client aborted')), { once: true });
+  }));
+  await assert.rejects(() => runTwoParty('aborted-http-clients', callbacks, {
+    timeoutMs: 2,
+    settleTimeoutMs: 2,
+    async terminate() {
+      terminatorCalls += 1;
+      serverStopped = true;
+      await Promise.all(serverJobs);
+    },
+  }), /timed out/);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(terminatorCalls, 1);
+  assert.equal(serverCommit, 0);
+});
+
 test('two-party timeout terminates a noncooperative participant within the owned bound', async () => {
   let stopped = false;
   let settled = false;
@@ -206,19 +234,36 @@ test('two-party timeout terminates a noncooperative participant within the owned
   assert.ok(Date.now() - startedAt < 250);
 });
 
-test('two-party termination failure preserves the failure and waits out delayed mutation', async () => {
+test('two-party termination failure preserves the failure and prevents delayed mutation', async () => {
   let mutation = false;
+  let stopped = false;
   const startedAt = Date.now();
   await assert.rejects(() => runTwoParty('failed-terminator', [
-    async () => { await new Promise(resolve => setTimeout(resolve, 25)); mutation = true; },
+    async () => { await new Promise(resolve => setTimeout(resolve, 25)); if (!stopped) mutation = true; },
     async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
   ], {
     timeoutMs: 2,
     settleTimeoutMs: 2,
-    async terminate() { throw new Error('worker termination failed'); },
-  }), error => error instanceof AggregateError && error.errors.some(item => item.message === 'worker termination failed'));
-  assert.equal(mutation, true, 'helper did not return while the delayed callback was live');
-  assert.ok(Date.now() - startedAt >= 20);
+    async terminate() { stopped = true; throw new Error('worker termination proof failed'); },
+  }), error => error instanceof AggregateError && error.errors.some(item => item.message === 'worker termination proof failed'));
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(mutation, false);
+  assert.ok(Date.now() - startedAt < 100);
+});
+
+test('two-party termination failure is bounded instead of awaiting unowned client promises forever', async () => {
+  const never = new Promise(() => {});
+  const outcome = await Promise.race([
+    runTwoParty('failed-terminator-bounded', [async () => never, async () => never], {
+      timeoutMs: 2,
+      settleTimeoutMs: 2,
+      async terminate() { throw new Error('termination proof unavailable'); },
+    }).then(() => 'resolved', error => error),
+    new Promise(resolve => setTimeout(() => resolve('outer-timeout'), 100)),
+  ]);
+  assert.notEqual(outcome, 'outer-timeout');
+  assert.ok(outcome instanceof AggregateError);
+  assert.match(outcome.message, /termination failed/);
 });
 
 test('eventual assertion bounds a probe that never resolves', async () => {
@@ -237,4 +282,14 @@ test('eventual assertion requires termination ownership before starting its prob
   let started = false;
   await assert.rejects(() => awaitEventually('unowned projection', async () => { started = true; }, Boolean), /owned terminator/);
   assert.equal(started, false);
+});
+
+test('owned process termination fails closed when neither TERM nor KILL produces exit proof', async () => {
+  const child = Object.assign(new EventEmitter(), { pid: 1234, exitCode: null, signalCode: null });
+  const signals = [];
+  await assert.rejects(() => terminateOwnedProcess(child, signal => signals.push(signal), {
+    gracefulTimeoutMs: 2,
+    killTimeoutMs: 2,
+  }), /exit was not observed/);
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
 });

@@ -12,6 +12,39 @@ const { processEnv, resetEnv } = nextEnvironment;
 const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
 const seederSource = await readFile(new URL('../scripts/qa/seed-phase2-emulator-fixtures.mjs', import.meta.url), 'utf8');
 
+test('roster browser source preserves escaped line-break regexes inside generated Playwright code', () => {
+  const start = source.indexOf("if (scenarioId === 'roster-search-filter-sort-export')");
+  const end = source.indexOf('const plan = buildTenantApiProbePlan(FIXTURES);', start);
+  const rosterBlock = source.slice(start, end);
+  assert.ok(rosterBlock.includes('label.match(/\\\\((\\\\d+)\\\\)/)'));
+  assert.match(rosterBlock, /content\.split\(\/\\\\r\?\\\\n\/\)/);
+  assert.match(rosterBlock, /!\/\[\\\\r\\\\n\]\/\.test\(value\)/);
+  assert.match(rosterBlock, /dialog\.getByRole\('button',\{name:'Close'\}\)\.last\(\)\.click\(\{force:true\}\)/);
+  assert.match(rosterBlock, /dialog\.waitFor\(\{state:'hidden',timeout:5000\}\)/);
+});
+
+test('module API-denial assertion is recorded inside the module console evidence case', () => {
+  const moduleConsoleCase = source.match(/recordObservedTenantCase\(scenarioId, 'console', 'team-modules-workflow-console'[\s\S]*?\}, 'All eight module keys enforce navigation and direct-route denial without browser errors\.'\);/)?.[0] || '';
+  assert.match(moduleConsoleCase, /tenant module persona and API denial matrix/);
+});
+
+test('organization last-seat race constrains and restores the persisted owner capacity', () => {
+  assert.match(source, /const ownerProfilePath = `users\/\$\{identityByAlias\.get\('qa-school-owner'\)\.uid\}`/);
+  assert.match(source, /withFirestoreOverlay\(\[`teams\/\$\{squad\.id\}`, projectionPath, ownerProfilePath\]/);
+  assert.match(source, /firestoreAdmin\.doc\(ownerProfilePath\)\.update\(\{ team_limit: 3 \}\)/);
+});
+
+test('organization administrator reconciliation reads named hub and target projection paths', () => {
+  assert.match(source, /const targetMemberPath = `teams\/\$\{hub\.id\}\/members\/\$\{targetUid\}`/);
+  assert.match(source, /readTenantConsumerDocuments\(\[hubPath, targetMemberPath, targetProjectionPath\]\)/);
+  assert.doesNotMatch(source, /readTenantConsumerDocuments\(paths\.slice\(-3\)\)/);
+});
+
+test('tenant quota conflict uses the production subscription lock shape', () => {
+  assert.match(source, /subscriptionMutation: \{ key: `tenant-quota-\$\{certificationRunId\}`, expiresAt: Date\.now\(\) \+ 60_000 \}/);
+  assert.doesNotMatch(source, /subscriptionMutation: \{ status: 'pending', startedAt:/);
+});
+
 test('certification identity mode accepts a unique local scope without changing legacy defaults', () => {
   const configured = auditRunner.resolveAuditRuntimeConfiguration({
     environment: {
@@ -610,6 +643,19 @@ test('Task 3 legacy route observations remove listeners and avoid fixed settle s
   assert.match(surfaceSweep, /page\.off\('console'/);
   assert.match(surfaceSweep, /page\.off\('pageerror'/);
   assert.match(surfaceSweep, /page\.off\('response'/);
+});
+
+test('tenant browser route observations await exact asynchronous consumer markers before sampling', () => {
+  const routeAudit = source.match(/function browserRouteAudit[\s\S]*?\n}\n\nfunction browserLoginFailureAudit/)?.[0] || '';
+  assert.match(routeAudit, /expectedTexts = \[\]/);
+  assert.match(routeAudit, /toLocaleLowerCase\(\)\.includes\(text\.toLocaleLowerCase\(\)\)/);
+  assert.match(routeAudit, /requestAnimationFrame/);
+  assert.match(routeAudit, /awaitExpectedTexts/);
+  assert.match(routeAudit, /expectedTextsVisible:/);
+  assert.match(source, /browserRouteAudit\(session, pathname, \{ expectedTexts \}\)/);
+  assert.match(source, /browserRouteAudit\(session, pathname, \{ mobile: true, expectedTexts \}\)/);
+  assert.match(source, /desktop\.expectedTextsVisible && mobile\.expectedTextsVisible/);
+  assert.doesNotMatch(routeAudit, /waitForTimeout/);
 });
 
 test('Task 3 scenario execution stops normal mutations after the first failure', async () => {

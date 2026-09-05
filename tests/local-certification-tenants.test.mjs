@@ -45,7 +45,32 @@ test('tenant contracts require explicit executed assertions instead of case-name
     const assertions = LOCAL_TENANT_OPERATION_CONTRACTS[scenarioId];
     assert.ok(assertions.length >= 2, `${scenarioId} must require multiple executed assertions`);
     assert.equal(new Set(assertions).size, assertions.length, `${scenarioId} assertion requirements must be unique`);
-    assert.equal(assertions.some(label => /workflow|lifecycle graph cardinality|consumer graph cardinality/i.test(label)), false);
+    assert.equal(assertions.some(label => /authorized lifecycle mutation|lifecycle graph cardinality|consumer graph cardinality/i.test(label)), false);
+  }
+});
+
+test('tenant contracts include the frozen safe-local remainder operations for every row', () => {
+  const required = {
+    'teams-create-and-capacity': ['tenant team create subscription state contrasts', 'tenant team create adult parent conditional outcomes', 'tenant team create duplicate and required-field matrix'],
+    'teams-join-by-code': ['tenant join self adult workflow', 'tenant join consumed and expired sessions denied', 'tenant join derived position and escalation matrix'],
+    'teams-profile-branding-settings': ['tenant settings staff owner authority matrix', 'tenant branding invalid oversized unsafe matrix', 'tenant branding rendered replacement and removal'],
+    'teams-module-visibility': ['tenant module legacy compatibility matrix', 'tenant module reenable rapid cross-tab persistence', 'tenant module persona and API denial matrix'],
+    'teams-seasonal-reset-delete-quota-resolution': ['tenant destructive cancel double-submit conflict matrix', 'tenant destructive delete workflow', 'tenant destructive resolve quota workflow'],
+    'organization-club-school-overview': ['tenant organization club school aggregate counts', 'tenant organization empty partial stale removed states', 'tenant organization rendered aggregate refresh'],
+    'organization-create-allocate-remove-squads': ['tenant organization fresh squad create remove', 'tenant organization last-seat allocation race', 'tenant organization delegate conflict matrix'],
+    'organization-global-waivers-documents-admins': ['tenant organization waiver deploy revoke version retry', 'tenant organization partial duplicate deployment recovery', 'tenant organization open delegate session authority loss'],
+    'roster-member-add-edit-remove-reinstate': ['tenant roster provider add flow', 'tenant roster owner staff guard matrix', 'tenant roster live access revocation'],
+    'roster-search-filter-sort-export': ['tenant roster exact sort row count and escaping', 'tenant roster exact private marker values omitted', 'tenant roster player parent export denial'],
+    'roster-parent-player-self-views': ['tenant roster adult youth self content', 'tenant roster missing stale sibling removed matrix', 'tenant roster two-way privacy after switch'],
+    'recruiting-private-profile-crud': ['tenant recruiting private full create update delete graph', 'tenant recruiting stats evaluation contact video saves', 'tenant recruiting private schema and actor scope matrix'],
+    'recruiting-public-scout-projection': ['tenant recruiting public hostile media page allowlist', 'tenant recruiting public missing invalid cache matrix', 'tenant recruiting public canonical editor save'],
+    'family-children-invites-team-cards': ['tenant family child add relink remove invite lifecycle', 'tenant family rendered Team A Team C cards', 'tenant family stale missing removed states'],
+    'family-schedule-waivers-payments': ['tenant family schedule ordering and child team grouping', 'tenant family payment amounts balances and state totals', 'tenant family duplicate inactive wrong-target matrix'],
+    'family-enable-youth-login': ['tenant youth enable revoke reissue lifecycle', 'tenant youth expired wrong-account activation race', 'tenant youth sibling staff guardian content denial'],
+  };
+  assert.deepEqual(new Set(Object.keys(required)), new Set(TENANT_EXECUTION_ORDER));
+  for (const [scenarioId, labels] of Object.entries(required)) {
+    for (const label of labels) assert.ok(LOCAL_TENANT_OPERATION_CONTRACTS[scenarioId].includes(label), `${scenarioId} missing ${label}`);
   }
 });
 
@@ -69,6 +94,15 @@ test('scenario workflow evidence records the mutation operation rather than a ge
   }
 });
 
+test('post-operation reconciliation cases do not masquerade as the mutation writer', () => {
+  assert.equal(tenantCaseAssociationFor(
+    'teams-create-and-capacity', 'happyPath', 'team-create-fresh-role-creator-graph',
+  ).operation, 'persistence');
+  assert.equal(tenantCaseAssociationFor(
+    'teams-seasonal-reset-delete-quota-resolution', 'happyPath', 'team-destructive-complete-reset-projection-reconciliation',
+  ).operation, 'persistence');
+});
+
 test('renamed cross-tenant cases retain their actual runtime executors', () => {
   assert.deepEqual(
     tenantCaseAssociationFor('teams-create-and-capacity', 'permission', 'team-create-cross-tenant-created-team-denial'),
@@ -77,6 +111,13 @@ test('renamed cross-tenant cases retain their actual runtime executors', () => {
   assert.deepEqual(
     tenantCaseAssociationFor('recruiting-public-scout-projection', 'permission', 'recruiting-public-cross-tenant-private-root-denial'),
     { actorAlias: 'qa-coach-owner-a', targetAlias: 'qa-player-adult-b', operation: 'permission' },
+  );
+});
+
+test('season reset validation case is attributed to the credential that preserves owner rate-limit budget', () => {
+  assert.deepEqual(
+    tenantCaseAssociationFor('teams-seasonal-reset-delete-quota-resolution', 'negativePath', 'team-destructive-negativePath'),
+    { actorAlias: 'qa-coach-owner-b', targetAlias: 'run-created-reset-squad', operation: 'permission' },
   );
 });
 
@@ -141,12 +182,34 @@ test('scenario infrastructure errors preserve original and restoration diagnosti
   };
   const result = await runTenantsBatch(context(`CERTIFICATION_EVENT ${JSON.stringify(event)}`), [scenario]);
   assert.deepEqual(result.runErrors, [{
+    scenarioId: scenario.id,
     stage: 'scenario-cleanup-or-runner',
     diagnostic: 'operation failed; cleanup also failed',
     originalDiagnostic: 'operation failed',
     restorationDiagnostics: ['restore team failed', 'verify object failed'],
   }]);
   assert.equal(result.results[0].cases.length, 0);
+});
+
+test('nonzero tenant child preserves structured scenario diagnostics beside its child-exit diagnostic', async () => {
+  const scenario = scenarios[0];
+  const event = {
+    type: 'scenario-error', scenarioId: scenario.id, stage: 'scenario-cleanup-or-runner',
+    diagnostic: 'operation failed; cleanup also failed',
+    originalDiagnostic: 'operation failed', restorationDiagnostics: ['restore failed'],
+  };
+  const stdout = `CERTIFICATION_EVENT ${JSON.stringify(event)}`;
+  const result = await runTenantsBatch(context(stdout, {
+    certificationObservation: { code: 1, stdout, stderr: 'generic child failure', startedAt: instant, completedAt: instant },
+  }), [scenario]);
+  assert.deepEqual(result.runErrors, [
+    {
+      scenarioId: scenario.id,
+      stage: 'scenario-cleanup-or-runner', diagnostic: 'operation failed; cleanup also failed',
+      originalDiagnostic: 'operation failed', restorationDiagnostics: ['restore failed'],
+    },
+    { stage: 'tenant-child', diagnostic: 'generic child failure' },
+  ]);
 });
 
 test('a nonzero tenant child with structured case failure does not duplicate it as a global error', async () => {

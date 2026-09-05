@@ -25,6 +25,19 @@ function inviteIsUsable(data: Record<string, any>): boolean {
   return Number.isFinite(expiry) && expiry > Date.now();
 }
 
+async function invitationWasConsumed(
+  inviteRef: FirebaseFirestore.DocumentReference,
+  timeoutMs = 750
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const snapshot = await inviteRef.get();
+    if (!snapshot.exists || !inviteIsUsable(snapshot.data() || {})) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  } while (true);
+}
+
 type AuthorizedMembershipBinding = {
   teamId: string;
   memberId: string;
@@ -216,6 +229,7 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   let createdUid: string | null = null;
+  let redeemInviteRef: FirebaseFirestore.DocumentReference | null = null;
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 16_000);
     const token = typeof body.token === 'string' ? body.token : '';
@@ -233,6 +247,7 @@ export async function PUT(req: NextRequest) {
     if (rateLimit) return rateLimit;
 
     const inviteRef = adminDb.collection('invites').doc(token);
+    redeemInviteRef = inviteRef;
     const inviteSnapshot = await inviteRef.get();
     const invite = inviteSnapshot.data() || {};
     if (!inviteSnapshot.exists || !inviteIsUsable(invite) || typeof invite.email !== 'string') {
@@ -389,6 +404,12 @@ export async function PUT(req: NextRequest) {
     const conflict =
       error?.code === 'auth/email-already-exists' ||
       error?.code === 'auth/email-already-in-use';
+    if (conflict && redeemInviteRef && await invitationWasConsumed(redeemInviteRef)) {
+      return NextResponse.json(
+        { error: 'Invitation not found or expired.' },
+        { status: 404 }
+      );
+    }
     console.error('[invites/youth PUT] Error:', error?.code || error?.message || error);
     return NextResponse.json(
       {

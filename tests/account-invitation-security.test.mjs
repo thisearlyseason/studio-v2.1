@@ -28,3 +28,10 @@ test('youth invite possession completes email verification without exposing invi
   assert.doesNotMatch(route, /cleanChildId\(playerData\.primaryTeamId\)/);
   assert.doesNotMatch(route, /playerData\.joinedTeamIds/);
 });
+
+test('concurrent youth redemption reports a consumed invitation instead of account authority conflict', async () => {
+  const route = await readFile(new URL('../src/app/api/invites/youth/route.ts', import.meta.url), 'utf8');
+
+  assert.match(route, /await invitationWasConsumed\(redeemInviteRef\)/);
+  assert.match(route, /Invitation not found or expired\./);
+});

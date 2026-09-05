@@ -65,7 +65,8 @@ export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
     return Object.freeze({
       actorAlias: caseId === 'team-create-cross-tenant-created-team-denial' ? 'qa-coach-owner-b' : 'qa-fresh-coach',
       targetAlias: base[1],
-      operation: dimension === 'happyPath' ? 'create'
+      operation: caseId === 'team-create-fresh-role-creator-graph' ? 'persistence'
+        : dimension === 'happyPath' ? 'create'
         : dimension === 'negativePath' || dimension === 'permission' ? 'permission'
           : dimension === 'persistence' ? 'persistence' : 'read',
     });
@@ -75,6 +76,9 @@ export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
   }
   if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-guardian-child-enrollment-race')) {
     return Object.freeze({ actorAlias: 'qa-parent-a', targetAlias: base[1], operation: 'create' });
+  }
+  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-adult-self-session-consumption')) {
+    return Object.freeze({ actorAlias: 'qa-adult-player-a', targetAlias: 'qa-pro-team', operation: 'create' });
   }
   if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-inactive-code-current-state-denial')) {
     return Object.freeze({ actorAlias: 'qa-parent-a', targetAlias: base[1], operation: 'permission' });
@@ -99,9 +103,11 @@ export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
   }
   if (scenarioId === 'teams-seasonal-reset-delete-quota-resolution') {
     return Object.freeze({
-      actorAlias: dimension === 'permission' ? 'qa-coach-owner-b' : 'qa-owner-delete-blocked',
+      actorAlias: dimension === 'permission' || caseId === 'team-destructive-negativePath'
+        ? 'qa-coach-owner-b' : 'qa-owner-delete-blocked',
       targetAlias: base[1],
-      operation: ['happyPath', 'persistence'].includes(dimension) ? 'delete'
+      operation: caseId === 'team-destructive-complete-reset-projection-reconciliation' ? 'persistence'
+        : ['happyPath', 'persistence'].includes(dimension) ? 'delete'
         : dimension === 'negativePath' || dimension === 'permission' ? 'permission' : 'read',
     });
   }
@@ -142,9 +148,12 @@ export const LOCAL_TENANT_CASE_REQUIREMENTS = Object.freeze({
     happyPath: 'fresh-role-creator-graph', negativePath: 'missing-target-denial',
     permission: 'cross-tenant-created-team-denial', persistence: 'created-graph-independent-read',
   }),
-  'teams-join-by-code': specializedCaseSet('team-join', {
-    happyPath: 'guardian-child-enrollment-race', negativePath: 'inactive-code-current-state-denial',
-    permission: 'cross-guardian-enrollment-denial', persistence: 'opaque-session-independent-reload',
+  'teams-join-by-code': Object.freeze({
+    ...specializedCaseSet('team-join', {
+      happyPath: 'guardian-child-enrollment-race', negativePath: 'inactive-code-current-state-denial',
+      permission: 'cross-guardian-enrollment-denial', persistence: 'opaque-session-independent-reload',
+    }),
+    happyPath: Object.freeze(['team-join-happyPath', 'team-join-guardian-child-enrollment-race', 'team-join-adult-self-session-consumption']),
   }),
   'teams-profile-branding-settings': scenarioCaseSet('team-settings', 'owner-settings-and-branding-edit'),
   'teams-module-visibility': scenarioCaseSet('team-modules', 'all-eight-toggle-and-direct-denial'),
@@ -176,69 +185,101 @@ export const LOCAL_TENANT_CASE_REQUIREMENTS = Object.freeze({
 // by the real route/rules/browser work below.
 export const LOCAL_TENANT_OPERATION_CONTRACTS = Object.freeze({
   'teams-create-and-capacity': Object.freeze([
+    'tenant team create subscription state contrasts', 'tenant team create adult parent conditional outcomes',
+    'tenant team create duplicate and required-field matrix',
     'tenant team create capacity race requests settle', 'tenant team create one-seat race single winner',
     'tenant team create one-seat race exhausted denial',
     'tenant team create qa-fresh-coach succeeds', 'tenant team create qa-fresh-admin succeeds',
     'tenant team create qa-fresh-league-creator succeeds', 'tenant team create owner server-derived',
   ]),
   'teams-join-by-code': Object.freeze([
+    'tenant join self adult workflow', 'tenant join consumed and expired sessions denied',
+    'tenant join derived position and escalation matrix',
     'tenant join active invitation resolves', 'tenant join concurrent duplicate requests settle',
     'tenant child concurrent join creates one roster row', 'tenant join wrong guardian child enrollment denied',
   ]),
   'teams-profile-branding-settings': Object.freeze([
-    'tenant teams-profile-branding-settings authorized lifecycle mutation', 'tenant branding unsafe type denied',
+    'tenant settings staff owner authority matrix', 'tenant branding invalid oversized unsafe matrix',
+    'tenant branding rendered replacement and removal',
+    'tenant settings owner description update accepted', 'tenant branding unsafe type denied',
     'tenant branding owner replacement succeeds', 'tenant branding Storage removal reconciled',
     'tenant settings browser edit survives reload', 'tenant settings browser exact viewports',
   ]),
   'teams-module-visibility': Object.freeze([
+    'tenant module legacy compatibility matrix', 'tenant module reenable rapid cross-tab persistence',
+    'tenant module persona and API denial matrix',
     'tenant all eight module keys persisted', 'tenant module eight navigation entries hidden',
     'tenant module eight direct routes denied', 'tenant module two viewport executions',
   ]),
   'teams-seasonal-reset-delete-quota-resolution': Object.freeze([
+    'tenant destructive cancel double-submit conflict matrix', 'tenant destructive delete workflow',
+    'tenant destructive resolve quota workflow',
     'tenant seasonal selected games deleted', 'tenant seasonal user membership removed',
     'tenant seasonal player team projection removed', 'tenant seasonal repeated complete reset succeeds',
   ]),
   'organization-club-school-overview': Object.freeze([
+    'tenant organization club school aggregate counts', 'tenant organization empty partial stale removed states',
+    'tenant organization rendered aggregate refresh',
     'tenant school overview owner aggregate', 'tenant school overview delegated administrator',
     'tenant school overview other institution denied', 'tenant school overview constituent refresh visible',
   ]),
   'organization-create-allocate-remove-squads': Object.freeze([
+    'tenant organization fresh squad create remove', 'tenant organization last-seat allocation race',
+    'tenant organization delegate conflict matrix',
     'tenant organization outsider allocation denied', 'tenant organization squad seat released',
     'tenant organization squad seat allocated', 'tenant organization allocation projection reconciled',
   ]),
   'organization-global-waivers-documents-admins': Object.freeze([
+    'tenant organization waiver deploy revoke version retry', 'tenant organization partial duplicate deployment recovery',
+    'tenant organization open delegate session authority loss',
     'tenant global waiver master and copies reconcile', 'tenant school administrator server-resolved target',
     'tenant school administrator member projection', 'tenant school administrator user projection revoked',
   ]),
   'roster-member-add-edit-remove-reinstate': Object.freeze([
+    'tenant roster provider add flow', 'tenant roster owner staff guard matrix',
+    'tenant roster live access revocation',
     'tenant roster member removed', 'tenant roster member reinstated', 'tenant roster reinstate persisted',
   ]),
   'roster-search-filter-sort-export': Object.freeze([
+    'tenant roster exact sort row count and escaping', 'tenant roster exact private marker values omitted',
+    'tenant roster player parent export denial',
     'tenant roster accented search and removed filter', 'tenant roster real manifest download',
     'tenant roster manifest bytes nonempty', 'tenant roster manifest private fields omitted',
     'tenant roster manifest content stable across viewports',
     'tenant roster search export two viewports', 'tenant roster export dialog containment',
   ]),
   'roster-parent-player-self-views': Object.freeze([
-    'tenant roster-parent-player-self-views authorized lifecycle mutation',
-    'tenant roster-parent-player-self-views lifecycle field reconciled',
+    'tenant roster adult youth self content', 'tenant roster missing stale sibling removed matrix',
+    'tenant roster two-way privacy after switch',
+    'tenant roster guardian child profile update accepted',
+    'tenant roster guardian child first name reconciled',
   ]),
   'recruiting-private-profile-crud': Object.freeze([
+    'tenant recruiting private full create update delete graph', 'tenant recruiting stats evaluation contact video saves',
+    'tenant recruiting private schema and actor scope matrix',
     'tenant recruiting private editor updates 1', 'tenant recruiting private editor updates 4',
     'tenant recruiting private cross-team editor denied', 'tenant recruiting private video reload',
   ]),
   'recruiting-public-scout-projection': Object.freeze([
+    'tenant recruiting public hostile media page allowlist', 'tenant recruiting public missing invalid cache matrix',
+    'tenant recruiting public canonical editor save',
     'tenant recruiting active profile published', 'tenant recruiting private contact direct read denied',
     'tenant recruiting canonical active status persisted', 'tenant recruiting editor saves committed',
   ]),
   'family-children-invites-team-cards': Object.freeze([
+    'tenant family child add relink remove invite lifecycle', 'tenant family rendered Team A Team C cards',
+    'tenant family stale missing removed states',
     'tenant family child 1 edit', 'tenant family child 2 edit', 'tenant family two child cards refresh',
   ]),
   'family-schedule-waivers-payments': Object.freeze([
+    'tenant family schedule ordering and child team grouping', 'tenant family payment amounts balances and state totals',
+    'tenant family duplicate inactive wrong-target matrix',
     'tenant family waiver other guardian denied', 'tenant family waiver guardian participant route succeeds',
     'tenant family waiver records guardian signer separately', 'tenant family waiver guardian ceremony explicit',
   ]),
   'family-enable-youth-login': Object.freeze([
+    'tenant youth enable revoke reissue lifecycle', 'tenant youth expired wrong-account activation race',
+    'tenant youth sibling staff guardian content denial',
     'tenant youth invite created by guardian', 'tenant youth invitation redemption',
     'tenant youth never inherits guardian identity', 'tenant youth invitation single-use denial',
     'tenant youth activated new-tab dashboard', 'tenant youth player self-view route both viewports',
@@ -293,6 +334,7 @@ export async function runTenantsBatch(context, scenarios) {
   const events = parseCertificationEvents(observation?.stdout || '');
   const cleanup = events.find(event => event.type === 'cleanup');
   const scenarioErrors = events.filter(event => event.type === 'scenario-error').map(event => ({
+    scenarioId: String(event.scenarioId || 'tenant-scenario-unknown').slice(0, 200),
     stage: event.stage || `tenant-scenario:${event.scenarioId}`,
     diagnostic: String(event.diagnostic || 'Tenant scenario failed outside a case boundary.').slice(0, 500),
     ...(event.originalDiagnostic ? { originalDiagnostic: String(event.originalDiagnostic).slice(0, 500) } : {}),
@@ -302,7 +344,7 @@ export async function runTenantsBatch(context, scenarios) {
   }));
   const hasStructuredFailure = events.some(event => event.type === 'case' && event.state === 'FAIL');
   const execution = { startedAt: observation?.startedAt || context.now(), completedAt: observation?.completedAt || context.now() };
-  const runErrors = !observation
+  const childErrors = !observation
     ? [{ stage: 'tenant-child', diagnostic: 'Shared certification child observation was unavailable.' }]
     : observation.code !== 0 && !hasStructuredFailure
       ? [{
@@ -310,7 +352,8 @@ export async function runTenantsBatch(context, scenarios) {
           diagnostic: (context.redact ? context.redact(observation.stderr) : String(observation.stderr || ''))
             .trim().slice(0, 500) || `Tenant child exited with code ${observation.code}.`,
         }]
-      : scenarioErrors;
+      : [];
+  const runErrors = [...scenarioErrors, ...childErrors];
   return {
     results: scenarios.map(scenario => resultForScenario({ scenario, context, events, cleanup, execution, capabilities })),
     runErrors,

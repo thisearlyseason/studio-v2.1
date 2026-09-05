@@ -175,6 +175,86 @@ test('roster reset retries an orphaned member descendant from a durable obligati
   assert.equal(documents.has(orphanPath), false);
 });
 
+test('reordered category retry reconciles the canonical durable obligation set', async () => {
+  const { executeTeamSeasonReset, SeasonResetError } = await import('../src/lib/team-season-reset.ts');
+  const memberPath = 'teams/team-a/members/member-a';
+  const orphanPath = `${memberPath}/signatures/waiver-a`;
+  const documents = new Map([
+    ['teams/team-a', { ownerUserId: 'owner-a' }],
+    [memberPath, { userId: 'member-a' }],
+    [orphanPath, { signed: true }],
+    ['users/member-a/teamMemberships/team-a', { teamId: 'team-a' }],
+  ]);
+  let failMemberRemoval = true;
+  const adapter = {
+    async get(path) { return structuredClone(documents.get(path) ?? null); },
+    async list(collectionPath) {
+      const depth = collectionPath.split('/').length + 1;
+      return [...documents.entries()].filter(([path]) => path.startsWith(`${collectionPath}/`) && path.split('/').length === depth)
+        .map(([path, data]) => ({ path, id: path.split('/').at(-1), data: structuredClone(data) }));
+    },
+    async update(path, patch) { documents.set(path, { ...(documents.get(path) || {}), ...structuredClone(patch) }); },
+    async remove(path) {
+      if (path === memberPath && failMemberRemoval) {
+        documents.delete(memberPath);
+        throw new Error('forced partial recursive delete');
+      }
+      for (const key of [...documents.keys()]) if (key === path || key.startsWith(`${path}/`)) documents.delete(key);
+    },
+    async hasDescendants(path) { return [...documents.keys()].some(key => key.startsWith(`${path}/`)); },
+    async storageExists() { return false; },
+    async removeStorage() {}, async removePlayerTeamAssociation() {},
+  };
+  await assert.rejects(
+    () => executeTeamSeasonReset({ teamId: 'team-a', ownerUid: 'owner-a', categories: ['games', 'roster'], adapter, maxAttempts: 1 }),
+    error => error instanceof SeasonResetError && error.code === 'PARTIAL_FAILURE',
+  );
+  failMemberRemoval = false;
+  await executeTeamSeasonReset({ teamId: 'team-a', ownerUid: 'owner-a', categories: ['roster', 'games'], adapter, maxAttempts: 1 });
+  assert.equal(documents.has(orphanPath), false);
+  assert.equal([...documents.keys()].some(path => path.includes('/seasonResetObligations/')), false);
+});
+
+test('complete reset reconciles a durable obligation left by a partial reset', async () => {
+  const { executeTeamSeasonReset, SeasonResetError } = await import('../src/lib/team-season-reset.ts');
+  const memberPath = 'teams/team-a/members/member-a';
+  const orphanPath = `${memberPath}/signatures/waiver-a`;
+  const documents = new Map([
+    ['teams/team-a', { ownerUserId: 'owner-a' }],
+    [memberPath, { userId: 'member-a' }],
+    [orphanPath, { signed: true }],
+    ['users/member-a/teamMemberships/team-a', { teamId: 'team-a' }],
+  ]);
+  let failMemberRemoval = true;
+  const adapter = {
+    async get(path) { return structuredClone(documents.get(path) ?? null); },
+    async list(collectionPath) {
+      const depth = collectionPath.split('/').length + 1;
+      return [...documents.entries()].filter(([path]) => path.startsWith(`${collectionPath}/`) && path.split('/').length === depth)
+        .map(([path, data]) => ({ path, id: path.split('/').at(-1), data: structuredClone(data) }));
+    },
+    async update(path, patch) { documents.set(path, { ...(documents.get(path) || {}), ...structuredClone(patch) }); },
+    async remove(path) {
+      if (path === memberPath && failMemberRemoval) {
+        documents.delete(memberPath);
+        throw new Error('forced partial recursive delete');
+      }
+      for (const key of [...documents.keys()]) if (key === path || key.startsWith(`${path}/`)) documents.delete(key);
+    },
+    async hasDescendants(path) { return [...documents.keys()].some(key => key.startsWith(`${path}/`)); },
+    async storageExists() { return false; },
+    async removeStorage() {}, async removePlayerTeamAssociation() {},
+  };
+  await assert.rejects(
+    () => executeTeamSeasonReset({ teamId: 'team-a', ownerUid: 'owner-a', categories: ['games', 'roster'], adapter, maxAttempts: 1 }),
+    error => error instanceof SeasonResetError && error.code === 'PARTIAL_FAILURE',
+  );
+  failMemberRemoval = false;
+  await executeTeamSeasonReset({ teamId: 'team-a', ownerUid: 'owner-a', categories: ['complete'], adapter, maxAttempts: 1 });
+  assert.equal(documents.has(orphanPath), false);
+  assert.equal([...documents.keys()].some(path => path.includes('/seasonResetObligations/')), false);
+});
+
 test('roster reset atomically removes only the active team and preserves a concurrent companion join', async () => {
   const { executeTeamSeasonReset } = await import('../src/lib/team-season-reset.ts');
   const documents = new Map([

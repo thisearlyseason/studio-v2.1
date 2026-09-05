@@ -121,7 +121,14 @@ export async function POST(req: NextRequest) {
     const sessionToken = typeof body.sessionToken === 'string' ? body.sessionToken.trim() : '';
     const requestedPlayerId = typeof body.playerId === 'string' ? body.playerId : '';
     const requestedPlayerEnrollment = body.enrollmentIntent === 'player' || sessionToken.length >= 32;
-    const playerId = requestedPlayerId || `p_${auth.uid}`;
+    const selfPlayers = requestedPlayerId
+      ? null
+      : await adminDb.collection('players').where('userId', '==', auth.uid).limit(2).get();
+    if (selfPlayers && selfPlayers.size > 1) {
+      return NextResponse.json({ error: 'Your athlete profile needs account support before joining a squad.' }, { status: 409 });
+    }
+    const playerId = requestedPlayerId || selfPlayers?.docs[0]?.id || `p_${auth.uid}`;
+    const joiningLinkedChild = requestedPlayerId.length > 0;
     if ((!CODE_PATTERN.test(code) && sessionToken.length < 32) || !/^p_[A-Za-z0-9_-]{1,200}$/.test(playerId)) {
       return NextResponse.json({ error: 'A valid squad invitation and athlete are required.' }, { status: 400 });
     }
@@ -146,7 +153,7 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const existingSelfMembership = playerId === `p_${auth.uid}`
+    const existingSelfMembership = !joiningLinkedChild
       ? await findActiveTeamMember(teamSnapshot.id, auth.uid)
       : null;
     if (requestedPlayerEnrollment && hasStaffRole(existingSelfMembership?.data)) {
@@ -155,7 +162,7 @@ export async function POST(req: NextRequest) {
     const userRef = adminDb.collection('users').doc(auth.uid);
     const playerRef = adminDb.collection('players').doc(playerId);
     const memberRef = existingSelfMembership?.ref
-      || teamSnapshot.ref.collection('members').doc(playerId === `p_${auth.uid}` ? auth.uid : playerId);
+      || teamSnapshot.ref.collection('members').doc(joiningLinkedChild ? playerId : auth.uid);
     const membershipRef = userRef.collection('teamMemberships').doc(teamSnapshot.id);
 
     const result = await adminDb.runTransaction(async transaction => {
@@ -175,11 +182,11 @@ export async function POST(req: NextRequest) {
 
       const user = userSnapshot.data() || {};
       const existingPlayer = playerSnapshot.data() || {};
-      if (playerId !== `p_${auth.uid}` && existingPlayer.parentId !== auth.uid) throw new Error('CHILD_FORBIDDEN');
+      if (joiningLinkedChild && existingPlayer.parentId !== auth.uid) throw new Error('CHILD_FORBIDDEN');
       if (requestedPlayerEnrollment && hasStaffRole(memberSnapshot.data())) throw new Error('STAFF_MEMBERSHIP_EXISTS');
       const position = safeJoinPosition({
         profileRole: user.role,
-        joiningLinkedChild: playerId !== `p_${auth.uid}`,
+        joiningLinkedChild,
         requestedPlayerEnrollment,
       });
       const displayName = String(
@@ -188,7 +195,6 @@ export async function POST(req: NextRequest) {
           : user.name || user.fullName || auth.email?.split('@')[0] || 'Athlete'
       );
       const avatar = String(user.avatar || user.avatarUrl || '');
-      const joiningLinkedChild = playerId !== `p_${auth.uid}`;
       if (!playerSnapshot.exists) {
         const [firstName = 'Athlete', ...lastName] = displayName.split(/\s+/).filter(Boolean);
         transaction.create(playerRef, {

@@ -788,6 +788,17 @@ export default function FamilyPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '', teamCode: '', email: '' });
+  const [childTeamMetadata, setChildTeamMetadata] = useState<Team[]>([]);
+  const familyTeams = useMemo(() => {
+    const merged = new Map((teams || []).map(team => [team.id, team]));
+    for (const team of childTeamMetadata) {
+      merged.set(team.id, { ...(merged.get(team.id) || {}), ...team } as Team);
+    }
+    return [...merged.values()];
+  }, [teams, childTeamMetadata]);
+  const childTeamKey = useMemo(() => [...new Set(
+    (myChildren || []).flatMap(child => child.joinedTeamIds || []),
+  )].sort().join('|'), [myChildren]);
   const pendingReturnPath = useMemo(() => {
     const value = searchParams.get('returnTo') || '';
     return value.startsWith('/teams/join?') ? value : '';
@@ -796,6 +807,31 @@ export default function FamilyPage() {
   useEffect(() => {
     if (searchParams.get('addChild') === '1') setIsAddOpen(true);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!auth || !isParent || !user?.id) {
+      setChildTeamMetadata([]);
+      return;
+    }
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const token = await getAuthToken(auth);
+        const response = await fetch('/api/family/teams', {
+          headers: authHeader(token),
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Unable to load family squads.');
+        if (!controller.signal.aborted) {
+          setChildTeamMetadata(Array.isArray(payload.teams) ? payload.teams : []);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) console.error('Family squad metadata failed to load.', error);
+      }
+    })();
+    return () => controller.abort();
+  }, [auth, isParent, user?.id, childTeamKey]);
 
   // Single collectionGroup query is safe — the write side now always stamps
   // userId: firebaseUser.uid on every signature doc (both direct and parent-guardian),
@@ -824,7 +860,7 @@ export default function FamilyPage() {
           try {
             // Fetch waiver documents for this team
             const docsSnap = await getDocs(collection(db, 'teams', teamId, 'documents'));
-            const team = teams.find(t => t.id === teamId);
+            const team = familyTeams.find(t => t.id === teamId);
             const teamName = (team as any)?.name || (team as any)?.teamName || teamId;
             for (const d of docsSnap.docs) {
               const data = d.data();
@@ -859,7 +895,7 @@ export default function FamilyPage() {
       setPendingWaivers(pending);
     };
     fetchPendingWaivers();
-  }, [db, user?.id, myChildren, teams]);
+  }, [db, user?.id, myChildren, familyTeams]);
 
   const handleSignWaiver = async () => {
     if (!signingWaiver || !signatureText.trim() || !user?.id || !auth) return;
@@ -946,7 +982,7 @@ export default function FamilyPage() {
     const map = new Map<string, { team: Team; members: PlayerProfile[] }>();
     
     // Use teams from context as base
-    teams.forEach(t => {
+    familyTeams.forEach(t => {
       if (!map.has(t.id)) {
         map.set(t.id, { team: t, members: [] });
       }
@@ -965,7 +1001,7 @@ export default function FamilyPage() {
     });
 
     return Array.from(map.values());
-  }, [teams, myChildren]);
+  }, [familyTeams, myChildren]);
 
   // --- Household Budget Breakdown ---
   const budgetBreakdown = useMemo(() => {
@@ -976,7 +1012,7 @@ export default function FamilyPage() {
       (child.joinedTeamIds || []).forEach(tid => {
         if (seenTeams.has(tid)) return;
         seenTeams.add(tid);
-        const team = teams.find(t => t.id === tid);
+        const team = familyTeams.find(t => t.id === tid);
         if (!team) return;
         const fee = parseFloat((team as any).registrationCost || '0') || 0;
         if (fee > 0) {
@@ -999,7 +1035,7 @@ export default function FamilyPage() {
     const grandTotal = householdBalance;
 
     return { enrollmentItems, dueItems, enrollmentTotal, duesTotal, grandTotal };
-  }, [householdBalance, myChildren, teams]);
+  }, [householdBalance, myChildren, familyTeams]);
 
   const upcomingEvents = useMemo(() => {
     const rawEvents = householdEvents || [];
@@ -1030,7 +1066,7 @@ export default function FamilyPage() {
 
     const householdTeamIds = Array.from(new Set([
       ...(myChildren || []).flatMap(c => c.joinedTeamIds || []),
-      ...(teams || []).map(t => t.id)
+      ...familyTeams.map(t => t.id)
     ]));
 
     const expandedTournamentMatches: any[] = [];
@@ -1087,7 +1123,7 @@ export default function FamilyPage() {
           const dB = toDateObj(b.date || b.startTime);
          return (dA?.getTime() || 0) - (dB?.getTime() || 0);
       });
-  }, [householdEvents, householdGames, myChildren, teams]);
+  }, [householdEvents, householdGames, myChildren, familyTeams]);
 
   const childItineraries = useMemo(() => {
     const rawEvents = householdEvents || [];
@@ -1490,7 +1526,7 @@ export default function FamilyPage() {
 
                 <div className="grid grid-cols-1 gap-3">
                   {events.length > 0 ? events.map((event) => {
-                    const team = (teams || []).find(t => t.id === event.teamId);
+                    const team = familyTeams.find(t => t.id === event.teamId);
                     return (
                       <Card key={event.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white hover:-translate-y-0.5 duration-300">
                         <CardContent className="p-0">
@@ -1542,7 +1578,7 @@ export default function FamilyPage() {
         
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
           {myChildren?.map(child => (
-            <ChildCard key={child.id} child={child} teams={teams || []} />
+            <ChildCard key={child.id} child={child} teams={familyTeams} />
           ))}
           
           {(!myChildren || myChildren.length === 0) && (
