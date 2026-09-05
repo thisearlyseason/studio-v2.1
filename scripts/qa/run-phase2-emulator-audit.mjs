@@ -6647,7 +6647,7 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'calendar-team-family-views-and-filters' && runBrowser) {
         await runCalendarViewsWorkflowAudit();
-        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
+        for (const dimension of ['happyPath', 'console', 'network', 'responsive']) {
           recordObservedOperationsCase(scenarioId, dimension, 'authenticated Calendar views and filters workflow completed');
         }
         continue;

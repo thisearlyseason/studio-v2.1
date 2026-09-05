@@ -230,6 +230,8 @@ test('Calendar views and filters have a dedicated two-viewport operations workfl
   const operationsBlock = source.slice(start, end);
   assert.match(operationsBlock, /scenarioId === 'calendar-team-family-views-and-filters' && runBrowser/);
   assert.match(operationsBlock, /await runCalendarViewsWorkflowAudit\(\)/);
+  assert.match(operationsBlock, /\['happyPath', 'console', 'network', 'responsive'\]/);
+  assert.doesNotMatch(operationsBlock, /calendar-team-family-views-and-filters[\s\S]{0,700}\['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'\]/);
   assert.match(source, /async function runCalendarViewsWorkflowAudit\(\)/);
   assert.match(source, /getByRole\('button', \{ name: 'Agenda'/);
   assert.match(source, /getByRole\('button', \{ name: 'Filters'/);
