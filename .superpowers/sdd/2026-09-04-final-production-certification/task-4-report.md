@@ -9,7 +9,13 @@ case per scenario. The shared runner supports tenant-only and ordered combined
 identity-plus-tenant execution, batch-contained artifacts, structured nonzero
 summaries, fail-fast propagation, and continuation when fail-fast is disabled.
 
-All locally executed cases pass. The coverage rows remain `BLOCKED`, not
+The immutable Chrome run `final-cert-t4-260905-145016-d6da` executed candidate
+`d191d1116df1052ad17bd5ce59ab66521710c508`: 16 scenarios, 176/176 required
+case records, zero failed cases, zero run errors, and zero missing local
+dimensions. Cleanup was `OBSERVED` with 304 measured deletions, 17 verified
+restorations, and zero retained audit records.
+
+The coverage rows remain `BLOCKED`, not
 `PASS`, because the exact candidate still requires the authorized staging
 companion. Youth login additionally requires approved mailbox receipt. No
 production data was read or mutated, and no outbound provider call occurred.
@@ -90,14 +96,18 @@ Storage, process-group, browser-session, and artifact ownership remains exact.
 - Firestore/Storage rules suite: 41 passed, 0 failed.
 - `npm run typecheck`: exit 0.
 - `npm run build`: exit 0 with existing repository warnings.
-- Full 16-row no-browser batch: all required server cases emitted; the final
-  focused retest after one fixture-name correction passed.
+- Full 16-row no-browser batch: 144/144 server cases passed, followed by a
+  focused successful retest after one fixture-name correction.
+- Exact immutable Chrome batch: `final-cert-t4-260905-145016-d6da` on
+  `d191d1116df1052ad17bd5ce59ab66521710c508`; 176/176 cases, 0 failures,
+  0 run errors, 0 missing local dimensions, cleanup 304 deleted / 17 restored /
+  0 retained.
 - `git diff --check`: exit 0.
 
-The final immutable browser run and its exact run ID/candidate SHA are recorded
-in the tracked tenant run summary after the implementation commit. Matrix rows
-stay blocked only for exact-revision staging, and the youth-mailbox receipt
-dimension is separately identified rather than inferred from local delivery.
+The tracked tenant run summary records the same immutable candidate and run.
+Matrix rows stay blocked only for exact-revision staging, and the youth-mailbox
+receipt dimension is separately identified rather than inferred from local
+delivery.
 
 ## Remaining External Gates
 

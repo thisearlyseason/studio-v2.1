@@ -1,28 +1,28 @@
 # Task 4 tenant and family local certification observations
 
-- Run: `final-cert-t4-260905-144837-44a7`
-- Commit: `826f16f72677a175c6568dbf021e0646818c6320`
+- Run: `final-cert-t4-260905-145016-d6da`
+- Commit: `d191d1116df1052ad17bd5ce59ab66521710c508`
 - Environment: loopback Firebase emulators and local Next server only
 - Result boundary: local observations do not constitute final coverage-matrix PASS
 
 | Scenario | Outcome | Observed dimensions | Missing dimensions |
 |---|---|---|---|
-| `teams-create-and-capacity` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `teams-join-by-code` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `teams-profile-branding-settings` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `teams-module-visibility` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `teams-seasonal-reset-delete-quota-resolution` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `organization-club-school-overview` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `organization-create-allocate-remove-squads` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `organization-global-waivers-documents-admins` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `roster-member-add-edit-remove-reinstate` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `roster-search-filter-sort-export` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `roster-parent-player-self-views` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `recruiting-private-profile-crud` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `recruiting-public-scout-projection` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `family-children-invites-team-cards` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `family-schedule-waivers-payments` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
-| `family-enable-youth-login` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, network | console, responsive |
+| `teams-create-and-capacity` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `teams-join-by-code` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `teams-profile-branding-settings` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `teams-module-visibility` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `teams-seasonal-reset-delete-quota-resolution` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `organization-club-school-overview` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `organization-create-allocate-remove-squads` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `organization-global-waivers-documents-admins` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `roster-member-add-edit-remove-reinstate` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `roster-search-filter-sort-export` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `roster-parent-player-self-views` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `recruiting-private-profile-crud` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `recruiting-public-scout-projection` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `family-children-invites-team-cards` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `family-schedule-waivers-payments` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `family-enable-youth-login` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 
 ## Remaining external requirements
 
@@ -45,7 +45,7 @@
 
 ## Cleanup
 
-- Shared proof `fixture-cleanup-final-cert-t4-260905-144837-44a7`: OBSERVED; deleted 304, restored 17, retained audit records 0.
+- Shared proof `fixture-cleanup-final-cert-t4-260905-145016-d6da`: OBSERVED; deleted 304, restored 17, retained audit records 0.
   - `teams-create-and-capacity` (local-batch): OBSERVED.
   - `teams-join-by-code` (local-batch): OBSERVED.
   - `teams-profile-branding-settings` (local-batch): OBSERVED.

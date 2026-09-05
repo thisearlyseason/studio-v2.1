@@ -16,7 +16,7 @@
 | Expected behavior | Every public response level uses an explicit runtime allowlist; a segment exposes only validated `start`, `end`, and optional `title` fields. |
 | Root cause | TypeScript described the intended segment shape, but the runtime projector trusted arbitrary input objects. |
 | Fix | Each segment is now projected field-by-field, bounded to 25 entries, and discarded unless it has finite nonnegative times with `end > start`; titles are bounded strings. |
-| Verification | A behavioral regression injects private nested data, invalid ranges, and an overlong title and proves only the valid allowlisted projection remains. Task 4 also exercises the public route, private Firestore denial, canonical state transitions, and same-URL no-store behavior. Exact-revision staging remains blocked. |
+| Verification | A behavioral regression injects private nested data, invalid ranges, and an overlong title and proves only the valid allowlisted projection remains. Immutable Task 4 run `final-cert-t4-260905-145016-d6da` on `d191d111` also exercises the public route, private Firestore denial, canonical state transitions, same-URL no-store behavior, and both viewports. Exact-revision staging remains blocked. |
 | Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
 
 ## BUG-036 — Guardian child enrollment assigned the guardian login to the child (resolved)
@@ -31,7 +31,7 @@
 | Expected behavior | Guardian authority is derived from the stored child relationship, while the child remains accountless until one youth invite activates one distinct Auth identity. |
 | Root cause | The join route used the authenticated caller as the player identity for both self-enrollment and guardian-managed enrollment. |
 | Fix | The server now separates self from guardian enrollment, preserves the existing child's identity/login fields, derives the guardian membership projection, and never copies the guardian UID into the child roster record. |
-| Verification | Executable route regressions cover a successful linked-child join and wrong-guardian denial. The Task 4 runner issues two concurrent child joins, observes one member, preserves the accountless child, then activates a distinct youth Auth identity with coherent player/member/user projections and denies token reuse. Approved mailbox delivery and exact-revision staging remain blocked. |
+| Verification | Executable route regressions cover a successful linked-child join and wrong-guardian denial. Immutable Task 4 run `final-cert-t4-260905-145016-d6da` on `d191d111` issues two concurrent child joins, observes one member, preserves the accountless child, then activates a distinct youth Auth identity with coherent player/member/user projections and denies token reuse. Approved mailbox delivery and exact-revision staging remain blocked. |
 | Status | RESOLVED LOCALLY — TENANT/FAMILY ROWS REMAIN BLOCKED |
 
 ## BUG-035 — Selected seasonal reset categories erased unrelated squad data (resolved)
@@ -46,7 +46,7 @@
 | Expected behavior | Explicit categories delete only mapped descendants of the exact active squad. Complete reset reconciles exact user/player membership projections and owned Storage while preserving the squad root and owner controls. |
 | Root cause | The client provider ran a broad deletion loop before checking selected categories and performed cross-account projection cleanup without an authoritative server scope. |
 | Fix | Settings now calls an owner-authorized server route backed by a category allowlist, active-team-only Firestore projections, exact Storage prefixes, bounded retries, and structured exhausted-failure reporting. Certification invokes the destructive route only on a fresh sacrificial graph in the loopback demo project; production remains untouched by the audit. |
-| Verification | Unit tests prove selected-category controls, complete projection reconciliation, owner/unknown-category denial, and Storage retry reporting. The Task 4 journey creates a fresh sacrificial graph, verifies games-only preservation controls, 400/403 failures, then verifies complete descendant/projection/Storage cleanup and exact root/owner preservation. Exact-revision staging remains blocked. |
+| Verification | Unit tests prove selected-category controls, complete projection reconciliation, owner/unknown-category denial, and Storage retry reporting. Immutable Task 4 run `final-cert-t4-260905-145016-d6da` on `d191d111` creates a fresh sacrificial graph, verifies games-only preservation controls, 400/403 failures, then verifies complete descendant/projection/Storage cleanup and exact root/owner preservation at both viewports. Exact-revision staging remains blocked. |
 | Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
 
 ## Task 11 audit runner — Demo discovery failure loses Firestore cleanup ownership (resolved)
@@ -75,7 +75,7 @@
 | Actual behavior | `POST` called `teamAcceptsRegistrations`, while `GET` returned the minimal squad projection immediately after code resolution without applying that guard. |
 | Root cause | The preview and consumption branches shared code lookup but not the active-registration predicate. |
 | Fix | `GET /api/teams/join` now applies `teamAcceptsRegistrations(team)` before returning any squad projection and uses the same 404 copy as an unknown code. |
-| Verification | The route regression now requires the inactive-state guard. Immutable local Task 4 run `final-cert-t4-260905-132028-6969` on candidate `c8235cf6` observed active and modified-code preview behavior, anonymous direct-read denial, minimal response fields, both viewports, zero console errors, and zero 5xx responses. Inactive-preview runtime, authenticated join consumption, reuse/race/escalation, and exact-revision staging remain blocked coverage rather than claimed evidence. |
+| Verification | Executable route regressions prove inactive code-only GET and POST denial without membership writes and guardian identity preservation. Immutable local Task 4 run `final-cert-t4-260905-145016-d6da` on candidate `d191d111` observed active/modified preview, two concurrent linked-child POSTs settling to one roster row, current-state inactive denial without a write, wrong-guardian denial, digest persistence, minimal responses, both viewports, and zero console/5xx findings. Exact-revision staging remains blocked. |
 | Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
 
 ## BUG-033 — Public recruiting activation had two conflicting authority sources (resolved)
@@ -91,7 +91,7 @@
 | Actual behavior | Three consumers disagreed about whether the profile was active. |
 | Root cause | The earlier public-API hardening moved authority to the canonical profile document without migrating the metadata reader and write path. |
 | Fix | Metadata now reads `recruitingProfile/profile` and calls `isProspectActivated`. The provider commits canonical `status: active|hidden` and the legacy projection atomically in one Firestore batch. |
-| Verification | The source regression proves metadata and the public API share the canonical status and that the toggle writes the canonical profile document. Immutable local Task 4 run `final-cert-t4-260905-132028-6969` observed active/hidden API behavior, public private-contact denial, allowlisted payload, both viewports, zero console errors, and zero 5xx responses. The visible toggle/cache lifecycle, unsafe/private media matrix, and exact-revision staging remain blocked coverage. |
+| Verification | Behavioral regressions prove metadata/API canonical-state agreement and that the compatibility toggle cannot write canonical status. Immutable local Task 4 run `final-cert-t4-260905-145016-d6da` on candidate `d191d111` observed hidden-active-committed-hidden transitions on the same URL, preserved `committed`, no-store behavior, recursive allowlisting, private/companion denial, both viewports, and zero console/5xx findings. Exact-revision staging remains blocked. |
 | Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
 
 ## BUG-032 — Duplicate youth-invite endpoint diverged from the Family contract (resolved)
@@ -107,7 +107,7 @@
 | Actual behavior | The legacy route maintained a separate 64-character-token implementation while the canonical route had the current 48-character invitation and activation contract. |
 | Root cause | The compatibility endpoint was copied rather than delegated when the canonical Family flow evolved. |
 | Fix | `/api/youth-invites` now re-exports canonical `GET`, `POST`, and `PUT` handlers from `/api/invites/youth`; there is no second invitation implementation. |
-| Verification | A bundled route regression compares canonical and compatibility GET status/body behavior and requires all three exports. Immutable local Task 4 run `final-cert-t4-260905-132028-6969` created/revoked a guardian-owned invite, observed cross-guardian and modified-token denial, denied anonymous Firestore reads, confirmed exact guardian/child persistence, and compared both live route responses. Existing-child Auth activation, reuse/duplicate-Auth/session isolation, responsive/console, approved mailbox delivery, and exact-revision staging remain blocked coverage. |
+| Verification | A bundled route regression compares canonical and compatibility behavior and requires all three exports. Immutable local Task 4 run `final-cert-t4-260905-145016-d6da` on candidate `d191d111` created a guardian-owned invite, observed cross-guardian/modified-token/direct-Firestore denial, compared both live route responses, activated one distinct youth Auth identity with coherent projections, denied reuse, restored the accountless child, and rendered Family in both viewports without console/5xx findings. Approved mailbox receipt and exact-revision staging remain blocked. |
 | Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
 
 ## BUG-031 — Linked player identity can inherit unrelated tenant and staff authority (resolved)
