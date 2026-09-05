@@ -3643,6 +3643,10 @@ function browserVisibleSensitiveNavigationAudit(session, allowedPaths, requiredP
           const link = page.locator('a[href=' + JSON.stringify(pathname) + ']:visible');
           if (await link.count() > 0) visiblePaths.push(pathname);
         }
+        const institutionHubButton = page.getByRole('button', { name: /School Hub|Club Hub/ });
+        if (!visiblePaths.includes('/club') && await institutionHubButton.count() > 0 && await institutionHubButton.first().isVisible()) {
+          visiblePaths.push('/club');
+        }
         observations.push({
           viewport: viewport.width,
           deniedVisible: visiblePaths.filter(pathname => !allowedPaths.has(pathname)),
