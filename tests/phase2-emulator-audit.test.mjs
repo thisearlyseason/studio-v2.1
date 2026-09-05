@@ -399,9 +399,22 @@ test('Task 3 visible admin navigation uses the desktop account menu and mobile M
   assert.match(visibleAudit, /getByRole\('link', \{ name: 'Go to Admin Page' \}\)/);
 });
 
+test('Task 3 visible admin navigation rehydrates the canonical landing before each viewport assertion', () => {
+  const visibleAudit = source.match(/function browserVisibleAdminNavigationAudit[\s\S]*?\n}\n\nfunction browserSurfaceSweep/)?.[0] || '';
+  assert.match(visibleAudit, /await page\.goto\(baseUrl \+ canonicalPath\)/);
+  assert.match(visibleAudit, /await navigationTrigger\.waitFor\(\{ state: 'visible', timeout: 15000 \}\)/);
+  assert.match(source, /browserVisibleAdminNavigationAudit\(session, alias === 'qa-superadmin', '\/settings'\)/);
+});
+
 test('Task 3 admin non-SA browser denials wait through client navigation', () => {
   assert.match(source, /admin browser non-SA policy/);
   assert.match(source, /path: '\/admin', expected: '\/dashboard', waitForPathChange: true/);
+});
+
+test('Task 3 route sweeps reconcile client redirects before starting the next navigation', () => {
+  const sweep = source.match(/function browserSurfaceSweep[\s\S]*?\n}\n\nfunction assertSurfaceSweep/)?.[0] || '';
+  assert.match(sweep, /if \(!String\(error\?\.message \|\| error\)\.includes\('net::ERR_ABORTED'\)\) throw error/);
+  assert.match(sweep, /await page\.waitForFunction\(expectedPaths => expectedPaths\.includes\(window\.location\.pathname\)/);
 });
 
 test('Task 3 emitted browser programs use serialization-safe selectors and real signup clicks', () => {

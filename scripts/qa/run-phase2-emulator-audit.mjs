@@ -3043,7 +3043,7 @@ async function runCertificationBrowserScenario(scenarioId) {
         if (alias !== 'qa-superadmin') {
           expectEqual(desktopPolicy.results[1].actual, '/dashboard', `dashboard policy denied route ${alias}`);
         }
-        const visibleNavigation = browserVisibleAdminNavigationAudit(session, alias === 'qa-superadmin');
+        const visibleNavigation = browserVisibleAdminNavigationAudit(session, alias === 'qa-superadmin', '/settings');
         expectEqual(visibleNavigation.agreement, true, `dashboard visible navigation agreement ${alias}`);
         expectEqual(visibleNavigation.fits, true, `dashboard visible navigation two viewport containment ${alias}`);
       } finally {
@@ -3229,18 +3229,24 @@ async function runCertificationIdentityScenarios() {
   if (result.failures.length > 0) throw new Error(`${result.failures.length} selected certification scenario stage(s) failed with structured case evidence.`);
 }
 
-function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin) {
+function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonicalPath) {
   const observations = JSON.parse(cli(session, ['run-code', `async page => {
+    const baseUrl = ${JSON.stringify(BASE_URL)};
+    const canonicalPath = ${JSON.stringify(canonicalPath)};
     const observations = [];
     for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
+      await page.goto(baseUrl + canonicalPath);
       let visibleAdminItems;
+      const navigationTrigger = viewport.width < 640
+        ? page.getByRole('button', { name: 'More', exact: true })
+        : page.getByRole('button', { name: 'Open account menu' });
+      await navigationTrigger.waitFor({ state: 'visible', timeout: 15000 });
+      await navigationTrigger.click();
       if (viewport.width < 640) {
-        await page.getByRole('button', { name: 'More', exact: true }).click();
         const mobileAdminLink = page.getByRole('link', { name: 'Go to Admin Page' });
         visibleAdminItems = await mobileAdminLink.count() > 0 && await mobileAdminLink.isVisible() ? 1 : 0;
       } else {
-        await page.getByRole('button', { name: 'Open account menu' }).click();
         const desktopAdminItem = page.getByRole('menuitem', { name: 'Go to Admin Page' });
         visibleAdminItems = await desktopAdminItem.count() > 0 && await desktopAdminItem.isVisible() ? 1 : 0;
       }
@@ -3291,10 +3297,13 @@ function browserSurfaceSweep(session, cases, { mobile = false } = {}) {
       await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
       for (const item of cases) {
         activePath = item.path;
-        await page.goto(${JSON.stringify(BASE_URL)} + item.path, { waitUntil: 'domcontentloaded' });
-        if (item.waitForPathChange === true) {
-          await page.waitForFunction(requested => window.location.pathname !== requested, item.path, { timeout: 15000 });
+        const expectedPaths = Array.isArray(item.expected) ? item.expected : [item.expected];
+        try {
+          await page.goto(${JSON.stringify(BASE_URL)} + item.path, { waitUntil: 'domcontentloaded' });
+        } catch (error) {
+          if (!String(error?.message || error).includes('net::ERR_ABORTED')) throw error;
         }
+        await page.waitForFunction(expectedPaths => expectedPaths.includes(window.location.pathname), expectedPaths, { timeout: 15000 });
         results.push({
           requested: item.path,
           expected: item.expected,
