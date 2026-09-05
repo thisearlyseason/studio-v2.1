@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
@@ -8,7 +11,11 @@ import {
   parseCertificationEvents,
   runIdentityBatch,
 } from '../scripts/qa/certification/local/batches/identity.mjs';
-import { DIMENSION_NAMES } from '../scripts/qa/certification/local/evidence.mjs';
+import {
+  DIMENSION_NAMES,
+  createEvidenceRecorder,
+  validateScenarioResults,
+} from '../scripts/qa/certification/local/evidence.mjs';
 import { selectLocalScenarios } from '../scripts/qa/certification/local/selection.mjs';
 
 const scenarios = selectLocalScenarios({ batches: ['identity'], catalog: CERTIFICATION_SCENARIOS });
@@ -138,6 +145,132 @@ test('multiple diagnostics for one failed case are retained without duplicate ca
   assert.equal(result.results[0].cases.length, 1);
   assert.deepEqual(result.results[0].cases[0].diagnostics, ['browser assertion failed', 'browser cleanup also failed']);
   assert.equal(result.results[0].outcome, 'FAIL');
+});
+
+test('failure aggregation retains event-level artifact provenance across observed and cleanup failures', async () => {
+  const [selected] = scenarios.filter(item => item.id === 'authentication-email-password-login');
+  const observed = caseEvent(selected.id, 'console');
+  const firstFailure = {
+    ...observed, state: 'FAIL', observed: 'browser assertion failed',
+    artifacts: ['cases/login-console-failure-1.json'],
+  };
+  const cleanupFailure = {
+    ...observed, state: 'FAIL', observed: 'browser cleanup also failed',
+    completedAt: '2026-09-04T18:00:02.000Z',
+    artifacts: ['cases/login-console-failure-2.json'],
+  };
+  const result = await runIdentityBatch(context({
+    runLegacyIdentityAudit: async () => ({
+      code: 1,
+      stdout: [eventLine(observed), eventLine(firstFailure), eventLine(cleanupFailure)].join('\n'),
+      stderr: '', startedAt: now, completedAt: '2026-09-04T18:02:00.000Z',
+    }),
+  }), [selected]);
+  const [caseRecord] = result.results[0].cases;
+  assert.equal(caseRecord.state, 'FAIL');
+  assert.deepEqual(caseRecord.diagnostics, [
+    observed.observed, firstFailure.observed, cleanupFailure.observed,
+  ]);
+  assert.deepEqual(caseRecord.artifactEvents.map(item => item.observed), [
+    observed.observed, firstFailure.observed, cleanupFailure.observed,
+  ]);
+});
+
+test('multiple failure artifacts validate and still produce the structured summary', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'task3-multi-failure-'));
+  const [selected] = scenarios.filter(item => item.id === 'authentication-email-password-login');
+  const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[selected.id].console[0];
+  const artifactPaths = [
+    `cases/${caseId}-failure-1.json`,
+    `cases/${caseId}-failure-2.json`,
+  ];
+  const failures = ['browser assertion failed', 'browser cleanup also failed'];
+  try {
+    await mkdir(path.join(directory, 'cases'));
+    await mkdir(path.join(directory, 'cleanup'));
+    for (let index = 0; index < artifactPaths.length; index += 1) {
+      await writeFile(path.join(directory, artifactPaths[index]), JSON.stringify({
+        runId: 'final-cert-t3-multi-failure',
+        commit: context().commit,
+        scenarioId: selected.id,
+        caseId,
+        dimension: 'console',
+        actorAliases: ['qa-synthetic-actor'],
+        expected: `${caseId} expected local behavior`,
+        observed: failures[index],
+        diagnostic: failures[index],
+        capturedAt: `2026-09-04T18:00:0${index + 1}.000Z`,
+      }));
+    }
+    await writeFile(path.join(directory, 'cleanup/marker.json'), JSON.stringify({
+      runId: 'final-cert-t3-multi-failure', commit: context().commit,
+      state: 'OBSERVED', counts: { deleted: 2, restored: 0, retainedAuditRecords: 0 },
+      capturedAt: '2026-09-04T18:01:00.000Z',
+    }));
+    const events = failures.map((observed, index) => ({
+      ...caseEvent(selected.id, 'console', caseId),
+      observed,
+      state: 'FAIL',
+      completedAt: `2026-09-04T18:00:0${index + 1}.000Z`,
+      artifacts: [artifactPaths[index]],
+    }));
+    events.push({
+      type: 'cleanup', cleanupId: 'multi-failure-cleanup', selectors: ['auth:owned'],
+      counts: { deleted: 2, restored: 0, retainedAuditRecords: 0 }, state: 'OBSERVED',
+      proof: ['cleanup/marker.json'],
+    });
+    const batch = await runIdentityBatch(context({
+      runId: 'final-cert-t3-multi-failure',
+      runLegacyIdentityAudit: async () => ({
+        code: 1, stdout: events.map(eventLine).join('\n'), stderr: '',
+        startedAt: now, completedAt: '2026-09-04T18:02:00.000Z',
+      }),
+    }), [selected]);
+    const validationOptions = {
+      artifactRoot: directory,
+      caseRequirements: LOCAL_IDENTITY_CASE_REQUIREMENTS,
+      expectedRunId: 'final-cert-t3-multi-failure',
+      expectedCommit: context().commit,
+    };
+    validateScenarioResults([selected], batch.results, validationOptions);
+    const recorder = createEvidenceRecorder({
+      scenarios: [selected], runId: 'final-cert-t3-multi-failure',
+      commit: context().commit, outputDir: directory,
+      caseRequirements: LOCAL_IDENTITY_CASE_REQUIREMENTS,
+    });
+    recorder.recordScenario(batch.results[0]);
+    await recorder.writeSummary({ markdownPath: path.join(directory, '02-identity.md') });
+    assert.match(await readFile(path.join(directory, '02-identity.md'), 'utf8'), /FAIL/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('artifact event provenance accepts only artifact-free NOT_OBSERVED events', async () => {
+  const [selected] = scenarios.filter(item => item.id === 'demo-seed-use-exit-expiry-cleanup');
+  const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[selected.id].negativePath[0];
+  const event = {
+    ...caseEvent(selected.id, 'negativePath', caseId),
+    state: 'NOT_OBSERVED', observed: 'worker seam unavailable', artifacts: [],
+  };
+  const cleanup = {
+    type: 'cleanup', cleanupId: 'not-observed-cleanup', selectors: ['fixture:exact'],
+    counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, state: 'OBSERVED',
+    proof: ['cleanup/marker.json'],
+  };
+  const batch = await runIdentityBatch(context({
+    runLegacyIdentityAudit: async () => ({
+      code: 0, stdout: [eventLine(event), eventLine(cleanup)].join('\n'), stderr: '',
+      startedAt: now, completedAt: '2026-09-04T18:02:00.000Z',
+    }),
+  }), [selected]);
+  assert.equal(batch.results[0].cases[0].state, 'NOT_OBSERVED');
+  assert.deepEqual(batch.results[0].cases[0].artifactEvents, [{
+    expected: event.expected, observed: event.observed, state: 'NOT_OBSERVED', artifacts: [],
+  }]);
+  validateScenarioResults([selected], batch.results, {
+    caseRequirements: LOCAL_IDENTITY_CASE_REQUIREMENTS,
+  });
 });
 
 test('scenario timestamps span every case instead of depending on case emission order', async () => {

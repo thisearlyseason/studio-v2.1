@@ -310,7 +310,7 @@ const certificationCaseContracts = Object.freeze({
     ] },
     { dimension: 'negativePath', caseId: 'reset-unknown-reused-modified-wrong-account', requirements: [
       /reset unknown email nonenumeration/, /reset modified OOB denial/, /reset reused OOB denial/,
-      /reset wrong-account password unchanged/, /reset wrong-account reset attempt denied/, /reset oversized payload denial/, /reset double-submit single request/,
+      /reset wrong-account password unchanged/, /reset other-account replacement password isolation/, /reset oversized payload denial/, /reset double-submit single request/,
       /reset action missing-password visible error/, /reset action consumed reload status/,
     ] },
     { dimension: 'permission', caseId: 'reset-nonenumeration-and-single-recipient', requirements: [
@@ -417,8 +417,8 @@ const certificationCaseContracts = Object.freeze({
     { dimension: 'persistence', caseId: 'demo-refresh-back-exit-isolation', requirements: [
       /demo context 1 exited session denial/, /demo context .* graph exact reconciliation/, /demo pending cleanup recovery/,
     ] },
-    { dimension: 'console', caseId: 'demo-local-console', requirements: [/demo browser console errors/] },
-    { dimension: 'network', caseId: 'demo-local-network', requirements: [/demo browser unexpected responses/] },
+    { dimension: 'console', caseId: 'demo-local-console', requirements: [/demo .*browser console errors/] },
+    { dimension: 'network', caseId: 'demo-local-network', requirements: [/demo .*browser unexpected responses/] },
     { dimension: 'responsive', caseId: 'demo-workspace-exit-error-two-viewports', requirements: [/demo browser two viewport states/] },
   ]),
   'dashboard-shell-role-landing-and-route-policy': Object.freeze([
@@ -427,7 +427,8 @@ const certificationCaseContracts = Object.freeze({
       { pattern: /dashboard policy denied route/, minCount: 19 }, { pattern: /dashboard blocked-state protected data denial .* message/, minCount: 3 },
     ] },
     { dimension: 'permission', caseId: 'dashboard-complete-role-plan-state-policy', requirements: [
-      { pattern: /dashboard complete route policy /, minCount: 20 }, { pattern: /dashboard visible navigation agreement /, minCount: 20 },
+      { pattern: /dashboard complete route policy /, minCount: 20 }, { pattern: /dashboard mobile route policy /, minCount: 20 },
+      { pattern: /dashboard visible navigation agreement /, minCount: 20 },
     ] },
     { dimension: 'persistence', caseId: 'dashboard-refresh-new-tab-back-team-session', requirements: [{ pattern: / refresh and Back destination$/, minCount: 20 }] },
     { dimension: 'console', caseId: 'dashboard-local-console', requirements: [{ pattern: / persistence console errors$/, minCount: 20 }] },
@@ -1058,19 +1059,138 @@ function registerDynamicFirestoreRoot(documentPath, label, registry = dynamicRes
   });
 }
 
-async function registerBrowserDemoGraph(uid, label) {
-  // The Auth identity and root are registered before graph discovery so a
-  // failure during discovery still has an exact fallback owner.
-  registerDynamicAuthIdentity(uid, `${label}-auth`);
-  registerDynamicFirestoreRoot(`users/${uid}`, `${label}-user`);
-  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-    const [teams, leagues] = await Promise.all([
-      firestoreAdmin.collection('teams').where('demoSessionOwnerId', '==', uid).get(),
-      firestoreAdmin.collection('leagues').where('creatorId', '==', uid).get(),
-    ]);
-    teams.docs.forEach((document, index) => registerDynamicFirestoreRoot(document.ref.path, `${label}-team-${index + 1}`));
-    leagues.docs.forEach((document, index) => registerDynamicFirestoreRoot(document.ref.path, `${label}-league-${index + 1}`));
+async function demoGraphSnapshots(firestoreAdmin, uid) {
+  const [ownedTeams, demoTeams, leagues, demoLeagues, players, facilities] = await Promise.all([
+    firestoreAdmin.collection('teams').where('ownerUserId', '==', uid).get(),
+    firestoreAdmin.collection('teams').where('demoSessionOwnerId', '==', uid).get(),
+    firestoreAdmin.collection('leagues').where('creatorId', '==', uid).get(),
+    firestoreAdmin.collection('leagues').where('demoSessionOwnerId', '==', uid).get(),
+    firestoreAdmin.collection('players').where('demoOwnerUserId', '==', uid).get(),
+    firestoreAdmin.collection('facilities').where('clubId', '==', uid).get(),
+  ]);
+  const teams = [...new Map([...ownedTeams.docs, ...demoTeams.docs].map(item => [item.ref.path, item])).values()];
+  const leagueDocuments = [...new Map([...leagues.docs, ...demoLeagues.docs].map(item => [item.ref.path, item])).values()];
+  const bookings = await Promise.all([
+    ...teams.map(team => firestoreAdmin.collection('scheduleBookings').where('hostTeamId', '==', team.id).get()),
+    ...leagueDocuments.map(league => firestoreAdmin.collection('scheduleBookings').where('leagueId', '==', league.id).get()),
+  ]);
+  return {
+    teams,
+    leagues: leagueDocuments,
+    players: players.docs,
+    facilities: facilities.docs,
+    bookings: [...new Map(bookings.flatMap(snapshot => snapshot.docs).map(item => [item.ref.path, item])).values()],
+  };
+}
+
+export function registerOwnedDemoCleanup({ uid, label, registry, cleanupGraph, verifyGraph, cleanupAuth, verifyAuth }) {
+  registerCertificationSensitiveAlias(uid, `${label}-auth`);
+  registry.register({
+    id: `auth:${label}:${uid}`,
+    kind: 'deleted',
+    cleanup: cleanupAuth,
+    verify: verifyAuth,
   });
+  registry.register({
+    id: `firestore-graph:${label}:${uid}`,
+    kind: 'deleted',
+    cleanup: cleanupGraph,
+    verify: verifyGraph,
+  });
+}
+
+const registeredBrowserDemoUids = new Set();
+
+async function registerBrowserDemoGraph(uid, label) {
+  if (!uid || registeredBrowserDemoUids.has(uid)) return;
+  registeredBrowserDemoUids.add(uid);
+  const discoveredLeagueIds = new Set();
+  registerOwnedDemoCleanup({
+    uid,
+    label,
+    registry: dynamicResourceRegistry,
+    cleanupAuth: () => withEmulatorAuthAdmin(async authAdmin => {
+      try {
+        await authAdmin.getUser(uid);
+        await authAdmin.deleteUser(uid);
+        return true;
+      } catch (error) {
+        if (error?.code === 'auth/user-not-found') return false;
+        throw error;
+      }
+    }),
+    verifyAuth: () => withEmulatorAuthAdmin(async authAdmin => {
+      try {
+        await authAdmin.getUser(uid);
+        return false;
+      } catch (error) {
+        if (error?.code === 'auth/user-not-found') return true;
+        throw error;
+      }
+    }),
+    cleanupGraph: () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const graph = await demoGraphSnapshots(firestoreAdmin, uid);
+      const userRef = firestoreAdmin.collection('users').doc(uid);
+      const userExists = (await userRef.get()).exists || (await userRef.listCollections()).length > 0;
+      for (const booking of graph.bookings) await firestoreAdmin.recursiveDelete(booking.ref);
+      for (const team of graph.teams) await firestoreAdmin.recursiveDelete(team.ref);
+      for (const league of graph.leagues) {
+        discoveredLeagueIds.add(league.id);
+        await firestoreAdmin.recursiveDelete(league.ref);
+        await firestoreAdmin.recursiveDelete(firestoreAdmin.collection('publicLeagueViews').doc(league.id));
+      }
+      for (const player of graph.players) await firestoreAdmin.recursiveDelete(player.ref);
+      for (const facility of graph.facilities) await firestoreAdmin.recursiveDelete(facility.ref);
+      await firestoreAdmin.recursiveDelete(userRef);
+      return userExists || Object.values(graph).some(items => items.length > 0);
+    }),
+    verifyGraph: () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const graph = await demoGraphSnapshots(firestoreAdmin, uid);
+      const userRef = firestoreAdmin.collection('users').doc(uid);
+      graph.leagues.forEach(league => discoveredLeagueIds.add(league.id));
+      const publicViews = await Promise.all([...discoveredLeagueIds].map(leagueId =>
+        firestoreAdmin.collection('publicLeagueViews').doc(leagueId).get()));
+      return Object.values(graph).every(items => items.length === 0) &&
+        !(await userRef.get()).exists && (await userRef.listCollections()).length === 0 &&
+        publicViews.every(snapshot => !snapshot.exists);
+    }),
+  });
+}
+
+function recoverBrowserDemoUid(session) {
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const sessionResponse = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)}).catch(() => null);
+    if (sessionResponse && sessionResponse.ok()) {
+      const payload = await sessionResponse.json().catch(() => ({}));
+      if (typeof payload.uid === 'string' && payload.uid) return { uid: payload.uid, source: 'session' };
+    }
+    const uid = await page.evaluate(async () => {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('firebaseLocalStorageDb');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }).catch(() => null);
+      if (!database || !database.objectStoreNames.contains('firebaseLocalStorage')) return null;
+      const values = await new Promise((resolve, reject) => {
+        const transaction = database.transaction('firebaseLocalStorage', 'readonly');
+        const request = transaction.objectStore('firebaseLocalStorage').getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      }).catch(() => []);
+      const findUid = value => {
+        if (!value || typeof value !== 'object') return null;
+        if (typeof value.uid === 'string' && value.uid) return value.uid;
+        for (const child of Object.values(value)) {
+          const found = findUid(child);
+          if (found) return found;
+        }
+        return null;
+      };
+      return findUid(values);
+    });
+    return { uid, source: uid ? 'firebase-auth-persistence' : 'absent' };
+  }`]));
+  return typeof result.uid === 'string' && result.uid ? result.uid : null;
 }
 
 function registerClaimRestoration(uid, originalClaims, label, registry = dynamicResourceRegistry) {
@@ -1464,30 +1584,75 @@ async function runCertificationApiScenario(scenarioId) {
         const runTeamHintAttack = async (label, playerPatch) => {
           const attackEmail = `${FIXTURES.runId}-youth-${label}@phase2.test`;
           const attackRegistry = createResourceRegistry({ maxAttempts: 3 });
+          let attackUser = null;
+          let attackIdentityRegistered = false;
+          let attackFailure = null;
+          const attackInvitePaths = new Set();
           registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, `youth-${label}-player`, attackRegistry);
-          await playerRef.update(playerPatch);
-          const attackInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
-            method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: attackEmail }),
-          });
-          expectEqual(attackInvite.status, 200, `youth forged ${label} invitation create`);
-          registerDynamicFirestoreRoot(`invites/${attackInvite.body.token}`, `youth-${label}-invite`, attackRegistry);
-          const redemption = await apiJsonResult('/api/invites/youth', null, {
-            method: 'PUT', body: JSON.stringify({ token: attackInvite.body.token, password }),
-          });
-          expectEqual(redemption.status, 200, `youth forged ${label} activation remains teamless`);
-          const attackUser = await getAuthUserByEmailIfPresent(authAdmin, attackEmail);
-          if (attackUser) {
-            registerDynamicAuthIdentity(attackUser.uid, `youth-${label}-user`, attackRegistry);
-            registerDynamicFirestoreRoot(`users/${attackUser.uid}`, `youth-${label}-user`, attackRegistry);
-            registerDynamicFirestoreRoot(`teams/${forgedTeam.id}/members/${attackUser.uid}`, `youth-${label}-member`, attackRegistry);
+          try {
+            await playerRef.update(playerPatch);
+            const attackInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+              method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: attackEmail }),
+            });
+            if (attackInvite.body?.token) {
+              const invitePath = `invites/${attackInvite.body.token}`;
+              attackInvitePaths.add(invitePath);
+              registerDynamicFirestoreRoot(invitePath, `youth-${label}-invite`);
+              registerDynamicFirestoreRoot(invitePath, `youth-${label}-invite`, attackRegistry);
+            }
+            expectEqual(attackInvite.status, 200, `youth forged ${label} invitation create`);
+            const redemption = await apiJsonResult('/api/invites/youth', null, {
+              method: 'PUT', body: JSON.stringify({ token: attackInvite.body.token, password }),
+            });
+            attackUser = await getAuthUserByEmailIfPresent(authAdmin, attackEmail);
+            if (attackUser) {
+              registerDynamicAuthIdentity(attackUser.uid, `youth-${label}-user`);
+              registerDynamicFirestoreRoot(`users/${attackUser.uid}`, `youth-${label}-user`);
+              registerDynamicFirestoreRoot(`teams/${forgedTeam.id}/members/${attackUser.uid}`, `youth-${label}-member`);
+              registerDynamicAuthIdentity(attackUser.uid, `youth-${label}-user`, attackRegistry);
+              registerDynamicFirestoreRoot(`users/${attackUser.uid}`, `youth-${label}-user`, attackRegistry);
+              registerDynamicFirestoreRoot(`teams/${forgedTeam.id}/members/${attackUser.uid}`, `youth-${label}-member`, attackRegistry);
+              attackIdentityRegistered = true;
+            }
+            expectEqual(redemption.status, 200, `youth forged ${label} activation remains teamless`);
+            const forgedMemberExists = attackUser
+              ? (await firestoreAdmin.collection('teams').doc(forgedTeam.id).collection('members').doc(attackUser.uid).get()).exists
+              : false;
+            expectEqual(forgedMemberExists, false, `youth forged ${label} cannot mint membership`);
+          } catch (error) {
+            attackFailure = error;
+            throw error;
+          } finally {
+            const recoveryFailures = [];
+            try {
+              const attackInvites = await firestoreAdmin.collection('invites').where('email', '==', attackEmail).get();
+              for (const [index, invite] of attackInvites.docs.entries()) {
+                if (attackInvitePaths.has(invite.ref.path)) continue;
+                registerDynamicFirestoreRoot(invite.ref.path, `youth-${label}-invite-fallback-${index + 1}`);
+                registerDynamicFirestoreRoot(invite.ref.path, `youth-${label}-invite-fallback-${index + 1}`, attackRegistry);
+              }
+              if (!attackIdentityRegistered) {
+                attackUser = await getAuthUserByEmailIfPresent(authAdmin, attackEmail);
+                if (attackUser) {
+                  registerDynamicAuthIdentity(attackUser.uid, `youth-${label}-user-fallback`);
+                  registerDynamicFirestoreRoot(`users/${attackUser.uid}`, `youth-${label}-user-fallback`);
+                  registerDynamicAuthIdentity(attackUser.uid, `youth-${label}-user-fallback`, attackRegistry);
+                  registerDynamicFirestoreRoot(`users/${attackUser.uid}`, `youth-${label}-user-fallback`, attackRegistry);
+                  registerDynamicFirestoreRoot(`teams/${forgedTeam.id}/members/${attackUser.uid}`, `youth-${label}-member-fallback`);
+                  registerDynamicFirestoreRoot(`teams/${forgedTeam.id}/members/${attackUser.uid}`, `youth-${label}-member-fallback`, attackRegistry);
+                }
+              }
+            } catch (error) {
+              recoveryFailures.push(error);
+            }
+            const attackCleanup = await attackRegistry.cleanup();
+            completedDynamicCleanupRuns.push(attackCleanup);
+            if (attackCleanup.state !== 'OBSERVED') recoveryFailures.push(new Error(`Youth ${label} cleanup retained owned resources.`));
+            if (recoveryFailures.length > 0) {
+              const failures = [...(attackFailure ? [attackFailure] : []), ...recoveryFailures];
+              throw new AggregateError(failures, failures.map(error => error.message).join('; '));
+            }
           }
-          const forgedMemberExists = attackUser
-            ? (await firestoreAdmin.collection('teams').doc(forgedTeam.id).collection('members').doc(attackUser.uid).get()).exists
-            : false;
-          const attackCleanup = await attackRegistry.cleanup();
-          completedDynamicCleanupRuns.push(attackCleanup);
-          if (attackCleanup.state !== 'OBSERVED') throw new Error(`Youth ${label} cleanup retained owned resources.`);
-          expectEqual(forgedMemberExists, false, `youth forged ${label} cannot mint membership`);
         };
         await runTeamHintAttack('primary-team', { primaryTeamId: forgedTeam.id, joinedTeamIds: [] });
         await runTeamHintAttack('joined-teams', { primaryTeamId: null, joinedTeamIds: [forgedTeam.id] });
@@ -1509,32 +1674,78 @@ async function runCertificationApiScenario(scenarioId) {
         };
 
         const removedRegistry = createResourceRegistry({ maxAttempts: 3 });
+        let removedUser = null;
+        let removedIdentityRegistered = false;
+        let removedFailure = null;
+        const removedInvitePaths = new Set();
         registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-removed-player', removedRegistry);
         registerDynamicFirestoreRoot(authorizedRosterRef.path, 'youth-removed-roster', removedRegistry);
-        await playerRef.update({ primaryTeamId: teamC.id, joinedTeamIds: [teamC.id] });
-        await authorizedRosterRef.set({ ...authorizedRoster, status: 'removed' });
         const removedEmail = `${FIXTURES.runId}-youth-removed@phase2.test`;
-        const removedInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
-          method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: removedEmail }),
-        });
-        registerDynamicFirestoreRoot(`invites/${removedInvite.body.token}`, 'youth-removed-invite', removedRegistry);
-        expectEqual(removedInvite.status, 200, 'youth removed child invitation remains teamless');
-        expectEqual((await apiJsonResult('/api/invites/youth', null, {
-          method: 'PUT', body: JSON.stringify({ token: removedInvite.body.token, password }),
-        })).status, 200, 'youth removed child teamless activation');
-        const removedUser = await getAuthUserByEmailIfPresent(authAdmin, removedEmail);
-        if (removedUser) {
-          registerDynamicAuthIdentity(removedUser.uid, 'youth-removed-user', removedRegistry);
-          registerDynamicFirestoreRoot(`users/${removedUser.uid}`, 'youth-removed-user', removedRegistry);
-          registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${removedUser.uid}`, 'youth-removed-member-projection', removedRegistry);
+        try {
+          await playerRef.update({ primaryTeamId: teamC.id, joinedTeamIds: [teamC.id] });
+          await authorizedRosterRef.set({ ...authorizedRoster, status: 'removed' });
+          const removedInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+            method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: removedEmail }),
+          });
+          if (removedInvite.body?.token) {
+            const invitePath = `invites/${removedInvite.body.token}`;
+            removedInvitePaths.add(invitePath);
+            registerDynamicFirestoreRoot(invitePath, 'youth-removed-invite');
+            registerDynamicFirestoreRoot(invitePath, 'youth-removed-invite', removedRegistry);
+          }
+          expectEqual(removedInvite.status, 200, 'youth removed child invitation remains teamless');
+          const removalRedemption = await apiJsonResult('/api/invites/youth', null, {
+            method: 'PUT', body: JSON.stringify({ token: removedInvite.body.token, password }),
+          });
+          removedUser = await getAuthUserByEmailIfPresent(authAdmin, removedEmail);
+          if (removedUser) {
+            registerDynamicAuthIdentity(removedUser.uid, 'youth-removed-user');
+            registerDynamicFirestoreRoot(`users/${removedUser.uid}`, 'youth-removed-user');
+            registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${removedUser.uid}`, 'youth-removed-member-projection');
+            registerDynamicAuthIdentity(removedUser.uid, 'youth-removed-user', removedRegistry);
+            registerDynamicFirestoreRoot(`users/${removedUser.uid}`, 'youth-removed-user', removedRegistry);
+            registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${removedUser.uid}`, 'youth-removed-member-projection', removedRegistry);
+            removedIdentityRegistered = true;
+          }
+          expectEqual(removalRedemption.status, 200, 'youth removed child teamless activation');
+          const removedProjectionExists = removedUser
+            ? (await firestoreAdmin.collection('teams').doc(teamC.id).collection('members').doc(removedUser.uid).get()).exists
+            : false;
+          expectEqual(removedProjectionExists, false, 'youth removed child cannot mint membership');
+        } catch (error) {
+          removedFailure = error;
+          throw error;
+        } finally {
+          const recoveryFailures = [];
+          try {
+            const removedInvites = await firestoreAdmin.collection('invites').where('email', '==', removedEmail).get();
+            for (const [index, invite] of removedInvites.docs.entries()) {
+              if (removedInvitePaths.has(invite.ref.path)) continue;
+              registerDynamicFirestoreRoot(invite.ref.path, `youth-removed-invite-fallback-${index + 1}`);
+              registerDynamicFirestoreRoot(invite.ref.path, `youth-removed-invite-fallback-${index + 1}`, removedRegistry);
+            }
+            if (!removedIdentityRegistered) {
+              removedUser = await getAuthUserByEmailIfPresent(authAdmin, removedEmail);
+              if (removedUser) {
+                registerDynamicAuthIdentity(removedUser.uid, 'youth-removed-user-fallback');
+                registerDynamicFirestoreRoot(`users/${removedUser.uid}`, 'youth-removed-user-fallback');
+                registerDynamicAuthIdentity(removedUser.uid, 'youth-removed-user-fallback', removedRegistry);
+                registerDynamicFirestoreRoot(`users/${removedUser.uid}`, 'youth-removed-user-fallback', removedRegistry);
+                registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${removedUser.uid}`, 'youth-removed-member-projection-fallback');
+                registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${removedUser.uid}`, 'youth-removed-member-projection-fallback', removedRegistry);
+              }
+            }
+          } catch (error) {
+            recoveryFailures.push(error);
+          }
+          const removedCleanup = await removedRegistry.cleanup();
+          completedDynamicCleanupRuns.push(removedCleanup);
+          if (removedCleanup.state !== 'OBSERVED') recoveryFailures.push(new Error('Youth removed-child cleanup retained owned resources.'));
+          if (recoveryFailures.length > 0) {
+            const failures = [...(removedFailure ? [removedFailure] : []), ...recoveryFailures];
+            throw new AggregateError(failures, failures.map(error => error.message).join('; '));
+          }
         }
-        const removedProjectionExists = removedUser
-          ? (await firestoreAdmin.collection('teams').doc(teamC.id).collection('members').doc(removedUser.uid).get()).exists
-          : false;
-        const removedCleanup = await removedRegistry.cleanup();
-        completedDynamicCleanupRuns.push(removedCleanup);
-        if (removedCleanup.state !== 'OBSERVED') throw new Error('Youth removed-child cleanup retained owned resources.');
-        expectEqual(removedProjectionExists, false, 'youth removed child cannot mint membership');
 
         await playerRef.set(originalPlayer);
         await authorizedRosterRef.set(authorizedRoster);
@@ -2511,7 +2722,7 @@ async function browserResetActionAudit() {
   expectEqual(result.consoleErrors.length, 0, 'reset action console errors');
   expectEqual(JSON.stringify(result.responseStatuses), JSON.stringify([400, 200, 400]), 'reset action unexpected responses');
   expectEqual((await signIn('qa-coach-owner-b', replacementPassword)).status, 200, 'reset browser action new password acceptance');
-  expectEqual((await signIn('qa-coach-owner-a', replacementPassword)).status, 400, 'reset wrong-account reset attempt denied');
+  expectEqual((await signIn('qa-coach-owner-a', replacementPassword)).status, 400, 'reset other-account replacement password isolation');
   expectEqual((await signIn('qa-coach-owner-a')).status, 200, 'reset wrong-account password unchanged after action');
   expectEqual(await publicJsonStatus('/api/email/reset-password', { email: targetEmail }), 200, 'reset browser action restoration OOB generation');
   const restore = selectLatestPasswordResetOob(await readEmulatorOobCodes(), targetEmail, new Set([action.oobCode]));
@@ -3211,6 +3422,7 @@ async function runCertificationBrowserScenario(scenarioId) {
   if (scenarioId === 'demo-seed-use-exit-expiry-cleanup') {
     const session = openAnonymousBrowser('cert-demo');
     const peerSession = openAnonymousBrowser('cert-demo-peer-context');
+    try {
     assertTwoViewportRoutes(session, [{ path: '/', expected: '/' }], 'demo public surfaces');
     const peerJourney = JSON.parse(cli(peerSession, ['run-code', `async page => {
       const consoleErrors = [];
@@ -3340,6 +3552,18 @@ async function runCertificationBrowserScenario(scenarioId) {
     expectEqual(peerExit.consoleErrors.length, 0, 'demo peer exit workflow console errors');
     expectEqual(peerExit.unexpectedResponses.length, 0, 'demo peer exit workflow unexpected responses');
     return;
+    } finally {
+      // Recover ownership while both pages still exist. This catches failures
+      // after anonymous Auth creation, during partial seed, and before the
+      // normal session/UI result can return a UID.
+      for (const [browserSession, label] of [
+        [peerSession, 'demo-browser-peer'],
+        [session, 'demo-browser-main'],
+      ]) {
+        const recoveredUid = recoverBrowserDemoUid(browserSession);
+        if (recoveredUid) await registerBrowserDemoGraph(recoveredUid, label);
+      }
+    }
   }
   if (scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
     for (const alias of FIXTURES.activeAliases) {

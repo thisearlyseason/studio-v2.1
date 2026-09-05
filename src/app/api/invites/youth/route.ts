@@ -341,6 +341,7 @@ export async function PUT(req: NextRequest) {
             isDeleted: false,
             playerId: freshInvite.childId,
             parentId: freshInvite.parentId,
+            teamId: binding.teamId,
             ownerUserId: team.ownerUserId || memberData.ownerUserId || null,
             joinedAt,
           }

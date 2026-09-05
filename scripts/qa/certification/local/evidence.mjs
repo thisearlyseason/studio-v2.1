@@ -178,6 +178,26 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (!['OBSERVED', 'NOT_OBSERVED', 'FAIL'].includes(caseRecord.state)) throw new Error(`${caseRecord.caseId} has invalid case state.`);
     if (!DIMENSION_NAMES.includes(caseRecord.dimension)) throw new Error(`${caseRecord.caseId} has invalid case dimension.`);
     if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
+    const artifactEvents = Array.isArray(caseRecord.artifactEvents)
+      ? caseRecord.artifactEvents
+      : [{
+          expected: caseRecord.expected,
+          observed: caseRecord.observed,
+          state: caseRecord.state,
+          artifacts: caseRecord.artifacts,
+        }];
+    for (const event of artifactEvents) {
+      assertPlainString(event.expected, 'artifact event expected');
+      assertPlainString(event.observed, 'artifact event observed');
+      if (!['OBSERVED', 'NOT_OBSERVED', 'FAIL'].includes(event.state) || !Array.isArray(event.artifacts) ||
+          (event.state === 'NOT_OBSERVED' && event.artifacts.length > 0)) {
+        throw new Error(`${caseRecord.caseId} has invalid artifact event provenance.`);
+      }
+    }
+    const eventArtifactUnion = [...new Set(artifactEvents.flatMap(event => event.artifacts))];
+    if (JSON.stringify(eventArtifactUnion) !== JSON.stringify(caseRecord.artifacts)) {
+      throw new Error(`${caseRecord.caseId} artifact event provenance does not reconcile with its artifacts.`);
+    }
     const allowedCases = requiredByDimension[caseRecord.dimension];
     if (allowedCases && !allowedCases.includes(caseRecord.caseId)) {
       throw new Error(`${caseRecord.caseId} is not a required case for ${caseRecord.dimension}.`);
@@ -185,6 +205,11 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (artifactRoot) {
       if (caseRecord.state !== 'NOT_OBSERVED' && caseRecord.artifacts.length === 0) throw new Error(`${caseRecord.caseId} requires an inspectable artifact.`);
       for (const artifact of caseRecord.artifacts) {
+        const matchingArtifactEvents = artifactEvents.filter(event => event.artifacts.includes(artifact));
+        if (matchingArtifactEvents.length !== 1) {
+          throw new Error(`${caseRecord.caseId} artifact must map to one exact event.`);
+        }
+        const artifactEvent = matchingArtifactEvents[0];
         const artifactPath = resolveContainedArtifact(artifactRoot, artifact);
         const parsed = JSON.parse(readFileSync(artifactPath, 'utf8'));
         assertNoProtectedEvidence(parsed, `artifact ${artifact}`);
@@ -197,14 +222,14 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         if (JSON.stringify(parsed.actorAliases) !== JSON.stringify(caseRecord.actorAliases)) {
           throw new Error(`${caseRecord.caseId} artifact actor provenance does not match its case.`);
         }
-        if (parsed.expected !== caseRecord.expected || parsed.observed !== caseRecord.observed) {
+        if (parsed.expected !== artifactEvent.expected || parsed.observed !== artifactEvent.observed) {
           throw new Error(`${caseRecord.caseId} artifact expected/observed provenance does not match its case.`);
         }
         const artifactCapturedAt = parseTimestamp(parsed.capturedAt, 'artifact capturedAt');
         if (artifactCapturedAt < caseStartedAt || artifactCapturedAt > caseCompletedAt) {
           throw new Error(`${caseRecord.caseId} artifact timestamp is outside its case range.`);
         }
-        if (caseRecord.state === 'OBSERVED' && (!Array.isArray(parsed.assertions) || parsed.assertions.length === 0)) {
+        if (artifactEvent.state === 'OBSERVED' && (!Array.isArray(parsed.assertions) || parsed.assertions.length === 0)) {
           throw new Error(`${caseRecord.caseId} observed artifact requires exact assertions.`);
         }
         for (const assertion of parsed.assertions || []) {

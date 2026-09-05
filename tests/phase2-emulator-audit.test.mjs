@@ -4,6 +4,7 @@ import test from 'node:test';
 import nextEnvironment from '@next/env';
 
 import { buildFixtureCatalog } from '../scripts/qa/certification/fixture-catalog.mjs';
+import { createResourceRegistry } from '../scripts/qa/certification/local/resource-registry.mjs';
 import * as auditRunner from '../scripts/qa/run-phase2-emulator-audit.mjs';
 
 const { processEnv, resetEnv } = nextEnvironment;
@@ -626,6 +627,61 @@ test('Task 3 youth browser mutations use an immediate measured cleanup registry'
   assert.match(source, /registerFirestoreDocumentRestoration\(playerRef\.path, originalPlayer, 'youth-browser-player', youthBrowserCleanupRegistry\)/);
   assert.match(source, /const browserCleanup = await youthBrowserCleanupRegistry\.cleanup\(\)/);
   assert.doesNotMatch(source, /if \(originalPlayer\) await playerRef\.set\(originalPlayer\)/);
+});
+
+test('Task 3 demo ownership cleanup survives identity-only, partial-seed, and discovery-failure setup', async () => {
+  for (const setup of ['identity-only', 'partial-seed', 'discovery-failure']) {
+    const registry = createResourceRegistry({ maxAttempts: 3 });
+    const state = {
+      auth: true,
+      graph: new Set(setup === 'identity-only' ? ['user'] : ['user', 'team', 'league-view', 'booking']),
+    };
+    let graphAttempts = 0;
+    auditRunner.registerOwnedDemoCleanup({
+      uid: `uid-${setup}`,
+      label: setup,
+      registry,
+      async cleanupAuth() {
+        const existed = state.auth;
+        state.auth = false;
+        return existed;
+      },
+      async verifyAuth() { return state.auth === false; },
+      async cleanupGraph() {
+        graphAttempts += 1;
+        if (setup === 'discovery-failure' && graphAttempts === 1) {
+          throw new Error('injected discovery failure');
+        }
+        const existed = state.graph.size > 0;
+        state.graph.clear();
+        return existed;
+      },
+      async verifyGraph() { return state.graph.size === 0; },
+    });
+    const cleanup = await registry.cleanup();
+    assert.equal(cleanup.state, 'OBSERVED');
+    assert.equal(state.auth, false);
+    assert.equal(state.graph.size, 0);
+    assert.equal(cleanup.reconciled.deleted, 2);
+    assert.equal(cleanup.counts.deleted, 2);
+    assert.equal(graphAttempts, setup === 'discovery-failure' ? 2 : 1);
+  }
+});
+
+test('Task 3 demo and youth fallback ownership is recovered before browser/session teardown', () => {
+  const browserHandlers = source.slice(source.indexOf('async function runCertificationBrowserScenario'));
+  const demoScenario = browserHandlers.match(/if \(scenarioId === 'demo-seed-use-exit-expiry-cleanup'\)[\s\S]*?if \(scenarioId === 'dashboard-shell/)?.[0] || '';
+  assert.match(demoScenario, /finally \{[\s\S]*recoverBrowserDemoUid\(browserSession\)[\s\S]*registerBrowserDemoGraph/);
+  const demoCleanup = source.match(/async function demoGraphSnapshots[\s\S]*?function recoverBrowserDemoUid/)?.[0] || '';
+  for (const requiredRoot of ['demoSessionOwnerId', 'demoOwnerUserId', 'publicLeagueViews', 'scheduleBookings']) {
+    assert.match(demoCleanup, new RegExp(requiredRoot));
+  }
+
+  const apiHandlers = source.slice(source.indexOf('async function runCertificationApiScenario'));
+  const youthScenario = apiHandlers.match(/if \(scenarioId === 'signup-onboarding-youth-invitation-signup'\)[\s\S]*?if \(scenarioId === 'signup-onboarding-missing-profile-onboarding'\)/)?.[0] || '';
+  assert.match(youthScenario, /runTeamHintAttack[\s\S]*finally \{[\s\S]*where\('email', '==', attackEmail\)[\s\S]*attackRegistry\.cleanup/);
+  assert.match(youthScenario, /removedEmail[\s\S]*finally \{[\s\S]*where\('email', '==', removedEmail\)[\s\S]*removedRegistry\.cleanup/);
+  assert.match(youthScenario, /registerDynamicFirestoreRoot\(invitePath, `youth-\$\{label\}-invite`\);[\s\S]*expectEqual\(attackInvite\.status/);
 });
 
 test('Task 3 demo expiry boundary is strict and deterministic', () => {

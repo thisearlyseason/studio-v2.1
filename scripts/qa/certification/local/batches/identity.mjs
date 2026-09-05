@@ -135,7 +135,16 @@ function resultForScenario({ scenario, context, events, cleanup, execution }) {
   for (const event of rawCases) {
     const existing = casesById.get(event.caseId);
     if (!existing) {
-      casesById.set(event.caseId, { ...event, diagnostics: [event.observed] });
+      casesById.set(event.caseId, {
+        ...event,
+        diagnostics: [event.observed],
+        artifactEvents: [{
+          expected: event.expected,
+          observed: event.observed,
+          state: event.state,
+          artifacts: [...(event.artifacts || [])],
+        }],
+      });
       continue;
     }
     casesById.set(event.caseId, {
@@ -150,6 +159,12 @@ function resultForScenario({ scenario, context, events, cleanup, execution }) {
       completedAt: [existing.completedAt, event.completedAt].sort().at(-1),
       artifacts: [...new Set([...(existing.artifacts || []), ...(event.artifacts || [])])],
       diagnostics: [...existing.diagnostics, event.observed],
+      artifactEvents: [...existing.artifactEvents, {
+        expected: event.expected,
+        observed: event.observed,
+        state: event.state,
+        artifacts: [...(event.artifacts || [])],
+      }],
     });
   }
   const cases = [...casesById.values()];

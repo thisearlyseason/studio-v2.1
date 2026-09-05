@@ -390,26 +390,45 @@ function eventInterval(data: FirebaseFirestore.DocumentData): Interval | null {
   };
 }
 
-async function isAuthorizedTeamStaff(teamId: string, actor: Actor): Promise<boolean> {
+export function isAuthorizedTeamStaffFromRecords({
+  teamId,
+  actor,
+  team,
+  directMember,
+}: {
+  teamId: string;
+  actor: Actor;
+  team?: FirebaseFirestore.DocumentData | null;
+  directMember?: FirebaseFirestore.DocumentData | null;
+  // Extra records are deliberately ignored. A linked player membership grants
+  // youth member access, never staff authority.
+  user?: FirebaseFirestore.DocumentData | null;
+  linkedMember?: FirebaseFirestore.DocumentData | null;
+}): boolean {
   if (actor.role === 'superadmin') return true;
-  const [team, user, directMember] = await Promise.all([
-    adminDb.collection('teams').doc(teamId).get(),
-    adminDb.collection('users').doc(actor.uid).get(),
-    adminDb.collection('teams').doc(teamId).collection('members').doc(actor.uid).get(),
-  ]);
-  if (!team.exists) return false;
-  if (team.data()?.ownerUserId === actor.uid) return true;
-  const linkedPlayerId = text(user.data()?.linkedPlayerId, 200);
-  const linkedMember = linkedPlayerId
-    ? await adminDb.collection('teams').doc(teamId).collection('members').doc(linkedPlayerId).get()
-    : null;
-  const member = directMember.exists ? directMember.data() : linkedMember?.data();
-  if (!member || member.status === 'removed' || member.isDeleted === true) return false;
-  return text(member?.role, 80) === 'Admin' || [
+  if (!team) return false;
+  if (team.ownerUserId === actor.uid) return true;
+  if (!directMember || directMember.status === 'removed' || directMember.isDeleted === true) return false;
+  if (text(directMember.userId ?? actor.uid, 200) !== actor.uid) return false;
+  if (text(directMember.teamId ?? teamId, 200) !== teamId) return false;
+  return text(directMember.role, 80) === 'Admin' || [
     'Coach', 'Head Coach', 'Assistant Coach', 'Team Representative',
     'Athletic Director', 'Director of Athletics', 'Staff', 'Manager', 'Squad Leader',
     'Coach Guest', 'Team Lead', 'Platform Admin',
-  ].includes(text(member?.position, 80));
+  ].includes(text(directMember.position, 80));
+}
+
+async function isAuthorizedTeamStaff(teamId: string, actor: Actor): Promise<boolean> {
+  const [team, directMember] = await Promise.all([
+    adminDb.collection('teams').doc(teamId).get(),
+    adminDb.collection('teams').doc(teamId).collection('members').doc(actor.uid).get(),
+  ]);
+  return isAuthorizedTeamStaffFromRecords({
+    teamId,
+    actor,
+    team: team.exists ? team.data() : null,
+    directMember: directMember.exists ? directMember.data() : null,
+  });
 }
 
 async function acquireLock(holder: string): Promise<void> {

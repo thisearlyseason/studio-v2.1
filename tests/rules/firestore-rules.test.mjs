@@ -44,6 +44,13 @@ beforeEach(async () => {
         role: 'youth_player',
         name: 'Youth',
         linkedPlayerId: 'child-player',
+        parentId: 'parent-account',
+      }),
+      setDoc(doc(db, 'users', 'forged-youth'), {
+        role: 'youth_player',
+        name: 'Forged Youth',
+        linkedPlayerId: 'child-player',
+        parentId: 'different-parent',
       }),
       setDoc(doc(db, 'users', 'removed'), { role: 'adult_player', name: 'Removed' }),
       setDoc(doc(db, 'users', 'suspended'), {
@@ -99,9 +106,16 @@ beforeEach(async () => {
       setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
         userId: 'parent-account',
         playerId: 'child-player',
+        parentId: 'parent-account',
+        teamId: 'team-a',
         role: 'Member',
         position: 'Player',
         status: 'active',
+      }),
+      setDoc(doc(db, 'players', 'child-player'), {
+        id: 'child-player',
+        userId: 'youth',
+        parentId: 'parent-account',
       }),
       setDoc(doc(db, 'teams', 'team-a', 'members', 'removed'), {
         userId: 'removed',
@@ -524,6 +538,62 @@ test('linked youth members retain access while removed members lose it', async (
   )));
 });
 
+test('linked youth authority requires the complete user, player, guardian, team, and active roster binding', async () => {
+  const youthDb = authenticatedDb('youth');
+  const forgedYouthDb = authenticatedDb('forged-youth');
+
+  await assertSucceeds(getDoc(doc(youthDb, 'teams', 'team-a')));
+  await assertFails(getDoc(doc(forgedYouthDb, 'teams', 'team-a')));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'players', 'child-player'), {
+      id: 'child-player', userId: 'other-youth', parentId: 'parent-account',
+    });
+  });
+  await assertFails(getDoc(doc(youthDb, 'teams', 'team-a')));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'players', 'child-player'), {
+      id: 'child-player', userId: 'youth', parentId: 'parent-account',
+    });
+    await setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
+      userId: 'parent-account', playerId: 'child-player', parentId: 'different-parent',
+      teamId: 'team-a', role: 'Admin', position: 'Head Coach', status: 'active',
+    });
+  });
+  await assertFails(getDoc(doc(youthDb, 'teams', 'team-a')));
+  await assertFails(setDoc(doc(youthDb, 'teams', 'team-a', 'drills', 'forged-staff'), {
+    title: 'forged',
+  }));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
+      userId: 'parent-account', playerId: 'child-player', parentId: 'parent-account',
+      teamId: 'different-team', role: 'Member', position: 'Player', status: 'active',
+    });
+  });
+  await assertFails(getDoc(doc(youthDb, 'teams', 'team-a')));
+});
+
+test('legitimate linked youth membership never inherits roster staff authority', async () => {
+  const youthDb = authenticatedDb('youth');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
+      userId: 'parent-account', playerId: 'child-player', parentId: 'parent-account',
+      teamId: 'team-a', role: 'Admin', position: 'Head Coach', status: 'active',
+    });
+  });
+
+  await assertSucceeds(getDoc(doc(youthDb, 'teams', 'team-a')));
+  await assertFails(setDoc(doc(youthDb, 'teams', 'team-a', 'drills', 'linked-staff'), {
+    title: 'must remain denied',
+  }));
+});
+
 test('an unrelated team owner cannot take over another player through mutable team fields', async () => {
   const attackerDb = authenticatedDb('outsider');
 
@@ -538,6 +608,22 @@ test('an unrelated team owner cannot take over another player through mutable te
     updatedByTeamId: 'attacker-team',
   }));
   await assertFails(deleteDoc(doc(attackerDb, 'players', 'private-player')));
+});
+
+test('client player edits cannot forge the server-owned youth identity binding', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'players', 'parent-child'), {
+      id: 'parent-child', parentId: 'member', userId: '', guardianIds: [], name: 'Child',
+    });
+  });
+  const parentDb = authenticatedDb('member');
+  await assertSucceeds(setDoc(doc(parentDb, 'players', 'parent-child'), { name: 'Updated child' }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'parent-child'), { userId: 'youth' }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'parent-child'), { parentId: 'different-parent' }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'parent-child'), { guardianIds: ['outsider'] }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'forged-child'), {
+    id: 'forged-child', parentId: 'member', userId: 'youth', guardianIds: [],
+  }));
 });
 
 test('a removed staff record cannot retain staff write authority', async () => {

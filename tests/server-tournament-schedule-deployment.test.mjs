@@ -4,6 +4,7 @@ import test from 'node:test';
 import { generateTournamentSchedule } from '../src/lib/scheduler-utils.ts';
 import {
   executeCompensatedScheduleMutation,
+  isAuthorizedTeamStaffFromRecords,
   prepareTournamentScheduleForDeployment,
   TournamentScheduleDeploymentError,
 } from '../src/lib/server-tournament-schedule-deployment.ts';
@@ -54,6 +55,31 @@ test('server preparation preserves stable resources and reserves all possible fi
   assert.ok(championship);
   assert.equal(championship.possibleTeamIds.length, teams.length);
   assert.ok(prepared.every(game => game.resourceId.startsWith('facility_1:')));
+});
+
+test('tournament staff authorization uses only direct server-authoritative staff membership', () => {
+  const actor = { uid: 'youth-user', role: 'youth_player' };
+  const team = { ownerUserId: 'owner' };
+  assert.equal(isAuthorizedTeamStaffFromRecords({
+    teamId: 'team-a',
+    actor,
+    team,
+    directMember: null,
+    user: { linkedPlayerId: 'child-player', parentId: 'parent-account' },
+    linkedMember: { playerId: 'different-player', parentId: 'different-parent', teamId: 'team-a', role: 'Admin', status: 'active' },
+  }), false);
+  assert.equal(isAuthorizedTeamStaffFromRecords({
+    teamId: 'team-a',
+    actor: { uid: 'staff-user', role: 'coach' },
+    team,
+    directMember: { userId: 'staff-user', teamId: 'team-a', position: 'Assistant Coach', status: 'active' },
+  }), true);
+  assert.equal(isAuthorizedTeamStaffFromRecords({
+    teamId: 'team-a',
+    actor: { uid: 'staff-user', role: 'coach' },
+    team,
+    directMember: { userId: 'staff-user', teamId: 'team-a', position: 'Assistant Coach', status: 'removed' },
+  }), false);
 });
 
 test('server preparation rejects missing resource identities', () => {

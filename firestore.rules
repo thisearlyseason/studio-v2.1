@@ -50,22 +50,29 @@ service cloud.firestore {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       let directMemberPath =
         /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
-      let linkedPlayerId = exists(userPath)
-        ? get(userPath).data.get('linkedPlayerId', '')
-        : '';
-      let linkedMemberPath =
-        /databases/$(database)/documents/teams/$(teamId)/members/$(linkedPlayerId);
       return isSignedIn() && (
         (
           exists(directMemberPath) &&
           isActiveMember(get(directMemberPath).data)
         ) ||
-        (
-          linkedPlayerId != '' &&
-          exists(linkedMemberPath) &&
-          isActiveMember(get(linkedMemberPath).data)
-        )
+        (exists(userPath) && hasAuthorizedLinkedPlayerMembership(teamId, get(userPath).data))
       );
+    }
+
+    function hasAuthorizedLinkedPlayerMembership(teamId, userData) {
+      let linkedPlayerId = userData.get('linkedPlayerId', '');
+      let parentId = userData.get('parentId', '');
+      let playerPath = /databases/$(database)/documents/players/$(linkedPlayerId);
+      let linkedMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(linkedPlayerId);
+      return linkedPlayerId != '' && parentId != '' &&
+        exists(playerPath) && exists(linkedMemberPath) &&
+        get(playerPath).data.get('userId', '') == request.auth.uid &&
+        get(playerPath).data.get('parentId', '') == parentId &&
+        get(linkedMemberPath).data.get('playerId', '') == linkedPlayerId &&
+        get(linkedMemberPath).data.get('parentId', '') == parentId &&
+        get(linkedMemberPath).data.get('teamId', teamId) == teamId &&
+        isActiveMember(get(linkedMemberPath).data);
     }
 
     function isTeamOwner(teamId) {
@@ -81,24 +88,21 @@ service cloud.firestore {
         );
     }
 
-    function teamMemberData(teamId) {
-      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+    function directTeamMemberData(teamId) {
       let directMemberPath =
         /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
-      let linkedPlayerId = exists(userPath)
-        ? get(userPath).data.get('linkedPlayerId', '')
-        : '';
-      let linkedMemberPath =
-        /databases/$(database)/documents/teams/$(teamId)/members/$(linkedPlayerId);
-      return exists(directMemberPath)
-        ? get(directMemberPath).data
-        : get(linkedMemberPath).data;
+      return get(directMemberPath).data;
     }
 
     function isTeamStaff(teamId) {
-      let member = teamMemberData(teamId);
+      let directMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
       return isTeamOwner(teamId) ||
-        (isActiveMember(member) && hasStaffAuthority(member));
+        (
+          isSignedIn() && exists(directMemberPath) &&
+          isActiveMember(directTeamMemberData(teamId)) &&
+          hasStaffAuthority(directTeamMemberData(teamId))
+        );
     }
 
     function hasStaffAuthority(member) {
@@ -111,7 +115,11 @@ service cloud.firestore {
     }
 
     function isTeamParent(teamId) {
-      return teamMemberData(teamId).get('position', '') in ['Parent', 'Guardian'];
+      let directMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
+      return isSignedIn() && exists(directMemberPath) &&
+        isActiveMember(directTeamMemberData(teamId)) &&
+        directTeamMemberData(teamId).get('position', '') in ['Parent', 'Guardian'];
     }
 
     function isTeamCoachOfPlayer(playerId) {
@@ -575,9 +583,13 @@ service cloud.firestore {
         (
           isSignedIn() && (
             request.resource.data.get('userId', '') == request.auth.uid ||
-            request.resource.data.get('parentId', '') == request.auth.uid ||
+            (
+              request.resource.data.get('parentId', '') == request.auth.uid &&
+              request.resource.data.get('userId', '') == ''
+            ) ||
             (request.resource.data.get('updatedByTeamId', '') != '' &&
-             isTeamOwner(request.resource.data.updatedByTeamId))
+             isTeamOwner(request.resource.data.updatedByTeamId) &&
+             request.resource.data.get('userId', '') == '')
           )
         )
       );
@@ -585,11 +597,15 @@ service cloud.firestore {
       // Coaches can update top-level player doc (e.g. toggleRecruitingProfile).
       // They include updatedByTeamId in the written data so we can verify ownership.
       allow update: if isSuperAdmin() || (isSignedIn() && (
-        resource.data.userId == request.auth.uid ||
+        resource.data.get('userId', '') == request.auth.uid ||
         resource.data.get('parentId', '') == request.auth.uid ||
         playerId == request.auth.uid ||
         isTeamCoachOfPlayer(playerId)
-      ));
+      ) &&
+        request.resource.data.get('userId', '') == resource.data.get('userId', '') &&
+        request.resource.data.get('parentId', '') == resource.data.get('parentId', '') &&
+        request.resource.data.get('guardianIds', []) == resource.data.get('guardianIds', [])
+      );
 
       allow delete: if isSuperAdmin() || (isSignedIn() && (
         resource.data.userId == request.auth.uid ||
