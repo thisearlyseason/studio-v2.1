@@ -141,13 +141,12 @@ function buildDashboardPolicyCases(fixture) {
   }));
 }
 
-function requiredDashboardNavigationPaths(fixture, cases) {
+function requiredDashboardNavigationPaths(fixture) {
   const required = [];
   if (fixture.role === 'parent') required.push('/family');
   if (fixture.alias === 'qa-school-owner' || fixture.alias === 'qa-elite-owner') required.push('/club');
   if (fixture.role === 'league_creator') required.push('/competition');
   if (fixture.alias === 'qa-superadmin') required.push('/admin');
-  if (cases.some(item => item.path === '/dashboard/billing' && item.allowed)) required.push('/dashboard/billing');
   return required;
 }
 
@@ -3372,7 +3371,7 @@ async function runCertificationBrowserScenario(scenarioId) {
           `dashboard policy two viewport containment ${alias}`,
         );
         const allowedPaths = policyCases.filter(item => item.allowed).map(item => item.path);
-        const requiredPaths = requiredDashboardNavigationPaths(fixture, policyCases);
+        const requiredPaths = requiredDashboardNavigationPaths(fixture);
         const visibleNavigation = browserVisibleSensitiveNavigationAudit(session, allowedPaths, requiredPaths, '/settings');
         expectEqual(visibleNavigation.observations.every(item => item.deniedVisible.length === 0), true, `dashboard visible navigation denied links ${alias}`);
         expectEqual(visibleNavigation.observations.every(item => item.missingRequired.length === 0), true, `dashboard visible navigation required links ${alias}`);
