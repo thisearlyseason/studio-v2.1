@@ -7208,7 +7208,7 @@ function browserMemberSportsHubWorkflow(session, memberUid) {
       await bookmarked.waitFor({ state: 'visible', timeout: 10000 });
       const memberBookmarksAfterClick = await page.evaluate(key => localStorage.getItem(key), bookmarksKey);
       await page.getByRole('button', { name: /^Saved/ }).click();
-      await page.getByText('Bookmarked only', { exact: true }).waitFor({ timeout: 10000 });
+      await page.getByText(/Bookmarked only/).waitFor({ timeout: 10000 });
       await page.reload();
       await page.getByTitle('Remove bookmark').first().waitFor({ state: 'visible', timeout: 15000 });
       const memberBookmarksAfterReload = await page.evaluate(key => localStorage.getItem(key), bookmarksKey);

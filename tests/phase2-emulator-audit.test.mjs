@@ -211,6 +211,8 @@ test('Sports Hub operations dispatch is a dedicated authenticated browser workfl
   assert.match(source, /sportsHubStorageKey\('preferences', memberUid\)/);
   assert.match(source, /sportsHubStorageKey\('bookmarks', ownerUid\)/);
   assert.match(source, /No results for/);
+  assert.match(source, /getByText\(\/Bookmarked only\/\)\.waitFor/);
+  assert.doesNotMatch(source, /getByText\('Bookmarked only', \{ exact: true \}\)\.waitFor/);
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
 });
 
