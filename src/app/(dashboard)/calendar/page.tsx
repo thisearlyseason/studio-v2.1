@@ -615,21 +615,27 @@ function CalendarSubscriptionDialog() {
   const { getCalendarFeedUrl, teams } = useTeam();
   const { toast } = useToast();
   const [url, setUrl] = useState<string | null>(null);
+  const [feedType, setFeedType] = useState<'user' | 'team' | 'multi' | null>(null);
   const [loading, setLoading] = useState(false);
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
 
-  const handleGenerate = async (type: 'user' | 'team' | 'multi') => {
+  const handleGenerate = async (type: 'user' | 'team' | 'multi', action: 'create' | 'rotate' | 'revoke' = 'create') => {
     setLoading(true);
     try {
-      const feedUrl = await getCalendarFeedUrl(type, undefined, type === 'multi' ? selectedTeamIds : undefined);
+      const feedUrl = await getCalendarFeedUrl(type, undefined, type === 'multi' ? selectedTeamIds : undefined, action);
       if (feedUrl) {
         setUrl(feedUrl);
+        setFeedType(type);
         navigator.clipboard.writeText(feedUrl);
         toast({ 
           title: "Secure URL Copied", 
           description: "The tactical feed link is now on your clipboard. Add it to your device's calendar app." 
         });
+      } else if (action === 'revoke') {
+        setUrl(null);
+        setFeedType(null);
+        toast({ title: 'Feed Revoked', description: 'This subscription link can no longer access your schedule.' });
       }
     } catch (e) {
       toast({ 
@@ -647,7 +653,7 @@ function CalendarSubscriptionDialog() {
   };
 
   return (
-    <Dialog onOpenChange={(open) => { if(!open) { setUrl(null); setMultiSelectMode(false); setSelectedTeamIds([]); } }}>
+    <Dialog onOpenChange={(open) => { if(!open) { setUrl(null); setFeedType(null); setMultiSelectMode(false); setSelectedTeamIds([]); } }}>
       <DialogTrigger asChild>
         <Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground">
           <CalendarDays className="h-4 w-4" /> Subscribe
@@ -799,6 +805,16 @@ function CalendarSubscriptionDialog() {
                 >
                   ← Choose a different feed
                 </button>
+                {feedType && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <Button variant="outline" disabled={loading} onClick={() => handleGenerate(feedType, 'rotate')} className="h-10 rounded-xl font-black uppercase text-[9px] tracking-widest">
+                      Rotate Link
+                    </Button>
+                    <Button variant="outline" disabled={loading} onClick={() => handleGenerate(feedType, 'revoke')} className="h-10 rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 font-black uppercase text-[9px] tracking-widest">
+                      Revoke Feed
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

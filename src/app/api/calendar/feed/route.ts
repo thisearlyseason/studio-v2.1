@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
+import { resolveCalendarFeedMutation } from '@/lib/calendar-feed-lifecycle';
 import {
   enforceUserRateLimit,
   getTrustedAppOrigin,
@@ -36,12 +37,6 @@ async function canAccessTeam(teamId: string, uid: string): Promise<boolean> {
   );
 }
 
-function sameTeamIds(left: unknown, right: string[]): boolean {
-  return Array.isArray(left) &&
-    left.length === right.length &&
-    left.every((value, index) => value === right[index]);
-}
-
 export async function POST(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
@@ -61,8 +56,12 @@ export async function POST(req: NextRequest) {
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
     const type = body.type;
+    const action = body.action === undefined ? 'create' : body.action;
     if (type !== 'user' && type !== 'team' && type !== 'multi') {
       return NextResponse.json({ error: 'Invalid calendar feed type.' }, { status: 400 });
+    }
+    if (action !== 'create' && action !== 'rotate' && action !== 'revoke') {
+      return NextResponse.json({ error: 'Invalid calendar feed action.' }, { status: 400 });
     }
 
     const rateLimit = await enforceUserRateLimit(
@@ -105,42 +104,51 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const existingFeeds = await adminDb
-      .collection('calendarFeeds')
-      .where('userId', '==', auth.uid)
-      .limit(100)
-      .get();
-    const existing = existingFeeds.docs.find(snapshot => {
-      const feed = snapshot.data();
-      if (feed.serverIssued !== true || feed.active !== true || feed.type !== type) return false;
-      if (type === 'team') return feed.teamId === teamId;
-      if (type === 'multi') return sameTeamIds(feed.teamIds, teamIds);
-      return true;
+    const feedCollection = adminDb.collection('calendarFeeds');
+    const feedQuery = feedCollection.where('userId', '==', auth.uid).limit(100);
+    const token = randomBytes(32).toString('hex');
+    const mutation = await adminDb.runTransaction(async transaction => {
+      const [existingFeeds, userSnapshot] = await Promise.all([
+        transaction.get(feedQuery),
+        transaction.get(adminDb.collection('users').doc(auth.uid)),
+      ]);
+      const resolved = resolveCalendarFeedMutation({
+        action,
+        type: type as FeedType,
+        teamId,
+        teamIds,
+        feeds: existingFeeds.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })),
+        nextToken: token,
+      });
+      const now = new Date().toISOString();
+      for (const feedId of resolved.deactivateIds) {
+        transaction.update(feedCollection.doc(feedId), { active: false, revokedAt: now });
+      }
+      if (resolved.kind === 'issue') {
+        if (!resolved.token) throw new Error('Calendar feed issuer did not allocate a token.');
+        transaction.set(feedCollection.doc(resolved.token), {
+          token: resolved.token,
+          type: type as FeedType,
+          userId: auth.uid,
+          ownerDisplayName: userSnapshot.data()?.name || null,
+          teamId,
+          teamIds: type === 'multi' ? teamIds : null,
+          serverIssued: true,
+          active: true,
+          createdAt: now,
+          lastRefreshed: now,
+          appBaseUrl: getTrustedAppOrigin(req),
+        });
+      }
+      return resolved;
     });
 
+    if (mutation.kind === 'revoked') return NextResponse.json({ revoked: true });
     // Firebase's deployed feed function deliberately accepts exactly 64
     // lowercase hexadecimal characters. Keep the issuer and verifier on the
     // same opaque-token format so a newly created feed is fetchable.
-    const token = existing?.id || randomBytes(32).toString('hex');
-    if (!existing) {
-      const userSnapshot = await adminDb.collection('users').doc(auth.uid).get();
-      const now = new Date().toISOString();
-      await adminDb.collection('calendarFeeds').doc(token).set({
-        token,
-        type: type as FeedType,
-        userId: auth.uid,
-        ownerDisplayName: userSnapshot.data()?.name || null,
-        teamId,
-        teamIds: type === 'multi' ? teamIds : null,
-        serverIssued: true,
-        active: true,
-        createdAt: now,
-        lastRefreshed: now,
-        appBaseUrl: getTrustedAppOrigin(req),
-      });
-    }
-
-    feedUrl.searchParams.set('token', token);
+    if (!mutation.token) throw new Error('Calendar feed issuer did not return a token.');
+    feedUrl.searchParams.set('token', mutation.token);
     return NextResponse.json({ url: feedUrl.toString() });
   } catch (error) {
     if (error instanceof RequestBodyError) {

@@ -371,6 +371,10 @@ export type TeamEvent = {
   tournamentTeamsData?: any[];
   tournamentGames?: any[];
   userRsvps?: Record<string, string>;
+  recurrenceSeriesId?: string;
+  recurrenceFrequency?: 'weekly';
+  recurrenceIndex?: number;
+  recurrenceCount?: number;
   teamWaiverText?: string;
   teamAgreements?: Record<string, any>;
   customFormFields?: any[];
@@ -880,8 +884,11 @@ interface TeamContextType {
   updateTeamDocument: (docId: string, data: any) => Promise<void>;
   deleteTeamDocument: (docId: string) => Promise<void>;
   addEvent: (data: any) => Promise<boolean>;
+  createEventSeries: (data: any, recurrence: { frequency: 'weekly'; count: number }) => Promise<boolean>;
   updateEvent: (id: string, data: any) => Promise<boolean>;
+  updateEventSeries: (id: string, data: any) => Promise<boolean>;
   deleteEvent: (id: string) => Promise<void>;
+  deleteEventSeries: (id: string) => Promise<void>;
   updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>;
   claimAssignment: (eventId: string, assignmentId: string) => Promise<boolean>;
   addMessage: (chatId: string, author: string, content: string, type: string, img?: string, poll?: any, teamId?: string) => Promise<void>;
@@ -988,7 +995,7 @@ interface TeamContextType {
   updateTeamCode: (teamId: string, newCode: string) => Promise<void>;
   checkCodeUniqueness: (code: string) => Promise<boolean>;
   // Calendar feed URL generator
-  getCalendarFeedUrl: (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[]) => Promise<string | null>;
+  getCalendarFeedUrl: (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[], action?: 'create' | 'rotate' | 'revoke') => Promise<string | null>;
   // Inline member update handler (used in coaches-corner)
   handleUpdateMemberField: (memberId: string, field: string, value: any) => Promise<void>;
   // Alias for user — used by pricing page
@@ -2221,6 +2228,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return false;
   }, [db, activeTeam, isStaff, members, firebaseAuth]);
 
+  const createEventSeries = useCallback(async (data: any, recurrence: { frequency: 'weekly'; count: number }) => {
+    if (!isStaff || !activeTeam?.id || !firebaseAuth) return false;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/teams/events/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'create-series', teamId: activeTeam.id, event: clean(data), recurrence }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to create this recurring event.');
+    return true;
+  }, [activeTeam?.id, firebaseAuth, isStaff]);
+
   const updateEvent = useCallback(async (id: string, data: any) => { 
     if (!isStaff) return false;
     if (activeTeam?.id && firebaseAuth) {
@@ -2238,6 +2259,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return false; 
   }, [activeTeam, isStaff, firebaseAuth]);
 
+  const updateEventSeries = useCallback(async (id: string, data: any) => {
+    if (!isStaff || !activeTeam?.id || !firebaseAuth) return false;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/teams/events/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'update-series', teamId: activeTeam.id, eventId: id, event: clean(data) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update this recurring event.');
+    return true;
+  }, [activeTeam?.id, firebaseAuth, isStaff]);
+
   const deleteEvent = useCallback(async (id: string) => { 
     if (!isStaff) return;
     if (activeTeam?.id && firebaseAuth) {
@@ -2252,6 +2287,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error(payload.error || 'Unable to delete this event.');
     }
   }, [activeTeam, isStaff, firebaseAuth]);
+
+  const deleteEventSeries = useCallback(async (id: string) => {
+    if (!isStaff || !activeTeam?.id || !firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/teams/events/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action: 'delete-series', teamId: activeTeam.id, eventId: id }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to delete this recurring event.');
+  }, [activeTeam?.id, firebaseAuth, isStaff]);
   const updateRSVP = useCallback(async (eventId: string, status: string, teamId?: string, userId?: string) => { 
     const tid = teamId || activeTeam?.id;
     const uid = userId || firebaseUser?.uid;
@@ -3570,7 +3618,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
 
-  const getCalendarFeedUrl = useCallback(async (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[]) => {
+  const getCalendarFeedUrl = useCallback(async (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[], action: 'create' | 'rotate' | 'revoke' = 'create') => {
     if (!firebaseUser) return null;
     const finalTargetId = targetId || (type === 'team' ? activeTeam?.id : firebaseUser?.uid);
     if (type !== 'multi' && !finalTargetId) return null;
@@ -3581,6 +3629,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify({
         type,
+        action,
         ...(type === 'team' ? { teamId: finalTargetId } : {}),
         ...(type === 'multi' ? { teamIds } : {}),
       }),
@@ -3620,8 +3669,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, createLeague,
     hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite, revokeChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
-    signTeamDocument, createTeamDocument, updateTeamDocument, deleteTeamDocument, addEvent, updateEvent, claimAssignment,
-    deleteEvent, updateRSVP, addMessage, resetSquadData,
+    signTeamDocument, createTeamDocument, updateTeamDocument, deleteTeamDocument, addEvent, createEventSeries, updateEvent, updateEventSeries, claimAssignment,
+    deleteEvent, deleteEventSeries, updateRSVP, addMessage, resetSquadData,
     removeMember, reinstateMember,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
@@ -3662,8 +3711,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     deleteLeagueInvite, updateLeagueTeamDetails, deleteChat, createChat,
     hideChatForUser, votePoll, updateChat, deployClubProtocol, deleteTeam, deleteAccount, upgradeChildToLogin, registerChild, updateChild, sendChildInvite, revokeChildInvite,
     updateUser, updateTeam, updateMember, updateTeamDetails, updateTeamHero, updateTeamPlan,
-    signTeamDocument, createTeamDocument, updateTeamDocument, deleteTeamDocument, addEvent, updateEvent,
-    deleteEvent, updateRSVP, addMessage, resetSquadData,
+    signTeamDocument, createTeamDocument, updateTeamDocument, deleteTeamDocument, addEvent, createEventSeries, updateEvent, updateEventSeries,
+    deleteEvent, deleteEventSeries, updateRSVP, addMessage, resetSquadData,
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising, recordDonation,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,

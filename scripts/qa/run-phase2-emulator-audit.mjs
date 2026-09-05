@@ -6653,6 +6653,14 @@ async function runCertificationOperationsScenarios() {
         }
         continue;
       }
+      if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
+        await runEventWorkflowAudit();
+        await runRecurringEventWorkflowAudit();
+        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
+          recordObservedOperationsCase(scenarioId, dimension, 'staff event CRUD, recurrence, validation, permission, persistence, and responsive workflow completed');
+        }
+        continue;
+      }
       // The operations dispatcher is deliberately explicit. Until a domain
       // handler supplies case-owned browser/API evidence, every dimension is
       // reported as NOT_OBSERVED instead of allowing the old generic audit to
@@ -7531,6 +7539,114 @@ async function runEventWorkflowAudit() {
   expectEqual(ownerResult.deletedAfterReload, 0, 'owner event delete persists after reload');
   expectEqual(ownerResult.consoleErrors.length, 0, 'owner event edit/delete console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'owner event edit/delete failed responses');
+}
+
+function browserOwnerRecurringEventWorkflow(session, marker) {
+  const title = `QA Weekly Event ${marker}`;
+  const updated = `QA Weekly Event Updated ${marker}`;
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) {
+        failedResponses.push(response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0]);
+      }
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
+      await page.getByRole('button', { name: '+ New Activity' }).click();
+      const form = page.getByRole('dialog', { name: 'Schedule New Team Activity' });
+      await form.getByPlaceholder('e.g. Squad Match vs Tigers').fill(${JSON.stringify(title)});
+      await form.getByRole('button', { name: 'Pick Date' }).first().click();
+      await page.getByRole('button', { name: /September 20/ }).first().click();
+      await form.locator('input[type="time"]').fill('18:30');
+      await form.locator('#weekly-recurrence-count').click();
+      await page.getByRole('option', { name: 'Four weekly activities' }).click();
+      const createResponse = page.waitForResponse(response => response.url().includes('/api/teams/events/action') && response.request().method() === 'POST');
+      await form.getByRole('button', { name: 'Deploy Activity' }).click();
+      const createStatus = (await createResponse).status();
+      if (createStatus !== 200) throw new Error('weekly recurrence create response status: ' + createStatus);
+      await page.getByText(${JSON.stringify(title)}, { exact: true }).first().waitFor({ timeout: 15000 });
+      await page.reload();
+      const itinerary = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Itinerary', exact: true }) });
+      const createdTitles = itinerary.getByText(${JSON.stringify(title)}, { exact: true });
+      await createdTitles.first().waitFor({ state: 'visible', timeout: 15000 });
+      const createdCount = await createdTitles.count();
+      const titleNodes = await createdTitles.evaluateAll(nodes => nodes.map(node => ({
+        tag: node.tagName,
+        text: node.textContent,
+        outer: node.outerHTML.slice(0, 500),
+      })));
+      await createdTitles.first().click();
+      const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+      const detailsVisible = await details.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+      if (!detailsVisible) {
+        throw new Error('weekly recurrence dialog diagnostic: ' + JSON.stringify({
+          createdCount,
+          titleNodes,
+          dialogs: await page.getByRole('dialog').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label') || node.textContent?.slice(0, 300))),
+        }));
+      }
+      const createdCalendarDate = (await details.innerText()).includes('September 20, 2026');
+      const seriesEditControl = details.getByRole('button', { name: 'Edit Entire Weekly Series' });
+      if (await seriesEditControl.count() === 0) {
+        throw new Error('weekly recurrence details diagnostic: ' + JSON.stringify({
+          buttons: await details.getByRole('button').allTextContents(),
+          body: (await details.innerText()).slice(0, 2400),
+        }));
+      }
+      await seriesEditControl.click();
+      const edit = page.getByRole('dialog', { name: 'Schedule New Team Activity' });
+      await edit.getByPlaceholder('e.g. Squad Match vs Tigers').fill(${JSON.stringify(updated)});
+      await edit.getByRole('button', { name: 'Deploy Activity' }).click();
+      await page.getByText(${JSON.stringify(updated)}, { exact: true }).first().waitFor({ timeout: 15000 });
+      await page.reload();
+      const updatedTitles = itinerary.getByText(${JSON.stringify(updated)}, { exact: true });
+      await updatedTitles.first().waitFor({ state: 'visible', timeout: 15000 });
+      const updatedCount = await updatedTitles.count();
+      await updatedTitles.first().click();
+      const updatedDetails = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${updated}`)} });
+      await updatedDetails.getByRole('button', { name: 'Delete Entire Weekly Series' }).click();
+      const confirmation = page.getByRole('alertdialog');
+      await confirmation.getByRole('button', { name: 'Delete Series' }).click();
+      await updatedTitles.first().waitFor({ state: 'detached', timeout: 15000 });
+      await page.reload();
+      await page.setViewportSize({ width: 390, height: 844 });
+      return {
+        createdCount,
+        createdCalendarDate,
+        updatedCount,
+        deletedCount: await itinerary.getByText(${JSON.stringify(updated)}, { exact: true }).count(),
+        mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors,
+        failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runRecurringEventWorkflowAudit() {
+  const marker = `phase2-recurring-${process.pid}`;
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `events-series-owner-${process.pid}`);
+  const result = browserOwnerRecurringEventWorkflow(owner, marker);
+  expectEqual(result.createdCount, 4, 'weekly recurrence creates the exact requested occurrence count');
+  expectEqual(result.createdCalendarDate, true, 'weekly recurrence preserves the selected local calendar date');
+  expectEqual(result.updatedCount, 4, 'weekly recurrence series edit preserves all occurrence dates');
+  expectEqual(result.deletedCount, 0, 'weekly recurrence series delete removes every occurrence');
+  expectEqual(result.mobileFits, true, 'weekly recurrence controls fit the mobile viewport');
+  expectEqual(result.consoleErrors.length, 0, 'weekly recurrence workflow console errors');
+  expectEqual(result.failedResponses.length, 0, 'weekly recurrence workflow failed responses');
 }
 
 function browserFacilityWorkflow(session, marker) {

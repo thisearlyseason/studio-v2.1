@@ -254,13 +254,14 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
 
 
 export default function EventsPage() {
-  const { activeTeam, activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, updateEvent, deleteEvent, members, createAlert } = useTeam();
+  const { activeTeam, activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, createEventSeries, updateEvent, updateEventSeries, deleteEvent, deleteEventSeries, members, createAlert } = useTeam();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<Date | null>(new Date());
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
+  const [editingSeries, setEditingSeries] = useState(false);
   
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
@@ -272,6 +273,7 @@ export default function EventsPage() {
   const [opponent, setOpponent] = useState('');
   const [assignments, setAssignments] = useState<{ id: string; title: string, assigneeId: string | null, assigneeName?: string | null }[]>([]);
   const [selectedDrillIds, setSelectedDrillIds] = useState<string[]>([]);
+  const [recurrenceCount, setRecurrenceCount] = useState('1');
 
   const db = useFirestore();
   const drillsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('title', 'asc')) : null, [activeTeam?.id, db]);
@@ -371,8 +373,10 @@ export default function EventsPage() {
     try {
       const payload: any = { 
         title: newTitle.trim(), eventType,
-        date: new Date(`${newDate}T${newTime || '00:00'}`).toISOString(), 
-        endDate: newEndDate ? new Date(`${newEndDate}T${newTime || '23:59'}`).toISOString() : new Date(`${newDate}T${newTime || '23:59'}`).toISOString(),
+        // Schedule dates are calendar dates. Converting them through a local
+        // Date then ISO serialisation shifts late-day activities across UTC.
+        date: newDate,
+        endDate: newEndDate || newDate,
         startTime: newTime, location: newLocation, description: newDescription,
         opponent: eventType === 'game' ? opponent : '',
         assignments: assignments.map(a => ({
@@ -381,7 +385,13 @@ export default function EventsPage() {
         })),
         drillIds: eventType === 'practice' ? selectedDrillIds : []
       }; 
-      const success = editingEvent ? await updateEvent(editingEvent.id, payload) : await addEvent(payload); 
+      const seriesCount = Number(recurrenceCount);
+      const seriesPayload = editingSeries ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'date' && key !== 'endDate')) : payload;
+      const success = editingEvent
+        ? editingSeries ? await updateEventSeries(editingEvent.id, seriesPayload) : await updateEvent(editingEvent.id, payload)
+        : seriesCount > 1
+          ? await createEventSeries(payload, { frequency: 'weekly', count: seriesCount })
+          : await addEvent(payload);
       
       if (success) {
         // Notify new assignees
@@ -406,10 +416,11 @@ export default function EventsPage() {
   };
 
   const resetForm = () => {
-    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setAssignments([]); setSelectedDrillIds([]);
+    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setEditingSeries(false); setAssignments([]); setSelectedDrillIds([]); setRecurrenceCount('1');
   };
 
   const handleEdit = (event: TeamEvent) => { 
+    setEditingSeries(false);
     setEditingEvent(event); 
     setNewTitle(event.title); 
     setEventType(event.eventType || 'game'); 
@@ -422,6 +433,22 @@ export default function EventsPage() {
     setOpponent(event.opponent || '');
     setSelectedDrillIds(event.drillIds || []);
     setIsCreateOpen(true); 
+  };
+
+  const handleEditSeries = (event: TeamEvent) => {
+    setEditingSeries(true);
+    setEditingEvent(event);
+    setNewTitle(event.title);
+    setEventType(event.eventType || 'game');
+    setNewDate(format(new Date(event.date), 'yyyy-MM-dd'));
+    if (event.endDate) setNewEndDate(format(new Date(event.endDate), 'yyyy-MM-dd'));
+    setNewTime(event.startTime);
+    setNewLocation(event.location);
+    setNewDescription(event.description);
+    setAssignments(event.assignments || []);
+    setOpponent(event.opponent || '');
+    setSelectedDrillIds(event.drillIds || []);
+    setIsCreateOpen(true);
   };
 
   const isAdmin = isStaff || isSuperAdmin;
@@ -505,7 +532,7 @@ export default function EventsPage() {
                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Squad Readiness</p>
                <p className="text-3xl font-black leading-none uppercase">Verified</p>
              </div>
-             <EventDetailDialog event={nextTournament} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} members={members}>
+             <EventDetailDialog event={nextTournament} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
                <Button className="w-full h-12 sm:h-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-xl px-8 sm:px-10">
                  Open Intel <ArrowUpRight className="ml-2 h-4 w-4" />
                </Button>
@@ -553,7 +580,7 @@ export default function EventsPage() {
           </DialogClose>
           <div className="flex flex-col lg:flex-row">
             <div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r">
-              <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingEvent ? "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingEvent ? editingSeries ? "Update Weekly Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
               <div className="space-y-6">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
@@ -627,6 +654,21 @@ export default function EventsPage() {
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Time *</Label><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black px-4 pr-10" />
                 </div>
+                {!editingEvent && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="weekly-recurrence-count" className="text-[10px] font-black uppercase tracking-widest ml-1">Repeat Weekly</Label>
+                    <Select value={recurrenceCount} onValueChange={setRecurrenceCount}>
+                      <SelectTrigger id="weekly-recurrence-count" className="h-12 rounded-xl border-2 bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="1" className="font-bold">One activity</SelectItem>
+                        <SelectItem value="2" className="font-bold">Two weekly activities</SelectItem>
+                        <SelectItem value="4" className="font-bold">Four weekly activities</SelectItem>
+                        <SelectItem value="8" className="font-bold">Eight weekly activities</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {Number(recurrenceCount) > 1 && <p className="text-[9px] font-bold text-muted-foreground uppercase">Creates {recurrenceCount} weekly activities. Each occurrence remains editable.</p>}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex-1 p-10 space-y-6 bg-white">
@@ -887,7 +929,7 @@ export default function EventsPage() {
                 ) : (
                   <div className="grid gap-3">
                     {selectedDayEvents.map(event => (
-                      <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} members={members}>
+                      <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
                         <Card className="hover:border-primary/30 transition-all duration-300 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                           <div className="flex items-stretch h-24">
                             <div className={cn('w-20 flex flex-col items-center justify-center border-r-2 shrink-0 px-2 text-center', EVENT_TYPE_COLORS[event.eventType || 'other'])}>
@@ -927,7 +969,7 @@ export default function EventsPage() {
           <div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border shadow-inner"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div>
           <div className="grid gap-4">
             {filteredEvents.map((event) => (
-              <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onDelete={deleteEvent} members={members}>
+              <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
                 <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                   <div className="flex items-stretch min-h-[96px] sm:h-32">
                     <div className={cn("w-16 sm:w-24 lg:w-32 flex flex-col items-center justify-center border-r-2 shrink-0 px-1 sm:px-2 text-center", EVENT_TYPE_COLORS[event.eventType || 'other'])}>

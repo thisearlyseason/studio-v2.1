@@ -88,7 +88,9 @@ interface EventDetailDialogProps {
   updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>;
   isAdmin: boolean;
   onEdit: (event: TeamEvent) => void;
+  onEditSeries?: (event: TeamEvent) => void;
   onDelete: (eventId: string) => void;
+  onDeleteSeries?: (eventId: string) => Promise<void>;
   children: React.ReactNode;
   members: Member[];
   /** If provided, the dialog opens on this tab instead of 'attendance' */
@@ -100,7 +102,9 @@ export function EventDetailDialog({
   updateRSVP, 
   isAdmin, 
   onEdit, 
+  onEditSeries,
   onDelete, 
+  onDeleteSeries,
   children, 
   members,
   defaultTab = 'attendance'
@@ -109,6 +113,7 @@ export function EventDetailDialog({
   const router = useRouter();
   const db = useFirestore();
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = React.useState(false);
+  const [deleteSeriesConfirmationOpen, setDeleteSeriesConfirmationOpen] = React.useState(false);
 
   const registrationsQuery = useMemoFirebase(() => {
     const eventTeamId = event.teamId || activeTeam?.id;
@@ -323,6 +328,16 @@ export function EventDetailDialog({
                       </TooltipContent>
                     </Tooltip>
                   </div>
+                  {event.recurrenceSeriesId && onEditSeries && (
+                    <Button variant="outline" className="w-full h-11 rounded-2xl border-white/20 bg-transparent text-white hover:bg-white/10 font-black uppercase text-[9px]" onClick={() => onEditSeries(event)}>
+                      Edit Entire Weekly Series
+                    </Button>
+                  )}
+                  {event.recurrenceSeriesId && onDeleteSeries && (
+                    <Button variant="outline" className="w-full h-11 rounded-2xl border-white/20 bg-transparent text-white hover:bg-white/10 font-black uppercase text-[9px]" onClick={() => setDeleteSeriesConfirmationOpen(true)}>
+                      Delete Entire Weekly Series
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -709,6 +724,22 @@ export function EventDetailDialog({
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => onDelete(event.id)}>
                 Delete Activity
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={deleteSeriesConfirmationOpen} onOpenChange={setDeleteSeriesConfirmationOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Weekly Series?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Every occurrence in <strong>{event.title}</strong>&rsquo;s weekly series will be permanently removed. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { void onDeleteSeries?.(event.id); }}>
+                Delete Series
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

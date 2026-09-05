@@ -232,7 +232,10 @@ test('Calendar views and filters have a dedicated two-viewport operations workfl
   assert.match(operationsBlock, /scenarioId === 'calendar-team-family-views-and-filters' && runBrowser/);
   assert.match(operationsBlock, /await runCalendarViewsWorkflowAudit\(\)/);
   assert.match(operationsBlock, /\['happyPath', 'console', 'network', 'responsive'\]/);
-  assert.doesNotMatch(operationsBlock, /calendar-team-family-views-and-filters[\s\S]{0,700}\['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'\]/);
+  const calendarBranchStart = operationsBlock.indexOf("scenarioId === 'calendar-team-family-views-and-filters'");
+  const calendarBranchEnd = operationsBlock.indexOf("if (scenarioId ===", calendarBranchStart + 1);
+  const calendarBranch = operationsBlock.slice(calendarBranchStart, calendarBranchEnd);
+  assert.doesNotMatch(calendarBranch, /\['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'\]/);
   assert.match(source, /async function runCalendarViewsWorkflowAudit\(\)/);
   assert.match(source, /getByRole\('button', \{ name: 'Agenda'/);
   assert.match(source, /getByRole\('button', \{ name: 'Filters'/);
@@ -1326,6 +1329,16 @@ test('emulator audit exercises event CRUD, RSVP persistence, and staff-only cont
   assert.match(source, /member RSVP persists after reload/);
   assert.match(source, /owner event edit persists after reload/);
   assert.match(source, /owner event delete persists after reload/);
+});
+
+test('recurring-event browser evidence waits for post-reload event hydration before opening series controls', () => {
+  const start = source.indexOf('function browserOwnerRecurringEventWorkflow(');
+  const end = source.indexOf('async function runRecurringEventWorkflowAudit()', start);
+  const recurrenceBlock = source.slice(start, end);
+  assert.match(recurrenceBlock, /const itinerary = page\.locator\('section'\)\.filter\(\{ has: page\.getByRole\('heading', \{ name: 'Itinerary', exact: true \}\) \}\);/);
+  assert.match(recurrenceBlock, /const createdTitles = itinerary\.getByText\(.*title.*exact: true.*\);/s);
+  assert.match(recurrenceBlock, /await createdTitles\.first\(\)\.waitFor\(\{ state: 'visible', timeout: 15000 \}\);/);
+  assert.match(recurrenceBlock, /weekly recurrence dialog diagnostic/);
 });
 
 test('emulator audit exercises facility and resource CRUD with destructive confirmation', () => {

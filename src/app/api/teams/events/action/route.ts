@@ -12,10 +12,24 @@ import { hasStaffRole } from '@/lib/staff-position';
 import { withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 import { buildTournamentReplicationEvent } from '@/lib/server-tournament-replication';
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
+import { buildRecurringEventDates } from '@/lib/team-event-recurrence';
+import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
+import { eventActionNeedsGeneratedId } from '@/lib/team-event-action';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const REGISTRATION_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no', 'no_response']);
+
+function recurrenceInput(value: unknown): { frequency: 'weekly'; count: number } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new EventMutationError('A weekly recurrence configuration is required.');
+  }
+  const input = value as Record<string, unknown>;
+  if (input.frequency !== 'weekly' || !Number.isInteger(input.count)) {
+    throw new EventMutationError('A valid weekly recurrence configuration is required.');
+  }
+  return { frequency: 'weekly', count: input.count as number };
+}
 
 class EventMutationError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -26,44 +40,6 @@ class EventMutationError extends Error {
 function cleanDate(value: unknown): string {
   const candidate = typeof value === 'string' ? value.trim().split('T')[0] : '';
   return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : '';
-}
-
-function parseTime(value: unknown): number | null {
-  if (typeof value !== 'string') return null;
-  const match = value.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/);
-  if (!match) return null;
-  let hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (minute > 59) return null;
-  if (match[3]) {
-    if (hour < 1 || hour > 12) return null;
-    if (match[3] === 'PM' && hour !== 12) hour += 12;
-    if (match[3] === 'AM' && hour === 12) hour = 0;
-  } else if (hour > 23) return null;
-  return hour * 60 + minute;
-}
-
-function eventInterval(data: Record<string, unknown>) {
-  const date = cleanDate(data.date);
-  const startMinute = parseTime(data.startTime ?? data.time);
-  if (!date || startMinute === null) return null;
-  const explicitEnd = parseTime(data.endTime);
-  const requestedDuration = Number(data.durationMinutes);
-  const duration = Number.isInteger(requestedDuration) && requestedDuration > 0 && requestedDuration <= 24 * 60
-    ? requestedDuration
-    : 60;
-  const endMinute = explicitEnd !== null && explicitEnd > startMinute
-    ? explicitEnd
-    : startMinute + duration;
-  if (endMinute > 24 * 60) return null;
-  return { date, startMinute, endMinute };
-}
-
-function overlaps(
-  left: { date: string; startMinute: number; endMinute: number },
-  right: { date: string; startMinute: number; endMinute: number }
-) {
-  return left.date === right.date && left.startMinute < right.endMinute && right.startMinute < left.endMinute;
 }
 
 function eventBookingId(teamId: string, eventId: string) {
@@ -86,10 +62,10 @@ async function assertEventAvailability(
   eventId: string,
   data: Record<string, unknown>
 ) {
-  const interval = eventInterval(data);
+  const interval = normalizeTeamEventInterval(data);
   if (!interval) return null;
   const [bookings, events] = await Promise.all([
-    adminDb.collection('scheduleBookings').where('date', '==', interval.date).get(),
+    adminDb.collection('scheduleBookings').where('date', 'in', teamEventConflictDates(interval)).get(),
     adminDb.collection('teams').doc(teamId).collection('events').get(),
   ]);
   const resourceId = typeof data.resourceId === 'string' ? data.resourceId.trim() : '';
@@ -102,7 +78,7 @@ async function assertEventAvailability(
       startMinute: Number(bookingData.startMinute),
       endMinute: Number(bookingData.endMinute),
     };
-    if (!Number.isFinite(other.startMinute) || !Number.isFinite(other.endMinute) || !overlaps(interval, other)) continue;
+    if (!Number.isFinite(other.startMinute) || !Number.isFinite(other.endMinute) || !teamEventIntervalsOverlap(interval, other)) continue;
     const teamIds = Array.isArray(bookingData.teamIds) ? bookingData.teamIds : [];
     const sameResource = resourceId && bookingData.resourceId === resourceId;
     const sameLocation = location && String(bookingData.location || '').trim().toLocaleLowerCase() === location;
@@ -112,8 +88,8 @@ async function assertEventAvailability(
   }
   for (const event of events.docs) {
     if (event.id === eventId) continue;
-    const other = eventInterval(event.data());
-    if (other && overlaps(interval, other)) {
+    const other = normalizeTeamEventInterval(event.data());
+    if (teamEventIntervalsOverlap(interval, other)) {
       throw new EventMutationError('This squad already has an event during the selected time.', 409);
     }
   }
@@ -152,19 +128,104 @@ export async function POST(req: NextRequest) {
     const action = String(body.action || '');
     const teamId = String(body.teamId || '');
     const requestedEventId = String(body.eventId || '');
+    const needsGeneratedId = eventActionNeedsGeneratedId(action);
     const requestedCreateId = action === 'create' && requestedEventId ? requestedEventId : '';
-    if (!ID_PATTERN.test(teamId) || (action !== 'create' && !ID_PATTERN.test(requestedEventId)) || (requestedCreateId && !ID_PATTERN.test(requestedCreateId))) {
+    const requiresEventId = !needsGeneratedId;
+    if (!ID_PATTERN.test(teamId) || (requiresEventId && !ID_PATTERN.test(requestedEventId)) || (requestedCreateId && !ID_PATTERN.test(requestedCreateId))) {
       return NextResponse.json({ error: 'Invalid squad or event.' }, { status: 400 });
     }
 
     const access = await teamAccess(teamId, auth.uid, auth.role);
     if (!access?.isMember) return NextResponse.json({ error: 'Squad membership required.' }, { status: 403 });
-    const eventRef = action === 'create'
+    const eventRef = needsGeneratedId
       ? requestedCreateId
         ? access.teamRef.collection('events').doc(requestedCreateId)
         : access.teamRef.collection('events').doc()
       : access.teamRef.collection('events').doc(requestedEventId);
     const eventId = eventRef.id;
+
+    if (action === 'create-series') {
+      if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
+      const result = await withScheduleMutationLock(async () => {
+        const submitted = safeEventData(body.event);
+        const recurrence = recurrenceInput(body.recurrence);
+        let dates: string[];
+        try {
+          dates = buildRecurringEventDates(cleanDate(submitted.date), recurrence.frequency, recurrence.count);
+        } catch (error) {
+          throw new EventMutationError(error instanceof Error ? error.message : 'Invalid recurrence configuration.');
+        }
+        const now = new Date().toISOString();
+        const seriesId = randomBytes(16).toString('hex');
+        const occurrences = dates.map(date => ({ ref: access.teamRef.collection('events').doc(), date }));
+        const prepared = [] as Array<{ ref: FirebaseFirestore.DocumentReference; event: Record<string, unknown>; interval: ReturnType<typeof normalizeTeamEventInterval> }>;
+        for (const occurrence of occurrences) {
+          const event = {
+            ...submitted,
+            id: occurrence.ref.id,
+            teamId,
+            ownerUserId: access.teamData.ownerUserId || auth.uid,
+            date: occurrence.date,
+            recurrenceSeriesId: seriesId,
+            recurrenceFrequency: recurrence.frequency,
+            recurrenceIndex: prepared.length,
+            recurrenceCount: recurrence.count,
+            createdAt: now,
+            updatedAt: now,
+          };
+          const interval = await assertEventAvailability(teamId, occurrence.ref.id, event);
+          prepared.push({ ref: occurrence.ref, event, interval });
+        }
+        const batch = adminDb.batch();
+        for (const occurrence of prepared) {
+          batch.set(occurrence.ref, occurrence.event);
+          if (occurrence.interval) {
+            batch.set(adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, occurrence.ref.id)),
+              buildTeamEventBooking({ bookingId: eventBookingId(teamId, occurrence.ref.id), teamId, eventId: occurrence.ref.id, event: occurrence.event, interval: occurrence.interval, now }));
+          }
+        }
+        await batch.commit();
+        return { eventIds: prepared.map(occurrence => occurrence.ref.id) };
+      });
+      return NextResponse.json({ success: true, eventIds: result.eventIds });
+    }
+
+    if (action === 'update-series' || action === 'delete-series') {
+      if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
+      const result = await withScheduleMutationLock(async () => {
+        const source = await eventRef.get();
+        if (!source.exists) return { status: 'missing' as const };
+        const seriesId = typeof source.data()?.recurrenceSeriesId === 'string' ? source.data()?.recurrenceSeriesId : '';
+        if (!seriesId) return { status: 'not-series' as const };
+        const siblings = await access.teamRef.collection('events').where('recurrenceSeriesId', '==', seriesId).get();
+        if (siblings.empty) return { status: 'missing' as const };
+        const now = new Date().toISOString();
+        const batch = adminDb.batch();
+        if (action === 'delete-series') {
+          for (const sibling of siblings.docs) {
+            batch.delete(sibling.ref);
+            batch.delete(adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, sibling.id)));
+          }
+          await batch.commit();
+          return { status: 'deleted' as const };
+        }
+        const submitted = safeEventData(body.event);
+        const updates = siblings.docs.map(sibling => ({ ref: sibling.ref, id: sibling.id, event: { ...sibling.data(), ...submitted, updatedAt: now } }));
+        for (const update of updates) await assertEventAvailability(teamId, update.id, update.event);
+        for (const update of updates) {
+          batch.set(update.ref, update.event, { merge: true });
+          const interval = normalizeTeamEventInterval(update.event);
+          const bookingRef = adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, update.id));
+          if (interval) batch.set(bookingRef, buildTeamEventBooking({ bookingId: bookingRef.id, teamId, eventId: update.id, event: update.event, interval, now }));
+          else batch.delete(bookingRef);
+        }
+        await batch.commit();
+        return { status: 'updated' as const };
+      });
+      if (result.status === 'missing') return NextResponse.json({ error: 'Event series not found.' }, { status: 404 });
+      if (result.status === 'not-series') return NextResponse.json({ error: 'This event is not part of a recurrence series.' }, { status: 400 });
+      return NextResponse.json({ success: true });
+    }
 
     if (action === 'replicate') {
       if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
