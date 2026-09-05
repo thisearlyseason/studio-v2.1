@@ -216,6 +216,14 @@ test('Sports Hub operations dispatch is a dedicated authenticated browser workfl
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
 });
 
+test('operations browser evidence attributes chat and Sports Hub actions to the actual authenticated fixtures', () => {
+  const actorFunction = source.slice(source.indexOf('function certificationActorAliases('), source.indexOf('function tenantCaseAssociations('));
+  assert.match(actorFunction, /'chat-channel-message-unread': \['qa-coach-owner-a', 'qa-team-member'\]/);
+  assert.match(actorFunction, /'sports-hub-browse-search-filter-bookmark-preferences': \['qa-team-member', 'qa-coach-owner-a'\]/);
+  assert.doesNotMatch(actorFunction, /'chat-channel-message-unread': \['catalog-scenario-actor'\]/);
+  assert.doesNotMatch(actorFunction, /'sports-hub-browse-search-filter-bookmark-preferences': \['catalog-scenario-actor'\]/);
+});
+
 test('communication browser workflow uses the run-scoped Team A identifier for its chat target', () => {
   const start = source.indexOf('function browserMemberCommunication(');
   const end = source.indexOf('async function runCommunicationWorkflowAudit()', start);
