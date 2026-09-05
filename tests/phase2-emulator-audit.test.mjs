@@ -1250,6 +1250,8 @@ test('emulator audit exercises remaining communication CRUD and cross-role persi
   assert.match(source, /owner poll persists after reload/);
   assert.match(source, /member poll vote persists after reload/);
   assert.match(source, /member chat message persists for owner/);
+  assert.match(source, /member chat message increments owner unread state/);
+  assert.match(source, /opening the channel clears only owner unread state/);
   assert.match(source, /Team B chat content is absent from Team A UI/);
 });
 

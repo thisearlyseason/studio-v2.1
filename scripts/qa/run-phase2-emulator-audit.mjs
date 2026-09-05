@@ -7021,12 +7021,22 @@ function browserOwnerCommunicationVerify(session, marker) {
     await page.reload();
     const deletedAfterReload = await page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true }).count();
 
-    await page.goto(${JSON.stringify(`${BASE_URL}/chats/qa-team-chat?teamId=qa-team-a`)});
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
+    const channelCard = page.locator('a[href="/chats/qa-team-chat?teamId=qa-team-a"]');
+    await channelCard.waitFor({ timeout: 10000 });
+    const unreadBeforeOpen = await channelCard.locator('div.bg-primary.text-white').count();
+    await channelCard.click();
     await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    await page.waitForTimeout(300);
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
+    await channelCard.waitFor({ timeout: 10000 });
+    const unreadAfterOpen = await channelCard.locator('div.bg-primary.text-white').count();
     return {
       memberComment,
       deletedAfterReload,
       chatVisible: await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).count(),
+      unreadBeforeOpen,
+      unreadAfterOpen,
     };
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
@@ -7056,6 +7066,8 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(ownerResult.memberComment, 1, 'member comment persists for owner');
   expectEqual(ownerResult.deletedAfterReload, 0, 'owner feed post delete persists after reload');
   expectEqual(ownerResult.chatVisible, 1, 'member chat message persists for owner');
+  expectEqual(ownerResult.unreadBeforeOpen > 0, true, 'member chat message increments owner unread state');
+  expectEqual(ownerResult.unreadAfterOpen, 0, 'opening the channel clears only owner unread state');
 }
 
 function browserOwnerEventCreate(session, marker) {
