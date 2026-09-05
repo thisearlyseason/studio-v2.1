@@ -198,6 +198,15 @@ test('managed operations chat dispatch emits one attributable result for each lo
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
 });
 
+test('communication browser workflow uses the run-scoped Team A identifier for its chat target', () => {
+  const start = source.indexOf('function browserMemberCommunication(');
+  const end = source.indexOf('async function runCommunicationWorkflowAudit()', start);
+  const communicationBlock = source.slice(start, end);
+  assert.match(source, /const TEAM_A_ID = FIXTURES\.teams\.find\(team => team\.alias === 'qa-team-a'\)\?\.id;/);
+  assert.match(communicationBlock, /teamId=\$\{TEAM_A_ID\}/);
+  assert.doesNotMatch(communicationBlock, /teamId=qa-team-a/);
+});
+
 test('the imported local harness may parse an operations scenario before it supplies the child batch flag', () => {
   const configured = auditRunner.resolveAuditRuntimeConfiguration({
     environment: {},

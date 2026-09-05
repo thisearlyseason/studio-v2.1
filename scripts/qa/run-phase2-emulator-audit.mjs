@@ -69,6 +69,8 @@ const BASE_URL = runtimeConfiguration.baseUrl;
 const FIXTURE_RUN_SUFFIX = runtimeConfiguration.fixtureRunSuffix;
 const BROWSER_SESSION_PREFIX = runtimeConfiguration.browserSessionPrefix;
 const FIXTURES = buildFixtureCatalog(FIXTURE_RUN_SUFFIX);
+const TEAM_A_ID = FIXTURES.teams.find(team => team.alias === 'qa-team-a')?.id;
+if (!TEAM_A_ID) throw new Error('The fixture catalog is missing the Team A browser chat target.');
 const runBrowser = runtimeConfiguration.runBrowser;
 const certificationIdentity = runtimeConfiguration.certificationIdentity;
 const certificationTenants = runtimeConfiguration.certificationTenants;
@@ -6999,7 +7001,7 @@ function browserMemberCommunication(session, marker) {
     const reloadedPollCard = reloadedPoll.locator('xpath=ancestor::div[.//button[.//span[normalize-space()="Morning"]]][1]');
     const voteAfterReload = await reloadedPollCard.getByText('1 v', { exact: true }).count();
 
-    await page.goto(${JSON.stringify(`${BASE_URL}/chats/qa-team-chat?teamId=qa-team-a`)});
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats/qa-team-chat?teamId=${TEAM_A_ID}`)});
     const chatInput = page.getByPlaceholder('Tactical update...');
     const chatReady = await chatInput.waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
     if (!chatReady) {
@@ -7012,15 +7014,40 @@ function browserMemberCommunication(session, marker) {
     }
     const emptySendDisabled = await page.getByRole('button', { name: 'Send message' }).isDisabled();
     await chatInput.fill(${JSON.stringify(`QA Chat ${marker}`)});
-    await page.getByRole('button', { name: 'Send message' }).click();
-    await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    const [sendResponse] = await Promise.all([
+      page.waitForResponse(response => response.url().includes('/api/teams/chat/message')),
+      page.getByRole('button', { name: 'Send message' }).click(),
+    ]);
+    const sendStatus = sendResponse.status();
+    const sentChatMessage = page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true });
+    const sentChatVisible = await sentChatMessage.waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+    if (!sentChatVisible) {
+      throw new Error('member chat send diagnostic: ' + JSON.stringify({
+        sendStatus,
+        pathname: await page.evaluate(() => window.location.pathname),
+        body: (await page.locator('body').innerText()).slice(0, 1800),
+        consoleErrors,
+        failedResponses,
+      }));
+    }
     await page.reload();
-    await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    const reloadedChatMessage = page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true });
+    const chatAfterReloadVisible = await reloadedChatMessage.waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+    if (!chatAfterReloadVisible) {
+      throw new Error('member chat persistence diagnostic: ' + JSON.stringify({
+        sendStatus,
+        pathname: await page.evaluate(() => window.location.pathname),
+        body: (await page.locator('body').innerText()).slice(0, 1800),
+        consoleErrors,
+        failedResponses,
+      }));
+    }
     return {
       ownerPostVisible,
       commentAfterReload,
       voteAfterReload,
-      chatAfterReload: await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).count(),
+      chatAfterReload: await reloadedChatMessage.count(),
+      sendStatus,
       emptySendDisabled,
       teamBLeak: await page.getByText(/BLUEBIRD-B/).count(),
       consoleErrors,
@@ -7032,6 +7059,11 @@ function browserMemberCommunication(session, marker) {
 
 function browserOwnerCommunicationVerify(session, marker) {
   const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('pageerror', error => consoleErrors.push(error.message));
+    page.on('response', response => { if (response.status() >= 400 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push({ status: response.status(), path: response.url().split('?')[0].replace(${JSON.stringify(BASE_URL)}, '') }); });
     await page.goto(${JSON.stringify(`${BASE_URL}/feed`)});
     await page.getByText(${JSON.stringify(`QA Comment ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
     const memberComment = await page.getByText(${JSON.stringify(`QA Comment ${marker}`)}, { exact: true }).count();
@@ -7043,11 +7075,20 @@ function browserOwnerCommunicationVerify(session, marker) {
     const deletedAfterReload = await page.getByText(${JSON.stringify(`QA Feed ${marker}`)}, { exact: true }).count();
 
     await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
-    const channelCard = page.locator('a[href="/chats/qa-team-chat?teamId=qa-team-a"]');
+    const channelCard = page.locator(${JSON.stringify(`a[href="/chats/qa-team-chat?teamId=${TEAM_A_ID}"]`)});
     await channelCard.waitFor({ timeout: 10000 });
     const unreadBeforeOpen = await channelCard.locator('div.bg-primary.text-white').count();
     await channelCard.click();
-    await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
+    const message = page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true });
+    const chatVisible = await message.waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+    if (!chatVisible) {
+      throw new Error('owner chat delivery diagnostic: ' + JSON.stringify({
+        pathname: await page.evaluate(() => window.location.pathname),
+        body: (await page.locator('body').innerText()).slice(0, 1800),
+        consoleErrors,
+        failedResponses,
+      }));
+    }
     await page.waitForTimeout(300);
     await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
     await channelCard.waitFor({ timeout: 10000 });
@@ -7059,10 +7100,12 @@ function browserOwnerCommunicationVerify(session, marker) {
     return {
       memberComment,
       deletedAfterReload,
-      chatVisible: await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).count(),
+      chatVisible: await message.count(),
       unreadBeforeOpen,
       unreadAfterOpen,
       mobileFits,
+      consoleErrors,
+      failedResponses,
     };
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
@@ -7084,6 +7127,7 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(memberResult.commentAfterReload, 1, 'member comment persists for owner');
   expectEqual(memberResult.voteAfterReload, 1, 'member poll vote persists after reload');
   expectEqual(memberResult.chatAfterReload, 1, 'member chat message persists after reload');
+  expectEqual(memberResult.sendStatus, 200, 'member chat message request succeeds');
   expectEqual(memberResult.emptySendDisabled, true, 'chat rejects an empty message');
   expectEqual(memberResult.teamBLeak, 0, 'Team B chat content is absent from Team A UI');
   expectEqual(memberResult.consoleErrors.length, 0, 'member communication workflow console errors');
@@ -7096,6 +7140,8 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(ownerResult.unreadBeforeOpen > 0, true, 'member chat message increments owner unread state');
   expectEqual(ownerResult.unreadAfterOpen, 0, 'opening the channel clears only owner unread state');
   expectEqual(ownerResult.mobileFits, true, 'chat channel list remains within the mobile viewport');
+  expectEqual(ownerResult.consoleErrors.length, 0, 'owner chat verification console errors');
+  expectEqual(ownerResult.failedResponses.length, 0, 'owner chat verification failed responses');
 }
 
 function browserOwnerEventCreate(session, marker) {
