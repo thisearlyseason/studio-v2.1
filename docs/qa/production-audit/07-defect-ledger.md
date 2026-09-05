@@ -2,7 +2,39 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-04; twenty-six defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-05; twenty-eight defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-029 — Admin directory name sorting disagrees with displayed names (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Administration — user directory |
+| Role | Trusted superadmin |
+| Page or route | `/admin` user directory |
+| Description | Directory rows without `fullName` displayed their legacy `name`, but the name-sort comparator treated those rows as empty. Clicking ascending or descending therefore did not produce the visible order promised by the table header. |
+| Expected behavior | The visible Name column sorts by the same normalized value it renders in both directions. |
+| Actual behavior | Fixture users backed by `name` remained out of visible ascending/descending order. |
+| Root cause | Rendering used `fullName || name`, while sorting read only the selected `fullName` property. |
+| Fix | The comparator now uses `fullName || name || email` for the Name column and retains the existing comparator for other fields. |
+| Verification | A focused browser regression waited for and asserted the actual ascending and descending row order; the immutable 11-scenario run `final-cert-t3-260905-070745-f043` repeated both assertions with zero console/network findings. The row remains BLOCKED for authorized staging claim revocation on the exact deployed revision. |
+| Status | RESOLVED LOCALLY — STAGING ROW REMAINS BLOCKED |
+
+## BUG-028 — Youth activation omits team membership projections (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Signup/onboarding — youth invitation activation |
+| Role | Youth player |
+| Page or route | `/signup/youth`; `/api/invites/youth` |
+| Description | Redeeming a valid youth invitation created the Auth identity and linked player/profile, but omitted both membership projections consumed by team authorization and dashboard data. |
+| Expected behavior | Activation atomically links the intended player and creates one active team member plus one user team-membership projection for the player's authoritative team. |
+| Actual behavior | The new identity existed without `teams/<teamId>/members/<uid>` or `users/<uid>/teamMemberships/<teamId>`. |
+| Root cause | The invitation transaction updated only the user/player/invite records and never derived the player's `primaryTeamId`/`joinedTeamIds` or projected membership. |
+| Fix | Redemption now resolves and verifies the authoritative team inside the transaction, creates both bounded membership documents, then consumes the invite atomically. |
+| Verification | Focused API and real-browser checks proved exact player linkage, one team membership, youth-only tenant authority, consumed-invite denial, and relogin persistence. The immutable run `final-cert-t3-260905-070745-f043` repeated the full youth role/tenant/rules matrix and exact restoration. Approved staging invite delivery remains blocked. |
+| Status | RESOLVED LOCALLY — STAGING ROW REMAINS BLOCKED |
 
 ## BUG-027 — Delegated school hub loads organization capacity before hub resolution (resolved)
 
