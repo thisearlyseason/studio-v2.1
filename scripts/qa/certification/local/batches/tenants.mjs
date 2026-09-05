@@ -15,8 +15,93 @@ export const TENANT_EXECUTION_ORDER = Object.freeze([
 ]);
 
 const caseSet = prefix => Object.freeze(Object.fromEntries(DIMENSION_NAMES.map(dimension => [
-  dimension, Object.freeze([`${prefix}-${dimension}`]),
+  dimension, Object.freeze([
+    `${prefix}-${dimension}`,
+    ...({
+      happyPath: [`${prefix}-lifecycle`],
+      negativePath: [`${prefix}-edge-cases`],
+      permission: [`${prefix}-tenant-isolation`],
+      persistence: [`${prefix}-reload`],
+    }[dimension] || []),
+  ]),
 ])));
+
+const TENANT_SCENARIO_ASSOCIATION_BASE = Object.freeze({
+  'teams-create-and-capacity': ['qa-fresh-coach', 'run-created-squad'],
+  'teams-join-by-code': ['qa-public-submitter', 'qa-team-a'],
+  'teams-profile-branding-settings': ['qa-coach-owner-a', 'qa-team-a'],
+  'teams-module-visibility': ['qa-coach-owner-a', 'qa-team-a'],
+  'teams-seasonal-reset-delete-quota-resolution': ['qa-owner-delete-blocked', 'run-created-reset-squad'],
+  'organization-club-school-overview': ['qa-school-owner', 'qa-school'],
+  'organization-create-allocate-remove-squads': ['qa-school-owner', 'qa-school'],
+  'organization-global-waivers-documents-admins': ['qa-school-owner', 'qa-school'],
+  'roster-member-add-edit-remove-reinstate': ['qa-coach-owner-a', 'qa-team-a'],
+  'roster-search-filter-sort-export': ['qa-coach-owner-a', 'qa-team-a'],
+  'roster-parent-player-self-views': ['qa-parent-a', 'qa-player-youth-a'],
+  'recruiting-private-profile-crud': ['qa-coach-owner-a', 'qa-player-adult-a'],
+  'recruiting-public-scout-projection': ['qa-public-submitter', 'qa-player-adult-b'],
+  'family-children-invites-team-cards': ['qa-parent-a', 'qa-player-youth-a'],
+  'family-schedule-waivers-payments': ['qa-parent-a', 'qa-household-a'],
+  'family-enable-youth-login': ['qa-parent-a', 'qa-player-youth-c'],
+});
+
+const OPERATION_BY_DIMENSION = Object.freeze({
+  happyPath: 'create', negativePath: 'permission', permission: 'permission', persistence: 'persistence',
+  console: 'read', network: 'read', responsive: 'read',
+});
+
+export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
+  const base = TENANT_SCENARIO_ASSOCIATION_BASE[scenarioId];
+  if (!base || !OPERATION_BY_DIMENSION[dimension]) return null;
+  if (scenarioId === 'teams-create-and-capacity') {
+    return Object.freeze({
+      actorAlias: dimension === 'permission' && caseId.endsWith('-tenant-isolation') ? 'qa-coach-owner-b' : 'qa-fresh-coach',
+      targetAlias: base[1],
+      operation: dimension === 'happyPath' ? 'create'
+        : dimension === 'negativePath' || dimension === 'permission' ? 'permission'
+          : dimension === 'persistence' ? 'persistence' : 'read',
+    });
+  }
+  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-lifecycle')) {
+    return Object.freeze({ actorAlias: 'qa-parent-a', targetAlias: base[1], operation: 'create' });
+  }
+  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-edge-cases')) {
+    return Object.freeze({ actorAlias: 'qa-parent-a', targetAlias: base[1], operation: 'permission' });
+  }
+  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-tenant-isolation')) {
+    return Object.freeze({ actorAlias: 'qa-parent-b', targetAlias: base[1], operation: 'permission' });
+  }
+  if (scenarioId === 'recruiting-public-scout-projection' && caseId.endsWith('-lifecycle')) {
+    return Object.freeze({ actorAlias: 'qa-coach-owner-b', targetAlias: base[1], operation: 'update' });
+  }
+  if (scenarioId === 'teams-seasonal-reset-delete-quota-resolution') {
+    return Object.freeze({
+      actorAlias: dimension === 'permission' ? 'qa-coach-owner-b' : 'qa-owner-delete-blocked',
+      targetAlias: base[1],
+      operation: ['happyPath', 'persistence'].includes(dimension) ? 'delete'
+        : dimension === 'negativePath' || dimension === 'permission' ? 'permission' : 'read',
+    });
+  }
+  const mutationLifecycleScenarios = new Set([
+    'teams-profile-branding-settings', 'teams-module-visibility',
+    'organization-club-school-overview', 'organization-create-allocate-remove-squads',
+    'organization-global-waivers-documents-admins', 'roster-member-add-edit-remove-reinstate',
+    'roster-search-filter-sort-export', 'roster-parent-player-self-views',
+    'recruiting-private-profile-crud', 'family-children-invites-team-cards',
+    'family-schedule-waivers-payments',
+  ]);
+  const specialized = ['teams-join-by-code', 'recruiting-public-scout-projection', 'family-enable-youth-login'].includes(scenarioId);
+  const outsider = scenarioId === 'recruiting-public-scout-projection' ? 'qa-coach-owner-a'
+    : scenarioId.startsWith('family-') ? 'qa-parent-b' : 'qa-coach-owner-b';
+  const actorAlias = scenarioId === 'family-enable-youth-login' && caseId.endsWith('-lifecycle') ? 'qa-youth-invite'
+    : dimension === 'negativePath' || dimension === 'network' ? 'qa-public-submitter'
+    : dimension === 'permission' ? (specialized && !caseId.endsWith('-tenant-isolation') ? 'qa-public-submitter' : outsider)
+      : base[0];
+  const operation = dimension === 'happyPath' && scenarioId === 'family-enable-youth-login' ? 'create'
+    : dimension === 'happyPath' && caseId.endsWith('-lifecycle') && mutationLifecycleScenarios.has(scenarioId) ? 'update'
+    : dimension === 'happyPath' ? 'read' : OPERATION_BY_DIMENSION[dimension];
+  return Object.freeze({ actorAlias, targetAlias: base[1], operation });
+}
 
 export const LOCAL_TENANT_CASE_REQUIREMENTS = Object.freeze(Object.fromEntries([
   ['teams-create-and-capacity', 'team-create'],
@@ -84,9 +169,19 @@ export async function runTenantsBatch(context, scenarios) {
   const observation = context.certificationObservation;
   const events = parseCertificationEvents(observation?.stdout || '');
   const cleanup = events.find(event => event.type === 'cleanup');
+  const hasStructuredFailure = events.some(event => event.type === 'case' && event.state === 'FAIL');
   const execution = { startedAt: observation?.startedAt || context.now(), completedAt: observation?.completedAt || context.now() };
+  const runErrors = !observation
+    ? [{ stage: 'tenant-child', diagnostic: 'Shared certification child observation was unavailable.' }]
+    : observation.code !== 0 && !hasStructuredFailure
+      ? [{
+          stage: 'tenant-child',
+          diagnostic: (context.redact ? context.redact(observation.stderr) : String(observation.stderr || ''))
+            .trim().slice(0, 500) || `Tenant child exited with code ${observation.code}.`,
+        }]
+      : [];
   return {
     results: scenarios.map(scenario => resultForScenario({ scenario, context, events, cleanup, execution, capabilities })),
-    runErrors: observation ? [] : [{ stage: 'tenant-child', diagnostic: 'Shared certification child observation was unavailable.' }],
+    runErrors,
   };
 }

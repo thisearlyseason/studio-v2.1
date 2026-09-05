@@ -174,6 +174,7 @@ export function buildFixtureCatalog(runSuffix) {
   const identityByAlias = new Map(identities.map(identity => [identity.alias, identity]));
   const uidFor = alias => identityByAlias.get(alias)?.uid || scopedId(alias);
   const teamIdFor = alias => scopedId(alias);
+  const playerIdFor = alias => `p_${scopedId(alias)}`;
 
   const teamDefinitions = [
     ['qa-team-a', 'qa-coach-owner-a', visibleMarker('FALCON-A'), 'Phase 2 Falcons', 'Basketball', 'team', '#C81E1E', null, 'youth'],
@@ -190,7 +191,9 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-disposable-team', 'qa-owner-delete-blocked', visibleMarker('DISPOSABLE-OWNER'), 'Disposable Owner Guard', 'Soccer', 'free', '#374151', null, 'youth'],
   ];
 
-  const routeCode = (prefix, alias) => `${prefix}_${alias}`
+  const runCodeScope = [...runSuffix].reduce((hash, character) =>
+    Math.imul(hash ^ character.charCodeAt(0), 16_777_619) >>> 0, 2_166_136_261).toString(36).toUpperCase();
+  const routeCode = (prefix, alias) => `${prefix}_${runCodeScope}_${alias}`
     .replace(/[^A-Za-z0-9_-]/g, '_')
     .toUpperCase()
     .slice(0, 32);
@@ -400,13 +403,13 @@ export function buildFixtureCatalog(runSuffix) {
   ].map(([alias, fixtureCase, teamAlias, declaredMime, detectedMime, sizeBytes, isPublic, deleted, payloadGenerator]) => {
     const extension = declaredMime === 'video/mp4' ? 'mp4' : declaredMime === 'image/jpeg' ? 'jpg' : 'png';
     const storagePath = fixtureCase === 'allowed'
-      ? `players/${scopedId('qa-player-adult-a')}/thumbnails/${scopedId(alias)}.${extension}`
+      ? `players/${playerIdFor('qa-player-adult-a')}/thumbnails/${scopedId(alias)}.${extension}`
       : fixtureCase === 'oversized'
-        ? `players/${scopedId('qa-player-adult-a')}/videos/${scopedId(alias)}.${extension}`
+        ? `players/${playerIdFor('qa-player-adult-a')}/videos/${scopedId(alias)}.${extension}`
         : fixtureCase === 'mime-spoofed'
-          ? `players/${scopedId('qa-player-adult-b')}/avatar/${scopedId(alias)}.${extension}`
+          ? `players/${playerIdFor('qa-player-adult-b')}/avatar/${scopedId(alias)}.${extension}`
           : fixtureCase === 'private'
-            ? `players/${scopedId('qa-player-adult-a')}/videos/${scopedId(alias)}.${extension}`
+            ? `players/${playerIdFor('qa-player-adult-a')}/videos/${scopedId(alias)}.${extension}`
             : `teams/${teamIdFor(teamAlias)}/branding/${scopedId(alias)}.${extension}`;
     return {
       alias,
@@ -460,9 +463,21 @@ export function buildFixtureCatalog(runSuffix) {
     payloadSeed: `${runId}:qa-team-logo`,
     lifecycle: 'present',
   }, {
+    alias: 'qa-disposable-reset-file',
+    case: 'destructive-reset-file',
+    path: `teams/${teamIdFor('qa-disposable-team')}/files/${scopedId('qa-disposable-reset-file')}.png`,
+    ownerAlias: 'qa-owner-delete-blocked',
+    access: 'private',
+    contentType: 'image/png',
+    detectedMime: 'image/png',
+    sizeBytes: 103,
+    payloadGenerator: 'solid-png-v1',
+    payloadSeed: `${runId}:qa-disposable-reset-file`,
+    lifecycle: 'present',
+  }, {
     alias: 'qa-file-pending-delete',
     case: 'pending-delete',
-    path: `players/${scopedId('qa-player-pending-delete')}/videos/${scopedId('qa-file-pending-delete')}.mp4`,
+    path: `players/${playerIdFor('qa-player-pending-delete')}/videos/${scopedId('qa-file-pending-delete')}.mp4`,
     ownerAlias: 'qa-pending-delete',
     access: 'private',
     contentType: 'video/mp4',
@@ -578,6 +593,15 @@ export function buildFixtureCatalog(runSuffix) {
     });
   }
 
+  const disposableTeam = teams.find(team => team.alias === 'qa-disposable-team');
+  for (const [collection, alias] of [['games', 'qa-disposable-game'], ['events', 'qa-disposable-event'], ['documents', 'qa-disposable-document']]) {
+    addDocument('organization', {
+      alias,
+      path: `teams/${disposableTeam.id}/${collection}/${scopedId(alias)}`,
+      data: { teamId: disposableTeam.id, ownerUserId: disposableTeam.ownerUserId, title: `${alias} reset fixture` },
+    });
+  }
+
   const membershipDefinitions = [
     ['qa-team-a', 'qa-coach-owner-a', 'Admin', 'Head Coach', 'active'],
     ['qa-team-a', 'qa-team-assistant', 'Admin', 'Assistant Coach', 'active'],
@@ -623,7 +647,10 @@ export function buildFixtureCatalog(runSuffix) {
       ownerUserId: team.ownerUserId,
       joinedAt: timestamp('2026-08-01T12:00:00.000Z'),
     };
-    if (userAlias === 'qa-youth-active') data.playerId = scopedId('qa-player-youth-a');
+    if (userAlias === 'qa-youth-active') {
+      data.playerId = playerIdFor('qa-player-youth-a');
+      data.parentId = uidFor('qa-parent-a');
+    }
     addDocument('roster', {
       alias: `${teamAlias}-${userAlias}-member`,
       path: `teams/${team.id}/members/${user.uid}`,
@@ -664,7 +691,7 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-player-pending-delete', 'qa-pending-delete', null, 'qa-team-a', 'Delete', visibleMarker('DISPOSABLE'), false],
   ];
   for (const [alias, userAlias, parentAlias, teamAlias, firstName, lastName, publicEnabled] of players) {
-    const playerId = scopedId(alias);
+    const playerId = playerIdFor(alias);
     const teamId = teamIdFor(teamAlias);
     addDocument('roster', {
       alias,
@@ -741,7 +768,7 @@ export function buildFixtureCatalog(runSuffix) {
   ];
   for (const [teamAlias, playerAlias, parentAlias, firstName, lastName] of accountlessMembers) {
     const team = teams.find(value => value.alias === teamAlias);
-    const playerId = scopedId(playerAlias);
+    const playerId = playerIdFor(playerAlias);
     addDocument('roster', {
       alias: `${teamAlias}-${playerAlias}-member`,
       path: `teams/${team.id}/members/${playerId}`,
@@ -756,8 +783,13 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-roster-duplicate-b', 'duplicate-name', 'Jordan Falcon', 'active'],
     ['qa-roster-long', 'long-value', `Synthetic ${'Long'.repeat(24)} Member`, 'active'],
     ['qa-roster-removed', 'removed', 'Removed Falcon', 'removed'],
-  ].map(([alias, variant, name, status], index) => ({ alias, variant, name, status, id: scopedId(alias), index }));
+  ].map(([alias, variant, name, status], index) => ({ alias, variant, name, status, id: playerIdFor(alias), index }));
   for (const row of rosterVariants) {
+    addDocument('roster', {
+      alias: `${row.alias}-player`,
+      path: `players/${row.id}`,
+      data: { id: row.id, userId: null, parentId: null, primaryTeamId: teamIdFor('qa-team-a'), joinedTeamIds: [teamIdFor('qa-team-a')], name: row.name, status: row.status },
+    });
     addDocument('roster', {
       alias: row.alias,
       path: `teams/${teamIdFor('qa-team-a')}/members/${row.id}`,
@@ -771,7 +803,7 @@ export function buildFixtureCatalog(runSuffix) {
       path: `households/${household.id}`,
       data: {
         ...household,
-        childPlayerIds: household.children.map(child => scopedId(child.playerAlias)),
+        childPlayerIds: household.children.map(child => playerIdFor(child.playerAlias)),
         teamIds: household.teamAliases.map(teamIdFor),
       },
     });
@@ -794,7 +826,7 @@ export function buildFixtureCatalog(runSuffix) {
     alias: 'qa-youth-invite-contract',
     collection: 'invites',
     tokenFormat: '48-hex',
-    childId: scopedId('qa-player-youth-c'),
+    childId: playerIdFor('qa-player-youth-c'),
     parentId: uidFor('qa-parent-a'),
     teamId: teamIdFor('qa-team-c'),
     recipientAlias: 'qa-youth-invite',
@@ -809,7 +841,7 @@ export function buildFixtureCatalog(runSuffix) {
         alias: `${household.alias}-${child.playerAlias}-balance`,
         path: `users/${household.parentUserId}/payments/${scopedId(`${child.playerAlias}-balance`)}`,
         data: {
-          childId: scopedId(child.playerAlias),
+          childId: playerIdFor(child.playerAlias),
           childName: child.playerAlias.replaceAll('-', ' '),
           teamId: teamIdFor(child.teamAlias),
           teamName: teams.find(team => team.alias === child.teamAlias).name,
@@ -827,7 +859,7 @@ export function buildFixtureCatalog(runSuffix) {
   addDocument('family', {
     alias: 'qa-household-a-overdue-balance',
     path: `users/${uidFor('qa-parent-a')}/payments/${scopedId('qa-household-a-overdue-balance')}`,
-    data: { childId: scopedId('qa-player-youth-a'), childName: 'Youth A', teamId: teamIdFor('qa-team-a'), teamName: teams.find(team => team.alias === 'qa-team-a').name, description: `${visibleMarker('FALCON-A')} overdue synthetic family fee`, amount: 19.5, status: 'overdue', date: '2026-09-09', dueDate: '2026-09-15', invoiceNumber: visibleMarker('INV-OVERDUE'), category: 'equipment' },
+    data: { childId: playerIdFor('qa-player-youth-a'), childName: 'Youth A', teamId: teamIdFor('qa-team-a'), teamName: teams.find(team => team.alias === 'qa-team-a').name, description: `${visibleMarker('FALCON-A')} overdue synthetic family fee`, amount: 19.5, status: 'overdue', date: '2026-09-09', dueDate: '2026-09-15', invoiceNumber: visibleMarker('INV-OVERDUE'), category: 'equipment' },
   });
 
   for (const timeFixture of timeFixtures) {

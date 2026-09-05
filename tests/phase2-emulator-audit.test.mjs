@@ -30,6 +30,7 @@ test('certification identity mode accepts a unique local scope without changing 
     certificationIdentity: true,
     certificationTenants: false,
     runBrowser: true,
+    failFast: false,
     selectedScenarios: [],
   });
 
@@ -41,8 +42,29 @@ test('certification identity mode accepts a unique local scope without changing 
     certificationIdentity: false,
     certificationTenants: false,
     runBrowser: false,
+    failFast: false,
     selectedScenarios: [],
   });
+});
+
+test('legacy configurable runtime exposes explicit fail-fast without conflating it with browser mode', () => {
+  const configured = auditRunner.resolveAuditRuntimeConfiguration({
+    environment: {},
+    argv: ['--certification-tenants', '--fail-fast'],
+  });
+  assert.equal(configured.failFast, true);
+  assert.equal(configured.runBrowser, false);
+});
+
+test('combined certification dispatch executes identity then tenants', async () => {
+  const calls = [];
+  await auditRunner.runSelectedCertificationBatches({
+    certificationIdentity: true,
+    certificationTenants: true,
+    runIdentity: async () => calls.push('identity'),
+    runTenants: async () => calls.push('tenants'),
+  });
+  assert.deepEqual(calls, ['identity', 'tenants']);
 });
 
 test('legacy configurable runtime rejects off-loopback and ambiguous app origins', () => {
@@ -410,13 +432,21 @@ test('Task 4 tenant API probes are derived only from frozen fixture aliases', ()
 });
 
 test('Task 4 certification mode executes tenant stages instead of setup-only success', () => {
-  assert.match(source, /else if \(certificationTenants\) \{\s*await runCertificationTenantScenarios\(\);/);
+  assert.match(source, /runSelectedCertificationBatches\(\{[\s\S]*runTenants: runCertificationTenantScenarios/);
   assert.match(source, /async function runCertificationTenantScenarios\(\)/);
   assert.match(source, /recordCertificationCase\([\s\S]*team-join-happyPath/);
   assert.match(source, /recordCertificationCase\([\s\S]*recruiting-public-happyPath/);
   assert.match(source, /recordCertificationCase\([\s\S]*family-youth-login-happyPath/);
   assert.match(source, /async function runTenantBrowserScenario\(scenarioId\)/);
   assert.match(source, /closeBrowserSessionsCreatedAfter\(ownedBrowserSessions, sessionBaseline/);
+});
+
+test('Task 4 probes seeded consumer documents and Storage before the first scenario mutation', () => {
+  const runner = source.match(/async function preflightTenantConsumerCapabilities[\s\S]*?async function runCertificationTenantScenarios[\s\S]*?for \(const scenarioId/)?.[0] || '';
+  assert.match(runner, /firestoreAdmin\.getAll/);
+  assert.match(runner, /bucket\.file\(object\.path\)\.exists/);
+  assert.match(runner, /inspectTenantCapabilities\(actualCatalog\)/);
+  assert.match(runner, /await preflightTenantConsumerCapabilities\(scenarioIds\);[\s\S]*for \(const scenarioId/);
 });
 
 test('Task 3 revoked admin sessions deny both open and fresh tabs at login', () => {

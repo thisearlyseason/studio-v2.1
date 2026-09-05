@@ -176,6 +176,7 @@ export async function startLocalHarness({
   projectId = 'demo-the-squad-audit',
   playwrightCli = '',
   browser = false,
+  failFast = false,
   endpoints = {
     auth: '127.0.0.1:9099',
     firestore: '127.0.0.1:8080',
@@ -193,9 +194,10 @@ export async function startLocalHarness({
   const runtimeSecret = randomBytes(32).toString('base64url');
   const runId = `final-cert-${runSuffix}`;
   const sessionPrefix = `cert-${runId}`;
+  const artifactRoot = path.join(rootDir, 'output/playwright/2026-09-04-final-certification');
   const taskDirectory = batches.length === 1 && batches[0] === 'identity' ? 'task-3'
     : batches.length === 1 && batches[0] === 'tenants' ? 'task-4' : 'local';
-  const artifactDir = path.join(rootDir, 'output/playwright/2026-09-04-final-certification', taskDirectory, runId);
+  const artifactDir = path.join(artifactRoot, taskDirectory, runId);
   const browserSessionRegistry = path.join(artifactDir, 'owned-browser-sessions.txt');
   const processGroupRegistry = path.join(artifactDir, 'owned-service-process-groups.txt');
   // A Task 3 run suffix is unique in production use. Clearing a stale registry
@@ -208,7 +210,8 @@ export async function startLocalHarness({
     AUDIT_FIREBASE_PROJECT_ID: projectId,
     AUDIT_BROWSER_SESSION_PREFIX: sessionPrefix,
     AUDIT_BASE_URL: endpoints.app,
-    AUDIT_ARTIFACT_DIR: artifactDir,
+    AUDIT_ARTIFACT_DIR: batches.length === 1 ? artifactDir : '',
+    AUDIT_ARTIFACT_ROOT: batches.length > 1 ? artifactRoot : '',
     AUDIT_BROWSER_SESSION_REGISTRY: browserSessionRegistry,
     AUDIT_PROCESS_GROUP_REGISTRY: processGroupRegistry,
     AUDIT_CERTIFICATION_RUN_ID: runId,
@@ -295,6 +298,7 @@ export async function startLocalHarness({
         ...(selectedBatches.includes('identity') ? ['--certification-identity'] : []),
         ...(selectedBatches.includes('tenants') ? ['--certification-tenants'] : []),
         ...(browser ? ['--browser'] : []),
+        ...(failFast ? ['--fail-fast'] : []),
         ...selectedScenarioIds.flatMap(scenarioId => ['--scenario', scenarioId]),
       ];
       const startedAt = new Date().toISOString();
@@ -309,9 +313,6 @@ export async function startLocalHarness({
       activeChild = null;
       activeExecution = null;
       const completedAt = new Date().toISOString();
-      if (result.code !== 0) {
-        throw new Error(redactText(`Certification audit child exited ${result.code}.\n${result.stdout}\n${result.stderr}`, runtimeSecret));
-      }
       return Object.freeze({
         code: result.code,
         stdout: redactText(result.stdout, runtimeSecret),

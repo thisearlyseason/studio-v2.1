@@ -926,7 +926,7 @@ test('Task 4 team invitation aliases satisfy the production route contract', () 
 
 test('Task 4 public recruiting fixture does not trigger outbound media fetches', () => {
   const catalog = buildFixtureCatalog('t4-public-media-boundary');
-  const playerId = 'qa-player-adult-b-t4-public-media-boundary';
+  const playerId = 'p_qa-player-adult-b-t4-public-media-boundary';
   assert.equal(catalog.firestoreDocuments.some(document => document.path.startsWith(`players/${playerId}/videos/`)), false);
 });
 

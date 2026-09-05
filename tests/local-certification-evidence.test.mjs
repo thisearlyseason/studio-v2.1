@@ -13,6 +13,7 @@ import {
   markdownForSummary,
   validateScenarioResults,
 } from '../scripts/qa/certification/local/evidence.mjs';
+import { tenantCaseAssociationFor } from '../scripts/qa/certification/local/batches/tenants.mjs';
 
 const [scenario] = CERTIFICATION_SCENARIOS;
 
@@ -309,6 +310,10 @@ test('evidence refuses credentials, session material, action links, query string
     { authorization: 'Bearer abc' },
     { rawProviderPayload: { id: 'evt_123' } },
     { note: 'sk_live_1234567890' },
+    { inviteToken: 'a'.repeat(48) },
+    { userId: 'unaliased-sensitive-uid' },
+    { note: 'synthetic-private-roster-4' },
+    { note: '/api/invites/youth?token=action-material' },
   ];
   for (const unsafe of unsafeValues) {
     assert.throws(
@@ -316,6 +321,62 @@ test('evidence refuses credentials, session material, action links, query string
       /protected evidence value/,
     );
   }
+});
+
+test('tenant evidence binds exact actor, target, operation, observations, and cleanup reference', () => {
+  const tenantScenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'teams-join-by-code');
+  const association = tenantCaseAssociationFor(tenantScenario.id, 'happyPath');
+  const caseId = 'team-join-happyPath';
+  const caseRecord = {
+    actorAliases: ['qa-public-submitter'],
+    ...association,
+    caseId,
+    dimension: 'happyPath',
+    role: tenantScenario.roles.join('/'),
+    tenantAlias: 'qa-team-a',
+    expected: 'exact team resolves',
+    observed: 'exact team resolves',
+    state: 'OBSERVED',
+    startedAt: '2026-09-04T18:00:01.000Z',
+    completedAt: '2026-09-04T18:00:02.000Z',
+    artifacts: ['cases/team-join-happyPath.json'],
+    network: { transport: 'loopback-http', observed: true },
+    console: { observed: false, reason: 'separate browser case' },
+    responsive: { observed: false, reason: 'separate browser case' },
+    cleanupRefs: ['fixture-cleanup-final-cert-t4-evidence-a1'],
+  };
+  const result = {
+    scenarioId: tenantScenario.id,
+    environment: 'local-emulator',
+    environmentGaps: tenantScenario.environments.filter(value => value !== 'local-emulator'),
+    commit: '0123456789abcdef0123456789abcdef01234567', revision: 'local',
+    startedAt: '2026-09-04T18:00:00.000Z', completedAt: '2026-09-04T18:01:00.000Z',
+    role: tenantScenario.roles.join('/'), tenantAlias: 'qa-team-a',
+    dimensions: Object.fromEntries(DIMENSION_NAMES.map(name => [name,
+      makeDimension(name === 'happyPath' ? 'OBSERVED' : 'BLOCKED_PRECONDITION', name === 'happyPath' ? [caseId] : [], 'exact local state'),
+    ])),
+    cases: [caseRecord],
+    cleanup: {
+      owner: tenantScenario.cleanupOwner, reference: 'fixture-cleanup-final-cert-t4-evidence-a1',
+      selectors: ['fixture-run:final-cert-t4-evidence-a1'], counts: { deleted: 1, restored: 0, retainedAuditRecords: 0 },
+      state: 'OBSERVED', proof: ['cleanup/marker.json'],
+    },
+    artifacts: [...caseRecord.artifacts],
+    missingDimensions: DIMENSION_NAMES.filter(name => name !== 'happyPath'),
+    externalRequirements: ['exact staging revision'], outcome: 'BLOCKED_PRECONDITION',
+  };
+  const options = {
+    caseShape: 'tenant',
+    caseRequirements: { [tenantScenario.id]: { happyPath: [caseId] } },
+    caseAssociationResolver: tenantCaseAssociationFor,
+  };
+  assert.equal(validateScenarioResults([tenantScenario], [result], options)[0].cases[0].actorAlias, association.actorAlias);
+  const replaceCase = replacement => [{ ...result, cases: [{ ...caseRecord, ...replacement }] }];
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ actorAlias: 'qa-parent-b' }), options), /actorAlias|association/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ targetAlias: 'qa-team-b' }), options), /association/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ cleanupRefs: [] }), options), /associations/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ network: {} }), options), /associations/);
+  assert.throws(() => validateScenarioResults([tenantScenario], replaceCase({ cleanupRefs: ['unrelated-cleanup'] }), options), /exact scenario cleanup/);
 });
 
 test('recorder writes sanitized JSON and Markdown with explicit external blockers', async () => {

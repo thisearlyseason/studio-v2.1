@@ -76,6 +76,20 @@ function publicStats(stats: UnknownRecord[]): UnknownRecord[] {
   }));
 }
 
+function publicSegments(value: unknown): Array<{ start: number; end: number; title: string }> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const segments = value.slice(0, 25).flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const segment = item as UnknownRecord;
+    const start = safeNumber(segment.start);
+    const end = safeNumber(segment.end);
+    const title = safeString(segment.title, 160);
+    if (start === undefined || end === undefined || start < 0 || end <= start || !title) return [];
+    return [{ start, end, title }];
+  });
+  return segments.length ? segments : undefined;
+}
+
 function publicVideos(videos: UnknownRecord[]): UnknownRecord[] {
   return videos.slice(0, 50).flatMap(video => {
     const url = safeUrl(video.url);
@@ -90,7 +104,7 @@ function publicVideos(videos: UnknownRecord[]): UnknownRecord[] {
       isTacticalClip: video.isTacticalClip === true,
       startAt: safeNumber(video.startAt),
       endAt: safeNumber(video.endAt),
-      segments: Array.isArray(video.segments) ? video.segments.slice(0, 25) : undefined,
+      segments: publicSegments(video.segments),
     }];
   });
 }

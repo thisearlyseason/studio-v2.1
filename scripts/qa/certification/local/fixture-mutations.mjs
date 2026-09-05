@@ -5,6 +5,14 @@ function assertSafeBoundary(projectId, runId) {
   if (!/^final-cert-[a-z0-9-]+$/.test(String(runId))) throw new Error('Fixture mutation registry requires a run-owned certification ID.');
 }
 
+function canonicalValue(value) {
+  if (value === null || typeof value !== 'object') return value;
+  if (typeof value.toMillis === 'function') return { __timestampMillis: value.toMillis() };
+  if (value instanceof Date) return { __dateMillis: value.getTime() };
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalValue(value[key])]));
+}
+
 export function createFixtureMutations({
   projectId,
   runId,
@@ -21,6 +29,7 @@ export function createFixtureMutations({
   const registry = createResourceRegistry({ maxAttempts });
   const registeredDocuments = new Set();
   let overlayCounter = 0;
+  const restoredOverlays = new Set();
   const isBaseline = path => baselineRoots.some(root => path === root || path.startsWith(`${root}/`));
 
   function registerDynamicDocument(alias, path) {
@@ -42,15 +51,42 @@ export function createFixtureMutations({
 
   async function withFirestoreOverlay(paths, callback) {
     const snapshots = [];
-    for (const path of paths) snapshots.push([path, await firestore.read(path)]);
+    for (const path of paths) {
+      const before = await firestore.read(path);
+      const overlayId = `overlay:${++overlayCounter}`;
+      const expected = JSON.stringify(canonicalValue(before));
+      const same = value => JSON.stringify(canonicalValue(value)) === expected;
+      const restore = async () => {
+        const current = await firestore.read(path);
+        if (same(current)) return false;
+        if (before === null) await firestore.remove(path);
+        else await firestore.write(path, before);
+        restoredOverlays.add(overlayId);
+        return true;
+      };
+      registry.register({
+        id: overlayId,
+        kind: 'obligation',
+        cleanup: restore,
+        async verify() { return same(await firestore.read(path)); },
+      });
+      snapshots.push({ path, before, restore });
+    }
     try {
       return await callback();
     } finally {
-      for (const [path, before] of snapshots.reverse()) {
-        if (before === null) await firestore.remove(path);
-        else await firestore.write(path, before);
+      const errors = [];
+      for (const snapshot of snapshots.reverse()) {
+        try {
+          await snapshot.restore();
+        } catch (error) {
+          errors.push(error);
+        }
       }
-      overlayCounter += snapshots.length;
+      if (errors.length > 0) {
+        const detail = errors.map(error => error instanceof Error ? error.message : String(error)).join(' | ');
+        throw new AggregateError(errors, `Overlay restoration failed: ${detail}`);
+      }
     }
   }
 
@@ -72,7 +108,14 @@ export function createFixtureMutations({
     withFirestoreOverlay,
     async cleanup() {
       const result = await registry.cleanup();
-      return Object.freeze({ ...result, overlaysRestored: overlayCounter });
+      const counts = { ...result.counts, restored: result.counts.restored + restoredOverlays.size };
+      const reconciled = { ...result.reconciled, restored: result.reconciled.restored + overlayCounter };
+      return Object.freeze({
+        ...result,
+        counts: Object.freeze(counts),
+        reconciled: Object.freeze(reconciled),
+        overlaysRestored: restoredOverlays.size,
+      });
     },
   });
 }

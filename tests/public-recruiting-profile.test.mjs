@@ -52,13 +52,37 @@ test('private player documents are no longer the public recruiting transport', (
   assert.doesNotMatch(publicPage, /recruitingContact/);
 });
 
-test('public recruiting metadata and API share the authoritative profile status gate', () => {
+test('public recruiting metadata and API share one canonical status writer', () => {
   const layout = fs.readFileSync(new URL('../src/app/recruit/player/[playerId]/layout.tsx', import.meta.url), 'utf8');
   const provider = fs.readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
+  const editor = fs.readFileSync(new URL('../src/app/(dashboard)/coaches-corner/page.tsx', import.meta.url), 'utf8');
+  const toggle = provider.match(/const toggleRecruitingProfile[\s\S]*?\n\s*}, \[db, activeTeam\?\.id\]\);/)?.[0] || '';
   assert.match(layout, /recruitingProfile.*profile/s);
   assert.match(layout, /isProspectActivated/);
   assert.doesNotMatch(layout, /recruitingProfileEnabled/);
-  assert.match(provider, /toggleRecruitingProfile[\s\S]*recruitingProfile', 'profile'[\s\S]*status: enabled \? 'active' : 'hidden'/);
+  assert.doesNotMatch(toggle, /recruitingProfile', 'profile'|status:/);
+  assert.match(editor, /updateRecruitingProfile\(member\.playerId,[\s\S]*toggleRecruitingProfile\(member\.playerId, isEnabled\)/);
+});
+
+test('public recruiting recursively allowlists video segments', () => {
+  const payload = buildPublicRecruitingProfile({
+    player: {}, profile: {}, metrics: {}, stats: [],
+    videos: [{
+      id: 'video-1', url: 'https://cdn.example/video.mp4',
+      segments: [
+        { start: 3, end: 9, title: 'Safe clip', privateContact: 'do-not-publish' },
+        { start: -1, end: 2, title: 'invalid' },
+        { start: 10, end: 4, title: 'backwards' },
+        { start: 12, end: 18, title: 'x'.repeat(500), nested: { secret: true } },
+      ],
+    }],
+  });
+  assert.deepEqual(payload.videos[0].segments, [
+    { start: 3, end: 9, title: 'Safe clip' },
+    { start: 12, end: 18, title: 'x'.repeat(160) },
+  ]);
+  assert.equal(JSON.stringify(payload).includes('privateContact'), false);
+  assert.equal(JSON.stringify(payload).includes('secret'), false);
 });
 
 test('a guardian retains update access to their own child without making the record public', () => {

@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
       : await findTeamByCode(code);
     if (!teamSnapshot?.exists) return NextResponse.json({ error: 'Squad invitation not found.' }, { status: 404 });
     const team = teamSnapshot.data() || {};
-    if (sessionRef && !teamAcceptsRegistrations(team)) {
+    if (!teamAcceptsRegistrations(team)) {
       return NextResponse.json({ error: 'This squad is not accepting new members.' }, { status: 409 });
     }
 
@@ -159,12 +159,14 @@ export async function POST(req: NextRequest) {
     const membershipRef = userRef.collection('teamMemberships').doc(teamSnapshot.id);
 
     const result = await adminDb.runTransaction(async transaction => {
-      const [userSnapshot, memberSnapshot, playerSnapshot, freshSession] = await Promise.all([
+      const [userSnapshot, memberSnapshot, playerSnapshot, freshSession, freshTeamSnapshot] = await Promise.all([
         transaction.get(userRef),
         transaction.get(memberRef),
         transaction.get(playerRef),
         sessionRef ? transaction.get(sessionRef) : Promise.resolve(null),
+        transaction.get(teamSnapshot.ref),
       ]);
+      if (!freshTeamSnapshot.exists || !teamAcceptsRegistrations(freshTeamSnapshot.data() || {})) return 'inactive';
       if (sessionRef) {
         const freshSessionData = freshSession?.data() || {};
         const freshExpiry = typeof freshSessionData.expiresAt?.toMillis === 'function' ? freshSessionData.expiresAt.toMillis() : 0;
@@ -186,6 +188,7 @@ export async function POST(req: NextRequest) {
           : user.name || user.fullName || auth.email?.split('@')[0] || 'Athlete'
       );
       const avatar = String(user.avatar || user.avatarUrl || '');
+      const joiningLinkedChild = playerId !== `p_${auth.uid}`;
       if (!playerSnapshot.exists) {
         const [firstName = 'Athlete', ...lastName] = displayName.split(/\s+/).filter(Boolean);
         transaction.create(playerRef, {
@@ -193,11 +196,14 @@ export async function POST(req: NextRequest) {
           parentId: null, isMinor: false, hasLogin: true, createdAt: now, joinedTeamIds: [teamSnapshot.id],
         });
       } else {
-        transaction.set(playerRef, { userId: auth.uid, hasLogin: true, joinedTeamIds: FieldValue.arrayUnion(teamSnapshot.id), updatedAt: now }, { merge: true });
+        transaction.set(playerRef, {
+          ...(!joiningLinkedChild ? { userId: auth.uid, hasLogin: true } : {}),
+          joinedTeamIds: FieldValue.arrayUnion(teamSnapshot.id), updatedAt: now,
+        }, { merge: true });
       }
       transaction.set(memberRef, {
         ...(memberSnapshot.data() || {}),
-        id: memberRef.id, userId: existingPlayer.userId || auth.uid, playerId, teamId: teamSnapshot.id,
+        id: memberRef.id, userId: existingPlayer.userId || (joiningLinkedChild ? null : auth.uid), playerId, teamId: teamSnapshot.id,
         name: displayName, avatar, parentId: existingPlayer.parentId || null, role: 'Member', position, jersey: '',
         status: 'active', joinedAt: memberSnapshot.data()?.joinedAt || now,
       }, { merge: true });
@@ -211,6 +217,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (result === 'expired') return NextResponse.json({ error: 'This squad invitation has expired.' }, { status: 410 });
+    if (result === 'inactive') return NextResponse.json({ error: 'This squad is not accepting new members.' }, { status: 409 });
     return NextResponse.json({
       ok: true,
       success: true,

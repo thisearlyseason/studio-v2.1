@@ -133,6 +133,13 @@ test('runner returns a failing exit code when any scenario outcome is FAIL', asy
   assert.equal(deps.events.at(-1)[0], 'close');
 });
 
+test('runner propagates fail-fast to the child harness instead of applying it only after execution', async () => {
+  const deps = dependencies();
+  await main(['--scenario', 'teams-create-and-capacity', '--fail-fast'], deps);
+  const start = deps.events.find(([name]) => name === 'start')[1];
+  assert.equal(start.failFast, true);
+});
+
 test('runner persists shared run errors without attributing them to a scenario', async () => {
   const deps = dependencies({
     runIdentityBatch: async (_context, scenarios) => ({

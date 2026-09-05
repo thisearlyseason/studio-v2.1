@@ -2,7 +2,52 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-05; thirty-three defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-05; thirty-six defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-037 — Public recruiting video segments exposed arbitrary nested fields (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Recruiting — public scout projection |
+| Role | Anonymous visitor |
+| Page or route | `GET /api/public/recruiting/{playerId}` |
+| Description | The top-level public DTO was allowlisted, but each video `segments` entry was copied wholesale. A private nested field supplied beside a valid clip range survived into the anonymous response. |
+| Expected behavior | Every public response level uses an explicit runtime allowlist; a segment exposes only validated `start`, `end`, and optional `title` fields. |
+| Root cause | TypeScript described the intended segment shape, but the runtime projector trusted arbitrary input objects. |
+| Fix | Each segment is now projected field-by-field, bounded to 25 entries, and discarded unless it has finite nonnegative times with `end > start`; titles are bounded strings. |
+| Verification | A behavioral regression injects private nested data, invalid ranges, and an overlong title and proves only the valid allowlisted projection remains. Task 4 also exercises the public route, private Firestore denial, canonical state transitions, and same-URL no-store behavior. Exact-revision staging remains blocked. |
+| Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
+
+## BUG-036 — Guardian child enrollment assigned the guardian login to the child (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P0 CRITICAL |
+| Feature | Teams/Family — linked-child enrollment and youth activation |
+| Role | Parent/guardian; youth player |
+| Page or route | `POST /api/teams/join`; `/api/invites/youth` |
+| Description | Enrolling an existing accountless child through a guardian-authenticated join wrote the guardian UID into the child's `userId` and set `hasLogin: true`. The later youth-login flow could no longer preserve a separate child identity. |
+| Expected behavior | Guardian authority is derived from the stored child relationship, while the child remains accountless until one youth invite activates one distinct Auth identity. |
+| Root cause | The join route used the authenticated caller as the player identity for both self-enrollment and guardian-managed enrollment. |
+| Fix | The server now separates self from guardian enrollment, preserves the existing child's identity/login fields, derives the guardian membership projection, and never copies the guardian UID into the child roster record. |
+| Verification | Executable route regressions cover a successful linked-child join and wrong-guardian denial. The Task 4 runner issues two concurrent child joins, observes one member, preserves the accountless child, then activates a distinct youth Auth identity with coherent player/member/user projections and denies token reuse. Approved mailbox delivery and exact-revision staging remain blocked. |
+| Status | RESOLVED LOCALLY — TENANT/FAMILY ROWS REMAIN BLOCKED |
+
+## BUG-035 — Selected seasonal reset categories erased unrelated squad data (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P0 CRITICAL |
+| Feature | Teams — seasonal reset/delete/quota resolution |
+| Role | Squad owner |
+| Page or route | Settings seasonal reset; `POST /api/teams/season-reset` |
+| Description | Selecting only `games` still queued deletion of games, events, members, incidents, equipment, chats, feed posts, files, and documents. Complete reset also selected user and child records without proving they belonged to the active squad. |
+| Expected behavior | Explicit categories delete only mapped descendants of the exact active squad. Complete reset reconciles exact user/player membership projections and owned Storage while preserving the squad root and owner controls. |
+| Root cause | The client provider ran a broad deletion loop before checking selected categories and performed cross-account projection cleanup without an authoritative server scope. |
+| Fix | Settings now calls an owner-authorized server route backed by a category allowlist, active-team-only Firestore projections, exact Storage prefixes, bounded retries, and structured exhausted-failure reporting. Certification invokes the destructive route only on a fresh sacrificial graph in the loopback demo project; production remains untouched by the audit. |
+| Verification | Unit tests prove selected-category controls, complete projection reconciliation, owner/unknown-category denial, and Storage retry reporting. The Task 4 journey creates a fresh sacrificial graph, verifies games-only preservation controls, 400/403 failures, then verifies complete descendant/projection/Storage cleanup and exact root/owner preservation. Exact-revision staging remains blocked. |
+| Status | RESOLVED LOCALLY — TENANT ROW REMAINS BLOCKED |
 
 ## Task 11 audit runner — Demo discovery failure loses Firestore cleanup ownership (resolved)
 

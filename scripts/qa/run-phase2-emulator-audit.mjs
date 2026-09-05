@@ -9,15 +9,19 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { buildFixtureCatalog, inspectFixtureMedia } from './certification/fixture-catalog.mjs';
+import { runTwoParty } from './certification/local/assertions.mjs';
 import { parseLoopbackHttpOrigin } from './certification/local/boundary.mjs';
 import {
   IDENTITY_EXECUTION_ORDER,
   LOCAL_IDENTITY_CASE_REQUIREMENTS,
 } from './certification/local/batches/identity.mjs';
-import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER } from './certification/local/batches/tenants.mjs';
+import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER, tenantCaseAssociationFor } from './certification/local/batches/tenants.mjs';
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES } from './certification/local/evidence.mjs';
+import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
+import { patchFirestoreFields } from './certification/local/tenant-mutation-probes.mjs';
+import { inspectTenantCapabilities, TENANT_SCENARIO_CAPABILITIES } from './certification/local/tenant-capabilities.mjs';
 
 export function resolveAuditRuntimeConfiguration({ environment = process.env, argv = process.argv.slice(2) } = {}) {
   const baseUrl = parseLoopbackHttpOrigin(
@@ -49,6 +53,7 @@ export function resolveAuditRuntimeConfiguration({ environment = process.env, ar
     certificationIdentity,
     certificationTenants,
     runBrowser: argv.includes('--browser'),
+    failFast: argv.includes('--fail-fast'),
     selectedScenarios: [...new Set(selectedScenarios)],
   };
 }
@@ -62,6 +67,7 @@ const FIXTURES = buildFixtureCatalog(FIXTURE_RUN_SUFFIX);
 const runBrowser = runtimeConfiguration.runBrowser;
 const certificationIdentity = runtimeConfiguration.certificationIdentity;
 const certificationTenants = runtimeConfiguration.certificationTenants;
+const certificationFailFast = runtimeConfiguration.failFast;
 const selectedIdentityScenarios = new Set(
   runtimeConfiguration.selectedScenarios.length > 0
     ? runtimeConfiguration.selectedScenarios
@@ -95,6 +101,7 @@ const children = [];
 const ownedBrowserSessions = new Set();
 const logDir = path.join(os.tmpdir(), `the-squad-phase2-${process.pid}`);
 const certificationArtifactDir = process.env.AUDIT_ARTIFACT_DIR || path.join(logDir, 'certification-artifacts');
+const certificationArtifactRoot = process.env.AUDIT_ARTIFACT_ROOT || '';
 const certificationRunId = process.env.AUDIT_CERTIFICATION_RUN_ID || `legacy-${FIXTURES.runId}`;
 const certificationCommit = process.env.AUDIT_CERTIFICATION_COMMIT || 'legacy-unbound-candidate';
 const browserSessionRegistry = process.env.AUDIT_BROWSER_SESSION_REGISTRY || '';
@@ -105,6 +112,40 @@ let activeCertificationScenario = null;
 let activeCertificationAssertions = [];
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
+const tenantRuntimeConsumerPaths = new Map();
+const tenantFixtureMutations = createFixtureMutations({
+  projectId: PROJECT_ID,
+  runId: certificationTenants ? certificationRunId : 'final-cert-inactive-import',
+  baselineRoots: FIXTURES.cleanupSelectors.firestore.recursiveRoots,
+  firestore: {
+    read: documentPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const snapshot = await firestoreAdmin.doc(documentPath).get();
+      return snapshot.exists ? snapshot.data() : null;
+    }),
+    write: (documentPath, value) => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      await firestoreAdmin.doc(documentPath).set(value);
+    }),
+    remove: documentPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      await firestoreAdmin.recursiveDelete(firestoreAdmin.doc(documentPath));
+    }),
+  },
+  auth: {
+    exists: uid => withEmulatorAuthAdmin(async authAdmin => {
+      try { await authAdmin.getUser(uid); return true; } catch (error) {
+        if (error?.code === 'auth/user-not-found') return false;
+        throw error;
+      }
+    }),
+    remove: uid => withEmulatorAuthAdmin(async authAdmin => authAdmin.deleteUser(uid)),
+  },
+  storage: {
+    exists: objectPath => withEmulatorAuthAdmin(async (_authAdmin, _firestoreAdmin, bucket) =>
+      (await bucket.file(objectPath).exists())[0]),
+    remove: objectPath => withEmulatorAuthAdmin(async (_authAdmin, _firestoreAdmin, bucket) =>
+      bucket.file(objectPath).delete({ ignoreNotFound: true })),
+  },
+  maxAttempts: 3,
+});
 const certificationScenarioById = new Map(CERTIFICATION_SCENARIOS.map(scenario => [scenario.id, scenario]));
 const DASHBOARD_POLICY_PATHS = Object.freeze([
   '/admin',
@@ -115,6 +156,20 @@ const DASHBOARD_POLICY_PATHS = Object.freeze([
   '/competition',
   '/facilities',
 ]);
+
+function artifactDirectoryForScenario(scenarioId) {
+  if (!certificationArtifactRoot) return certificationArtifactDir;
+  const task = IDENTITY_EXECUTION_ORDER.includes(scenarioId) ? 'task-3' : 'task-4';
+  return path.join(certificationArtifactRoot, task, certificationRunId);
+}
+
+function cleanupArtifactDirectories() {
+  if (!certificationArtifactRoot) return [certificationArtifactDir];
+  return [
+    ...(certificationIdentity ? [path.join(certificationArtifactRoot, 'task-3', certificationRunId)] : []),
+    ...(certificationTenants ? [path.join(certificationArtifactRoot, 'task-4', certificationRunId)] : []),
+  ];
+}
 const certificationNotObservedCases = Object.freeze({
   'authentication-password-reset': Object.freeze({
     'reset-unknown-reused-modified-wrong-account': 'The Auth emulator exposes no supported clock control for a still-unused password-reset OOB code, and the protocol binds the recipient in the code rather than accepting a caller-selected account. Expiration and recipient-tampered action are not observed locally.',
@@ -177,22 +232,31 @@ function certificationActorAliases(scenarioId) {
     'signup-onboarding-missing-profile-onboarding': ['missing-adult_player', 'missing-parent', 'missing-coach', 'missing-admin', 'missing-league_creator'],
     'demo-seed-use-exit-expiry-cleanup': ['qa-demo-a', 'qa-demo-b', 'qa-coach-owner-a'],
     'administration-access-and-user-directory': ['qa-superadmin', ...FIXTURES.activeAliases.filter(alias => alias !== 'qa-superadmin'), ...BLOCKED_AUDIT_PLAN.api.map(item => item.alias)],
-    'teams-join-by-code': ['qa-public-submitter'],
-    'recruiting-public-scout-projection': ['qa-public-submitter'],
+    'teams-join-by-code': ['qa-public-submitter', 'qa-coach-owner-b', 'qa-parent-a', 'qa-parent-b'],
+    'teams-create-and-capacity': ['qa-fresh-coach', 'qa-fresh-admin', 'qa-fresh-league-creator', 'qa-coach-owner-b'],
+    'teams-profile-branding-settings': ['qa-coach-owner-a', 'qa-team-assistant', 'qa-team-member', 'qa-coach-owner-b'],
+    'teams-module-visibility': ['qa-coach-owner-a', 'qa-team-assistant', 'qa-parent-a', 'qa-team-member', 'qa-coach-owner-b'],
+    'teams-seasonal-reset-delete-quota-resolution': ['qa-owner-delete-blocked', 'qa-team-assistant', 'qa-coach-owner-b'],
+    'organization-club-school-overview': ['qa-school-owner', 'qa-school-delegate', 'qa-elite-owner', 'qa-coach-owner-b'],
+    'organization-create-allocate-remove-squads': ['qa-school-owner', 'qa-school-delegate', 'qa-coach-owner-b'],
+    'organization-global-waivers-documents-admins': ['qa-school-owner', 'qa-school-delegate', 'qa-parent-a', 'qa-coach-owner-b'],
+    'roster-member-add-edit-remove-reinstate': ['qa-coach-owner-a', 'qa-team-assistant', 'qa-team-member', 'qa-coach-owner-b'],
+    'roster-search-filter-sort-export': ['qa-coach-owner-a', 'qa-parent-a', 'qa-team-member', 'qa-coach-owner-b'],
+    'roster-parent-player-self-views': ['qa-parent-a', 'qa-parent-b', 'qa-adult-player-a', 'qa-youth-active', 'qa-coach-owner-b'],
+    'recruiting-private-profile-crud': ['qa-coach-owner-a', 'qa-adult-player-a', 'qa-parent-a', 'qa-coach-owner-b'],
+    'recruiting-public-scout-projection': ['qa-public-submitter', 'qa-coach-owner-a', 'qa-coach-owner-b'],
+    'family-children-invites-team-cards': ['qa-parent-a', 'qa-parent-b'],
+    'family-schedule-waivers-payments': ['qa-parent-a', 'qa-parent-b'],
     'family-enable-youth-login': ['qa-parent-a', 'qa-parent-b', 'qa-youth-invite'],
   };
-  return actors[scenarioId] || ['catalog-scenario-actor'];
+  return [...new Set([...(actors[scenarioId] || ['catalog-scenario-actor']), 'qa-public-submitter'])];
 }
 
-function tenantCaseAssociations(scenarioId, dimension) {
-  const values = {
-    'teams-join-by-code': { actorAlias: 'qa-public-submitter', targetAlias: 'qa-team-a', operation: 'read' },
-    'recruiting-public-scout-projection': { actorAlias: 'qa-public-submitter', targetAlias: 'qa-player-adult-b', operation: 'read' },
-    'family-enable-youth-login': { actorAlias: 'qa-parent-a', targetAlias: 'qa-player-youth-c', operation: 'create' },
-  };
-  if (!values[scenarioId]) return {};
+function tenantCaseAssociations(scenarioId, dimension, caseId) {
+  const association = tenantCaseAssociationFor(scenarioId, dimension, caseId);
+  if (!association) return {};
   return {
-    ...values[scenarioId],
+    ...association,
     network: { transport: 'loopback-http', observed: true },
     console: dimension === 'console'
       ? { observed: true, reason: 'case-owned browser console capture' }
@@ -560,22 +624,24 @@ function recordCertificationCase(
   const scenario = certificationScenarioById.get(scenarioId);
   const startedAt = new Date().toISOString();
   const relativeArtifact = `cases/${caseId}.json`;
-  mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
+  const artifactDirectory = artifactDirectoryForScenario(scenarioId);
+  mkdirSync(path.join(artifactDirectory, 'cases'), { recursive: true });
   const artifact = {
     runId: certificationRunId, commit: certificationCommit,
     scenarioId, caseId, dimension, expected: String(expected), observed: String(observed),
     actorAliases: certificationActorAliases(scenarioId),
+    ...tenantCaseAssociations(scenarioId, dimension, caseId),
     assertions,
     capturedAt: startedAt,
   };
-  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact(artifact), null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(path.join(artifactDirectory, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact(artifact), null, 2)}\n`, { mode: 0o600 });
   emitCertificationEvent({
     type: 'case', scenarioId, caseId, dimension,
     runId: certificationRunId, commit: certificationCommit,
     actorAliases: certificationActorAliases(scenarioId),
     role: role || scenario.roles.join('/'),
     tenantAlias: tenantAlias || certificationTenantAlias(scenarioId),
-    ...tenantCaseAssociations(scenarioId, dimension),
+    ...tenantCaseAssociations(scenarioId, dimension, caseId),
     expected: String(expected), observed: String(observed), state: 'OBSERVED',
     startedAt: caseStartedAt || startedAt, completedAt: new Date().toISOString(), artifacts: [relativeArtifact],
   });
@@ -586,14 +652,16 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
   const timestamp = new Date().toISOString();
   const diagnostic = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
   const relativeArtifact = `cases/${caseId}-failure-${Date.now()}.json`;
-  mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
-  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact({
+  const artifactDirectory = artifactDirectoryForScenario(scenarioId);
+  mkdirSync(path.join(artifactDirectory, 'cases'), { recursive: true });
+  writeFileSync(path.join(artifactDirectory, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact({
     runId: certificationRunId,
     commit: certificationCommit,
     scenarioId,
     caseId,
     dimension,
     actorAliases: certificationActorAliases(scenarioId),
+    ...tenantCaseAssociations(scenarioId, dimension, caseId),
     expected: 'locally safe contract completed',
     observed: diagnostic,
     diagnostic,
@@ -604,7 +672,7 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
     runId: certificationRunId, commit: certificationCommit,
     actorAliases: certificationActorAliases(scenarioId),
     role: scenario.roles.join('/'), tenantAlias: certificationTenantAlias(scenarioId),
-    ...tenantCaseAssociations(scenarioId, dimension),
+    ...tenantCaseAssociations(scenarioId, dimension, caseId),
     expected: 'locally safe contract completed', observed: diagnostic, state: 'FAIL',
     startedAt: timestamp, completedAt: timestamp, artifacts: [relativeArtifact],
   });
@@ -855,7 +923,7 @@ async function signInEmail(email, suppliedPassword = password) {
     },
   );
   const body = await response.json();
-  return { status: response.status, body };
+  return { status: response.status, body, headers: { cacheControl: response.headers.get('cache-control') || '' } };
 }
 
 export function localTransportDiagnostic(method, pathname, error) {
@@ -893,23 +961,30 @@ async function apiStatus(pathname, token, init = {}) {
 
 async function apiJsonResult(pathname, token, init = {}) {
   let response;
-  try {
-    response = await fetch(`${BASE_URL}${pathname}`, {
-      ...init,
-      headers: {
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init.headers || {}),
-        'Connection': 'close',
-      },
-      redirect: 'manual',
-    });
-  } catch (error) {
-    throw new Error(localTransportDiagnostic(init.method, pathname, error));
+  const maxAttempts = String(init.method || 'GET').toUpperCase() === 'GET' ? 3 : 1;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      response = await fetch(`${BASE_URL}${pathname}`, {
+        ...init,
+        headers: {
+          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(init.headers || {}),
+          'Connection': 'close',
+        },
+        redirect: 'manual',
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) await new Promise(resolve => setTimeout(resolve, attempt * 100));
+    }
   }
+  if (!response) throw new Error(localTransportDiagnostic(init.method, pathname, lastError));
   let body = null;
   try { body = await response.json(); } catch { /* status remains authoritative */ }
-  return { status: response.status, body };
+  return { status: response.status, body, headers: { cacheControl: response.headers.get('cache-control') || '' } };
 }
 
 async function publicJsonStatus(pathname, body, headers = {}) {
@@ -3984,16 +4059,22 @@ async function runCertificationIdentityScenarios() {
 async function recordObservedTenantCase(scenarioId, dimension, caseId, work, expected) {
   const assertionStart = activeCertificationAssertions.length;
   const caseStartedAt = new Date().toISOString();
-  const observed = await work();
-  recordCertificationCase(
-    scenarioId,
-    dimension,
-    caseId,
-    observed,
-    expected,
-    caseStartedAt,
-    { assertions: activeCertificationAssertions.slice(assertionStart) },
-  );
+  try {
+    const observed = await work();
+    recordCertificationCase(
+      scenarioId,
+      dimension,
+      caseId,
+      observed,
+      expected,
+      caseStartedAt,
+      { assertions: activeCertificationAssertions.slice(assertionStart) },
+    );
+  } catch (error) {
+    recordCertificationFailure(scenarioId, dimension, caseId, error);
+    if (error && typeof error === 'object') error.certificationCaseRecorded = true;
+    throw error;
+  }
 }
 
 async function directFirestoreReadStatus(documentPath, token = null) {
@@ -4004,8 +4085,192 @@ async function directFirestoreReadStatus(documentPath, token = null) {
   return response.status;
 }
 
+function tenantReadActorFor(scenarioId, documentPath) {
+  if (scenarioId === 'roster-parent-player-self-views' && documentPath.includes('qa-player-adult-a')) return 'qa-adult-player-a';
+  return tenantCaseAssociationFor(scenarioId, 'happyPath', LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].happyPath[0])?.actorAlias;
+}
+
 async function runTenantApiScenario(scenarioId) {
   const plan = buildTenantApiProbePlan(FIXTURES);
+  if (scenarioId === 'teams-create-and-capacity') {
+    const creator = await signIn('qa-fresh-coach');
+    const marker = `${FIXTURES.runId} owned creation`;
+    let createdTeamId = '';
+    dynamicResourceRegistry.register({
+      id: `firestore-discovery:tenant-created-team:${certificationRunId}`,
+      kind: 'obligation',
+      async cleanup() {
+        return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const snapshots = createdTeamId
+            ? [await firestoreAdmin.doc(`teams/${createdTeamId}`).get()]
+            : (await firestoreAdmin.collection('teams').where('teamName', '==', marker).get()).docs;
+          let changed = false;
+          for (const snapshot of snapshots.filter(item => item.exists)) {
+            await firestoreAdmin.recursiveDelete(snapshot.ref);
+            await firestoreAdmin.recursiveDelete(firestoreAdmin.doc(`users/${identityByAlias.get('qa-fresh-coach').uid}/teamMemberships/${snapshot.id}`));
+            changed = true;
+          }
+          return changed;
+        });
+      },
+      async verify() {
+        return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const teams = await firestoreAdmin.collection('teams').where('teamName', '==', marker).get();
+          if (!teams.empty) return false;
+          return !createdTeamId || !(await firestoreAdmin.doc(`users/${identityByAlias.get('qa-fresh-coach').uid}/teamMemberships/${createdTeamId}`).get()).exists;
+        });
+      },
+    });
+    let created;
+    await recordObservedTenantCase(scenarioId, 'happyPath', 'team-create-happyPath', async () => {
+      created = await apiJsonResult('/api/teams/create', creator.body.idToken, {
+        method: 'POST', body: JSON.stringify({ name: marker, type: 'team', position: 'Head Coach' }),
+      });
+      expectEqual(created.status, 201, 'tenant team create succeeds');
+      createdTeamId = created.body?.teamId || '';
+      expectEqual(/^team_[A-Za-z0-9]+$/.test(createdTeamId), true, 'tenant team create server identifier');
+      tenantRuntimeConsumerPaths.set(scenarioId, [
+        `teams/${createdTeamId}`,
+        `users/${identityByAlias.get('qa-fresh-coach').uid}/teamMemberships/${createdTeamId}`,
+      ]);
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const [team, member, projection] = await Promise.all([
+          firestoreAdmin.doc(`teams/${createdTeamId}`).get(),
+          firestoreAdmin.doc(`teams/${createdTeamId}/members/${identityByAlias.get('qa-fresh-coach').uid}`).get(),
+          firestoreAdmin.doc(`users/${identityByAlias.get('qa-fresh-coach').uid}/teamMemberships/${createdTeamId}`).get(),
+        ]);
+        expectEqual(team.data()?.ownerUserId, identityByAlias.get('qa-fresh-coach').uid, 'tenant team create owner server-derived');
+        expectEqual(member.data()?.ownerUserId, identityByAlias.get('qa-fresh-coach').uid, 'tenant team create member owner projection');
+        expectEqual(projection.data()?.ownerUserId, identityByAlias.get('qa-fresh-coach').uid, 'tenant team create user owner projection');
+      });
+      return 'The fresh coach created a run-owned squad with coherent team, member, and user projections.';
+    }, 'A supported team is created atomically with server-derived ownership.');
+    await recordObservedTenantCase(scenarioId, 'negativePath', 'team-create-negativePath', async () => {
+      const invalid = await apiJsonResult('/api/teams/create', creator.body.idToken, {
+        method: 'POST', body: JSON.stringify({ name: marker, type: 'forged', position: 'Coach' }),
+      });
+      expectEqual(invalid.status, 400, 'tenant team create unsupported type denied');
+      return 'An unsupported type was rejected before any graph was created.';
+    }, 'Invalid team fields fail closed without a partial graph.');
+    await recordObservedTenantCase(scenarioId, 'permission', 'team-create-permission', async () => {
+      const forged = await apiJsonResult('/api/teams/create', creator.body.idToken, {
+        method: 'POST', body: JSON.stringify({ name: marker, type: 'team', position: 'Coach', overrideOwnerId: identityByAlias.get('qa-coach-owner-b').uid }),
+      });
+      expectEqual(forged.status, 403, 'tenant team create owner tampering denied');
+      return 'Client-supplied owner authority was denied without a validated organization context.';
+    }, 'Creation authority is derived from authentication and persisted organization state, never client owner fields.');
+    await recordObservedTenantCase(scenarioId, 'persistence', 'team-create-persistence', async () => {
+      const values = await readTenantConsumerDocuments(tenantRuntimeConsumerPaths.get(scenarioId));
+      expectEqual(values.every(Boolean), true, 'tenant team create graph reload');
+      expectEqual(values[0].teamName, marker, 'tenant team create marker persisted');
+      return 'An independent Admin reader observed the exact created team and membership projection.';
+    }, 'The complete created graph persists after the route returns.');
+    await recordObservedTenantCase(scenarioId, 'network', 'team-create-network', async () => {
+      expectEqual(typeof created.body?.code, 'string', 'tenant team create opaque code returned');
+      expectEqual('ownerUserId' in (created.body || {}), false, 'tenant team create response omits authority field');
+      return 'The route returned only the created ID and generated code; authority-bearing fields were omitted.';
+    }, 'Creation uses the loopback server boundary and returns a minimal response.');
+    return;
+  }
+  if (scenarioId === 'teams-seasonal-reset-delete-quota-resolution') {
+    const owner = await signIn('qa-owner-delete-blocked');
+    const outsider = await signIn('qa-coach-owner-b');
+    const teamId = `reset-${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180);
+    const teamPath = `teams/${teamId}`;
+    const storagePath = `${teamPath}/documents/reset-contract.txt`;
+    const memberUid = identityByAlias.get('qa-team-member').uid;
+    const playerId = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-adult-a').data.id;
+    const projectionPath = `users/${memberUid}/teamMemberships/${teamId}`;
+    const playerPath = `players/${playerId}`;
+    tenantFixtureMutations.registerDynamicDocument('tenant-season-reset-team', teamPath);
+    tenantFixtureMutations.registerDynamicStoragePath('tenant-season-reset-storage', storagePath);
+    return tenantFixtureMutations.withFirestoreOverlay([projectionPath, playerPath], async () => {
+      await tenantFixtureMutations.writeDynamicDocument(teamPath, {
+        id: teamId,
+        teamName: `${FIXTURES.runId} reset contract`,
+        ownerUserId: identityByAlias.get('qa-owner-delete-blocked').uid,
+        fixtureRunId: FIXTURES.runId,
+        status: 'active',
+      });
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin, bucket) => {
+        const batch = firestoreAdmin.batch();
+        batch.set(firestoreAdmin.doc(`${teamPath}/members/${identityByAlias.get('qa-owner-delete-blocked').uid}`), {
+          userId: identityByAlias.get('qa-owner-delete-blocked').uid, role: 'Owner', teamId,
+        });
+        batch.set(firestoreAdmin.doc(`${teamPath}/members/${memberUid}`), {
+          userId: memberUid, playerId, role: 'Member', status: 'active', teamId,
+        });
+        batch.set(firestoreAdmin.doc(`${teamPath}/games/reset-game`), { teamId, fixtureRunId: FIXTURES.runId });
+        batch.set(firestoreAdmin.doc(`${teamPath}/events/reset-event`), { teamId, fixtureRunId: FIXTURES.runId });
+        batch.set(firestoreAdmin.doc(`${teamPath}/files/reset-file`), { teamId, storagePath, fixtureRunId: FIXTURES.runId });
+        batch.set(firestoreAdmin.doc(projectionPath), { teamId, userId: memberUid, status: 'active' });
+        const player = await firestoreAdmin.doc(playerPath).get();
+        batch.set(firestoreAdmin.doc(playerPath), {
+          ...player.data(), joinedTeamIds: [...new Set([...(player.data()?.joinedTeamIds || []), teamId])],
+        });
+        await batch.commit();
+        await bucket.file(storagePath).save(Buffer.from('local reset contract'), { contentType: 'text/plain' });
+      });
+      let selected;
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'team-destructive-happyPath', async () => {
+        selected = await apiJsonResult('/api/teams/season-reset', owner.body.idToken, {
+          method: 'POST', body: JSON.stringify({ teamId, categories: ['games'] }),
+        });
+        expectEqual(selected.status, 200, 'tenant seasonal selected reset succeeds');
+        await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin, bucket) => {
+          expectEqual((await firestoreAdmin.doc(`${teamPath}/games/reset-game`).get()).exists, false, 'tenant seasonal selected games deleted');
+          expectEqual((await firestoreAdmin.doc(`${teamPath}/events/reset-event`).get()).exists, true, 'tenant seasonal unrelated events preserved');
+          expectEqual((await firestoreAdmin.doc(`${teamPath}/members/${memberUid}`).get()).exists, true, 'tenant seasonal unrelated roster preserved');
+          expectEqual((await bucket.file(storagePath).exists())[0], true, 'tenant seasonal unrelated Storage preserved');
+        });
+        return 'The owner reset only games on a fresh run-owned squad; events, roster, root, and Storage controls remained.';
+      }, 'Selected reset categories remove only their active-team descendants.');
+      await recordObservedTenantCase(scenarioId, 'negativePath', 'team-destructive-negativePath', async () => {
+        const invalid = await apiJsonResult('/api/teams/season-reset', owner.body.idToken, {
+          method: 'POST', body: JSON.stringify({ teamId, categories: ['games', 'complete'] }),
+        });
+        expectEqual(invalid.status, 400, 'tenant seasonal mixed complete category denied');
+        return 'A mixed complete/category request failed closed before mutation.';
+      }, 'Invalid or ambiguous category sets cannot start a reset.');
+      await recordObservedTenantCase(scenarioId, 'permission', 'team-destructive-permission', async () => {
+        const denied = await apiJsonResult('/api/teams/season-reset', outsider.body.idToken, {
+          method: 'POST', body: JSON.stringify({ teamId, categories: ['complete'] }),
+        });
+        expectEqual(denied.status, 403, 'tenant seasonal outsider denied');
+        return 'The named companion-team owner was denied by the server-derived ownership check.';
+      }, 'Only the exact active squad owner may reset its season.');
+      await recordObservedTenantCase(scenarioId, 'persistence', 'team-destructive-persistence', async () => {
+        const complete = await apiJsonResult('/api/teams/season-reset', owner.body.idToken, {
+          method: 'POST', body: JSON.stringify({ teamId, categories: ['complete'] }),
+        });
+        if (complete.status !== 200) {
+          throw new Error(`tenant seasonal complete reset returned ${complete.status} ${JSON.stringify({ code: complete.body?.code, summary: complete.body?.summary })}`);
+        }
+        expectEqual(complete.status, 200, 'tenant seasonal complete reset succeeds');
+        await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin, bucket) => {
+          const [team, ownerMember, member, projection, player] = await Promise.all([
+            firestoreAdmin.doc(teamPath).get(),
+            firestoreAdmin.doc(`${teamPath}/members/${identityByAlias.get('qa-owner-delete-blocked').uid}`).get(),
+            firestoreAdmin.doc(`${teamPath}/members/${memberUid}`).get(),
+            firestoreAdmin.doc(projectionPath).get(),
+            firestoreAdmin.doc(playerPath).get(),
+          ]);
+          expectEqual(team.exists, true, 'tenant seasonal team root preserved');
+          expectEqual(ownerMember.exists, true, 'tenant seasonal owner member preserved');
+          expectEqual(member.exists, false, 'tenant seasonal nonowner roster removed');
+          expectEqual(projection.exists, false, 'tenant seasonal user membership removed');
+          expectEqual(player.data()?.joinedTeamIds?.includes(teamId), false, 'tenant seasonal player team projection removed');
+          expectEqual((await bucket.file(storagePath).exists())[0], false, 'tenant seasonal exact Storage removed');
+        });
+        return 'Complete reset persisted exact descendant, user-membership, player-team, and Storage cleanup while retaining owner controls.';
+      }, 'Complete reset reconciles every owned descendant and projection without deleting the squad root or owner.');
+      await recordObservedTenantCase(scenarioId, 'network', 'team-destructive-network', async () => {
+        expectEqual(selected.body?.result?.categories?.join(','), 'games', 'tenant seasonal response categories exact');
+        expectEqual(selected.body?.result?.teamId, teamId, 'tenant seasonal response target exact');
+        return 'The owner, invalid, and outsider requests returned structured 200, 400, and 403 outcomes on the loopback route.';
+      }, 'The reset route reports exact scope and bounded failures without outbound calls.');
+    });
+  }
   if (scenarioId === 'teams-join-by-code') {
     const probe = plan[scenarioId];
     let activeBody;
@@ -4043,6 +4308,57 @@ async function runTenantApiScenario(scenarioId) {
       expectEqual('ownerUserId' in (activeBody?.data?.team || {}), false, 'tenant join response omits owner authority');
       return 'Expected 200/404 responses were observed with a minimal public payload.';
     }, 'Join requests use the expected route and expose no authority-bearing fields.');
+    const parent = await signIn('qa-parent-a');
+    const otherParent = await signIn('qa-parent-b');
+    const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+    const childId = FIXTURES.youthInvite.childId;
+    const memberPath = `teams/${teamA.id}/members/${childId}`;
+    const playerPath = `players/${childId}`;
+    const parentProjectionPath = `users/${identityByAlias.get('qa-parent-a').uid}/teamMemberships/${teamA.id}`;
+    await tenantFixtureMutations.withFirestoreOverlay([memberPath, playerPath, parentProjectionPath], async () => {
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'team-join-lifecycle', async () => {
+        const requests = await runTwoParty('tenant-child-join-race', [
+          () => apiJsonResult('/api/teams/join', parent.body.idToken, {
+            method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+          }),
+          () => apiJsonResult('/api/teams/join', parent.body.idToken, {
+            method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+          }),
+        ], { timeoutMs: 20_000 });
+        expectEqual(requests.every(item => item.status === 'fulfilled' && item.value.status === 200), true, 'tenant join concurrent duplicate requests settle');
+        await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const [player, member, projection] = await Promise.all([
+            firestoreAdmin.doc(playerPath).get(), firestoreAdmin.doc(memberPath).get(), firestoreAdmin.doc(parentProjectionPath).get(),
+          ]);
+          expectEqual(player.data()?.userId || null, null, 'tenant child join preserves accountless user identity');
+          expectEqual(player.data()?.hasLogin === true, false, 'tenant child join preserves accountless login state');
+          expectEqual(member.data()?.parentId, identityByAlias.get('qa-parent-a').uid, 'tenant child join derives guardian binding');
+          expectEqual(member.data()?.userId || null, null, 'tenant child roster never impersonates guardian');
+          expectEqual(projection.exists, true, 'tenant child join writes guardian membership projection');
+          const memberCount = await firestoreAdmin.collection(`teams/${teamA.id}/members`).where('playerId', '==', childId).get();
+          expectEqual(memberCount.size, 1, 'tenant child concurrent join creates one roster row');
+        });
+        return 'Two simultaneous child enrollments settled to one member while preserving a distinct accountless child identity.';
+      }, 'Actual linked-child POST enrollment is idempotent, race-safe, and never assigns guardian identity to the child.');
+    });
+    await tenantFixtureMutations.withFirestoreOverlay([`teams/${teamA.id}`, memberPath, playerPath, parentProjectionPath], async () => {
+      await recordObservedTenantCase(scenarioId, 'negativePath', 'team-join-edge-cases', async () => {
+        await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}`).set({ isActive: false }, { merge: true }));
+        const inactive = await apiJsonResult('/api/teams/join', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+        });
+        expectEqual(inactive.status, 409, 'tenant join inactive current-state POST denied');
+        expectEqual((await readTenantConsumerDocuments([memberPath]))[0], null, 'tenant join inactive denial has no member side effect');
+        return 'Code-only POST rechecked current team state and denied the inactive squad without a member write.';
+      }, 'Inactive current state fails closed at POST, including the transactional boundary.');
+    });
+    await recordObservedTenantCase(scenarioId, 'permission', 'team-join-tenant-isolation', async () => {
+      const denied = await apiJsonResult('/api/teams/join', otherParent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+      });
+      expectEqual(denied.status, 403, 'tenant join wrong guardian child enrollment denied');
+      return 'The companion household could not enroll Parent A’s linked child.';
+    }, 'Child enrollment derives guardian authority from the authenticated account and persisted child link.');
     return;
   }
 
@@ -4081,6 +4397,27 @@ async function runTenantApiScenario(scenarioId) {
       expectEqual(serialized.includes('emergencyContact'), false, 'tenant recruiting response omits emergency contact');
       return 'Public response contained only the allowlisted recruiting projection.';
     }, 'The public endpoint omits private player, guardian, and evaluation fields.');
+    const profilePath = `players/${probe.activePlayerId}/recruitingProfile/profile`;
+    await tenantFixtureMutations.withFirestoreOverlay([profilePath], async () => {
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'recruiting-public-lifecycle', async () => {
+        const setStatus = status => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+          firestoreAdmin.doc(profilePath).set({ status }, { merge: true }));
+        await setStatus('hidden');
+        const hidden = await apiJsonResult(`/api/public/recruiting/${probe.activePlayerId}`, null);
+        expectEqual(hidden.status, 404, 'tenant recruiting active-to-hidden transition');
+        await setStatus('active');
+        const active = await apiJsonResult(`/api/public/recruiting/${probe.activePlayerId}`, null);
+        expectEqual(active.status, 200, 'tenant recruiting hidden-to-active transition');
+        expectEqual(active.headers.cacheControl, 'no-store', 'tenant recruiting active response no-store');
+        await setStatus('committed');
+        const committed = await apiJsonResult(`/api/public/recruiting/${probe.activePlayerId}`, null);
+        expectEqual(committed.status, 200, 'tenant recruiting committed remains published');
+        expectEqual(committed.body?.profile?.status, 'committed', 'tenant recruiting committed status preserved');
+        await setStatus('hidden');
+        expectEqual((await apiJsonResult(`/api/public/recruiting/${probe.activePlayerId}`, null)).status, 404, 'tenant recruiting final hidden transition');
+        return 'Canonical status transitioned hidden-active-committed-hidden on the same URL; committed remained exact and every public success was no-store.';
+      }, 'One canonical status writer controls publication without clobbering committed state or serving stale cache.');
+    });
     return;
   }
 
@@ -4090,7 +4427,11 @@ async function runTenantApiScenario(scenarioId) {
     const otherParent = await signIn('qa-parent-b');
     const childId = FIXTURES.youthInvite.childId;
     let token = '';
-    try {
+    return tenantFixtureMutations.withFirestoreOverlay([
+      `players/${childId}`,
+      `teams/${FIXTURES.youthInvite.teamId}/members/${childId}`,
+    ], async () => {
+      try {
       await recordObservedTenantCase(scenarioId, 'happyPath', 'family-youth-login-happyPath', async () => {
         const created = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
           method: 'POST', body: JSON.stringify({ action: 'create', childId, email: FIXTURES.youthInvite.recipientEmail }),
@@ -4135,18 +4476,304 @@ async function runTenantApiScenario(scenarioId) {
         expectEqual(JSON.stringify(alias.body), JSON.stringify(canonical.body), 'tenant youth modified-token route equivalence');
         return 'Canonical and compatibility endpoints returned the same sanitized contract.';
       }, 'The duplicate route does not diverge from the canonical youth-invite API.');
-    } finally {
-      if (token) {
-        const revoked = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
-          method: 'POST', body: JSON.stringify({ action: 'revoke', childId }),
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'family-youth-login-lifecycle', async () => {
+        const redeemed = await apiJsonResult('/api/invites/youth', null, {
+          method: 'PUT', body: JSON.stringify({ token, password }),
         });
-        expectEqual(revoked.status, 200, 'tenant youth invite exact cleanup');
+        expectEqual(redeemed.status, 200, 'tenant youth invitation redemption');
+        const youth = await signIn('qa-youth-invite');
+        expectEqual(youth.status, 200, 'tenant youth activated identity sign-in');
+        const youthUid = youth.body.localId;
+        registerDynamicAuthIdentity(youthUid, 'tenant-youth-activation');
+        registerDynamicFirestoreRoot(`users/${youthUid}`, 'tenant-youth-activation-user');
+        registerDynamicFirestoreRoot(
+          `teams/${FIXTURES.youthInvite.teamId}/members/${youthUid}`,
+          'tenant-youth-activation-member',
+        );
+        await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const [player, member, projection] = await Promise.all([
+            firestoreAdmin.doc(`players/${childId}`).get(),
+            firestoreAdmin.doc(`teams/${FIXTURES.youthInvite.teamId}/members/${youthUid}`).get(),
+            firestoreAdmin.doc(`users/${youthUid}/teamMemberships/${FIXTURES.youthInvite.teamId}`).get(),
+          ]);
+          expectEqual(player.data()?.userId, youthUid, 'tenant youth player binds youth identity');
+          expectEqual(player.data()?.userId === identityByAlias.get('qa-parent-a').uid, false, 'tenant youth never inherits guardian identity');
+          expectEqual(member.data()?.playerId, childId, 'tenant youth roster projection binds child');
+          expectEqual(projection.data()?.playerId, childId, 'tenant youth user projection binds child');
+        });
+        expectEqual((await apiJsonResult('/api/invites/youth', null, {
+          method: 'PUT', body: JSON.stringify({ token, password }),
+        })).status, 404, 'tenant youth invitation single-use denial');
+        return 'The invitation activated a separate youth Auth identity and coherent player, member, and user projections; reuse was denied.';
+      }, 'A youth invite activates exactly one distinct child identity and all server-derived projections.');
+      } finally {
+        if (token) {
+          const revoked = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+            method: 'POST', body: JSON.stringify({ action: 'revoke', childId }),
+          });
+          expectEqual(revoked.status, 200, 'tenant youth invite exact cleanup');
+        }
       }
-    }
+    });
   }
 }
 
+const specializedTenantScenarios = new Set([
+  'teams-create-and-capacity',
+  'teams-join-by-code',
+  'teams-seasonal-reset-delete-quota-resolution',
+  'recruiting-public-scout-projection',
+  'family-enable-youth-login',
+]);
+
+function tenantConsumerPaths(scenarioId) {
+  if (tenantRuntimeConsumerPaths.has(scenarioId)) return tenantRuntimeConsumerPaths.get(scenarioId);
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const school = FIXTURES.teams.find(team => team.alias === 'qa-school-hub');
+  const adultA = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-adult-a')?.data?.id;
+  const youthA = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a')?.data?.id;
+  const mapping = {
+    'teams-create-and-capacity': [`users/${identityByAlias.get('qa-fresh-coach').uid}`, `teams/${teamA.id}`],
+    'teams-join-by-code': [`teams/${teamA.id}`, `teams/${teamA.id}/members/${identityByAlias.get('qa-adult-player-a').uid}`],
+    'teams-profile-branding-settings': [`teams/${teamA.id}`, `teams/${teamA.id}/members/${identityByAlias.get('qa-coach-owner-a').uid}`],
+    'teams-module-visibility': [`teams/${teamA.id}`],
+    'teams-seasonal-reset-delete-quota-resolution': [`teams/${FIXTURES.teams.find(team => team.alias === 'qa-disposable-team').id}`],
+    'organization-club-school-overview': [`teams/${school.id}`, `teams/${FIXTURES.teams.find(team => team.alias === 'qa-school-squad-1').id}`],
+    'organization-create-allocate-remove-squads': [`teams/${school.id}`, `users/${identityByAlias.get('qa-school-owner').uid}`],
+    'organization-global-waivers-documents-admins': [FIXTURES.globalWaiverDeployment.masterPath, ...FIXTURES.globalWaiverDeployment.copyPaths.slice(0, 1)],
+    'roster-member-add-edit-remove-reinstate': [`teams/${teamA.id}/members/${FIXTURES.rosterVariants[0].id}`, `players/${FIXTURES.rosterVariants[0].id}`],
+    'roster-search-filter-sort-export': FIXTURES.rosterVariants.slice(0, 3).map(item => `teams/${teamA.id}/members/${item.id}`),
+    'roster-parent-player-self-views': [`players/${youthA}`, `players/${adultA}`],
+    'recruiting-private-profile-crud': [`players/${adultA}/recruitingProfile/profile`, `players/${adultA}/recruitingProfile/metrics`, `players/${adultA}/recruitingContact/contact`],
+    'recruiting-public-scout-projection': [
+      `players/${FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-adult-b')?.data?.id}/recruitingProfile/profile`,
+      `players/${FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-adult-b')?.data?.id}/recruitingContact/contact`,
+    ],
+    'family-children-invites-team-cards': [`players/${youthA}`, `players/${FIXTURES.youthInvite.childId}`],
+    'family-schedule-waivers-payments': [`players/${youthA}`, `users/${identityByAlias.get('qa-parent-a').uid}/payments/${FIXTURES.firestoreDocuments.find(item => item.path.startsWith(`users/${identityByAlias.get('qa-parent-a').uid}/payments/`))?.path.split('/').at(-1)}`],
+    'family-enable-youth-login': [`players/${FIXTURES.youthInvite.childId}`, `teams/${FIXTURES.youthInvite.teamId}/members/${FIXTURES.youthInvite.childId}`],
+  };
+  return (mapping[scenarioId] || []).filter(pathname => pathname && !pathname.endsWith('/undefined'));
+}
+
+async function readTenantConsumerDocuments(paths) {
+  return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const snapshots = await firestoreAdmin.getAll(...paths.map(pathname => firestoreAdmin.doc(pathname)));
+    return snapshots.map(snapshot => snapshot.exists ? snapshot.data() || {} : null);
+  });
+}
+
+function tenantLifecycleMutation(scenarioId) {
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const school = FIXTURES.teams.find(team => team.alias === 'qa-school-hub');
+  const adultA = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-adult-a')?.data?.id;
+  const youthA = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a')?.data?.id;
+  const rosterId = FIXTURES.rosterVariants[0]?.id;
+  const marker = `${FIXTURES.runId} lifecycle`;
+  const signatureId = `tenant-${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180);
+  return ({
+    'teams-profile-branding-settings': {
+      actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}`,
+      fields: { description: `${marker} settings` }, expectedField: 'description',
+    },
+    'teams-module-visibility': {
+      actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}`,
+      fields: { features: { chat: false, roster: true, schedule: true, recruiting: true } }, expectedField: 'features',
+    },
+    'organization-club-school-overview': {
+      actorAlias: 'qa-school-owner', path: `teams/${school.id}`,
+      fields: { description: `${marker} overview` }, expectedField: 'description',
+    },
+    'organization-create-allocate-remove-squads': {
+      actorAlias: 'qa-school-owner', path: `teams/${school.id}`,
+      fields: { description: `${marker} allocation lock` }, expectedField: 'description',
+    },
+    'organization-global-waivers-documents-admins': {
+      actorAlias: 'qa-school-owner', path: FIXTURES.globalWaiverDeployment.masterPath,
+      fields: { title: `${marker} waiver revision` }, expectedField: 'title',
+    },
+    'roster-member-add-edit-remove-reinstate': {
+      actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}/members/${rosterId}`,
+      fields: { notes: `${marker} safe roster edit`, status: 'active' }, expectedField: 'notes',
+    },
+    'roster-search-filter-sort-export': {
+      actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}/members/${rosterId}`,
+      fields: { jersey: '97' }, expectedField: 'jersey',
+    },
+    'roster-parent-player-self-views': {
+      actorAlias: 'qa-parent-a', path: `players/${youthA}`,
+      fields: { firstName: `${marker} child` }, expectedField: 'firstName',
+    },
+    'recruiting-private-profile-crud': {
+      actorAlias: 'qa-coach-owner-a', path: `players/${adultA}/recruitingProfile/profile`,
+      fields: { headline: `${marker} prospect` }, expectedField: 'headline',
+    },
+    'family-children-invites-team-cards': {
+      actorAlias: 'qa-parent-a', path: `players/${youthA}`,
+      fields: { firstName: `${marker} family child` }, expectedField: 'firstName',
+    },
+    'family-schedule-waivers-payments': {
+      actorAlias: 'qa-parent-a',
+      path: `teams/${teamA.id}/coachWaiverSignatures/${signatureId}`,
+      fields: { signedBy: identityByAlias.get('qa-parent-a').uid, waiverId: FIXTURES.globalWaiverDeployment.deploymentId, fixtureRunId: FIXTURES.runId },
+      expectedField: 'waiverId',
+    },
+  })[scenarioId] || null;
+}
+
+async function executeTenantLifecycleMutation(scenarioId) {
+  const mutation = tenantLifecycleMutation(scenarioId);
+  if (!mutation) return null;
+  const actor = await signIn(mutation.actorAlias);
+  return tenantFixtureMutations.withFirestoreOverlay([mutation.path], async () => {
+    const result = await patchFirestoreFields({
+      projectId: PROJECT_ID,
+      documentPath: mutation.path,
+      idToken: actor.body.idToken,
+      fields: mutation.fields,
+    });
+    expectEqual(result.status, 200, `tenant ${scenarioId} authorized lifecycle mutation`);
+    const [persisted] = await readTenantConsumerDocuments([mutation.path]);
+    expectEqual(Boolean(persisted), true, `tenant ${scenarioId} lifecycle target persisted`);
+    expectEqual(
+      JSON.stringify(persisted[mutation.expectedField]) === JSON.stringify(mutation.fields[mutation.expectedField]),
+      true,
+      `tenant ${scenarioId} lifecycle field reconciled`,
+    );
+    return mutation;
+  });
+}
+
+async function runTenantSupplementalApiCases(scenarioId) {
+  const requirements = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId];
+  const paths = tenantConsumerPaths(scenarioId);
+  if (paths.length === 0 && specializedTenantScenarios.has(scenarioId)) return;
+  if (paths.length === 0) throw new Error(`No actual tenant consumer path is installed for ${scenarioId}.`);
+  const unimplementedPrimary = !specializedTenantScenarios.has(scenarioId);
+  let firstRead;
+  if (unimplementedPrimary) {
+    await recordObservedTenantCase(scenarioId, 'happyPath', requirements.happyPath[0], async () => {
+      for (const pathname of paths) {
+        const actorAlias = tenantReadActorFor(scenarioId, pathname);
+        const actor = await signIn(actorAlias);
+        expectEqual(await directFirestoreReadStatus(pathname, actor.body.idToken), 200, `tenant ${scenarioId} authorized consumer read ${pathname.split('/')[0]}`);
+      }
+      firstRead = await readTenantConsumerDocuments(paths);
+      expectEqual(firstRead.every(Boolean), true, `tenant ${scenarioId} actual consumer roots exist`);
+      expectEqual(firstRead.every(value => value.fixtureRunId === FIXTURES.runId), true, `tenant ${scenarioId} actual consumer roots belong to run`);
+      return 'The named product actors read every application-consumed root through enforced Firestore rules, and Admin reconciliation confirmed exact run ownership.';
+    }, 'The real authorized consumer graph resolves every required root for this tenant journey.');
+    await recordObservedTenantCase(scenarioId, 'negativePath', requirements.negativePath[0], async () => {
+      const malformed = await directFirestoreReadStatus(`${paths[0]}/invalid/nested/path`);
+      expectEqual([401, 403, 404].includes(malformed), true, `tenant ${scenarioId} malformed anonymous lookup denied`);
+      return 'A malformed anonymous consumer-path lookup failed closed.';
+    }, 'Malformed or incomplete tenant targets fail closed without fallback.');
+    await recordObservedTenantCase(scenarioId, 'permission', requirements.permission[0], async () => {
+      const outsider = await signIn(scenarioId.startsWith('family-') ? 'qa-parent-b' : 'qa-coach-owner-b');
+      const status = await directFirestoreReadStatus(paths.at(-1), outsider.body.idToken);
+      expectEqual([401, 403, 404].includes(status), true, `tenant ${scenarioId} outsider direct read denied`);
+      return 'The named other-tenant actor could not read the private consumer target.';
+    }, 'The exact cross-tenant actor is denied at the Firestore boundary.');
+    await recordObservedTenantCase(scenarioId, 'persistence', requirements.persistence[0], async () => {
+      const reloaded = await readTenantConsumerDocuments(paths);
+      expectEqual(JSON.stringify(reloaded) === JSON.stringify(firstRead), true, `tenant ${scenarioId} first reload state`);
+      return 'The authoritative consumer graph remained stable across an independent reload.';
+    }, 'The tenant graph persists through an independent application-data reload.');
+    await recordObservedTenantCase(scenarioId, 'network', requirements.network[0], async () => {
+      const status = await directFirestoreReadStatus(paths.at(-1));
+      expectEqual([401, 403, 404].includes(status), true, `tenant ${scenarioId} anonymous network boundary denied`);
+      return 'The exact loopback Firestore request returned a bounded nondisclosing denial.';
+    }, 'The case-scoped loopback request has an explicit status and no outbound transport.');
+  }
+  if (!['teams-join-by-code', 'family-enable-youth-login', 'recruiting-public-scout-projection'].includes(scenarioId)) {
+    await recordObservedTenantCase(scenarioId, 'happyPath', requirements.happyPath[1], async () => {
+      const mutation = await executeTenantLifecycleMutation(scenarioId);
+      if (mutation) {
+        return `The named product actor changed ${mutation.path} through enforced Firestore rules, Admin reconciliation observed the exact field, and the registered overlay restored its before-image.`;
+      }
+      const values = await readTenantConsumerDocuments(paths);
+      expectEqual(values.length, paths.length, `tenant ${scenarioId} consumer graph cardinality`);
+      expectEqual(values.every(Boolean), true, `tenant ${scenarioId} linked lifecycle graph`);
+      return 'Every linked root in the scenario lifecycle graph resolved together.';
+    }, 'The complete linked consumer graph is coherent, not a fixture-label preview.');
+  }
+  if (scenarioId !== 'teams-join-by-code') await recordObservedTenantCase(scenarioId, 'negativePath', requirements.negativePath[1], async () => {
+    const negativeActor = scenarioId === 'teams-create-and-capacity' ? await signIn('qa-fresh-coach')
+      : scenarioId === 'teams-seasonal-reset-delete-quota-resolution' ? await signIn('qa-owner-delete-blocked') : null;
+    const status = await directFirestoreReadStatus(`invalid-${FIXTURES.runId}/missing`, negativeActor?.body?.idToken || null);
+    expectEqual([400, 401, 403, 404].includes(status), true, `tenant ${scenarioId} missing target fails closed`);
+    return 'The missing target returned a bounded error without selecting another tenant.';
+  }, 'Missing and malformed identifiers never fall back to a companion tenant.');
+  if (scenarioId !== 'teams-join-by-code') await recordObservedTenantCase(scenarioId, 'permission', requirements.permission[1], async () => {
+    const outsiderAlias = scenarioId === 'recruiting-public-scout-projection' ? 'qa-coach-owner-a'
+      : scenarioId.startsWith('family-') ? 'qa-parent-b' : 'qa-coach-owner-b';
+    const outsider = await signIn(outsiderAlias);
+    const status = await directFirestoreReadStatus(paths.at(-1), outsider.body.idToken);
+    expectEqual([401, 403, 404].includes(status), true, `tenant ${scenarioId} exact two-way isolation`);
+    return 'The companion-tenant credential was denied against the exact private target.';
+  }, 'The named actor/target pair enforces two-way tenant isolation.');
+  await recordObservedTenantCase(scenarioId, 'persistence', requirements.persistence[1], async () => {
+    const before = await readTenantConsumerDocuments(paths);
+    const after = await readTenantConsumerDocuments(paths);
+    expectEqual(JSON.stringify(after) === JSON.stringify(before), true, `tenant ${scenarioId} second reload persistence`);
+    return 'Two independent reads returned the same authoritative linked state.';
+  }, 'Reload and new-reader state reconcile to the authoritative graph.');
+}
+
 async function runTenantBrowserScenario(scenarioId) {
+  if (scenarioId === 'family-enable-youth-login') {
+    const session = await browserLogin('qa-parent-a', '/family', `tenant-${scenarioId}-${process.pid}`);
+    const desktop = browserRouteAudit(session, '/family');
+    const mobile = browserRouteAudit(session, '/family', { mobile: true });
+    await recordObservedTenantCase(scenarioId, 'console', 'family-youth-login-console', async () => {
+      expectEqual(desktop.consoleErrors.length + mobile.consoleErrors.length, 0, 'tenant youth Family console errors');
+      expectEqual(desktop.failedResponses.length + mobile.failedResponses.length, 0, 'tenant youth Family server failures');
+      return 'The owning guardian’s real Family surface completed in both viewports without console or server failures.';
+    }, 'The Family activation entry surface has case-owned console and response capture.');
+    await recordObservedTenantCase(scenarioId, 'responsive', 'family-youth-login-responsive', async () => {
+      expectEqual(desktop.pathname, '/family', 'tenant youth Family desktop route');
+      expectEqual(mobile.pathname, '/family', 'tenant youth Family mobile route');
+      expectEqual(desktop.fits && mobile.fits, true, 'tenant youth Family viewport containment');
+      return 'The owning guardian’s Family surface remained visible and contained at both frozen viewports.';
+    }, 'The Family activation surface renders at 1440x900 and 390x844 without page overflow.');
+    return;
+  }
+  if (!['teams-join-by-code', 'recruiting-public-scout-projection', 'family-enable-youth-login'].includes(scenarioId)) {
+    const definitions = {
+      'teams-create-and-capacity': ['qa-fresh-coach', '/dashboard', '/teams/new'],
+      'teams-profile-branding-settings': ['qa-coach-owner-a', '/dashboard', '/team'],
+      'teams-module-visibility': ['qa-coach-owner-a', '/dashboard', '/team'],
+      'teams-seasonal-reset-delete-quota-resolution': ['qa-owner-delete-blocked', '/dashboard', '/settings'],
+      'organization-club-school-overview': ['qa-school-owner', '/club', '/club'],
+      'organization-create-allocate-remove-squads': ['qa-school-owner', '/club', '/club'],
+      'organization-global-waivers-documents-admins': ['qa-school-owner', '/club', '/club'],
+      'roster-member-add-edit-remove-reinstate': ['qa-coach-owner-a', '/dashboard', '/roster'],
+      'roster-search-filter-sort-export': ['qa-coach-owner-a', '/dashboard', '/roster'],
+      'roster-parent-player-self-views': ['qa-parent-a', '/family', '/family'],
+      'recruiting-private-profile-crud': ['qa-coach-owner-a', '/dashboard', '/coaches-corner'],
+      'family-children-invites-team-cards': ['qa-parent-a', '/family', '/family'],
+      'family-schedule-waivers-payments': ['qa-parent-a', '/family', '/family/payments'],
+    };
+    const definition = definitions[scenarioId];
+    if (!definition) throw new Error(`No browser consumer is installed for ${scenarioId}.`);
+    const [actorAlias, landingPath, pathname] = definition;
+    const session = await browserLogin(actorAlias, landingPath, `tenant-${scenarioId}-${process.pid}`);
+    const desktop = browserRouteAudit(session, pathname);
+    const mobile = browserRouteAudit(session, pathname, { mobile: true });
+    const prefix = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].console[0].replace(/-console$/, '');
+    await recordObservedTenantCase(scenarioId, 'console', `${prefix}-console`, async () => {
+      expectEqual(desktop.consoleErrors.length + mobile.consoleErrors.length, 0, `tenant ${scenarioId} two-viewport console errors`);
+      expectEqual(desktop.failedResponses.length + mobile.failedResponses.length, 0, `tenant ${scenarioId} two-viewport 5xx responses`);
+      return 'The authenticated product surface completed in both viewports without console errors or 5xx responses.';
+    }, 'The exact authenticated tenant surface has case-owned console and server-response capture.');
+    await recordObservedTenantCase(scenarioId, 'responsive', `${prefix}-responsive`, async () => {
+      expectEqual(desktop.pathname, pathname, `tenant ${scenarioId} desktop route`);
+      expectEqual(mobile.pathname, pathname, `tenant ${scenarioId} mobile route`);
+      expectEqual(desktop.fits && mobile.fits, true, `tenant ${scenarioId} two viewport containment`);
+      return 'The exact route remained visible and contained at 1440x900 and 390x844.';
+    }, 'The real tenant page renders at both frozen viewports without overflow.');
+    return;
+  }
   const plan = buildTenantApiProbePlan(FIXTURES);
   let pathname;
   let expectedText;
@@ -4158,7 +4785,7 @@ async function runTenantBrowserScenario(scenarioId) {
     apiPathFragment = '/api/teams/join?';
   } else if (scenarioId === 'recruiting-public-scout-projection') {
     pathname = `/recruit/player/${encodeURIComponent(plan[scenarioId].activePlayerId)}`;
-    expectedText = 'Blair';
+    expectedText = FIXTURES.teams.find(team => team.alias === 'qa-team-b').visibleMarker;
     apiPathFragment = `/api/public/recruiting/${plan[scenarioId].activePlayerId}`;
   } else {
     return;
@@ -4222,19 +4849,69 @@ async function runTenantBrowserScenario(scenarioId) {
   }, 'The journey renders its exact fixture at 1440x900 and 390x844 without horizontal overflow.');
 }
 
+async function preflightTenantConsumerCapabilities(scenarioIds) {
+  const required = new Set(scenarioIds.flatMap(scenarioId => TENANT_SCENARIO_CAPABILITIES[scenarioId] || []));
+  const actualCatalog = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin, bucket) => {
+    const snapshots = [];
+    for (let offset = 0; offset < FIXTURES.firestoreDocuments.length; offset += 100) {
+      const descriptors = FIXTURES.firestoreDocuments.slice(offset, offset + 100);
+      snapshots.push(...await firestoreAdmin.getAll(...descriptors.map(item => firestoreAdmin.doc(item.path))));
+    }
+    const firestoreDocuments = snapshots.flatMap((snapshot, index) => {
+      if (!snapshot.exists) return [];
+      const descriptor = FIXTURES.firestoreDocuments[index];
+      return [{ path: descriptor.path, domain: descriptor.domain, data: snapshot.data() }];
+    });
+    const storageObjects = [];
+    for (const object of FIXTURES.storageObjects) {
+      const [exists] = await bucket.file(object.path).exists();
+      if (object.lifecycle !== 'present' || exists) storageObjects.push(object);
+    }
+    return { ...FIXTURES, firestoreDocuments, storageObjects };
+  });
+  const readiness = inspectTenantCapabilities(actualCatalog);
+  const missing = readiness.missing.filter(capability => required.has(capability));
+  emitCertificationEvent({
+    type: 'tenant-preflight',
+    runId: certificationRunId,
+    commit: certificationCommit,
+    scenarioIds,
+    capabilities: readiness.capabilities.filter(item => required.has(item.name)),
+  });
+  if (missing.length > 0) throw new Error(`Tenant consumer preflight missing: ${missing.join(', ')}.`);
+}
+
 async function runCertificationTenantScenarios() {
   const scenarioIds = TENANT_EXECUTION_ORDER.filter(id => selectedTenantScenarios.has(id));
+  await preflightTenantConsumerCapabilities(scenarioIds);
+  let failureCount = 0;
   for (const scenarioId of scenarioIds) {
     const sessionBaseline = new Set(ownedBrowserSessions);
     activeCertificationScenario = scenarioId;
     activeCertificationAssertions = [];
     try {
       await runTenantApiScenario(scenarioId);
-      if (runBrowser) await runTenantBrowserScenario(scenarioId);
+      await runTenantSupplementalApiCases(scenarioId);
+      if (runBrowser) {
+        try {
+          await runTenantBrowserScenario(scenarioId);
+        } catch (error) {
+          if (!error?.certificationCaseRecorded) {
+            const caseId = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].console[0];
+            recordCertificationFailure(scenarioId, 'console', caseId, error);
+            if (error && typeof error === 'object') error.certificationCaseRecorded = true;
+          }
+          throw error;
+        }
+      }
     } catch (error) {
-      const caseId = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].network[0];
-      recordCertificationFailure(scenarioId, 'network', caseId, error);
-      throw error;
+      failureCount += 1;
+      if (!error?.certificationCaseRecorded) {
+        const caseId = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].network[0];
+        recordCertificationFailure(scenarioId, 'network', caseId, error);
+      }
+      if (certificationFailFast) throw error;
+      console.error(redact(`Tenant scenario ${scenarioId} failed: ${error instanceof Error ? error.message : error}`));
     } finally {
       await closeBrowserSessionsCreatedAfter(ownedBrowserSessions, sessionBaseline, async session => {
         run(playwrightCli, [`-s=${session}`, '--raw', 'close'], { stdio: 'pipe' });
@@ -4244,6 +4921,7 @@ async function runCertificationTenantScenarios() {
       activeCertificationAssertions = [];
     }
   }
+  if (failureCount > 0) throw new Error(`${failureCount} selected tenant scenario(s) failed with structured case evidence.`);
 }
 
 function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonicalPath) {
@@ -5695,8 +6373,13 @@ async function cleanup() {
     }
   }
   try {
+    const tenantMutationCleanup = await tenantFixtureMutations.cleanup();
     const finalDynamicCleanup = await dynamicResourceRegistry.cleanup();
-    dynamicCleanup = mergeResourceCleanupResults([...completedDynamicCleanupRuns, finalDynamicCleanup]);
+    dynamicCleanup = mergeResourceCleanupResults([
+      ...completedDynamicCleanupRuns,
+      tenantMutationCleanup,
+      finalDynamicCleanup,
+    ]);
     if (dynamicCleanup.state !== 'OBSERVED') {
       console.error(`Dynamic cleanup retained ${dynamicCleanup.residuals.length} owned resource(s).`);
       process.exitCode = 1;
@@ -5723,8 +6406,7 @@ async function cleanup() {
         retainedAuditRecords: measuredCleanup.counts.retainedAuditRecords + dynamicCleanup.counts.retainedAuditRecords,
       };
       const cleanupState = dynamicCleanup.state === 'OBSERVED' ? 'OBSERVED' : 'FAIL';
-      mkdirSync(path.join(certificationArtifactDir, 'cleanup'), { recursive: true });
-      writeFileSync(path.join(certificationArtifactDir, 'cleanup/fixture-cleanup-marker.json'), `${JSON.stringify(sanitizeCertificationArtifact({
+      const cleanupArtifact = `${JSON.stringify(sanitizeCertificationArtifact({
         runId: certificationRunId,
         commit: certificationCommit,
         fixtureRunId: FIXTURES.runId,
@@ -5732,7 +6414,11 @@ async function cleanup() {
         counts: cleanupCounts,
         measured: { fixture: measuredCleanup.measured, dynamic: dynamicCleanup },
         capturedAt: new Date().toISOString(),
-      }), null, 2)}\n`, { mode: 0o600 });
+      }), null, 2)}\n`;
+      for (const artifactDirectory of cleanupArtifactDirectories()) {
+        mkdirSync(path.join(artifactDirectory, 'cleanup'), { recursive: true });
+        writeFileSync(path.join(artifactDirectory, 'cleanup/fixture-cleanup-marker.json'), cleanupArtifact, { mode: 0o600 });
+      }
       emitCertificationEvent({
         type: 'cleanup',
         runId: certificationRunId,
@@ -5756,6 +6442,16 @@ async function cleanup() {
   await Promise.all(children.reverse().map(child => terminateOwnedChildAndWait(child)));
 }
 
+export async function runSelectedCertificationBatches({
+  certificationIdentity: runIdentitySelected,
+  certificationTenants: runTenantsSelected,
+  runIdentity,
+  runTenants,
+}) {
+  if (runIdentitySelected) await runIdentity();
+  if (runTenantsSelected) await runTenants();
+}
+
 async function main() {
   await import('node:fs/promises').then(fs => fs.mkdir(logDir, { recursive: true }));
   process.once('SIGINT', () => shutdownState.request(130));
@@ -5769,10 +6465,13 @@ async function main() {
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (certificationIdentity) {
-    await runCertificationIdentityScenarios();
-  } else if (certificationTenants) {
-    await runCertificationTenantScenarios();
+  if (certificationIdentity || certificationTenants) {
+    await runSelectedCertificationBatches({
+      certificationIdentity,
+      certificationTenants,
+      runIdentity: runCertificationIdentityScenarios,
+      runTenants: runCertificationTenantScenarios,
+    });
   } else {
     if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
     if (runBrowser) await runBrowserAudit();

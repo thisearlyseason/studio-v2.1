@@ -118,6 +118,29 @@ export function getAdminProjectId(): string | null {
   return _projectId || app.options.projectId || null;
 }
 
+export function getAdminStorageBucketName(): string {
+  const app = initAdminApp();
+  if (typeof app.options.storageBucket === 'string' && app.options.storageBucket) {
+    return app.options.storageBucket;
+  }
+  const explicit = process.env.FIREBASE_STORAGE_BUCKET;
+  if (explicit) return explicit;
+  const webConfig = process.env.NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG;
+  if (webConfig) {
+    try {
+      const storageBucket = JSON.parse(webConfig)?.storageBucket;
+      if (typeof storageBucket === 'string' && storageBucket) return storageBucket;
+    } catch {
+      // The Firebase client config has its own validation path. Do not infer a
+      // production bucket from malformed configuration.
+    }
+  }
+  const isEmulator = Boolean(process.env.FIREBASE_STORAGE_EMULATOR_HOST);
+  const projectId = _projectId || app.options.projectId;
+  if (isEmulator && projectId) return `${projectId}.appspot.com`;
+  throw new Error('Firebase Storage bucket is not configured.');
+}
+
 export function getAdminAuth(): admin.auth.Auth {
   return initAdminApp().auth();
 }

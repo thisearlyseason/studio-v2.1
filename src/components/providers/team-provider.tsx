@@ -1818,17 +1818,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const deletePlayerVideo = useCallback(async (playerId: string, videoId: string) => { if (!db) return; await deleteDoc(doc(db, 'players', playerId, 'videos', videoId)); }, [db]);
   const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => {
     if (!db) return;
-    const batch = writeBatch(db);
     const authority = activeTeam?.id ? { updatedByTeamId: activeTeam.id } : {};
-    batch.set(doc(db, 'players', playerId, 'recruitingProfile', 'profile'), {
-      status: enabled ? 'active' : 'hidden',
-      updatedAt: serverTimestamp(),
-      ...authority,
-    }, { merge: true });
-    // Keep the legacy root projection in sync for existing roster controls. Public
-    // availability is decided only from recruitingProfile/profile.status.
-    batch.set(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled, ...authority }, { merge: true });
-    await batch.commit();
+    // Canonical status is written by updateRecruitingProfile. This callback owns
+    // only the legacy roster projection, so committed and future statuses cannot
+    // be clobbered by a racing second writer.
+    await setDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled, ...authority }, { merge: true });
   }, [db, activeTeam?.id]);
   const updateStaffEvaluation = useCallback(async (memberId: string, notes: string) => { if (!activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current'), { notes, updatedAt: new Date().toISOString() }); }, [activeTeam, db]);
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeam?.id || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeam, db]);
@@ -2067,37 +2061,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [db, firebaseUser]);
 
-  const resetSquadData = useCallback(async (cats: string[]) => { 
-    if (!db || !firebaseUser?.uid) return; 
-    
-    try {
-      const batch = writeBatch(db); 
-      
-      // 1. Wipe current active team data if exists
-      if (activeTeam?.id) {
-        const paths = ['games', 'events', 'members', 'incidents', 'equipment', 'groupChats', 'feedPosts', 'files', 'documents'];
-        const collections = await Promise.all(
-          paths.map(path => getDocs(collection(db, 'teams', activeTeam.id, path)))
-        );
-        collections.forEach(snap => snap.forEach(d => batch.delete(d.ref)));
-      }
-
-      // 2. AGGRESSIVE WIPE: Clear all memberships if doing complete wipe
-      if (cats.includes('complete')) {
-        const memberships = await getDocs(collection(db, 'users', firebaseUser.uid, 'teamMemberships'));
-        memberships.forEach(d => batch.delete(d.ref));
-        
-        // Also clear children to ensure fresh household start
-        const children = await getDocs(query(collection(db, 'players'), where('parentId', '==', firebaseUser.uid)));
-        children.forEach(d => batch.delete(d.ref));
-      }
-
-      await batch.commit(); 
-    } catch (error) {
-      console.error("Reset Failure:", error);
-      throw error;
-    }
-  }, [activeTeam, db, firebaseUser]);
+  const resetSquadData = useCallback(async (categories: string[]) => {
+    if (!activeTeam?.id || !firebaseAuth) throw new Error('Choose an active squad before resetting its season.');
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Please sign in again.');
+    const response = await fetch('/api/teams/season-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ teamId: activeTeam.id, categories }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Unable to reset this squad season.');
+  }, [activeTeam?.id, firebaseAuth]);
 
   const signTeamDocument = useCallback(async (docId: string, sig: string, mid: string) => { 
     if (!activeTeam?.id || !firebaseAuth) return false;

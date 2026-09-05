@@ -29,10 +29,14 @@ function capabilityChecks(catalog) {
   const paths = new Map(documents.map(item => [item.path, item.data]));
   const team = alias => catalog?.teams?.find(item => item.alias === alias);
   const identity = alias => catalog?.identities?.find(item => item.alias === alias);
-  const playerId = alias => `${alias}-${catalog?.runSuffix}`;
+  const rootPlayer = alias => documents.find(item => item.path.startsWith('players/') && !item.path.slice('players/'.length).includes('/') && item.data?.fixtureAlias === alias);
+  const playerId = alias => rootPlayer(alias)?.data?.id;
   const teamId = alias => team(alias)?.id;
   const userId = alias => identity(alias)?.uid;
-  const teamMarkers = ['qa-team-a', 'qa-team-b', 'qa-team-c'].map(alias => team(alias)?.visibleMarker);
+  const memberByPlayer = (teamAlias, childId) => documents.find(item =>
+    item.path.startsWith(`teams/${teamId(teamAlias)}/members/`) && item.data?.playerId === childId)?.data;
+  const teamRoot = alias => paths.get(`teams/${teamId(alias)}`);
+  const teamMarkers = ['qa-team-a', 'qa-team-b', 'qa-team-c'].map(alias => teamRoot(alias)?.visibleMarker);
   const adultA = playerId('qa-player-adult-a');
   const youthC = playerId('qa-player-youth-c');
   const youthB = playerId('qa-player-youth-b');
@@ -43,20 +47,47 @@ function capabilityChecks(catalog) {
     'tenant-markers': teamMarkers.length === 3 && teamMarkers.every(Boolean) && new Set(teamMarkers).size === 3,
     'paid-capacity': ['qa-pro-owner', 'qa-elite-owner', 'qa-school-owner', 'qa-league-owner-a'].every(alias => {
       const profile = paths.get(`users/${userId(alias)}`);
-      return profile && profile.plan_type && profile.subscription_status && Number.isInteger(profile.team_limit) && profile.outboundProvidersEnabled === false;
+      return profile && ['team', 'elite', 'school', 'league'].includes(profile.plan_type) &&
+        ['active', 'trialing', 'past_due'].includes(profile.subscription_status) &&
+        Number.isInteger(profile.team_limit) && profile.team_limit > 0 && profile.outboundProvidersEnabled === false;
     }),
-    'school-hub': schoolHub?.type === 'school_hub' && schoolSquads.length === 3 && schoolSquads.every(item => item.schoolId === schoolHub.id) && schoolHub.schoolAdminIds.includes(userId('qa-school-delegate')),
-    'club-squads': clubSquads.length === 3 && clubSquads.every(item => item.ownerUserId === userId('qa-elite-owner')),
-    'roster-rich': (catalog?.rosterVariants?.length || 0) >= 6 && catalog.rosterVariants.some(item => item.variant === 'accented') && catalog.rosterVariants.some(item => item.variant === 'removed'),
+    'school-hub': schoolHub?.type === 'school_hub' && teamRoot('qa-school-hub')?.type === 'school_hub' &&
+      schoolSquads.length === 3 && schoolSquads.every(item => paths.get(`teams/${item.id}`)?.schoolId === schoolHub.id) &&
+      teamRoot('qa-school-hub')?.schoolAdminIds?.includes(userId('qa-school-delegate')),
+    'club-squads': clubSquads.length === 3 && clubSquads.every(item =>
+      paths.get(`teams/${item.id}`)?.ownerUserId === userId('qa-elite-owner')),
+    'roster-rich': (catalog?.rosterVariants?.length || 0) >= 6 &&
+      catalog.rosterVariants.some(item => item.variant === 'accented') && catalog.rosterVariants.some(item => item.variant === 'removed') &&
+      catalog.rosterVariants.every(item => paths.get(`players/${item.id}`)?.id === item.id &&
+        paths.get(`teams/${teamId('qa-team-a')}/members/${item.id}`)?.playerId === item.id),
     'recruiting-private': paths.has(`players/${adultA}/recruitingProfile/profile`) && paths.has(`players/${adultA}/recruitingProfile/metrics`) && paths.has(`players/${adultA}/recruitingContact/contact`) && documents.some(item => item.path.startsWith(`players/${adultA}/stats/`)) && documents.some(item => item.path.startsWith(`players/${adultA}/evaluations/`)) && documents.some(item => item.path.startsWith(`players/${adultA}/videos/`)),
     'recruiting-public': documents.filter(item => item.path.endsWith('/recruitingProfile/profile')).some(item => item.data.status === 'active') && documents.filter(item => item.path.endsWith('/recruitingProfile/profile')).some(item => item.data.status === 'hidden'),
-    'family-two-child': catalog?.households?.find(item => item.alias === 'qa-household-a')?.children.length === 2 && catalog?.households?.find(item => item.alias === 'qa-household-b')?.children.length === 1,
+    'family-two-child': catalog?.households?.find(item => item.alias === 'qa-household-a')?.children.length === 2 &&
+      catalog?.households?.find(item => item.alias === 'qa-household-b')?.children.length === 1 &&
+      (catalog?.households || []).every(household => {
+        const persisted = paths.get(`households/${household.id}`);
+        return persisted?.parentUserId === household.parentUserId && household.children.every(child => {
+          const childId = playerId(child.playerAlias);
+          return Boolean(childId) && persisted.childPlayerIds?.includes(childId) &&
+            paths.get(`players/${childId}`)?.parentId === household.parentUserId &&
+            memberByPlayer(child.teamAlias, childId)?.parentId === household.parentUserId;
+        });
+      }),
     'family-payments': documents.filter(item => item.path.startsWith(`users/${userId('qa-parent-a')}/payments/`)).length >= 3,
     'family-waivers': paths.has(`teams/${teamId('qa-team-c')}/members/${youthC}`) && paths.has(`teams/${teamId('qa-team-b')}/members/${youthB}`) && documents.some(item => item.path.startsWith(`teams/${teamId('qa-team-c')}/documents/`) && item.data.type === 'waiver' && item.data.ownerUserId === team('qa-team-c')?.ownerUserId),
-    'youth-invite': catalog?.youthInvite?.collection === 'invites' && catalog.youthInvite.childId === youthC && catalog.youthInvite.startState === 'no-active-invite' && !documents.some(item => item.path.startsWith('youthInvites/')),
+    'youth-invite': catalog?.youthInvite?.collection === 'invites' && /^p_[A-Za-z0-9_-]{1,200}$/.test(catalog?.youthInvite?.childId || '') &&
+      catalog.youthInvite.childId === youthC && paths.get(`players/${youthC}`)?.parentId === catalog.youthInvite.parentId &&
+      paths.get(`teams/${catalog.youthInvite.teamId}/members/${youthC}`)?.parentId === catalog.youthInvite.parentId &&
+      catalog.youthInvite.startState === 'no-active-invite' && !documents.some(item => item.path.startsWith('youthInvites/')),
     'branding-storage': (catalog?.storageObjects || []).some(item => item.path.startsWith(`teams/${teamId('qa-team-a')}/branding/`) && item.lifecycle === 'present') && (catalog?.storageObjects || []).every(item => item.path && item.lifecycle),
-    'race-barriers': ['qa-race-team-capacity', 'qa-race-join-code'].every(alias => (catalog?.raceFixtures || []).find(item => item.alias === alias)?.participantAliases.length === 2),
-    'disposable-destructive': catalog?.dynamicCleanupContract?.destructiveBaselineAliases?.includes('qa-disposable-team') && !catalog.dynamicCleanupContract.destructiveBaselineAliases.includes('run-created-sacrificial-team'),
+    'race-barriers': ['qa-race-team-capacity', 'qa-race-join-code'].every(alias => {
+      const race = (catalog?.raceFixtures || []).find(item => item.alias === alias);
+      return race?.participantAliases.length === 2 && race.expectedWinnerCount === 1 && Boolean(race.barrierKey);
+    }),
+    'disposable-destructive': catalog?.dynamicCleanupContract?.destructiveBaselineAliases?.includes('qa-disposable-team') &&
+      Boolean(teamRoot('qa-disposable-team')) && ['games', 'events', 'documents'].every(collection =>
+        documents.some(item => item.path.startsWith(`teams/${teamId('qa-disposable-team')}/${collection}/`))) &&
+      (catalog?.storageObjects || []).some(item => item.path.startsWith(`teams/${teamId('qa-disposable-team')}/`) && item.lifecycle === 'present'),
     'global-waiver': Boolean(catalog?.globalWaiverDeployment?.masterPath) && catalog.globalWaiverDeployment.copyPaths.every(path => paths.get(path)?.deploymentId === catalog.globalWaiverDeployment.deploymentId),
     'dynamic-cleanup': catalog?.dynamicCleanupContract?.registrationRequiredBeforeWrite === true && ['firestore', 'auth', 'storage', 'browser'].every(kind => catalog.dynamicCleanupContract.resourceKinds.includes(kind)),
   };

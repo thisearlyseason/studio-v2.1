@@ -42,6 +42,61 @@ test('dynamic cleanup refuses baseline destruction and retains failed resources'
   assert.equal(cleanup.residuals.length, 1);
 });
 
+test('overlay restoration attempts every path and final cleanup retries exact residuals', async () => {
+  const records = new Map([
+    ['teams/run-team/settings/a', { value: 'before-a' }],
+    ['teams/run-team/settings/b', { value: 'before-b' }],
+  ]);
+  let failedB = false;
+  const firestore = {
+    async read(path) { return records.has(path) ? structuredClone(records.get(path)) : null; },
+    async write(path, value) {
+      if (path.endsWith('/b') && value.value === 'before-b' && !failedB) {
+        failedB = true;
+        throw new Error('transient restore');
+      }
+      records.set(path, structuredClone(value));
+    },
+    async remove(path) { records.delete(path); },
+  };
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', firestore,
+    baselineRoots: ['teams/qa-team-a'], maxAttempts: 2,
+  });
+  await assert.rejects(
+    () => mutations.withFirestoreOverlay([...records.keys()], async () => {
+      for (const path of records.keys()) records.set(path, { value: 'during' });
+    }),
+    /transient restore/
+  );
+  assert.deepEqual(records.get('teams/run-team/settings/a'), { value: 'before-a' });
+  assert.deepEqual(records.get('teams/run-team/settings/b'), { value: 'during' });
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.equal(cleanup.counts.restored, 2);
+  assert.deepEqual(records.get('teams/run-team/settings/b'), { value: 'before-b' });
+  assert.equal(cleanup.residuals.length, 0);
+});
+
+test('overlay verification treats Firestore field reordering as the same before-image', async () => {
+  const records = new Map([['players/p-a', { nested: { z: 1, a: 2 }, joinedTeamIds: ['a', 'b'] }]]);
+  const firestore = {
+    async read(path) { return structuredClone(records.get(path) ?? null); },
+    async write(path, value) {
+      records.set(path, { joinedTeamIds: structuredClone(value.joinedTeamIds), nested: { a: value.nested.a, z: value.nested.z } });
+    },
+    async remove(path) { records.delete(path); },
+  };
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', firestore,
+    baselineRoots: ['players/p-a'], maxAttempts: 1,
+  });
+  await mutations.withFirestoreOverlay(['players/p-a'], async () => records.set('players/p-a', { changed: true }));
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.equal(cleanup.residuals.length, 0);
+});
+
 test('two-party barrier releases both callbacks together and eventual probes are bounded', async () => {
   const order = [];
   const settled = await runTwoParty('capacity-race', [
@@ -55,4 +110,22 @@ test('two-party barrier releases both callbacks together and eventual probes are
   const value = await awaitEventually('projection', async () => ++attempts, current => current === 3, { timeoutMs: 100, intervalMs: 1 });
   assert.equal(value, 3);
   await assert.rejects(() => awaitEventually('never', async () => false, Boolean, { timeoutMs: 5, intervalMs: 1 }), /never/);
+});
+
+test('two-party timeout aborts and settles both participants before returning', async () => {
+  let lateMutation = false;
+  let slowSettled = false;
+  await assert.rejects(
+    () => runTwoParty('late-race', [
+      async signal => {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        if (!signal.aborted) lateMutation = true;
+        slowSettled = true;
+      },
+      async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
+    ], { timeoutMs: 2 }),
+    /timed out/
+  );
+  assert.equal(slowSettled, true);
+  assert.equal(lateMutation, false);
 });

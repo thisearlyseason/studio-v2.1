@@ -31,7 +31,9 @@ test('tenant batch owns exactly 16 scenarios and a complete seven-dimension case
   assert.deepEqual(new Set(TENANT_EXECUTION_ORDER), new Set(scenarios.map(item => item.id)));
   for (const scenario of scenarios) {
     assert.deepEqual(Object.keys(LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id]), DIMENSION_NAMES);
-    assert.ok(Object.values(LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id]).every(value => value.length === 1));
+    assert.ok(Object.values(LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id]).every(value => value.length >= 1));
+    assert.ok(['happyPath', 'negativePath', 'permission', 'persistence']
+      .every(dimension => LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id][dimension].length >= 2));
   }
 });
 
@@ -68,4 +70,34 @@ test('a missing capability is named as a blocked precondition before mutation ev
   ]);
   assert.match(result.results[0].dimensions.happyPath.note, /youth-invite/);
   assert.equal(result.results[0].cases.length, 0);
+});
+
+test('a nonzero tenant child without a structured failure is retained as a redacted run error', async () => {
+  const result = await runTenantsBatch(context('', {
+    certificationObservation: {
+      code: 1,
+      stdout: '',
+      stderr: 'tenant execution failed token=secret-value',
+      startedAt: instant,
+      completedAt: instant,
+    },
+    redact: value => String(value).replace(/token=\S+/g, '[redacted]'),
+  }), scenarios);
+  assert.deepEqual(result.runErrors, [{
+    stage: 'tenant-child',
+    diagnostic: 'tenant execution failed [redacted]',
+  }]);
+});
+
+test('a nonzero tenant child with structured case failure does not duplicate it as a global error', async () => {
+  const scenario = scenarios.find(item => item.id === 'teams-join-by-code');
+  const event = {
+    type: 'case', scenarioId: scenario.id, caseId: LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id].network[0],
+    dimension: 'network', state: 'FAIL', actorAliases: ['qa-parent-a'], role: 'P', tenantAlias: 'qa-team-a',
+    expected: 'Request succeeds.', observed: 'Request failed.', startedAt: instant, completedAt: instant, artifacts: [],
+  };
+  const result = await runTenantsBatch(context(`CERTIFICATION_EVENT ${JSON.stringify(event)}`, {
+    certificationObservation: { code: 1, stdout: `CERTIFICATION_EVENT ${JSON.stringify(event)}`, stderr: 'structured failure', startedAt: instant, completedAt: instant },
+  }), scenarios);
+  assert.deepEqual(result.runErrors, []);
 });

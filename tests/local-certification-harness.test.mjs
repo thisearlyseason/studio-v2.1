@@ -86,6 +86,27 @@ test('one legacy identity execution receives a unique scope and stripped outboun
   await harness.close();
 });
 
+test('fail-fast is an explicit child argument and is omitted by default', async () => {
+  const calls = [];
+  const dependencies = {
+    ...options().dependencies,
+    execute: async input => { calls.push(input); return { code: 0, stdout: '', stderr: '' }; },
+  };
+  const harness = await startLocalHarness(options({ failFast: true, dependencies }));
+  await harness.runLegacyCertificationAudit({ batches: ['tenants'] });
+  assert.equal(calls[0].args.includes('--fail-fast'), true);
+  await harness.close();
+
+  const defaultCalls = [];
+  const defaultHarness = await startLocalHarness(options({
+    runSuffix: 't3-20260904-180000-a2',
+    dependencies: { ...dependencies, execute: async input => { defaultCalls.push(input); return { code: 0, stdout: '', stderr: '' }; } },
+  }));
+  await defaultHarness.runLegacyCertificationAudit({ batches: ['tenants'] });
+  assert.equal(defaultCalls[0].args.includes('--fail-fast'), false);
+  await defaultHarness.close();
+});
+
 test('outer harness never performs global browser cleanup for no-browser or browser runs', async () => {
   let closeBrowserCalls = 0;
   const dependencies = {
@@ -138,7 +159,7 @@ test('outer cleanup terminates every exact registered service process group afte
   assert.deepEqual(signals, [[41002, 'SIGTERM'], [41001, 'SIGTERM']]);
 });
 
-test('runtime credentials are redacted and cleanup remains idempotent after a child failure', async () => {
+test('child failure returns redacted structured output and cleanup remains idempotent', async () => {
   let closeCalls = 0;
   const secret = Buffer.from('0123456789abcdef0123456789abcdef').toString('base64url');
   const dependencies = {
@@ -151,18 +172,29 @@ test('runtime credentials are redacted and cleanup remains idempotent after a ch
     playwrightCli: '/tmp/playwright-cli',
     dependencies,
   }));
-  await assert.rejects(
-    () => harness.runLegacyIdentityAudit(),
-    error => {
-      assert.doesNotMatch(error.message, new RegExp(secret));
-      assert.doesNotMatch(error.message, /token=abc/);
-      assert.match(error.message, /\[redacted\]/);
-      return true;
-    },
-  );
+  const observation = await harness.runLegacyIdentityAudit();
+  assert.equal(observation.code, 1);
+  assert.doesNotMatch(observation.stderr, new RegExp(secret));
+  assert.doesNotMatch(observation.stderr, /token=abc/);
+  assert.match(observation.stderr, /\[redacted\]/);
   await harness.close();
   await harness.close();
   assert.equal(closeCalls, 0);
+});
+
+test('combined harness gives the child a batch-aware artifact root', async () => {
+  const calls = [];
+  const harness = await startLocalHarness(options({
+    batches: ['identity', 'tenants'],
+    dependencies: {
+      ...options().dependencies,
+      execute: async input => { calls.push(input); return { code: 0, stdout: '', stderr: '' }; },
+    },
+  }));
+  await harness.runLegacyCertificationAudit({ batches: ['identity', 'tenants'] });
+  assert.match(calls[0].env.AUDIT_ARTIFACT_ROOT, /2026-09-04-final-certification$/);
+  assert.equal(calls[0].env.AUDIT_ARTIFACT_DIR, '');
+  await harness.close();
 });
 
 test('run suffixes reject legacy or unsafe values', async () => {
@@ -183,10 +215,9 @@ test('outer close escalates and finishes when the audit child ignores SIGTERM', 
     },
   }));
   const running = harness.runLegacyIdentityAudit();
-  const rejected = assert.rejects(running, /exited 137/);
   await new Promise(resolve => setImmediate(resolve));
   await harness.close();
-  await rejected;
+  assert.equal((await running).code, 137);
   assert.equal(terminateCalls, 2);
 });
 
@@ -224,14 +255,13 @@ test('outer close kills a registered detached descendant after force-killing its
   };
   const harness = await startLocalHarness(options({ dependencies }));
   const running = harness.runLegacyIdentityAudit();
-  const rejected = assert.rejects(running, /Certification audit child exited/);
   try {
     for (let count = 0; count < 100 && descendantPid === null; count += 1) {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     assert.ok(Number.isInteger(descendantPid));
     await harness.close();
-    await rejected;
+    assert.notEqual((await running).code, 0);
     assert.throws(() => process.kill(-descendantPid, 0), error => error?.code === 'ESRCH');
   } finally {
     if (Number.isInteger(descendantPid)) {

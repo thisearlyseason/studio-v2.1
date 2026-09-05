@@ -19,9 +19,9 @@ export const DIMENSION_NAMES = Object.freeze([
   'responsive',
 ]);
 
-const PROTECTED_KEY_PATTERN = /(?:password|cookie|authorization|actionurl|actionlink|oobcode|rawproviderpayload|sessiontoken|sessioncode|refreshtoken|idtoken|providersecret|joincode|teamcode|invitecode|medicalnotes|parentemail|privatecontact)/i;
-const PROTECTED_VALUE_PATTERN = /(?:password\s*[=:]|cookie\s*[=:]|authorization\s*[=:]|bearer\s+[a-z0-9._~-]+|oobcode=|mode=(?:resetpassword|verifyemail)|sk_live_[a-z0-9]+|rk_live_[a-z0-9]+)/i;
-const URL_QUERY_PATTERN = /https?:\/\/[^\s]+\?[^\s]+/i;
+const PROTECTED_KEY_PATTERN = /(?:password|cookie|authorization|actionurl|actionlink|oobcode|rawproviderpayload|(?:^|_)token|(?:^|_)uid|userid|sessiontoken|sessioncode|refreshtoken|idtoken|providersecret|joincode|teamcode|invitecode|medicalnotes|parentemail|privatecontact)/i;
+const PROTECTED_VALUE_PATTERN = /(?:password\s*[=:]|cookie\s*[=:]|authorization\s*[=:]|bearer\s+[a-z0-9._~-]+|oobcode=|mode=(?:resetpassword|verifyemail)|sk_live_[a-z0-9]+|rk_live_[a-z0-9]+|synthetic-private-[a-z0-9_-]+|\b[a-f0-9]{48}\b)/i;
+const URL_QUERY_PATTERN = /(?:https?:\/\/|\/)\S*\?\S+/i;
 
 function assertPlainString(value, label) {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`Scenario result requires ${label}.`);
@@ -127,7 +127,7 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
   }
 }
 
-function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape } = {}) {
+function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape, caseAssociationResolver } = {}) {
   assertNoProtectedEvidence(result);
   assertPlainString(result.environment, 'environment');
   if (!scenario.environments.includes(result.environment)) {
@@ -184,8 +184,19 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
       if (!['create', 'read', 'update', 'delete', 'permission', 'persistence'].includes(caseRecord.operation)) {
         throw new Error(`${caseRecord.caseId} requires a tenant operation.`);
       }
-      if (!caseRecord.network || !caseRecord.console || !caseRecord.responsive || !Array.isArray(caseRecord.cleanupRefs)) {
+      if (!caseRecord.network || typeof caseRecord.network.transport !== 'string' || typeof caseRecord.network.observed !== 'boolean' ||
+          !caseRecord.console || typeof caseRecord.console.observed !== 'boolean' ||
+          !caseRecord.responsive || typeof caseRecord.responsive.observed !== 'boolean' ||
+          !Array.isArray(caseRecord.cleanupRefs) || caseRecord.cleanupRefs.length === 0) {
         throw new Error(`${caseRecord.caseId} requires tenant network, console, responsive, and cleanup associations.`);
+      }
+      if (!caseRecord.actorAliases.includes(caseRecord.actorAlias)) {
+        throw new Error(`${caseRecord.caseId} actorAlias must be one of its exact actor aliases.`);
+      }
+      const expectedAssociation = caseAssociationResolver?.(result.scenarioId, caseRecord.dimension, caseRecord.caseId);
+      if (expectedAssociation && (caseRecord.actorAlias !== expectedAssociation.actorAlias ||
+          caseRecord.targetAlias !== expectedAssociation.targetAlias || caseRecord.operation !== expectedAssociation.operation)) {
+        throw new Error(`${caseRecord.caseId} tenant actor, target, or operation association does not match its contract.`);
       }
     }
     const artifactEvents = Array.isArray(caseRecord.artifactEvents)
@@ -239,6 +250,13 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         }
         if (JSON.stringify(parsed.actorAliases) !== JSON.stringify(caseRecord.actorAliases)) {
           throw new Error(`${caseRecord.caseId} artifact actor provenance does not match its case.`);
+        }
+        if (caseShape === 'tenant') {
+          for (const key of ['actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs']) {
+            if (JSON.stringify(parsed[key]) !== JSON.stringify(caseRecord[key])) {
+              throw new Error(`${caseRecord.caseId} artifact tenant association ${key} does not match its case.`);
+            }
+          }
         }
         if (parsed.expected !== artifactEvent.expected || parsed.observed !== artifactEvent.observed) {
           throw new Error(`${caseRecord.caseId} artifact expected/observed provenance does not match its case.`);
@@ -308,6 +326,13 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
   const artifactUnion = [...new Set(result.cases.flatMap(item => item.artifacts))];
   if (JSON.stringify(result.artifacts) !== JSON.stringify(artifactUnion)) {
     throw new Error(`${result.scenarioId} artifact list does not reconcile with case artifacts.`);
+  }
+  if (caseShape === 'tenant') {
+    for (const caseRecord of result.cases) {
+      if (!caseRecord.cleanupRefs.includes(result.cleanup.reference)) {
+        throw new Error(`${caseRecord.caseId} cleanup references do not include the exact scenario cleanup.`);
+      }
+    }
   }
   validateCleanup(scenario, result, { artifactRoot, expectedRunId, expectedCommit });
   return result;
@@ -380,7 +405,7 @@ async function writeAtomically(filePath, contents) {
   await rename(temporaryPath, filePath);
 }
 
-export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, caseRequirements, title = 'Local certification', batch }) {
+export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, caseRequirements, caseAssociationResolver, title = 'Local certification', batch }) {
   const recorded = [];
   const runErrors = [];
   return Object.freeze({
@@ -400,6 +425,7 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
         expectedRunId: runId,
         expectedCommit: commit,
         caseShape: batch === 'tenants' ? 'tenant' : 'identity',
+        caseAssociationResolver,
       });
       const summary = { runId, commit, title, generatedAt: new Date().toISOString(), runErrors, results };
       assertNoProtectedEvidence(summary);
