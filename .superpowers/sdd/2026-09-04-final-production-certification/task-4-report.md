@@ -3,13 +3,15 @@
 ## Result
 
 Task 4 owns exactly the 16 frozen tenant/family scenarios. The final immutable
-local Chrome run `final-cert-t4-260905-195812-03c6` exercised the complete
-round-four candidate tree: 16 scenarios, 177/177 required case records
+local Chrome run `final-cert-t4-260905-205845-c3ee` exercised committed
+candidate `d89bcf833e6d0f32073925b585ba0a6b1d86f93f`: 16 scenarios,
+177/177 required case records
 observed, 112/112 local dimensions observed, zero failed cases, and zero run
-errors. Cleanup was `OBSERVED` with 301 measured deletions, 46 verified
+errors. Cleanup was `OBSERVED` with 301 measured deletions, 72 verified
 restorations, zero residuals, and zero retained audit records. The evidence
-recorder names baseline commit `58a207fb` because the reviewed round-four diff
-and this report are committed together after immutable execution.
+root, result, cleanup marker, emitted events, and all 177 case artifacts name
+that exact implementation SHA. This report and the regenerated matrix are a
+separate evidence-only commit and do not change the certified implementation.
 
 Every row remains `BLOCKED`, not `PASS`, pending execution on the exact staging
 revision. Youth activation additionally needs approved QA mailbox delivery and
@@ -25,8 +27,11 @@ server; production remained read-only and provider delivery was not invoked.
   preview/session and POST flows, linked-child concurrency, inactive-current-
   state denial, and wrong-guardian denial.
 - Settings performs an actual owner UI edit and verifies the saved value after
-  desktop/mobile reloads. Branding executes owner upload/replacement/removal
-  plus outsider and unsafe-type denials. Module visibility persists the frozen
+  desktop/mobile reloads. Branding drives a browser-native File through the
+  real input, observes a rendered logo, a different replacement `src`, then
+  delete/fallback/no-logo after reload at both viewports. Storage upload,
+  outsider, unsafe-type, and cleanup assertions remain separate. Module
+  visibility persists the frozen
   eight-key set and checks all eight navigation/direct-route denials in both
   viewports.
 - Canonical and legacy module flags now share one route policy. Mixed records
@@ -47,10 +52,17 @@ server; production remained read-only and provider delivery was not invoked.
 - Recruiting executes authenticated private document mutations and canonical
   hidden-active-committed-hidden public transitions, with recursive public-media
   allowlisting and private/cross-tenant denials.
-- Family work uses two linked children across Team A and Team C, exercises the
-  schedule/waiver/payment consumer graph and guardian signature route, and
-  activates a separate youth Auth identity. Youth reuse is denied and the
-  activated child opens its own roster view in both viewports.
+- Family work creates a disposable accountless child through the server route,
+  links, unlinks, and relinks it under the verified guardian, renders the
+  runtime child plus the household's Team A and Team C cards, excludes Parent B,
+  then removes the child and proves absence after reload. It also creates
+  unsorted disposable events and three payment records through supported
+  routes; the authenticated Family consumers provide the observed chronological
+  order, child/team grouping, paid/pending/overdue rows, and exact balances.
+  Duplicate, inactive, wrong-child, and wrong-team mutations fail against those
+  runtime records. Guardian waiver signing and separate youth Auth activation
+  remain exercised; youth reuse is denied and the activated child opens its own
+  roster view in both viewports.
 - Family squad metadata is now derived by a verified guardian endpoint instead
   of direct guardian memberships, so the exact Team A and Team C names render
   in cards and aggregate consumers. The organization overview similarly merges
@@ -83,6 +95,18 @@ server; production remained read-only and provider delivery was not invoked.
   identity instead of inventing `p_<uid>` or trusting client hints.
 - **BUG-043:** canonical and legacy module flags enforce one migration-safe
   route and persistence policy.
+- **BUG-044:** Team branding lacked an authoritative delete/fallback lifecycle;
+  owners can now remove the stored logo and the fallback remains after reload.
+- **BUG-045:** Family child creation trusted a client Firestore write and offered
+  no supported unlink/remove lifecycle; the new route derives guardian identity
+  from the verified session and owns create, unlink, and recursive removal.
+- **BUG-046:** guardian enrollment rejected valid server-created `child_*`
+  identities. The join route now accepts the common validated identifier shape
+  while preserving the server-side parent binding and accountless child identity.
+- **BUG-047:** household payment projections had no supported staff mutation
+  boundary. The new finance-authorized route derives guardian, child, team, and
+  projection paths from server records, writes source/projection atomically, and
+  rejects duplicate, inactive, wrong-child, and wrong-team requests.
 
 The round-four work also repaired audit defects in exact mandatory-operation
 enforcement, runtime actor/target/request provenance, allowlisted sensitive-data
@@ -91,6 +115,12 @@ ownership, bounded race termination, structured original/restoration failure
 diagnostics, settings/family/organization hydration waits, generated Playwright
 regex escaping, roster download row-count validation, and owned Radix
 overlay/toast settlement.
+
+The round-five evidence repair replaced fixture-labelled branding, child, and
+aggregate checks with actual UI/runtime operations. Adversarial tests now reject
+Node-only upload globals, fixture-only child evidence, pre-sorted event
+expectations, and hard-coded rendered grouping. Deterministic event creation now
+returns a conflict instead of overwriting an existing runtime request.
 
 ## Safety and Evidence
 
@@ -110,27 +140,31 @@ possible.
 
 ## Verification
 
-- Focused Task 4 and runner suite: 163 passed, 0 failed.
-- Full application suite: 697 passed, 0 failed.
+- Focused Task 4 and runner suite: 128 passed, 0 failed.
+- Full application suite: 707 passed, 0 failed.
 - Firestore/Storage rules suite: 42 passed, 0 failed.
 - `npm run typecheck`: exit 0.
 - `npm run build`: exit 0.
 - Task 3 team-switch browser regression: exit 0; cleanup 299/0/0.
 - Task 3 Alerts browser regression: exit 0; exactly two eligible alerts,
   exclusions/persistence/mobile checks observed; cleanup 299/0/0.
-- Focused roster browser run `final-cert-t4-260905-194710-cfa9`: exit 0;
+- Focused branding browser run `final-cert-t4-260905-205401-3fbd`: exit 0;
   cleanup 299 deleted / 1 restored / 0 retained.
-- Final non-browser batch `final-cert-t4-260905-195740-66ec`: exit 0; 16
-  scenarios; cleanup 301 deleted / 44 restored / 0 retained.
-- Immutable Chrome batch `final-cert-t4-260905-195812-03c6`: 16 scenarios,
+- Focused child lifecycle browser run `final-cert-t4-260905-205043-e882`:
+  exit 0; PATCH 200/113 bytes, DELETE 200/70 bytes; cleanup 299/0/0.
+- Focused schedule/payment browser run `final-cert-t4-260905-205223-0a5a`:
+  exit 0; cleanup 299 deleted / 35 restored / 0 retained.
+- Immutable Chrome batch `final-cert-t4-260905-205845-c3ee`: 16 scenarios,
   177/177 cases, 112/112 local dimensions, zero failures/run errors; cleanup
-  301 deleted / 46 restored / 0 retained, with zero residuals.
+  301 deleted / 72 restored / 0 retained, with zero residuals. Results,
+  cleanup, emitted events, and 177/177 case files name candidate `d89bcf83`.
 
 ## Remaining External Gates
 
-1. Deploy the Task 4 completion commit containing this report to the authorized
-   staging companion and repeat the 16 rows with disposable run-prefixed data
-   and exact cleanup.
+1. Deploy implementation candidate `d89bcf833e6d0f32073925b585ba0a6b1d86f93f`
+   (plus this evidence-only report commit if desired) to the authorized staging
+   companion and repeat the 16 rows with disposable run-prefixed data and exact
+   cleanup.
 2. Observe approved mailbox delivery and receipt for the youth invitation.
 3. Keep production read-only. Stripe/provider and physical-device work belongs
    to later certification batches and is not inferred here.
