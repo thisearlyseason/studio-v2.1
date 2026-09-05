@@ -7111,6 +7111,19 @@ function browserOwnerCommunicationVerify(session, marker) {
   return JSON.parse(cli(session, ['run-code', code]));
 }
 
+async function readChatUnreadDiagnostics(teamId, chatId, userId) {
+  return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const chat = await firestoreAdmin.doc(`teams/${teamId}/groupChats/${chatId}`).get();
+    const data = chat.data() || {};
+    const value = data.unreadBy?.[userId];
+    return {
+      nestedOwnerUnread: typeof value === 'number' ? value : 0,
+      nestedUnreadMapPresent: Boolean(data.unreadBy && typeof data.unreadBy === 'object'),
+      literalUnreadFieldCount: Object.keys(data).filter(key => key.startsWith('unreadBy.')).length,
+    };
+  });
+}
+
 async function runCommunicationWorkflowAudit() {
   const marker = `phase2-${process.pid}`;
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `communication-owner-${process.pid}`);
@@ -7132,6 +7145,13 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(memberResult.teamBLeak, 0, 'Team B chat content is absent from Team A UI');
   expectEqual(memberResult.consoleErrors.length, 0, 'member communication workflow console errors');
   expectEqual(memberResult.failedResponses.length, 0, 'member communication workflow failed responses');
+
+  const ownerUnreadServer = await readChatUnreadDiagnostics(
+    TEAM_A_ID,
+    'qa-team-chat',
+    identityByAlias.get('qa-coach-owner-a').uid,
+  );
+  expectEqual(ownerUnreadServer.nestedOwnerUnread, 1, `member chat message increments owner unread state on the server (${JSON.stringify(ownerUnreadServer)})`);
 
   const ownerResult = browserOwnerCommunicationVerify(owner, marker);
   expectEqual(ownerResult.memberComment, 1, 'member comment persists for owner');

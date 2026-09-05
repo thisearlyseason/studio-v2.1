@@ -107,7 +107,10 @@ export async function POST(req: NextRequest) {
       [`unreadBy.${auth.uid}`]: 0,
     };
     for (const recipientId of recipientUserIds) unreadUpdate[`unreadBy.${recipientId}`] = FieldValue.increment(1);
-    await chatRef.set(unreadUpdate, { merge: true });
+    // `set(..., { merge: true })` preserves dotted keys literally in this
+    // Admin SDK path. `update` resolves the unreadBy field paths so recipients
+    // receive a real nested counter that the channel list can render.
+    await chatRef.update(unreadUpdate);
     const channelName = typeof chat.data()?.name === 'string'
       ? chat.data()!.name.trim().slice(0, 100) || 'Team Chat'
       : 'Team Chat';

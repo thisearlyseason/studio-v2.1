@@ -325,6 +325,8 @@ test('chat unread state is recipient-specific, persisted by the server, and clea
   assert.match(message, /\[`unreadBy\.\$\{auth\.uid\}`\]: 0/);
   assert.match(message, /chatRecipientIds\.map\(memberId => findActiveTeamMember\(teamId, memberId\)\)/);
   assert.match(message, /for \(const recipientId of recipientUserIds\)/);
+  assert.match(message, /await chatRef\.update\(unreadUpdate\);/);
+  assert.doesNotMatch(message, /await chatRef\.set\(unreadUpdate, \{ merge: true \}\);/);
   assert.match(chat, /export async function PATCH/);
   assert.match(chat, /team-chat-read/);
   assert.match(chat, /\[`unreadBy\.\$\{auth\.uid\}`\]: 0/);
