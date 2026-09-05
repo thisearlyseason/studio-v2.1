@@ -51,6 +51,7 @@ test('shared navigation hides routes rejected by the dashboard policy', () => {
   const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
 
   assert.match(shell, /authorizeDashboardRoute\(tab\.href,[\s\S]+isSuperAdmin \? 'superadmin' : undefined/);
+  assert.match(shell, /bottomNavItems[\s\S]*?filter\(item => authorizeDashboardRoute\(item\.href/);
 });
 
 test('a forged profile role cannot inherit management or institution authority', () => {

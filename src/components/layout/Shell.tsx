@@ -620,7 +620,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 { name: 'Roster', href: '/roster', icon: Users },
                 ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
               ]
-  );
+  ).filter(item => authorizeDashboardRoute(item.href, {
+    role: user?.role,
+    plan_type: user?.plan_type,
+    isPrimaryClubAuthority,
+  }, isSuperAdmin ? 'superadmin' : undefined).allowed);
 
   if (!activeTeam && !user) return null;
 
