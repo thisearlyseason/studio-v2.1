@@ -120,6 +120,40 @@ test('dynamic registry preserves a measured mutation when verification fails tra
   assert.equal(verificationAttempts, 2);
 });
 
+test('dynamic registry executes exact resources registered by an unmeasured cleanup obligation', async () => {
+  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = module.createResourceRegistry({ maxAttempts: 2 });
+  const calls = [];
+  let exactRootPresent = true;
+  registry.register({
+    id: 'discovery:demo-owner',
+    kind: 'obligation',
+    async cleanup() {
+      calls.push('discover');
+      registry.register({
+        id: 'firestore:demo-owner:teams/team-a',
+        kind: 'deleted',
+        async cleanup() {
+          calls.push('teams/team-a');
+          const existed = exactRootPresent;
+          exactRootPresent = false;
+          return existed;
+        },
+        async verify() { return !exactRootPresent; },
+      });
+      return false;
+    },
+    async verify() { return true; },
+  });
+
+  const result = await registry.cleanup();
+  assert.equal(result.state, 'OBSERVED');
+  assert.deepEqual(calls, ['discover', 'teams/team-a']);
+  assert.deepEqual(result.counts, { deleted: 1, restored: 0, retainedAuditRecords: 0 });
+  assert.deepEqual(result.reconciled, { deleted: 1, restored: 0, retainedAuditRecords: 0 });
+  assert.deepEqual(result.selectors, ['discovery:demo-owner', 'firestore:demo-owner:teams/team-a']);
+});
+
 test('cleanup results merge immediate scenario cleanup with final fallback cleanup', async () => {
   const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
   const merged = module.mergeResourceCleanupResults([

@@ -629,43 +629,203 @@ test('Task 3 youth browser mutations use an immediate measured cleanup registry'
   assert.doesNotMatch(source, /if \(originalPlayer\) await playerRef\.set\(originalPlayer\)/);
 });
 
-test('Task 3 demo ownership cleanup survives identity-only, partial-seed, and discovery-failure setup', async () => {
-  for (const setup of ['identity-only', 'partial-seed', 'discovery-failure']) {
-    const registry = createResourceRegistry({ maxAttempts: 3 });
-    const state = {
-      auth: true,
-      graph: new Set(setup === 'identity-only' ? ['user'] : ['user', 'team', 'league-view', 'booking']),
-    };
-    let graphAttempts = 0;
-    auditRunner.registerOwnedDemoCleanup({
-      uid: `uid-${setup}`,
-      label: setup,
-      registry,
-      async cleanupAuth() {
-        const existed = state.auth;
-        state.auth = false;
-        return existed;
+test('Task 3 live demo registration owns Auth and the known user root before graph discovery', async () => {
+  assert.equal(typeof auditRunner.registerOwnedDemoGraphDiscovery, 'function');
+  const registry = createResourceRegistry({ maxAttempts: 3 });
+  const roots = new Set(['users/demo-identity-only']);
+  const cleanupOrder = [];
+  let authPresent = true;
+  const registration = auditRunner.registerOwnedDemoGraphDiscovery({
+    uid: 'demo-identity-only',
+    label: 'demo-browser-main',
+    registry,
+    async discoverRootPaths() { return []; },
+    async cleanupRoot(rootPath) {
+      cleanupOrder.push(rootPath);
+      const existed = roots.has(rootPath);
+      roots.delete(rootPath);
+      return existed;
+    },
+    async verifyRoot(rootPath) { return !roots.has(rootPath); },
+    async cleanupAuth() {
+      cleanupOrder.push('auth');
+      const existed = authPresent;
+      authPresent = false;
+      return existed;
+    },
+    async verifyAuth() { return !authPresent; },
+  });
+
+  assert.deepEqual(registry.cleanup instanceof Function, true);
+  await registration.discover();
+  const cleanup = await registry.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.deepEqual(cleanupOrder, ['users/demo-identity-only', 'auth']);
+  assert.deepEqual(cleanup.counts, { deleted: 2, restored: 0, retainedAuditRecords: 0 });
+  assert.deepEqual(cleanup.reconciled, { deleted: 2, restored: 0, retainedAuditRecords: 0 });
+  assert.equal(cleanup.selectors.includes('firestore:demo-browser-main:demo-identity-only:users/demo-identity-only'), true);
+  assert.equal(cleanup.selectors.includes('firestore-discovery:demo-browser-main:demo-identity-only'), true);
+});
+
+test('Task 3 recovered UID retains transient discovery for exact cleanup and original diagnostics', async () => {
+  const registry = createResourceRegistry({ maxAttempts: 3 });
+  const uid = 'demo-recovered';
+  const exactRoots = [
+    `users/${uid}`,
+    'facilities/facility-a',
+    'players/player-a',
+    'publicLeagueViews/league-a',
+    'leagues/league-a',
+    'teams/team-a',
+    'scheduleBookings/booking-a',
+  ];
+  const roots = new Set(exactRoots);
+  const cleanupAttempts = new Map();
+  const cleanupOrder = [];
+  let discoveryAttempts = 0;
+  let authPresent = true;
+  let registration;
+  const originalFailure = new Error('original demo browser failure');
+  let caught;
+  try {
+    await auditRunner.recoverOwnedDemoBrowserContexts({
+      contexts: [{ session: 'main-session', label: 'demo-browser-main', knownUid: uid }],
+      originalError: originalFailure,
+      async recoverUid() { throw new Error('known UID must not be recovered again'); },
+      async registerUid(recoveredUid, label) {
+        registration ||= auditRunner.registerOwnedDemoGraphDiscovery({
+          uid: recoveredUid,
+          label,
+          registry,
+          async discoverRootPaths() {
+            discoveryAttempts += 1;
+            if (discoveryAttempts === 1) throw new Error('transient graph discovery');
+            return exactRoots.slice(1);
+          },
+          async cleanupRoot(rootPath) {
+            cleanupOrder.push(rootPath);
+            cleanupAttempts.set(rootPath, (cleanupAttempts.get(rootPath) || 0) + 1);
+            const existed = roots.has(rootPath);
+            if (rootPath === 'publicLeagueViews/league-a' && cleanupAttempts.get(rootPath) === 1) {
+              throw new Error('transient public-view cleanup');
+            }
+            roots.delete(rootPath);
+            return existed;
+          },
+          async verifyRoot(rootPath) { return !roots.has(rootPath); },
+          async cleanupAuth() {
+            cleanupOrder.push('auth');
+            const existed = authPresent;
+            authPresent = false;
+            return existed;
+          },
+          async verifyAuth() { return !authPresent; },
+        });
+        await registration.discover();
       },
-      async verifyAuth() { return state.auth === false; },
-      async cleanupGraph() {
-        graphAttempts += 1;
-        if (setup === 'discovery-failure' && graphAttempts === 1) {
-          throw new Error('injected discovery failure');
-        }
-        const existed = state.graph.size > 0;
-        state.graph.clear();
-        return existed;
-      },
-      async verifyGraph() { return state.graph.size === 0; },
     });
-    const cleanup = await registry.cleanup();
-    assert.equal(cleanup.state, 'OBSERVED');
-    assert.equal(state.auth, false);
-    assert.equal(state.graph.size, 0);
-    assert.equal(cleanup.reconciled.deleted, 2);
-    assert.equal(cleanup.counts.deleted, 2);
-    assert.equal(graphAttempts, setup === 'discovery-failure' ? 2 : 1);
+  } catch (error) {
+    caught = error;
   }
+  assert.equal(caught instanceof AggregateError, true);
+  assert.equal(caught.errors[0], originalFailure);
+  assert.match(caught.errors[1].message, /transient graph discovery/);
+
+  const cleanup = await registry.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.equal(discoveryAttempts, 2);
+  assert.deepEqual([...roots], []);
+  assert.equal(authPresent, false);
+  assert.equal(cleanupOrder.at(-1), 'auth');
+  assert.equal(cleanupAttempts.get('publicLeagueViews/league-a'), 2);
+  assert.deepEqual(cleanup.counts, { deleted: 8, restored: 0, retainedAuditRecords: 0 });
+  assert.deepEqual(cleanup.reconciled, { deleted: 8, restored: 0, retainedAuditRecords: 0 });
+  for (const rootPath of exactRoots) {
+    assert.equal(cleanup.selectors.includes(`firestore:demo-browser-main:${uid}:${rootPath}`), true);
+  }
+});
+
+test('Task 3 exhausted demo discovery reports residuals and retains Auth ownership', async () => {
+  const registry = createResourceRegistry({ maxAttempts: 2 });
+  const uid = 'demo-undiscovered';
+  const roots = new Set([`users/${uid}`, 'teams/undiscovered-team']);
+  let authPresent = true;
+  let discoveryAttempts = 0;
+  const registration = auditRunner.registerOwnedDemoGraphDiscovery({
+    uid,
+    label: 'demo-browser-main',
+    registry,
+    async discoverRootPaths() {
+      discoveryAttempts += 1;
+      throw new Error('graph database unavailable');
+    },
+    async cleanupRoot(rootPath) {
+      const existed = roots.has(rootPath);
+      roots.delete(rootPath);
+      return existed;
+    },
+    async verifyRoot(rootPath) { return !roots.has(rootPath); },
+    async cleanupAuth() {
+      const existed = authPresent;
+      authPresent = false;
+      return existed;
+    },
+    async verifyAuth() { return !authPresent; },
+  });
+  await assert.rejects(() => registration.discover(), /graph database unavailable/);
+
+  const cleanup = await registry.cleanup();
+  assert.equal(cleanup.state, 'FAIL');
+  assert.equal(discoveryAttempts, 3);
+  assert.equal(authPresent, true);
+  assert.deepEqual([...roots], ['teams/undiscovered-team']);
+  assert.deepEqual(cleanup.counts, { deleted: 1, restored: 0, retainedAuditRecords: 0 });
+  assert.deepEqual(
+    cleanup.residuals.map(item => item.id),
+    [`firestore-discovery:demo-browser-main:${uid}`, `auth:demo-browser-main:${uid}`],
+  );
+  assert.deepEqual(
+    cleanup.diagnostics.filter(item => item.id === `firestore-discovery:demo-browser-main:${uid}`).map(item => item.attempt),
+    [1, 2],
+  );
+});
+
+test('Task 3 demo Auth gate verifies every exact root without concurrent Admin app collisions', async () => {
+  const registry = createResourceRegistry({ maxAttempts: 2 });
+  const uid = 'demo-sequential-verification';
+  const roots = new Set([`users/${uid}`, 'teams/team-a', 'leagues/league-a']);
+  let verificationActive = false;
+  let authPresent = true;
+  const registration = auditRunner.registerOwnedDemoGraphDiscovery({
+    uid,
+    label: 'demo-browser-main',
+    registry,
+    async discoverRootPaths() { return ['teams/team-a', 'leagues/league-a']; },
+    async cleanupRoot(rootPath) {
+      const existed = roots.has(rootPath);
+      roots.delete(rootPath);
+      return existed;
+    },
+    async verifyRoot(rootPath) {
+      if (verificationActive) throw new Error('duplicate Firebase Admin app name');
+      verificationActive = true;
+      await Promise.resolve();
+      verificationActive = false;
+      return !roots.has(rootPath);
+    },
+    async cleanupAuth() {
+      const existed = authPresent;
+      authPresent = false;
+      return existed;
+    },
+    async verifyAuth() { return !authPresent; },
+  });
+  await registration.discover();
+
+  const cleanup = await registry.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.deepEqual(cleanup.residuals, []);
+  assert.equal(authPresent, false);
 });
 
 test('Task 3 demo graph cleanup retries a saved public view after its league parent is deleted', async () => {

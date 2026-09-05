@@ -1083,30 +1083,17 @@ async function demoGraphSnapshots(firestoreAdmin, uid) {
   };
 }
 
-export function registerOwnedDemoCleanup({ uid, label, registry, cleanupGraph, verifyGraph, cleanupAuth, verifyAuth }) {
-  registerCertificationSensitiveAlias(uid, `${label}-auth`);
-  registry.register({
-    id: `auth:${label}:${uid}`,
-    kind: 'deleted',
-    cleanup: cleanupAuth,
-    verify: verifyAuth,
-  });
-  registry.register({
-    id: `firestore-graph:${label}:${uid}`,
-    kind: 'deleted',
-    cleanup: cleanupGraph,
-    verify: verifyGraph,
-  });
-}
-
 export function registerOwnedDemoGraphRoots({ uid, label, registry, rootPaths, cleanupRoot, verifyRoot }) {
   if (!Array.isArray(rootPaths) || typeof cleanupRoot !== 'function' || typeof verifyRoot !== 'function') {
     throw new Error('Demo graph cleanup requires exact root paths and cleanup handlers.');
   }
-  for (const rootPath of [...new Set(rootPaths)]) {
+  const exactRootPaths = [...new Set(rootPaths)];
+  for (const rootPath of exactRootPaths) {
     if (typeof rootPath !== 'string' || !rootPath || rootPath.includes('..')) {
       throw new Error('Demo graph cleanup root paths must be exact document paths.');
     }
+  }
+  for (const rootPath of exactRootPaths) {
     registry.register({
       id: `firestore:${label}:${uid}:${rootPath}`,
       kind: 'deleted',
@@ -1114,6 +1101,88 @@ export function registerOwnedDemoGraphRoots({ uid, label, registry, rootPaths, c
       verify: () => verifyRoot(rootPath),
     });
   }
+}
+
+export function registerOwnedDemoGraphDiscovery({
+  uid,
+  label,
+  registry,
+  discoverRootPaths,
+  cleanupRoot,
+  verifyRoot,
+  cleanupAuth,
+  verifyAuth,
+}) {
+  if (!uid || !label || !registry ||
+      typeof discoverRootPaths !== 'function' || typeof cleanupRoot !== 'function' ||
+      typeof verifyRoot !== 'function' || typeof cleanupAuth !== 'function' || typeof verifyAuth !== 'function') {
+    throw new Error('Demo graph discovery cleanup requires an owned UID and cleanup handlers.');
+  }
+
+  const registeredRootPaths = new Set();
+  let discoveryComplete = false;
+  let discoveryPromise = null;
+
+  const registerExactRoots = rootPaths => {
+    const unregisteredRootPaths = [...new Set(rootPaths)].filter(rootPath => !registeredRootPaths.has(rootPath));
+    registerOwnedDemoGraphRoots({ uid, label, registry, rootPaths: unregisteredRootPaths, cleanupRoot, verifyRoot });
+    for (const rootPath of unregisteredRootPaths) registeredRootPaths.add(rootPath);
+  };
+
+  registry.register({
+    id: `auth:${label}:${uid}`,
+    kind: 'deleted',
+    async cleanup() {
+      if (!discoveryComplete) throw new Error('Demo graph discovery remains unresolved; Auth ownership is retained.');
+      let hasUnresolvedRoot = false;
+      for (const rootPath of registeredRootPaths) {
+        try {
+          if (await verifyRoot(rootPath) !== true) hasUnresolvedRoot = true;
+        } catch {
+          hasUnresolvedRoot = true;
+        }
+      }
+      if (hasUnresolvedRoot) {
+        throw new Error('Demo graph cleanup remains unresolved; Auth ownership is retained.');
+      }
+      return cleanupAuth();
+    },
+    verify: verifyAuth,
+  });
+
+  // The UID is already known, so this exact root and the discovery obligation
+  // must exist before the first graph query can fail.
+  registerExactRoots([`users/${uid}`]);
+
+  const discover = async () => {
+    if (discoveryComplete) return;
+    if (!discoveryPromise) {
+      discoveryPromise = (async () => {
+        const rootPaths = await discoverRootPaths();
+        if (!Array.isArray(rootPaths)) throw new Error('Demo graph discovery must return exact root paths.');
+        registerExactRoots(rootPaths);
+        discoveryComplete = true;
+      })();
+    }
+    try {
+      await discoveryPromise;
+    } catch (error) {
+      discoveryPromise = null;
+      throw error;
+    }
+  };
+
+  registry.register({
+    id: `firestore-discovery:${label}:${uid}`,
+    kind: 'obligation',
+    async cleanup() {
+      await discover();
+      return false;
+    },
+    async verify() { return discoveryComplete; },
+  });
+
+  return Object.freeze({ discover });
 }
 
 export async function recoverOwnedDemoBrowserContexts({ contexts, originalError = null, recoverUid, registerUid }) {
@@ -1148,13 +1217,35 @@ async function registerBrowserDemoGraph(uid, label) {
   if (!uid) return;
   let registered = registeredBrowserDemoUids.get(uid);
   if (!registered) {
-    registered = { rootPaths: new Set() };
-    registeredBrowserDemoUids.set(uid, registered);
     registerCertificationSensitiveAlias(uid, `${label}-auth`);
-    dynamicResourceRegistry.register({
-      id: `auth:${label}:${uid}`,
-      kind: 'deleted',
-      cleanup: () => withEmulatorAuthAdmin(async authAdmin => {
+    const cleanupRoot = rootPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const ref = firestoreAdmin.doc(rootPath);
+      const existed = (await ref.get()).exists || (await ref.listCollections()).length > 0;
+      await firestoreAdmin.recursiveDelete(ref);
+      return existed;
+    });
+    const verifyRoot = rootPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const ref = firestoreAdmin.doc(rootPath);
+      return !(await ref.get()).exists && (await ref.listCollections()).length === 0;
+    });
+    registered = registerOwnedDemoGraphDiscovery({
+      uid,
+      label,
+      registry: dynamicResourceRegistry,
+      discoverRootPaths: () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const graph = await demoGraphSnapshots(firestoreAdmin, uid);
+        return [
+          ...graph.facilities.map(item => item.ref.path),
+          ...graph.players.map(item => item.ref.path),
+          ...graph.leagues.map(item => `publicLeagueViews/${item.id}`),
+          ...graph.leagues.map(item => item.ref.path),
+          ...graph.teams.map(item => item.ref.path),
+          ...graph.bookings.map(item => item.ref.path),
+        ];
+      }),
+      cleanupRoot,
+      verifyRoot,
+      cleanupAuth: () => withEmulatorAuthAdmin(async authAdmin => {
         try {
           await authAdmin.getUser(uid);
           await authAdmin.deleteUser(uid);
@@ -1164,7 +1255,7 @@ async function registerBrowserDemoGraph(uid, label) {
           throw error;
         }
       }),
-      verify: () => withEmulatorAuthAdmin(async authAdmin => {
+      verifyAuth: () => withEmulatorAuthAdmin(async authAdmin => {
         try {
           await authAdmin.getUser(uid);
           return false;
@@ -1174,38 +1265,9 @@ async function registerBrowserDemoGraph(uid, label) {
         }
       }),
     });
+    registeredBrowserDemoUids.set(uid, registered);
   }
-
-  const rootPaths = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-    const graph = await demoGraphSnapshots(firestoreAdmin, uid);
-    return [
-      `users/${uid}`,
-      ...graph.facilities.map(item => item.ref.path),
-      ...graph.players.map(item => item.ref.path),
-      ...graph.leagues.map(item => `publicLeagueViews/${item.id}`),
-      ...graph.leagues.map(item => item.ref.path),
-      ...graph.teams.map(item => item.ref.path),
-      ...graph.bookings.map(item => item.ref.path),
-    ];
-  });
-  const unregisteredRootPaths = [...new Set(rootPaths)].filter(rootPath => !registered.rootPaths.has(rootPath));
-  registerOwnedDemoGraphRoots({
-    uid,
-    label,
-    registry: dynamicResourceRegistry,
-    rootPaths: unregisteredRootPaths,
-    cleanupRoot: rootPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-      const ref = firestoreAdmin.doc(rootPath);
-      const existed = (await ref.get()).exists || (await ref.listCollections()).length > 0;
-      await firestoreAdmin.recursiveDelete(ref);
-      return existed;
-    }),
-    verifyRoot: rootPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-      const ref = firestoreAdmin.doc(rootPath);
-      return !(await ref.get()).exists && (await ref.listCollections()).length === 0;
-    }),
-  });
-  for (const rootPath of unregisteredRootPaths) registered.rootPaths.add(rootPath);
+  await registered.discover();
 }
 
 function recoverBrowserDemoUid(session) {
