@@ -4,7 +4,7 @@
 
 Task 3's shared local runner and exact eleven-scenario identity batch execute the
 locally safe emulator, API, and real-Chrome contracts in frozen catalog order.
-The final immutable run `final-cert-t3-260905-111335-5280` used candidate commit
+The last full immutable run `final-cert-t3-260905-111335-5280` used candidate commit
 `5d3c9283393c61f7258e023de648a64372c197bc`, exited zero, emitted all 77 exact
 case records, recorded 885 case-owned assertions, and had zero run errors. Of
 the 77 cases, 73 are `OBSERVED`, four are explicitly `NOT_OBSERVED`, and none
@@ -15,6 +15,25 @@ candidate is not deployed to staging, no approved mailbox receipt indicator is
 available, and real hosted session/background Function evidence is absent.
 Production was neither queried nor changed. No matrix row was promoted to PASS.
 
+## Round 5 Findings
+
+- Demo cleanup snapshots every exact owned user, team, league, public league
+  view, player, facility, and schedule-booking root before cleanup starts. Each
+  root has its own bounded retry, mutation count, and recursive-delete
+  postcondition, so removing a parent cannot erase a failed child's retry
+  target.
+- Browser recovery attempts peer and main demo contexts independently. Known
+  UIDs are registered without another browser command; a recovery failure in
+  either context cannot skip the other, and the original scenario error remains
+  first in the aggregated diagnostics.
+- Strict evidence validation derives each case's aggregate state from its
+  artifact events. An `OBSERVED` case containing `FAIL` event metadata is now
+  rejected.
+- Focused real-browser run `final-cert-t3-260905-120539-16c3` on immutable
+  candidate `b93bc1b6c2f9166868fa313bb35d4784e08749be` repeated both demo
+  contexts and exact exit cleanup with five observed cases, two unchanged
+  truthful worker `NOT_OBSERVED` cases, zero failures, and zero residuals.
+
 ## Round 4 Findings
 
 - Downstream youth authority no longer trusts an arbitrary
@@ -22,12 +41,14 @@ Production was neither queried nor changed. No matrix row was promoted to PASS.
   guardian chain and an active roster record for the requested team. Staff and
   parent authority remain direct-membership-only. Tournament scheduling uses
   the same direct server-authorized staff boundary.
-- Player identity bindings (`userId`, `parentId`, and `guardianIds`) cannot be
-  forged or rewritten by clients. Youth invitation projections carry the team
-  binding used by downstream policy.
-- Browser-created youth and demo identities and graph roots register before
-  dependent seed/UI waits. Outer `finally` recovery discovers partially created
-  resources, and bounded cleanup attempts and verifies every registered target.
+- Established player identity bindings (`userId`, `parentId`, and
+  `guardianIds`) cannot be rewritten by clients. Initial self-owned player
+  creation is not independently authoritative: the server-owned user link and
+  guardian fields plus an active exact-team roster record remain required.
+  Youth invitation projections carry the team binding used by downstream policy.
+- Youth resources register at mutation time. Browser demo UIDs register as soon
+  as their session result is known, with all-context fallback recovery before
+  teardown. Bounded cleanup attempts and verifies every registered target.
 - Multiple legitimate assertion and cleanup failures retain separate structured
   diagnostics and artifact provenance; the validator still rejects mismatched,
   duplicate, unsafe, or uncontained evidence.
@@ -115,6 +136,14 @@ missing-profile, lifecycle, and claim resources passed absence/restoration
 postconditions. All owned browser sessions and local services closed in
 `finally`.
 
+That successful full run does not itself prove transient failure recovery.
+Round 5 adds red/green behavioral regressions for a public-view failure after
+its league was deleted, a recursive-root failure after its parent document was
+deleted, and first/second browser-context recovery failures. Focused browser
+cleanup `fixture-cleanup-final-cert-t3-260905-120539-16c3` then reconciled 249
+measured deletions, zero restorations, and zero residual audit records using the
+new exact per-root registry.
+
 Lifecycle's `background-batch` contribution remains `BLOCKED_PRECONDITION`.
 The demo scheduler expiry/pending-recovery cases likewise remain
 `NOT_OBSERVED`; local registry cleanup is not represented as worker evidence.
@@ -127,7 +156,8 @@ The demo scheduler expiry/pending-recovery cases likewise remain
   guardian chain plus an active roster record for that team; staff authority is
   direct-membership-only. Rules and helper regressions cover valid youth access,
   mismatched user/player/parent/team records, removed membership, staff
-  non-inheritance, client binding forgery, and legitimate direct staff access.
+  non-inheritance, established binding rewrite denial, and legitimate direct
+  staff access.
 - **BUG-028:** youth activation could mint tenant authority from
   parent-editable player team fields. Redemption now stores and revalidates the
   exact active child roster binding. Regressions cover forged primary and joined
@@ -156,17 +186,19 @@ integration proof.
 
 - Focused youth browser rerun: run `final-cert-t3-260905-111011-341f`, 7/7
   observed, zero failures; cleanup 265 deleted / 5 restored / 0 retained.
-- Focused demo browser rerun on the final candidate: run
+- Round 4 focused demo browser rerun: run
   `final-cert-t3-260905-111233-c0da`, 5/7 observed with two explicit
   `NOT_OBSERVED` worker dimensions, zero failures; cleanup 249 deleted / 0
   restored / 0 retained.
 - Final immutable browser batch: run `final-cert-t3-260905-111335-5280`, 11
   scenarios, 77 cases, 73 observed / 4 not observed / 0 failed, 885 case-owned
   assertions, zero run errors; cleanup 290 deleted / 5 restored / 0 retained.
+- Round 5 affected demo browser run: `final-cert-t3-260905-120539-16c3` on
+  candidate `b93bc1b6`, 5 observed / 2 not observed / 0 failed, 12 case-owned
+  assertions, zero run errors; cleanup 249 deleted / 0 restored / 0 retained.
 - `npm run test:rules`: 41 passed, 0 failed.
-- Focused identity, evidence, invitation, and tournament-staff suite: 103
-  passed, 0 failed.
-- `npm test`: 592 passed, 0 failed.
+- Round 5 focused local-certification suite: 126 passed, 0 failed.
+- `npm test`: 595 passed, 0 failed.
 - `npm run typecheck`: exit 0.
 - `npm run build`: exit 0; optimized production build completed. Existing
   repository lint, Tailwind, and workspace-root warnings were non-fatal.
@@ -174,7 +206,7 @@ integration proof.
 
 ## Remaining Blockers
 
-Deploy and correlate exact candidate commit `5d3c9283` before hosted evidence.
+Deploy and correlate exact candidate commit `b93bc1b6` before hosted evidence.
 Then provide explicit authorization for run-prefixed staging mutations and
 trusted-claim restoration, an approved disposable QA mailbox with a receipt
 indicator, durable role/session fixtures, and an allowlisted real
