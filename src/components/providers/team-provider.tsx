@@ -3209,12 +3209,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser]);
 
   const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);
-  const updateIncident = useCallback(async (teamId: string, id: string, data: any) => {
+  const updateIncident = useCallback(async (teamId: string, id: string, data: Pick<TeamIncident, 'status'>) => {
     if (!db || !firebaseUser) return;
+    const status = data.status;
+    if (!status || !['open', 'monitoring', 'follow_up_required', 'resolved'].includes(status)) {
+      throw new Error('An incident update must be a valid status transition.');
+    }
     const updatedAt = new Date().toISOString();
+    const transition: Record<string, unknown> = {
+      status,
+      updatedAt,
+      updatedBy: firebaseUser.uid,
+      auditHistory: arrayUnion({ action: `status:${status}`, userId: firebaseUser.uid, at: updatedAt }),
+    };
+    if (status === 'resolved') {
+      transition.resolvedAt = updatedAt;
+      transition.resolvedBy = firebaseUser.uid;
+    }
     await updateDoc(doc(db, 'teams', teamId, 'incidents', id), {
-      ...clean(data), updatedAt, updatedBy: firebaseUser.uid,
-      auditHistory: arrayUnion({ action: data.status ? `status:${data.status}` : 'updated', userId: firebaseUser.uid, at: updatedAt }),
+      ...transition,
     });
   }, [db, firebaseUser]);
   

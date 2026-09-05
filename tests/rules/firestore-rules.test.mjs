@@ -315,6 +315,17 @@ beforeEach(async () => {
         teamId: 'team-a',
         active: true,
       }),
+      setDoc(doc(db, 'teams', 'team-a', 'incidents', 'incident-a'), {
+        teamId: 'team-a',
+        ownerUserId: 'owner',
+        reportedBy: 'owner',
+        title: 'Original report',
+        description: 'Original factual narrative',
+        date: '2026-09-05',
+        status: 'open',
+        createdAt: '2026-09-05T00:00:00.000Z',
+        auditHistory: [],
+      }),
     ]);
   });
 });
@@ -369,6 +380,30 @@ test('calendar feed documents are readable and writable only by trusted server c
   await assertFails(setDoc(doc(superAdminDb, 'stripeConnectWebhookEvents', 'evt_forged'), {
     status: 'completed',
   }));
+});
+
+test('incident originals are immutable while staff can record an audited status transition', async () => {
+  const staffDb = authenticatedDb('staff');
+  const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
+  const incidentRef = doc(staffDb, 'teams', 'team-a', 'incidents', 'incident-a');
+
+  await assertFails(setDoc(incidentRef, {
+    description: 'Rewritten after the fact',
+    updatedAt: '2026-09-05T01:00:00.000Z',
+    updatedBy: 'staff',
+    auditHistory: [{ action: 'updated', userId: 'staff', at: '2026-09-05T01:00:00.000Z' }],
+  }, { merge: true }));
+
+  await assertFails(deleteDoc(doc(superAdminDb, 'teams', 'team-a', 'incidents', 'incident-a')));
+
+  await assertSucceeds(setDoc(incidentRef, {
+    status: 'resolved',
+    resolvedAt: '2026-09-05T01:00:00.000Z',
+    resolvedBy: 'staff',
+    updatedAt: '2026-09-05T01:00:00.000Z',
+    updatedBy: 'staff',
+    auditHistory: [{ action: 'status:resolved', userId: 'staff', at: '2026-09-05T01:00:00.000Z' }],
+  }, { merge: true }));
 });
 
 test('payment records are server-written and members can read only their own records', async () => {

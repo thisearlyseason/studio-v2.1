@@ -2806,7 +2806,6 @@ function SafetyHub() {
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewingIncident, setViewingIncident] = useState<TeamIncident | null>(null);
-  const [editingIncidentId, setEditingIncidentId] = useState<string | null>(null);
   
   const [form, setForm] = useState({
     title: '',
@@ -2839,18 +2838,12 @@ function SafetyHub() {
 
   const incidentsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'incidents'), orderBy('date', 'desc')) : null, [activeTeam?.id, db]);
   const { data: incidents, isLoading } = useCollection<TeamIncident>(incidentsQuery);
-  const { updateIncident } = useTeam();
 
   const handleLogIncident = async () => {
     if (!form.title || !form.date) return;
     setIsProcessing(true);
-    if (editingIncidentId) {
-       await updateIncident(activeTeam!.id, editingIncidentId, form);
-    } else {
-       await addIncident(form);
-    }
+    await addIncident(form);
     setIsLogOpen(false);
-    setEditingIncidentId(null);
     setIsProcessing(false);
     setForm({
       title: '',
@@ -2986,7 +2979,7 @@ function SafetyHub() {
           <Button variant="outline" className="flex-1 sm:flex-none rounded-xl h-11 border-2 font-black uppercase text-[10px] text-foreground" onClick={exportLedger} disabled={!incidents?.length}>
             <Download className="h-4 w-4 mr-2" /> Export Ledger
           </Button>
-          <Button className="flex-1 sm:flex-none rounded-xl h-11 px-6 font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={() => { setEditingIncidentId(null); setIsLogOpen(true); setForm({
+          <Button className="flex-1 sm:flex-none rounded-xl h-11 px-6 font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={() => { setIsLogOpen(true); setForm({
             title: '', date: format(new Date(), 'yyyy-MM-dd'), time: format(new Date(), 'HH:mm'), location: '', description: '', emergencyServicesCalled: false, severity: 'minor', witnesses: '', witnessesList: [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }], involvedPeople: '', involvedPersonnel: [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }], treatmentProvided: '', followUpRequired: false, actionsTaken: '', reportedTo: '', equipmentInvolved: '', weatherConditions: 'Clear/Indoor'
           }); }}>
             <Plus className="h-4 w-4 mr-2" /> Log Incident
@@ -3049,7 +3042,7 @@ function SafetyHub() {
               <div className="flex items-center gap-4 mb-2">
                 <div className="bg-red-100 p-3 rounded-2xl text-red-600 shadow-sm"><ShieldAlert className="h-6 w-6" /></div>
                 <div>
-                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingIncidentId ? 'Edit Incident' : 'Log Incident'}</DialogTitle>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight">Log Incident</DialogTitle>
                   <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Official Institutional Reporting Pipeline</DialogDescription>
                 </div>
               </div>
@@ -3192,38 +3185,14 @@ function SafetyHub() {
 
             <DialogFooter>
               <Button className="w-full h-16 rounded-[2rem] text-lg font-black bg-black text-white hover:bg-red-600 transition-all shadow-xl border-none" onClick={handleLogIncident} disabled={isProcessing || !form.title}>
-                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : (editingIncidentId ? "Update Report in Ledger" : "Commit Report to Ledger")}
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Commit Report to Ledger"}
               </Button>
             </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
 
-      <IncidentDetailDialog incident={viewingIncident} isOpen={!!viewingIncident} onOpenChange={(o) => !o && setViewingIncident(null)} onEdit={() => {
-        if (!viewingIncident) return;
-        setForm({
-          title: viewingIncident.title,
-          date: viewingIncident.date,
-          time: viewingIncident.time || '',
-          location: viewingIncident.location || '',
-          description: viewingIncident.description || '',
-          emergencyServicesCalled: viewingIncident.emergencyServicesCalled || false,
-          severity: viewingIncident.severity || 'minor',
-          witnesses: viewingIncident.witnesses || '',
-          witnessesList: viewingIncident.witnessesList?.length ? viewingIncident.witnessesList.map(w => ({ name: w.name, phone: w.phone || '', email: w.email || '' })) : [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }],
-          involvedPeople: viewingIncident.involvedPeople || '',
-          involvedPersonnel: viewingIncident.involvedPersonnel?.length ? viewingIncident.involvedPersonnel.map(w => ({ name: w.name, phone: w.phone || '', email: w.email || '' })) : [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }],
-          treatmentProvided: viewingIncident.treatmentProvided || '',
-          followUpRequired: viewingIncident.followUpRequired || false,
-          actionsTaken: viewingIncident.actionsTaken || '',
-          reportedTo: viewingIncident.reportedTo || '',
-          equipmentInvolved: viewingIncident.equipmentInvolved || '',
-          weatherConditions: viewingIncident.weatherConditions || 'Clear/Indoor'
-        });
-        setEditingIncidentId(viewingIncident.id);
-        setViewingIncident(null);
-        setIsLogOpen(true);
-      }} />
+      <IncidentDetailDialog incident={viewingIncident} isOpen={!!viewingIncident} onOpenChange={(o) => !o && setViewingIncident(null)} />
     </div>
   );
 }

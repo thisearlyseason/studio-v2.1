@@ -296,3 +296,20 @@ test('organization squad seats are explicit, capacity-bound, and organizer-contr
   assert.match(hub, /Return to Starter/);
   assert.doesNotMatch(hub, /await deleteTeam\(teamToDelete\.id\)/);
 });
+
+test('incident originals are write-once and client transitions are status-only audited updates', async () => {
+  const [rules, provider, detail] = await Promise.all([
+    readSource('../firestore.rules'),
+    readSource('../src/components/providers/team-provider.tsx'),
+    readSource('../src/app/(dashboard)/coaches-corner/incident-detail-dialog.tsx'),
+  ]);
+
+  assert.match(rules, /allow create: if canCreateIncident\(teamId\);/);
+  assert.match(rules, /allow update: if isTeamStaff\(teamId\) && canTransitionIncident\(\);/);
+  assert.match(rules, /allow delete: if false;/);
+  assert.match(rules, /affectedKeys\(\)\.hasOnly\(\[\s*'status', 'resolvedAt', 'resolvedBy', 'updatedAt', 'updatedBy', 'auditHistory'/);
+  assert.match(rules, /transition\.get\('action', ''\) == 'status:' \+ request\.resource\.data\.get\('status', ''\)/);
+  assert.match(provider, /data: Pick<TeamIncident, 'status'>/);
+  assert.match(provider, /action: `status:\$\{status\}`/);
+  assert.doesNotMatch(detail, /Edit Report/);
+});

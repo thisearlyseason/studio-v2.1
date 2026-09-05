@@ -11,7 +11,7 @@ import { generateBrandedPDF } from '@/lib/pdf-utils';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 
-export function IncidentDetailDialog({ incident, isOpen, onOpenChange, onEdit }: { incident: TeamIncident | null, isOpen: boolean, onOpenChange: (o: boolean) => void, onEdit?: () => void }) {
+export function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: TeamIncident | null, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const { activeTeam } = useTeam();
   if (!incident) return null;
 
@@ -149,9 +149,6 @@ export function IncidentDetailDialog({ incident, isOpen, onOpenChange, onEdit }:
                 </div>
               </div>
               <div className="flex gap-2">
-                {onEdit && (
-                  <Button variant="outline" size="sm" onClick={onEdit} className="h-7 text-[10px] font-black uppercase tracking-widest rounded-lg">Edit Report</Button>
-                )}
                 <Badge className={cn(
                   "border-none font-black text-[10px] uppercase px-4 h-7 shrink-0",
                   incident.emergencyServicesCalled ? "bg-red-600 text-white shadow-lg shadow-red-600/20" : "bg-muted text-muted-foreground"
