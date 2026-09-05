@@ -113,6 +113,7 @@ let activeCertificationScenario = null;
 let activeCertificationAssertions = [];
 let activeCertificationCaseIds = new Set();
 let activeTenantExecution = null;
+let activeTenantExecutionGroup = null;
 const tenantTokenActors = new Map();
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
@@ -998,13 +999,24 @@ function registerFamilyRuntimeChildTarget(childId) {
 }
 
 function bindTenantRuntimeTarget(runtimeTarget) {
-  if (!runtimeTarget || tenantRuntimeTargets.get(runtimeTarget.resourcePath) !== runtimeTarget || !activeTenantExecution) {
+  const executions = activeTenantExecutionGroup || (activeTenantExecution ? [activeTenantExecution] : []);
+  if (!runtimeTarget || tenantRuntimeTargets.get(runtimeTarget.resourcePath) !== runtimeTarget || executions.length === 0) {
     throw new Error('A registered runtime target must be bound to an active tenant evidence case.');
   }
-  if (activeTenantExecution.runtimeTarget && activeTenantExecution.runtimeTarget.alias !== runtimeTarget.alias) {
-    throw new Error('A tenant evidence case cannot change runtime targets after registration.');
+  for (const execution of executions) {
+    if (execution.runtimeTarget && execution.runtimeTarget.alias !== runtimeTarget.alias) {
+      throw new Error('A tenant evidence case cannot change runtime targets after registration.');
+    }
+    execution.runtimeTarget = runtimeTarget;
   }
-  activeTenantExecution.runtimeTarget = runtimeTarget;
+}
+
+function activeTenantExecutions() {
+  return activeTenantExecutionGroup || (activeTenantExecution ? [activeTenantExecution] : []);
+}
+
+function appendTenantExecutionRecord(collection, record) {
+  for (const execution of activeTenantExecutions()) execution[collection].push({ ...record });
 }
 
 function tenantOperationFromRequest(pathname, method, status) {
@@ -1013,13 +1025,14 @@ function tenantOperationFromRequest(pathname, method, status) {
   if (normalizedMethod === 'GET') return 'read';
   if (normalizedMethod === 'DELETE') return 'delete';
   if (normalizedMethod === 'PATCH' || normalizedMethod === 'PUT') return 'update';
+  if (pathname === '/api/family/children' && normalizedMethod === 'POST') return 'create';
   if (/season-reset|release-squad/.test(pathname)) return 'delete';
   if (/teams\/create|teams\/join|youth-invite|enable-youth/.test(pathname)) return 'create';
   return 'update';
 }
 
 function recordTenantRequest({ pathname, method = 'GET', status, token = null, documentPath = null, body = null, startedAt, completedAt }) {
-  if (!activeTenantExecution) return;
+  if (activeTenantExecutions().length === 0) return;
   let parsedBody = {};
   try { parsedBody = body ? JSON.parse(body) : {}; } catch { parsedBody = {}; }
   const codedTeam = parsedBody.code ? FIXTURES.teams.find(team =>
@@ -1032,7 +1045,7 @@ function recordTenantRequest({ pathname, method = 'GET', status, token = null, d
     documentPath || parsedBody.teamId || parsedBody.childId || parsedBody.playerId || pathname,
   ));
   const completed = completedAt || new Date().toISOString();
-  activeTenantExecution.requests.push({
+  appendTenantExecutionRecord('requests', {
     transport: 'loopback-http', method: String(method).toUpperCase(),
     route: String(pathname).split('?')[0], status,
     executorAlias: token ? tenantTokenActors.get(token) || 'authenticated-actor' : 'qa-public-submitter',
@@ -1041,6 +1054,43 @@ function recordTenantRequest({ pathname, method = 'GET', status, token = null, d
     startedAt: startedAt || completed,
     completedAt: completed,
   });
+}
+
+function recordTenantBrowserRequest({ pathname, method, status, executorAlias, targetAlias, operation, startedAt, completedAt }) {
+  appendTenantExecutionRecord('requests', {
+    transport: 'loopback-http', method: String(method).toUpperCase(), route: String(pathname).split('?')[0], status,
+    executorAlias, targetAlias, operation, startedAt, completedAt,
+  });
+}
+
+function recordTenantBrowserRender(runtimeTarget, startedAt, completedAt) {
+  appendTenantExecutionRecord('observations', {
+    kind: 'browser-render', actorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias,
+    operation: 'read', startedAt, completedAt,
+  });
+}
+
+async function reconcileFamilyRuntimeChildGraph({ runtimeTarget, teamA, teamC, phase, expected }) {
+  const paths = [
+    runtimeTarget.resourcePath,
+    `teams/${teamA.id}/members/${runtimeTarget.resourcePath.split('/').at(-1)}`,
+    `teams/${teamC.id}/members/${runtimeTarget.resourcePath.split('/').at(-1)}`,
+  ];
+  const startedAt = new Date().toISOString();
+  const snapshots = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+    firestoreAdmin.getAll(...paths.map(pathname => firestoreAdmin.doc(pathname))));
+  const values = snapshots.map(snapshot => snapshot.exists ? snapshot.data() || {} : null);
+  const observed = { player: Boolean(values[0]), teamA: Boolean(values[1]), teamC: Boolean(values[2]) };
+  expectEqual(JSON.stringify(observed), JSON.stringify(expected), `tenant family ${phase} exact runtime graph reconciliation`);
+  const completedAt = new Date().toISOString();
+  appendTenantExecutionRecord('adminTargets', {
+    targetAlias: runtimeTarget.alias, actorAlias: 'qa-parent-a', operation: 'read', observedAt: completedAt, sourceCaseId: phase,
+  });
+  appendTenantExecutionRecord('reconciliations', {
+    sourceCaseId: phase, actorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias,
+    operation: 'persistence', startedAt, completedAt,
+  });
+  return observed;
 }
 
 async function patchFirestoreFields(options) {
@@ -4272,43 +4322,60 @@ async function runCertificationIdentityScenarios() {
 }
 
 async function recordObservedTenantCase(scenarioId, dimension, caseId, work, expected, runtimeTarget = null) {
+  return recordObservedTenantCases(scenarioId, [{ dimension, caseId, expected, runtimeTarget }], work);
+}
+
+async function recordObservedTenantCases(scenarioId, caseDefinitions, work) {
+  if (!Array.isArray(caseDefinitions) || caseDefinitions.length === 0) {
+    throw new Error('Tenant case execution requires at least one case definition.');
+  }
   const assertionStart = activeCertificationAssertions.length;
   const caseStartedAt = new Date().toISOString();
   const previousExecution = activeTenantExecution;
-  activeTenantExecution = {
+  const previousExecutionGroup = activeTenantExecutionGroup;
+  const executions = caseDefinitions.map(({ runtimeTarget = null }) => ({
     startedAt: caseStartedAt,
     completedAt: caseStartedAt,
     requests: [], adminTargets: [], observations: [], reconciliations: [], runtimeTarget,
-  };
+  }));
+  activeTenantExecution = executions[0];
+  activeTenantExecutionGroup = executions;
   try {
     const observed = await work();
     const caseCompletedAt = new Date().toISOString();
-    activeTenantExecution.completedAt = caseCompletedAt;
-    const association = tenantCaseAssociationFor(scenarioId, dimension, caseId, activeTenantExecution.runtimeTarget);
-    if (association) {
-      activeTenantExecution.observations.push({
-        kind: ['console', 'responsive'].includes(dimension) ? 'browser-work' : 'case-work',
-        ...association,
-        startedAt: caseStartedAt,
-        completedAt: caseCompletedAt,
-      });
+    for (let index = 0; index < caseDefinitions.length; index += 1) {
+      const { dimension, caseId, expected } = caseDefinitions[index];
+      const execution = executions[index];
+      execution.completedAt = caseCompletedAt;
+      const association = tenantCaseAssociationFor(scenarioId, dimension, caseId, execution.runtimeTarget);
+      if (association && !execution.observations.some(item =>
+        item.actorAlias === association.actorAlias && item.targetAlias === association.targetAlias && item.operation === association.operation)) {
+        execution.observations.push({
+          kind: ['console', 'responsive'].includes(dimension) ? 'browser-work' : 'case-work',
+          ...association,
+          startedAt: caseStartedAt,
+          completedAt: caseCompletedAt,
+        });
+      }
+      recordCertificationCase(
+        scenarioId,
+        dimension,
+        caseId,
+        typeof observed === 'object' && observed !== null ? observed[caseId] || observed[dimension] || JSON.stringify(observed) : observed,
+        expected,
+        caseStartedAt,
+        { assertions: activeCertificationAssertions.slice(assertionStart), execution },
+      );
     }
-    const execution = activeTenantExecution;
-    recordCertificationCase(
-      scenarioId,
-      dimension,
-      caseId,
-      observed,
-      expected,
-      caseStartedAt,
-      { assertions: activeCertificationAssertions.slice(assertionStart), execution },
-    );
   } catch (error) {
-    recordCertificationFailure(scenarioId, dimension, caseId, error);
+    for (const { dimension, caseId } of caseDefinitions) {
+      recordCertificationFailure(scenarioId, dimension, caseId, error);
+    }
     if (error && typeof error === 'object') error.certificationCaseRecorded = true;
     throw error;
   } finally {
     activeTenantExecution = previousExecution;
+    activeTenantExecutionGroup = previousExecutionGroup;
   }
 }
 
@@ -5164,19 +5231,19 @@ function tenantConsumerPaths(scenarioId) {
 }
 
 async function readTenantConsumerDocuments(paths) {
-  if (activeTenantExecution) {
+  if (activeTenantExecutions().length > 0) {
     const association = tenantCaseAssociationFor(
       activeCertificationScenario,
       'persistence',
       LOCAL_TENANT_CASE_REQUIREMENTS[activeCertificationScenario]?.persistence?.[0] || '',
     );
     const observedAt = new Date().toISOString();
-    activeTenantExecution.adminTargets.push(...paths.map(pathname => ({
+    for (const pathname of paths) appendTenantExecutionRecord('adminTargets', {
       targetAlias: tenantTargetAliasFromValue(pathname) || 'run-owned-consumer-root',
       actorAlias: association?.actorAlias || 'qa-public-submitter',
       operation: 'persistence',
       observedAt,
-    })));
+    });
   }
   return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     const snapshots = await firestoreAdmin.getAll(...paths.map(pathname => firestoreAdmin.doc(pathname)));
@@ -5930,14 +5997,18 @@ async function runTenantBrowserScenario(scenarioId) {
     const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
     const childId = `child_t4_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
     const requestId = childId.slice('child_'.length);
-    const runtimeTarget = registerFamilyRuntimeChildTarget(childId);
     const markerFirst = `Runtime${FIXTURES.runId.replace(/[^A-Za-z0-9]/g, '').slice(-8)}`;
     const markerFull = `${markerFirst} FamilyLifecycle`;
     const ownedPaths = [
       `players/${childId}`, `teams/${teamA.id}/members/${childId}`, `teams/${teamC.id}/members/${childId}`,
     ];
     ownedPaths.forEach((path, index) => registerDynamicFirestoreRoot(path, `tenant-family-browser-${index + 1}`));
-    return tenantFixtureMutations.withFirestoreOverlay(ownedPaths, async () => {
+    return tenantFixtureMutations.withFirestoreOverlay(ownedPaths, async () => recordObservedTenantCases(scenarioId, [
+      { dimension: 'console', caseId: 'family-children-workflow-console', expected: 'The Family child lifecycle is runtime-created and scoped to the verified guardian.' },
+      { dimension: 'responsive', caseId: 'family-children-workflow-responsive', expected: 'Family runtime cards render at 1440x900 and 390x844.' },
+    ], async () => {
+      const runtimeTarget = registerFamilyRuntimeChildTarget(childId);
+      bindTenantRuntimeTarget(runtimeTarget);
       const created = await apiJsonResult('/api/family/children', parent.body.idToken, {
         method: 'POST', body: JSON.stringify({ requestId, firstName: markerFirst, lastName: 'FamilyLifecycle', dateOfBirth: '2012-02-03' }),
       });
@@ -5952,7 +6023,12 @@ async function runTenantBrowserScenario(scenarioId) {
       });
       expectEqual(created.status === 201 && linkedA.status === 200 && firstUnlink.status === 200 && relinked.status === 200, true,
         'tenant family browser runtime lifecycle setup');
+      await reconcileFamilyRuntimeChildGraph({
+        runtimeTarget, teamA, teamC, phase: 'family-runtime-after-create-link-relink',
+        expected: { player: true, teamA: true, teamC: false },
+      });
       const session = await browserLogin('qa-parent-a', '/family', `tenant-${scenarioId}-${process.pid}`);
+      const renderStartedAt = new Date().toISOString();
       const renderResult = JSON.parse(cli(session, ['run-code', `async page => {
         const observations=[];const consoleErrors=[];const failures=[];
         const onConsole=m=>{if(m.type()==='error')consoleErrors.push(m.text())};const onResponse=r=>{if(r.status()>=500)failures.push({status:r.status(),url:r.url()})};
@@ -5968,7 +6044,10 @@ async function runTenantBrowserScenario(scenarioId) {
           return {observations,consoleErrors,failures,error:String(error?.stack||error)};
         } finally {page.off('console',onConsole);page.off('response',onResponse)}
       }`]));
+      const renderCompletedAt = new Date().toISOString();
       if (renderResult.error) throw new Error(`tenant family browser render lifecycle failed: ${renderResult.error}`);
+      recordTenantBrowserRender(runtimeTarget, renderStartedAt, renderCompletedAt);
+      const unlinkStartedAt = new Date().toISOString();
       const unlinkResult = JSON.parse(cli(session, ['run-code', `async page => {
         const consoleErrors=[];const failures=[];const onConsole=m=>{if(m.type()==='error')consoleErrors.push(m.text())};const onResponse=r=>{if(r.status()>=500)failures.push({status:r.status(),url:r.url()})};
         page.on('console',onConsole);page.on('response',onResponse);
@@ -5980,7 +6059,16 @@ async function runTenantBrowserScenario(scenarioId) {
           return {status:response.status(),bodyLength:body.length,unlinkedTeamA:(await card.locator('[data-team-id=${teamA.id}]').count())===0,consoleErrors,failures,error:null};
         }catch(error){return{status:null,bodyLength:null,unlinkedTeamA:false,consoleErrors,failures,error:String(error?.stack||error)}}finally{page.off('console',onConsole);page.off('response',onResponse)}
       }`]));
+      const unlinkCompletedAt = new Date().toISOString();
       if (unlinkResult.error) throw new Error(`tenant family browser unlink failed: ${unlinkResult.error}`);
+      recordTenantBrowserRequest({ pathname: '/api/family/children', method: 'PATCH', status: unlinkResult.status,
+        executorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation: 'update', startedAt: unlinkStartedAt, completedAt: unlinkCompletedAt });
+      recordTenantBrowserRender(runtimeTarget, unlinkStartedAt, unlinkCompletedAt);
+      await reconcileFamilyRuntimeChildGraph({
+        runtimeTarget, teamA, teamC, phase: 'family-runtime-after-browser-unlink',
+        expected: { player: true, teamA: false, teamC: false },
+      });
+      const removeStartedAt = new Date().toISOString();
       const removeResult = JSON.parse(cli(session, ['run-code', `async page => {
         const consoleErrors=[];const failures=[];const onConsole=m=>{if(m.type()==='error')consoleErrors.push(m.text())};const onResponse=r=>{if(r.status()>=500)failures.push({status:r.status(),url:r.url()})};
         page.on('console',onConsole);page.on('response',onResponse);
@@ -5990,7 +6078,15 @@ async function runTenantBrowserScenario(scenarioId) {
           return {status:response.status(),bodyLength:body.length,removed:(await page.getByText(${JSON.stringify(markerFull)},{exact:true}).count())===0,consoleErrors,failures,error:null};
         }catch(error){return{status:null,bodyLength:null,removed:false,consoleErrors,failures,error:String(error?.stack||error)}}finally{page.off('console',onConsole);page.off('response',onResponse)}
       }`]));
+      const removeCompletedAt = new Date().toISOString();
       if (removeResult.error) throw new Error(`tenant family browser remove failed: ${removeResult.error}`);
+      recordTenantBrowserRequest({ pathname: '/api/family/children', method: 'DELETE', status: removeResult.status,
+        executorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation: 'delete', startedAt: removeStartedAt, completedAt: removeCompletedAt });
+      recordTenantBrowserRender(runtimeTarget, removeStartedAt, removeCompletedAt);
+      await reconcileFamilyRuntimeChildGraph({
+        runtimeTarget, teamA, teamC, phase: 'family-runtime-after-browser-remove',
+        expected: { player: false, teamA: false, teamC: false },
+      });
       const parentBSession = await browserLogin('qa-parent-b', '/family', `tenant-${scenarioId}-parent-b-${process.pid}`);
       const parentBExcluded = Number(cli(parentBSession, ['run-code', `async page=>{await page.goto(${JSON.stringify(BASE_URL)}+'/family');await page.getByRole('heading',{name:'Family Overview'}).waitFor({state:'visible',timeout:15000});return await page.getByText(${JSON.stringify(markerFull)},{exact:true}).count()}`])) === 0;
       const persisted = await readTenantConsumerDocuments(ownedPaths);
@@ -5999,27 +6095,23 @@ async function runTenantBrowserScenario(scenarioId) {
         renderedTeams: [teamA.id, teamC.id], parentBExcluded, unlinkedTeamA: unlinkResult.status === 200 && unlinkResult.unlinkedTeamA,
         removed: removeResult.status === 200 && removeResult.removed, absentAfterReload: persisted.every(value => value === null),
       };
-      await recordObservedTenantCase(scenarioId, 'console', 'family-children-workflow-console', async () => {
-        bindTenantRuntimeTarget(runtimeTarget);
-        const consoleErrors=[...renderResult.consoleErrors,...unlinkResult.consoleErrors,...removeResult.consoleErrors];
-        const failures=[...renderResult.failures,...unlinkResult.failures,...removeResult.failures];
-        expectEqual(consoleErrors.length, 0, 'tenant family child lifecycle console errors');
-        expectEqual(failures.length, 0, 'tenant family child lifecycle server failures');
-        expectEqual(renderResult.observations.every(item => item.teamA && item.teamC && item.runtimeTeamA), true, 'tenant family rendered Team A Team C cards');
-        expectEqual(unlinkResult.status, 200, 'tenant family browser unlink endpoint status');
-        expectEqual(unlinkResult.bodyLength > 0, true, 'tenant family browser unlink response body present');
-        expectEqual(removeResult.status, 200, 'tenant family browser remove endpoint status');
-        expectEqual(removeResult.bodyLength > 0, true, 'tenant family browser remove response body present');
-        assertTenantWorkflowObservation('family-child-lifecycle', observation);
-        return `A disposable athlete was created and linked to its squad, Team A and Team C family cards rendered for Parent A, Parent B was excluded, and the runtime athlete was unlinked and removed; PATCH returned ${unlinkResult.status}/${unlinkResult.bodyLength} bytes and DELETE returned ${removeResult.status}/${removeResult.bodyLength} bytes.`;
-      }, 'The Family child lifecycle is runtime-created and scoped to the verified guardian.', runtimeTarget);
-      await recordObservedTenantCase(scenarioId, 'responsive', 'family-children-workflow-responsive', async () => {
-        bindTenantRuntimeTarget(runtimeTarget);
-        expectEqual(renderResult.observations.length, 2, 'tenant family child exact viewports');
-        expectEqual(renderResult.observations.every(item => item.fits), true, 'tenant family child lifecycle viewport containment');
-        return 'The same runtime child and Team A/Team C cards rendered at both frozen viewports.';
-      }, 'Family runtime cards render at 1440x900 and 390x844.', runtimeTarget);
-    });
+      const consoleErrors=[...renderResult.consoleErrors,...unlinkResult.consoleErrors,...removeResult.consoleErrors];
+      const failures=[...renderResult.failures,...unlinkResult.failures,...removeResult.failures];
+      expectEqual(consoleErrors.length, 0, 'tenant family child lifecycle console errors');
+      expectEqual(failures.length, 0, 'tenant family child lifecycle server failures');
+      expectEqual(renderResult.observations.every(item => item.teamA && item.teamC && item.runtimeTeamA), true, 'tenant family rendered Team A Team C cards');
+      expectEqual(unlinkResult.status, 200, 'tenant family browser unlink endpoint status');
+      expectEqual(unlinkResult.bodyLength > 0, true, 'tenant family browser unlink response body present');
+      expectEqual(removeResult.status, 200, 'tenant family browser remove endpoint status');
+      expectEqual(removeResult.bodyLength > 0, true, 'tenant family browser remove response body present');
+      expectEqual(renderResult.observations.length, 2, 'tenant family child exact viewports');
+      expectEqual(renderResult.observations.every(item => item.fits), true, 'tenant family child lifecycle viewport containment');
+      assertTenantWorkflowObservation('family-child-lifecycle', observation);
+      return {
+        'family-children-workflow-console': `A disposable athlete was created and linked to its squad, Team A and Team C family cards rendered for Parent A, Parent B was excluded, and the runtime athlete was unlinked and removed; PATCH returned ${unlinkResult.status}/${unlinkResult.bodyLength} bytes and DELETE returned ${removeResult.status}/${removeResult.bodyLength} bytes.`,
+        'family-children-workflow-responsive': 'The same runtime child and Team A/Team C cards rendered at both frozen viewports.',
+      };
+    }));
   }
   if (scenarioId === 'teams-module-visibility') {
     const owner = await signIn('qa-coach-owner-a');

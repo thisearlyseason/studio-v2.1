@@ -170,6 +170,39 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
   }
 }
 
+function validateFamilyBrowserRuntimeLifecycle(caseRecord, execution) {
+  if (caseRecord.caseId !== 'family-children-workflow-console' && caseRecord.caseId !== 'family-children-workflow-responsive') return;
+  const targetAlias = caseRecord.runtimeTarget?.alias;
+  const requiredPhases = [
+    'family-runtime-after-create-link-relink',
+    'family-runtime-after-browser-unlink',
+    'family-runtime-after-browser-remove',
+  ];
+  const matching = (method, route, operation, minimum = 1) => execution.requests.filter(request =>
+    request.method === method && request.route === route && request.status >= 200 && request.status < 300 &&
+    request.operation === operation && request.executorAlias === 'qa-parent-a' && request.targetAlias === targetAlias,
+  ).length >= minimum;
+  const rendered = execution.observations.filter(observation =>
+    observation.kind === 'browser-render' && observation.actorAlias === 'qa-parent-a' &&
+    observation.targetAlias === targetAlias && observation.operation === 'read',
+  );
+  const reconciledPhases = new Set(execution.reconciliations.filter(record =>
+    record.actorAlias === 'qa-parent-a' && record.targetAlias === targetAlias && record.operation === 'persistence',
+  ).map(record => record.sourceCaseId));
+  const adminPhases = new Set(execution.adminTargets.filter(record =>
+    record.actorAlias === 'qa-parent-a' && record.targetAlias === targetAlias && record.operation === 'read',
+  ).map(record => record.sourceCaseId));
+  const hasSyntheticOnlyObservation = execution.observations.some(observation => observation.kind === 'browser-work');
+  if (!matching('POST', '/api/family/children', 'create') ||
+      !matching('POST', '/api/teams/join', 'create', 2) ||
+      !matching('PATCH', '/api/family/children', 'update', 2) ||
+      !matching('DELETE', '/api/family/children', 'delete') ||
+      rendered.length < 3 || hasSyntheticOnlyObservation ||
+      requiredPhases.some(phase => !reconciledPhases.has(phase) || !adminPhases.has(phase))) {
+    throw new Error(`${caseRecord.caseId} requires in-interval browser runtime lifecycle evidence, exact reconciliation, and rendered observations.`);
+  }
+}
+
 function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape, caseAssociationResolver, operationContracts } = {}) {
   assertNoProtectedEvidence(result);
   assertClosedObject(result, [
@@ -344,6 +377,9 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           if (boundOperations.length === 0 || boundOperations.some(item => parseTimestamp(item.startedAt, 'runtime target operation startedAt') < registeredAt)) {
             throw new Error(`${caseRecord.caseId} runtime target was not registered before its bound operation.`);
           }
+        }
+        if (result.scenarioId === 'family-children-invites-team-cards') {
+          validateFamilyBrowserRuntimeLifecycle(caseRecord, execution);
         }
       }
       if (!caseRecord.actorAliases.includes(caseRecord.actorAlias)) {

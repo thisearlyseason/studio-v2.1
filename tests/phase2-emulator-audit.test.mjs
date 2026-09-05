@@ -77,6 +77,14 @@ test('family child creation resolves its run-owned target from requestId before 
   assert.match(requestRecorder, /runtimeTargetAlias \|\|/);
 });
 
+test('family child browser creation is recorded as a create operation before generic POST classification', () => {
+  const start = source.indexOf('function tenantOperationFromRequest(');
+  const end = source.indexOf('function recordTenantRequest(', start);
+  const operationClassifier = source.slice(start, end);
+  assert.match(operationClassifier, /pathname === '\/api\/family\/children' && normalizedMethod === 'POST'/);
+  assert.match(operationClassifier, /return 'create';/);
+});
+
 test('tenant workflow evidence requires unsorted runtime schedule and exact rendered ledger values', () => {
   assert.throws(() => auditRunner.assertTenantWorkflowObservation('family-schedule-payments', {
     fixtureRows: [{ status: 'paid' }],

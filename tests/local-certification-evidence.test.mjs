@@ -502,6 +502,73 @@ test('runtime family evidence rejects missing, mismatched, static, or late-regis
   assert.throws(() => validateScenarioResults([tenantScenario], replace({ runtimeTarget: { ...runtimeTarget, registeredAt: '2026-09-04T18:00:01.500Z' }, execution: { ...caseRecord.execution, runtimeTarget: { ...runtimeTarget, registeredAt: '2026-09-04T18:00:01.500Z' } } }), options), /not registered before/i);
 });
 
+test('runtime family browser evidence requires in-interval lifecycle requests, reconciliation, and rendered observations', () => {
+  const tenantScenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'family-children-invites-team-cards');
+  const caseId = 'family-children-workflow-console';
+  const runtimeTarget = {
+    alias: 'run-family-child-final-cert-t4-browser',
+    resourcePath: 'players/child_t4_final_cert_t4_browser',
+    registeredAt: '2026-09-04T18:00:00.000Z',
+  };
+  const association = tenantCaseAssociationFor(tenantScenario.id, 'console', caseId, runtimeTarget);
+  const execution = {
+    startedAt: '2026-09-04T18:00:01.000Z', completedAt: '2026-09-04T18:00:02.000Z', runtimeTarget,
+    requests: [
+      ['POST', '/api/family/children', 201, 'create', '01.100', '01.200'],
+      ['POST', '/api/teams/join', 200, 'create', '01.210', '01.300'],
+      ['PATCH', '/api/family/children', 200, 'update', '01.310', '01.400'],
+      ['POST', '/api/teams/join', 200, 'create', '01.410', '01.500'],
+      ['PATCH', '/api/family/children', 200, 'update', '01.510', '01.600'],
+      ['DELETE', '/api/family/children', 200, 'delete', '01.610', '01.700'],
+    ].map(([method, route, status, operation, started, completed]) => ({
+      transport: 'loopback-http', method, route, status, executorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation,
+      startedAt: `2026-09-04T18:00:${started}Z`, completedAt: `2026-09-04T18:00:${completed}Z`,
+    })),
+    adminTargets: [
+      'family-runtime-after-create-link-relink',
+      'family-runtime-after-browser-unlink',
+      'family-runtime-after-browser-remove',
+    ].map(sourceCaseId => ({ targetAlias: runtimeTarget.alias, actorAlias: 'qa-parent-a', operation: 'read', observedAt: '2026-09-04T18:00:01.800Z', sourceCaseId })),
+    observations: [0, 1, 2].map(index => ({ kind: 'browser-render', actorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation: 'read', startedAt: `2026-09-04T18:00:01.${510 + index * 10}Z`, completedAt: `2026-09-04T18:00:01.${519 + index * 10}Z` })),
+    reconciliations: [
+      'family-runtime-after-create-link-relink',
+      'family-runtime-after-browser-unlink',
+      'family-runtime-after-browser-remove',
+    ].map(sourceCaseId => ({ sourceCaseId, actorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation: 'persistence', startedAt: '2026-09-04T18:00:01.700Z', completedAt: '2026-09-04T18:00:01.800Z' })),
+  };
+  const caseRecord = {
+    actorAliases: ['qa-parent-a'], ...association, runtimeTarget, caseId, dimension: 'console',
+    role: tenantScenario.roles.join('/'), tenantAlias: 'qa-team-a', expected: 'browser runtime child lifecycle',
+    observed: 'browser runtime child lifecycle', state: 'OBSERVED',
+    startedAt: '2026-09-04T18:00:01.000Z', completedAt: '2026-09-04T18:00:02.000Z', artifacts: [],
+    network: { transport: 'loopback-http', observed: true, reason: 'case-owned runtime request capture' },
+    console: { observed: true, reason: 'case-owned browser console capture' },
+    responsive: { observed: false, reason: 'server probe; viewport is a separate dimension' },
+    cleanupRefs: ['fixture-cleanup-runtime-browser-target'], execution,
+  };
+  const result = {
+    scenarioId: tenantScenario.id, environment: 'local-emulator',
+    environmentGaps: tenantScenario.environments.filter(value => value !== 'local-emulator'),
+    commit: '0123456789abcdef0123456789abcdef01234567', revision: 'local',
+    startedAt: '2026-09-04T18:00:00.000Z', completedAt: '2026-09-04T18:01:00.000Z',
+    role: tenantScenario.roles.join('/'), tenantAlias: 'qa-team-a',
+    dimensions: Object.fromEntries(DIMENSION_NAMES.map(name => [name,
+      makeDimension(name === 'console' ? 'OBSERVED' : 'BLOCKED_PRECONDITION', name === 'console' ? [caseId] : [], 'exact local state'),
+    ])),
+    cases: [caseRecord],
+    cleanup: { owner: tenantScenario.cleanupOwner, reference: 'fixture-cleanup-runtime-browser-target', selectors: ['dynamic:runtime-child'],
+      counts: { deleted: 1, restored: 0, retainedAuditRecords: 0 }, state: 'OBSERVED', proof: ['cleanup/runtime-browser-target.json'] },
+    artifacts: [], missingDimensions: DIMENSION_NAMES.filter(name => name !== 'console'), externalRequirements: ['exact staging revision'], outcome: 'BLOCKED_PRECONDITION',
+  };
+  const options = { caseShape: 'tenant', caseRequirements: { [tenantScenario.id]: { console: [caseId] } }, caseAssociationResolver: tenantCaseAssociationFor, operationContracts: { [tenantScenario.id]: [] } };
+  assert.equal(validateScenarioResults([tenantScenario], [result], options)[0].cases[0].targetAlias, runtimeTarget.alias);
+  const replace = replacement => [{ ...result, cases: [{ ...caseRecord, ...replacement }] }];
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ execution: { ...execution, requests: [], adminTargets: [], observations: [{ ...execution.observations[0], kind: 'browser-work' }], reconciliations: [] } }), options), /browser runtime lifecycle evidence/i);
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ execution: { ...execution, requests: execution.requests.map((request, index) => index === 0 ? { ...request, startedAt: '2026-09-04T18:00:02.001Z' } : request) } }), options), /outside its execution interval/i);
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ execution: { ...execution, reconciliations: [] } }), options), /browser runtime lifecycle evidence/i);
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ execution: { ...execution, reconciliations: execution.reconciliations.map(record => ({ ...record, targetAlias: 'qa-player-youth-a' })) } }), options), /browser runtime lifecycle evidence/i);
+});
+
 test('recorder writes sanitized JSON and Markdown with explicit external blockers', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'task3-evidence-'));
   try {
