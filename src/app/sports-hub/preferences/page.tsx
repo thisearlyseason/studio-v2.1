@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { SPORTS_HUB_SPORTS } from '@/lib/sports-hub-types';
 import { cn } from '@/lib/utils';
+import { useUser } from '@/firebase';
+import { readSportsHubPreferences, sportsHubStorageKey } from '@/lib/sports-hub-storage';
 
 type Difficulty = 'youth' | 'high-school' | 'college' | 'professional' | 'recreational';
 
@@ -77,6 +79,7 @@ function SingleSelect({ options, selected, onSelect }: { options: { value: strin
 }
 
 export default function PreferencesPage() {
+  const { user } = useUser();
   const { toast } = useToast();
   const [favoriteSports, setFavoriteSports] = useState<string[]>([]);
   const [coachingLevel, setCoachingLevel] = useState('');
@@ -87,16 +90,13 @@ export default function PreferencesPage() {
 
   useEffect(() => {
     try {
-      const prefs = localStorage.getItem('sh_preferences');
-      if (prefs) {
-        const p = JSON.parse(prefs);
-        setFavoriteSports(p.favoriteSports || []);
-        setCoachingLevel(p.coachingLevel || '');
-        setAgeGroups(p.ageGroups || []);
-        setLeagueType(p.leagueType || '');
-      }
+      const p = readSportsHubPreferences(localStorage, user?.uid);
+      setFavoriteSports(p.favoriteSports || []);
+      setCoachingLevel(p.coachingLevel || '');
+      setAgeGroups(p.ageGroups || []);
+      setLeagueType(p.leagueType || '');
     } catch { /* ignore */ }
-  }, []);
+  }, [user?.uid]);
 
   const toggleSport = (sport: string) =>
     setFavoriteSports((prev) => prev.includes(sport) ? prev.filter((s) => s !== sport) : [...prev, sport]);
@@ -107,7 +107,7 @@ export default function PreferencesPage() {
   const handleSave = async () => {
     setSaving(true);
     await new Promise((r) => setTimeout(r, 500));
-    localStorage.setItem('sh_preferences', JSON.stringify({ favoriteSports, coachingLevel, ageGroups, leagueType }));
+    localStorage.setItem(sportsHubStorageKey('preferences', user?.uid), JSON.stringify({ favoriteSports, coachingLevel, ageGroups, leagueType }));
     setSaving(false);
     setSaved(true);
     toast({ title: 'Preferences Saved', description: 'Your Sports Hub is now personalized.' });

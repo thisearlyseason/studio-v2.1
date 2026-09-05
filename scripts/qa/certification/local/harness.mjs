@@ -196,7 +196,8 @@ export async function startLocalHarness({
   const sessionPrefix = `cert-${runId}`;
   const artifactRoot = path.join(rootDir, 'output/playwright/2026-09-04-final-certification');
   const taskDirectory = batches.length === 1 && batches[0] === 'identity' ? 'task-3'
-    : batches.length === 1 && batches[0] === 'tenants' ? 'task-4' : 'local';
+    : batches.length === 1 && batches[0] === 'tenants' ? 'task-4'
+      : batches.length === 1 && batches[0] === 'operations' ? 'task-5' : 'local';
   const artifactDir = path.join(artifactRoot, taskDirectory, runId);
   const browserSessionRegistry = path.join(artifactDir, 'owned-browser-sessions.txt');
   const processGroupRegistry = path.join(artifactDir, 'owned-service-process-groups.txt');
@@ -297,6 +298,7 @@ export async function startLocalHarness({
         'scripts/qa/run-phase2-emulator-audit.mjs',
         ...(selectedBatches.includes('identity') ? ['--certification-identity'] : []),
         ...(selectedBatches.includes('tenants') ? ['--certification-tenants'] : []),
+        ...(selectedBatches.includes('operations') ? ['--certification-operations'] : []),
         ...(browser ? ['--browser'] : []),
         ...(failFast ? ['--fail-fast'] : []),
         ...selectedScenarioIds.flatMap(scenarioId => ['--scenario', scenarioId]),

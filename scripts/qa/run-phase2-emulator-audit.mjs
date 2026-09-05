@@ -16,6 +16,7 @@ import {
   LOCAL_IDENTITY_CASE_REQUIREMENTS,
 } from './certification/local/batches/identity.mjs';
 import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER, tenantCaseAssociationFor } from './certification/local/batches/tenants.mjs';
+import { OPERATIONS_SCENARIO_IDS } from './certification/local/selection.mjs';
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
@@ -38,9 +39,11 @@ export function resolveAuditRuntimeConfiguration({ environment = process.env, ar
   }
   const certificationIdentity = argv.includes('--certification-identity');
   const certificationTenants = argv.includes('--certification-tenants');
+  const certificationOperations = argv.includes('--certification-operations');
   const allowedScenarios = new Set([
-    ...(certificationIdentity || (!certificationIdentity && !certificationTenants) ? IDENTITY_EXECUTION_ORDER : []),
-    ...(certificationTenants || (!certificationIdentity && !certificationTenants) ? TENANT_EXECUTION_ORDER : []),
+    ...(certificationIdentity || (!certificationIdentity && !certificationTenants && !certificationOperations) ? IDENTITY_EXECUTION_ORDER : []),
+    ...(certificationTenants || (!certificationIdentity && !certificationTenants && !certificationOperations) ? TENANT_EXECUTION_ORDER : []),
+    ...(certificationOperations ? OPERATIONS_SCENARIO_IDS : []),
   ]);
   for (const scenarioId of selectedScenarios) {
     if (!allowedScenarios.has(scenarioId)) throw new Error(`Unknown selected certification scenario ${scenarioId}.`);
@@ -52,6 +55,7 @@ export function resolveAuditRuntimeConfiguration({ environment = process.env, ar
     browserSessionPrefix: environment.AUDIT_BROWSER_SESSION_PREFIX || 'phase2',
     certificationIdentity,
     certificationTenants,
+    certificationOperations,
     runBrowser: argv.includes('--browser'),
     failFast: argv.includes('--fail-fast'),
     selectedScenarios: [...new Set(selectedScenarios)],

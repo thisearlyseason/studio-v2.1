@@ -19,6 +19,21 @@ test('Sports Hub uses its compact search affordance at tablet widths', async () 
   assert.match(layout, /href="\/sports-hub\/search" className="lg:hidden"/);
 });
 
+test('Sports Hub bookmarks and preferences use one safe authenticated storage contract', async () => {
+  const [bookmark, preferences, news] = await Promise.all([
+    source('../src/components/sports-hub/BookmarkButton.tsx'),
+    source('../src/app/sports-hub/preferences/page.tsx'),
+    source('../src/app/sports-hub/news/page.tsx'),
+  ]);
+  for (const component of [bookmark, preferences, news]) {
+    assert.match(component, /sports-hub-storage/);
+    assert.match(component, /useUser/);
+  }
+  assert.doesNotMatch(bookmark, /JSON\.parse\(localStorage\.getItem\('sh_bookmarks'/);
+  assert.doesNotMatch(news, /localStorage\.getItem\('sh-bookmarks'/);
+  assert.doesNotMatch(preferences, /localStorage\.getItem\('sh_preferences'/);
+});
+
 test('desktop and mobile squad switchers share a stable accessible name', async () => {
   const shell = await source('../src/components/layout/Shell.tsx');
   const labels = shell.match(/aria-label="Switch squad"/g) || [];

@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Article } from '@/lib/sports-hub-articles';
 import { useSportsHubArticles } from '@/hooks/use-sports-hub-articles';
+import { useUser } from '@/firebase';
+import { readSportsHubArray, sportsHubStorageKey } from '@/lib/sports-hub-storage';
 
 // ─── Category Config ──────────────────────────────────────────────────────────
 
@@ -48,11 +50,15 @@ const stagger = { visible: { transition: { staggerChildren: 0.05 } } };
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
 function useBookmarks() {
+  const { user } = useUser();
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
-    try { return new Set(JSON.parse(localStorage.getItem('sh-bookmarks') ?? '[]')); }
-    catch { return new Set(); }
+    return new Set(readSportsHubArray(localStorage, 'bookmarks', user?.uid));
   });
+
+  React.useEffect(() => {
+    setBookmarks(new Set(readSportsHubArray(localStorage, 'bookmarks', user?.uid)));
+  }, [user?.uid]);
 
   const toggle = (id: string) => {
     setBookmarks(prev => {
@@ -62,7 +68,7 @@ function useBookmarks() {
       } else {
         next.add(id);
       }
-      try { localStorage.setItem('sh-bookmarks', JSON.stringify([...next])); } catch { /* */ }
+      try { localStorage.setItem(sportsHubStorageKey('bookmarks', user?.uid), JSON.stringify([...next])); } catch { /* */ }
       return next;
     });
   };

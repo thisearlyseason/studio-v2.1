@@ -52,6 +52,10 @@ function dependencies(overrides = {}) {
       events.push(['tenants', scenarios.map(scenario => scenario.id)]);
       return { results: scenarios.map(scenario => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' })), runErrors: [] };
     },
+    runOperationsBatch: async (_context, scenarios) => {
+      events.push(['operations', scenarios.map(scenario => scenario.id)]);
+      return { results: scenarios.map(scenario => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' })), runErrors: [] };
+    },
     createEvidenceRecorder: ({ scenarios }) => ({
       recordScenario(result) { scenariosRecorded.push(result); },
       recordRunError(error) { runErrors.push(error); events.push(['run-error', error]); },
@@ -102,6 +106,27 @@ test('tenant-only and combined selections use one child lifecycle and isolated e
   assert.deepEqual(deps.events.find(([name]) => name === 'child')[1], ['tenants']);
   assert.match(recorderOptions[0].outputDir, /task-4/);
   assert.match(recorderOptions[0].markdownPath || '', /03-tenants\.md$/);
+});
+
+test('operations selection has its own evidence target and uses the shared lifecycle once', async () => {
+  const recorderOptions = [];
+  const deps = dependencies({
+    markdownPath: undefined,
+    createEvidenceRecorder: options => {
+      recorderOptions.push(options);
+      return {
+        recordScenario(result) { deps.scenariosRecorded.push(result); },
+        recordRunError() {},
+        async writeSummary({ markdownPath }) { return { results: [], runErrors: [], markdownPath }; },
+      };
+    },
+  });
+  await main(['--scenario', 'events-event-crud-recurrence'], deps);
+  assert.equal(deps.events.filter(([name]) => name === 'child').length, 1);
+  assert.deepEqual(deps.events.find(([name]) => name === 'child')[1], ['operations']);
+  assert.deepEqual(deps.events.find(([name]) => name === 'operations')[1], ['events-event-crud-recurrence']);
+  assert.match(recorderOptions[0].outputDir, /task-5/);
+  assert.match(recorderOptions[0].markdownPath || '', /04-operations\.md$/);
 });
 
 test('browser selection refuses a missing wrapper before starting any process', async () => {

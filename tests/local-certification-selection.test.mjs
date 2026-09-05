@@ -43,8 +43,36 @@ const TENANT_IDS = [
   'family-enable-youth-login',
 ];
 
+const OPERATIONS_IDS = [
+  'attendance-practice-event-member-attendance',
+  'events-event-crud-recurrence',
+  'events-rsvp-attendance-details',
+  'calendar-team-family-views-and-filters',
+  'calendar-ics-create-fetch-revoke',
+  'reminders-same-day-fcm-scheduler',
+  'practice-practice-plans-templates',
+  'practice-drill-playbook-crud-search',
+  'practice-film-upload-coach-marks-watch',
+  'feed-post-media-comment-moderation',
+  'chat-channel-message-unread',
+  'polls-create-vote-change-tally',
+  'email-verification-reset-welcome-team-email',
+  'newsletter-subscribe-unsubscribe-admin-compose',
+  'push-device-registration-preferences-target-send',
+  'files-library-crud-download',
+  'files-avatar-branding-player-media-paths',
+  'waivers-team-global-waiver-lifecycle',
+  'waivers-parent-player-coach-signature',
+  'forms-league-tournament-registration-builder',
+  'safety-incident-create-read-export',
+  'facilities-facility-field-crud-rename',
+  'facilities-availability-booking-delete',
+  'equipment-inventory-assignment-return',
+  'sports-hub-browse-search-filter-bookmark-preferences',
+];
+
 test('identity assignment owns the exact 11 Task 3 scenarios in catalog order', () => {
-  assert.deepEqual(LOCAL_BATCH_ORDER, ['identity', 'tenants']);
+  assert.deepEqual(LOCAL_BATCH_ORDER, ['identity', 'tenants', 'operations']);
   assert.deepEqual(SCENARIO_BATCH_ASSIGNMENTS.identity, IDENTITY_IDS);
 
   const selected = selectLocalScenarios({ batches: ['identity'], catalog: CERTIFICATION_SCENARIOS });
@@ -60,6 +88,15 @@ test('tenant assignment owns exactly the 16 Task 4 scenarios in frozen catalog o
   assert.deepEqual(selected.map(scenario => scenario.id), TENANT_IDS);
   assert.equal(new Set(selected.map(scenario => scenario.id)).size, 16);
   assert.ok(Object.isFrozen(SCENARIO_BATCH_ASSIGNMENTS.tenants));
+});
+
+test('operations assignment owns exactly the 25 Task 5 scenarios in frozen catalog order', () => {
+  assert.deepEqual(LOCAL_BATCH_ORDER, ['identity', 'tenants', 'operations']);
+  assert.deepEqual(SCENARIO_BATCH_ASSIGNMENTS.operations, OPERATIONS_IDS);
+  const selected = selectLocalScenarios({ batches: ['operations'], catalog: CERTIFICATION_SCENARIOS });
+  assert.deepEqual(selected.map(scenario => scenario.id), OPERATIONS_IDS);
+  assert.equal(new Set(selected.map(scenario => scenario.id)).size, 25);
+  assert.equal(selected.some(scenario => scenario.id === 'sports-hub-rss-refresh-admin-publish'), false);
 });
 
 test('tenant selection excludes adjacent and established scenarios', () => {
@@ -100,7 +137,7 @@ test('CLI parser requires a selector and supports the documented positional comp
     batches: ['identity'], scenarioIds: [], browser: true, failFast: true, list: false,
   });
   assert.deepEqual(parseLocalBatchArgs(['--all-local']), {
-    batches: ['identity', 'tenants'], scenarioIds: [], browser: false, failFast: false, list: false,
+    batches: ['identity', 'tenants', 'operations'], scenarioIds: [], browser: false, failFast: false, list: false,
   });
   assert.deepEqual(parseLocalBatchArgs(['--list']), {
     batches: [], scenarioIds: [], browser: false, failFast: false, list: true,
@@ -129,7 +166,7 @@ test('selection rejects unknown batches, flags, scenarios, and non-local ownersh
   assert.throws(() => parseLocalBatchArgs(['--unknown']), /Unknown local certification argument/);
   assert.throws(() => selectLocalScenarios({ scenarioIds: ['not-a-scenario'] }), /Unknown certification scenario/);
   assert.throws(
-    () => selectLocalScenarios({ scenarioIds: ['attendance-practice-event-member-attendance'] }),
+    () => selectLocalScenarios({ scenarioIds: ['games-team-score-create-edit-reset'] }),
     /not assigned to a local batch/,
   );
 });

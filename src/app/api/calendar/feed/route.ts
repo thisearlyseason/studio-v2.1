@@ -118,7 +118,10 @@ export async function POST(req: NextRequest) {
       return true;
     });
 
-    const token = existing?.id || randomBytes(32).toString('base64url');
+    // Firebase's deployed feed function deliberately accepts exactly 64
+    // lowercase hexadecimal characters. Keep the issuer and verifier on the
+    // same opaque-token format so a newly created feed is fetchable.
+    const token = existing?.id || randomBytes(32).toString('hex');
     if (!existing) {
       const userSnapshot = await adminDb.collection('users').doc(auth.uid).get();
       const now = new Date().toISOString();

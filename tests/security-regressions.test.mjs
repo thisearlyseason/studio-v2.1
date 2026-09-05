@@ -196,7 +196,9 @@ test('calendar feeds are server-issued and revalidate current squad membership',
   assert.doesNotMatch(provider, /Math\.random\(\)[\s\S]*calendarFeeds/);
   assert.match(route, /verifyFirebaseToken/);
   assert.match(route, /assertNonAnonymous/);
-  assert.match(route, /randomBytes\(32\)/);
+  // The Function intentionally accepts a 64-character lowercase hex ID. A
+  // base64url ID generated here cannot ever reach the authorized feed record.
+  assert.match(route, /randomBytes\(32\)\.toString\('hex'\)/);
   assert.match(route, /serverIssued: true/);
   assert.match(route, /canAccessTeam/);
   assert.match(route, /process\.env\.CALENDAR_FEED_BASE_URL/);

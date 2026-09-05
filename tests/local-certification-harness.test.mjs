@@ -197,6 +197,26 @@ test('combined harness gives the child a batch-aware artifact root', async () =>
   await harness.close();
 });
 
+test('operations harness keeps one managed child lifecycle and passes only its explicit certification flag', async () => {
+  const calls = [];
+  const harness = await startLocalHarness(options({
+    batches: ['operations'],
+    dependencies: {
+      ...options().dependencies,
+      execute: async input => { calls.push(input); return { code: 0, stdout: '', stderr: '' }; },
+    },
+  }));
+  await harness.runLegacyCertificationAudit({ batches: ['operations'], selectedScenarioIds: ['events-event-crud-recurrence'] });
+  assert.deepEqual(calls[0].args, [
+    'scripts/qa/run-phase2-emulator-audit.mjs',
+    '--certification-operations',
+    '--scenario',
+    'events-event-crud-recurrence',
+  ]);
+  assert.match(harness.artifactDir, /task-5/);
+  await harness.close();
+});
+
 test('run suffixes reject legacy or unsafe values', async () => {
   await assert.rejects(() => startLocalHarness(options({ runSuffix: 'phase2' })), /unique Task 3 run suffix/);
   await assert.rejects(() => startLocalHarness(options({ runSuffix: 'Task 3 unsafe' })), /lowercase run suffix/);

@@ -1,6 +1,34 @@
 import { CERTIFICATION_SCENARIOS } from '../scenario-catalog.mjs';
 
-export const LOCAL_BATCH_ORDER = Object.freeze(['identity', 'tenants']);
+export const LOCAL_BATCH_ORDER = Object.freeze(['identity', 'tenants', 'operations']);
+
+export const OPERATIONS_SCENARIO_IDS = Object.freeze([
+  'attendance-practice-event-member-attendance',
+  'events-event-crud-recurrence',
+  'events-rsvp-attendance-details',
+  'calendar-team-family-views-and-filters',
+  'calendar-ics-create-fetch-revoke',
+  'reminders-same-day-fcm-scheduler',
+  'practice-practice-plans-templates',
+  'practice-drill-playbook-crud-search',
+  'practice-film-upload-coach-marks-watch',
+  'feed-post-media-comment-moderation',
+  'chat-channel-message-unread',
+  'polls-create-vote-change-tally',
+  'email-verification-reset-welcome-team-email',
+  'newsletter-subscribe-unsubscribe-admin-compose',
+  'push-device-registration-preferences-target-send',
+  'files-library-crud-download',
+  'files-avatar-branding-player-media-paths',
+  'waivers-team-global-waiver-lifecycle',
+  'waivers-parent-player-coach-signature',
+  'forms-league-tournament-registration-builder',
+  'safety-incident-create-read-export',
+  'facilities-facility-field-crud-rename',
+  'facilities-availability-booking-delete',
+  'equipment-inventory-assignment-return',
+  'sports-hub-browse-search-filter-bookmark-preferences',
+]);
 
 export const SCENARIO_BATCH_ASSIGNMENTS = Object.freeze({
   identity: Object.freeze([
@@ -34,6 +62,7 @@ export const SCENARIO_BATCH_ASSIGNMENTS = Object.freeze({
     'family-schedule-waivers-payments',
     'family-enable-youth-login',
   ]),
+  operations: OPERATIONS_SCENARIO_IDS,
 });
 
 const assignmentEntries = Object.entries(SCENARIO_BATCH_ASSIGNMENTS).flatMap(([batch, ids]) => (

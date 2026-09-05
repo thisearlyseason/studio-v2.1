@@ -146,6 +146,7 @@ test('certification identity mode accepts a unique local scope without changing 
     browserSessionPrefix: 'cert-final-cert-t3-20260904-180000-a1-identity',
     certificationIdentity: true,
     certificationTenants: false,
+    certificationOperations: false,
     runBrowser: true,
     failFast: false,
     selectedScenarios: [],
@@ -158,6 +159,7 @@ test('certification identity mode accepts a unique local scope without changing 
     browserSessionPrefix: 'phase2',
     certificationIdentity: false,
     certificationTenants: false,
+    certificationOperations: false,
     runBrowser: false,
     failFast: false,
     selectedScenarios: [],
@@ -172,6 +174,17 @@ test('legacy configurable runtime exposes explicit fail-fast without conflating 
   assert.equal(configured.failFast, true);
   assert.equal(configured.runBrowser, false);
   assert.match(source, /runSelectedCertificationBatches\(\{[\s\S]*?failFast:\s*certificationFailFast,/);
+});
+
+test('operations certification selection remains explicit and does not widen legacy certification batches', () => {
+  const configured = auditRunner.resolveAuditRuntimeConfiguration({
+    environment: {},
+    argv: ['--certification-operations', '--scenario', 'events-event-crud-recurrence'],
+  });
+  assert.equal(configured.certificationIdentity, false);
+  assert.equal(configured.certificationTenants, false);
+  assert.equal(configured.certificationOperations, true);
+  assert.deepEqual(configured.selectedScenarios, ['events-event-crud-recurrence']);
 });
 
 test('combined certification dispatch executes identity then tenants', async () => {
