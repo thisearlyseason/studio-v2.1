@@ -6610,13 +6610,14 @@ function recordBlockedOperationsCases(scenarioId, reason, dimensions = DIMENSION
 }
 
 function recordObservedOperationsCase(scenarioId, dimension, observed) {
+  const firstCapturedAt = activeCertificationAssertions.map(assertion => assertion.capturedAt).filter(Boolean).sort()[0] || null;
   recordCertificationCase(
     scenarioId,
     dimension,
     LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension][0],
     observed,
     'case-owned local browser/API assertions completed',
-    null,
+    firstCapturedAt,
     { assertions: [...activeCertificationAssertions] },
   );
 }

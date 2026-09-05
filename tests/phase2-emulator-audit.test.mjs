@@ -192,6 +192,7 @@ test('managed operations chat dispatch emits one attributable result for each lo
   const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
   const operationsBlock = source.slice(start, end);
   assert.match(operationsBlock, /function recordBlockedOperationsCases\(scenarioId, reason, dimensions = DIMENSION_NAMES\)/);
+  assert.match(operationsBlock, /const firstCapturedAt = activeCertificationAssertions\.map\(assertion => assertion\.capturedAt\)\.filter\(Boolean\)\.sort\(\)\[0\] \|\| null;/);
   assert.match(operationsBlock, /for \(const dimension of \['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'\]\)/);
   assert.doesNotMatch(operationsBlock, /recordBlockedOperationsCases\(scenarioId,[\s\S]*?390x844/);
   assert.match(source, /const emptySendDisabled = await page\.getByRole\('button', \{ name: 'Send message' \}\)\.isDisabled\(\)/);
