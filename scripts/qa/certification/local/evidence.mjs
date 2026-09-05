@@ -79,7 +79,7 @@ export function makeDimension(state, caseIds = [], note = '') {
   });
 }
 
-function validateCleanup(scenario, result, { artifactRoot } = {}) {
+function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expectedCommit } = {}) {
   const cleanup = result.cleanup;
   if (!cleanup || typeof cleanup !== 'object') throw new Error(`${result.scenarioId} requires cleanup metadata.`);
   if (cleanup.owner !== scenario.cleanupOwner) {
@@ -110,6 +110,14 @@ function validateCleanup(scenario, result, { artifactRoot } = {}) {
     for (const proof of cleanup.proof) {
       const proofPath = resolveContainedArtifact(artifactRoot, proof);
       const parsed = JSON.parse(readFileSync(proofPath, 'utf8'));
+      assertNoProtectedEvidence(parsed, `cleanup artifact ${proof}`);
+      if ((expectedRunId && parsed.runId !== expectedRunId) || (expectedCommit && parsed.commit !== expectedCommit)) {
+        throw new Error(`${result.scenarioId} cleanup proof run/candidate provenance does not match.`);
+      }
+      const cleanupCapturedAt = parseTimestamp(parsed.capturedAt, 'cleanup artifact capturedAt');
+      if (cleanupCapturedAt < parseTimestamp(result.startedAt, 'result startedAt')) {
+        throw new Error(`${result.scenarioId} cleanup proof timestamp predates the result.`);
+      }
       const stateMatches = parsed.state === cleanup.state ||
         (scenario.cleanupOwner === 'background-batch' && cleanup.state === 'BLOCKED_PRECONDITION' && parsed.state === 'OBSERVED');
       if (!stateMatches || JSON.stringify(parsed.counts) !== JSON.stringify(cleanup.counts)) {
@@ -119,7 +127,7 @@ function validateCleanup(scenario, result, { artifactRoot } = {}) {
   }
 }
 
-function validateResult(scenario, result, { artifactRoot, caseRequirements } = {}) {
+function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit } = {}) {
   assertNoProtectedEvidence(result);
   assertPlainString(result.environment, 'environment');
   if (!scenario.environments.includes(result.environment)) {
@@ -131,6 +139,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements } = {
     throw new Error(`${result.scenarioId} environment gaps do not match its frozen contract.`);
   }
   assertPlainString(result.commit, 'commit');
+  if (expectedCommit && result.commit !== expectedCommit) throw new Error(`${result.scenarioId} result candidate provenance does not match.`);
   assertPlainString(result.revision, 'revision');
   const resultStartedAt = parseTimestamp(result.startedAt, 'startedAt');
   const resultCompletedAt = parseTimestamp(result.completedAt, 'completedAt');
@@ -166,7 +175,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements } = {
     if (caseCompletedAt < caseStartedAt || caseStartedAt < resultStartedAt || caseCompletedAt > resultCompletedAt) {
       throw new Error(`${caseRecord.caseId} timestamp range is invalid.`);
     }
-    if (!['OBSERVED', 'FAIL'].includes(caseRecord.state)) throw new Error(`${caseRecord.caseId} has invalid case state.`);
+    if (!['OBSERVED', 'NOT_OBSERVED', 'FAIL'].includes(caseRecord.state)) throw new Error(`${caseRecord.caseId} has invalid case state.`);
     if (!DIMENSION_NAMES.includes(caseRecord.dimension)) throw new Error(`${caseRecord.caseId} has invalid case dimension.`);
     if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
     const allowedCases = requiredByDimension[caseRecord.dimension];
@@ -174,18 +183,39 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements } = {
       throw new Error(`${caseRecord.caseId} is not a required case for ${caseRecord.dimension}.`);
     }
     if (artifactRoot) {
-      if (caseRecord.artifacts.length === 0) throw new Error(`${caseRecord.caseId} requires an inspectable artifact.`);
+      if (caseRecord.state !== 'NOT_OBSERVED' && caseRecord.artifacts.length === 0) throw new Error(`${caseRecord.caseId} requires an inspectable artifact.`);
       for (const artifact of caseRecord.artifacts) {
         const artifactPath = resolveContainedArtifact(artifactRoot, artifact);
         const parsed = JSON.parse(readFileSync(artifactPath, 'utf8'));
+        assertNoProtectedEvidence(parsed, `artifact ${artifact}`);
+        if ((expectedRunId && parsed.runId !== expectedRunId) || (expectedCommit && parsed.commit !== expectedCommit)) {
+          throw new Error(`${caseRecord.caseId} artifact run/candidate provenance does not match.`);
+        }
         if (parsed.scenarioId !== result.scenarioId || parsed.caseId !== caseRecord.caseId || parsed.dimension !== caseRecord.dimension) {
           throw new Error(`${caseRecord.caseId} artifact provenance does not match its case.`);
         }
         if (JSON.stringify(parsed.actorAliases) !== JSON.stringify(caseRecord.actorAliases)) {
           throw new Error(`${caseRecord.caseId} artifact actor provenance does not match its case.`);
         }
+        if (parsed.expected !== caseRecord.expected || parsed.observed !== caseRecord.observed) {
+          throw new Error(`${caseRecord.caseId} artifact expected/observed provenance does not match its case.`);
+        }
+        const artifactCapturedAt = parseTimestamp(parsed.capturedAt, 'artifact capturedAt');
+        if (artifactCapturedAt < caseStartedAt || artifactCapturedAt > caseCompletedAt) {
+          throw new Error(`${caseRecord.caseId} artifact timestamp is outside its case range.`);
+        }
         if (caseRecord.state === 'OBSERVED' && (!Array.isArray(parsed.assertions) || parsed.assertions.length === 0)) {
           throw new Error(`${caseRecord.caseId} observed artifact requires exact assertions.`);
+        }
+        for (const assertion of parsed.assertions || []) {
+          assertPlainString(assertion.label, 'artifact assertion label');
+          if (String(assertion.expected) !== String(assertion.observed)) {
+            throw new Error(`${caseRecord.caseId} artifact assertion mismatch for ${assertion.label}.`);
+          }
+          const assertionCapturedAt = parseTimestamp(assertion.capturedAt, 'artifact assertion capturedAt');
+          if (assertionCapturedAt < caseStartedAt || assertionCapturedAt > caseCompletedAt) {
+            throw new Error(`${caseRecord.caseId} artifact assertion timestamp is outside its case range.`);
+          }
         }
       }
     }
@@ -229,14 +259,14 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements } = {
   const hasFailure = DIMENSION_NAMES.some(name => result.dimensions[name].state === 'FAIL') ||
     result.cases.some(caseRecord => caseRecord.state === 'FAIL');
   if ((result.outcome === 'FAIL') !== hasFailure) throw new Error(`${result.scenarioId} outcome does not match case failures.`);
-  if (result.outcome === 'OBSERVED' && (derivedMissing.length > 0 || result.externalRequirements.length > 0)) {
-    throw new Error(`${result.scenarioId} observed outcome conflicts with missing or external requirements.`);
+  if (result.outcome === 'OBSERVED' && (derivedMissing.length > 0 || result.externalRequirements.length > 0 || result.environmentGaps.length > 0)) {
+    throw new Error(`${result.scenarioId} observed outcome conflicts with missing dimensions, external requirements, or environment gaps.`);
   }
   const artifactUnion = [...new Set(result.cases.flatMap(item => item.artifacts))];
   if (JSON.stringify(result.artifacts) !== JSON.stringify(artifactUnion)) {
     throw new Error(`${result.scenarioId} artifact list does not reconcile with case artifacts.`);
   }
-  validateCleanup(scenario, result, { artifactRoot });
+  validateCleanup(scenario, result, { artifactRoot, expectedRunId, expectedCommit });
   return result;
 }
 
@@ -321,7 +351,12 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
       runErrors.push({ stage: error.stage, diagnostic: error.diagnostic });
     },
     async writeSummary({ markdownPath }) {
-      const results = validateScenarioResults(scenarios, recorded, { artifactRoot: outputDir, caseRequirements });
+      const results = validateScenarioResults(scenarios, recorded, {
+        artifactRoot: outputDir,
+        caseRequirements,
+        expectedRunId: runId,
+        expectedCommit: commit,
+      });
       const summary = { runId, commit, generatedAt: new Date().toISOString(), runErrors, results };
       assertNoProtectedEvidence(summary);
       await writeAtomically(path.join(outputDir, 'results.json'), `${JSON.stringify(summary, null, 2)}\n`);

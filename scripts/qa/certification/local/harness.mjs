@@ -95,6 +95,62 @@ export async function closeRegisteredBrowserSessions({
   await rm(registryPath, { force: true });
 }
 
+function defaultSignalProcessGroup(pid, signal) {
+  process.kill(-pid, signal);
+}
+
+function defaultIsProcessGroupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+export async function closeRegisteredProcessGroups({
+  registryPath,
+  signalProcessGroup = defaultSignalProcessGroup,
+  isProcessGroupAlive = defaultIsProcessGroupAlive,
+  maxAttempts = 2,
+  settleMs = 1_000,
+}) {
+  let contents = '';
+  try {
+    contents = await readFile(registryPath, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return;
+    throw error;
+  }
+  const groups = [...new Set(contents.split('\n').map(value => value.trim()).filter(Boolean))];
+  if (groups.some(value => !/^[1-9]\d{0,9}$/.test(value) || Number(value) <= 1 || Number(value) === process.pid)) {
+    throw new Error('Service process-group registry contains a non-owned process group.');
+  }
+  let pending = groups.map(Number).reverse().filter(pid => isProcessGroupAlive(pid));
+  for (let attempt = 1; attempt <= maxAttempts && pending.length > 0; attempt += 1) {
+    const signal = attempt === maxAttempts ? 'SIGKILL' : 'SIGTERM';
+    for (const pid of pending) {
+      try {
+        signalProcessGroup(pid, signal);
+      } catch (error) {
+        if (error?.code !== 'ESRCH') throw error;
+      }
+    }
+    const deadline = Date.now() + settleMs;
+    do {
+      pending = pending.filter(pid => isProcessGroupAlive(pid));
+      if (pending.length === 0 || Date.now() >= deadline) break;
+      await new Promise(resolve => setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))));
+    } while (pending.length > 0);
+  }
+  if (pending.length > 0) {
+    await writeFile(registryPath, `${pending.join('\n')}\n`, { mode: 0o600 });
+    throw new Error(`Failed to terminate ${pending.length} registered service process group(s).`);
+  }
+  await rm(registryPath, { force: true });
+}
+
 function validateBoundary({ projectId, endpoints, runSuffix, browser, playwrightCli }) {
   if (!String(projectId).startsWith('demo-')) throw new Error('Local certification project must use a demo-* Firebase project ID.');
   if (!isLoopbackAuthority(endpoints.auth)) throw new Error('Auth emulator must be loopback.');
@@ -116,6 +172,7 @@ function redactText(value, runtimeSecret) {
 export async function startLocalHarness({
   rootDir,
   runSuffix,
+  commit = 'local-test-candidate',
   projectId = 'demo-the-squad-audit',
   playwrightCli = '',
   browser = false,
@@ -137,6 +194,11 @@ export async function startLocalHarness({
   const sessionPrefix = `cert-${runId}-identity`;
   const artifactDir = path.join(rootDir, 'output/playwright/2026-09-04-final-certification/task-3', runId);
   const browserSessionRegistry = path.join(artifactDir, 'owned-browser-sessions.txt');
+  const processGroupRegistry = path.join(artifactDir, 'owned-service-process-groups.txt');
+  // A Task 3 run suffix is unique in production use. Clearing a stale registry
+  // before execution also makes an interrupted/retried harness fail closed
+  // without inheriting process identities from an earlier owner.
+  await rm(processGroupRegistry, { force: true });
   const env = buildIsolatedAuditEnvironment(baseEnvironment, {
     AUDIT_FIXTURE_PASSWORD: runtimeSecret,
     AUDIT_FIXTURE_RUN_SUFFIX: runSuffix,
@@ -145,6 +207,9 @@ export async function startLocalHarness({
     AUDIT_BASE_URL: endpoints.app,
     AUDIT_ARTIFACT_DIR: artifactDir,
     AUDIT_BROWSER_SESSION_REGISTRY: browserSessionRegistry,
+    AUDIT_PROCESS_GROUP_REGISTRY: processGroupRegistry,
+    AUDIT_CERTIFICATION_RUN_ID: runId,
+    AUDIT_CERTIFICATION_COMMIT: commit,
     AUDIT_LOCAL_MAIL_TRANSPORT: 'memory-sink',
     NEXT_PUBLIC_APP_URL: endpoints.app,
     FIREBASE_AUTH_EMULATOR_HOST: endpoints.auth,
@@ -184,6 +249,12 @@ export async function startLocalHarness({
           if (!await waitForExecution()) throw new Error('Identity audit child did not terminate after forced shutdown.');
         }
       }
+      await closeRegisteredProcessGroups({
+        registryPath: processGroupRegistry,
+        signalProcessGroup: dependencies.signalProcessGroup,
+        isProcessGroupAlive: dependencies.isProcessGroupAlive,
+        settleMs: dependencies.processGroupSettleMs,
+      });
       if (browser) {
         await closeRegisteredBrowserSessions({
           registryPath: browserSessionRegistry,

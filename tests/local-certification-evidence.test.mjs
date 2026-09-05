@@ -155,12 +155,16 @@ test('validation enforces required case IDs and inspectable contained artifact p
       caseId,
       dimension: 'happyPath',
       actorAliases: caseRecord.actorAliases,
-      assertions: [{ label: 'stored once', observed: 'true' }],
+      expected: caseRecord.expected,
+      observed: caseRecord.observed,
+      capturedAt: '2026-09-04T18:00:01.500Z',
+      assertions: [{ label: 'stored once', expected: 'true', observed: 'true', capturedAt: '2026-09-04T18:00:01.250Z' }],
     }));
     await mkdir(path.join(directory, 'cleanup'));
     await writeFile(path.join(directory, 'cleanup/marker.json'), JSON.stringify({
       state: 'OBSERVED',
       counts: result.cleanup.counts,
+      capturedAt: '2026-09-04T18:02:00.000Z',
     }));
     result.cleanup.proof = ['cleanup/marker.json'];
     assert.equal(validateScenarioResults([scenario], [result], options)[0].scenarioId, scenario.id);
@@ -174,6 +178,59 @@ test('validation enforces required case IDs and inspectable contained artifact p
       cases: [{ ...caseRecord, artifacts: ['../outside.json'] }],
       artifacts: ['../outside.json'],
     }], options), /contained/i);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('validation rejects observed outcomes with required environment gaps and adversarial artifact contents', async () => {
+  assert.throws(() => validateScenarioResults([scenario], [validResult({
+    outcome: 'OBSERVED',
+    externalRequirements: [],
+  })]), /environment gaps/i);
+
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'task3-adversarial-artifact-'));
+  await mkdir(path.join(directory, 'cases'));
+  await mkdir(path.join(directory, 'cleanup'));
+  const caseId = 'marketing-local-happyPath';
+  const caseRecord = {
+    actorAliases: ['qa-public-submitter'], caseId, dimension: 'happyPath', role: 'V',
+    tenantAlias: 'not-applicable', expected: 'stored once', observed: 'stored once', state: 'OBSERVED',
+    startedAt: '2026-09-04T18:00:01.000Z', completedAt: '2026-09-04T18:00:02.000Z',
+    artifacts: [`cases/${caseId}.json`],
+  };
+  const result = validResult({
+    dimensions: { ...validResult().dimensions, happyPath: makeDimension('OBSERVED', [caseId], 'local') },
+    cases: [caseRecord], artifacts: [...caseRecord.artifacts],
+    missingDimensions: DIMENSION_NAMES.filter(name => name !== 'happyPath'),
+    cleanup: { ...validResult().cleanup, proof: ['cleanup/marker.json'] },
+  });
+  const options = {
+    artifactRoot: directory,
+    caseRequirements: { [scenario.id]: { happyPath: [caseId] } },
+    expectedRunId: 'final-cert-t3-evidence-a1',
+    expectedCommit: result.commit,
+  };
+  await writeFile(path.join(directory, 'cleanup/marker.json'), JSON.stringify({
+    runId: options.expectedRunId, commit: result.commit, capturedAt: '2026-09-04T18:02:00.000Z',
+    state: 'OBSERVED', counts: result.cleanup.counts,
+  }));
+  const writeArtifact = artifact => writeFile(path.join(directory, `cases/${caseId}.json`), JSON.stringify(artifact));
+  const baseArtifact = {
+    runId: options.expectedRunId, commit: result.commit,
+    scenarioId: scenario.id, caseId, dimension: 'happyPath', actorAliases: caseRecord.actorAliases,
+    expected: caseRecord.expected, observed: caseRecord.observed, capturedAt: '2026-09-04T18:00:01.500Z',
+    assertions: [{ label: 'stored once', expected: 'true', observed: 'true', capturedAt: '2026-09-04T18:00:01.250Z' }],
+  };
+  try {
+    await writeArtifact({ ...baseArtifact, assertions: [{ ...baseArtifact.assertions[0], observed: 'false' }] });
+    assert.throws(() => validateScenarioResults([scenario], [result], options), /assertion.*mismatch/i);
+    await writeArtifact({ ...baseArtifact, assertions: [{ ...baseArtifact.assertions[0], password: 'exposed' }] });
+    assert.throws(() => validateScenarioResults([scenario], [result], options), /protected evidence/i);
+    await writeArtifact({ ...baseArtifact, capturedAt: '2026-09-04T19:00:00.000Z' });
+    assert.throws(() => validateScenarioResults([scenario], [result], options), /artifact timestamp/i);
+    await writeArtifact({ ...baseArtifact, runId: 'foreign-run' });
+    assert.throws(() => validateScenarioResults([scenario], [result], options), /run\/candidate provenance/i);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -253,6 +310,9 @@ test('recorder writes sanitized JSON and Markdown with explicit external blocker
   const directory = await mkdtemp(path.join(os.tmpdir(), 'task3-evidence-'));
   try {
     await writeFile(path.join(directory, 'cleanup-marker-final-cert-t3-evidence-a1'), JSON.stringify({
+      runId: 'final-cert-t3-evidence-a1',
+      commit: '0123456789abcdef0123456789abcdef01234567',
+      capturedAt: '2026-09-04T18:02:00.000Z',
       state: 'OBSERVED',
       counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 },
     }));

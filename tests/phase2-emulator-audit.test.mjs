@@ -537,6 +537,17 @@ test('Task 3 case artifacts sanitize actor values before writing', () => {
   assert.doesNotMatch(JSON.stringify(sanitized), /token-value|oobCode=secret/);
 });
 
+test('Task 3 artifact sanitation replaces embedded emails and registered dynamic identities', () => {
+  assert.equal(typeof auditRunner.registerCertificationSensitiveAlias, 'function');
+  auditRunner.registerCertificationSensitiveAlias('example-unaliased-uid', 'signup-browser-coach');
+  const sanitized = auditRunner.sanitizeCertificationArtifact({
+    detail: 'user owned@example.test failed for example-unaliased-uid',
+    selector: 'auth:signup-browser-coach:example-unaliased-uid',
+  });
+  assert.equal(sanitized.detail, 'user [synthetic-email] failed for [signup-browser-coach]');
+  assert.equal(sanitized.selector, 'auth:signup-browser-coach:[signup-browser-coach]');
+});
+
 test('Task 3 case selection requires every exact assertion and excludes unrelated scenario assertions', () => {
   assert.equal(typeof auditRunner.selectCertificationCaseAssertions, 'function');
   const assertions = [

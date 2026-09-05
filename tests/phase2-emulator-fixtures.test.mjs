@@ -55,3 +55,13 @@ test('Phase 2 fixture teams suppress outbound notification providers during loca
   assert.ok(profiles.every(profile => profile.data.fcmTokens.length === 0));
   assert.ok(profiles.every(profile => profile.data.webPushSubscriptions.length === 0));
 });
+
+test('baseline cleanup attempts every exact selector and every provider stage with bounded verification retries', () => {
+  assert.match(source, /async function cleanupExactResources/);
+  assert.match(source, /for \(const resource of pending\)/);
+  assert.match(source, /mutatedUnits\.set\(resource\.id, Math\.max/);
+  assert.match(source, /Promise\.allSettled\(\[/);
+  assert.match(source, /cleanupFirestore\(db\)/);
+  assert.match(source, /cleanupAuth\(auth\)/);
+  assert.match(source, /cleanupStorage\(bucket\)/);
+});

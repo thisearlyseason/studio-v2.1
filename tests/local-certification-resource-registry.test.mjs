@@ -94,6 +94,32 @@ test('dynamic registry reconciles an already-absent resource without counting a 
   assert.deepEqual(result.reconciled, { deleted: 1, restored: 0, retainedAuditRecords: 0 });
 });
 
+test('dynamic registry preserves a measured mutation when verification fails transiently', async () => {
+  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = module.createResourceRegistry({ maxAttempts: 2 });
+  let present = true;
+  let verificationAttempts = 0;
+  registry.register({
+    id: 'auth:deleted-before-transient-verification', kind: 'deleted',
+    async cleanup() {
+      if (!present) return false;
+      present = false;
+      return true;
+    },
+    async verify() {
+      verificationAttempts += 1;
+      if (verificationAttempts === 1) throw new Error('transient verification read');
+      return !present;
+    },
+  });
+
+  const result = await registry.cleanup();
+  assert.equal(result.state, 'OBSERVED');
+  assert.deepEqual(result.counts, { deleted: 1, restored: 0, retainedAuditRecords: 0 });
+  assert.deepEqual(result.reconciled, { deleted: 1, restored: 0, retainedAuditRecords: 0 });
+  assert.equal(verificationAttempts, 2);
+});
+
 test('cleanup results merge immediate scenario cleanup with final fallback cleanup', async () => {
   const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
   const merged = module.mergeResourceCleanupResults([

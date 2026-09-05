@@ -25,6 +25,65 @@ function inviteIsUsable(data: Record<string, any>): boolean {
   return Number.isFinite(expiry) && expiry > Date.now();
 }
 
+type AuthorizedMembershipBinding = {
+  teamId: string;
+  memberId: string;
+};
+
+function activeChildRosterBinding(
+  childId: string,
+  parentId: string,
+  path: string,
+  data: Record<string, any>
+): AuthorizedMembershipBinding | null {
+  const segments = path.split('/');
+  if (
+    segments.length !== 4 ||
+    segments[0] !== 'teams' ||
+    segments[2] !== 'members' ||
+    data.parentId !== parentId ||
+    data.status === 'removed' ||
+    data.isDeleted === true ||
+    (data.playerId !== childId && segments[3] !== childId)
+  ) {
+    return null;
+  }
+  const teamId = cleanChildId(segments[1]);
+  const memberId = cleanChildId(segments[3]);
+  return teamId && memberId ? { teamId, memberId } : null;
+}
+
+async function findAuthorizedMemberships(
+  childId: string,
+  parentId: string
+): Promise<AuthorizedMembershipBinding[]> {
+  const candidates = await adminDb
+    .collectionGroup('members')
+    .where('parentId', '==', parentId)
+    .limit(200)
+    .get();
+  const bindings = candidates.docs
+    .map(snapshot => activeChildRosterBinding(childId, parentId, snapshot.ref.path, snapshot.data()))
+    .filter((binding): binding is AuthorizedMembershipBinding => binding !== null);
+  return [...new Map(bindings.map(binding => [`${binding.teamId}/${binding.memberId}`, binding])).values()];
+}
+
+function readAuthorizedMemberships(value: unknown): AuthorizedMembershipBinding[] | null {
+  // Invitations created before membership binding remain redeemable, but they
+  // cannot mint team authority. Teamless children intentionally use [].
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+  const bindings: AuthorizedMembershipBinding[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object') return null;
+    const teamId = cleanChildId((candidate as Record<string, unknown>).teamId);
+    const memberId = cleanChildId((candidate as Record<string, unknown>).memberId);
+    if (!teamId || !memberId) return null;
+    bindings.push({ teamId, memberId });
+  }
+  return [...new Map(bindings.map(binding => [`${binding.teamId}/${binding.memberId}`, binding])).values()];
+}
+
 export async function GET(req: NextRequest) {
   try {
     const token = req.nextUrl.searchParams.get('token') || '';
@@ -115,6 +174,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const authorizedMemberships = await findAuthorizedMemberships(childId, auth.uid);
     const token = randomBytes(24).toString('hex');
     const sentAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + INVITE_LIFETIME_MS).toISOString();
@@ -131,6 +191,7 @@ export async function POST(req: NextRequest) {
       parentId: auth.uid,
       createdBy: auth.uid,
       email,
+      authorizedMemberships,
       expiresAt,
       used: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -197,11 +258,7 @@ export async function PUT(req: NextRequest) {
       ]);
       const freshInvite = freshInviteSnapshot.data() || {};
       const playerData = playerSnapshot.data() || {};
-      const teamId =
-        cleanChildId(playerData.primaryTeamId) ||
-        (Array.isArray(playerData.joinedTeamIds)
-          ? playerData.joinedTeamIds.find(value => cleanChildId(value))
-          : null);
+      const authorizedMemberships = readAuthorizedMemberships(freshInvite.authorizedMemberships);
       if (!freshInviteSnapshot.exists || !inviteIsUsable(freshInvite)) {
         throw new Error('Invitation no longer available.');
       }
@@ -210,15 +267,40 @@ export async function PUT(req: NextRequest) {
         freshInvite.email !== invite.email ||
         !playerSnapshot.exists ||
         playerData.parentId !== freshInvite.parentId ||
-        !teamId
+        authorizedMemberships === null
       ) {
         throw new Error('Invitation data does not match the child profile.');
       }
 
-      const teamRef = adminDb.collection('teams').doc(teamId);
-      const teamSnapshot = await transaction.get(teamRef);
-      if (!teamSnapshot.exists) throw new Error('Invitation team no longer exists.');
-      const team = teamSnapshot.data() || {};
+      const boundMemberships = await Promise.all(authorizedMemberships.map(async binding => {
+        const memberRef = adminDb
+          .collection('teams')
+          .doc(binding.teamId)
+          .collection('members')
+          .doc(binding.memberId);
+        const teamRef = adminDb.collection('teams').doc(binding.teamId);
+        const [memberSnapshot, teamSnapshot] = await Promise.all([
+          transaction.get(memberRef),
+          transaction.get(teamRef),
+        ]);
+        const memberData = memberSnapshot.data() || {};
+        const activeBinding = activeChildRosterBinding(
+          freshInvite.childId,
+          freshInvite.parentId,
+          memberRef.path,
+          memberData
+        );
+        if (
+          !memberSnapshot.exists ||
+          !teamSnapshot.exists ||
+          !activeBinding ||
+          activeBinding.teamId !== binding.teamId ||
+          activeBinding.memberId !== binding.memberId
+        ) {
+          throw new RequestBodyError('The child roster membership changed after this invitation was created.', 409);
+        }
+        return { binding, memberData, team: teamSnapshot.data() || {} };
+      }));
 
       const userRef = adminDb.collection('users').doc(userRecord.uid);
       const playerRef = adminDb.collection('players').doc(freshInvite.childId);
@@ -245,44 +327,47 @@ export async function PUT(req: NextRequest) {
         inviteSentAt: admin.firestore.FieldValue.delete(),
         inviteExpiresAt: admin.firestore.FieldValue.delete(),
       });
-      transaction.create(
-        adminDb.collection('teams').doc(teamId).collection('members').doc(userRecord.uid),
-        {
-          id: userRecord.uid,
-          userId: userRecord.uid,
-          name: displayName,
-          email: invite.email,
-          role: 'Member',
-          position: 'Player',
-          status: 'active',
-          isDeleted: false,
-          playerId: freshInvite.childId,
-          ownerUserId: team.ownerUserId || null,
-          joinedAt,
-        }
-      );
-      transaction.create(
-        adminDb.collection('users').doc(userRecord.uid).collection('teamMemberships').doc(teamId),
-        {
-          teamId,
-          name: team.teamName || team.name || 'Squad',
-          teamName: team.teamName || team.name || 'Squad',
-          userId: userRecord.uid,
-          status: 'active',
-          role: 'Member',
-          position: 'Player',
-          playerId: freshInvite.childId,
-          ownerUserId: team.ownerUserId || null,
-          planId: team.planId || null,
-          plan_type: team.plan_type || 'free',
-          isPro: team.isPro === true,
-          isDemo: team.isDemo === true,
-          outboundProvidersEnabled: team.outboundProvidersEnabled === true,
-          type: team.type || 'team',
-          ...(team.schoolId ? { schoolId: team.schoolId } : {}),
-          joinedAt,
-        }
-      );
+      for (const { binding, memberData, team } of boundMemberships) {
+        transaction.create(
+          adminDb.collection('teams').doc(binding.teamId).collection('members').doc(userRecord.uid),
+          {
+            id: userRecord.uid,
+            userId: userRecord.uid,
+            name: displayName,
+            email: invite.email,
+            role: 'Member',
+            position: 'Player',
+            status: 'active',
+            isDeleted: false,
+            playerId: freshInvite.childId,
+            parentId: freshInvite.parentId,
+            ownerUserId: team.ownerUserId || memberData.ownerUserId || null,
+            joinedAt,
+          }
+        );
+        transaction.create(
+          adminDb.collection('users').doc(userRecord.uid).collection('teamMemberships').doc(binding.teamId),
+          {
+            teamId: binding.teamId,
+            name: team.teamName || team.name || 'Squad',
+            teamName: team.teamName || team.name || 'Squad',
+            userId: userRecord.uid,
+            status: 'active',
+            role: 'Member',
+            position: 'Player',
+            playerId: freshInvite.childId,
+            ownerUserId: team.ownerUserId || memberData.ownerUserId || null,
+            planId: team.planId || null,
+            plan_type: team.plan_type || 'free',
+            isPro: team.isPro === true,
+            isDemo: team.isDemo === true,
+            outboundProvidersEnabled: team.outboundProvidersEnabled === true,
+            type: team.type || 'team',
+            ...(team.schoolId ? { schoolId: team.schoolId } : {}),
+            joinedAt,
+          }
+        );
+      }
       transaction.delete(inviteRef);
     });
 

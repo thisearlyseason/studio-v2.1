@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { closeRegisteredBrowserSessions, startLocalHarness } from '../scripts/qa/certification/local/harness.mjs';
+import { closeRegisteredBrowserSessions, closeRegisteredProcessGroups, startLocalHarness } from '../scripts/qa/certification/local/harness.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 
@@ -121,6 +122,22 @@ test('outer cleanup closes every exact registry session, retries failures, and l
   ]);
 });
 
+test('outer cleanup terminates every exact registered service process group after child death', async () => {
+  const registryPath = path.join(await mkdtemp(path.join(os.tmpdir(), 'cert-process-registry-')), 'groups.txt');
+  await writeFile(registryPath, '41001\n41002\n41001\n');
+  const alive = new Set([41001, 41002]);
+  const signals = [];
+  await closeRegisteredProcessGroups({
+    registryPath,
+    signalProcessGroup(pid, signal) {
+      signals.push([pid, signal]);
+      alive.delete(pid);
+    },
+    isProcessGroupAlive(pid) { return alive.has(pid); },
+  });
+  assert.deepEqual(signals, [[41002, 'SIGTERM'], [41001, 'SIGTERM']]);
+});
+
 test('runtime credentials are redacted and cleanup remains idempotent after a child failure', async () => {
   let closeCalls = 0;
   const secret = Buffer.from('0123456789abcdef0123456789abcdef').toString('base64url');
@@ -166,8 +183,59 @@ test('outer close escalates and finishes when the audit child ignores SIGTERM', 
     },
   }));
   const running = harness.runLegacyIdentityAudit();
+  const rejected = assert.rejects(running, /exited 137/);
   await new Promise(resolve => setImmediate(resolve));
   await harness.close();
-  await assert.rejects(running, /exited 137/);
+  await rejected;
   assert.equal(terminateCalls, 2);
+});
+
+test('outer close kills a registered detached descendant after force-killing its audit child', async () => {
+  let descendantPid = null;
+  const dependencies = {
+    ...options().dependencies,
+    closeTimeoutMs: 30,
+    processGroupSettleMs: 500,
+    execute: ({ env, registerChild }) => new Promise((resolve, reject) => {
+      const program = `
+        const { spawn } = require('node:child_process');
+        const { mkdirSync, writeFileSync } = require('node:fs');
+        const { dirname } = require('node:path');
+        const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+        mkdirSync(dirname(process.env.AUDIT_PROCESS_GROUP_REGISTRY), { recursive: true });
+        writeFileSync(process.env.AUDIT_PROCESS_GROUP_REGISTRY, String(child.pid) + String.fromCharCode(10));
+        process.stdout.write(String(child.pid) + String.fromCharCode(10));
+        process.on('SIGTERM', () => {});
+        setInterval(() => {}, 1000);
+      `;
+      const child = spawn(process.execPath, ['-e', program], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+      registerChild(child);
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', chunk => {
+        stdout += chunk;
+        const parsed = Number(stdout.trim());
+        if (Number.isInteger(parsed)) descendantPid = parsed;
+      });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.once('error', reject);
+      child.once('close', (code, signal) => resolve({ code: code ?? 1, signal, stdout, stderr }));
+    }),
+  };
+  const harness = await startLocalHarness(options({ dependencies }));
+  const running = harness.runLegacyIdentityAudit();
+  const rejected = assert.rejects(running, /Identity audit child exited/);
+  try {
+    for (let count = 0; count < 100 && descendantPid === null; count += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.ok(Number.isInteger(descendantPid));
+    await harness.close();
+    await rejected;
+    assert.throws(() => process.kill(-descendantPid, 0), error => error?.code === 'ESRCH');
+  } finally {
+    if (Number.isInteger(descendantPid)) {
+      try { process.kill(-descendantPid, 'SIGKILL'); } catch {}
+    }
+  }
 });

@@ -91,38 +91,85 @@ async function countDocumentTree(documentRef) {
   return count;
 }
 
-async function cleanupFirestore(db) {
-  let deleted = 0;
-  for (const rootPath of CATALOG.cleanupSelectors.firestore.recursiveRoots) {
-    deleted += await countDocumentTree(db.doc(rootPath));
-    await db.recursiveDelete(db.doc(rootPath));
+async function cleanupExactResources(resources, { cleanup, verify }, maxAttempts = 2) {
+  let pending = resources.map(resource => ({ ...resource }));
+  const mutatedUnits = new Map();
+  const diagnostics = [];
+  for (let attempt = 1; attempt <= maxAttempts && pending.length > 0; attempt += 1) {
+    const retry = [];
+    for (const resource of pending) {
+      try {
+        const units = Number(await cleanup(resource)) || 0;
+        mutatedUnits.set(resource.id, Math.max(mutatedUnits.get(resource.id) || 0, units));
+        if (await verify(resource) !== true) throw new Error('cleanup postcondition was not satisfied');
+      } catch (error) {
+        diagnostics.push(`${resource.id} attempt ${attempt}: ${error instanceof Error ? error.message : error}`);
+        retry.push(resource);
+      }
+    }
+    pending = retry;
   }
-  return deleted;
+  if (pending.length > 0) {
+    throw new AggregateError(diagnostics, `Fixture cleanup retained ${pending.length} exact resource(s).`);
+  }
+  return [...mutatedUnits.values()].reduce((total, units) => total + units, 0);
+}
+
+async function cleanupFirestore(db) {
+  return cleanupExactResources(
+    CATALOG.cleanupSelectors.firestore.recursiveRoots.map(rootPath => ({ id: `firestore:${rootPath}`, rootPath })),
+    {
+      async cleanup(resource) {
+        const ref = db.doc(resource.rootPath);
+        const count = await countDocumentTree(ref);
+        await db.recursiveDelete(ref);
+        return count;
+      },
+      async verify(resource) {
+        const ref = db.doc(resource.rootPath);
+        return !(await ref.get()).exists && (await ref.listCollections()).length === 0;
+      },
+    },
+  );
 }
 
 async function cleanupAuth(auth) {
-  let deleted = 0;
-  for (const uid of CATALOG.cleanupSelectors.auth.uids) {
-    try {
-      await auth.getUser(uid);
-      await auth.deleteUser(uid);
-      deleted += 1;
-    } catch (error) {
-      if (error?.code !== 'auth/user-not-found') throw error;
-    }
-  }
-  return deleted;
+  return cleanupExactResources(
+    CATALOG.cleanupSelectors.auth.uids.map(uid => ({ id: `auth:${uid}`, uid })),
+    {
+      async cleanup(resource) {
+        try {
+          await auth.getUser(resource.uid);
+          await auth.deleteUser(resource.uid);
+          return 1;
+        } catch (error) {
+          if (error?.code === 'auth/user-not-found') return 0;
+          throw error;
+        }
+      },
+      async verify(resource) {
+        return auth.getUser(resource.uid).then(() => false, error => {
+          if (error?.code === 'auth/user-not-found') return true;
+          throw error;
+        });
+      },
+    },
+  );
 }
 
 async function cleanupStorage(bucket) {
-  let deleted = 0;
-  for (const path of CATALOG.cleanupSelectors.storage.objectPaths) {
-    const file = bucket.file(path);
-    const [exists] = await file.exists();
-    await file.delete({ ignoreNotFound: true });
-    if (exists) deleted += 1;
-  }
-  return deleted;
+  return cleanupExactResources(
+    CATALOG.cleanupSelectors.storage.objectPaths.map(objectPath => ({ id: `storage:${objectPath}`, objectPath })),
+    {
+      async cleanup(resource) {
+        const file = bucket.file(resource.objectPath);
+        const [exists] = await file.exists();
+        await file.delete({ ignoreNotFound: true });
+        return exists ? 1 : 0;
+      },
+      async verify(resource) { return !(await bucket.file(resource.objectPath).exists())[0]; },
+    },
+  );
 }
 
 async function assertStorageAbsent(bucket) {
@@ -245,10 +292,19 @@ async function main() {
   const db = getFirestore(app);
   const bucket = getStorage(app).bucket();
 
+  const cleanupStages = await Promise.allSettled([
+    cleanupFirestore(db),
+    cleanupAuth(auth),
+    cleanupStorage(bucket),
+  ]);
+  const cleanupFailures = cleanupStages.filter(result => result.status === 'rejected');
+  if (cleanupFailures.length > 0) {
+    throw new AggregateError(cleanupFailures.map(result => result.reason), 'One or more fixture cleanup stages failed.');
+  }
   const cleanupCounts = {
-    firestore: await cleanupFirestore(db),
-    auth: await cleanupAuth(auth),
-    storage: await cleanupStorage(bucket),
+    firestore: cleanupStages[0].value,
+    auth: cleanupStages[1].value,
+    storage: cleanupStages[2].value,
   };
 
   if (process.argv.includes('--cleanup-only')) {

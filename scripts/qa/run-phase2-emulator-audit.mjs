@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, openSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import { Agent as HttpAgent } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -77,11 +77,15 @@ const workflowEquipmentOnly = process.argv.includes('--workflow-equipment-only')
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const sensitiveValues = new Set([password]);
+const certificationSensitiveAliases = new Map();
 const children = [];
 const ownedBrowserSessions = new Set();
 const logDir = path.join(os.tmpdir(), `the-squad-phase2-${process.pid}`);
 const certificationArtifactDir = process.env.AUDIT_ARTIFACT_DIR || path.join(logDir, 'certification-artifacts');
+const certificationRunId = process.env.AUDIT_CERTIFICATION_RUN_ID || `legacy-${FIXTURES.runId}`;
+const certificationCommit = process.env.AUDIT_CERTIFICATION_COMMIT || 'legacy-unbound-candidate';
 const browserSessionRegistry = process.env.AUDIT_BROWSER_SESSION_REGISTRY || '';
+const processGroupRegistry = process.env.AUDIT_PROCESS_GROUP_REGISTRY || '';
 let fixturesSeeded = false;
 let cleanupStarted = false;
 let activeCertificationScenario = null;
@@ -89,6 +93,23 @@ let activeCertificationAssertions = [];
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
 const certificationScenarioById = new Map(CERTIFICATION_SCENARIOS.map(scenario => [scenario.id, scenario]));
+const certificationNotObservedCases = Object.freeze({
+  'authentication-password-reset': Object.freeze({
+    'reset-unknown-reused-modified-wrong-account': 'The Auth emulator exposes no supported clock control for a still-unused password-reset OOB code, and the protocol binds the recipient in the code rather than accepting a caller-selected account. Expiration and recipient-tampered action are not observed locally.',
+  }),
+  'account-lifecycle-disable-delete-cancel-purge': Object.freeze({
+    'lifecycle-state-reload-and-local-retry': 'The real scheduled purge worker is not available through a deterministic local invocation seam; direct audit-registry deletion is cleanup evidence only and is not worker evidence.',
+  }),
+  'demo-seed-use-exit-expiry-cleanup': Object.freeze({
+    'demo-cross-id-duplicate-billing-expiry-retry': 'Cross-ID, idempotency, and billing denials were exercised, but the real scheduled demo-expiry worker and injected retry path are not available through a deterministic local seam.',
+    'demo-refresh-back-exit-isolation': 'Browser refresh, exit, and graph reconciliation were exercised, but application-owned pending-exit recovery was not invoked; audit-registry recovery is not application-worker evidence.',
+  }),
+  'dashboard-shell-role-landing-and-route-policy': Object.freeze({
+    'dashboard-navigation-direct-route-denials': 'Twenty landings and admin denials were exercised, but the complete family, billing, club, competition, and staff direct-route decision table was not executed for every role/plan/state alias.',
+    'dashboard-complete-role-plan-state-policy': 'Visible Admin-link agreement alone does not cover the complete family, billing, club, competition, and staff navigation policy branches.',
+    'dashboard-policy-two-viewports': 'Two-viewports were exercised for the executed landing/admin subset, not every branch of the complete navigation decision table.',
+  }),
+});
 
 function certificationActorAliases(scenarioId) {
   if (scenarioId === 'marketing-legal-contact-beta-coach-referral') return ['qa-public-submitter', 'qa-team-member', 'qa-superadmin'];
@@ -134,7 +155,7 @@ export function createAuditShutdownState() {
 const shutdownState = createAuditShutdownState();
 
 function emitCertificationEvent(event) {
-  const sanitized = JSON.parse(redact(JSON.stringify(event)));
+  const sanitized = JSON.parse(redact(JSON.stringify(sanitizeCertificationArtifact(event))));
   console.log(`CERTIFICATION_EVENT ${JSON.stringify(sanitized)}`);
 }
 
@@ -149,11 +170,21 @@ export function sanitizeCertificationArtifact(value) {
     ]));
   }
   if (typeof value !== 'string') return value;
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return '[synthetic-email]';
-  return value
+  let sanitized = value.replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[synthetic-email]');
+  for (const [sensitive, alias] of certificationSensitiveAliases) {
+    sanitized = sanitized.replaceAll(sensitive, `[${alias}]`);
+  }
+  return sanitized
     .replace(/Authorization:\s*Bearer\s+\S+/gi, 'Authorization: [redacted]')
     .replace(/https?:\/\/[^\s]+\?[^\s]+/gi, '[redacted-url]')
     .replace(/(?:oobCode|password|token|secret)=[^\s&]+/gi, '[redacted]');
+}
+
+export function registerCertificationSensitiveAlias(value, alias) {
+  if (typeof value !== 'string' || value.length === 0) throw new Error('Sensitive alias value is required.');
+  if (!/^[a-z0-9][a-z0-9_-]{0,80}$/i.test(String(alias || ''))) throw new Error('Sensitive alias label is invalid.');
+  certificationSensitiveAliases.set(value, alias);
+  sensitiveValues.add(value);
 }
 
 export function selectCertificationCaseAssertions(assertions, requiredPatterns) {
@@ -305,6 +336,8 @@ const certificationCaseContracts = Object.freeze({
     { dimension: 'permission', caseId: 'youth-cross-guardian-team-and-pii-allowlist', requirements: [
       /youth cross-guardian target nondisclosure/, /youth other-player denial/, /youth removed-member denial/,
       /youth wrong-team staff denial/, /youth invite PII allowlist/, /youth activated tenant authority/,
+      /youth forged primary-team cannot mint membership/, /youth forged joined-teams cannot mint membership/,
+      /youth removed child cannot mint membership/, /youth post-invite team change denial/,
     ] },
     { dimension: 'persistence', caseId: 'youth-player-membership-refresh-relogin', requirements: [
       /youth player login state/, /youth profile player linkage/, /youth relogin profile persistence/,
@@ -315,7 +348,7 @@ const certificationCaseContracts = Object.freeze({
   ]),
   'signup-onboarding-missing-profile-onboarding': Object.freeze([
     { dimension: 'happyPath', caseId: 'onboarding-missing-partial-role-completion', requirements: [
-      /missing profile session establishment/, /partial profile privileged API denial/, /onboarding role without plan state/,
+      /missing profile session establishment/, /partial profile privileged API denial/, /onboarding persisted role-without-plan partial profile/,
       /onboarding transient read failure recovery/, { pattern: /onboarding role .* completion destination/, minCount: 5 },
     ] },
     { dimension: 'negativePath', caseId: 'onboarding-validation-double-submit-refresh', requirements: [
@@ -327,9 +360,9 @@ const certificationCaseContracts = Object.freeze({
     { dimension: 'persistence', caseId: 'onboarding-profile-landing-refresh-relogin', requirements: [
       { pattern: /onboarding role .* relogin destination/, minCount: 5 },
     ] },
-    { dimension: 'console', caseId: 'onboarding-local-console', requirements: [/onboarding workflows console errors/] },
-    { dimension: 'network', caseId: 'onboarding-local-network', requirements: [/onboarding workflows unexpected responses/] },
-    { dimension: 'responsive', caseId: 'onboarding-states-two-viewports', requirements: [/onboarding real forms two viewports/] },
+    { dimension: 'console', caseId: 'onboarding-local-console', requirements: [{ pattern: /onboarding role .* workflow console errors/, minCount: 5 }] },
+    { dimension: 'network', caseId: 'onboarding-local-network', requirements: [{ pattern: /onboarding role .* workflow unexpected responses/, minCount: 5 }] },
+    { dimension: 'responsive', caseId: 'onboarding-states-two-viewports', requirements: [{ pattern: /onboarding role .* two viewport states/, minCount: 5 }] },
   ]),
   'demo-seed-use-exit-expiry-cleanup': Object.freeze([
     { dimension: 'happyPath', caseId: 'demo-two-context-seed-use-exit', requirements: [
@@ -372,7 +405,8 @@ const certificationCaseContracts = Object.freeze({
       /admin malformed target denial/, { pattern: /admin non-SA denial /, minCount: 19 }, { pattern: /admin browser non-SA route denial /, minCount: 22 },
     ] },
     { dimension: 'permission', caseId: 'admin-claim-revoke-refresh-restore-rules', requirements: [
-      /admin revoked already-issued token denial/, /admin open page revoked open tabs denied/, /admin rules direct read denial/,
+      /admin revoked already-issued token denial/, /admin open page revoked open tabs denied/,
+      { pattern: /admin rules direct read denial /, minCount: 19 },
     ] },
     { dimension: 'persistence', caseId: 'admin-session-revoke-restore-continuity', requirements: [
       /admin restored claim access/, /admin open page restored browser continuity/,
@@ -400,7 +434,9 @@ export function buildCompletedCertificationCases(scenarioId, assertions) {
 }
 
 function recordCompletedCertificationCases(scenarioId) {
+  const notObserved = certificationNotObservedCases[scenarioId] || {};
   for (const completed of buildCompletedCertificationCases(scenarioId, activeCertificationAssertions)) {
+    if (notObserved[completed.caseId]) continue;
     const requiredIds = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId]?.[completed.dimension] || [];
     if (!requiredIds.includes(completed.caseId)) {
       throw new Error(`Case contract ${completed.caseId} is not frozen for ${scenarioId}/${completed.dimension}.`);
@@ -419,6 +455,21 @@ function recordCompletedCertificationCases(scenarioId) {
       { assertions: completed.assertions },
     );
   }
+  for (const [caseId, reason] of Object.entries(notObserved)) {
+    const dimension = Object.entries(LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId])
+      .find(([, caseIds]) => caseIds.includes(caseId))?.[0];
+    if (!dimension) throw new Error(`NOT_OBSERVED case ${caseId} is outside the frozen scenario contract.`);
+    const timestamp = new Date().toISOString();
+    emitCertificationEvent({
+      type: 'case', scenarioId, caseId, dimension,
+      runId: certificationRunId, commit: certificationCommit,
+      actorAliases: certificationActorAliases(scenarioId),
+      role: certificationScenarioById.get(scenarioId).roles.join('/'),
+      tenantAlias: certificationTenantAlias(scenarioId),
+      expected: 'locally safe contract completed', observed: reason, state: 'NOT_OBSERVED',
+      startedAt: timestamp, completedAt: timestamp, artifacts: [],
+    });
+  }
 }
 
 function recordCertificationCase(
@@ -435,6 +486,7 @@ function recordCertificationCase(
   const relativeArtifact = `cases/${caseId}.json`;
   mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
   const artifact = {
+    runId: certificationRunId, commit: certificationCommit,
     scenarioId, caseId, dimension, expected: String(expected), observed: String(observed),
     actorAliases: certificationActorAliases(scenarioId),
     assertions,
@@ -443,6 +495,7 @@ function recordCertificationCase(
   writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact(artifact), null, 2)}\n`, { mode: 0o600 });
   emitCertificationEvent({
     type: 'case', scenarioId, caseId, dimension,
+    runId: certificationRunId, commit: certificationCommit,
     actorAliases: certificationActorAliases(scenarioId),
     role: role || scenario.roles.join('/'),
     tenantAlias: tenantAlias || certificationTenantAlias(scenarioId),
@@ -457,9 +510,21 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
   const diagnostic = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
   const relativeArtifact = `cases/${caseId}-failure-${Date.now()}.json`;
   mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
-  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact({ scenarioId, caseId, dimension, actorAliases: certificationActorAliases(scenarioId), diagnostic, capturedAt: timestamp }), null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact({
+    runId: certificationRunId,
+    commit: certificationCommit,
+    scenarioId,
+    caseId,
+    dimension,
+    actorAliases: certificationActorAliases(scenarioId),
+    expected: 'locally safe contract completed',
+    observed: diagnostic,
+    diagnostic,
+    capturedAt: timestamp,
+  }), null, 2)}\n`, { mode: 0o600 });
   emitCertificationEvent({
     type: 'case', scenarioId, caseId, dimension,
+    runId: certificationRunId, commit: certificationCommit,
     actorAliases: certificationActorAliases(scenarioId),
     role: scenario.roles.join('/'), tenantAlias: certificationTenantAlias(scenarioId),
     expected: 'locally safe contract completed', observed: diagnostic, state: 'FAIL',
@@ -625,6 +690,10 @@ function startProcess(command, args, logName) {
   const child = spawn(command, args, {
     cwd: process.cwd(), env, stdio: ['ignore', output, output], detached: process.platform !== 'win32',
   });
+  if (processGroupRegistry && process.platform !== 'win32') {
+    mkdirSync(path.dirname(processGroupRegistry), { recursive: true });
+    appendFileSync(processGroupRegistry, `${child.pid}\n`, { mode: 0o600 });
+  }
   children.push(child);
   return child;
 }
@@ -899,6 +968,7 @@ async function getAuthUserByEmailIfPresent(authAdmin, email) {
 }
 
 function registerDynamicAuthIdentity(uid, label, registry = dynamicResourceRegistry) {
+  registerCertificationSensitiveAlias(uid, label);
   registry.register({
     id: `auth:${label}:${uid}`,
     kind: 'deleted',
@@ -946,6 +1016,21 @@ function registerDynamicFirestoreRoot(documentPath, label, registry = dynamicRes
         return !(await ref.get()).exists && (await ref.listCollections()).length === 0;
       });
     },
+  });
+}
+
+async function registerBrowserDemoGraph(uid, label) {
+  // The Auth identity and root are registered before graph discovery so a
+  // failure during discovery still has an exact fallback owner.
+  registerDynamicAuthIdentity(uid, `${label}-auth`);
+  registerDynamicFirestoreRoot(`users/${uid}`, `${label}-user`);
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const [teams, leagues] = await Promise.all([
+      firestoreAdmin.collection('teams').where('demoSessionOwnerId', '==', uid).get(),
+      firestoreAdmin.collection('leagues').where('creatorId', '==', uid).get(),
+    ]);
+    teams.docs.forEach((document, index) => registerDynamicFirestoreRoot(document.ref.path, `${label}-team-${index + 1}`));
+    leagues.docs.forEach((document, index) => registerDynamicFirestoreRoot(document.ref.path, `${label}-league-${index + 1}`));
   });
 }
 
@@ -1335,6 +1420,98 @@ async function runCertificationApiScenario(scenarioId) {
       registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-api-player', dynamicResourceRegistry);
       registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-api-player', youthCleanupRegistry);
       try {
+        const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+        const forgedTeam = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+        const runTeamHintAttack = async (label, playerPatch) => {
+          const attackEmail = `${FIXTURES.runId}-youth-${label}@phase2.test`;
+          const attackRegistry = createResourceRegistry({ maxAttempts: 3 });
+          registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, `youth-${label}-player`, attackRegistry);
+          await playerRef.update(playerPatch);
+          const attackInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+            method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: attackEmail }),
+          });
+          expectEqual(attackInvite.status, 200, `youth forged ${label} invitation create`);
+          registerDynamicFirestoreRoot(`invites/${attackInvite.body.token}`, `youth-${label}-invite`, attackRegistry);
+          const redemption = await apiJsonResult('/api/invites/youth', null, {
+            method: 'PUT', body: JSON.stringify({ token: attackInvite.body.token, password }),
+          });
+          expectEqual(redemption.status, 200, `youth forged ${label} activation remains teamless`);
+          const attackUser = await getAuthUserByEmailIfPresent(authAdmin, attackEmail);
+          if (attackUser) {
+            registerDynamicAuthIdentity(attackUser.uid, `youth-${label}-user`, attackRegistry);
+            registerDynamicFirestoreRoot(`users/${attackUser.uid}`, `youth-${label}-user`, attackRegistry);
+            registerDynamicFirestoreRoot(`teams/${forgedTeam.id}/members/${attackUser.uid}`, `youth-${label}-member`, attackRegistry);
+          }
+          const forgedMemberExists = attackUser
+            ? (await firestoreAdmin.collection('teams').doc(forgedTeam.id).collection('members').doc(attackUser.uid).get()).exists
+            : false;
+          const attackCleanup = await attackRegistry.cleanup();
+          completedDynamicCleanupRuns.push(attackCleanup);
+          if (attackCleanup.state !== 'OBSERVED') throw new Error(`Youth ${label} cleanup retained owned resources.`);
+          expectEqual(forgedMemberExists, false, `youth forged ${label} cannot mint membership`);
+        };
+        await runTeamHintAttack('primary-team', { primaryTeamId: forgedTeam.id, joinedTeamIds: [] });
+        await runTeamHintAttack('joined-teams', { primaryTeamId: null, joinedTeamIds: [forgedTeam.id] });
+
+        const authorizedRosterRef = firestoreAdmin
+          .collection('teams').doc(teamC.id).collection('members').doc(player.data.id);
+        registerDynamicFirestoreRoot(authorizedRosterRef.path, 'youth-authorized-roster');
+        registerDynamicFirestoreRoot(authorizedRosterRef.path, 'youth-authorized-roster', youthCleanupRegistry);
+        const authorizedRoster = {
+          id: player.data.id,
+          playerId: player.data.id,
+          parentId: identityByAlias.get('qa-parent-a').uid,
+          name: 'Youth C',
+          role: 'Member',
+          position: 'Player',
+          status: 'active',
+          isDeleted: false,
+          ownerUserId: teamC.ownerUserId,
+        };
+
+        const removedRegistry = createResourceRegistry({ maxAttempts: 3 });
+        registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-removed-player', removedRegistry);
+        registerDynamicFirestoreRoot(authorizedRosterRef.path, 'youth-removed-roster', removedRegistry);
+        await playerRef.update({ primaryTeamId: teamC.id, joinedTeamIds: [teamC.id] });
+        await authorizedRosterRef.set({ ...authorizedRoster, status: 'removed' });
+        const removedEmail = `${FIXTURES.runId}-youth-removed@phase2.test`;
+        const removedInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: removedEmail }),
+        });
+        registerDynamicFirestoreRoot(`invites/${removedInvite.body.token}`, 'youth-removed-invite', removedRegistry);
+        expectEqual(removedInvite.status, 200, 'youth removed child invitation remains teamless');
+        expectEqual((await apiJsonResult('/api/invites/youth', null, {
+          method: 'PUT', body: JSON.stringify({ token: removedInvite.body.token, password }),
+        })).status, 200, 'youth removed child teamless activation');
+        const removedUser = await getAuthUserByEmailIfPresent(authAdmin, removedEmail);
+        if (removedUser) {
+          registerDynamicAuthIdentity(removedUser.uid, 'youth-removed-user', removedRegistry);
+          registerDynamicFirestoreRoot(`users/${removedUser.uid}`, 'youth-removed-user', removedRegistry);
+          registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${removedUser.uid}`, 'youth-removed-member-projection', removedRegistry);
+        }
+        const removedProjectionExists = removedUser
+          ? (await firestoreAdmin.collection('teams').doc(teamC.id).collection('members').doc(removedUser.uid).get()).exists
+          : false;
+        const removedCleanup = await removedRegistry.cleanup();
+        completedDynamicCleanupRuns.push(removedCleanup);
+        if (removedCleanup.state !== 'OBSERVED') throw new Error('Youth removed-child cleanup retained owned resources.');
+        expectEqual(removedProjectionExists, false, 'youth removed child cannot mint membership');
+
+        await playerRef.set(originalPlayer);
+        await authorizedRosterRef.set(authorizedRoster);
+        const changedEmail = `${FIXTURES.runId}-youth-team-changed@phase2.test`;
+        const changedInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: changedEmail }),
+        });
+        expectEqual(changedInvite.status, 200, 'youth post-invite team change setup');
+        registerDynamicFirestoreRoot(`invites/${changedInvite.body.token}`, 'youth-team-changed-invite', youthCleanupRegistry);
+        await authorizedRosterRef.update({ status: 'removed' });
+        expectEqual((await apiJsonResult('/api/invites/youth', null, {
+          method: 'PUT', body: JSON.stringify({ token: changedInvite.body.token, password }),
+        })).status, 409, 'youth post-invite team change denial');
+        expectEqual(await getAuthUserByEmailIfPresent(authAdmin, changedEmail), null, 'youth stale invite Auth rollback');
+        await authorizedRosterRef.set(authorizedRoster);
+
         const expired = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
           method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: youthEmail }),
         });
@@ -1392,7 +1569,6 @@ async function runCertificationApiScenario(scenarioId) {
         expectEqual(linkedPlayer.hasLogin, true, 'youth player login state');
         const youthProfile = await firestoreAdmin.collection('users').doc(createdYouthUid).get();
         expectEqual(youthProfile.data()?.linkedPlayerId, player.data.id, 'youth profile player linkage');
-        const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
         registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${createdYouthUid}`, 'youth-api-team-member');
         registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${createdYouthUid}`, 'youth-api-team-member', youthCleanupRegistry);
         expectEqual(await apiStatus(`/api/teams/chat?teamId=${teamC.id}`, youth.body.idToken), 200, 'youth activated tenant authority');
@@ -1462,7 +1638,12 @@ async function runCertificationApiScenario(scenarioId) {
         expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'partial profile privileged API denial');
         await userRef.set({ role: 'adult_player', notificationsEnabled: false }, { merge: true });
         const persisted = await userRef.get();
-        expectEqual(persisted.data()?.role, 'adult_player', 'missing profile role completion persistence');
+        expectEqual(
+          persisted.data()?.role === 'adult_player' &&
+            !('planId' in (persisted.data() || {})) && !('plan_type' in (persisted.data() || {})),
+          true,
+          'onboarding persisted role-without-plan partial profile',
+        );
         expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'completed nonadmin profile API denial');
       } finally {
         // The global registry owns exact deletion and postcondition proof.
@@ -1574,12 +1755,14 @@ async function runCertificationApiScenario(scenarioId) {
       const result = await signIn(alias);
       expectEqual(await apiStatus('/api/admin/newsletter', result.body.idToken), 403, `admin non-SA denial ${alias}`);
     }
-    const member = await signIn('qa-team-member');
-    const directAdminRead = await fetch(
-      `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/adminAuditLogs?pageSize=1`,
-      { headers: { Authorization: `Bearer ${member.body.idToken}`, Connection: 'close' } },
-    );
-    expectEqual(directAdminRead.status, 403, 'admin rules direct read denial');
+    for (const alias of FIXTURES.activeAliases.filter(alias => alias !== 'qa-superadmin')) {
+      const identity = await signIn(alias);
+      const directAdminRead = await fetch(
+        `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/adminAuditLogs?pageSize=1`,
+        { headers: { Authorization: `Bearer ${identity.body.idToken}`, Connection: 'close' } },
+      );
+      expectEqual(directAdminRead.status, 403, `admin rules direct read denial ${alias}`);
+    }
     expectEqual(await apiStatus('/api/admin/users/not%2Fvalid/account-control', trusted.body.idToken, {
       method: 'POST', body: JSON.stringify({ action: 'suspend' }),
     }), 400, 'admin malformed target denial');
@@ -2626,6 +2809,21 @@ async function runCertificationBrowserScenario(scenarioId) {
       registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-browser-player');
       registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-browser-player', youthBrowserCleanupRegistry);
       try {
+        const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+        const rosterRef = firestoreAdmin.collection('teams').doc(teamC.id).collection('members').doc(player.data.id);
+        registerDynamicFirestoreRoot(rosterRef.path, 'youth-browser-authorized-roster');
+        registerDynamicFirestoreRoot(rosterRef.path, 'youth-browser-authorized-roster', youthBrowserCleanupRegistry);
+        await rosterRef.set({
+          id: player.data.id,
+          playerId: player.data.id,
+          parentId: identityByAlias.get('qa-parent-a').uid,
+          name: 'Youth C',
+          role: 'Member',
+          position: 'Player',
+          status: 'active',
+          isDeleted: false,
+          ownerUserId: teamC.ownerUserId,
+        });
         const invite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
           method: 'POST', body: JSON.stringify({
             action: 'create', childId: player.data.id,
@@ -2894,6 +3092,9 @@ async function runCertificationBrowserScenario(scenarioId) {
         expectEqual(completion.viewportFits.every(Boolean), true, 'onboarding real forms two viewports');
         expectEqual(completion.clientErrors.join(' | '), '', 'onboarding workflows console errors');
         expectEqual(JSON.stringify(completion.unexpectedResponses), '[]', 'onboarding workflows unexpected responses');
+        expectEqual(completion.viewportFits.every(Boolean), true, 'onboarding role coach two viewport states');
+        expectEqual(completion.clientErrors.join(' | '), '', 'onboarding role coach workflow console errors');
+        expectEqual(JSON.stringify(completion.unexpectedResponses), '[]', 'onboarding role coach workflow unexpected responses');
         expectEqual(completion.expectedReadFaultConsoleCount, 1, 'onboarding injected read failure console signal');
         expectEqual(completion.injectedReadFailures >= 1, true, 'onboarding transient read failure recovery');
         const profile = await firestoreAdmin.collection('users').doc(account.uid).get();
@@ -2921,16 +3122,41 @@ async function runCertificationBrowserScenario(scenarioId) {
         try {
           const session = await browserLoginCredentials(email, password, '/onboarding', `cert-onboarding-${item.role}-${process.pid}`, `onboarding role ${item.role}`);
           const result = JSON.parse(cli(session, ['run-code', `async page => {
+            const consoleErrors = [];
+            const unexpectedResponses = [];
+            const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+            const onPageError = error => consoleErrors.push(error.message);
+            const onResponse = response => {
+              const url = response.url();
+              if (url.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+                unexpectedResponses.push({ status: response.status(), pathname: url.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+              }
+            };
+            page.on('console', onConsole);
+            page.on('pageerror', onPageError);
+            page.on('response', onResponse);
+            try {
             await page.locator('#onboarding-name').waitFor({ state: 'visible', timeout: 15000 });
-            const planPromptCount = await page.getByText(/choose.*plan/i).count();
+            const viewportFits = [];
+            for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+              await page.setViewportSize(viewport);
+              viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+            }
             await page.locator('#onboarding-name').fill(${JSON.stringify(`Completed ${item.role}`)});
             await page.locator(${JSON.stringify(`#role-${item.role}`)}).click();
             await page.getByRole('button', { name: 'Continue' }).click();
             await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(item.destination)}, { timeout: 15000 });
-            return { pathname: await page.evaluate(() => window.location.pathname), planPromptCount };
+            return { pathname: await page.evaluate(() => window.location.pathname), viewportFits, consoleErrors, unexpectedResponses };
+            } finally {
+              page.off('console', onConsole);
+              page.off('pageerror', onPageError);
+              page.off('response', onResponse);
+            }
           }`]));
           expectEqual(result.pathname, item.destination, `onboarding role ${item.role} completion destination`);
-          if (item.role === 'adult_player') expectEqual(result.planPromptCount, 0, 'onboarding role without plan state');
+          expectEqual(result.viewportFits.every(Boolean), true, `onboarding role ${item.role} two viewport states`);
+          expectEqual(result.consoleErrors.length, 0, `onboarding role ${item.role} workflow console errors`);
+          expectEqual(result.unexpectedResponses.length, 0, `onboarding role ${item.role} workflow unexpected responses`);
           const persisted = await firestoreAdmin.collection('users').doc(account.uid).get();
           expectEqual(persisted.data()?.role, item.role, `onboarding role ${item.role} persisted role`);
           await closeBrowserSessionNow(session);
@@ -2948,15 +3174,65 @@ async function runCertificationBrowserScenario(scenarioId) {
     const peerSession = openAnonymousBrowser('cert-demo-peer-context');
     assertTwoViewportRoutes(session, [{ path: '/', expected: '/' }], 'demo public surfaces');
     const peerJourney = JSON.parse(cli(peerSession, ['run-code', `async page => {
+      const consoleErrors = [];
+      const unexpectedResponses = [];
+      const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+      const onPageError = error => consoleErrors.push(error.message);
+      const onResponse = response => {
+        const url = response.url();
+        if (url.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) unexpectedResponses.push({ status: response.status(), pathname: url.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+      };
+      page.on('console', onConsole);
+      page.on('pageerror', onPageError);
+      page.on('response', onResponse);
+      try {
       await page.goto(${JSON.stringify(`${BASE_URL}/`)});
       await page.getByRole('button', { name: 'Experience Demo' }).click();
       await page.getByRole('button', { name: /Open Starter Plan Demo/ }).click();
       await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
       await page.getByText('Demo Mode', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
       const sessionResponse = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)});
-      return { status: sessionResponse.status(), uid: (await sessionResponse.json()).uid };
+      const viewportFits = [];
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      }
+      return { status: sessionResponse.status(), uid: (await sessionResponse.json()).uid, viewportFits, consoleErrors, unexpectedResponses };
+      } finally {
+        page.off('console', onConsole);
+        page.off('pageerror', onPageError);
+        page.off('response', onResponse);
+      }
     }`]));
     expectEqual(peerJourney.status, 200, 'demo peer browser context session');
+    await registerBrowserDemoGraph(peerJourney.uid, 'demo-browser-peer');
+    expectEqual(peerJourney.viewportFits.every(Boolean), true, 'demo peer browser two viewport states');
+    expectEqual(peerJourney.consoleErrors.length, 0, 'demo peer browser console errors');
+    expectEqual(peerJourney.unexpectedResponses.length, 0, 'demo peer browser unexpected responses');
+    const mainSeed = JSON.parse(cli(session, ['run-code', `async page => {
+      const consoleErrors = [];
+      const unexpectedResponses = [];
+      const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+      const onPageError = error => consoleErrors.push(error.message);
+      const onResponse = response => {
+        const url = response.url();
+        if (url.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) unexpectedResponses.push({ status: response.status(), pathname: url.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+      };
+      page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+      try {
+        await page.goto(${JSON.stringify(`${BASE_URL}/`)});
+        await page.getByRole('button', { name: 'Experience Demo' }).click();
+        await page.getByRole('button', { name: /Open Starter Plan Demo/ }).click();
+        await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
+        await page.getByText('Demo Mode', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
+        const response = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)});
+        return { status: response.status(), uid: (await response.json()).uid, consoleErrors, unexpectedResponses };
+      } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
+    }`]));
+    expectEqual(mainSeed.status, 200, 'demo main browser context session');
+    await registerBrowserDemoGraph(mainSeed.uid, 'demo-browser-main');
+    expectEqual(mainSeed.consoleErrors.length, 0, 'demo main seed workflow console errors');
+    expectEqual(mainSeed.unexpectedResponses.length, 0, 'demo main seed workflow unexpected responses');
     const journey = JSON.parse(cli(session, ['run-code', `async page => {
       const consoleErrors = [];
       const unexpectedResponses = [];
@@ -2972,10 +3248,6 @@ async function runCertificationBrowserScenario(scenarioId) {
       page.on('pageerror', onPageError);
       page.on('response', onResponse);
       try {
-        await page.goto(${JSON.stringify(`${BASE_URL}/`)});
-        await page.getByRole('button', { name: 'Experience Demo' }).click();
-        await page.getByRole('button', { name: /Open Starter Plan Demo/ }).click();
-        await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
         await page.getByText('Demo Mode', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
         const sessionResponse = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)});
         const uid = (await sessionResponse.json()).uid;
@@ -3023,6 +3295,11 @@ async function runCertificationBrowserScenario(scenarioId) {
     const peerExit = exitDemoBrowserContext(peerSession);
     expectEqual(peerExit.status, 204, 'demo peer browser exact exit cleanup');
     expectEqual(peerExit.pathname, '/login', 'demo peer browser direct-route denial');
+    if (peerExit.consoleErrors.length > 0 || peerExit.unexpectedResponses.length > 0) {
+      console.log(`demo peer exit diagnostic: ${JSON.stringify(peerExit)}`);
+    }
+    expectEqual(peerExit.consoleErrors.length, 0, 'demo peer exit workflow console errors');
+    expectEqual(peerExit.unexpectedResponses.length, 0, 'demo peer exit workflow unexpected responses');
     return;
   }
   if (scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
@@ -3280,10 +3557,21 @@ function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonica
 
 function exitDemoBrowserContext(session) {
   return JSON.parse(cli(session, ['run-code', `async page => {
-    const response = await page.request.post(${JSON.stringify(`${BASE_URL}/api/demo/exit`)});
-    await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
-    await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 15000 });
-    return { status: response.status(), pathname: await page.evaluate(() => window.location.pathname) };
+    const consoleErrors = [];
+    const unexpectedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      const url = response.url();
+      if (url.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) unexpectedResponses.push({ status: response.status(), pathname: url.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+    };
+    page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+    try {
+      const response = await page.request.post(${JSON.stringify(`${BASE_URL}/api/demo/exit`)});
+      await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+      await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 15000 });
+      return { status: response.status(), pathname: await page.evaluate(() => window.location.pathname), consoleErrors, unexpectedResponses };
+    } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
   }`]));
 }
 
@@ -4644,7 +4932,9 @@ async function cleanup() {
       const cleanupState = dynamicCleanup.state === 'OBSERVED' ? 'OBSERVED' : 'FAIL';
       mkdirSync(path.join(certificationArtifactDir, 'cleanup'), { recursive: true });
       writeFileSync(path.join(certificationArtifactDir, 'cleanup/fixture-cleanup-marker.json'), `${JSON.stringify(sanitizeCertificationArtifact({
-        runId: FIXTURES.runId,
+        runId: certificationRunId,
+        commit: certificationCommit,
+        fixtureRunId: FIXTURES.runId,
         state: cleanupState,
         counts: cleanupCounts,
         measured: { fixture: measuredCleanup.measured, dynamic: dynamicCleanup },
@@ -4652,6 +4942,8 @@ async function cleanup() {
       }), null, 2)}\n`, { mode: 0o600 });
       emitCertificationEvent({
         type: 'cleanup',
+        runId: certificationRunId,
+        commit: certificationCommit,
         cleanupId: `fixture-cleanup-${FIXTURES.runId}`,
         selectors: [
           `auth:${FIXTURES.cleanupSelectors.auth.uids.length}-exact-uids`,

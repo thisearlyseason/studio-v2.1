@@ -140,8 +140,12 @@ function resultForScenario({ scenario, context, events, cleanup, execution }) {
     }
     casesById.set(event.caseId, {
       ...existing,
-      state: existing.state === 'FAIL' || event.state === 'FAIL' ? 'FAIL' : 'OBSERVED',
-      observed: existing.state === 'FAIL' ? existing.observed : event.observed,
+      state: existing.state === 'FAIL' || event.state === 'FAIL'
+        ? 'FAIL'
+        : existing.state === 'NOT_OBSERVED' || event.state === 'NOT_OBSERVED'
+          ? 'NOT_OBSERVED'
+          : 'OBSERVED',
+      observed: existing.state !== 'OBSERVED' ? existing.observed : event.observed,
       startedAt: [existing.startedAt, event.startedAt].sort()[0],
       completedAt: [existing.completedAt, event.completedAt].sort().at(-1),
       artifacts: [...new Set([...(existing.artifacts || []), ...(event.artifacts || [])])],
@@ -155,14 +159,17 @@ function resultForScenario({ scenario, context, events, cleanup, execution }) {
     const matching = cases.filter(item => item.dimension === dimension);
     const matchingIds = new Set(matching.map(item => item.caseId));
     const failed = matching.some(item => item.state === 'FAIL');
+    const notObserved = matching.some(item => item.state === 'NOT_OBSERVED');
     const complete = required.every(caseId => matchingIds.has(caseId)) &&
       matching.every(item => item.state === 'OBSERVED');
     const missingBrowser = !context.browserEnabled && ['console', 'responsive'].includes(dimension);
     dimensions[dimension] = makeDimension(
-      failed ? 'FAIL' : complete ? 'OBSERVED' : 'BLOCKED_PRECONDITION',
+      failed ? 'FAIL' : complete ? 'OBSERVED' : notObserved ? 'NOT_OBSERVED' : 'BLOCKED_PRECONDITION',
       matching.map(item => item.caseId),
       failed
         ? 'A locally executed case failed; see its structured diagnostic and artifact.'
+        : notObserved
+          ? matching.filter(item => item.state === 'NOT_OBSERVED').map(item => item.observed).join(' ')
         : complete
           ? 'Every required locally safe case for this dimension was observed.'
           : missingBrowser

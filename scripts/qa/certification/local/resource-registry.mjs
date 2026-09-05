@@ -70,10 +70,13 @@ export function createResourceRegistry({ maxAttempts = 2 } = {}) {
         for (const resource of pending) {
           try {
             const didMutate = await resource.cleanup();
+            // Cleanup may have committed even when the following verification read
+            // fails transiently. Preserve the measured mutation across retries so an
+            // idempotent second cleanup cannot erase what the first attempt changed.
+            mutated.set(resource.id, mutated.get(resource.id) === true || didMutate === true);
             const verified = await resource.verify();
             if (verified !== true) throw new Error('cleanup postcondition was not satisfied');
             succeeded.set(resource.id, resource);
-            mutated.set(resource.id, didMutate === true);
           } catch (error) {
             diagnostics.push(diagnosticFor(resource.id, attempt, error));
             retry.push(resource);

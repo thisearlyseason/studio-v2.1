@@ -95,6 +95,7 @@ export async function main(argv, dependencies = {}) {
     harness = await startHarness({
       rootDir,
       runSuffix,
+      commit,
       playwrightCli,
       browser: parsed.browser,
       baseEnvironment: environment,
