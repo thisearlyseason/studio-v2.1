@@ -6591,8 +6591,8 @@ async function runCertificationTenantScenarios() {
   if (failureCount > 0) throw new Error(`${failureCount} selected tenant scenario(s) failed with structured case evidence.`);
 }
 
-function recordBlockedOperationsCases(scenarioId, reason) {
-  for (const dimension of DIMENSION_NAMES) {
+function recordBlockedOperationsCases(scenarioId, reason, dimensions = DIMENSION_NAMES) {
+  for (const dimension of dimensions) {
     const caseId = LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension][0];
     const timestamp = new Date().toISOString();
     emitCertificationEvent({
@@ -6607,6 +6607,18 @@ function recordBlockedOperationsCases(scenarioId, reason) {
   }
 }
 
+function recordObservedOperationsCase(scenarioId, dimension, observed) {
+  recordCertificationCase(
+    scenarioId,
+    dimension,
+    LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension][0],
+    observed,
+    'case-owned local browser/API assertions completed',
+    null,
+    { assertions: [...activeCertificationAssertions] },
+  );
+}
+
 async function runCertificationOperationsScenarios() {
   const scenarioIds = OPERATIONS_SCENARIO_IDS.filter(id => selectedOperationsScenarios.has(id));
   for (const scenarioId of scenarioIds) {
@@ -6614,6 +6626,13 @@ async function runCertificationOperationsScenarios() {
     activeCertificationAssertions = [];
     activeCertificationCaseIds = new Set();
     try {
+      if (scenarioId === 'chat-channel-message-unread' && runBrowser) {
+        await runCommunicationWorkflowAudit();
+        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
+          recordObservedOperationsCase(scenarioId, dimension, 'two-session communication workflow completed');
+        }
+        continue;
+      }
       // The operations dispatcher is deliberately explicit. Until a domain
       // handler supplies case-owned browser/API evidence, every dimension is
       // reported as NOT_OBSERVED instead of allowing the old generic audit to
@@ -6991,6 +7010,7 @@ function browserMemberCommunication(session, marker) {
         failedResponses,
       }));
     }
+    const emptySendDisabled = await page.getByRole('button', { name: 'Send message' }).isDisabled();
     await chatInput.fill(${JSON.stringify(`QA Chat ${marker}`)});
     await page.getByRole('button', { name: 'Send message' }).click();
     await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).waitFor({ timeout: 10000 });
@@ -7001,6 +7021,7 @@ function browserMemberCommunication(session, marker) {
       commentAfterReload,
       voteAfterReload,
       chatAfterReload: await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).count(),
+      emptySendDisabled,
       teamBLeak: await page.getByText(/BLUEBIRD-B/).count(),
       consoleErrors,
       failedResponses,
@@ -7031,12 +7052,17 @@ function browserOwnerCommunicationVerify(session, marker) {
     await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
     await channelCard.waitFor({ timeout: 10000 });
     const unreadAfterOpen = await channelCard.locator('div.bg-primary.text-white').count();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
+    await channelCard.waitFor({ timeout: 10000 });
+    const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
     return {
       memberComment,
       deletedAfterReload,
       chatVisible: await page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true }).count(),
       unreadBeforeOpen,
       unreadAfterOpen,
+      mobileFits,
     };
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
@@ -7058,6 +7084,7 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(memberResult.commentAfterReload, 1, 'member comment persists for owner');
   expectEqual(memberResult.voteAfterReload, 1, 'member poll vote persists after reload');
   expectEqual(memberResult.chatAfterReload, 1, 'member chat message persists after reload');
+  expectEqual(memberResult.emptySendDisabled, true, 'chat rejects an empty message');
   expectEqual(memberResult.teamBLeak, 0, 'Team B chat content is absent from Team A UI');
   expectEqual(memberResult.consoleErrors.length, 0, 'member communication workflow console errors');
   expectEqual(memberResult.failedResponses.length, 0, 'member communication workflow failed responses');
@@ -7068,6 +7095,7 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(ownerResult.chatVisible, 1, 'member chat message persists for owner');
   expectEqual(ownerResult.unreadBeforeOpen > 0, true, 'member chat message increments owner unread state');
   expectEqual(ownerResult.unreadAfterOpen, 0, 'opening the channel clears only owner unread state');
+  expectEqual(ownerResult.mobileFits, true, 'chat channel list remains within the mobile viewport');
 }
 
 function browserOwnerEventCreate(session, marker) {

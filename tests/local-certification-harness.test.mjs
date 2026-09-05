@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -180,6 +180,35 @@ test('child failure returns redacted structured output and cleanup remains idemp
   await harness.close();
   await harness.close();
   assert.equal(closeCalls, 0);
+});
+
+test('managed child output is retained as a redacted, run-owned transcript', async () => {
+  const secret = Buffer.from('0123456789abcdef0123456789abcdef').toString('base64url');
+  const harness = await startLocalHarness(options({
+    runSuffix: 't5-20260905-223700-a1',
+    batches: ['operations'],
+    dependencies: {
+      ...options().dependencies,
+      execute: async () => ({
+        code: 1,
+        signal: null,
+        stdout: 'PASS initial browser login',
+        stderr: `failure password=${secret} token=not-for-evidence`,
+      }),
+    },
+  }));
+  const observation = await harness.runLegacyCertificationAudit({
+    batches: ['operations'], selectedScenarioIds: ['chat-channel-message-unread'],
+  });
+  assert.equal(observation.code, 1);
+  assert.equal(observation.transcript, 'execution/legacy-audit.json');
+  const transcript = JSON.parse(await readFile(path.join(harness.artifactDir, observation.transcript), 'utf8'));
+  assert.equal(transcript.runId, harness.runId);
+  assert.equal(transcript.code, 1);
+  assert.match(transcript.stdout, /PASS initial browser login/);
+  assert.doesNotMatch(JSON.stringify(transcript), new RegExp(secret));
+  assert.doesNotMatch(JSON.stringify(transcript), /not-for-evidence/);
+  await harness.close();
 });
 
 test('combined harness gives the child a batch-aware artifact root', async () => {

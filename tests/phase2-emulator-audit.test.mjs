@@ -187,6 +187,17 @@ test('operations certification selection remains explicit and does not widen leg
   assert.deepEqual(configured.selectedScenarios, ['events-event-crud-recurrence']);
 });
 
+test('managed operations chat dispatch emits one attributable result for each local dimension', () => {
+  const start = source.indexOf('function recordBlockedOperationsCases(');
+  const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
+  const operationsBlock = source.slice(start, end);
+  assert.match(operationsBlock, /function recordBlockedOperationsCases\(scenarioId, reason, dimensions = DIMENSION_NAMES\)/);
+  assert.match(operationsBlock, /for \(const dimension of \['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'\]\)/);
+  assert.doesNotMatch(operationsBlock, /recordBlockedOperationsCases\(scenarioId,[\s\S]*?390x844/);
+  assert.match(source, /const emptySendDisabled = await page\.getByRole\('button', \{ name: 'Send message' \}\)\.isDisabled\(\)/);
+  assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
+});
+
 test('the imported local harness may parse an operations scenario before it supplies the child batch flag', () => {
   const configured = auditRunner.resolveAuditRuntimeConfiguration({
     environment: {},

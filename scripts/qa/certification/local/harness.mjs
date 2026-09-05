@@ -1,6 +1,6 @@
 import { randomBytes as nodeRandomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -169,6 +169,26 @@ function redactText(value, runtimeSecret) {
     .replace(/Bearer\s+\S+/gi, '[redacted]');
 }
 
+async function writeManagedExecutionTranscript({ artifactDir, runId, commit, result, startedAt, completedAt, runtimeSecret }) {
+  const transcript = 'execution/legacy-audit.json';
+  await mkdir(path.join(artifactDir, 'execution'), { recursive: true });
+  // Keep the managed child's outcome inspectable even when its terminal pipe
+  // outlives the invoking UI command. The child output is already redacted and
+  // bounded so this artifact cannot become a credential or raw-log archive.
+  const bounded = value => redactText(value, runtimeSecret).slice(-16_000);
+  await writeFile(path.join(artifactDir, transcript), `${JSON.stringify({
+    runId,
+    commit,
+    code: result.code,
+    signal: result.signal || null,
+    startedAt,
+    completedAt,
+    stdout: bounded(result.stdout),
+    stderr: bounded(result.stderr),
+  }, null, 2)}\n`, { mode: 0o600 });
+  return transcript;
+}
+
 export async function startLocalHarness({
   rootDir,
   runSuffix,
@@ -315,12 +335,14 @@ export async function startLocalHarness({
       activeChild = null;
       activeExecution = null;
       const completedAt = new Date().toISOString();
+      const transcript = await writeManagedExecutionTranscript({
+        artifactDir, runId, commit, result, startedAt, completedAt, runtimeSecret,
+      });
       return Object.freeze({
         code: result.code,
         stdout: redactText(result.stdout, runtimeSecret),
         stderr: redactText(result.stderr, runtimeSecret),
-        startedAt,
-        completedAt,
+        startedAt, completedAt, transcript,
       });
     },
     async runLegacyIdentityAudit(selectedScenarioIds = []) {
