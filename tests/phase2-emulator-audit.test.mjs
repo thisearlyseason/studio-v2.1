@@ -187,6 +187,15 @@ test('operations certification selection remains explicit and does not widen leg
   assert.deepEqual(configured.selectedScenarios, ['events-event-crud-recurrence']);
 });
 
+test('the imported local harness may parse an operations scenario before it supplies the child batch flag', () => {
+  const configured = auditRunner.resolveAuditRuntimeConfiguration({
+    environment: {},
+    argv: ['--scenario', 'events-event-crud-recurrence'],
+  });
+  assert.equal(configured.certificationOperations, false);
+  assert.deepEqual(configured.selectedScenarios, ['events-event-crud-recurrence']);
+});
+
 test('combined certification dispatch executes identity then tenants', async () => {
   const calls = [];
   await auditRunner.runSelectedCertificationBatches({

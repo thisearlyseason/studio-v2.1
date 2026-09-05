@@ -119,6 +119,9 @@ export async function main(argv, dependencies = {}) {
       commit,
       now: () => now().toISOString(),
       certificationObservation,
+      operations: Object.freeze({
+        execute: ({ handler, ...input }) => handler({ ...input, context }),
+      }),
     };
     const results = [];
     const summaries = [];

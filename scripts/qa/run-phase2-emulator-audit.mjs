@@ -17,6 +17,7 @@ import {
 } from './certification/local/batches/identity.mjs';
 import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER, tenantCaseAssociationFor } from './certification/local/batches/tenants.mjs';
 import { OPERATIONS_SCENARIO_IDS } from './certification/local/selection.mjs';
+import { LOCAL_OPERATIONS_CASE_REQUIREMENTS } from './certification/local/batches/operations.mjs';
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
@@ -43,7 +44,7 @@ export function resolveAuditRuntimeConfiguration({ environment = process.env, ar
   const allowedScenarios = new Set([
     ...(certificationIdentity || (!certificationIdentity && !certificationTenants && !certificationOperations) ? IDENTITY_EXECUTION_ORDER : []),
     ...(certificationTenants || (!certificationIdentity && !certificationTenants && !certificationOperations) ? TENANT_EXECUTION_ORDER : []),
-    ...(certificationOperations ? OPERATIONS_SCENARIO_IDS : []),
+    ...(certificationOperations || (!certificationIdentity && !certificationTenants && !certificationOperations) ? OPERATIONS_SCENARIO_IDS : []),
   ]);
   for (const scenarioId of selectedScenarios) {
     if (!allowedScenarios.has(scenarioId)) throw new Error(`Unknown selected certification scenario ${scenarioId}.`);
@@ -71,6 +72,7 @@ const FIXTURES = buildFixtureCatalog(FIXTURE_RUN_SUFFIX);
 const runBrowser = runtimeConfiguration.runBrowser;
 const certificationIdentity = runtimeConfiguration.certificationIdentity;
 const certificationTenants = runtimeConfiguration.certificationTenants;
+const certificationOperations = runtimeConfiguration.certificationOperations;
 const certificationFailFast = runtimeConfiguration.failFast;
 const selectedIdentityScenarios = new Set(
   runtimeConfiguration.selectedScenarios.length > 0
@@ -81,6 +83,11 @@ const selectedTenantScenarios = new Set(
   runtimeConfiguration.selectedScenarios.length > 0
     ? runtimeConfiguration.selectedScenarios
     : TENANT_EXECUTION_ORDER,
+);
+const selectedOperationsScenarios = new Set(
+  runtimeConfiguration.selectedScenarios.length > 0
+    ? runtimeConfiguration.selectedScenarios
+    : OPERATIONS_SCENARIO_IDS,
 );
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const teamSwitchOnly = process.argv.includes('--team-switch-only');
@@ -178,7 +185,8 @@ const DASHBOARD_POLICY_PATHS = Object.freeze([
 
 function artifactDirectoryForScenario(scenarioId) {
   if (!certificationArtifactRoot) return certificationArtifactDir;
-  const task = IDENTITY_EXECUTION_ORDER.includes(scenarioId) ? 'task-3' : 'task-4';
+  const task = IDENTITY_EXECUTION_ORDER.includes(scenarioId) ? 'task-3'
+    : TENANT_EXECUTION_ORDER.includes(scenarioId) ? 'task-4' : 'task-5';
   return path.join(certificationArtifactRoot, task, certificationRunId);
 }
 
@@ -187,6 +195,7 @@ function cleanupArtifactDirectories() {
   return [
     ...(certificationIdentity ? [path.join(certificationArtifactRoot, 'task-3', certificationRunId)] : []),
     ...(certificationTenants ? [path.join(certificationArtifactRoot, 'task-4', certificationRunId)] : []),
+    ...(certificationOperations ? [path.join(certificationArtifactRoot, 'task-5', certificationRunId)] : []),
   ];
 }
 const certificationNotObservedCases = Object.freeze({
@@ -6582,6 +6591,45 @@ async function runCertificationTenantScenarios() {
   if (failureCount > 0) throw new Error(`${failureCount} selected tenant scenario(s) failed with structured case evidence.`);
 }
 
+function recordBlockedOperationsCases(scenarioId, reason) {
+  for (const dimension of DIMENSION_NAMES) {
+    const caseId = LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension][0];
+    const timestamp = new Date().toISOString();
+    emitCertificationEvent({
+      type: 'case', scenarioId, caseId, dimension,
+      runId: certificationRunId, commit: certificationCommit,
+      actorAliases: certificationActorAliases(scenarioId),
+      role: certificationScenarioById.get(scenarioId).roles.join('/'),
+      tenantAlias: certificationTenantAlias(scenarioId),
+      expected: 'exact locally safe Task 5 contract completed', observed: reason,
+      state: 'NOT_OBSERVED', startedAt: timestamp, completedAt: timestamp, artifacts: [],
+    });
+  }
+}
+
+async function runCertificationOperationsScenarios() {
+  const scenarioIds = OPERATIONS_SCENARIO_IDS.filter(id => selectedOperationsScenarios.has(id));
+  for (const scenarioId of scenarioIds) {
+    activeCertificationScenario = scenarioId;
+    activeCertificationAssertions = [];
+    activeCertificationCaseIds = new Set();
+    try {
+      // The operations dispatcher is deliberately explicit. Until a domain
+      // handler supplies case-owned browser/API evidence, every dimension is
+      // reported as NOT_OBSERVED instead of allowing the old generic audit to
+      // be misattributed as a Task 5 PASS.
+      recordBlockedOperationsCases(scenarioId,
+        runBrowser
+          ? 'No exact case-owned operations handler has emitted evidence for this frozen scenario yet.'
+          : 'This operation requires browser-enabled local handler evidence; the current run was API-only.');
+    } finally {
+      activeCertificationScenario = null;
+      activeCertificationAssertions = [];
+      activeCertificationCaseIds = new Set();
+    }
+  }
+}
+
 function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonicalPath) {
   const observations = JSON.parse(cli(session, ['run-code', `async page => {
     const baseUrl = ${JSON.stringify(BASE_URL)};
@@ -8175,7 +8223,7 @@ async function main() {
   ownedNextServerProcess = startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (certificationIdentity || certificationTenants) {
+  if (certificationIdentity || certificationTenants || certificationOperations) {
     await runSelectedCertificationBatches({
       certificationIdentity,
       certificationTenants,
@@ -8183,6 +8231,7 @@ async function main() {
       runTenants: runCertificationTenantScenarios,
       failFast: certificationFailFast,
     });
+    if (certificationOperations) await runCertificationOperationsScenarios();
   } else {
     if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
     if (runBrowser) await runBrowserAudit();

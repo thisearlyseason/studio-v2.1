@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { OPERATIONS_SCENARIO_IDS } from '../scripts/qa/certification/local/selection.mjs';
-import { assertOperationsHandlerExactness, handlers } from '../scripts/qa/certification/local/batches/operations.mjs';
+import { assertOperationsHandlerExactness, handlers, LOCAL_OPERATIONS_CASE_REQUIREMENTS } from '../scripts/qa/certification/local/batches/operations.mjs';
 
 test('operations handler registry is an exact immutable match for the frozen Task 5 assignment', () => {
   assert.doesNotThrow(() => assertOperationsHandlerExactness(handlers));
@@ -16,4 +16,15 @@ test('operations handler registry rejects missing, duplicate, and adjacent handl
   const extra = { ...handlers, 'sports-hub-rss-refresh-admin-publish': async () => undefined };
   assert.throws(() => assertOperationsHandlerExactness(extra), /unexpected handler/);
   assert.throws(() => assertOperationsHandlerExactness({ ...handlers, 'events-event-crud-recurrence': 'not-a-handler' }), /must be a function/);
+});
+
+test('every operations scenario has an explicit case contract for every local dimension', () => {
+  const dimensions = ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'];
+  assert.deepEqual(Object.keys(LOCAL_OPERATIONS_CASE_REQUIREMENTS), OPERATIONS_SCENARIO_IDS);
+  for (const scenarioId of OPERATIONS_SCENARIO_IDS) {
+    assert.deepEqual(Object.keys(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]), dimensions);
+    for (const dimension of dimensions) {
+      assert.equal(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension].length, 1);
+    }
+  }
 });
