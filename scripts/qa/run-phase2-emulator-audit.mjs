@@ -283,7 +283,7 @@ const certificationCaseContracts = Object.freeze({
       { pattern: /signup .* verified destination and reload/, minCount: 5 },
     ] },
     { dimension: 'negativePath', caseId: 'signup-invalid-duplicate-aborted-provider-failure', requirements: [
-      /signup duplicate email denial/, /signup invalid input UI denial/, /signup aborted delivery UI recovery/, /signup provider-failure delivery UI recovery/,
+      /signup duplicate email denial/, /signup invalid input UI denial/, /signup aborted delivery UI recovery/, /signup provider failure delivery UI recovery/,
     ] },
     { dimension: 'permission', caseId: 'signup-preverification-and-privileged-field-denial', requirements: [
       { pattern: /signup .* preverification session denial/, minCount: 5 }, /signup privileged field injection denied/,

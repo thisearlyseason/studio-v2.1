@@ -554,9 +554,20 @@ test('Task 3 case selection requires every exact assertion and excludes unrelate
   );
 });
 
-test('Task 3 signup negative case matches the executed provider-failure label', () => {
-  assert.match(source, /signup provider-failure delivery UI recovery/);
-  assert.doesNotMatch(source, /signup provider failure UI recovery/);
+test('Task 3 signup negative case completes from the executed browser labels', () => {
+  const completed = auditRunner.buildCompletedCertificationCases(
+    'signup-onboarding-coach-admin-league-parent-adult-player-signup',
+    [
+      { label: 'signup duplicate email denial' },
+      { label: 'signup invalid input UI denial' },
+      { label: 'signup aborted delivery UI recovery' },
+      { label: 'signup provider failure delivery UI recovery' },
+    ],
+  );
+  assert.equal(
+    completed.some(item => item.caseId === 'signup-invalid-duplicate-aborted-provider-failure'),
+    true,
+  );
 });
 
 test('Task 3 case completion cannot promote a successful no-op or partial scenario', () => {
