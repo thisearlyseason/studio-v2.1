@@ -6645,6 +6645,13 @@ async function runCertificationOperationsScenarios() {
         }
         continue;
       }
+      if (scenarioId === 'calendar-team-family-views-and-filters' && runBrowser) {
+        await runCalendarViewsWorkflowAudit();
+        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
+          recordObservedOperationsCase(scenarioId, dimension, 'authenticated Calendar views and filters workflow completed');
+        }
+        continue;
+      }
       // The operations dispatcher is deliberately explicit. Until a domain
       // handler supplies case-owned browser/API evidence, every dimension is
       // reported as NOT_OBSERVED instead of allowing the old generic audit to
@@ -7328,6 +7335,50 @@ async function runSportsHubBrowseWorkflowAudit() {
   expectEqual(ownerResult.mobileFits, true, 'Sports Hub preferences fit the mobile viewport');
   expectEqual(ownerResult.consoleErrors.length, 0, 'Sports Hub owner workflow console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'Sports Hub owner workflow failed responses');
+}
+
+async function runCalendarViewsWorkflowAudit() {
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-owner-${process.pid}`);
+  const result = JSON.parse(cli(owner, ['run-code', `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) {
+        failedResponses.push({ status: response.status(), path: response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0] });
+      }
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      const agenda = page.getByRole('button', { name: 'Agenda', exact: true });
+      await agenda.click();
+      const agendaActive = await agenda.getAttribute('data-state').catch(() => null);
+      await page.getByRole('button', { name: 'Filters', exact: true }).click();
+      await page.getByText('Squad Enrollment', { exact: true }).waitFor({ timeout: 10000 });
+      const enrolledSquads = await page.getByText(/Phase 2 (Falcons|Bluebirds)/).count();
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Grid', exact: true }).click();
+      const gridActive = await page.getByRole('button', { name: 'Grid', exact: true }).getAttribute('data-state').catch(() => null);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 10000 });
+      const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      return { agendaActive, gridActive, enrolledSquads, mobileFits, consoleErrors, failedResponses };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`]));
+  expectEqual(result.enrolledSquads > 0, true, 'Calendar exposes the authenticated owner squad filter choices');
+  expectEqual(result.mobileFits, true, 'Calendar fits the mobile viewport');
+  expectEqual(result.consoleErrors.length, 0, 'Calendar views workflow console errors');
+  expectEqual(result.failedResponses.length, 0, 'Calendar views workflow failed responses');
 }
 
 function browserOwnerEventCreate(session, marker) {

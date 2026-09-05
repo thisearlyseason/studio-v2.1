@@ -224,6 +224,19 @@ test('operations browser evidence attributes chat and Sports Hub actions to the 
   assert.doesNotMatch(actorFunction, /'sports-hub-browse-search-filter-bookmark-preferences': \['catalog-scenario-actor'\]/);
 });
 
+test('Calendar views and filters have a dedicated two-viewport operations workflow', () => {
+  const start = source.indexOf('async function runCertificationOperationsScenarios()');
+  const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
+  const operationsBlock = source.slice(start, end);
+  assert.match(operationsBlock, /scenarioId === 'calendar-team-family-views-and-filters' && runBrowser/);
+  assert.match(operationsBlock, /await runCalendarViewsWorkflowAudit\(\)/);
+  assert.match(source, /async function runCalendarViewsWorkflowAudit\(\)/);
+  assert.match(source, /getByRole\('button', \{ name: 'Agenda'/);
+  assert.match(source, /getByRole\('button', \{ name: 'Filters'/);
+  assert.match(source, /getByRole\('heading', \{ name: 'Master Calendar'/);
+  assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
+});
+
 test('communication browser workflow uses the run-scoped Team A identifier for its chat target', () => {
   const start = source.indexOf('function browserMemberCommunication(');
   const end = source.indexOf('async function runCommunicationWorkflowAudit()', start);
