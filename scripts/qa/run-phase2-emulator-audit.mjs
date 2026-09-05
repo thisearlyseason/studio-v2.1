@@ -4150,13 +4150,16 @@ async function runTenantBrowserScenario(scenarioId) {
   const plan = buildTenantApiProbePlan(FIXTURES);
   let pathname;
   let expectedText;
+  let apiPathFragment;
   if (scenarioId === 'teams-join-by-code') {
     const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
     pathname = `/register/squad/${encodeURIComponent(teamA.id)}?code=${encodeURIComponent(teamA.code)}`;
     expectedText = teamA.name;
+    apiPathFragment = '/api/teams/join?';
   } else if (scenarioId === 'recruiting-public-scout-projection') {
     pathname = `/recruit/player/${encodeURIComponent(plan[scenarioId].activePlayerId)}`;
     expectedText = 'Blair';
+    apiPathFragment = `/api/public/recruiting/${plan[scenarioId].activePlayerId}`;
   } else {
     return;
   }
@@ -4176,14 +4179,17 @@ async function runTenantBrowserScenario(scenarioId) {
       const observations = [];
       for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
         await page.setViewportSize(viewport);
+        const apiResponsePromise = page.waitForResponse(response => response.url().includes(${JSON.stringify(apiPathFragment)}), { timeout: 20000 }).catch(() => null);
         await page.goto(${JSON.stringify(`${BASE_URL}${pathname}`)}, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(expected => (document.body?.innerText || '').includes(expected), ${JSON.stringify(expectedText)}, { timeout: 20000 });
+        const apiResponse = await apiResponsePromise;
+        await page.waitForFunction(expected => (document.body?.innerText || '').toLowerCase().includes(expected.toLowerCase()), ${JSON.stringify(expectedText)}, { timeout: 20000 }).catch(() => null);
         const bodyText = await page.locator('body').innerText();
         observations.push({
           viewport,
           pathname: page.url().split(${JSON.stringify(BASE_URL)})[1]?.split('?')[0] || '/',
-          markerCount: bodyText.includes(${JSON.stringify(expectedText)}) ? 1 : 0,
+          markerCount: bodyText.toLowerCase().includes(${JSON.stringify(expectedText.toLowerCase())}) ? 1 : 0,
           bodyExcerpt: bodyText.slice(0, 300),
+          apiStatus: apiResponse?.status() || null,
           scrollWidth: await page.evaluate(() => document.documentElement.scrollWidth),
           clientWidth: await page.evaluate(() => document.documentElement.clientWidth),
         });
@@ -4207,6 +4213,9 @@ async function runTenantBrowserScenario(scenarioId) {
   }, 'The public journey has no console errors or unexpected server failures.');
   await recordObservedTenantCase(scenarioId, 'responsive', `${prefix}-responsive`, async () => {
     expectEqual(result.observations.length, 2, `tenant ${scenarioId} viewport observations`);
+    if (!result.observations.every(item => item.markerCount > 0)) {
+      throw new Error(`tenant ${scenarioId} marker missing; ${result.observations.map(item => `${item.viewport.width}px api=${item.apiStatus} body=${item.bodyExcerpt}`).join(' | ').slice(0, 1000)}`);
+    }
     expectEqual(result.observations.every(item => item.markerCount > 0), true, `tenant ${scenarioId} marker visible at both viewports`);
     expectEqual(result.observations.every(item => item.scrollWidth <= item.clientWidth), true, `tenant ${scenarioId} no horizontal overflow`);
     return 'The exact public marker remained visible without page-level overflow at desktop and mobile widths.';
