@@ -1,7 +1,7 @@
 # Task 3 identity local certification observations
 
-- Run: `final-cert-t3-260905-070745-f043`
-- Commit: `f8fada52a23ad8afe36615b49fc809d7e05ca110`
+- Run: `final-cert-t3-260905-100743-7ed8`
+- Commit: `320d7f9f004b848da2a6c86103e1a266fdb871a7`
 - Environment: loopback Firebase emulators and local Next server only
 - Result boundary: local observations do not constitute final coverage-matrix PASS
 
@@ -10,12 +10,12 @@
 | `marketing-legal-contact-beta-coach-referral` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 | `authentication-email-password-login` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 | `authentication-logout-revocation-multi-tab` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
-| `authentication-password-reset` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
-| `account-lifecycle-disable-delete-cancel-purge` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `authentication-password-reset` | BLOCKED_PRECONDITION | happyPath, permission, persistence, console, network, responsive | negativePath |
+| `account-lifecycle-disable-delete-cancel-purge` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, console, network, responsive | persistence |
 | `signup-onboarding-coach-admin-league-parent-adult-player-signup` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 | `signup-onboarding-youth-invitation-signup` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 | `signup-onboarding-missing-profile-onboarding` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
-| `demo-seed-use-exit-expiry-cleanup` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
+| `demo-seed-use-exit-expiry-cleanup` | BLOCKED_PRECONDITION | happyPath, permission, console, network, responsive | negativePath, persistence |
 | `dashboard-shell-role-landing-and-route-policy` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 | `administration-access-and-user-directory` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 
@@ -35,7 +35,7 @@
 
 ## Cleanup
 
-- Shared proof `fixture-cleanup-final-cert-t3-260905-070745-f043`: OBSERVED; deleted 281, restored 2, retained audit records 0.
+- Shared proof `fixture-cleanup-final-cert-t3-260905-100743-7ed8`: OBSERVED; deleted 290, restored 5, retained audit records 0.
   - `marketing-legal-contact-beta-coach-referral` (local-batch): OBSERVED.
   - `authentication-email-password-login` (local-batch): OBSERVED.
   - `authentication-logout-revocation-multi-tab` (local-batch): OBSERVED.

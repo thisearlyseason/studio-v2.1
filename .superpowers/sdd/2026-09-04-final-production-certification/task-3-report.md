@@ -4,61 +4,66 @@
 
 Task 3's shared local runner and exact eleven-scenario identity batch execute the
 locally safe emulator, API, and real-Chrome contracts in frozen catalog order.
-The final immutable run `final-cert-t3-260905-070745-f043` used commit
-`f8fada52a23ad8afe36615b49fc809d7e05ca110`, exited zero, emitted all 77 exact
-case records, recorded 518 case-owned assertions (1,174 passing observations in
-the full child log), and had zero run errors. Every row has seven locally
-observed case dimensions.
+The final immutable run `final-cert-t3-260905-100743-7ed8` used candidate commit
+`320d7f9f004b848da2a6c86103e1a266fdb871a7`, exited zero, emitted all 77 exact
+case records, recorded 743 case-owned assertions, and had zero run errors. Of
+the 77 cases, 73 are `OBSERVED`, four are explicitly `NOT_OBSERVED`, and none
+failed.
 
-This is not final certification. All eleven rows remain
-`BLOCKED_PRECONDITION`: the candidate is not deployed to staging, no approved
-mailbox receipt indicator is available, and real hosted session/background
-Function evidence is absent. Production was not queried or changed. No matrix
-row was promoted to PASS.
+This is not final certification. Every row remains `BLOCKED_PRECONDITION`: the
+candidate is not deployed to staging, no approved mailbox receipt indicator is
+available, and real hosted session/background Function evidence is absent.
+Production was neither queried nor changed. No matrix row was promoted to PASS.
 
-## Fix-round Review Findings
+## Round 3 Findings
 
-- R1: case completion is derived from exact executed assertion contracts. A
-  successful no-op or partial handler cannot manufacture evidence. Every
-  locally safe omitted flow named by the review now executes.
-- R2: scenario-scoped console and response observers cover the actual browser
-  mutations, explicitly allow expected negative responses, remove listeners in
-  `finally`, and wait on meaningful route/DOM/network conditions.
-- R3: a dynamic resource/claim cleanup registry registers resources at
-  creation, attempts every exact cleanup, retries boundedly, verifies deletion
-  or restoration postconditions, and reports measured counts.
-- R4: the identity orchestrator stops all later mutation after its first
-  scenario failure while preserving cleanup/restoration and multiple sanitized
-  diagnostics for the failing case.
-- R5: evidence validation enforces the frozen case set, environment gaps,
-  ordered parseable timestamps, cleanup consistency, artifact containment and
-  existence, per-case provenance, and redacted artifacts before write.
-- R6: owned child/process teardown preserves signal exit status, terminates an
-  unresponsive child within bounds, retries exact session closures, and never
-  uses global browser cleanup.
+- Youth invitation authority now binds only to an active, server-authorized
+  child roster membership captured by the invitation and revalidated during
+  redemption. Parent-editable `primaryTeamId` and `joinedTeamIds` never mint
+  authority. Legitimate teamless/legacy activation remains teamless.
+- Dashboard evidence executes the actual route/navigation decision table for
+  all 20 active identities over seven sensitive routes at desktop and mobile
+  widths, plus the three blocked identities, visible-navigation consistency,
+  refresh/new-tab/Back persistence, and remaining surface sweeps.
+- Reset executes valid, modified, reused, old/new, wrong-account, restoration,
+  non-enumeration, form-state, console, network, and responsive paths. A true
+  unused-code expiry and recipient-tampered action remain `NOT_OBSERVED` because
+  the Auth emulator provides neither supported OOB clock control nor a
+  caller-selected recipient action.
+- Lifecycle and demo evidence no longer substitutes audit cleanup for an
+  application scheduler. Direct state transitions, boundaries, browser flows,
+  isolation, and measured cleanup execute; unavailable application-worker
+  paths remain `NOT_OBSERVED`.
+- Dynamic Auth, Firestore, Storage, claim, and restoration resources register
+  at mutation time. Cleanup attempts every registered target, retries boundedly,
+  verifies postconditions, and records actual delete/restore counts.
+- Case evidence validates environment, candidate, run, ordered timestamps,
+  artifact containment/existence/content, provenance, cleanup consistency, and
+  sanitized identities before write. The outer supervisor owns a process group,
+  preserves signal status, and bounds escalation even if its child is killed.
 
 ## Exact Scenario Outcomes
 
-| Scenario | Case-owned assertions | Local cases | Overall outcome | External requirement still open |
+| Scenario | Case-owned assertions | Local case state | Overall outcome | External requirement still open |
 |---|---:|---:|---|---|
-| `marketing-legal-contact-beta-coach-referral` | 26 | 7/7 | BLOCKED_PRECONDITION | Exact staging revision and approved mailbox/provider delivery-once evidence |
-| `authentication-email-password-login` | 80 | 7/7 | BLOCKED_PRECONDITION | Durable hosted session on the exact staging revision |
-| `authentication-logout-revocation-multi-tab` | 17 | 7/7 | BLOCKED_PRECONDITION | Hosted multi-tab logout and authorized claim revocation on the exact revision |
-| `authentication-password-reset` | 29 | 7/7 | BLOCKED_PRECONDITION | Approved QA mailbox action and actual delivery on the exact revision |
-| `account-lifecycle-disable-delete-cancel-purge` | 18 | 7/7 | BLOCKED_PRECONDITION | Authorized staging records, real Function/scheduler invocation and logs, and bounded staging fault injection |
-| `signup-onboarding-coach-admin-league-parent-adult-player-signup` | 41 | 7/7 | BLOCKED_PRECONDITION | Approved delivered verification for five staging roles on the exact revision |
-| `signup-onboarding-youth-invitation-signup` | 19 | 7/7 | BLOCKED_PRECONDITION | Approved invite mailbox delivery on the exact revision |
-| `signup-onboarding-missing-profile-onboarding` | 24 | 7/7 | BLOCKED_PRECONDITION | Durable hosted missing/partial-profile sessions on the exact revision |
-| `demo-seed-use-exit-expiry-cleanup` | 21 | 7/7 | BLOCKED_PRECONDITION | Exact staging revision and actual scheduled cleanup/retry logs |
-| `dashboard-shell-role-landing-and-route-policy` | 185 | 7/7 | BLOCKED_PRECONDITION | Durable hosted role/plan/state sessions on the exact revision |
-| `administration-access-and-user-directory` | 58 | 7/7 | BLOCKED_PRECONDITION | Authorized staging trusted-claim revoke/restore on the exact revision |
+| `marketing-legal-contact-beta-coach-referral` | 26 | 7 observed | BLOCKED_PRECONDITION | Exact staging revision and approved mailbox/provider delivery-once evidence |
+| `authentication-email-password-login` | 80 | 7 observed | BLOCKED_PRECONDITION | Durable hosted session on the exact staging revision |
+| `authentication-logout-revocation-multi-tab` | 17 | 7 observed | BLOCKED_PRECONDITION | Hosted multi-tab logout and authorized claim revocation on the exact revision |
+| `authentication-password-reset` | 18 | 6 observed, 1 not observed | BLOCKED_PRECONDITION | True expiry/recipient-tamper seam plus approved mailbox delivery on the exact revision |
+| `account-lifecycle-disable-delete-cancel-purge` | 14 | 6 observed, 1 not observed | BLOCKED_PRECONDITION | Real Function/scheduler invocation, correlated logs, and bounded staging fault injection |
+| `signup-onboarding-coach-admin-league-parent-adult-player-signup` | 41 | 7 observed | BLOCKED_PRECONDITION | Approved delivered verification for five staging roles on the exact revision |
+| `signup-onboarding-youth-invitation-signup` | 23 | 7 observed | BLOCKED_PRECONDITION | Approved invite mailbox delivery on the exact revision |
+| `signup-onboarding-missing-profile-onboarding` | 54 | 7 observed | BLOCKED_PRECONDITION | Durable hosted missing/partial-profile sessions on the exact revision |
+| `demo-seed-use-exit-expiry-cleanup` | 10 | 5 observed, 2 not observed | BLOCKED_PRECONDITION | Actual scheduled expiry/pending-recovery worker and retry logs on the exact revision |
+| `dashboard-shell-role-landing-and-route-policy` | 384 | 7 observed | BLOCKED_PRECONDITION | Durable hosted role/plan/state sessions on the exact revision |
+| `administration-access-and-user-directory` | 76 | 7 observed | BLOCKED_PRECONDITION | Authorized staging trusted-claim revoke/restore on the exact revision |
 
 The tracked sanitized summary is
 `docs/qa/production-audit/runs/2026-09-04-final-certification/02-identity.md`.
 The ignored machine result is
-`output/playwright/2026-09-04-final-certification/task-3/final-cert-t3-260905-070745-f043/results.json`.
-All eleven result outcomes are `BLOCKED_PRECONDITION`, `runErrors` is empty,
-and every case artifact is contained beneath that run directory.
+`output/playwright/2026-09-04-final-certification/task-3/final-cert-t3-260905-100743-7ed8/results.json`.
+All eleven result outcomes are `BLOCKED_PRECONDITION`; `runErrors` is empty and
+every declared artifact is contained beneath that run directory.
 
 ## Browser, Error, and Persistence Evidence
 
@@ -68,84 +73,81 @@ The exact final command was:
 PLAYWRIGHT_CLI=/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh npm run qa:certify-local -- identity --browser
 ```
 
-The local run covered public contact/beta/referral forms and isolation; all 20
-active identity landings plus blocked states; timeout, double-submit, keyboard,
-password visibility, refresh/new-tab/Back, and deep-link login behavior; user
-and administrator open-tab/fresh-tab revocation; expired/reused/modified and
-wrong-account reset links; lifecycle schedule/cancel/suspend/restore plus local
-purge clock/fault/retry/reconciliation; five fresh visible signup flows with
-invalid, duplicate, aborted-delivery, provider-failure, and privileged-field
-attacks; youth role/tenant/rules and relogin persistence; all missing-profile
-role completions and transient read recovery; two demo browser contexts,
-cross-ID denial, expiry, and cleanup retry; the complete route-policy/visible
-navigation matrix; and all non-superadmin admin routes plus rules, directory
-targeting, actual ascending/descending order, mobile fit, and live revocation.
+The final browser run covered public form validation/persistence/isolation; 20
+active login landings and three blocked accounts; login timeout/recovery,
+double-submit, keyboard, visibility, deep-link and navigation persistence;
+logout and administrator open/fresh-tab revocation; complete visible signup and
+missing-profile role flows; adversarial and authorized youth activation; two
+isolated demo browser contexts; the complete dashboard route policy; and all
+non-superadmin administration denials, directory sort/target, responsive, and
+revocation paths. Scenario-scoped observers surrounded the actual mutations and
+were removed in `finally`.
 
-Every supported workflow captured its own console/network evidence at both
-required viewports. The local child inherited no usable Stripe, Resend, push,
-internal-route, or Firebase service credentials. Accepted email actions used
-only the in-memory local sink. Parsed loopback validation rejected foreign,
-userinfo, suffix, protocol, path, and invalid-port bypasses at the outer,
-browser, and legacy seams.
+The local child inherited no usable Stripe, Resend, push, internal-route, or
+Firebase service credentials. Accepted email actions used only the in-memory
+local sink. Parsed loopback validation rejected foreign, userinfo, suffix,
+protocol, path, and invalid-port bypasses at the outer, browser, and legacy
+seams.
 
 ## Cleanup
 
-Shared cleanup event
-`fixture-cleanup-final-cert-t3-260905-070745-f043` is `OBSERVED`: 281 exact
-deletions, two exact restorations, and zero retained audit records. Dynamic Auth,
-Firestore, Storage, demo, signup, youth, missing-profile, lifecycle, and claim
-resources passed absence/restoration postconditions. The browser registry was
-empty after `finally`, and no owned emulator/Next/audit process remained.
+Shared cleanup event `fixture-cleanup-final-cert-t3-260905-100743-7ed8` is
+`OBSERVED`: 290 measured deletions, five measured restorations, and zero retained
+audit records. Dynamic Auth, Firestore, Storage, demo, signup, youth,
+missing-profile, lifecycle, and claim resources passed absence/restoration
+postconditions. All owned browser sessions and local services closed in
+`finally`.
 
-Lifecycle's `background-batch` cleanup contribution remains
-`BLOCKED_PRECONDITION`; local purge fault/retry evidence is not represented as a
-real scheduler invocation or staging background cleanup.
+Lifecycle's `background-batch` contribution remains `BLOCKED_PRECONDITION`.
+The demo scheduler expiry/pending-recovery cases likewise remain
+`NOT_OBSERVED`; local registry cleanup is not represented as worker evidence.
 
 ## Bugs Found and Fixed
 
-- BUG-028: youth invitation redemption linked Auth/profile/player data but did
-  not create the user's team member and membership projections. The API now
-  resolves the player's authoritative team in-transaction and creates both
-  projections atomically; focused API/browser linkage, tenant-authority, and
-  relogin tests passed before the final full run.
-- BUG-029: the admin directory displayed `name` when `fullName` was absent but
-  sorted only by `fullName`, so visible rows could fail both ascending and
-  descending order. The comparator now uses the same
-  `fullName || name || email` fallback as rendering; focused browser assertions
-  verified both real orders before the full run.
+- **BUG-028:** youth activation could mint tenant authority from
+  parent-editable player team fields. Redemption now stores and revalidates the
+  exact active child roster binding. Regressions cover forged primary and joined
+  fields, removed child, post-invite team change with Auth rollback, teamless
+  legacy activation, authorized membership, tenant authority, and relogin.
+- **BUG-029:** admin directory sorting used a different name fallback than its
+  visible rows. The comparator now uses `fullName || name || email`; actual
+  ascending and descending browser orders pass.
+- **BUG-030:** elite-plan club owners saw a mobile `/competition` link even
+  though the authoritative route policy denied it. The shared mobile bottom nav
+  now filters through `authorizeDashboardRoute`; the 20-role visible-navigation
+  and direct-route matrix passes at both viewports.
 
-Audit-only defects repaired in the same round include the dashboard hydration
-navigation race, exact-expected redirect handling, stale emulator Admin SDK
-HTTP keep-alive (`EPIPE`), login's frozen three-blocked-identity contract, and
-the signup negative-case label attribution. Each received a regression and an
-affected focused rerun. These are runner/evidence defects, not additional
-product bug IDs.
+Audit-only repairs include strict evidence validation/sanitization, exact
+resource cleanup, process-group supervision, scenario filtering, mutation-time
+observers, correct fail-stop behavior, and a bounded redirect transition wait
+with requested/expected/actual diagnostics. The latter reproduced only under
+the accumulated full-batch load, passed its focused rerun, and then passed the
+final full run. These are runner/evidence defects, not product bug IDs.
 
-Prior Task 3 fixes BUG-022 through BUG-027 remain covered. BUG-023 retains both
-the helper test and the five-target request-plan integration regression; no
-report language treats the helper alone as integration proof.
+BUG-023 retains both the pure target-builder regression and the separate
+five-request integration-plan regression; the helper alone is not described as
+integration proof.
 
 ## Verification
 
-- Focused real-browser signup rerun after the final evidence-attribution fix:
-  7/7 exact cases, including invalid, duplicate, aborted-delivery, and provider
-  failure; exact cleanup; no run errors.
-- Final immutable browser batch: 11 scenarios, 77/77 cases, 518 case-owned
-  assertions, 1,174 total passing observations, zero run errors, cleanup 281
-  deleted / 2 restored / 0 retained.
-- Focused behavioral regression for signup evidence attribution: 1 passed, 0
-  failed.
-- `npm test`: 579 passed, 0 failed.
+- Focused dashboard browser rerun on final candidate: run
+  `final-cert-t3-260905-095628-6857`, 7/7 observed, zero failures; cleanup 249
+  deleted / 0 restored / 0 retained.
+- Final immutable browser batch: run `final-cert-t3-260905-100743-7ed8`, 11
+  scenarios, 77 cases, 73 observed / 4 not observed / 0 failed, 743 case-owned
+  assertions, zero run errors; cleanup 290 deleted / 5 restored / 0 retained.
+- `node --test tests/phase2-emulator-audit.test.mjs`: 60 passed, 0 failed.
+- `npm test`: 586 passed, 0 failed.
 - `npm run typecheck`: exit 0.
 - `npm run build`: exit 0; optimized production build completed. Existing
-  repository lint/Tailwind/workspace-root warnings were non-fatal.
-- `git diff --check`: exit 0 after report/matrix/ledger reconciliation.
+  repository lint, Tailwind, and workspace-root warnings were non-fatal.
+- `git diff --check`: run after final report/matrix/ledger reconciliation.
 
 ## Remaining Blockers
 
-Deploy and correlate exact candidate commit `f8fada52` before hosted evidence.
+Deploy and correlate exact candidate commit `320d7f9f` before hosted evidence.
 Then provide explicit authorization for run-prefixed staging mutations and
-trusted-claim restore, an approved disposable QA mailbox with a receipt
+trusted-claim restoration, an approved disposable QA mailbox with a receipt
 indicator, durable role/session fixtures, and an allowlisted real
 Function/scheduler invocation with sanitized correlated logs and safe bounded
 fault injection.

@@ -2,7 +2,23 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-05; twenty-eight defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-05; twenty-nine defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-030 — Elite-plan mobile navigation exposes a denied competition route (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Dashboard shell — responsive route navigation |
+| Role | Elite-plan club owner |
+| Page or route | Mobile bottom navigation; `/competition` |
+| Description | The mobile shell rendered a Leagues link to `/competition` for an elite-plan club owner even though the authoritative route policy denied that destination and redirected direct access to `/dashboard`. |
+| Expected behavior | Every visible sensitive navigation item agrees with the same role, plan, tenant, and trusted-claim policy that guards direct routes. |
+| Actual behavior | Mobile navigation advertised a route that the application immediately denied. Backend and direct-route guards still prevented unauthorized access. |
+| Root cause | Coordination tabs were filtered through `authorizeDashboardRoute`, but the shared mobile bottom-nav list bypassed the policy filter. |
+| Fix | `Shell` now filters mobile bottom-nav items through `authorizeDashboardRoute` using the active identity's authoritative role, plan, ownership, and trusted-claim state. |
+| Verification | A regression was red before the fix. Focused dashboard run `final-cert-t3-260905-095628-6857` and final immutable run `final-cert-t3-260905-100743-7ed8` on candidate `320d7f9f` then completed the 20-role, seven-route direct and visible-navigation matrix at desktop and mobile widths with zero policy, console, network, or containment failures. The coverage row remains blocked for exact-revision hosted sessions. |
+| Status | RESOLVED LOCALLY — STAGING ROW REMAINS BLOCKED |
 
 ## BUG-029 — Admin directory name sorting disagrees with displayed names (resolved)
 
@@ -17,10 +33,10 @@
 | Actual behavior | Fixture users backed by `name` remained out of visible ascending/descending order. |
 | Root cause | Rendering used `fullName || name`, while sorting read only the selected `fullName` property. |
 | Fix | The comparator now uses `fullName || name || email` for the Name column and retains the existing comparator for other fields. |
-| Verification | A focused browser regression waited for and asserted the actual ascending and descending row order; the immutable 11-scenario run `final-cert-t3-260905-070745-f043` repeated both assertions with zero console/network findings. The row remains BLOCKED for authorized staging claim revocation on the exact deployed revision. |
+| Verification | A focused browser regression waited for and asserted the actual ascending and descending row order; the immutable 11-scenario run `final-cert-t3-260905-100743-7ed8` repeated both assertions with zero console/network findings. The row remains BLOCKED for authorized staging claim revocation on the exact deployed revision. |
 | Status | RESOLVED LOCALLY — STAGING ROW REMAINS BLOCKED |
 
-## BUG-028 — Youth activation omits team membership projections (resolved)
+## BUG-028 — Youth activation trusts parent-editable player team fields (resolved)
 
 | Field | Evidence |
 |---|---|
@@ -28,12 +44,12 @@
 | Feature | Signup/onboarding — youth invitation activation |
 | Role | Youth player |
 | Page or route | `/signup/youth`; `/api/invites/youth` |
-| Description | Redeeming a valid youth invitation created the Auth identity and linked player/profile, but omitted both membership projections consumed by team authorization and dashboard data. |
-| Expected behavior | Activation atomically links the intended player and creates one active team member plus one user team-membership projection for the player's authoritative team. |
-| Actual behavior | The new identity existed without `teams/<teamId>/members/<uid>` or `users/<uid>/teamMemberships/<teamId>`. |
-| Root cause | The invitation transaction updated only the user/player/invite records and never derived the player's `primaryTeamId`/`joinedTeamIds` or projected membership. |
-| Fix | Redemption now resolves and verifies the authoritative team inside the transaction, creates both bounded membership documents, then consumes the invite atomically. |
-| Verification | Focused API and real-browser checks proved exact player linkage, one team membership, youth-only tenant authority, consumed-invite denial, and relogin persistence. The immutable run `final-cert-t3-260905-070745-f043` repeated the full youth role/tenant/rules matrix and exact restoration. Approved staging invite delivery remains blocked. |
+| Description | The first membership repair derived tenant authority from the player's `primaryTeamId` and `joinedTeamIds`. Those fields are parent-editable profile metadata, so a forged value could mint a youth membership during invitation redemption. |
+| Expected behavior | Activation grants tenant authority only for the exact child and team backed by a currently active, server-authorized roster membership. Teamless and legacy players remain teamless. |
+| Actual behavior | A valid invite could convert forged player team metadata into `teams/<teamId>/members/<uid>` and `users/<uid>/teamMemberships/<teamId>` projections. |
+| Root cause | Redemption treated denormalized player preference/link fields as authorization instead of binding and revalidating an active child roster record. |
+| Fix | Invitation creation stores the authoritative active-roster binding. Redemption transactionally revalidates the exact player/team membership before creating projections; missing, removed, or changed bindings fail closed and roll back the new Auth identity. |
+| Verification | Behavioral regressions cover forged primary-team and joined-team fields, removed child membership, post-invite team change with HTTP 409 and Auth rollback, legitimate teamless activation, and an authorized active-roster positive. Final immutable run `final-cert-t3-260905-100743-7ed8` repeated linkage, tenant authority, relogin persistence, both viewports, console/network observers, and exact restoration. Approved staging invite delivery remains blocked. |
 | Status | RESOLVED LOCALLY — STAGING ROW REMAINS BLOCKED |
 
 ## BUG-027 — Delegated school hub loads organization capacity before hub resolution (resolved)
