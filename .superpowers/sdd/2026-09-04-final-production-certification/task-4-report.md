@@ -18,6 +18,31 @@ revision. Youth activation additionally needs approved QA mailbox delivery and
 receipt. The run used only loopback Firebase emulators and the local Next
 server; production remained read-only and provider delivery was not invoked.
 
+## Task 11 R16 browser-provenance addendum
+
+The earlier browser artifacts registered the disposable Family child target but
+opened their console/responsive case intervals only after the lifecycle had
+finished. Candidate `f0c54b242645f76ca9320ed14b7f6aee6286dad9` repairs that
+evidence boundary without altering the accepted activated-child deletion policy:
+one case-owned execution now opens before target registration and every Family
+create, link, relink, browser unlink, browser removal, Admin graph
+reconciliation, and render observation. The console and responsive artifacts
+share that bounded execution rather than attaching a post-hoc synthetic
+`browser-work` record.
+
+Red/green regressions reject a target-only synthetic browser observation,
+missing dynamic reconciliation, a target mismatch, an out-of-interval request,
+and misclassification of the Family create POST. The focused Family Chrome run
+`final-cert-t4-260905-215231-26e9` passed all 11 case records with no run
+errors and cleanup `299 deleted / 0 restored / 0 retained`. The fresh immutable
+16-scenario Chrome run `final-cert-t4-260905-215356-8a35` used the exact
+implementation SHA, recorded 177/177 cases and 112/112 local dimensions with
+zero run errors, and reconciled cleanup at `301 deleted / 72 restored / 0
+retained`. Each repaired browser artifact records the create, two joins, two
+PATCHes, DELETE, three browser-render observations, and the exact
+create/link/relink, unlink, and removal reconciliations for the same runtime
+target and interval.
+
 ## Implemented and Executed Work
 
 - The tenant runner requires scenario-specific assertion sets for all 16 rows;
