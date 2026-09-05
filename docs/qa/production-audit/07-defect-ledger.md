@@ -2,7 +2,23 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-05; twenty-nine defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-05; thirty defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-031 — Linked player identity can inherit unrelated tenant and staff authority (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P0 CRITICAL |
+| Feature | Youth identity — downstream team and tournament authorization |
+| Role | Youth player; team staff |
+| Page or route | Firestore team resources; tournament schedule deployment helper |
+| Description | Downstream authorization trusted an arbitrary `users.linkedPlayerId`. A forged user profile could point at an unrelated active roster member and be treated as a team member; the tournament staff helper could also interpret that linked roster entry's staff-like position as the caller's authority. |
+| Expected behavior | Youth access requires a server-authoritative user/player/guardian binding plus an active roster relationship for the exact team. Staff or parent powers require the caller's own direct active membership. Legitimate teamless and legacy activation must remain usable without granting unrelated tenant authority. |
+| Actual behavior | `linkedPlayerId` alone was sufficient to enter the linked-player branch. Firestore rules did not bind the player back to the signed-in user and guardian, and the server tournament helper fell back from the caller's direct membership to the linked player's membership. |
+| Root cause | A denormalized convenience pointer was consumed as an authorization proof without verifying its server-owned identity chain or separating youth membership from staff authority. |
+| Fix | Firestore membership now requires matching `users/{uid}`, `players/{linkedPlayerId}`, and active `teams/{teamId}/members/{linkedPlayerId}` records, including user, guardian, player, and team bindings. Staff/parent rules and tournament deployment use direct active caller membership only. Client writes cannot forge player `userId`, `parentId`, or `guardianIds`; youth member projections carry their authoritative team binding. |
+| Verification | Firestore emulator tests prove valid linked-youth access and deny mismatched user/player, parent, team, removed membership, staff inheritance, and player-binding forgery. Tournament helper regressions prove legitimate direct staff access and deny linked, removed, and cross-team records. Focused youth run `final-cert-t3-260905-111011-341f` passed 7/7 local cases, and immutable full run `final-cert-t3-260905-111335-5280` on candidate `5d3c9283` passed all 11 scenarios with zero failed cases or run errors. Approved staging invite/session evidence remains blocked. |
+| Status | RESOLVED LOCALLY — STAGING ROW REMAINS BLOCKED |
 
 ## BUG-030 — Elite-plan mobile navigation exposes a denied competition route (resolved)
 

@@ -4,9 +4,9 @@
 
 Task 3's shared local runner and exact eleven-scenario identity batch execute the
 locally safe emulator, API, and real-Chrome contracts in frozen catalog order.
-The final immutable run `final-cert-t3-260905-100743-7ed8` used candidate commit
-`320d7f9f004b848da2a6c86103e1a266fdb871a7`, exited zero, emitted all 77 exact
-case records, recorded 743 case-owned assertions, and had zero run errors. Of
+The final immutable run `final-cert-t3-260905-111335-5280` used candidate commit
+`5d3c9283393c61f7258e023de648a64372c197bc`, exited zero, emitted all 77 exact
+case records, recorded 885 case-owned assertions, and had zero run errors. Of
 the 77 cases, 73 are `OBSERVED`, four are explicitly `NOT_OBSERVED`, and none
 failed.
 
@@ -15,7 +15,24 @@ candidate is not deployed to staging, no approved mailbox receipt indicator is
 available, and real hosted session/background Function evidence is absent.
 Production was neither queried nor changed. No matrix row was promoted to PASS.
 
-## Round 3 Findings
+## Round 4 Findings
+
+- Downstream youth authority no longer trusts an arbitrary
+  `users.linkedPlayerId`. Firestore access requires a server-bound user/player/
+  guardian chain and an active roster record for the requested team. Staff and
+  parent authority remain direct-membership-only. Tournament scheduling uses
+  the same direct server-authorized staff boundary.
+- Player identity bindings (`userId`, `parentId`, and `guardianIds`) cannot be
+  forged or rewritten by clients. Youth invitation projections carry the team
+  binding used by downstream policy.
+- Browser-created youth and demo identities and graph roots register before
+  dependent seed/UI waits. Outer `finally` recovery discovers partially created
+  resources, and bounded cleanup attempts and verifies every registered target.
+- Multiple legitimate assertion and cleanup failures retain separate structured
+  diagnostics and artifact provenance; the validator still rejects mismatched,
+  duplicate, unsafe, or uncontained evidence.
+
+Round 3 coverage remains intact:
 
 - Youth invitation authority now binds only to an active, server-authorized
   child roster membership captured by the invitation and revalidated during
@@ -25,7 +42,7 @@ Production was neither queried nor changed. No matrix row was promoted to PASS.
   all 20 active identities over seven sensitive routes at desktop and mobile
   widths, plus the three blocked identities, visible-navigation consistency,
   refresh/new-tab/Back persistence, and remaining surface sweeps.
-- Reset executes valid, modified, reused, old/new, wrong-account, restoration,
+- Reset executes valid, modified, reused, old/new, other-account password-isolation, restoration,
   non-enumeration, form-state, console, network, and responsive paths. A true
   unused-code expiry and recipient-tampered action remain `NOT_OBSERVED` because
   the Auth emulator provides neither supported OOB clock control nor a
@@ -54,14 +71,14 @@ Production was neither queried nor changed. No matrix row was promoted to PASS.
 | `signup-onboarding-coach-admin-league-parent-adult-player-signup` | 41 | 7 observed | BLOCKED_PRECONDITION | Approved delivered verification for five staging roles on the exact revision |
 | `signup-onboarding-youth-invitation-signup` | 23 | 7 observed | BLOCKED_PRECONDITION | Approved invite mailbox delivery on the exact revision |
 | `signup-onboarding-missing-profile-onboarding` | 54 | 7 observed | BLOCKED_PRECONDITION | Durable hosted missing/partial-profile sessions on the exact revision |
-| `demo-seed-use-exit-expiry-cleanup` | 10 | 5 observed, 2 not observed | BLOCKED_PRECONDITION | Actual scheduled expiry/pending-recovery worker and retry logs on the exact revision |
-| `dashboard-shell-role-landing-and-route-policy` | 384 | 7 observed | BLOCKED_PRECONDITION | Durable hosted role/plan/state sessions on the exact revision |
+| `demo-seed-use-exit-expiry-cleanup` | 12 | 5 observed, 2 not observed | BLOCKED_PRECONDITION | Actual scheduled expiry/pending-recovery worker and retry logs on the exact revision |
+| `dashboard-shell-role-landing-and-route-policy` | 524 | 7 observed | BLOCKED_PRECONDITION | Durable hosted role/plan/state sessions on the exact revision |
 | `administration-access-and-user-directory` | 76 | 7 observed | BLOCKED_PRECONDITION | Authorized staging trusted-claim revoke/restore on the exact revision |
 
 The tracked sanitized summary is
 `docs/qa/production-audit/runs/2026-09-04-final-certification/02-identity.md`.
 The ignored machine result is
-`output/playwright/2026-09-04-final-certification/task-3/final-cert-t3-260905-100743-7ed8/results.json`.
+`output/playwright/2026-09-04-final-certification/task-3/final-cert-t3-260905-111335-5280/results.json`.
 All eleven result outcomes are `BLOCKED_PRECONDITION`; `runErrors` is empty and
 every declared artifact is contained beneath that run directory.
 
@@ -70,7 +87,7 @@ every declared artifact is contained beneath that run directory.
 The exact final command was:
 
 ```text
-PLAYWRIGHT_CLI=/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh npm run qa:certify-local -- identity --browser
+PLAYWRIGHT_CLI=/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh npm run qa:certify-local -- identity --browser --fail-fast
 ```
 
 The final browser run covered public form validation/persistence/isolation; 20
@@ -91,7 +108,7 @@ seams.
 
 ## Cleanup
 
-Shared cleanup event `fixture-cleanup-final-cert-t3-260905-100743-7ed8` is
+Shared cleanup event `fixture-cleanup-final-cert-t3-260905-111335-5280` is
 `OBSERVED`: 290 measured deletions, five measured restorations, and zero retained
 audit records. Dynamic Auth, Firestore, Storage, demo, signup, youth,
 missing-profile, lifecycle, and claim resources passed absence/restoration
@@ -104,6 +121,13 @@ The demo scheduler expiry/pending-recovery cases likewise remain
 
 ## Bugs Found and Fixed
 
+- **BUG-031:** an arbitrary `users.linkedPlayerId` could be treated as team
+  membership in Firestore and as tournament staff authority in the server
+  scheduling helper. Authorization now requires the server-bound user/player/
+  guardian chain plus an active roster record for that team; staff authority is
+  direct-membership-only. Rules and helper regressions cover valid youth access,
+  mismatched user/player/parent/team records, removed membership, staff
+  non-inheritance, client binding forgery, and legitimate direct staff access.
 - **BUG-028:** youth activation could mint tenant authority from
   parent-editable player team fields. Redemption now stores and revalidates the
   exact active child roster binding. Regressions cover forged primary and joined
@@ -130,14 +154,19 @@ integration proof.
 
 ## Verification
 
-- Focused dashboard browser rerun on final candidate: run
-  `final-cert-t3-260905-095628-6857`, 7/7 observed, zero failures; cleanup 249
-  deleted / 0 restored / 0 retained.
-- Final immutable browser batch: run `final-cert-t3-260905-100743-7ed8`, 11
-  scenarios, 77 cases, 73 observed / 4 not observed / 0 failed, 743 case-owned
+- Focused youth browser rerun: run `final-cert-t3-260905-111011-341f`, 7/7
+  observed, zero failures; cleanup 265 deleted / 5 restored / 0 retained.
+- Focused demo browser rerun on the final candidate: run
+  `final-cert-t3-260905-111233-c0da`, 5/7 observed with two explicit
+  `NOT_OBSERVED` worker dimensions, zero failures; cleanup 249 deleted / 0
+  restored / 0 retained.
+- Final immutable browser batch: run `final-cert-t3-260905-111335-5280`, 11
+  scenarios, 77 cases, 73 observed / 4 not observed / 0 failed, 885 case-owned
   assertions, zero run errors; cleanup 290 deleted / 5 restored / 0 retained.
-- `node --test tests/phase2-emulator-audit.test.mjs`: 60 passed, 0 failed.
-- `npm test`: 586 passed, 0 failed.
+- `npm run test:rules`: 41 passed, 0 failed.
+- Focused identity, evidence, invitation, and tournament-staff suite: 103
+  passed, 0 failed.
+- `npm test`: 592 passed, 0 failed.
 - `npm run typecheck`: exit 0.
 - `npm run build`: exit 0; optimized production build completed. Existing
   repository lint, Tailwind, and workspace-root warnings were non-fatal.
@@ -145,7 +174,7 @@ integration proof.
 
 ## Remaining Blockers
 
-Deploy and correlate exact candidate commit `320d7f9f` before hosted evidence.
+Deploy and correlate exact candidate commit `5d3c9283` before hosted evidence.
 Then provide explicit authorization for run-prefixed staging mutations and
 trusted-claim restoration, an approved disposable QA mailbox with a receipt
 indicator, durable role/session fixtures, and an allowlisted real

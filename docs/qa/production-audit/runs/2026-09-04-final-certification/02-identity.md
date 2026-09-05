@@ -1,7 +1,7 @@
 # Task 3 identity local certification observations
 
-- Run: `final-cert-t3-260905-100743-7ed8`
-- Commit: `320d7f9f004b848da2a6c86103e1a266fdb871a7`
+- Run: `final-cert-t3-260905-111335-5280`
+- Commit: `5d3c9283393c61f7258e023de648a64372c197bc`
 - Environment: loopback Firebase emulators and local Next server only
 - Result boundary: local observations do not constitute final coverage-matrix PASS
 
@@ -35,7 +35,7 @@
 
 ## Cleanup
 
-- Shared proof `fixture-cleanup-final-cert-t3-260905-100743-7ed8`: OBSERVED; deleted 290, restored 5, retained audit records 0.
+- Shared proof `fixture-cleanup-final-cert-t3-260905-111335-5280`: OBSERVED; deleted 290, restored 5, retained audit records 0.
   - `marketing-legal-contact-beta-coach-referral` (local-batch): OBSERVED.
   - `authentication-email-password-login` (local-batch): OBSERVED.
   - `authentication-logout-revocation-multi-tab` (local-batch): OBSERVED.
