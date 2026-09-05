@@ -174,7 +174,7 @@ const certificationCaseContracts = Object.freeze({
       /login double-submit single session request/,
     ] },
     { dimension: 'permission', caseId: 'login-blocked-state-and-tenant-denials', requirements: [
-      { pattern: / certification blocked state$/, minCount: 4 }, { pattern: /scoped tenant request /, minCount: 5 },
+      { pattern: / certification blocked state$/, minCount: 3 }, { pattern: /scoped tenant request /, minCount: 5 },
     ] },
     { dimension: 'persistence', caseId: 'login-deep-link-refresh-new-tab', requirements: [
       /protected deep-link return/, /login owner session refresh and Back destination/,

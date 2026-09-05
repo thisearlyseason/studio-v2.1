@@ -548,6 +548,15 @@ test('Task 3 case completion cannot promote a successful no-op or partial scenar
   ]), []);
 });
 
+test('Task 3 login permission case matches the three frozen blocked identities', () => {
+  const assertions = [
+    ...['qa-unverified', 'qa-suspended', 'qa-pending-delete'].map(alias => ({ label: `${alias} certification blocked state` })),
+    ...Array.from({ length: 5 }, (_, index) => ({ label: `scoped tenant request actor-${index}` })),
+  ];
+  const completed = auditRunner.buildCompletedCertificationCases('authentication-email-password-login', assertions);
+  assert.equal(completed.some(item => item.caseId === 'login-blocked-state-and-tenant-denials'), true);
+});
+
 test('Task 3 fixture cleanup consumes measured operation counts instead of catalog arithmetic', () => {
   assert.match(seederSource, /FIXTURE_CLEANUP_RESULT/);
   assert.match(seederSource, /countDocumentTree/);
