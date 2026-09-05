@@ -12,6 +12,7 @@ import {
 } from './local/batches/identity.mjs';
 import {
   LOCAL_TENANT_CASE_REQUIREMENTS,
+  LOCAL_TENANT_OPERATION_CONTRACTS,
   tenantCaseAssociationFor,
   runTenantsBatch as defaultRunTenantsBatch,
 } from './local/batches/tenants.mjs';
@@ -121,7 +122,7 @@ export async function main(argv, dependencies = {}) {
     const summaries = [];
     const batchDefinitions = {
       identity: { run: runIdentityBatch, task: 'task-3', markdown: '02-identity.md', title: 'Task 3 identity', caseRequirements: LOCAL_IDENTITY_CASE_REQUIREMENTS },
-      tenants: { run: runTenantsBatch, task: 'task-4', markdown: '03-tenants.md', title: 'Task 4 tenant and family', caseRequirements: LOCAL_TENANT_CASE_REQUIREMENTS, caseAssociationResolver: tenantCaseAssociationFor },
+      tenants: { run: runTenantsBatch, task: 'task-4', markdown: '03-tenants.md', title: 'Task 4 tenant and family', caseRequirements: LOCAL_TENANT_CASE_REQUIREMENTS, caseAssociationResolver: tenantCaseAssociationFor, operationContracts: LOCAL_TENANT_OPERATION_CONTRACTS },
     };
     for (const [batch, selected] of groups) {
       const definition = batchDefinitions[batch];
@@ -140,6 +141,7 @@ export async function main(argv, dependencies = {}) {
         batch,
         caseRequirements: definition.caseRequirements,
         caseAssociationResolver: definition.caseAssociationResolver,
+        operationContracts: definition.operationContracts,
       });
       const batchOutput = await definition.run(context, selected);
       for (const runError of batchOutput.runErrors) recorder.recordRunError(runError);

@@ -31,12 +31,17 @@ export interface Team {
   contactPhone?: string;
   registrationProtocolId?: string;
   features?: {
+    attendance?: boolean;
+    equipment?: boolean;
+    facilities?: boolean;
     feed?: boolean;
-    roster?: boolean;
+    files?: boolean;
+    fundraising?: boolean;
     practice?: boolean;
+    volunteers?: boolean;
+    roster?: boolean;
     playbook?: boolean;
     volunteer?: boolean;
-    fundraising?: boolean;
     tacticalChat?: boolean;
     library?: boolean;
   };

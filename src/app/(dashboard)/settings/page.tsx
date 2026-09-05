@@ -80,6 +80,18 @@ import { deletePushDevice, registerPushDevice } from '@/lib/client-push-registra
 import { clearBrowserSession } from '@/lib/client-auth';
 import { isStaffPosition } from '@/lib/staff-position';
 import { canManageActiveTeamModules } from '@/lib/team-settings-authority';
+import { TEAM_MODULE_DEFINITIONS } from '@/lib/team-module-visibility';
+
+const TEAM_MODULE_ICONS = {
+  attendance: Users,
+  equipment: Dumbbell,
+  facilities: LayoutDashboard,
+  feed: LayoutDashboard,
+  files: FolderClosed,
+  fundraising: PiggyBank,
+  practice: Dumbbell,
+  volunteers: HandHelping,
+} as const;
 
 export default function SettingsPage() {
   const { 
@@ -705,26 +717,17 @@ export default function SettingsPage() {
             Toggle which squad modules are visible in the sidebar. Disabled modules are completely hidden and inaccessible to all users in this squad.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { id: 'feed', name: 'Feed', icon: LayoutDashboard },
-              { id: 'roster', name: 'Roster', icon: Users },
-              { id: 'practice', name: 'Practice', icon: Dumbbell },
-              { id: 'playbook', name: 'Playbook', icon: GraduationCap },
-              { id: 'volunteer', name: 'Volunteer', icon: HandHelping },
-              { id: 'fundraising', name: 'Fundraising', icon: PiggyBank },
-              { id: 'tacticalChat', name: 'Team Chat', icon: MessageCircle },
-              { id: 'library', name: 'Library', icon: FolderClosed },
-            ].map(module => {
-              const Icon = module.icon;
+            {TEAM_MODULE_DEFINITIONS.map(module => {
+              const Icon = TEAM_MODULE_ICONS[module.key];
               // features is undefined by default, so we treat undefined as true (enabled)
-              const isEnabled = activeTeam.features?.[module.id as keyof typeof activeTeam.features] !== false;
+              const isEnabled = activeTeam.features?.[module.key] !== false;
               
               const handleToggle = async (checked: boolean) => {
                 if (!db) return;
                 try {
                   const teamRef = doc(db, 'teams', activeTeam.id);
                   await updateDoc(teamRef, {
-                    [`features.${module.id}`]: checked
+                    [`features.${module.key}`]: checked
                   });
                   toast({ title: 'Module Updated', description: `${module.name} is now ${checked ? 'visible' : 'hidden'}.` });
                 } catch (e) {
@@ -734,7 +737,7 @@ export default function SettingsPage() {
               };
 
               return (
-                <div key={module.id} className={cn(
+                <div key={module.key} className={cn(
                   "p-4 rounded-[2rem] border shadow-sm flex items-center justify-between transition-all",
                   isEnabled ? "bg-white" : "bg-muted/50 grayscale-[0.5]"
                 )}>

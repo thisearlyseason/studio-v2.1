@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const TEAM_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
 const CATEGORY_COLLECTIONS = Object.freeze({
@@ -20,6 +22,15 @@ export type TeamSeasonResetAdapter = {
   update(path: string, patch: Record<string, unknown>): Promise<void>;
   removePlayerTeamAssociation(path: string, teamId: string): Promise<void>;
   removeStorage(path: string): Promise<void>;
+  hasDescendants(path: string): Promise<boolean>;
+  storageExists(path: string): Promise<boolean>;
+};
+
+type ResetObligationKind = 'storage' | 'player' | 'userMembership' | 'firestore' | 'member';
+type ResetObligation = {
+  path: string;
+  kind: ResetObligationKind;
+  targetPath: string;
 };
 
 export class SeasonResetError extends Error {
@@ -65,6 +76,14 @@ async function retry(label: string, operation: () => Promise<void>, maxAttempts:
   });
 }
 
+function obligationId(operationKey: string, kind: ResetObligationKind, targetPath: string) {
+  return createHash('sha256').update(`${operationKey}\0${kind}\0${targetPath}`).digest('hex').slice(0, 32);
+}
+
+function obligationRank(kind: ResetObligationKind) {
+  return { storage: 0, player: 1, userMembership: 2, firestore: 3, member: 4 }[kind];
+}
+
 export async function executeTeamSeasonReset({
   teamId,
   ownerUid,
@@ -91,47 +110,88 @@ export async function executeTeamSeasonReset({
     : [...new Set(categories.flatMap(category => CATEGORY_COLLECTIONS[category as keyof typeof CATEGORY_COLLECTIONS]))];
   const records = (await Promise.all(collectionNames.map(name => adapter.list(`teams/${teamId}/${name}`)))).flat();
   const ownerMemberPath = `teams/${teamId}/members/${ownerUid}`;
-  const removals = new Set<string>();
-  const playerUpdates = new Set<string>();
-  const storagePaths = new Set<string>();
+  const operationKey = categories.join('+');
+  const obligationCollection = `teams/${teamId}/seasonResetObligations`;
+  const obligations = new Map<string, ResetObligation>();
+
+  for (const record of await adapter.list(obligationCollection)) {
+    if (record.data.operationKey !== operationKey || record.data.teamId !== teamId) continue;
+    const kind = record.data.kind;
+    const targetPath = record.data.targetPath;
+    if (!['storage', 'player', 'userMembership', 'firestore', 'member'].includes(kind) || typeof targetPath !== 'string') {
+      throw new SeasonResetError('INVALID_OBLIGATION', 'Reset recovery state is invalid.');
+    }
+    obligations.set(record.path, { path: record.path, kind, targetPath });
+  }
+
+  const register = (kind: ResetObligationKind, targetPath: string) => {
+    const path = `${obligationCollection}/${obligationId(operationKey, kind, targetPath)}`;
+    obligations.set(path, { path, kind, targetPath });
+  };
 
   for (const record of records) {
     if (record.path === ownerMemberPath) continue;
-    removals.add(record.path);
     if (record.path.startsWith(`teams/${teamId}/members/`)) {
       const userId = typeof record.data.userId === 'string' ? record.data.userId : '';
-      if (userId && userId !== ownerUid) removals.add(`users/${userId}/teamMemberships/${teamId}`);
+      if (userId && userId !== ownerUid) register('userMembership', `users/${userId}/teamMemberships/${teamId}`);
       const playerId = typeof record.data.playerId === 'string' ? record.data.playerId : '';
       if (playerId) {
         const playerPath = `players/${playerId}`;
-        if (await adapter.get(playerPath)) playerUpdates.add(playerPath);
+        if (await adapter.get(playerPath)) register('player', playerPath);
       }
+      register('member', record.path);
+    } else {
+      register('firestore', record.path);
     }
     if (record.path.startsWith(`teams/${teamId}/files/`) && typeof record.data.storagePath === 'string') {
       if (!record.data.storagePath.startsWith(`teams/${teamId}/`)) {
         throw new SeasonResetError('UNSAFE_STORAGE_PATH', 'Reset refused an object outside the active squad.');
       }
-      storagePaths.add(record.data.storagePath);
+      register('storage', record.data.storagePath);
     }
+  }
+
+  for (const obligation of obligations.values()) {
+    await retry(`obligation:${obligation.path}`, () => adapter.update(obligation.path, {
+      teamId,
+      operationKey,
+      kind: obligation.kind,
+      targetPath: obligation.targetPath,
+    }), maxAttempts);
   }
 
   let storageDeleted = 0;
   let firestoreDeleted = 0;
   let projectionsUpdated = 0;
-  for (const path of storagePaths) {
-    await retry(`storage:${path}`, () => adapter.removeStorage(path), maxAttempts);
-    storageDeleted += 1;
-  }
-  // Reconcile the projection before deleting the member document that acts as
-  // the durable discovery source for retry. The adapter owns the transaction,
-  // so a concurrent join cannot be overwritten by a stale captured array.
-  for (const path of playerUpdates) {
-    await retry(`firestore:${path}`, () => adapter.removePlayerTeamAssociation(path, teamId), maxAttempts);
-    projectionsUpdated += 1;
-  }
-  for (const path of removals) {
-    await retry(`firestore:${path}`, () => adapter.remove(path), maxAttempts);
-    firestoreDeleted += 1;
+  const ordered = [...obligations.values()].sort((left, right) => obligationRank(left.kind) - obligationRank(right.kind));
+  for (const obligation of ordered) {
+    const path = obligation.targetPath;
+    if (obligation.kind === 'storage') {
+      await retry(`storage:${path}`, async () => {
+        await adapter.removeStorage(path);
+        if (await adapter.storageExists(path)) throw new Error('storage object remains');
+      }, maxAttempts);
+      storageDeleted += 1;
+    } else if (obligation.kind === 'player') {
+      await retry(`firestore:${path}`, async () => {
+        await adapter.removePlayerTeamAssociation(path, teamId);
+        const player = await adapter.get(path);
+        if (player && (player.primaryTeamId === teamId || (Array.isArray(player.joinedTeamIds) && player.joinedTeamIds.includes(teamId)))) {
+          throw new Error('player association remains');
+        }
+      }, maxAttempts);
+      projectionsUpdated += 1;
+    } else {
+      await retry(`firestore:${path}`, async () => {
+        await adapter.remove(path);
+        if (await adapter.get(path) || await adapter.hasDescendants(path)) throw new Error('Firestore target remains');
+      }, maxAttempts);
+      firestoreDeleted += 1;
+    }
+    await retry(`obligation:${obligation.path}`, async () => {
+      await adapter.remove(obligation.path);
+      if (await adapter.get(obligation.path) || await adapter.hasDescendants(obligation.path)) throw new Error('reset obligation remains');
+    }, maxAttempts);
   }
 
   return Object.freeze({

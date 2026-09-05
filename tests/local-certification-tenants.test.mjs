@@ -6,6 +6,7 @@ import { DIMENSION_NAMES } from '../scripts/qa/certification/local/evidence.mjs'
 import { selectLocalScenarios } from '../scripts/qa/certification/local/selection.mjs';
 import {
   LOCAL_TENANT_CASE_REQUIREMENTS,
+  LOCAL_TENANT_OPERATION_CONTRACTS,
   TENANT_EXECUTION_ORDER,
   runTenantsBatch,
   tenantCaseAssociationFor,
@@ -38,29 +39,13 @@ test('tenant batch owns exactly 16 scenarios and a complete seven-dimension case
   }
 });
 
-test('tenant contracts name scenario-specific mandatory workflows instead of generic lifecycle substitutes', () => {
-  const requiredFragments = {
-    'teams-create-and-capacity': 'fresh-role-creator-graph',
-    'teams-join-by-code': 'guardian-child-enrollment-race',
-    'teams-profile-branding-settings': 'owner-settings-and-branding-edit',
-    'teams-module-visibility': 'all-eight-toggle-and-direct-denial',
-    'teams-seasonal-reset-delete-quota-resolution': 'complete-reset-projection-reconciliation',
-    'organization-club-school-overview': 'constituent-count-and-visibility-refresh',
-    'organization-create-allocate-remove-squads': 'seat-release-and-reallocation',
-    'organization-global-waivers-documents-admins': 'master-copy-update-and-admin-boundary',
-    'roster-member-add-edit-remove-reinstate': 'remove-reinstate-projection',
-    'roster-search-filter-sort-export': 'accented-filter-and-manifest-download',
-    'roster-parent-player-self-views': 'guardian-child-edit-and-sibling-boundary',
-    'recruiting-private-profile-crud': 'profile-metrics-contact-media-edit',
-    'recruiting-public-scout-projection': 'canonical-editor-status-transitions',
-    'family-children-invites-team-cards': 'child-edit-and-two-card-refresh',
-    'family-schedule-waivers-payments': 'guardian-signature-and-ledger-refresh',
-    'family-enable-youth-login': 'guardian-invite-and-youth-activation',
-  };
-  for (const [scenarioId, fragment] of Object.entries(requiredFragments)) {
-    const caseIds = Object.values(LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId]).flat();
-    assert.ok(caseIds.some(caseId => caseId.includes(fragment)), `${scenarioId} requires ${fragment}`);
-    assert.equal(caseIds.some(caseId => /-(?:lifecycle|edge-cases|tenant-isolation)$/.test(caseId)), false);
+test('tenant contracts require explicit executed assertions instead of case-name fragments or counts', () => {
+  assert.deepEqual(new Set(Object.keys(LOCAL_TENANT_OPERATION_CONTRACTS)), new Set(TENANT_EXECUTION_ORDER));
+  for (const scenarioId of TENANT_EXECUTION_ORDER) {
+    const assertions = LOCAL_TENANT_OPERATION_CONTRACTS[scenarioId];
+    assert.ok(assertions.length >= 2, `${scenarioId} must require multiple executed assertions`);
+    assert.equal(new Set(assertions).size, assertions.length, `${scenarioId} assertion requirements must be unique`);
+    assert.equal(assertions.some(label => /workflow|lifecycle graph cardinality|consumer graph cardinality/i.test(label)), false);
   }
 });
 
@@ -82,6 +67,17 @@ test('scenario workflow evidence records the mutation operation rather than a ge
   ]) {
     assert.equal(tenantCaseAssociationFor(scenarioId, 'happyPath', caseId).operation, 'update');
   }
+});
+
+test('renamed cross-tenant cases retain their actual runtime executors', () => {
+  assert.deepEqual(
+    tenantCaseAssociationFor('teams-create-and-capacity', 'permission', 'team-create-cross-tenant-created-team-denial'),
+    { actorAlias: 'qa-coach-owner-b', targetAlias: 'run-created-squad', operation: 'permission' },
+  );
+  assert.deepEqual(
+    tenantCaseAssociationFor('recruiting-public-scout-projection', 'permission', 'recruiting-public-cross-tenant-private-root-denial'),
+    { actorAlias: 'qa-coach-owner-a', targetAlias: 'qa-player-adult-b', operation: 'permission' },
+  );
 });
 
 test('absent application observations stay blocked and never become PASS', async () => {
@@ -134,6 +130,23 @@ test('a nonzero tenant child without a structured failure is retained as a redac
     stage: 'tenant-child',
     diagnostic: 'tenant execution failed [redacted]',
   }]);
+});
+
+test('scenario infrastructure errors preserve original and restoration diagnostics without inventing case ownership', async () => {
+  const scenario = scenarios[0];
+  const event = {
+    type: 'scenario-error', scenarioId: scenario.id, stage: 'scenario-cleanup-or-runner',
+    diagnostic: 'operation failed; cleanup also failed',
+    originalDiagnostic: 'operation failed', restorationDiagnostics: ['restore team failed', 'verify object failed'],
+  };
+  const result = await runTenantsBatch(context(`CERTIFICATION_EVENT ${JSON.stringify(event)}`), [scenario]);
+  assert.deepEqual(result.runErrors, [{
+    stage: 'scenario-cleanup-or-runner',
+    diagnostic: 'operation failed; cleanup also failed',
+    originalDiagnostic: 'operation failed',
+    restorationDiagnostics: ['restore team failed', 'verify object failed'],
+  }]);
+  assert.equal(result.results[0].cases.length, 0);
 });
 
 test('a nonzero tenant child with structured case failure does not duplicate it as a global error', async () => {

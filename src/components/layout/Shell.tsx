@@ -116,6 +116,7 @@ import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 import { clearBrowserSession } from '@/lib/client-auth';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
+import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import {
   Tooltip,
   TooltipContent,
@@ -529,13 +530,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       }, isSuperAdmin ? 'superadmin' : undefined).allowed) return false;
 
       // Module Visibility Settings
-      if (tab.name === 'Feed' && activeTeam?.features?.feed === false) return false;
-      if (tab.name === 'Roster' && activeTeam?.features?.roster === false) return false;
-      if (tab.name === 'Practice' && activeTeam?.features?.practice === false) return false;
-      if (tab.name === 'Volunteer' && activeTeam?.features?.volunteer === false) return false;
-      if (tab.name === 'Fundraising' && activeTeam?.features?.fundraising === false) return false;
-      if (tab.href === '/chats' && activeTeam?.features?.tacticalChat === false) return false;
-      if (tab.name === 'Library' && activeTeam?.features?.library === false) return false;
+      if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
 
       // Feed is filtered by plan/feature
       if (tab.name === 'Feed') return hasFeature?.('live_feed_read') && !(isParent && activeTeam?.parentFeedEnabled === false);
@@ -562,6 +557,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       return tab.name === 'Facilities' || tab.name === 'Equipment';
     }
     if (tab.name === 'Facilities' && !canManageFacilities) return false;
+    if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
     return true;
   });
 

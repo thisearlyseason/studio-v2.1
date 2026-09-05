@@ -18,6 +18,7 @@ import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
+import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -331,24 +332,10 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     // Module Visibility Guard against Side-Gating
-    if (activeTeam) {
-      const isFeatureDisabled = (modulePath: string, featureKey: string) => 
-        pathname.startsWith(modulePath) && activeTeam.features?.[featureKey as keyof typeof activeTeam.features] === false;
-
-      if (
-        isFeatureDisabled('/feed', 'feed') ||
-        isFeatureDisabled('/roster', 'roster') ||
-        isFeatureDisabled('/practice', 'practice') ||
-        isFeatureDisabled('/drills', 'playbook') ||
-        isFeatureDisabled('/volunteers', 'volunteer') ||
-        isFeatureDisabled('/fundraising', 'fundraising') ||
-        isFeatureDisabled('/chats', 'tacticalChat') ||
-        isFeatureDisabled('/files', 'library')
-      ) {
+    if (activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features)) {
         toast({ title: 'Access Denied', description: 'This module has been disabled by your squad administrator.', variant: 'destructive' });
         router.replace('/dashboard');
         return;
-      }
     }
   }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
 

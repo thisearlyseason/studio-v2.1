@@ -1,8 +1,10 @@
 export async function awaitEventually(label, probe, predicate, {
   timeoutMs = 5_000,
   intervalMs = 25,
+  terminate,
 } = {}) {
   if (typeof probe !== 'function' || typeof predicate !== 'function') throw new TypeError('Eventual assertion requires probe and predicate functions.');
+  if (typeof terminate !== 'function') throw new Error(`${label} requires an owned terminator before starting its probe.`);
   const deadline = Date.now() + timeoutMs;
   let lastValue;
   do {
@@ -10,11 +12,22 @@ export async function awaitEventually(label, probe, predicate, {
     const controller = new AbortController();
     let timer;
     const timedOut = Symbol('probe-timeout');
+    const probePromise = Promise.resolve().then(() => probe(controller.signal));
     lastValue = await Promise.race([
-      Promise.resolve().then(() => probe(controller.signal)),
+      probePromise,
       new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve(timedOut); }, remainingMs); }),
     ]).finally(() => clearTimeout(timer));
-    if (lastValue === timedOut) break;
+    if (lastValue === timedOut) {
+      let terminationError;
+      try {
+        await terminate({ settled: probePromise, signal: controller.signal });
+      } catch (error) {
+        terminationError = error;
+      }
+      await probePromise.catch(() => undefined);
+      if (terminationError) throw new AggregateError([terminationError], `Unable to terminate ${label} probe.`, { cause: terminationError });
+      break;
+    }
     if (predicate(lastValue)) return lastValue;
     if (Date.now() >= deadline) break;
     await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, Math.max(1, deadline - Date.now()))));
@@ -29,6 +42,9 @@ export async function runTwoParty(label, callbacks, {
 } = {}) {
   if (!Array.isArray(callbacks) || callbacks.length !== 2 || callbacks.some(callback => typeof callback !== 'function')) {
     throw new Error(`${label} requires exactly two participant callbacks.`);
+  }
+  if (typeof terminate !== 'function') {
+    throw new Error(`${label} requires an owned terminator before starting participant callbacks.`);
   }
   let release;
   const controller = new AbortController();
@@ -52,12 +68,18 @@ export async function runTwoParty(label, callbacks, {
         new Promise(resolve => setTimeout(() => resolve(false), settleTimeoutMs)),
       ]);
       if (!await waitForSettlement()) {
-        if (typeof terminate !== 'function') {
-          throw new Error(`${label} two-party barrier timed out with a noncooperative participant and no owned terminator.`);
+        let terminationError;
+        try {
+          await terminate({ settled, signal: controller.signal });
+        } catch (error) {
+          terminationError = error;
         }
-        await terminate();
-        if (!await waitForSettlement()) {
-          throw new Error(`${label} two-party barrier termination did not settle every participant.`);
+        // A valid terminator owns the worker/server boundary and does not
+        // return until it is impossible for the callbacks to mutate again.
+        // Therefore settlement is awaited without exposing cleanup early.
+        await settled;
+        if (terminationError) {
+          throw new AggregateError([terminationError], `${label} two-party barrier termination failed.`, { cause: terminationError });
         }
       }
       throw new Error(`${label} two-party barrier timed out.`);

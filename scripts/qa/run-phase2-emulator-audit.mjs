@@ -20,7 +20,7 @@ import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
-import { patchFirestoreFields } from './certification/local/tenant-mutation-probes.mjs';
+import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
 import { inspectTenantCapabilities, TENANT_SCENARIO_CAPABILITIES } from './certification/local/tenant-capabilities.mjs';
 
 export function resolveAuditRuntimeConfiguration({ environment = process.env, argv = process.argv.slice(2) } = {}) {
@@ -98,6 +98,7 @@ const password = randomBytes(24).toString('base64url');
 const sensitiveValues = new Set([password]);
 const certificationSensitiveAliases = new Map();
 const children = [];
+let ownedNextServerProcess = null;
 const ownedBrowserSessions = new Set();
 const logDir = path.join(os.tmpdir(), `the-squad-phase2-${process.pid}`);
 const certificationArtifactDir = process.env.AUDIT_ARTIFACT_DIR || path.join(logDir, 'certification-artifacts');
@@ -111,6 +112,8 @@ let cleanupStarted = false;
 let activeCertificationScenario = null;
 let activeCertificationAssertions = [];
 let activeCertificationCaseIds = new Set();
+let activeTenantExecution = null;
+const tenantTokenActors = new Map();
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
 const tenantRuntimeConsumerPaths = new Map();
@@ -132,7 +135,9 @@ const tenantFixtureMutations = createFixtureMutations({
     hasDescendants: documentPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
       const collections = await firestoreAdmin.doc(documentPath).listCollections();
       for (const collection of collections) {
-        if (!(await collection.limit(1).get()).empty) return true;
+        // listDocuments includes missing intermediate document references that
+        // own deeper descendants; a query would incorrectly report them empty.
+        if ((await collection.listDocuments()).length > 0) return true;
       }
       return false;
     }),
@@ -260,12 +265,18 @@ function certificationActorAliases(scenarioId) {
   return [...new Set([...(actors[scenarioId] || ['catalog-scenario-actor']), 'qa-public-submitter'])];
 }
 
-function tenantCaseAssociations(scenarioId, dimension, caseId) {
+function tenantCaseAssociations(scenarioId, dimension, caseId, execution = null) {
   const association = tenantCaseAssociationFor(scenarioId, dimension, caseId);
   if (!association) return {};
+  const browserCaptured = ['console', 'responsive'].includes(dimension);
+  const requestCaptured = (execution?.requests?.length || 0) > 0;
   return {
     ...association,
-    network: { transport: 'loopback-http', observed: true },
+    network: {
+      transport: 'loopback-http', observed: requestCaptured || browserCaptured,
+      reason: requestCaptured ? 'case-owned runtime request capture'
+        : browserCaptured ? 'case-owned browser response capture' : 'Admin reconciliation only; no case-owned product request',
+    },
     console: dimension === 'console'
       ? { observed: true, reason: 'case-owned browser console capture' }
       : { observed: false, reason: 'server probe; browser console is a separate dimension' },
@@ -627,7 +638,7 @@ function recordCertificationCase(
   observed,
   expected = 'locally safe contract completed',
   caseStartedAt = null,
-  { assertions = activeCertificationAssertions, role, tenantAlias } = {},
+  { assertions = activeCertificationAssertions, role, tenantAlias, execution } = {},
 ) {
   if (activeCertificationCaseIds.has(caseId)) throw new Error(`Certification case ${caseId} was already emitted.`);
   const scenario = certificationScenarioById.get(scenarioId);
@@ -639,7 +650,8 @@ function recordCertificationCase(
     runId: certificationRunId, commit: certificationCommit,
     scenarioId, caseId, dimension, expected: String(expected), observed: String(observed),
     actorAliases: certificationActorAliases(scenarioId),
-    ...tenantCaseAssociations(scenarioId, dimension, caseId),
+    ...tenantCaseAssociations(scenarioId, dimension, caseId, execution),
+    ...(execution ? { execution } : {}),
     assertions,
     capturedAt: startedAt,
   };
@@ -650,7 +662,8 @@ function recordCertificationCase(
     actorAliases: certificationActorAliases(scenarioId),
     role: role || scenario.roles.join('/'),
     tenantAlias: tenantAlias || certificationTenantAlias(scenarioId),
-    ...tenantCaseAssociations(scenarioId, dimension, caseId),
+    ...tenantCaseAssociations(scenarioId, dimension, caseId, execution),
+    ...(execution ? { execution } : {}),
     expected: String(expected), observed: String(observed), state: 'OBSERVED',
     startedAt: caseStartedAt || startedAt, completedAt: new Date().toISOString(), artifacts: [relativeArtifact],
   });
@@ -694,10 +707,17 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
 }
 
 function recordCertificationRunFailure(scenarioId, error) {
+  const nested = error instanceof AggregateError ? [...error.errors] : [];
+  const original = nested[0] || error?.cause || error;
+  const restoration = nested.slice(1);
+  const diagnostic = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
   emitCertificationEvent({
     type: 'scenario-error', scenarioId, runId: certificationRunId, commit: certificationCommit,
     stage: 'scenario-cleanup-or-runner',
-    diagnostic: redact(error instanceof Error ? error.message : String(error)).slice(0, 500),
+    diagnostic,
+    originalDiagnostic: redact(original instanceof Error ? original.message : String(original)).slice(0, 500),
+    restorationDiagnostics: restoration.map(item =>
+      redact(item instanceof Error ? item.message : String(item)).slice(0, 500)),
   });
 }
 
@@ -933,7 +953,9 @@ function run(command, args, options = {}) {
 }
 
 async function signIn(alias, suppliedPassword = password) {
-  return signInEmail(emailForAlias(alias), suppliedPassword);
+  const result = await signInEmail(emailForAlias(alias), suppliedPassword);
+  if (result.status === 200 && result.body?.idToken) tenantTokenActors.set(result.body.idToken, alias);
+  return result;
 }
 
 async function signInEmail(email, suppliedPassword = password) {
@@ -947,6 +969,54 @@ async function signInEmail(email, suppliedPassword = password) {
   );
   const body = await response.json();
   return { status: response.status, body, headers: { cacheControl: response.headers.get('cache-control') || '' } };
+}
+
+function tenantTargetAliasFromValue(value) {
+  if (!value) return null;
+  const raw = String(value);
+  const team = FIXTURES.teams.find(item => item.id === raw || raw.includes(`/teams/${item.id}`) || raw.startsWith(`teams/${item.id}`));
+  if (team) {
+    if (team.alias === 'qa-disposable-team') return 'run-created-reset-squad';
+    if (team.alias === 'qa-school-hub' || team.alias.startsWith('qa-school-squad-')) return 'qa-school';
+    if (activeCertificationScenario === 'family-schedule-waivers-payments') return 'qa-household-a';
+    return team.alias;
+  }
+  const player = FIXTURES.firestoreDocuments.find(item => item.path.startsWith('players/') &&
+    (item.path.split('/')[1] === raw || raw.includes(`/players/${item.path.split('/')[1]}`) || raw.startsWith(`players/${item.path.split('/')[1]}`)));
+  if (player?.data?.fixtureAlias) {
+    if (activeCertificationScenario === 'family-schedule-waivers-payments') return 'qa-household-a';
+    return player.data.fixtureAlias;
+  }
+  if (raw.includes(`reset-${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180))) return 'run-created-reset-squad';
+  if ([...(tenantRuntimeConsumerPaths.values())].flat().some(pathname => pathname.includes(raw) || raw.includes(pathname))) return 'run-created-squad';
+  return null;
+}
+
+function recordTenantRequest({ pathname, method = 'GET', status, token = null, documentPath = null, body = null }) {
+  if (!activeTenantExecution) return;
+  let parsedBody = {};
+  try { parsedBody = body ? JSON.parse(body) : {}; } catch { parsedBody = {}; }
+  const codedTeam = parsedBody.code ? FIXTURES.teams.find(team =>
+    [team.code, team.teamCode, team.inviteCode].filter(Boolean).some(code =>
+      String(code).toUpperCase() === String(parsedBody.code).toUpperCase())) : null;
+  const targetAlias = codedTeam?.alias || tenantTargetAliasFromValue(
+    documentPath || parsedBody.teamId || parsedBody.childId || parsedBody.playerId || pathname,
+  );
+  activeTenantExecution.requests.push({
+    transport: 'loopback-http', method: String(method).toUpperCase(),
+    route: String(pathname).split('?')[0], status,
+    executorAlias: token ? tenantTokenActors.get(token) || 'authenticated-actor' : 'qa-public-submitter',
+    ...(targetAlias ? { targetAlias } : {}),
+  });
+}
+
+async function patchFirestoreFields(options) {
+  const result = await patchFirestoreFieldsRequest(options);
+  recordTenantRequest({
+    pathname: '/firestore/document', method: 'PATCH', status: result.status,
+    token: options.idToken, documentPath: options.documentPath,
+  });
+  return result;
 }
 
 export function localTransportDiagnostic(method, pathname, error) {
@@ -1014,6 +1084,7 @@ async function apiJsonResult(pathname, token, init = {}) {
   if (!response) throw new Error(localTransportDiagnostic(init.method, pathname, lastError));
   let body = null;
   try { body = await response.json(); } catch { /* status remains authoritative */ }
+  recordTenantRequest({ pathname, method: init.method || 'GET', status: response.status, token, body: init.body });
   return { status: response.status, body, headers: { cacheControl: response.headers.get('cache-control') || '' } };
 }
 
@@ -4121,8 +4192,11 @@ async function runCertificationIdentityScenarios() {
 async function recordObservedTenantCase(scenarioId, dimension, caseId, work, expected) {
   const assertionStart = activeCertificationAssertions.length;
   const caseStartedAt = new Date().toISOString();
+  const previousExecution = activeTenantExecution;
+  activeTenantExecution = { requests: [], adminTargets: [] };
   try {
     const observed = await work();
+    const execution = activeTenantExecution;
     recordCertificationCase(
       scenarioId,
       dimension,
@@ -4130,12 +4204,14 @@ async function recordObservedTenantCase(scenarioId, dimension, caseId, work, exp
       observed,
       expected,
       caseStartedAt,
-      { assertions: activeCertificationAssertions.slice(assertionStart) },
+      { assertions: activeCertificationAssertions.slice(assertionStart), execution },
     );
   } catch (error) {
     recordCertificationFailure(scenarioId, dimension, caseId, error);
     if (error && typeof error === 'object') error.certificationCaseRecorded = true;
     throw error;
+  } finally {
+    activeTenantExecution = previousExecution;
   }
 }
 
@@ -4144,6 +4220,7 @@ async function directFirestoreReadStatus(documentPath, token = null) {
     `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/${documentPath}`,
     { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), Connection: 'close' } },
   );
+  recordTenantRequest({ pathname: '/firestore/document', method: 'GET', status: response.status, token, documentPath });
   return response.status;
 }
 
@@ -4158,6 +4235,8 @@ async function runTenantApiScenario(scenarioId) {
     const creatorAliases = ['qa-fresh-coach', 'qa-fresh-admin', 'qa-fresh-league-creator'];
     const creators = new Map(await Promise.all(creatorAliases.map(async alias => [alias, await signIn(alias)])));
     const markers = new Map(creatorAliases.map(alias => [alias, `${FIXTURES.runId} ${alias} owned creation`]));
+    const markerValuesFor = alias => alias === 'qa-fresh-coach'
+      ? [1, 2].map(attempt => `${markers.get(alias)} ${attempt}`) : [markers.get(alias)];
     let createdTeamId = '';
     const createdTeamIds = new Map();
     dynamicResourceRegistry.register({
@@ -4169,7 +4248,9 @@ async function runTenantApiScenario(scenarioId) {
           for (const alias of creatorAliases) {
             const knownId = createdTeamIds.get(alias);
             if (knownId) snapshots.push(await firestoreAdmin.doc(`teams/${knownId}`).get());
-            else snapshots.push(...(await firestoreAdmin.collection('teams').where('teamName', '==', markers.get(alias)).get()).docs);
+            else for (const marker of markerValuesFor(alias)) {
+              snapshots.push(...(await firestoreAdmin.collection('teams').where('teamName', '==', marker).get()).docs);
+            }
           }
           let changed = false;
           for (const snapshot of snapshots.filter(item => item.exists)) {
@@ -4185,7 +4266,9 @@ async function runTenantApiScenario(scenarioId) {
       async verify() {
         return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
           for (const alias of creatorAliases) {
-            if (!(await firestoreAdmin.collection('teams').where('teamName', '==', markers.get(alias)).get()).empty) return false;
+            for (const marker of markerValuesFor(alias)) {
+              if (!(await firestoreAdmin.collection('teams').where('teamName', '==', marker).get()).empty) return false;
+            }
             const knownId = createdTeamIds.get(alias);
             if (knownId && (await firestoreAdmin.doc(`users/${identityByAlias.get(alias).uid}/teamMemberships/${knownId}`).get()).exists) return false;
           }
@@ -4196,9 +4279,28 @@ async function runTenantApiScenario(scenarioId) {
     let created;
     await recordObservedTenantCase(scenarioId, 'happyPath', 'team-create-happyPath', async () => {
       for (const alias of creatorAliases) {
-        const response = await apiJsonResult('/api/teams/create', creators.get(alias).body.idToken, {
-          method: 'POST', body: JSON.stringify({ name: markers.get(alias), type: 'team', position: 'Head Coach' }),
-        });
+        let response;
+        if (alias === 'qa-fresh-coach') {
+          const attempts = await runTwoParty('tenant-one-seat-team-create-race', [1, 2].map(attempt => signal =>
+            apiJsonResult('/api/teams/create', creators.get(alias).body.idToken, {
+              method: 'POST',
+              body: JSON.stringify({ name: `${markers.get(alias)} ${attempt}`, type: 'team', position: 'Head Coach' }),
+              signal,
+            })), {
+            timeoutMs: 20_000,
+            settleTimeoutMs: 1_000,
+            terminate: async () => terminateOwnedChildAndWait(ownedNextServerProcess),
+          });
+          const fulfilled = attempts.filter(item => item.status === 'fulfilled').map(item => item.value);
+          expectEqual(fulfilled.length, 2, 'tenant team create capacity race requests settle');
+          expectEqual(fulfilled.filter(item => item.status === 201).length, 1, 'tenant team create one-seat race single winner');
+          expectEqual(fulfilled.filter(item => item.status === 409).length, 1, 'tenant team create one-seat race exhausted denial');
+          response = fulfilled.find(item => item.status === 201);
+        } else {
+          response = await apiJsonResult('/api/teams/create', creators.get(alias).body.idToken, {
+            method: 'POST', body: JSON.stringify({ name: markers.get(alias), type: 'team', position: 'Head Coach' }),
+          });
+        }
         expectEqual(response.status, 201, `tenant team create ${alias} succeeds`);
         const teamId = response.body?.teamId || '';
         expectEqual(/^team_[A-Za-z0-9]+$/.test(teamId), true, `tenant team create ${alias} server identifier`);
@@ -4242,7 +4344,7 @@ async function runTenantApiScenario(scenarioId) {
     await recordObservedTenantCase(scenarioId, 'persistence', 'team-create-persistence', async () => {
       const values = await readTenantConsumerDocuments(tenantRuntimeConsumerPaths.get(scenarioId));
       expectEqual(values.every(Boolean), true, 'tenant team create graph reload');
-      expectEqual(values[0].teamName, markers.get('qa-fresh-coach'), 'tenant team create marker persisted');
+      expectEqual(values[0].teamName.startsWith(markers.get('qa-fresh-coach')), true, 'tenant team create marker persisted');
       return 'An independent Admin reader observed the exact created team and membership projection.';
     }, 'The complete created graph persists after the route returns.');
     await recordObservedTenantCase(scenarioId, 'network', 'team-create-network', async () => {
@@ -4272,6 +4374,7 @@ async function runTenantApiScenario(scenarioId) {
         fixtureRunId: FIXTURES.runId,
         status: 'active',
       });
+      tenantRuntimeConsumerPaths.set(scenarioId, [teamPath]);
       await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin, bucket) => {
         const batch = firestoreAdmin.batch();
         batch.set(firestoreAdmin.doc(`${teamPath}/members/${identityByAlias.get('qa-owner-delete-blocked').uid}`), {
@@ -4354,6 +4457,37 @@ async function runTenantApiScenario(scenarioId) {
   }
   if (scenarioId === 'teams-join-by-code') {
     const probe = plan[scenarioId];
+    const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+    const joinDiscoveryStartedAt = Date.now();
+    // Register the complete server-created session discovery boundary before
+    // the first preview. This also owns sessions created by both browser
+    // viewports or by a response that is lost after the server commit.
+    dynamicResourceRegistry.register({
+      id: `server-discovery:tenant-join-sessions:${certificationRunId}`,
+      kind: 'obligation',
+      async cleanup() {
+        return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const sessions = await firestoreAdmin.collection('team_join_sessions').where('teamId', '==', teamA.id).get();
+          let changed = false;
+          for (const session of sessions.docs) {
+            const createdAt = typeof session.data()?.createdAt?.toMillis === 'function' ? session.data().createdAt.toMillis() : 0;
+            if (createdAt < joinDiscoveryStartedAt) continue;
+            await firestoreAdmin.recursiveDelete(session.ref);
+            changed = true;
+          }
+          return changed;
+        });
+      },
+      async verify() {
+        return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const sessions = await firestoreAdmin.collection('team_join_sessions').where('teamId', '==', teamA.id).get();
+          return sessions.docs.every(session => {
+            const createdAt = typeof session.data()?.createdAt?.toMillis === 'function' ? session.data().createdAt.toMillis() : 0;
+            return createdAt < joinDiscoveryStartedAt;
+          });
+        });
+      },
+    });
     let activeBody;
     await recordObservedTenantCase(scenarioId, 'happyPath', 'team-join-happyPath', async () => {
       const active = await apiJsonResult(probe.activePath, null);
@@ -4368,7 +4502,6 @@ async function runTenantApiScenario(scenarioId) {
       return 'Modified invitation code returned nondisclosing not-found.';
     }, 'A mismatched team and invitation code is denied.');
     await recordObservedTenantCase(scenarioId, 'permission', 'team-join-permission', async () => {
-      const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
       const status = await directFirestoreReadStatus(`teams/${teamA.id}`);
       expectEqual([401, 403].includes(status), true, 'tenant join anonymous direct team read denied');
       return 'Anonymous direct Firestore team read was denied while the server returned a minimal projection.';
@@ -4391,7 +4524,6 @@ async function runTenantApiScenario(scenarioId) {
     }, 'Join requests use the expected route and expose no authority-bearing fields.');
     const parent = await signIn('qa-parent-a');
     const otherParent = await signIn('qa-parent-b');
-    const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
     const childId = FIXTURES.youthInvite.childId;
     const memberPath = `teams/${teamA.id}/members/${childId}`;
     const playerPath = `players/${childId}`;
@@ -4407,7 +4539,11 @@ async function runTenantApiScenario(scenarioId) {
             method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
             signal,
           }),
-        ], { timeoutMs: 20_000 });
+        ], {
+          timeoutMs: 20_000,
+          settleTimeoutMs: 1_000,
+          terminate: async () => terminateOwnedChildAndWait(ownedNextServerProcess),
+        });
         expectEqual(requests.every(item => item.status === 'fulfilled' && item.value.status === 200), true, 'tenant join concurrent duplicate requests settle');
         await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
           const [player, member, projection] = await Promise.all([
@@ -4725,6 +4861,10 @@ function tenantConsumerPaths(scenarioId) {
 }
 
 async function readTenantConsumerDocuments(paths) {
+  if (activeTenantExecution) {
+    activeTenantExecution.adminTargets.push(...paths.map(pathname =>
+      tenantTargetAliasFromValue(pathname) || 'run-owned-consumer-root'));
+  }
   return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     const snapshots = await firestoreAdmin.getAll(...paths.map(pathname => firestoreAdmin.doc(pathname)));
     return snapshots.map(snapshot => snapshot.exists ? snapshot.data() || {} : null);
@@ -4745,7 +4885,7 @@ function tenantLifecycleMutation(scenarioId) {
     },
     'teams-module-visibility': {
       actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}`,
-      fields: { features: { feed: false, roster: false, practice: false, playbook: false, volunteer: false, fundraising: false, tacticalChat: false, library: false } }, expectedField: 'features',
+      fields: { features: { attendance: false, equipment: false, facilities: false, feed: false, files: false, fundraising: false, practice: false, volunteers: false } }, expectedField: 'features',
     },
     'organization-club-school-overview': {
       actorAlias: 'qa-school-owner', path: `teams/${school.id}`,
@@ -4972,7 +5112,7 @@ async function executeTenantLifecycleMutation(scenarioId) {
       `tenant ${scenarioId} lifecycle field reconciled`,
     );
     if (scenarioId === 'teams-module-visibility') {
-      expectEqual(Object.keys(persisted.features || {}).sort().join(','), 'feed,fundraising,library,playbook,practice,roster,tacticalChat,volunteer', 'tenant all eight module keys persisted');
+      expectEqual(Object.keys(persisted.features || {}).sort().join(','), 'attendance,equipment,facilities,feed,files,fundraising,practice,volunteers', 'tenant all eight module keys persisted');
       expectEqual(Object.values(persisted.features || {}).every(value => value === false), true, 'tenant all eight modules disabled');
     }
     if (scenarioId === 'teams-profile-branding-settings') {
@@ -5071,6 +5211,21 @@ async function runTenantSupplementalApiCases(scenarioId) {
     return 'The companion-tenant credential was denied against the exact private target.';
   }, 'The named actor/target pair enforces two-way tenant isolation.');
   await recordObservedTenantCase(scenarioId, 'persistence', requirements.persistence[1], async () => {
+    if (scenarioId === 'teams-seasonal-reset-delete-quota-resolution') {
+      const owner = await signIn('qa-owner-delete-blocked');
+      const [teamPath] = tenantRuntimeConsumerPaths.get(scenarioId) || [];
+      const teamId = teamPath?.split('/').at(-1);
+      expectEqual(Boolean(teamId), true, 'tenant seasonal repeat reset runtime target retained');
+      const repeated = await apiJsonResult('/api/teams/season-reset', owner.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId, categories: ['complete'] }),
+      });
+      expectEqual(repeated.status, 200, 'tenant seasonal repeated complete reset succeeds');
+      expectEqual(repeated.body?.result?.teamId, teamId, 'tenant seasonal repeated reset exact target');
+      expectEqual(repeated.body?.result?.categories?.join(','), 'complete', 'tenant seasonal repeated reset exact category');
+      const [team] = await readTenantConsumerDocuments([teamPath]);
+      expectEqual(Boolean(team), true, 'tenant seasonal repeated reset preserves team root');
+      return 'The exact complete-reset route repeated successfully against the same run-owned squad and retained the squad root.';
+    }
     const before = await readTenantConsumerDocuments(paths);
     const after = await readTenantConsumerDocuments(paths);
     expectEqual(JSON.stringify(after) === JSON.stringify(before), true, `tenant ${scenarioId} second reload persistence`);
@@ -5082,16 +5237,54 @@ async function runTenantBrowserScenario(scenarioId) {
   if (scenarioId === 'family-enable-youth-login') {
     return;
   }
+  if (scenarioId === 'teams-profile-branding-settings') {
+    const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+    const teamPath = `teams/${team.id}`;
+    const marker = `${FIXTURES.runId} browser squad profile`;
+    return tenantFixtureMutations.withFirestoreOverlay([teamPath], async () => {
+      const session = await browserLogin('qa-coach-owner-a', '/dashboard', `tenant-${scenarioId}-${process.pid}`);
+      const result = JSON.parse(cli(session, ['run-code', `async page => {
+        const observations=[]; const consoleErrors=[]; const failures=[];
+        const onConsole=message=>{if(message.type()==='error') consoleErrors.push(message.text())};
+        const onResponse=response=>{if(response.status()>=400) failures.push({status:response.status(),url:response.url()})};
+        page.on('console',onConsole); page.on('response',onResponse);
+        try {
+          await page.setViewportSize({width:1440,height:900}); await page.goto(${JSON.stringify(BASE_URL)} + '/team');
+          await page.getByRole('button',{name:/Edit Squad/}).click();
+          const dialog=page.getByRole('dialog').filter({has:page.getByRole('heading',{name:'Edit Squad Profile',exact:true})}); await dialog.waitFor({state:'visible'});
+          await dialog.locator('textarea').fill(${JSON.stringify(marker)});
+          await dialog.getByRole('button',{name:/Commit Changes/}).click();
+          await dialog.waitFor({state:'hidden'}); await page.reload();
+          const savedMarker=page.getByText(${JSON.stringify(marker)},{exact:true}); await savedMarker.waitFor({state:'visible',timeout:15000});
+          observations.push({width:1440,marker:await savedMarker.count(),fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
+          await page.setViewportSize({width:390,height:844}); await page.reload(); await savedMarker.waitFor({state:'visible',timeout:15000});
+          observations.push({width:390,marker:await savedMarker.count(),fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
+          return {observations,consoleErrors,failures};
+        } finally {page.off('console',onConsole);page.off('response',onResponse)}
+      }`]));
+      await recordObservedTenantCase(scenarioId, 'console', 'team-settings-workflow-console', async () => {
+        expectEqual(result.consoleErrors.length, 0, 'tenant settings browser edit console errors');
+        expectEqual(result.failures.length, 0, 'tenant settings browser edit server failures');
+        expectEqual(result.observations.every(item => item.marker === 1), true, 'tenant settings browser edit survives reload');
+        return 'The owner edited the real squad profile UI and both independent reloads rendered the saved marker.';
+      }, 'The real squad settings mutation and reload are captured without browser or server failures.');
+      await recordObservedTenantCase(scenarioId, 'responsive', 'team-settings-workflow-responsive', async () => {
+        expectEqual(result.observations.length, 2, 'tenant settings browser exact viewports');
+        expectEqual(result.observations.every(item => item.fits), true, 'tenant settings browser edit contained');
+        return 'The refreshed saved value remained visible and contained at both frozen viewports.';
+      }, 'The edited squad profile is visible at 1440x900 and 390x844.');
+    });
+  }
   if (scenarioId === 'teams-module-visibility') {
     const owner = await signIn('qa-coach-owner-a');
     const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
     const teamPath = `teams/${team.id}`;
     return tenantFixtureMutations.withFirestoreOverlay([teamPath], async () => {
-      const features = { feed: false, roster: false, practice: false, playbook: false, volunteer: false, fundraising: false, tacticalChat: false, library: false };
+      const features = { attendance: false, equipment: false, facilities: false, feed: false, files: false, fundraising: false, practice: false, volunteers: false };
       expectEqual((await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: teamPath, idToken: owner.body.idToken, fields: { features } })).status, 200, 'tenant module browser setup all eight keys');
       const session = await browserLogin('qa-team-member', '/dashboard', `tenant-${scenarioId}-${process.pid}`);
       const result = JSON.parse(cli(session, ['run-code', `async page => {
-        const routes = ['/feed','/roster','/practice','/drills','/volunteers','/fundraising','/chats','/files'];
+        const routes = ['/events','/equipment','/facilities','/feed','/files','/fundraising','/practice','/volunteers'];
         const observations = [];
         const consoleErrors = [];
         const failures = [];
@@ -5140,19 +5333,32 @@ async function runTenantBrowserScenario(scenarioId) {
       try {
         for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
           await page.setViewportSize(viewport); await page.goto(${JSON.stringify(BASE_URL)} + '/roster');
+          if (viewport.width === 390) {
+            for (const toastClose of await page.locator('[toast-close]').all()) await toastClose.click({force:true});
+            const openDialogs=page.locator('[role="dialog"][data-state="open"]');
+            for (const openDialog of await openDialogs.all()) {
+              const closeButton=openDialog.getByRole('button',{name:'Close'}).last();
+              if (await closeButton.count()) await closeButton.click({force:true});
+            }
+            await openDialogs.first().waitFor({state:'hidden',timeout:5000}).catch(()=>{});
+          }
           const search = page.getByPlaceholder('Search squad roster...'); await search.waitFor({state:'visible',timeout:15000});
           await search.fill(${JSON.stringify(accentedName)});
           const accented = await page.getByText(${JSON.stringify(accentedName)}, {exact:true}).count();
           await search.fill('Removed Falcon'); const removed = await page.getByText('Removed Falcon', {exact:true}).count();
           await search.fill('');
-          await page.getByRole('button', {name:/Export Emails/}).click();
-          const dialog = page.getByRole('dialog'); await dialog.waitFor({state:'visible'});
+          const exportButton=page.getByText('Export Emails',{exact:true}).first();
+          await exportButton.waitFor({state:'visible',timeout:15000});
+          await exportButton.click();
+          const dialog = page.getByRole('dialog').filter({has:page.getByRole('heading',{name:'Personnel Export',exact:true})}); await dialog.waitFor({state:'visible'});
           const label = await dialog.getByText(/Validated Contacts/).innerText();
           const downloadPromise = page.waitForEvent('download');
           await dialog.getByRole('button', {name:/Download/}).click();
           const download = await downloadPromise;
-          observations.push({width:viewport.width, accented, removed, label, filename:download.suggestedFilename(), fits:await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)});
-          await page.keyboard.press('Escape');
+          const stream = await download.createReadStream(); const bytes = [];
+          for await (const chunk of stream) bytes.push(...chunk);
+          const content = bytes.map(byte => String.fromCharCode(byte)).join('');
+          observations.push({width:viewport.width, accented, removed, label, filename:download.suggestedFilename(), content, fits:await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)});
         }
         return {observations,consoleErrors,failures};
       } finally { page.off('console',onConsole); page.off('response',onResponse); }
@@ -5162,6 +5368,9 @@ async function runTenantBrowserScenario(scenarioId) {
       expectEqual(result.failures.length, 0, 'tenant roster search export server failures');
       expectEqual(result.observations.every(item => item.accented === 1 && item.removed === 0), true, 'tenant roster accented search and removed filter');
       expectEqual(result.observations.every(item => /^Team_Manifest_\d+\.txt$/.test(item.filename)), true, 'tenant roster real manifest download');
+      expectEqual(result.observations.every(item => item.content.length > 0), true, 'tenant roster manifest bytes nonempty');
+      expectEqual(result.observations.every(item => !/medical|private contact|emergency contact/i.test(item.content)), true, 'tenant roster manifest private fields omitted');
+      expectEqual(result.observations[0].content, result.observations[1].content, 'tenant roster manifest content stable across viewports');
       return 'Accented search matched exactly, removed members stayed excluded, and the real filtered contact manifest downloaded.';
     }, 'Roster search/filter and real export execute without browser or server failures.');
     await recordObservedTenantCase(scenarioId, 'responsive', 'roster-discovery-workflow-responsive', async () => {
@@ -5331,21 +5540,16 @@ async function runCertificationTenantScenarios() {
           await runTenantBrowserScenario(scenarioId);
         } catch (error) {
           if (!error?.certificationCaseRecorded) {
-            const caseId = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].console[0];
-            recordCertificationFailure(scenarioId, 'console', caseId, error);
-            if (error && typeof error === 'object') error.certificationCaseRecorded = true;
+            recordCertificationRunFailure(scenarioId, error);
+            if (error && typeof error === 'object') error.certificationRunRecorded = true;
           }
           throw error;
         }
       }
     } catch (error) {
       failureCount += 1;
-      if (!error?.certificationCaseRecorded) {
-        const nextCase = Object.entries(LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId])
-          .flatMap(([dimension, caseIds]) => caseIds.map(caseId => ({ dimension, caseId })))
-          .find(item => !activeCertificationCaseIds.has(item.caseId));
-        if (nextCase) recordCertificationFailure(scenarioId, nextCase.dimension, nextCase.caseId, error);
-        else recordCertificationRunFailure(scenarioId, error);
+      if (!error?.certificationCaseRecorded && !error?.certificationRunRecorded) {
+        recordCertificationRunFailure(scenarioId, error);
       }
       if (certificationFailFast) throw error;
       console.error(redact(`Tenant scenario ${scenarioId} failed: ${error instanceof Error ? error.message : error}`));
@@ -5684,7 +5888,7 @@ function browserMemberCommunication(session, marker) {
     page.on('pageerror', error => consoleErrors.push(error.message));
     page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
     await page.goto(${JSON.stringify(`${BASE_URL}/feed`)});
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
       const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
       const visible = await alert.waitFor({ state: 'visible', timeout: 1200 }).then(() => true).catch(() => false);
       if (!visible) break;
@@ -6454,34 +6658,39 @@ function browserAlertsAudit(session) {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     const receivedTitles = [];
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
-      const appeared = await alert.waitFor({ state: 'visible', timeout: 2500 }).then(() => true).catch(() => false);
-      if (!appeared) break;
+    let quietAlertChecks = 0;
+    for (let attempt = 0; attempt < 30 && quietAlertChecks < 8; attempt += 1) {
+      await page.waitForTimeout(700);
+      const alert = page.locator('[role="dialog"][data-state="open"]').filter({has:page.getByRole('button',{name:'Got It'})});
+      if (!await alert.count()) {
+        quietAlertChecks += 1;
+        continue;
+      }
+      quietAlertChecks = 0;
       receivedTitles.push((await alert.locator('h2:not(.sr-only)').textContent()) || '');
       await alert.getByRole('button', { name: 'Got It' }).click();
-      await alert.waitFor({ state: 'hidden' });
+      await alert.waitFor({ state: 'hidden', timeout: 5000 });
     }
 
-    const alertButton = page.getByRole('button', { name: /^Open alerts/ });
+    const alertButton = page.locator('button[aria-label^="Open alerts"]');
     const alertButtonName = await alertButton.getAttribute('aria-label');
-    await alertButton.click();
+    await alertButton.evaluate(button => button.click());
     const inbox = page.getByRole('dialog', { name: 'Squad Alert Inbox' });
     await inbox.waitFor();
-    await inbox.getByRole('button', { name: 'Show History' }).click();
+    await inbox.getByRole('button', { name: 'Show History' }).click({timeout:5000}).catch(()=>{throw new Error('desktop alert history toggle blocked')});
     const historyEveryone = await inbox.getByText('FALCON-A Everyone Alert', { exact: true }).count();
     const historyPlayer = await inbox.getByText('FALCON-A Player Alert', { exact: true }).count();
     const wrongCoach = await inbox.getByText('FALCON-A Coach Alert', { exact: true }).count();
     const wrongParent = await inbox.getByText('FALCON-A Parent Alert', { exact: true }).count();
     const otherTenant = await inbox.getByText('BLUEBIRD-B Everyone Alert', { exact: true }).count();
-    await inbox.getByRole('button', { name: 'Close' }).click();
+    await inbox.getByRole('button', { name: 'Close' }).click({timeout:5000}).catch(()=>{throw new Error('desktop alert inbox close blocked')});
 
     await page.reload();
     const reopened = await page.getByRole('dialog', { name: 'High Priority Team Alert' })
       .waitFor({ state: 'visible', timeout: 1500 }).then(() => true).catch(() => false);
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: /^Open alerts/ }).click();
+    await page.locator('button[aria-label^="Open alerts"]').evaluate(button => button.click());
     const mobileInbox = page.getByRole('dialog', { name: 'Squad Alert Inbox' });
     await mobileInbox.waitFor();
     const mobileBox = await mobileInbox.boundingBox();
@@ -6910,7 +7119,7 @@ async function main() {
   run(process.execPath, ['scripts/qa/seed-phase2-emulator-fixtures.mjs']);
   fixturesSeeded = true;
 
-  startProcess('npm', ['run', 'dev'], 'next.log');
+  ownedNextServerProcess = startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
   if (certificationIdentity || certificationTenants) {

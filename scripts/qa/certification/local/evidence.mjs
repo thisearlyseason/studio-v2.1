@@ -20,7 +20,14 @@ export const DIMENSION_NAMES = Object.freeze([
 ]);
 
 const PROTECTED_KEY_PATTERN = /(?:password|cookie|authorization|actionurl|actionlink|oobcode|rawproviderpayload|parentuid|invitetoken|(?:^|_)token|(?:^|_)uid|userid|sessiontoken|sessioncode|refreshtoken|idtoken|providersecret|joincode|teamcode|invitecode|medicalnotes|parentemail|privatecontact)/i;
-const PROTECTED_NORMALIZED_KEYS = new Set(['parentuid', 'invitetoken']);
+// Normalize before matching so casing and punctuation cannot turn a protected
+// credential or private subject identifier into admissible evidence.
+const PROTECTED_NORMALIZED_KEYS = new Set([
+  'parentuid', 'guardianuid', 'childuid', 'userid',
+  'invitetoken', 'accesstoken', 'sessiontoken', 'sessioncode',
+  'refreshtoken', 'idtoken', 'joincode', 'teamcode', 'invitecode',
+  'medicalnotes', 'privatecontact', 'parentemail',
+]);
 const PROTECTED_VALUE_PATTERN = /(?:password\s*[=:]|cookie\s*[=:]|authorization\s*[=:]|bearer\s+[a-z0-9._~-]+|oobcode=|mode=(?:resetpassword|verifyemail)|sk_live_[a-z0-9]+|rk_live_[a-z0-9]+|synthetic-private-[a-z0-9_-]+|\b[a-f0-9]{48}\b)/i;
 const URL_QUERY_PATTERN = /(?:https?:\/\/|\/)\S*\?\S+/i;
 
@@ -128,7 +135,7 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
   }
 }
 
-function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape, caseAssociationResolver } = {}) {
+function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape, caseAssociationResolver, operationContracts } = {}) {
   assertNoProtectedEvidence(result);
   assertPlainString(result.environment, 'environment');
   if (!scenario.environments.includes(result.environment)) {
@@ -158,6 +165,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     throw new Error(`${result.scenarioId} requires case, artifact, missing-dimension, and external-requirement arrays.`);
   }
   const casesById = new Map();
+  const observedAssertionLabels = new Set();
   const requiredByDimension = caseRequirements?.[scenario.id] || {};
   for (const caseRecord of result.cases) {
     assertPlainString(caseRecord.caseId, 'caseId');
@@ -180,6 +188,15 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (!DIMENSION_NAMES.includes(caseRecord.dimension)) throw new Error(`${caseRecord.caseId} has invalid case dimension.`);
     if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
     if (caseShape === 'tenant') {
+      if (operationContracts) {
+        const allowedCaseKeys = new Set([
+          'actorAliases', 'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive',
+          'cleanupRefs', 'execution', 'caseId', 'dimension', 'role', 'tenantAlias', 'expected', 'observed',
+          'state', 'startedAt', 'completedAt', 'artifacts', 'artifactEvents', 'type', 'scenarioId', 'runId', 'commit',
+        ]);
+        const unexpected = Object.keys(caseRecord).filter(key => !allowedCaseKeys.has(key));
+        if (unexpected.length > 0) throw new Error(`${caseRecord.caseId} contains non-allowlisted evidence fields: ${unexpected.join(', ')}.`);
+      }
       assertPlainString(caseRecord.actorAlias, 'case actorAlias');
       assertPlainString(caseRecord.targetAlias, 'case targetAlias');
       if (!['create', 'read', 'update', 'delete', 'permission', 'persistence'].includes(caseRecord.operation)) {
@@ -190,6 +207,32 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           !caseRecord.responsive || typeof caseRecord.responsive.observed !== 'boolean' ||
           !Array.isArray(caseRecord.cleanupRefs) || caseRecord.cleanupRefs.length === 0) {
         throw new Error(`${caseRecord.caseId} requires tenant network, console, responsive, and cleanup associations.`);
+      }
+      if (operationContracts && caseRecord.state === 'OBSERVED') {
+        const execution = caseRecord.execution;
+        if (!execution || !Array.isArray(execution.requests) || !Array.isArray(execution.adminTargets)) {
+          throw new Error(`${caseRecord.caseId} requires runtime request and Admin-reconciliation evidence.`);
+        }
+        for (const request of execution.requests) {
+          const allowed = new Set(['transport', 'method', 'route', 'status', 'executorAlias', 'targetAlias']);
+          if (!request || Object.keys(request).some(key => !allowed.has(key)) ||
+              request.transport !== 'loopback-http' || !/^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method) ||
+              !request.route?.startsWith('/') || request.route.includes('?') || !Number.isInteger(request.status) ||
+              typeof request.executorAlias !== 'string') {
+            throw new Error(`${caseRecord.caseId} has invalid allowlisted runtime request evidence.`);
+          }
+        }
+        const executors = new Set(execution.requests.map(request => request.executorAlias));
+        if (executors.size > 0 && !executors.has(caseRecord.actorAlias)) {
+          throw new Error(`${caseRecord.caseId} runtime executor does not include its claimed actorAlias.`);
+        }
+        const targets = new Set([
+          ...execution.requests.flatMap(request => request.targetAlias ? [request.targetAlias] : []),
+          ...execution.adminTargets,
+        ]);
+        if (targets.size > 0 && !targets.has(caseRecord.targetAlias) && !targets.has('run-owned-consumer-root')) {
+          throw new Error(`${caseRecord.caseId} runtime target does not include its claimed targetAlias.`);
+        }
       }
       if (!caseRecord.actorAliases.includes(caseRecord.actorAlias)) {
         throw new Error(`${caseRecord.caseId} actorAlias must be one of its exact actor aliases.`);
@@ -253,7 +296,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           throw new Error(`${caseRecord.caseId} artifact actor provenance does not match its case.`);
         }
         if (caseShape === 'tenant') {
-          for (const key of ['actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs']) {
+          for (const key of ['actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs', ...(operationContracts ? ['execution'] : [])]) {
             if (JSON.stringify(parsed[key]) !== JSON.stringify(caseRecord[key])) {
               throw new Error(`${caseRecord.caseId} artifact tenant association ${key} does not match its case.`);
             }
@@ -278,6 +321,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           if (assertionCapturedAt < caseStartedAt || assertionCapturedAt > caseCompletedAt) {
             throw new Error(`${caseRecord.caseId} artifact assertion timestamp is outside its case range.`);
           }
+          observedAssertionLabels.add(assertion.label);
         }
       }
     }
@@ -332,6 +376,14 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     for (const caseRecord of result.cases) {
       if (!caseRecord.cleanupRefs.includes(result.cleanup.reference)) {
         throw new Error(`${caseRecord.caseId} cleanup references do not include the exact scenario cleanup.`);
+      }
+    }
+    const requiredOperations = operationContracts?.[result.scenarioId] || [];
+    const allLocalDimensionsObserved = DIMENSION_NAMES.every(name => result.dimensions[name].state === 'OBSERVED');
+    if (allLocalDimensionsObserved && artifactRoot) {
+      const missingOperations = requiredOperations.filter(label => !observedAssertionLabels.has(label));
+      if (missingOperations.length > 0) {
+        throw new Error(`${result.scenarioId} is missing mandatory executed assertions: ${missingOperations.join(', ')}.`);
       }
     }
   }
@@ -406,7 +458,7 @@ async function writeAtomically(filePath, contents) {
   await rename(temporaryPath, filePath);
 }
 
-export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, caseRequirements, caseAssociationResolver, title = 'Local certification', batch }) {
+export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, caseRequirements, caseAssociationResolver, operationContracts, title = 'Local certification', batch }) {
   const recorded = [];
   const runErrors = [];
   return Object.freeze({
@@ -417,7 +469,17 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
       assertPlainString(error?.stage, 'run error stage');
       assertPlainString(error?.diagnostic, 'run error diagnostic');
       assertNoProtectedEvidence(error);
-      runErrors.push({ stage: error.stage, diagnostic: error.diagnostic });
+      if (error.originalDiagnostic !== undefined) assertPlainString(error.originalDiagnostic, 'run error originalDiagnostic');
+      if (error.restorationDiagnostics !== undefined && (!Array.isArray(error.restorationDiagnostics) ||
+          error.restorationDiagnostics.some(value => typeof value !== 'string' || value.length === 0))) {
+        throw new Error('Run error restorationDiagnostics must be nonempty strings.');
+      }
+      runErrors.push({
+        stage: error.stage,
+        diagnostic: error.diagnostic,
+        ...(error.originalDiagnostic ? { originalDiagnostic: error.originalDiagnostic } : {}),
+        ...(error.restorationDiagnostics ? { restorationDiagnostics: [...error.restorationDiagnostics] } : {}),
+      });
     },
     async writeSummary({ markdownPath }) {
       const results = validateScenarioResults(scenarios, recorded, {
@@ -427,6 +489,7 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
         expectedCommit: commit,
         caseShape: batch === 'tenants' ? 'tenant' : 'identity',
         caseAssociationResolver,
+        operationContracts,
       });
       const summary = { runId, commit, title, generatedAt: new Date().toISOString(), runErrors, results };
       assertNoProtectedEvidence(summary);

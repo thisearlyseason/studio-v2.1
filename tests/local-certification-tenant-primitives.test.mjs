@@ -4,11 +4,19 @@ import test from 'node:test';
 import { awaitEventually, runTwoParty } from '../scripts/qa/certification/local/assertions.mjs';
 import { createFixtureMutations } from '../scripts/qa/certification/local/fixture-mutations.mjs';
 
+test('dynamic cleanup fails closed when recursive Firestore proof is unavailable', () => {
+  assert.throws(() => createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit',
+    firestore: { async read() { return null; }, async write() {}, async remove() {} },
+  }), /recursive descendant proof/);
+});
+
 test('dynamic Firestore writes require registration and exact overlays restore in reverse order', async () => {
   const records = new Map([['teams/run-team', { name: 'before' }]]);
   const operations = [];
   const firestore = {
     async read(path) { return records.has(path) ? structuredClone(records.get(path)) : null; },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
     async write(path, value) { operations.push(['write', path, value]); records.set(path, structuredClone(value)); },
     async remove(path) { operations.push(['remove', path]); records.delete(path); },
   };
@@ -32,7 +40,7 @@ test('dynamic Firestore writes require registration and exact overlays restore i
 test('dynamic cleanup refuses baseline destruction and retains failed resources', async () => {
   const mutations = createFixtureMutations({
     projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit',
-    firestore: { async read() { return {}; }, async write() {}, async remove() { throw new Error('transient'); } },
+    firestore: { async read() { return {}; }, async hasDescendants() { return false; }, async write() {}, async remove() { throw new Error('transient'); } },
     baselineRoots: ['teams/qa-team-a'], maxAttempts: 1,
   });
   assert.throws(() => mutations.registerDynamicDocument('bad', 'teams/qa-team-a'), /baseline root/);
@@ -66,6 +74,7 @@ test('overlay restoration attempts every path and final cleanup retries exact re
   let failedB = false;
   const firestore = {
     async read(path) { return records.has(path) ? structuredClone(records.get(path)) : null; },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
     async write(path, value) {
       if (path.endsWith('/b') && value.value === 'before-b' && !failedB) {
         failedB = true;
@@ -100,6 +109,7 @@ test('overlay reports both the original callback failure and restoration failure
     projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', maxAttempts: 1,
     firestore: {
       async read(path) { return records.get(path) ?? null; },
+      async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
       async write() { throw new Error('restore failed'); },
       async remove(path) { records.delete(path); },
     },
@@ -119,6 +129,7 @@ test('overlay verification treats Firestore field reordering as the same before-
   const records = new Map([['players/p-a', { nested: { z: 1, a: 2 }, joinedTeamIds: ['a', 'b'] }]]);
   const firestore = {
     async read(path) { return structuredClone(records.get(path) ?? null); },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
     async write(path, value) {
       records.set(path, { joinedTeamIds: structuredClone(value.joinedTeamIds), nested: { a: value.nested.a, z: value.nested.z } });
     },
@@ -139,14 +150,23 @@ test('two-party barrier releases both callbacks together and eventual probes are
   const settled = await runTwoParty('capacity-race', [
     async () => { order.push('a'); return 'A'; },
     async () => { order.push('b'); return 'B'; },
-  ], { timeoutMs: 100 });
+  ], { timeoutMs: 100, async terminate() {} });
   assert.deepEqual(settled.map(item => item.status), ['fulfilled', 'fulfilled']);
   assert.deepEqual(new Set(order), new Set(['a', 'b']));
 
   let attempts = 0;
-  const value = await awaitEventually('projection', async () => ++attempts, current => current === 3, { timeoutMs: 100, intervalMs: 1 });
+  const value = await awaitEventually('projection', async () => ++attempts, current => current === 3, { timeoutMs: 100, intervalMs: 1, async terminate() {} });
   assert.equal(value, 3);
-  await assert.rejects(() => awaitEventually('never', async () => false, Boolean, { timeoutMs: 5, intervalMs: 1 }), /never/);
+  await assert.rejects(() => awaitEventually('never', async () => false, Boolean, { timeoutMs: 5, intervalMs: 1, async terminate() {} }), /never/);
+});
+
+test('two-party work without an owned terminator is rejected before callbacks start', async () => {
+  let started = false;
+  await assert.rejects(() => runTwoParty('unowned-race', [
+    async () => { started = true; },
+    async () => { started = true; },
+  ], { timeoutMs: 2 }), /owned terminator/);
+  assert.equal(started, false);
 });
 
 test('two-party timeout aborts and settles both participants before returning', async () => {
@@ -160,7 +180,7 @@ test('two-party timeout aborts and settles both participants before returning', 
         slowSettled = true;
       },
       async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
-    ], { timeoutMs: 2 }),
+    ], { timeoutMs: 2, async terminate() {} }),
     /timed out/
   );
   assert.equal(slowSettled, true);
@@ -186,11 +206,35 @@ test('two-party timeout terminates a noncooperative participant within the owned
   assert.ok(Date.now() - startedAt < 250);
 });
 
+test('two-party termination failure preserves the failure and waits out delayed mutation', async () => {
+  let mutation = false;
+  const startedAt = Date.now();
+  await assert.rejects(() => runTwoParty('failed-terminator', [
+    async () => { await new Promise(resolve => setTimeout(resolve, 25)); mutation = true; },
+    async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
+  ], {
+    timeoutMs: 2,
+    settleTimeoutMs: 2,
+    async terminate() { throw new Error('worker termination failed'); },
+  }), error => error instanceof AggregateError && error.errors.some(item => item.message === 'worker termination failed'));
+  assert.equal(mutation, true, 'helper did not return while the delayed callback was live');
+  assert.ok(Date.now() - startedAt >= 20);
+});
+
 test('eventual assertion bounds a probe that never resolves', async () => {
+  let stopped = false;
   const startedAt = Date.now();
   await assert.rejects(
-    () => awaitEventually('stuck projection', () => new Promise(() => {}), Boolean, { timeoutMs: 10 }),
+    () => awaitEventually('stuck projection', () => new Promise(resolve => {
+      const interval = setInterval(() => { if (stopped) { clearInterval(interval); resolve(false); } }, 1);
+    }), Boolean, { timeoutMs: 10, async terminate() { stopped = true; } }),
     /stuck projection/
   );
   assert.ok(Date.now() - startedAt < 250);
+});
+
+test('eventual assertion requires termination ownership before starting its probe', async () => {
+  let started = false;
+  await assert.rejects(() => awaitEventually('unowned projection', async () => { started = true; }, Boolean), /owned terminator/);
+  assert.equal(started, false);
 });

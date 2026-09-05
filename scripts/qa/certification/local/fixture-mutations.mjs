@@ -26,6 +26,9 @@ export function createFixtureMutations({
   if (!firestore || typeof firestore.read !== 'function' || typeof firestore.remove !== 'function' || typeof firestore.write !== 'function') {
     throw new Error('Fixture mutation registry requires a Firestore adapter.');
   }
+  if (typeof firestore.hasDescendants !== 'function') {
+    throw new Error('Fixture mutation registry requires recursive descendant proof.');
+  }
   const registry = createResourceRegistry({ maxAttempts });
   const registeredDocuments = new Set();
   let overlayCounter = 0;
@@ -41,14 +44,13 @@ export function createFixtureMutations({
       kind: 'deleted',
       async cleanup() {
         const rootExists = await firestore.read(path) !== null;
-        const descendantsExist = typeof firestore.hasDescendants === 'function' && await firestore.hasDescendants(path);
+        const descendantsExist = await firestore.hasDescendants(path);
         if (!rootExists && !descendantsExist) return false;
         await firestore.remove(path);
         return true;
       },
       async verify() {
-        return await firestore.read(path) === null &&
-          (typeof firestore.hasDescendants !== 'function' || !await firestore.hasDescendants(path));
+        return await firestore.read(path) === null && !await firestore.hasDescendants(path);
       },
     });
   }

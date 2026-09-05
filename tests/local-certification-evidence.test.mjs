@@ -314,6 +314,14 @@ test('evidence refuses credentials, session material, action links, query string
     { invite_token: 'short' },
     { parentUid: 'parent-public-alias-value' },
     { PARENT_UID: 'parent-public-alias-value' },
+    { guardianUid: 'guardian-public-alias-value' },
+    { GUARDIAN_UID: 'guardian-public-alias-value' },
+    { childUid: 'child-public-alias-value' },
+    { child_uid: 'child-public-alias-value' },
+    { accessToken: 'short-access-material' },
+    { ACCESS_TOKEN: 'short-access-material' },
+    { medical_notes: 'private medical material' },
+    { private_contact: 'private contact material' },
     { userId: 'unaliased-sensitive-uid' },
     { note: 'synthetic-private-roster-4' },
     { note: '/api/invites/youth?token=action-material' },
@@ -400,12 +408,22 @@ test('recorder writes sanitized JSON and Markdown with explicit external blocker
     });
     recorder.recordScenario(validResult());
     recorder.recordRunError({ stage: 'preflight', diagnostic: 'sanitized shared failure' });
+    recorder.recordRunError({
+      stage: 'scenario-cleanup-or-runner', diagnostic: 'combined failure',
+      originalDiagnostic: 'operation failure', restorationDiagnostics: ['restoration failure'],
+    });
     const written = await recorder.writeSummary({ markdownPath: path.join(directory, '02-identity.md') });
     assert.equal(written.results.length, 1);
     const json = JSON.parse(await readFile(path.join(directory, 'results.json'), 'utf8'));
     const markdown = await readFile(path.join(directory, '02-identity.md'), 'utf8');
     assert.equal(json.runId, 'final-cert-t3-evidence-a1');
-    assert.deepEqual(json.runErrors, [{ stage: 'preflight', diagnostic: 'sanitized shared failure' }]);
+    assert.deepEqual(json.runErrors, [
+      { stage: 'preflight', diagnostic: 'sanitized shared failure' },
+      {
+        stage: 'scenario-cleanup-or-runner', diagnostic: 'combined failure',
+        originalDiagnostic: 'operation failure', restorationDiagnostics: ['restoration failure'],
+      },
+    ]);
     assert.match(markdown, /BLOCKED_PRECONDITION/);
     assert.match(markdown, /exact staging revision/);
     assert.doesNotMatch(markdown, /password|cookie|oobCode|Bearer/i);

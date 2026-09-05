@@ -32,6 +32,13 @@ export async function POST(request: NextRequest) {
         async remove(path) {
           await adminDb.recursiveDelete(adminDb.doc(path));
         },
+        async hasDescendants(path) {
+          const collections = await adminDb.doc(path).listCollections();
+          for (const collection of collections) {
+            if ((await collection.listDocuments()).length > 0) return true;
+          }
+          return false;
+        },
         async update(path, patch) {
           await adminDb.doc(path).set(patch, { merge: true });
         },
@@ -52,6 +59,10 @@ export async function POST(request: NextRequest) {
         async removeStorage(path) {
           ensureAdminInit();
           await admin.storage().bucket(getAdminStorageBucketName()).file(path).delete({ ignoreNotFound: true });
+        },
+        async storageExists(path) {
+          ensureAdminInit();
+          return (await admin.storage().bucket(getAdminStorageBucketName()).file(path).exists())[0];
         },
       },
     });
