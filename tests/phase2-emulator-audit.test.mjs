@@ -409,7 +409,20 @@ test('Task 3 visible admin navigation rehydrates the canonical landing before ea
   const visibleAudit = source.match(/function browserVisibleAdminNavigationAudit[\s\S]*?\n}\n\nfunction browserSurfaceSweep/)?.[0] || '';
   assert.match(visibleAudit, /await page\.goto\(baseUrl \+ canonicalPath\)/);
   assert.match(visibleAudit, /await navigationTrigger\.waitFor\(\{ state: 'visible', timeout: 15000 \}\)/);
-  assert.match(source, /browserVisibleAdminNavigationAudit\(session, alias === 'qa-superadmin', '\/settings'\)/);
+  assert.match(source, /browserVisibleSensitiveNavigationAudit\(session, allowedPaths, requiredPaths, '\/settings'\)/);
+});
+
+test('Task 3 dashboard browser executes every route-policy branch and checks all visible sensitive navigation', () => {
+  assert.match(source, /const DASHBOARD_POLICY_PATHS = Object\.freeze\(\[/);
+  for (const pathname of ['/admin', '/family', '/family/payments', '/dashboard/billing', '/club', '/competition', '/facilities']) {
+    assert.match(source, new RegExp(`['\"]${pathname.replaceAll('/', '\\/')}['\"]`));
+  }
+  assert.match(source, /function buildDashboardPolicyCases/);
+  assert.match(source, /browserVisibleSensitiveNavigationAudit/);
+  assert.match(source, /dashboard visible navigation denied links/);
+  assert.match(source, /dashboard visible navigation required links/);
+  assert.match(source, /dashboard complete route policy/);
+  assert.match(source, /item\.path/);
 });
 
 test('Task 3 admin non-SA browser denials wait through client navigation', () => {

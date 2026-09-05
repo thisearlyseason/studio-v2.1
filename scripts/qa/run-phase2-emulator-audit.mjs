@@ -93,6 +93,15 @@ let activeCertificationAssertions = [];
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
 const certificationScenarioById = new Map(CERTIFICATION_SCENARIOS.map(scenario => [scenario.id, scenario]));
+const DASHBOARD_POLICY_PATHS = Object.freeze([
+  '/admin',
+  '/family',
+  '/family/payments',
+  '/dashboard/billing',
+  '/club',
+  '/competition',
+  '/facilities',
+]);
 const certificationNotObservedCases = Object.freeze({
   'authentication-password-reset': Object.freeze({
     'reset-unknown-reused-modified-wrong-account': 'The Auth emulator exposes no supported clock control for a still-unused password-reset OOB code, and the protocol binds the recipient in the code rather than accepting a caller-selected account. Expiration and recipient-tampered action are not observed locally.',
@@ -104,12 +113,43 @@ const certificationNotObservedCases = Object.freeze({
     'demo-cross-id-duplicate-billing-expiry-retry': 'Cross-ID, idempotency, and billing denials were exercised, but the real scheduled demo-expiry worker and injected retry path are not available through a deterministic local seam.',
     'demo-refresh-back-exit-isolation': 'Browser refresh, exit, and graph reconciliation were exercised, but application-owned pending-exit recovery was not invoked; audit-registry recovery is not application-worker evidence.',
   }),
-  'dashboard-shell-role-landing-and-route-policy': Object.freeze({
-    'dashboard-navigation-direct-route-denials': 'Twenty landings and admin denials were exercised, but the complete family, billing, club, competition, and staff direct-route decision table was not executed for every role/plan/state alias.',
-    'dashboard-complete-role-plan-state-policy': 'Visible Admin-link agreement alone does not cover the complete family, billing, club, competition, and staff navigation policy branches.',
-    'dashboard-policy-two-viewports': 'Two-viewports were exercised for the executed landing/admin subset, not every branch of the complete navigation decision table.',
-  }),
 });
+
+function buildDashboardPolicyCases(fixture) {
+  const claimsRole = fixture.alias === 'qa-superadmin' ? 'superadmin' : '';
+  const role = claimsRole === 'superadmin'
+    ? claimsRole
+    : fixture.role === 'superadmin' ? '' : fixture.role;
+  const primaryAuthority = fixture.alias === 'qa-school-owner' || fixture.alias === 'qa-elite-owner';
+  const management = ['coach', 'admin', 'league_creator', 'superadmin'].includes(role) || primaryAuthority;
+  const institution = role === 'superadmin' || primaryAuthority ||
+    (management && ['elite', 'elite_teams', 'league', 'elite_league', 'school'].includes(fixture.planId));
+  const competition = role === 'superadmin' || role === 'league_creator' ||
+    (management && ['league', 'elite_league', 'school'].includes(fixture.planId));
+  const allowed = pathname => {
+    if (pathname === '/admin') return role === 'superadmin';
+    if (pathname === '/family' || pathname === '/family/payments') return role === 'parent' || role === 'superadmin';
+    if (pathname === '/dashboard/billing' || pathname === '/facilities') return management;
+    if (pathname === '/club') return institution;
+    if (pathname === '/competition') return competition;
+    throw new Error(`Unhandled dashboard policy path: ${pathname}`);
+  };
+  return DASHBOARD_POLICY_PATHS.map(pathname => ({
+    path: pathname,
+    expected: allowed(pathname) ? pathname : '/dashboard',
+    allowed: allowed(pathname),
+  }));
+}
+
+function requiredDashboardNavigationPaths(fixture, cases) {
+  const required = [];
+  if (fixture.role === 'parent') required.push('/family');
+  if (fixture.alias === 'qa-school-owner' || fixture.alias === 'qa-elite-owner') required.push('/club');
+  if (fixture.role === 'league_creator') required.push('/competition');
+  if (fixture.alias === 'qa-superadmin') required.push('/admin');
+  if (cases.some(item => item.path === '/dashboard/billing' && item.allowed)) required.push('/dashboard/billing');
+  return required;
+}
 
 function certificationActorAliases(scenarioId) {
   if (scenarioId === 'marketing-legal-contact-beta-coach-referral') return ['qa-public-submitter', 'qa-team-member', 'qa-superadmin'];
@@ -3309,24 +3349,37 @@ async function runCertificationBrowserScenario(scenarioId) {
       try {
         session = await browserLogin(alias, fixture.expectedLanding, `cert-dashboard-${alias}-${process.pid}`);
         browserLandingPersistenceAudit(session, fixture.expectedLanding, `dashboard ${alias}`);
-        const directCases = [{ path: fixture.expectedLanding, expected: fixture.expectedLanding }];
-        if (alias !== 'qa-superadmin') directCases.push({ path: '/admin', expected: '/dashboard', waitForPathChange: true });
+        const policyCases = buildDashboardPolicyCases(fixture);
+        const directCases = [
+          { path: fixture.expectedLanding, expected: fixture.expectedLanding },
+          ...policyCases.map(item => ({ path: item.path, expected: item.expected, waitForPathChange: !item.allowed })),
+        ];
         const desktopPolicy = browserSurfaceSweep(session, directCases);
         assertSurfaceSweep(desktopPolicy, `dashboard direct policy ${alias}`);
         const mobilePolicy = browserSurfaceSweep(session, directCases, { mobile: true });
         assertSurfaceSweep(mobilePolicy, `dashboard mobile policy ${alias}`);
-        expectEqual(desktopPolicy.results[0].actual, fixture.expectedLanding, `dashboard complete route policy ${alias}`);
+        for (let index = 0; index < policyCases.length; index += 1) {
+          const item = policyCases[index];
+          expectEqual(desktopPolicy.results[index + 1].actual, item.expected, `dashboard complete route policy ${alias} ${item.path}`);
+          expectEqual(mobilePolicy.results[index + 1].actual, item.expected, `dashboard mobile route policy ${alias} ${item.path}`);
+          if (!item.allowed) {
+            expectEqual(desktopPolicy.results[index + 1].actual, '/dashboard', `dashboard policy denied route ${alias} ${item.path}`);
+          }
+        }
         expectEqual(
           desktopPolicy.results.every(item => item.mobileFits) && mobilePolicy.results.every(item => item.mobileFits),
           true,
           `dashboard policy two viewport containment ${alias}`,
         );
-        if (alias !== 'qa-superadmin') {
-          expectEqual(desktopPolicy.results[1].actual, '/dashboard', `dashboard policy denied route ${alias}`);
-        }
-        const visibleNavigation = browserVisibleAdminNavigationAudit(session, alias === 'qa-superadmin', '/settings');
-        expectEqual(visibleNavigation.agreement, true, `dashboard visible navigation agreement ${alias}`);
-        expectEqual(visibleNavigation.fits, true, `dashboard visible navigation two viewport containment ${alias}`);
+        const allowedPaths = policyCases.filter(item => item.allowed).map(item => item.path);
+        const requiredPaths = requiredDashboardNavigationPaths(fixture, policyCases);
+        const visibleNavigation = browserVisibleSensitiveNavigationAudit(session, allowedPaths, requiredPaths, '/settings');
+        expectEqual(visibleNavigation.observations.every(item => item.deniedVisible.length === 0), true, `dashboard visible navigation denied links ${alias}`);
+        expectEqual(visibleNavigation.observations.every(item => item.missingRequired.length === 0), true, `dashboard visible navigation required links ${alias}`);
+        expectEqual(visibleNavigation.consoleErrors.length, 0, `dashboard visible navigation console errors ${alias}`);
+        expectEqual(visibleNavigation.unexpectedResponses.length, 0, `dashboard visible navigation unexpected responses ${alias}`);
+        expectEqual(visibleNavigation.observations.every(item => item.fits), true, `dashboard visible navigation agreement ${alias}`);
+        expectEqual(visibleNavigation.observations.every(item => item.fits), true, `dashboard visible navigation two viewport containment ${alias}`);
       } finally {
         if (session) await closeBrowserSessionNow(session);
       }
@@ -3553,6 +3606,59 @@ function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonica
     agreement: observations.every(item => item.visibleAdminItems === (shouldExposeAdmin ? 1 : 0)),
     fits: observations.every(item => item.fits),
   };
+}
+
+function browserVisibleSensitiveNavigationAudit(session, allowedPaths, requiredPaths, canonicalPath) {
+  return JSON.parse(cli(session, ['run-code', `async page => {
+    const baseUrl = ${JSON.stringify(BASE_URL)};
+    const policyPaths = ${JSON.stringify(DASHBOARD_POLICY_PATHS)};
+    const allowedPaths = new Set(${JSON.stringify(allowedPaths)});
+    const requiredPaths = ${JSON.stringify(requiredPaths)};
+    const canonicalPath = ${JSON.stringify(canonicalPath)};
+    const observations = [];
+    const consoleErrors = [];
+    const unexpectedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      const responseUrl = response.url();
+      if (responseUrl.startsWith(baseUrl + '/') && response.status() >= 400) {
+        unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(baseUrl.length).split(/[?#]/, 1)[0] });
+      }
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        await page.goto(baseUrl + canonicalPath);
+        await page.waitForFunction(expected => window.location.pathname === expected, canonicalPath, { timeout: 15000 });
+        const navigationTrigger = viewport.width < 640
+          ? page.getByRole('button', { name: 'More', exact: true })
+          : page.getByRole('button', { name: 'Open account menu' });
+        await navigationTrigger.waitFor({ state: 'visible', timeout: 15000 });
+        await navigationTrigger.click();
+        const visiblePaths = [];
+        for (const pathname of policyPaths) {
+          const link = page.locator('a[href=' + JSON.stringify(pathname) + ']:visible');
+          if (await link.count() > 0) visiblePaths.push(pathname);
+        }
+        observations.push({
+          viewport: viewport.width,
+          deniedVisible: visiblePaths.filter(pathname => !allowedPaths.has(pathname)),
+          missingRequired: requiredPaths.filter(pathname => !visiblePaths.includes(pathname)),
+          fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        });
+        await page.keyboard.press('Escape');
+      }
+      return { observations, consoleErrors, unexpectedResponses };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`]));
 }
 
 function exitDemoBrowserContext(session) {
