@@ -280,6 +280,7 @@ function certificationActorAliases(scenarioId) {
     'family-enable-youth-login': ['qa-parent-a', 'qa-parent-b', 'qa-youth-invite'],
     'chat-channel-message-unread': ['qa-coach-owner-a', 'qa-team-member'],
     'sports-hub-browse-search-filter-bookmark-preferences': ['qa-team-member', 'qa-coach-owner-a'],
+    'calendar-team-family-views-and-filters': ['qa-coach-owner-a'],
   };
   return [...new Set([...(actors[scenarioId] || ['catalog-scenario-actor']), 'qa-public-submitter'])];
 }

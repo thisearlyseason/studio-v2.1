@@ -220,6 +220,7 @@ test('operations browser evidence attributes chat and Sports Hub actions to the 
   const actorFunction = source.slice(source.indexOf('function certificationActorAliases('), source.indexOf('function tenantCaseAssociations('));
   assert.match(actorFunction, /'chat-channel-message-unread': \['qa-coach-owner-a', 'qa-team-member'\]/);
   assert.match(actorFunction, /'sports-hub-browse-search-filter-bookmark-preferences': \['qa-team-member', 'qa-coach-owner-a'\]/);
+  assert.match(actorFunction, /'calendar-team-family-views-and-filters': \['qa-coach-owner-a'\]/);
   assert.doesNotMatch(actorFunction, /'chat-channel-message-unread': \['catalog-scenario-actor'\]/);
   assert.doesNotMatch(actorFunction, /'sports-hub-browse-search-filter-bookmark-preferences': \['catalog-scenario-actor'\]/);
 });
