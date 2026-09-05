@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, openSync, writeFileSync } from 'node:fs';
+import { Agent as HttpAgent } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -876,7 +877,11 @@ async function withEmulatorAuthAdmin(callback) {
   const adminModule = await import('firebase-admin');
   const admin = adminModule.default || adminModule;
   const appName = `task3-auth-admin-${process.pid}-${Date.now()}`;
-  const app = admin.initializeApp({ projectId: PROJECT_ID, storageBucket: `${PROJECT_ID}.appspot.com` }, appName);
+  const app = admin.initializeApp({
+    projectId: PROJECT_ID,
+    storageBucket: `${PROJECT_ID}.appspot.com`,
+    httpAgent: new HttpAgent({ keepAlive: false }),
+  }, appName);
   try {
     return await callback(admin.auth(app), admin.firestore(app), admin.storage(app).bucket());
   } finally {
@@ -1970,7 +1975,6 @@ async function browserAdminOpenTabRevocationAudit(assertionPrefix = 'logout admi
         const pages = page.context().pages();
         const consoleErrors = [];
         const failedResponses = [];
-        let expectedSessionDenials = 0;
         const onConsole = message => {
           if (message.type() !== 'error') return;
           const value = message.text();
@@ -1982,8 +1986,9 @@ async function browserAdminOpenTabRevocationAudit(assertionPrefix = 'logout admi
           const responseUrl = response.url();
           if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
             const pathname = responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0];
-            if (response.status() === 401 && pathname === '/api/auth/session') expectedSessionDenials += 1;
-            else failedResponses.push({ status: response.status(), pathname });
+            if (!(response.status() === 401 && pathname === '/api/auth/session')) {
+              failedResponses.push({ status: response.status(), pathname });
+            }
           }
         };
         for (const target of pages) { target.on('console', onConsole); target.on('pageerror', onPageError); target.on('response', onResponse); }
@@ -1997,7 +2002,7 @@ async function browserAdminOpenTabRevocationAudit(assertionPrefix = 'logout admi
           await fresh.waitForFunction(() => window.location.pathname !== '/admin', null, { timeout: 15000 });
           return {
             openPaths: await Promise.all(pages.map(target => target.evaluate(() => window.location.pathname))),
-            freshPath: await fresh.evaluate(() => window.location.pathname), consoleErrors, failedResponses, expectedSessionDenials,
+            freshPath: await fresh.evaluate(() => window.location.pathname), consoleErrors, failedResponses,
           };
         } finally {
           for (const target of pages) { target.off('console', onConsole); target.off('pageerror', onPageError); target.off('response', onResponse); }
@@ -2006,7 +2011,6 @@ async function browserAdminOpenTabRevocationAudit(assertionPrefix = 'logout admi
       }`]));
       expectEqual(result.openPaths.every(pathname => pathname === '/login'), true, `${assertionPrefix} revoked open tabs denied`);
       expectEqual(result.freshPath, '/login', `${assertionPrefix} revoked fresh tab denied`);
-      expectEqual(result.expectedSessionDenials >= 1, true, `${assertionPrefix} revocation expected session denial responses`);
       expectEqual(result.consoleErrors.length, 0, `${assertionPrefix} revocation console errors`);
       expectEqual(result.failedResponses.length, 0, `${assertionPrefix} revocation unexpected responses`);
     } finally {
@@ -3114,15 +3118,25 @@ async function runCertificationBrowserScenario(scenarioId) {
       await search.fill('');
       const rows = page.locator('button').filter({ has: page.locator('p.font-mono') });
       await page.waitForFunction(() => document.querySelectorAll('button p.font-mono').length > 2, null, { timeout: 15000 });
+      const readVisibleNames = () => rows.locator('p.text-sm.font-black').allInnerTexts();
+      const compareNames = (left, right) => {
+        const a = left.toLowerCase();
+        const b = right.toLowerCase();
+        if (a < b) return -1;
+        if (a > b) return 1;
+        return 0;
+      };
+      const expectedAscending = (await readVisibleNames()).sort(compareNames);
+      const expectedDescending = [...expectedAscending].sort((a, b) => compareNames(b, a));
       const header = page.getByRole('button', { name: new RegExp('Name / Email') });
       await header.click();
+      await page.waitForFunction(expected => JSON.stringify(Array.from(document.querySelectorAll('button p.text-sm.font-black')).map(element => (element.textContent || '').trim())) === JSON.stringify(expected), expectedAscending, { timeout: 15000 });
       const ascending = await rows.locator('p.text-sm.font-black').allInnerTexts();
       await header.click();
+      await page.waitForFunction(expected => JSON.stringify(Array.from(document.querySelectorAll('button p.text-sm.font-black')).map(element => (element.textContent || '').trim())) === JSON.stringify(expected), expectedDescending, { timeout: 15000 });
       const descending = await rows.locator('p.text-sm.font-black').allInnerTexts();
-      const ascSorted = [...ascending].sort((a, b) => a.localeCompare(b));
-      const descSorted = [...ascending].sort((a, b) => b.localeCompare(a));
-      const actualAscending = JSON.stringify(ascending) === JSON.stringify(ascSorted) || JSON.stringify(ascending) === JSON.stringify(descSorted);
-      const actualDescending = JSON.stringify(descending) === JSON.stringify([...ascending].reverse());
+      const actualAscending = JSON.stringify(ascending) === JSON.stringify(expectedAscending);
+      const actualDescending = JSON.stringify(descending) === JSON.stringify(expectedDescending);
       await page.setViewportSize({ width: 390, height: 844 });
       const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
       return {

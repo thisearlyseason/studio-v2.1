@@ -1147,8 +1147,8 @@ export default function AdminPortalPage() {
               );
             })
             .sort((a, b) => {
-              let av = a[userSortField] ?? '';
-              let bv = b[userSortField] ?? '';
+              let av = userSortField === 'fullName' ? (a.fullName || a.name || a.email || '') : (a[userSortField] ?? '');
+              let bv = userSortField === 'fullName' ? (b.fullName || b.name || b.email || '') : (b[userSortField] ?? '');
               if (typeof av === 'string') av = av.toLowerCase();
               if (typeof bv === 'string') bv = bv.toLowerCase();
               if (av < bv) return userSortDir === 'asc' ? -1 : 1;

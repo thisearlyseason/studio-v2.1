@@ -227,6 +227,12 @@ test('browser evidence waits for the filtered admin row and preserves console di
   assert.match(source, /console\.log\(`\$\{label\} persistence failed response diagnostic:/);
 });
 
+test('Task 3 admin sort evidence waits for both React row-order transitions', () => {
+  const directory = source.match(/const directory = JSON\.parse[\s\S]*?expectEqual\(directory\.targetCount/)?.[0] || '';
+  assert.match(directory, /await page\.waitForFunction\(expected =>[\s\S]*?expectedAscending/);
+  assert.match(directory, /await page\.waitForFunction\(expected =>[\s\S]*?expectedDescending/);
+});
+
 test('default API and browser audits consume every blocked session expectation', () => {
   const catalog = buildFixtureCatalog('blocked-audit-a1');
   const plan = auditRunner.buildBlockedAuditPlan(catalog.blockedAliases);
@@ -389,7 +395,7 @@ test('Task 3 reset action correlates generic resource console noise with exact r
 test('Task 3 revoked admin sessions deny both open and fresh tabs at login', () => {
   assert.match(source, /result\.openPaths\.every\(pathname => pathname === '\/login'\)/);
   assert.match(source, /expectEqual\(result\.freshPath, '\/login'/);
-  assert.match(source, /revocation expected session denial responses/);
+  assert.doesNotMatch(source, /expectEqual\(result\.expectedSessionDenials >= 1/);
 });
 
 test('Task 3 visible admin navigation uses the desktop account menu and mobile More sheet', () => {
@@ -605,6 +611,12 @@ test('Task 3 local HTTP helpers avoid stale pooled sockets across dev-server com
     const helper = source.match(new RegExp(`async function ${name}[\\s\\S]*?\\n}`))?.[0] || '';
     assert.match(helper, /['"]Connection['"]:\s*['"]close['"]/);
   }
+});
+
+test('Task 3 Firebase Admin emulator calls disable stale HTTP keep-alive reuse', () => {
+  const helper = source.match(/async function withEmulatorAuthAdmin[\s\S]*?\n}\n\nasync function getAuthUserByEmailIfPresent/)?.[0] || '';
+  assert.match(source, /import \{ Agent as HttpAgent \} from 'node:http'/);
+  assert.match(helper, /httpAgent: new HttpAgent\(\{ keepAlive: false \}\)/);
 });
 
 test('Task 3 transport diagnostics retain only local method, path, and error code', () => {

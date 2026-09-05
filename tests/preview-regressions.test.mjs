@@ -6,6 +6,12 @@ import { dispatchTeamNotification } from '../src/lib/client-team-notification.ts
 
 const readSource = path => readFile(new URL(path, import.meta.url), 'utf8');
 
+test('admin Name and Email sort uses the visible fallback value', async () => {
+  const source = await readSource('../src/app/admin/page.tsx');
+  assert.match(source, /userSortField === 'fullName' \? \(a\.fullName \|\| a\.name \|\| a\.email \|\| ''\)/);
+  assert.match(source, /userSortField === 'fullName' \? \(b\.fullName \|\| b\.name \|\| b\.email \|\| ''\)/);
+});
+
 test('facility rename scans owner-scoped schedules without collection-group indexes', async () => {
   const source = await readSource('../src/app/api/facilities/update/route.ts');
   assert.match(source, /where\('ownerUserId', '==', facilityOwnerId\)/);
