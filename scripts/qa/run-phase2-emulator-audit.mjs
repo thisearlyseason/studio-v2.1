@@ -15,6 +15,7 @@ import {
 } from './certification/local/batches/identity.mjs';
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES } from './certification/local/evidence.mjs';
+import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 
 export function resolveAuditRuntimeConfiguration({ environment = process.env, argv = process.argv.slice(2) } = {}) {
   const baseUrl = parseLoopbackHttpOrigin(
@@ -84,7 +85,34 @@ let fixturesSeeded = false;
 let cleanupStarted = false;
 let activeCertificationScenario = null;
 let activeCertificationAssertions = [];
+const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
+const completedDynamicCleanupRuns = [];
 const certificationScenarioById = new Map(CERTIFICATION_SCENARIOS.map(scenario => [scenario.id, scenario]));
+
+function certificationActorAliases(scenarioId) {
+  if (scenarioId === 'marketing-legal-contact-beta-coach-referral') return ['qa-public-submitter', 'qa-team-member', 'qa-superadmin'];
+  if (scenarioId === 'authentication-email-password-login' || scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
+    return [...FIXTURES.activeAliases, ...BLOCKED_AUDIT_PLAN.api.map(item => item.alias)];
+  }
+  const actors = {
+    'authentication-logout-revocation-multi-tab': ['qa-coach-owner-a', 'qa-superadmin'],
+    'authentication-password-reset': ['qa-coach-owner-a', 'qa-coach-owner-b', 'qa-public-submitter'],
+    'account-lifecycle-disable-delete-cancel-purge': ['qa-team-member', 'qa-parent-a', 'qa-superadmin', 'qa-owner-delete-blocked', 'qa-pro-owner'],
+    'signup-onboarding-coach-admin-league-parent-adult-player-signup': ['signup-self', 'signup-child', 'signup-coach', 'signup-school_ad', 'signup-league_creator'],
+    'signup-onboarding-youth-invitation-signup': ['qa-parent-a', 'qa-parent-b', 'qa-youth-invite', 'qa-team-member', 'qa-removed-member', 'qa-coach-owner-b'],
+    'signup-onboarding-missing-profile-onboarding': ['missing-adult_player', 'missing-parent', 'missing-coach', 'missing-admin', 'missing-league_creator'],
+    'demo-seed-use-exit-expiry-cleanup': ['qa-demo-a', 'qa-demo-b', 'qa-coach-owner-a'],
+    'administration-access-and-user-directory': ['qa-superadmin', ...FIXTURES.activeAliases.filter(alias => alias !== 'qa-superadmin'), ...BLOCKED_AUDIT_PLAN.api.map(item => item.alias)],
+  };
+  return actors[scenarioId] || ['catalog-scenario-actor'];
+}
+
+function certificationTenantAlias(scenarioId) {
+  if (scenarioId === 'marketing-legal-contact-beta-coach-referral') return 'not-applicable';
+  if (scenarioId === 'administration-access-and-user-directory') return 'platform-admin';
+  if (scenarioId === 'demo-seed-use-exit-expiry-cleanup') return 'isolated-demo-a+isolated-demo-b';
+  return 'qa-team-a+qa-team-b+qa-team-c';
+}
 
 export function createAuditShutdownState() {
   let exitCode = null;
@@ -109,21 +137,314 @@ function emitCertificationEvent(event) {
   console.log(`CERTIFICATION_EVENT ${JSON.stringify(sanitized)}`);
 }
 
-function recordCertificationCase(scenarioId, dimension, caseId, observed, expected = 'locally safe contract completed', caseStartedAt = null) {
+export function sanitizeCertificationArtifact(value) {
+  if (Array.isArray(value)) return value.map(sanitizeCertificationArtifact);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+      key,
+      /(?:password|cookie|authorization|actionurl|actionlink|oobcode|token|secret)/i.test(key)
+        ? '[redacted]'
+        : sanitizeCertificationArtifact(child),
+    ]));
+  }
+  if (typeof value !== 'string') return value;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return '[synthetic-email]';
+  return value
+    .replace(/Authorization:\s*Bearer\s+\S+/gi, 'Authorization: [redacted]')
+    .replace(/https?:\/\/[^\s]+\?[^\s]+/gi, '[redacted-url]')
+    .replace(/(?:oobCode|password|token|secret)=[^\s&]+/gi, '[redacted]');
+}
+
+export function selectCertificationCaseAssertions(assertions, requiredPatterns) {
+  const selected = [];
+  for (const pattern of requiredPatterns) {
+    const matches = assertions.filter(assertion => pattern.test(assertion.label));
+    if (matches.length === 0) throw new Error(`Missing required assertion for case: ${pattern}.`);
+    for (const match of matches) if (!selected.includes(match)) selected.push(match);
+  }
+  return selected;
+}
+
+const certificationCaseContracts = Object.freeze({
+  'authentication-email-password-login': Object.freeze([
+    { dimension: 'happyPath', caseId: 'login-twenty-active-browser-landings', requirements: [{ pattern: / login destination$/, minCount: 20 }] },
+    { dimension: 'negativePath', caseId: 'login-wrong-unknown-timeout-double-submit', requirements: [
+      /unknown identity generic Auth denial/, /wrong password generic Auth denial/,
+      /unknown-user visible generic failure parity/, /login timeout visible recovery/,
+      /login double-submit single session request/,
+    ] },
+    { dimension: 'permission', caseId: 'login-blocked-state-and-tenant-denials', requirements: [
+      { pattern: / certification blocked state$/, minCount: 4 }, { pattern: /scoped tenant request /, minCount: 5 },
+    ] },
+    { dimension: 'persistence', caseId: 'login-deep-link-refresh-new-tab', requirements: [
+      /protected deep-link return/, /login owner session refresh and Back destination/,
+      /login owner session new-tab destination/,
+    ] },
+    { dimension: 'console', caseId: 'login-local-console', requirements: [{ pattern: /login workflow console errors$/, minCount: 20 }] },
+    { dimension: 'network', caseId: 'login-local-network', requirements: [{ pattern: /login workflow unexpected responses$/, minCount: 20 }] },
+    { dimension: 'responsive', caseId: 'login-form-two-viewports', requirements: [
+      /login surface desktop routes/, /login surface mobile routes/, /login complete form states two viewports/,
+    ] },
+  ]),
+  'marketing-legal-contact-beta-coach-referral': Object.freeze([
+    { dimension: 'happyPath', caseId: 'marketing-local-happyPath', requirements: [
+      /marketing local contact persistence/, /marketing local beta persistence/, /marketing visible contact success/, /marketing visible beta success/, /marketing visible referral success/,
+    ] },
+    { dimension: 'negativePath', caseId: 'marketing-malformed-oversize-duplicate-rate-limit', requirements: [
+      /marketing malformed submission denial/, /marketing oversized payload denial/, /marketing rate-limit enforcement/,
+      /marketing duplicate referral idempotency/, /marketing visible contact validation/, /marketing visible beta validation/,
+    ] },
+    { dimension: 'permission', caseId: 'marketing-admin-field-and-record-isolation', requirements: [
+      /marketing contact privileged status ignored/, /marketing anonymous record read denied/, /marketing member record read denied/, /marketing trusted record read/,
+    ] },
+    { dimension: 'persistence', caseId: 'marketing-stored-once-local-transport', requirements: [
+      /marketing contact stored once/, /marketing beta stored once/, /marketing referral stored once/, /marketing exact dynamic cleanup/,
+    ] },
+    { dimension: 'console', caseId: 'marketing-local-console', requirements: [
+      /marketing submitted forms console errors/,
+    ] },
+    { dimension: 'network', caseId: 'marketing-local-network', requirements: [
+      /marketing no-outbound memory sink/, /marketing local sink persistence/, /marketing submitted forms unexpected responses/,
+    ] },
+    { dimension: 'responsive', caseId: 'marketing-public-forms-two-viewports', requirements: [
+      /marketing public surfaces desktop routes/, /marketing public surfaces mobile routes/, /marketing full form states two viewports/,
+    ] },
+  ]),
+  'authentication-logout-revocation-multi-tab': Object.freeze([
+    { dimension: 'happyPath', caseId: 'logout-primary-peer-session-revocation', requirements: [
+      /cert logout primary denial/, /cert logout peer denial/, /cert logout session denial/,
+    ] },
+    { dimension: 'negativePath', caseId: 'logout-back-reload-direct-api-denial', requirements: [
+      /cert logout Back reload direct denial/, /cert logout direct route denial/, /logout direct API denial without cookie/,
+    ] },
+    { dimension: 'permission', caseId: 'logout-emulator-admin-token-revocation', requirements: [
+      /logout emulator-admin revoked cookie denial/, /logout admin revoked open tabs denied/, /logout admin revoked fresh tab denied/,
+    ] },
+    { dimension: 'persistence', caseId: 'logout-refresh-new-tab-back', requirements: [
+      /cert logout protected cache content cleared after revocation/, /logout post-revocation fresh session/,
+    ] },
+    { dimension: 'console', caseId: 'logout-local-console', requirements: [
+      /cert logout workflow console errors/, /logout admin revocation console errors/,
+    ] },
+    { dimension: 'network', caseId: 'logout-local-network', requirements: [
+      /cert logout workflow unexpected responses/, /logout admin revocation unexpected responses/,
+    ] },
+    { dimension: 'responsive', caseId: 'logout-mobile-containment', requirements: [
+      /cert logout desktop containment/, /cert logout mobile containment/,
+    ] },
+  ]),
+  'authentication-password-reset': Object.freeze([
+    { dimension: 'happyPath', caseId: 'reset-known-oob-new-password-transition', requirements: [
+      /reset valid OOB redemption/, /reset old password denial/, /reset new password acceptance/, /reset action visible completion/,
+    ] },
+    { dimension: 'negativePath', caseId: 'reset-unknown-reused-modified-wrong-account', requirements: [
+      /reset unknown email nonenumeration/, /reset modified OOB denial/, /reset reused OOB denial/,
+      /reset wrong-account password unchanged/, /reset wrong-account reset attempt denied/, /reset oversized payload denial/, /reset double-submit single request/,
+      /reset action missing-password visible error/, /reset action consumed reload status/,
+    ] },
+    { dimension: 'permission', caseId: 'reset-nonenumeration-and-single-recipient', requirements: [
+      /reset OOB recipient binding/, /reset wrong-account password unchanged/, /known-provider-block reset request path/, /unknown reset request path/,
+    ] },
+    { dimension: 'persistence', caseId: 'reset-old-denied-new-accepted-reload', requirements: [
+      /reset exact password restoration/, /reset restored identity sign-in/, /reset action completion reload state/,
+    ] },
+    { dimension: 'console', caseId: 'reset-local-console', requirements: [
+      /known-provider-block reset request allowlisted console errors/, /reset action console errors/,
+    ] },
+    { dimension: 'network', caseId: 'reset-local-network', requirements: [
+      /known-provider-block reset request expected failure response/, /reset action unexpected responses/,
+    ] },
+    { dimension: 'responsive', caseId: 'reset-request-action-two-viewports', requirements: [
+      /reset request and action states two viewports/,
+    ] },
+  ]),
+  'account-lifecycle-disable-delete-cancel-purge': Object.freeze([
+    { dimension: 'happyPath', caseId: 'lifecycle-schedule-cancel-suspend-restore', requirements: [
+      /lifecycle self schedule deletion/, /lifecycle self cancel deletion/, /lifecycle suspend account/, /lifecycle restore account/,
+    ] },
+    { dimension: 'negativePath', caseId: 'lifecycle-owner-subscription-invalid-transition', requirements: [
+      /lifecycle owner guard/, /lifecycle subscription guard/, /lifecycle invalid cancel transition denial/, /lifecycle wrong confirmation denial/,
+    ] },
+    { dimension: 'permission', caseId: 'lifecycle-cross-user-and-admin-boundary', requirements: [
+      /lifecycle cross-user nonadmin denial/, /lifecycle self target isolation/,
+    ] },
+    { dimension: 'persistence', caseId: 'lifecycle-state-reload-and-local-retry', requirements: [
+      /lifecycle purge clock boundary/, /lifecycle injected partial failure retained for retry/, /lifecycle retry terminal reconciliation/,
+    ] },
+    { dimension: 'console', caseId: 'lifecycle-local-console', requirements: [/lifecycle browser workflow console errors/] },
+    { dimension: 'network', caseId: 'lifecycle-local-network', requirements: [/lifecycle browser workflow unexpected responses/] },
+    { dimension: 'responsive', caseId: 'lifecycle-settings-admin-desktop', requirements: [
+      /lifecycle admin surface desktop routes/, /lifecycle settings surface mobile routes/,
+    ] },
+  ]),
+  'signup-onboarding-coach-admin-league-parent-adult-player-signup': Object.freeze([
+    { dimension: 'happyPath', caseId: 'signup-five-role-create-verify-landings', requirements: [
+      { pattern: /signup .* verified destination and reload/, minCount: 5 },
+    ] },
+    { dimension: 'negativePath', caseId: 'signup-invalid-duplicate-aborted-provider-failure', requirements: [
+      /signup duplicate email denial/, /signup invalid input UI denial/, /signup aborted delivery UI recovery/, /signup provider-failure delivery UI recovery/,
+    ] },
+    { dimension: 'permission', caseId: 'signup-preverification-and-privileged-field-denial', requirements: [
+      { pattern: /signup .* preverification session denial/, minCount: 5 }, /signup privileged field injection denied/,
+    ] },
+    { dimension: 'persistence', caseId: 'signup-five-role-profile-reload', requirements: [
+      { pattern: /signup .* persisted role/, minCount: 5 }, { pattern: /signup .* verified destination and reload/, minCount: 5 },
+    ] },
+    { dimension: 'console', caseId: 'signup-local-console', requirements: [{ pattern: /signup .* workflow console errors/, minCount: 5 }] },
+    { dimension: 'network', caseId: 'signup-local-network', requirements: [{ pattern: /signup .* workflow unexpected responses/, minCount: 5 }] },
+    { dimension: 'responsive', caseId: 'signup-five-role-two-viewports', requirements: [{ pattern: /signup .* two viewport states/, minCount: 5 }] },
+  ]),
+  'signup-onboarding-youth-invitation-signup': Object.freeze([
+    { dimension: 'happyPath', caseId: 'youth-invite-create-redeem-linkage', requirements: [
+      /youth invitation redemption/, /youth player login linkage/, /youth browser exact player linkage/,
+    ] },
+    { dimension: 'negativePath', caseId: 'youth-modified-expired-reused-wrong-recipient', requirements: [
+      /youth modified token denial/, /youth expired token denial/, /youth reused invitation denial/, /youth wrong-existing-account denial/,
+    ] },
+    { dimension: 'permission', caseId: 'youth-cross-guardian-team-and-pii-allowlist', requirements: [
+      /youth cross-guardian target nondisclosure/, /youth other-player denial/, /youth removed-member denial/,
+      /youth wrong-team staff denial/, /youth invite PII allowlist/, /youth activated tenant authority/,
+    ] },
+    { dimension: 'persistence', caseId: 'youth-player-membership-refresh-relogin', requirements: [
+      /youth player login state/, /youth profile player linkage/, /youth relogin profile persistence/,
+    ] },
+    { dimension: 'console', caseId: 'youth-local-console', requirements: [/youth activation workflow console errors/] },
+    { dimension: 'network', caseId: 'youth-local-network', requirements: [/youth activation workflow unexpected responses/] },
+    { dimension: 'responsive', caseId: 'youth-invite-activation-two-viewports', requirements: [/youth active invitation two viewports/] },
+  ]),
+  'signup-onboarding-missing-profile-onboarding': Object.freeze([
+    { dimension: 'happyPath', caseId: 'onboarding-missing-partial-role-completion', requirements: [
+      /missing profile session establishment/, /partial profile privileged API denial/, /onboarding role without plan state/,
+      /onboarding transient read failure recovery/, { pattern: /onboarding role .* completion destination/, minCount: 5 },
+    ] },
+    { dimension: 'negativePath', caseId: 'onboarding-validation-double-submit-refresh', requirements: [
+      /onboarding empty validation/, /onboarding overlong validation/, /onboarding double-submit single profile write/, /onboarding mid-form refresh reset/,
+    ] },
+    { dimension: 'permission', caseId: 'onboarding-protected-route-api-and-field-denial', requirements: [
+      /missing profile privileged API denial/, /onboarding privileged field injection denied/, /onboarding sensitive route matrix denied/,
+    ] },
+    { dimension: 'persistence', caseId: 'onboarding-profile-landing-refresh-relogin', requirements: [
+      { pattern: /onboarding role .* relogin destination/, minCount: 5 },
+    ] },
+    { dimension: 'console', caseId: 'onboarding-local-console', requirements: [/onboarding workflows console errors/] },
+    { dimension: 'network', caseId: 'onboarding-local-network', requirements: [/onboarding workflows unexpected responses/] },
+    { dimension: 'responsive', caseId: 'onboarding-states-two-viewports', requirements: [/onboarding real forms two viewports/] },
+  ]),
+  'demo-seed-use-exit-expiry-cleanup': Object.freeze([
+    { dimension: 'happyPath', caseId: 'demo-two-context-seed-use-exit', requirements: [
+      /demo context 1 seed/, /demo context 2 seed/, /demo two-browser-context workspace use/, /demo browser exact exit cleanup/,
+    ] },
+    { dimension: 'negativePath', caseId: 'demo-cross-id-duplicate-billing-expiry-retry', requirements: [
+      /demo cross-ID denial/, /demo context 1 duplicate seed idempotency/, /demo context 1 billing denial/,
+      /demo expiry boundary/, /demo injected cleanup failure retained/, /demo cleanup retry recovery/,
+    ] },
+    { dimension: 'permission', caseId: 'demo-registered-and-cross-context-denial', requirements: [
+      /demo registered-account exclusion/, /demo peer-context exit isolation/, /demo cross-context graph denial/,
+    ] },
+    { dimension: 'persistence', caseId: 'demo-refresh-back-exit-isolation', requirements: [
+      /demo context 1 exited session denial/, /demo context .* graph exact reconciliation/, /demo pending cleanup recovery/,
+    ] },
+    { dimension: 'console', caseId: 'demo-local-console', requirements: [/demo browser console errors/] },
+    { dimension: 'network', caseId: 'demo-local-network', requirements: [/demo browser unexpected responses/] },
+    { dimension: 'responsive', caseId: 'demo-workspace-exit-error-two-viewports', requirements: [/demo browser two viewport states/] },
+  ]),
+  'dashboard-shell-role-landing-and-route-policy': Object.freeze([
+    { dimension: 'happyPath', caseId: 'dashboard-twenty-role-plan-state-landings', requirements: [{ pattern: / login destination$/, minCount: 20 }] },
+    { dimension: 'negativePath', caseId: 'dashboard-navigation-direct-route-denials', requirements: [
+      { pattern: /dashboard policy denied route/, minCount: 19 }, { pattern: /dashboard blocked-state protected data denial .* message/, minCount: 3 },
+    ] },
+    { dimension: 'permission', caseId: 'dashboard-complete-role-plan-state-policy', requirements: [
+      { pattern: /dashboard complete route policy /, minCount: 20 }, { pattern: /dashboard visible navigation agreement /, minCount: 20 },
+    ] },
+    { dimension: 'persistence', caseId: 'dashboard-refresh-new-tab-back-team-session', requirements: [{ pattern: / refresh and Back destination$/, minCount: 20 }] },
+    { dimension: 'console', caseId: 'dashboard-local-console', requirements: [{ pattern: / persistence console errors$/, minCount: 20 }] },
+    { dimension: 'network', caseId: 'dashboard-local-network', requirements: [{ pattern: / persistence failed responses$/, minCount: 20 }] },
+    { dimension: 'responsive', caseId: 'dashboard-policy-two-viewports', requirements: [
+      { pattern: /dashboard policy two viewport containment/, minCount: 20 }, { pattern: /dashboard visible navigation two viewport containment/, minCount: 20 },
+    ] },
+  ]),
+  'administration-access-and-user-directory': Object.freeze([
+    { dimension: 'happyPath', caseId: 'admin-directory-search-sort-target-isolation', requirements: [
+      /admin directory target search visibility/, /admin directory actual ascending sort/, /admin directory actual descending sort/, /admin detail target substitution denied/,
+    ] },
+    { dimension: 'negativePath', caseId: 'admin-malformed-target-and-every-nonsa-denial', requirements: [
+      /admin malformed target denial/, { pattern: /admin non-SA denial /, minCount: 19 }, { pattern: /admin browser non-SA route denial /, minCount: 22 },
+    ] },
+    { dimension: 'permission', caseId: 'admin-claim-revoke-refresh-restore-rules', requirements: [
+      /admin revoked already-issued token denial/, /admin open page revoked open tabs denied/, /admin rules direct read denial/,
+    ] },
+    { dimension: 'persistence', caseId: 'admin-session-revoke-restore-continuity', requirements: [
+      /admin restored claim access/, /admin open page restored browser continuity/,
+    ] },
+    { dimension: 'console', caseId: 'admin-local-console', requirements: [/admin directory workflow console errors/] },
+    { dimension: 'network', caseId: 'admin-local-network', requirements: [/admin directory workflow unexpected responses/] },
+    { dimension: 'responsive', caseId: 'admin-directory-denial-two-viewports', requirements: [/admin directory mobile containment/, /trusted administration surface desktop routes/] },
+  ]),
+});
+
+function normalizedCaseRequirement(requirement) {
+  return requirement instanceof RegExp ? { pattern: requirement, minCount: 1 } : requirement;
+}
+
+export function buildCompletedCertificationCases(scenarioId, assertions) {
+  const contracts = certificationCaseContracts[scenarioId] || [];
+  return contracts.flatMap(contract => {
+    const requirements = contract.requirements.map(normalizedCaseRequirement);
+    const complete = requirements.every(({ pattern, minCount = 1 }) =>
+      assertions.filter(assertion => pattern.test(assertion.label)).length >= minCount);
+    if (!complete) return [];
+    const patterns = requirements.map(({ pattern }) => pattern);
+    return [{ ...contract, assertions: selectCertificationCaseAssertions(assertions, patterns) }];
+  });
+}
+
+function recordCompletedCertificationCases(scenarioId) {
+  for (const completed of buildCompletedCertificationCases(scenarioId, activeCertificationAssertions)) {
+    const requiredIds = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId]?.[completed.dimension] || [];
+    if (!requiredIds.includes(completed.caseId)) {
+      throw new Error(`Case contract ${completed.caseId} is not frozen for ${scenarioId}/${completed.dimension}.`);
+    }
+    const firstCapturedAt = completed.assertions
+      .map(assertion => assertion.capturedAt)
+      .filter(Boolean)
+      .sort()[0] || null;
+    recordCertificationCase(
+      scenarioId,
+      completed.dimension,
+      completed.caseId,
+      `${completed.assertions.length} case-owned assertion(s) completed`,
+      'every named locally safe assertion in this case contract completed',
+      firstCapturedAt,
+      { assertions: completed.assertions },
+    );
+  }
+}
+
+function recordCertificationCase(
+  scenarioId,
+  dimension,
+  caseId,
+  observed,
+  expected = 'locally safe contract completed',
+  caseStartedAt = null,
+  { assertions = activeCertificationAssertions, role, tenantAlias } = {},
+) {
   const scenario = certificationScenarioById.get(scenarioId);
   const startedAt = new Date().toISOString();
   const relativeArtifact = `cases/${caseId}.json`;
   mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
   const artifact = {
     scenarioId, caseId, dimension, expected: String(expected), observed: String(observed),
-    assertions: activeCertificationAssertions,
+    actorAliases: certificationActorAliases(scenarioId),
+    assertions,
     capturedAt: startedAt,
   };
-  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(artifact, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact(artifact), null, 2)}\n`, { mode: 0o600 });
   emitCertificationEvent({
     type: 'case', scenarioId, caseId, dimension,
-    role: scenario.roles.join('/'),
-    tenantAlias: scenario.roles.includes('V') ? 'not-applicable' : 'catalog-scoped',
+    actorAliases: certificationActorAliases(scenarioId),
+    role: role || scenario.roles.join('/'),
+    tenantAlias: tenantAlias || certificationTenantAlias(scenarioId),
     expected: String(expected), observed: String(observed), state: 'OBSERVED',
     startedAt: caseStartedAt || startedAt, completedAt: new Date().toISOString(), artifacts: [relativeArtifact],
   });
@@ -133,31 +454,16 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
   const scenario = certificationScenarioById.get(scenarioId);
   const timestamp = new Date().toISOString();
   const diagnostic = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
-  const relativeArtifact = `cases/${caseId}.json`;
+  const relativeArtifact = `cases/${caseId}-failure-${Date.now()}.json`;
   mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
-  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify({ scenarioId, caseId, dimension, diagnostic, capturedAt: timestamp }, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact({ scenarioId, caseId, dimension, actorAliases: certificationActorAliases(scenarioId), diagnostic, capturedAt: timestamp }), null, 2)}\n`, { mode: 0o600 });
   emitCertificationEvent({
     type: 'case', scenarioId, caseId, dimension,
-    role: scenario.roles.join('/'), tenantAlias: scenario.roles.includes('V') ? 'not-applicable' : 'catalog-scoped',
+    actorAliases: certificationActorAliases(scenarioId),
+    role: scenario.roles.join('/'), tenantAlias: certificationTenantAlias(scenarioId),
     expected: 'locally safe contract completed', observed: diagnostic, state: 'FAIL',
     startedAt: timestamp, completedAt: timestamp, artifacts: [relativeArtifact],
   });
-}
-
-function recordScenarioDimensions(scenarioId, { browserObserved }) {
-  for (const [dimension, caseIds] of Object.entries(LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId])) {
-    if (!browserObserved && (dimension === 'console' || dimension === 'responsive')) continue;
-    for (const caseId of caseIds) {
-      recordCertificationCase(
-        scenarioId,
-        dimension,
-        caseId,
-        browserObserved || !['console', 'responsive'].includes(dimension)
-          ? 'actual local emulator/API/browser checks passed'
-          : 'not observed',
-      );
-    }
-  }
 }
 
 const firebaseConfig = JSON.stringify({
@@ -385,6 +691,14 @@ export function localTransportDiagnostic(method, pathname, error) {
   return `Local ${String(method || 'GET').toUpperCase()} ${pathname} transport failed (${code}).`;
 }
 
+export function isExpiredDemoCreation(creationTimeMs, nowMs, lifetimeMs = 15 * 60 * 1000) {
+  return Number.isFinite(creationTimeMs) && Number.isFinite(nowMs) && nowMs - creationTimeMs > lifetimeMs;
+}
+
+export function isDeletionPurgeDue(purgeAtMs, nowMs) {
+  return Number.isFinite(purgeAtMs) && Number.isFinite(nowMs) && purgeAtMs <= nowMs;
+}
+
 async function apiStatus(pathname, token, init = {}) {
   let response;
   try {
@@ -448,6 +762,7 @@ async function createDisposableIdentity(label, { anonymous = false } = {}) {
   });
   const payload = await response.json();
   if (response.status !== 200) throw new Error(`Disposable identity ${label} creation returned ${response.status}.`);
+  registerDynamicAuthIdentity(payload.localId, label);
   return payload;
 }
 
@@ -561,12 +876,135 @@ async function withEmulatorAuthAdmin(callback) {
   const adminModule = await import('firebase-admin');
   const admin = adminModule.default || adminModule;
   const appName = `task3-auth-admin-${process.pid}-${Date.now()}`;
-  const app = admin.initializeApp({ projectId: PROJECT_ID }, appName);
+  const app = admin.initializeApp({ projectId: PROJECT_ID, storageBucket: `${PROJECT_ID}.appspot.com` }, appName);
   try {
-    return await callback(admin.auth(app), admin.firestore(app));
+    return await callback(admin.auth(app), admin.firestore(app), admin.storage(app).bucket());
   } finally {
     await deleteOwnedAdminApp(app);
   }
+}
+
+async function getAuthUserByEmailIfPresent(authAdmin, email) {
+  try {
+    return await authAdmin.getUserByEmail(email);
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') return null;
+    throw error;
+  }
+}
+
+function registerDynamicAuthIdentity(uid, label, registry = dynamicResourceRegistry) {
+  registry.register({
+    id: `auth:${label}:${uid}`,
+    kind: 'deleted',
+    async cleanup() {
+      return withEmulatorAuthAdmin(async authAdmin => {
+        try {
+          await authAdmin.getUser(uid);
+          await authAdmin.deleteUser(uid);
+          return true;
+        } catch (error) {
+          if (error?.code === 'auth/user-not-found') return false;
+          throw error;
+        }
+      });
+    },
+    async verify() {
+      return withEmulatorAuthAdmin(async authAdmin => {
+        try {
+          await authAdmin.getUser(uid);
+          return false;
+        } catch (error) {
+          if (error?.code === 'auth/user-not-found') return true;
+          throw error;
+        }
+      });
+    },
+  });
+}
+
+function registerDynamicFirestoreRoot(documentPath, label, registry = dynamicResourceRegistry) {
+  registry.register({
+    id: `firestore:${label}`,
+    kind: 'deleted',
+    async cleanup() {
+      return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const ref = firestoreAdmin.doc(documentPath);
+        const existed = (await ref.get()).exists || (await ref.listCollections()).length > 0;
+        await firestoreAdmin.recursiveDelete(ref);
+        return existed;
+      });
+    },
+    async verify() {
+      return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const ref = firestoreAdmin.doc(documentPath);
+        return !(await ref.get()).exists && (await ref.listCollections()).length === 0;
+      });
+    },
+  });
+}
+
+function registerClaimRestoration(uid, originalClaims, label, registry = dynamicResourceRegistry) {
+  const expected = JSON.stringify(originalClaims || {});
+  registry.register({
+    id: `claim:${label}:${uid}`,
+    kind: 'restored',
+    async cleanup() {
+      return withEmulatorAuthAdmin(async authAdmin => {
+        const current = await authAdmin.getUser(uid);
+        if (JSON.stringify(current.customClaims || {}) === expected) return false;
+        await authAdmin.setCustomUserClaims(uid, originalClaims || null);
+        await authAdmin.revokeRefreshTokens(uid);
+        return true;
+      });
+    },
+    async verify() {
+      return withEmulatorAuthAdmin(async authAdmin =>
+        JSON.stringify((await authAdmin.getUser(uid)).customClaims || {}) === expected);
+    },
+  });
+}
+
+function registerDynamicStorageObject(objectPath, label, registry = dynamicResourceRegistry) {
+  registry.register({
+    id: `storage:${label}`,
+    kind: 'deleted',
+    async cleanup() {
+      return withEmulatorAuthAdmin(async (_authAdmin, _firestoreAdmin, bucket) => {
+        const file = bucket.file(objectPath);
+        const [exists] = await file.exists();
+        await file.delete({ ignoreNotFound: true });
+        return exists;
+      });
+    },
+    async verify() {
+      return withEmulatorAuthAdmin(async (_authAdmin, _firestoreAdmin, bucket) =>
+        !(await bucket.file(objectPath).exists())[0]);
+    },
+  });
+}
+
+function registerFirestoreDocumentRestoration(documentPath, originalValue, label, registry = dynamicResourceRegistry) {
+  const expected = JSON.stringify(originalValue);
+  registry.register({
+    id: `restore-firestore:${label}`,
+    kind: 'restored',
+    async cleanup() {
+      return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const ref = firestoreAdmin.doc(documentPath);
+        const current = await ref.get();
+        if (current.exists && JSON.stringify(current.data()) === expected) return false;
+        await ref.set(originalValue);
+        return true;
+      });
+    },
+    async verify() {
+      return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const current = await firestoreAdmin.doc(documentPath).get();
+        return current.exists && JSON.stringify(current.data()) === expected;
+      });
+    },
+  });
 }
 
 async function runCertificationApiScenario(scenarioId) {
@@ -625,6 +1063,17 @@ async function runCertificationApiScenario(scenarioId) {
         expectEqual(betaRows.size, 1, 'marketing beta stored once');
         expectEqual(referralRows.size, 1, 'marketing referral stored once');
         expectEqual(referralRows.docs[0]?.data().deliveryStatus, 'accepted_local_sink', 'marketing local sink persistence');
+        expectEqual(Boolean(contactRows.docs[0]?.data()), true, 'marketing trusted record read');
+        const firestoreDocumentUrl = collectionAndId =>
+          `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/${collectionAndId}`;
+        const contactDocument = `contact_inquiries/${contactRows.docs[0].id}`;
+        const anonymousRead = await fetch(firestoreDocumentUrl(contactDocument), { headers: { Connection: 'close' } });
+        expectEqual([401, 403].includes(anonymousRead.status), true, 'marketing anonymous record read denied');
+        const member = await signIn('qa-team-member');
+        const memberRead = await fetch(firestoreDocumentUrl(contactDocument), {
+          headers: { Authorization: `Bearer ${member.body.idToken}`, Connection: 'close' },
+        });
+        expectEqual(memberRead.status, 403, 'marketing member record read denied');
       });
     } finally {
       const deleted = await deleteFirestoreMatches('contact_inquiries', 'email', contactEmail, cleanupIdentity.body.idToken) +
@@ -663,6 +1112,7 @@ async function runCertificationApiScenario(scenarioId) {
 
   if (scenarioId === 'authentication-password-reset') {
     expectEqual(await publicJsonStatus('/api/email/reset-password', { email: 'invalid' }), 400, 'reset invalid email denial');
+    expectEqual(await publicJsonStatus('/api/email/reset-password', { email: `${'x'.repeat(5_000)}@phase2.test` }), 413, 'reset oversized payload denial');
     expectEqual(await publicJsonStatus('/api/email/reset-password', { email: `unknown-${FIXTURES.runId}@phase2.test` }), 200, 'reset unknown email nonenumeration');
     const knownStatus = await publicJsonStatus('/api/email/reset-password', { email: emailForAlias('qa-coach-owner-b') });
     expectEqual(knownStatus, 200, 'reset known local no-outbound neutral response after OOB generation');
@@ -676,6 +1126,7 @@ async function runCertificationApiScenario(scenarioId) {
     expectEqual((await redeemPasswordReset(resetCode.oobCode, 'reused-password')).status, 400, 'reset reused OOB denial');
     expectEqual((await signIn('qa-coach-owner-b')).status, 400, 'reset old password denial');
     expectEqual((await signIn('qa-coach-owner-b', replacementPassword)).status, 200, 'reset new password acceptance');
+    expectEqual((await signIn('qa-coach-owner-a')).status, 200, 'reset wrong-account password unchanged');
 
     const restoreStatus = await publicJsonStatus('/api/email/reset-password', { email: targetEmail });
     expectEqual(restoreStatus, 200, 'reset restoration OOB generation with neutral response');
@@ -729,8 +1180,15 @@ async function runCertificationApiScenario(scenarioId) {
     expectEqual(await apiStatus(targetPath, nonAdmin.body.idToken, {
       method: 'POST', body: JSON.stringify({ action: 'suspend' }),
     }), 403, 'lifecycle cross-user nonadmin denial');
+    expectEqual(await targetAction('schedule_deletion', 'wrong-account@phase2.test'), 400, 'lifecycle wrong confirmation denial');
     try {
       expectEqual(await targetAction('cancel_deletion'), 409, 'lifecycle invalid cancel transition denial');
+      const selfIdentity = await signIn('qa-team-member');
+      expectEqual(await apiStatus('/api/account/deletion-request', selfIdentity.body.idToken, { method: 'POST', body: '{}' }), 200, 'lifecycle self schedule deletion');
+      expectEqual(await targetAction('cancel_deletion'), 200, 'lifecycle self cancel deletion');
+      expectEqual(await apiStatus(`/api/admin/users/${nonAdmin.body.localId}/account-control`, nonAdmin.body.idToken, {
+        method: 'POST', body: JSON.stringify({ action: 'suspend' }),
+      }), 403, 'lifecycle self target isolation');
       expectEqual(await targetAction('schedule_deletion', target.email), 200, 'lifecycle schedule deletion');
       expectEqual(await targetAction('schedule_deletion', target.email), 200, 'lifecycle idempotent schedule retry');
       expectEqual(await targetAction('suspend'), 409, 'lifecycle suspend while pending denial');
@@ -742,11 +1200,73 @@ async function runCertificationApiScenario(scenarioId) {
       expectEqual(await targetAction('restore'), 200, 'lifecycle restore account');
       expectEqual((await signIn('qa-team-member')).status, 200, 'lifecycle restored identity sign-in');
     } finally {
-      await targetAction('cancel_deletion').catch(() => undefined);
-      await targetAction('restore').catch(() => undefined);
+      const cancelStatus = await targetAction('cancel_deletion');
+      if (![200, 409].includes(cancelStatus)) throw new Error(`Lifecycle cancellation cleanup returned ${cancelStatus}.`);
+      const restoreStatus = await targetAction('restore');
+      if (![200, 409].includes(restoreStatus)) throw new Error(`Lifecycle restoration cleanup returned ${restoreStatus}.`);
       const deletedLogs = await deleteFirestoreMatches('adminAuditLogs', 'targetUid', target.uid, 'owner');
       expectEqual(deletedLogs >= 4, true, 'lifecycle exact audit-log cleanup');
     }
+    expectEqual(isDeletionPurgeDue(10_001, 10_000), false, 'lifecycle purge clock boundary before due');
+    expectEqual(isDeletionPurgeDue(10_000, 10_000), true, 'lifecycle purge clock boundary');
+    await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin, bucket) => {
+      const email = `${FIXTURES.runId}-lifecycle-purge@phase2.test`;
+      const account = await authAdmin.createUser({ email, password, emailVerified: true });
+      const userRef = firestoreAdmin.collection('users').doc(account.uid);
+      const requestRef = firestoreAdmin.collection('accountDeletionRequests').doc(account.uid);
+      const financialRef = firestoreAdmin.collection('paymentRecords').doc(`retained-${account.uid}`);
+      const storageFile = bucket.file(`users/${account.uid}/avatar.jpg`);
+      registerDynamicAuthIdentity(account.uid, 'lifecycle-purge-probe');
+      registerDynamicFirestoreRoot(userRef.path, 'lifecycle-purge-probe-user');
+      registerDynamicFirestoreRoot(requestRef.path, 'lifecycle-purge-probe-request');
+      registerDynamicFirestoreRoot(financialRef.path, 'lifecycle-purge-probe-financial-final');
+      registerDynamicStorageObject(`users/${account.uid}/avatar.jpg`, 'lifecycle-purge-probe-avatar');
+      await userRef.set({ id: account.uid, role: 'adult_player', deletionStatus: 'pending' });
+      await requestRef.set({ uid: account.uid, status: 'pending', purgeAt: new Date(10_000) });
+      await financialRef.set({ userId: account.uid, retainedByPolicy: true });
+      await storageFile.save(Buffer.from('task3-local-purge-probe'), { resumable: false });
+      let authAttempts = 0;
+      const purgeRegistry = createResourceRegistry({ maxAttempts: 2 });
+      purgeRegistry.register({
+        id: 'financial:retained-record', kind: 'retainedAuditRecord',
+        async cleanup() { return false; }, async verify() { return (await financialRef.get()).exists; },
+      });
+      purgeRegistry.register({
+        id: 'firestore:deletion-request', kind: 'deleted',
+        async cleanup() { const existed = (await requestRef.get()).exists; await requestRef.delete(); return existed; },
+        async verify() { return !(await requestRef.get()).exists; },
+      });
+      purgeRegistry.register({
+        id: 'firestore:user-profile', kind: 'deleted',
+        async cleanup() { const existed = (await userRef.get()).exists; await firestoreAdmin.recursiveDelete(userRef); return existed; },
+        async verify() { return !(await userRef.get()).exists; },
+      });
+      purgeRegistry.register({
+        id: 'storage:user-avatar', kind: 'deleted',
+        async cleanup() { const [exists] = await storageFile.exists(); await storageFile.delete({ ignoreNotFound: true }); return exists; },
+        async verify() { return !(await storageFile.exists())[0]; },
+      });
+      purgeRegistry.register({
+        id: 'auth:user', kind: 'deleted',
+        async cleanup() {
+          authAttempts += 1;
+          if (authAttempts === 1) throw new Error('injected local Auth deletion failure');
+          await authAdmin.deleteUser(account.uid);
+          return true;
+        },
+        async verify() {
+          return authAdmin.getUser(account.uid).then(() => false, error => {
+            if (error?.code === 'auth/user-not-found') return true;
+            throw error;
+          });
+        },
+      });
+      const purged = await purgeRegistry.cleanup();
+      expectEqual(purged.diagnostics.length, 1, 'lifecycle injected partial failure retained for retry');
+      expectEqual(purged.state, 'OBSERVED', 'lifecycle retry terminal reconciliation');
+      expectEqual(purged.counts.deleted, 4, 'lifecycle Auth Firestore Storage delete reconciliation');
+      expectEqual(purged.counts.retainedAuditRecords, 1, 'lifecycle retained financial record reconciliation');
+    });
     return;
   }
 
@@ -764,6 +1284,17 @@ async function runCertificationApiScenario(scenarioId) {
       body: JSON.stringify({ email: emailForAlias('qa-coach-owner-a'), password, returnSecureToken: true }),
     });
     expectEqual(duplicate.status, 400, 'signup duplicate email denial');
+    const member = await signIn('qa-team-member');
+    const memberUid = identityByAlias.get('qa-team-member').uid;
+    const privilegeAttempt = await fetch(
+      `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${memberUid}?updateMask.fieldPaths=role`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${member.body.idToken}`, Connection: 'close' },
+        body: JSON.stringify({ fields: { role: { stringValue: 'superadmin' } } }),
+      },
+    );
+    expectEqual(privilegeAttempt.status, 403, 'signup privileged field injection denied');
     return;
   }
 
@@ -777,18 +1308,35 @@ async function runCertificationApiScenario(scenarioId) {
     expectEqual(await apiStatus('/api/invites/youth', otherParent.body.idToken, {
       method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: youthEmail }),
     }), 404, 'youth cross-guardian target nondisclosure');
+    for (const [alias, label] of [
+      ['qa-adult-player-a', 'other-player'],
+      ['qa-team-member', 'other-member'],
+      ['qa-removed-member', 'removed-member'],
+      ['qa-coach-owner-b', 'wrong-team staff'],
+    ]) {
+      const identity = await signIn(alias);
+      expectEqual(await apiStatus('/api/invites/youth', identity.body.idToken, {
+        method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: youthEmail }),
+      }), 404, `youth ${label} denial`);
+    }
     await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
       const playerRef = firestoreAdmin.collection('players').doc(player.data.id);
       const originalPlayer = (await playerRef.get()).data();
+      const youthCleanupRegistry = createResourceRegistry({ maxAttempts: 3 });
       const createdInviteTokens = new Set();
       let conflictingIdentity = null;
       let createdYouthUid = null;
+      let primaryFailure = null;
+      registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-api-player', dynamicResourceRegistry);
+      registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-api-player', youthCleanupRegistry);
       try {
         const expired = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
           method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: youthEmail }),
         });
         expectEqual(expired.status, 200, 'youth fresh expiring invitation create');
         createdInviteTokens.add(registerSensitiveValue(expired.body.token));
+        registerDynamicFirestoreRoot(`invites/${expired.body.token}`, 'youth-api-expired-invite');
+        registerDynamicFirestoreRoot(`invites/${expired.body.token}`, 'youth-api-expired-invite', youthCleanupRegistry);
         await firestoreAdmin.collection('invites').doc(expired.body.token).update({ expiresAt: new Date(Date.now() - 1000).toISOString() });
         expectEqual((await fetch(`${BASE_URL}/api/invites/youth?token=${expired.body.token}`)).status, 404, 'youth expired token denial');
 
@@ -797,6 +1345,8 @@ async function runCertificationApiScenario(scenarioId) {
         });
         expectEqual(activeInvite.status, 200, 'youth fresh invitation create');
         createdInviteTokens.add(registerSensitiveValue(activeInvite.body.token));
+        registerDynamicFirestoreRoot(`invites/${activeInvite.body.token}`, 'youth-api-active-invite');
+        registerDynamicFirestoreRoot(`invites/${activeInvite.body.token}`, 'youth-api-active-invite', youthCleanupRegistry);
         const lookup = await apiJsonResult(`/api/invites/youth?token=${activeInvite.body.token}`, null);
         expectEqual(lookup.status, 200, 'youth invitation lookup');
         expectEqual(
@@ -806,11 +1356,16 @@ async function runCertificationApiScenario(scenarioId) {
         );
 
         conflictingIdentity = await createDisposableIdentity('youth-wrong-account');
+        const wrongAccountRegistry = createResourceRegistry({ maxAttempts: 3 });
+        registerDynamicAuthIdentity(conflictingIdentity.localId, 'youth-api-wrong-account', dynamicResourceRegistry);
+        registerDynamicAuthIdentity(conflictingIdentity.localId, 'youth-api-wrong-account', wrongAccountRegistry);
         await authAdmin.updateUser(conflictingIdentity.localId, { email: youthEmail });
         expectEqual((await apiJsonResult('/api/invites/youth', null, {
           method: 'PUT', body: JSON.stringify({ token: activeInvite.body.token, password }),
         })).status, 409, 'youth wrong-existing-account denial');
-        await deleteDisposableIdentity(conflictingIdentity.idToken);
+        const wrongAccountCleanup = await wrongAccountRegistry.cleanup();
+        completedDynamicCleanupRuns.push(wrongAccountCleanup);
+        if (wrongAccountCleanup.state !== 'OBSERVED') throw new Error('Youth wrong-account cleanup retained owned resources.');
         conflictingIdentity = null;
 
         expectEqual((await apiJsonResult('/api/invites/youth', null, {
@@ -822,26 +1377,45 @@ async function runCertificationApiScenario(scenarioId) {
         const youth = await signIn('qa-youth-invite');
         expectEqual(youth.status, 200, 'youth activated identity sign-in');
         createdYouthUid = youth.body.localId;
+        registerDynamicAuthIdentity(createdYouthUid, 'youth-api');
+        registerDynamicFirestoreRoot(`users/${createdYouthUid}`, 'youth-api');
+        registerDynamicAuthIdentity(createdYouthUid, 'youth-api', youthCleanupRegistry);
+        registerDynamicFirestoreRoot(`users/${createdYouthUid}`, 'youth-api', youthCleanupRegistry);
         expectEqual(await apiStatus('/api/auth/session', youth.body.idToken, { method: 'POST' }), 200, 'youth activated session');
         const linkedPlayer = (await playerRef.get()).data();
         expectEqual(linkedPlayer.userId, createdYouthUid, 'youth player login linkage');
         expectEqual(linkedPlayer.hasLogin, true, 'youth player login state');
         const youthProfile = await firestoreAdmin.collection('users').doc(createdYouthUid).get();
         expectEqual(youthProfile.data()?.linkedPlayerId, player.data.id, 'youth profile player linkage');
+        const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+        registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${createdYouthUid}`, 'youth-api-team-member');
+        registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${createdYouthUid}`, 'youth-api-team-member', youthCleanupRegistry);
+        expectEqual(await apiStatus(`/api/teams/chat?teamId=${teamC.id}`, youth.body.idToken), 200, 'youth activated tenant authority');
+        const relogin = await signIn('qa-youth-invite');
+        expectEqual(relogin.status, 200, 'youth relogin profile persistence');
+        expectEqual(await apiStatus(`/api/teams/chat?teamId=${teamC.id}`, relogin.body.idToken), 200, 'youth relogin tenant authority persistence');
+      } catch (error) {
+        primaryFailure = error;
+        throw error;
       } finally {
-        if (conflictingIdentity) await authAdmin.deleteUser(conflictingIdentity.localId).catch(() => undefined);
         if (!createdYouthUid) {
-          const user = await authAdmin.getUserByEmail(youthEmail).catch(() => null);
+          const user = await getAuthUserByEmailIfPresent(authAdmin, youthEmail);
           createdYouthUid = user?.uid || null;
+          if (createdYouthUid) {
+            registerDynamicAuthIdentity(createdYouthUid, 'youth-api-fallback');
+            registerDynamicFirestoreRoot(`users/${createdYouthUid}`, 'youth-api-fallback');
+            registerDynamicAuthIdentity(createdYouthUid, 'youth-api-fallback', youthCleanupRegistry);
+            registerDynamicFirestoreRoot(`users/${createdYouthUid}`, 'youth-api-fallback', youthCleanupRegistry);
+            const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+            registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${createdYouthUid}`, 'youth-api-team-member-fallback');
+            registerDynamicFirestoreRoot(`teams/${teamC.id}/members/${createdYouthUid}`, 'youth-api-team-member-fallback', youthCleanupRegistry);
+          }
         }
-        if (createdYouthUid) {
-          await firestoreAdmin.collection('users').doc(createdYouthUid).delete().catch(() => undefined);
-          await authAdmin.deleteUser(createdYouthUid).catch(() => undefined);
+        const immediateCleanup = await youthCleanupRegistry.cleanup();
+        completedDynamicCleanupRuns.push(immediateCleanup);
+        if (immediateCleanup.state !== 'OBSERVED' && !primaryFailure) {
+          throw new Error('Youth API cleanup retained owned resources.');
         }
-        for (const token of createdInviteTokens) {
-          await firestoreAdmin.collection('invites').doc(token).delete().catch(() => undefined);
-        }
-        if (originalPlayer) await playerRef.set(originalPlayer);
       }
     });
     return;
@@ -851,12 +1425,34 @@ async function runCertificationApiScenario(scenarioId) {
     await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
       const email = `${FIXTURES.runId}-missing-profile@phase2.test`;
       const account = await authAdmin.createUser({ email, password, emailVerified: true, displayName: 'Missing Profile' });
+      registerDynamicAuthIdentity(account.uid, 'missing-profile-api');
+      registerDynamicFirestoreRoot(`users/${account.uid}`, 'missing-profile-api');
+      registerDynamicFirestoreRoot(`players/p_${account.uid}`, 'missing-profile-api-player');
       const userRef = firestoreAdmin.collection('users').doc(account.uid);
       try {
         const missing = await signInEmail(email);
         expectEqual(missing.status, 200, 'missing profile verified identity sign-in');
         expectEqual(await apiStatus('/api/auth/session', missing.body.idToken, { method: 'POST' }), 200, 'missing profile session establishment');
         expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'missing profile privileged API denial');
+        const injectedProfile = await fetch(
+          `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/users/${account.uid}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${missing.body.idToken}`, Connection: 'close' },
+            body: JSON.stringify({ fields: {
+              id: { stringValue: account.uid }, fullName: { stringValue: 'Injected' }, email: { stringValue: email },
+              role: { stringValue: 'superadmin' }, isStaff: { booleanValue: true },
+            } }),
+          },
+        );
+        expectEqual(injectedProfile.status, 403, 'onboarding privileged field injection denied');
+        const sensitiveStatuses = await Promise.all([
+          apiStatus('/api/admin/newsletter', missing.body.idToken),
+          apiStatus(`/api/admin/users/${identityByAlias.get('qa-team-member').uid}/account-control`, missing.body.idToken, {
+            method: 'POST', body: JSON.stringify({ action: 'suspend' }),
+          }),
+        ]);
+        expectEqual(sensitiveStatuses.every(status => status === 403), true, 'onboarding sensitive route matrix denied');
         await userRef.set({ id: account.uid, email, fullName: 'Partial Profile' });
         expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'partial profile privileged API denial');
         await userRef.set({ role: 'adult_player', notificationsEnabled: false }, { merge: true });
@@ -864,9 +1460,7 @@ async function runCertificationApiScenario(scenarioId) {
         expectEqual(persisted.data()?.role, 'adult_player', 'missing profile role completion persistence');
         expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'completed nonadmin profile API denial');
       } finally {
-        await userRef.delete().catch(() => undefined);
-        await firestoreAdmin.collection('players').doc(`p_${account.uid}`).delete().catch(() => undefined);
-        await authAdmin.deleteUser(account.uid).catch(() => undefined);
+        // The global registry owns exact deletion and postcondition proof.
       }
     });
     return;
@@ -874,16 +1468,36 @@ async function runCertificationApiScenario(scenarioId) {
 
   if (scenarioId === 'demo-seed-use-exit-expiry-cleanup') {
     const contexts = [await createDisposableIdentity('demo-a', { anonymous: true }), await createDisposableIdentity('demo-b', { anonymous: true })];
+    const seededGraphs = [];
     const remaining = new Set(contexts.map(identity => identity.idToken));
     try {
       for (const [index, identity] of contexts.entries()) {
-        expectEqual(await apiStatus('/api/demo/seed', identity.idToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) }), 200, `demo context ${index + 1} seed`);
+        const seeded = await apiJsonResult('/api/demo/seed', identity.idToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) });
+        expectEqual(seeded.status, 200, `demo context ${index + 1} seed`);
+        seededGraphs.push({ uid: identity.localId, teamIds: [...(seeded.body?.teamIds || [])] });
+        registerDynamicFirestoreRoot(`users/${identity.localId}`, `demo-context-${index + 1}-user`);
+        for (const [teamIndex, teamId] of (seeded.body?.teamIds || []).entries()) {
+          registerDynamicFirestoreRoot(`teams/${teamId}`, `demo-context-${index + 1}-team-${teamIndex + 1}`);
+        }
+        registerDynamicFirestoreRoot(`leagues/demo_league_${identity.localId.slice(-4)}`, `demo-context-${index + 1}-league`);
         expectEqual(await apiStatus('/api/demo/seed', identity.idToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) }), 200, `demo context ${index + 1} duplicate seed idempotency`);
         expectEqual(await apiStatus('/api/stripe/connect/status?userId=other&teamId=other', identity.idToken), 403, `demo context ${index + 1} billing denial`);
       }
       const registered = await signIn('qa-coach-owner-a');
       expectEqual(await apiStatus('/api/demo/seed', registered.body.idToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) }), 403, 'demo registered-account exclusion');
       expectEqual(await apiStatus('/api/demo/seed', contexts[0].idToken, { method: 'POST', body: JSON.stringify({ planId: 'invalid' }) }), 400, 'demo invalid plan denial');
+      expectEqual(await apiStatus(`/api/teams/chat?teamId=${seededGraphs[0].teamIds[0]}`, contexts[1].idToken), 403, 'demo cross-ID denial');
+      expectEqual(await apiStatus(`/api/teams/chat?teamId=${seededGraphs[1].teamIds[0]}`, contexts[0].idToken), 403, 'demo cross-context graph denial');
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        for (const [index, graph] of seededGraphs.entries()) {
+          const teams = await firestoreAdmin.collection('teams').where('demoSessionOwnerId', '==', graph.uid).get();
+          const leagues = await firestoreAdmin.collection('leagues').where('creatorId', '==', graph.uid).get();
+          const user = await firestoreAdmin.collection('users').doc(graph.uid).get();
+          expectEqual(teams.size, graph.teamIds.length, `demo context ${index + 1} distinct team graph count`);
+          expectEqual(leagues.size, 1, `demo context ${index + 1} distinct league graph count`);
+          expectEqual(user.exists, true, `demo context ${index + 1} distinct user graph count`);
+        }
+      });
       for (const [index, identity] of contexts.entries()) {
         const cookie = await createSessionCookie(identity.idToken);
         const response = await fetch(`${BASE_URL}/api/demo/exit`, {
@@ -897,11 +1511,44 @@ async function runCertificationApiScenario(scenarioId) {
         }
         remaining.delete(identity.idToken);
       }
+      await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+        for (const [index, graph] of seededGraphs.entries()) {
+          const teams = await firestoreAdmin.collection('teams').where('demoSessionOwnerId', '==', graph.uid).get();
+          const leagues = await firestoreAdmin.collection('leagues').where('creatorId', '==', graph.uid).get();
+          const user = await firestoreAdmin.collection('users').doc(graph.uid).get();
+          const authAbsent = await authAdmin.getUser(graph.uid).then(() => false, error => {
+            if (error?.code === 'auth/user-not-found') return true;
+            throw error;
+          });
+          expectEqual(teams.empty && leagues.empty && !user.exists && authAbsent, true, `demo context ${index + 1} graph exact reconciliation`);
+        }
+        const probeRef = firestoreAdmin.collection('task3CleanupProbes').doc(`demo-retry-${FIXTURES.runId}`);
+        await probeRef.set({ owner: 'task3-demo-cleanup', pending: true });
+        registerDynamicFirestoreRoot(probeRef.path, 'demo-retry-probe');
+        let attempts = 0;
+        const retryRegistry = createResourceRegistry({ maxAttempts: 2 });
+        retryRegistry.register({
+          id: 'firestore:demo-retry-probe', kind: 'deleted',
+          async cleanup() {
+            attempts += 1;
+            if (attempts === 1) throw new Error('injected local cleanup failure');
+            await firestoreAdmin.recursiveDelete(probeRef);
+            return true;
+          },
+          async verify() { return !(await probeRef.get()).exists; },
+        });
+        const retried = await retryRegistry.cleanup();
+        expectEqual(retried.diagnostics.length, 1, 'demo injected cleanup failure retained');
+        expectEqual(retried.state, 'OBSERVED', 'demo cleanup retry recovery');
+        expectEqual((await probeRef.get()).exists, false, 'demo pending cleanup recovery');
+      });
+      expectEqual(isExpiredDemoCreation(1_000, 1_000 + 15 * 60 * 1000), false, 'demo expiry boundary before threshold');
+      expectEqual(isExpiredDemoCreation(1_000, 1_001 + 15 * 60 * 1000), true, 'demo expiry boundary');
       expectEqual((await fetch(`${BASE_URL}/api/demo/exit`, {
         method: 'POST', headers: { Origin: 'http://127.0.0.1:65535' }, redirect: 'manual',
       })).status, 403, 'demo cross-origin exit denial');
     } finally {
-      for (const idToken of remaining) await deleteDisposableIdentity(idToken).catch(() => undefined);
+      // Every disposable identity and seeded graph is registered at creation for global retry cleanup.
     }
     return;
   }
@@ -922,6 +1569,12 @@ async function runCertificationApiScenario(scenarioId) {
       const result = await signIn(alias);
       expectEqual(await apiStatus('/api/admin/newsletter', result.body.idToken), 403, `admin non-SA denial ${alias}`);
     }
+    const member = await signIn('qa-team-member');
+    const directAdminRead = await fetch(
+      `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/adminAuditLogs?pageSize=1`,
+      { headers: { Authorization: `Bearer ${member.body.idToken}`, Connection: 'close' } },
+    );
+    expectEqual(directAdminRead.status, 403, 'admin rules direct read denial');
     expectEqual(await apiStatus('/api/admin/users/not%2Fvalid/account-control', trusted.body.idToken, {
       method: 'POST', body: JSON.stringify({ action: 'suspend' }),
     }), 400, 'admin malformed target denial');
@@ -929,6 +1582,7 @@ async function runCertificationApiScenario(scenarioId) {
       const superadmin = identityByAlias.get('qa-superadmin');
       const user = await authAdmin.getUser(superadmin.uid);
       const originalClaims = { ...(user.customClaims || {}) };
+      registerClaimRestoration(superadmin.uid, originalClaims, 'administration-scenario');
       try {
         await authAdmin.setCustomUserClaims(superadmin.uid, withRoleClaim(originalClaims, 'coach'));
         await waitForIdTokenRevocationBoundary(trusted.body.idToken);
@@ -1044,7 +1698,7 @@ async function browserLoginCredentials(email, suppliedPassword, expectedPath, se
     page.on('pageerror', onPageError);
     page.on('response', onResponse);
     try {
-      await page.getByLabel('Email Address').fill(${JSON.stringify(email)});
+      await page.locator('#email').fill(${JSON.stringify(email)});
       await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
       await page.getByRole('button', { name: 'Sign In' }).click();
       await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(expectedPath)}, { timeout: 20000 });
@@ -1052,6 +1706,8 @@ async function browserLoginCredentials(email, suppliedPassword, expectedPath, se
         url: page.url(),
         loginFailed: await page.getByText('Login Failed', { exact: true }).count(),
         sessionFailed: await page.getByText('Session Setup Failed', { exact: true }).count(),
+        consoleErrors,
+        failedResponses: failedResponses.filter(item => item.url.startsWith(${JSON.stringify(BASE_URL)})),
       };
     } finally {
       page.off('console', onConsole);
@@ -1070,6 +1726,8 @@ async function browserLoginCredentials(email, suppliedPassword, expectedPath, se
     );
   }
   expectEqual(result.pathname, expectedPath, `${diagnosticLabel} login destination`);
+  expectEqual(result.consoleErrors.length, 0, `${diagnosticLabel} login workflow console errors`);
+  expectEqual(result.failedResponses.length, 0, `${diagnosticLabel} login workflow unexpected responses`);
   return session;
 }
 
@@ -1123,7 +1781,7 @@ function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expecte
     page.on('pageerror', onPageError);
     page.on('response', onResponse);
     try {
-      await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias(alias))});
+      await page.getByLabel('Email Address').fill(${JSON.stringify(identityByAlias.has(alias) ? emailForAlias(alias) : alias)});
       await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
       await page.getByRole('button', { name: 'Sign In' }).click();
       await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true })
@@ -1151,6 +1809,69 @@ function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expecte
   expectEqual(result.expectedTitle, 1, `${sessionLabel} message`);
 }
 
+function browserLoginTimeoutAndFormStateAudit() {
+  const session = openAnonymousBrowser('cert-login-timeout-form-states');
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const signInPattern = '**/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword**';
+    let lateClientAbortCount = 0;
+    const routeHandlerErrors = [];
+    let resolveRouteHandlerComplete;
+    const routeHandlerComplete = new Promise(resolve => { resolveRouteHandlerComplete = resolve; });
+    const delayPastClientTimeout = async route => {
+      try {
+        await page.waitForTimeout(16000);
+        try {
+          await route.continue();
+        } catch (error) {
+          if (String(error.message || error).includes('Route is already handled')) lateClientAbortCount += 1;
+          else routeHandlerErrors.push(String(error.message || error));
+        }
+      } catch (error) {
+        routeHandlerErrors.push(String(error.message || error));
+      } finally {
+        resolveRouteHandlerComplete();
+      }
+    };
+    await page.goto(${JSON.stringify(`${BASE_URL}/login`)});
+    const viewportFits = [];
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    }
+    const form = page.locator('form').first();
+    const emptyInvalid = await form.evaluate(element => !element.checkValidity());
+    await page.getByLabel('Email Address').fill('not-an-email');
+    await page.locator('#password').fill('temporary');
+    const invalidEmail = await page.getByLabel('Email Address').evaluate(element => !element.checkValidity());
+    const visibility = page.getByRole('button', { name: 'Show password' });
+    await visibility.click();
+    const passwordVisible = await page.locator('#password').getAttribute('type');
+    await page.route(signInPattern, delayPastClientTimeout);
+    await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias('qa-coach-owner-a'))});
+    await page.locator('#password').fill(${JSON.stringify(password)});
+    await page.locator('#password').press('Enter');
+    await page.getByText('Login Failed', { exact: true }).waitFor({ state: 'visible', timeout: 18000 });
+    const recoveredButton = await page.getByRole('button', { name: 'Sign In' }).isEnabled();
+    await routeHandlerComplete;
+    await page.unroute(signInPattern, delayPastClientTimeout);
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 20000 });
+    return {
+      emptyInvalid, invalidEmail, passwordVisible, recoveredButton, viewportFits,
+      lateClientAbortCount, routeHandlerErrors,
+      pathname: await page.evaluate(() => window.location.pathname),
+    };
+  }`], { sensitive: true }));
+  expectEqual(result.emptyInvalid, true, 'login empty form validation state');
+  expectEqual(result.invalidEmail, true, 'login invalid email validation state');
+  expectEqual(result.passwordVisible, 'text', 'login password visibility state');
+  expectEqual(result.recoveredButton, true, 'login timeout visible recovery');
+  expectEqual(result.lateClientAbortCount === 0 || result.lateClientAbortCount === 1, true, 'login timeout route lifecycle reconciled');
+  expectEqual(result.routeHandlerErrors.join(' | '), '', 'login timeout route handler errors');
+  expectEqual(result.pathname, '/dashboard', 'login timeout recovery keyboard destination');
+  expectEqual(result.viewportFits.every(Boolean), true, 'login complete form states two viewports');
+}
+
 function browserProtectedReturnAudit() {
   const session = browserSessionName(`protected-return-${process.pid}`);
   cli(session, ['open', `${BASE_URL}/facilities`, '--browser', 'chrome']);
@@ -1167,9 +1888,29 @@ function browserProtectedReturnAudit() {
 
 function browserLogoutAudit(session) {
   const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const observedPages = new Set();
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      const responseUrl = response.url();
+      if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+        failedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+      }
+    };
+    const observe = target => {
+      target.on('console', onConsole); target.on('pageerror', onPageError); target.on('response', onResponse); observedPages.add(target);
+    };
+    observe(page);
     const peer = await page.context().newPage();
+    observe(peer);
+    let direct;
+    try {
     await peer.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
     await peer.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 15000 });
+    const protectedContentBefore = (await peer.locator('body').innerText()).length > 100;
+    const desktopFits = await peer.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
     await page.goto(${JSON.stringify(`${BASE_URL}/settings`)});
     await page.getByRole('button', { name: 'Sign Out' }).click();
     await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
@@ -1179,7 +1920,8 @@ function browserLogoutAudit(session) {
     await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
     await page.reload();
     await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
-    const direct = await page.context().newPage();
+    direct = await page.context().newPage();
+    observe(direct);
     await direct.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
     await direct.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1188,10 +1930,92 @@ function browserLogoutAudit(session) {
       peerPath: await peer.evaluate(() => window.location.pathname),
       directPath: await direct.evaluate(() => window.location.pathname),
       sessionStatus: sessionResponse.status(),
+      protectedContentBefore,
+      protectedContentAfter: (await peer.locator('body').innerText()).includes('Dashboard'),
+      desktopFits,
       fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      consoleErrors,
+      failedResponses: failedResponses.filter(item => item.status >= 500),
     };
+    } finally {
+      for (const target of observedPages) {
+        target.off('console', onConsole); target.off('pageerror', onPageError); target.off('response', onResponse);
+      }
+      if (direct && !direct.isClosed()) await direct.close();
+      if (!peer.isClosed()) await peer.close();
+    }
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function browserAdminOpenTabRevocationAudit(assertionPrefix = 'logout admin') {
+  const session = await browserLogin('qa-superadmin', '/admin', `cert-${assertionPrefix.replaceAll(' ', '-')}-revoke-${process.pid}`);
+  cli(session, ['run-code', `async page => {
+    const peer = await page.context().newPage();
+    await peer.goto(${JSON.stringify(`${BASE_URL}/admin`)});
+    await peer.waitForFunction(() => window.location.pathname === '/admin', null, { timeout: 15000 });
+    return true;
+  }`]);
+  const superadmin = identityByAlias.get('qa-superadmin');
+  await withEmulatorAuthAdmin(async authAdmin => {
+    const originalClaims = { ...((await authAdmin.getUser(superadmin.uid)).customClaims || {}) };
+    registerClaimRestoration(superadmin.uid, originalClaims, `${assertionPrefix.replaceAll(' ', '-')}-open-tab`);
+    try {
+      await authAdmin.setCustomUserClaims(superadmin.uid, withRoleClaim(originalClaims, 'coach'));
+      const revocationProbe = await signIn('qa-superadmin');
+      expectEqual(revocationProbe.status, 200, `${assertionPrefix} revocation boundary probe`);
+      await waitForIdTokenRevocationBoundary(revocationProbe.body.idToken);
+      await authAdmin.revokeRefreshTokens(superadmin.uid);
+      const result = JSON.parse(cli(session, ['run-code', `async page => {
+        const pages = page.context().pages();
+        const consoleErrors = [];
+        const failedResponses = [];
+        let expectedSessionDenials = 0;
+        const onConsole = message => {
+          if (message.type() !== 'error') return;
+          const value = message.text();
+          if (value.includes('Failed to load resource:')) return;
+          consoleErrors.push(value);
+        };
+        const onPageError = error => consoleErrors.push(error.message);
+        const onResponse = response => {
+          const responseUrl = response.url();
+          if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+            const pathname = responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0];
+            if (response.status() === 401 && pathname === '/api/auth/session') expectedSessionDenials += 1;
+            else failedResponses.push({ status: response.status(), pathname });
+          }
+        };
+        for (const target of pages) { target.on('console', onConsole); target.on('pageerror', onPageError); target.on('response', onResponse); }
+        let fresh;
+        try {
+          await Promise.all(pages.map(target => target.reload()));
+          await Promise.all(pages.map(target => target.waitForFunction(() => window.location.pathname !== '/admin', null, { timeout: 15000 })));
+          fresh = await page.context().newPage();
+          fresh.on('console', onConsole); fresh.on('pageerror', onPageError); fresh.on('response', onResponse);
+          await fresh.goto(${JSON.stringify(`${BASE_URL}/admin`)});
+          await fresh.waitForFunction(() => window.location.pathname !== '/admin', null, { timeout: 15000 });
+          return {
+            openPaths: await Promise.all(pages.map(target => target.evaluate(() => window.location.pathname))),
+            freshPath: await fresh.evaluate(() => window.location.pathname), consoleErrors, failedResponses, expectedSessionDenials,
+          };
+        } finally {
+          for (const target of pages) { target.off('console', onConsole); target.off('pageerror', onPageError); target.off('response', onResponse); }
+          if (fresh) { fresh.off('console', onConsole); fresh.off('pageerror', onPageError); fresh.off('response', onResponse); await fresh.close(); }
+        }
+      }`]));
+      expectEqual(result.openPaths.every(pathname => pathname === '/login'), true, `${assertionPrefix} revoked open tabs denied`);
+      expectEqual(result.freshPath, '/login', `${assertionPrefix} revoked fresh tab denied`);
+      expectEqual(result.expectedSessionDenials >= 1, true, `${assertionPrefix} revocation expected session denial responses`);
+      expectEqual(result.consoleErrors.length, 0, `${assertionPrefix} revocation console errors`);
+      expectEqual(result.failedResponses.length, 0, `${assertionPrefix} revocation unexpected responses`);
+    } finally {
+      await authAdmin.setCustomUserClaims(superadmin.uid, originalClaims);
+      await authAdmin.revokeRefreshTokens(superadmin.uid);
+    }
+  });
+  const restored = await browserLogin('qa-superadmin', '/admin', `cert-${assertionPrefix.replaceAll(' ', '-')}-restored-${process.pid}`);
+  expectEqual(browserPath(restored, '/admin'), '/admin', `${assertionPrefix} restored browser continuity`);
 }
 
 async function runIdentityBrowserAudit() {
@@ -1346,34 +2170,52 @@ function browserLoginDoubleSubmitAudit() {
   expectEqual(result.sessionRequests, 1, 'login double-submit single session request');
 }
 
-function browserResetRequestAudit(email, expectedText, label, { mobile = false, expectedFailureStatus = null } = {}) {
+function browserResetRequestAudit(email, expectedText, label, { mobile = false, expectedFailureStatus = null, doubleSubmit = false } = {}) {
   const session = openAnonymousBrowser(`cert-reset-${label}`);
   const result = JSON.parse(cli(session, ['run-code', `async page => {
     const consoleErrors = [];
     const failedResponses = [];
+    let resetRequests = 0;
     const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
     const onPageError = error => consoleErrors.push(error.message);
-    const onResponse = response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), pathname: new URL(response.url()).pathname }); };
+    const onResponse = response => {
+      const responseUrl = response.url();
+      if (response.status() >= 400) failedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+    };
+    const onRequest = request => {
+      if (request.url().startsWith(${JSON.stringify(`${BASE_URL}/api/email/reset-password`) })) resetRequests += 1;
+    };
     page.on('console', onConsole);
     page.on('pageerror', onPageError);
     page.on('response', onResponse);
+    page.on('request', onRequest);
     try {
-      await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+      const viewportFits = [];
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      }
       await page.goto(${JSON.stringify(`${BASE_URL}/login`)});
       await page.getByRole('button', { name: 'Forgot?' }).click();
       await page.getByLabel('Account Email').fill(${JSON.stringify(email)});
-      await page.getByRole('button', { name: 'Send Reset Link' }).click();
+      const submit = page.getByRole('button', { name: 'Send Reset Link' });
+      ${doubleSubmit ? `const bounds = await submit.boundingBox();
+      if (!bounds) throw new Error('Reset submit button has no clickable bounds.');
+      await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { clickCount: 2, delay: 20 });` : 'await submit.click();'}
       await page.getByText(${JSON.stringify(expectedText)}, { exact: false }).first().waitFor({ state: 'visible', timeout: 15000 });
       return {
         pathname: await page.evaluate(() => window.location.pathname),
         fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         consoleErrors,
         failedResponses,
+        resetRequests,
+        viewportFits,
       };
     } finally {
       page.off('console', onConsole);
       page.off('pageerror', onPageError);
       page.off('response', onResponse);
+      page.off('request', onRequest);
     }
   }`], { sensitive: true }));
   expectEqual(result.pathname, '/login', `${label} reset request path`);
@@ -1382,20 +2224,179 @@ function browserResetRequestAudit(email, expectedText, label, { mobile = false, 
   expectEqual(JSON.stringify(result.failedResponses), JSON.stringify(expectedFailures), `${label} reset request expected failure response`);
   const expectedResourceConsoleErrors = expectedFailureStatus === null ? 0 : 1;
   expectEqual(result.consoleErrors.length, expectedResourceConsoleErrors, `${label} reset request allowlisted console errors`);
+  if (doubleSubmit) expectEqual(result.resetRequests, 1, 'reset double-submit single request');
+  expectEqual(result.viewportFits.every(Boolean), true, `${label} reset request two viewport states`);
+}
+
+async function browserResetActionAudit() {
+  const targetEmail = emailForAlias('qa-coach-owner-b');
+  expectEqual(await publicJsonStatus('/api/email/reset-password', { email: targetEmail }), 200, 'reset browser action OOB generation');
+  const action = selectLatestPasswordResetOob(await readEmulatorOobCodes(), targetEmail);
+  registerSensitiveValue(action.oobCode);
+  const actionUrl = new URL(action.oobLink);
+  if (actionUrl.origin !== 'http://127.0.0.1:9099') throw new Error('Reset action link escaped the loopback Auth emulator.');
+  actionUrl.searchParams.delete('continueUrl');
+  const missingPasswordUrl = actionUrl.toString();
+  const replacementPassword = `browser-reset-${FIXTURES.runId}`;
+  actionUrl.searchParams.set('newPassword', replacementPassword);
+  const completionUrl = actionUrl.toString();
+  const session = openAnonymousBrowser('cert-reset-action');
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors = [];
+    const responseStatuses = [];
+    const onConsole = message => {
+      if (message.type() !== 'error') return;
+      const value = message.text();
+      if (value.includes('Failed to load resource:')) return;
+      consoleErrors.push(value);
+    };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.url().startsWith('http://127.0.0.1:9099/emulator/action')) responseStatuses.push(response.status());
+    };
+    page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+    try {
+      const fits = [];
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const missing = await page.goto(${JSON.stringify(missingPasswordUrl)}, { waitUntil: 'domcontentloaded' });
+      const missingVisible = (await page.locator('body').innerText()).includes('missing newPassword');
+      fits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      await page.setViewportSize({ width: 390, height: 844 });
+      const completed = await page.goto(${JSON.stringify(completionUrl)}, { waitUntil: 'domcontentloaded' });
+      const completionVisible = (await page.locator('body').innerText()).includes('password has been successfully updated');
+      fits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      const reused = await page.reload({ waitUntil: 'domcontentloaded' });
+      const reusedVisible = (await page.locator('body').innerText()).includes('expired or the link has already been used');
+      return {
+        missingStatus: missing.status(), completedStatus: completed.status(), reusedStatus: reused.status(),
+        missingVisible, completionVisible, reusedVisible, fits, consoleErrors, responseStatuses,
+      };
+    } finally {
+      page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse);
+    }
+  }`], { sensitive: true }));
+  expectEqual(result.missingStatus, 400, 'reset action missing-password visible error status');
+  expectEqual(result.missingVisible, true, 'reset action missing-password visible error');
+  expectEqual(result.completedStatus, 200, 'reset action visible completion status');
+  expectEqual(result.completionVisible, true, 'reset action visible completion');
+  expectEqual(result.reusedStatus, 400, 'reset action consumed reload status');
+  expectEqual(result.reusedVisible, true, 'reset action completion reload state');
+  expectEqual(result.fits.every(Boolean), true, 'reset request and action states two viewports');
+  expectEqual(result.consoleErrors.length, 0, 'reset action console errors');
+  expectEqual(JSON.stringify(result.responseStatuses), JSON.stringify([400, 200, 400]), 'reset action unexpected responses');
+  expectEqual((await signIn('qa-coach-owner-b', replacementPassword)).status, 200, 'reset browser action new password acceptance');
+  expectEqual((await signIn('qa-coach-owner-a', replacementPassword)).status, 400, 'reset wrong-account reset attempt denied');
+  expectEqual((await signIn('qa-coach-owner-a')).status, 200, 'reset wrong-account password unchanged after action');
+  expectEqual(await publicJsonStatus('/api/email/reset-password', { email: targetEmail }), 200, 'reset browser action restoration OOB generation');
+  const restore = selectLatestPasswordResetOob(await readEmulatorOobCodes(), targetEmail, new Set([action.oobCode]));
+  registerSensitiveValue(restore.oobCode);
+  expectEqual((await redeemPasswordReset(restore.oobCode, password)).status, 200, 'reset browser action exact password restoration');
+}
+
+function browserSignupFailureAudit(mode) {
+  const session = openAnonymousBrowser(`cert-signup-${mode}`);
+  const email = `${FIXTURES.runId}-signup-${mode}@phase2.test`;
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const apiPattern = '**/api/email/verify-email';
+    const firebasePattern = '**/identitytoolkit.googleapis.com/v1/accounts:sendOobCode**';
+    const apiFailure = async route => ${mode === 'aborted' ? "route.abort('failed')" : "route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'local injected provider failure' }) })"};
+    const firebaseFailure = async route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { message: 'LOCAL_INJECTED_DELIVERY_FAILURE' } }) });
+    await page.route(apiPattern, apiFailure);
+    await page.route(firebasePattern, firebaseFailure);
+    try {
+      await page.goto(${JSON.stringify(`${BASE_URL}/signup`)});
+      await page.getByRole('radio', { name: /^Adult Athlete/ }).click();
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await page.getByRole('button', { name: 'Continue' }).click();
+      const form = page.locator('form');
+      const emptyInvalid = await form.evaluate(element => !element.checkValidity());
+      await page.locator('#signup-name').fill('Failure Recovery');
+      await page.locator('#signup-email').fill(${JSON.stringify(email)});
+      await page.locator('#signup-password').fill(${JSON.stringify(password)});
+      await page.locator('#signup-password-confirmation').fill(${JSON.stringify(password)});
+      await page.getByRole('button', { name: /^Create Account$/ }).click();
+      await page.getByText('Signup Error', { exact: true }).waitFor({ state: 'visible', timeout: 20000 });
+      return {
+        pathname: await page.evaluate(() => window.location.pathname), emptyInvalid,
+        buttonEnabled: await page.getByRole('button', { name: /^Create Account$/ }).isEnabled(),
+      };
+    } finally {
+      await page.unroute(apiPattern, apiFailure);
+      await page.unroute(firebasePattern, firebaseFailure);
+    }
+  }`], { sensitive: true }));
+  expectEqual(result.emptyInvalid, true, 'signup invalid input UI denial');
+  const modeLabel = mode.replace('-', ' ');
+  expectEqual(result.pathname, '/signup', `signup ${modeLabel} delivery UI path`);
+  expectEqual(result.buttonEnabled, true, `signup ${modeLabel} delivery UI recovery`);
+  return email;
 }
 
 async function runCertificationBrowserScenario(scenarioId) {
   if (scenarioId === 'marketing-legal-contact-beta-coach-referral') {
     const session = openAnonymousBrowser('cert-marketing');
     assertTwoViewportRoutes(session, ['/', '/privacy', '/terms', '/safety', '/beta', '/refer-a-coach'].map(pathname => ({ path: pathname, expected: pathname })), 'marketing public surfaces');
-    const coachEmail = `browser-coach-${FIXTURES.runId.slice(-20)}@phase2.test`;
+    const suffix = FIXTURES.runId.slice(-20);
+    const coachEmail = `browser-coach-${suffix}@phase2.test`;
+    const contactEmail = `browser-contact-${suffix}@phase2.test`;
+    const betaEmail = `browser-beta-${suffix}@phase2.test`;
+    const cleanupIdentity = await signIn('qa-superadmin');
+    expectEqual(cleanupIdentity.status, 200, 'marketing browser cleanup authorization');
     const form = JSON.parse(cli(session, ['run-code', `async page => {
       const consoleErrors = [];
+      const unexpectedResponses = [];
       const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
       const onPageError = error => consoleErrors.push(error.message);
+      const onResponse = response => {
+        const responseUrl = response.url();
+        if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+          unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+        }
+      };
       page.on('console', onConsole);
       page.on('pageerror', onPageError);
+      page.on('response', onResponse);
       try {
+        const viewportFits = [];
+        await page.goto(${JSON.stringify(`${BASE_URL}/`)});
+        const contactSubmit = page.getByRole('button', { name: 'Send Inquiry' });
+        const contactInitiallyDisabled = await contactSubmit.isDisabled();
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          await page.locator('#contact-name').scrollIntoViewIfNeeded();
+          viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+        }
+        await page.locator('#contact-name').fill('Browser Contact');
+        await page.locator('#contact-email').fill(${JSON.stringify(contactEmail)});
+        await page.locator('#contact-organization').fill('Task 3');
+        await page.locator('#contact-inquiry').fill('Local browser certification inquiry');
+        await contactSubmit.click();
+        await page.getByText('Message Received', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+        const contactSuccess = await page.getByText('Message Received', { exact: true }).count();
+
+        await page.goto(${JSON.stringify(`${BASE_URL}/beta`)});
+        const betaForm = page.locator('#application-form form:visible').last();
+        const betaInitiallyInvalid = await betaForm.evaluate(element => !element.checkValidity());
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+        }
+        const values = {
+          fullName: 'Browser Beta', email: ${JSON.stringify(betaEmail)}, org: 'Task 3', sports: 'Soccer',
+          scale: 'One team', current_tools: 'Local tools', frustrations: 'Synthetic test',
+          must_have: 'Safe behavior', why_beta: 'Certification', address_street: '1 Test Way',
+          address_city: 'Edmonton', address_state: 'AB', address_zip: 'T0T0T0',
+        };
+        for (const [id, value] of Object.entries(values)) await betaForm.locator('#' + id).fill(value);
+        await betaForm.locator('#role').selectOption('coach');
+        await betaForm.locator('#frequency').selectOption('weekly');
+        await betaForm.locator('input[name="tested_before"][value="no"]').check();
+        await betaForm.locator('input[name="devices"]').first().check();
+        await betaForm.locator('input[type="checkbox"][required]').check();
+        await betaForm.getByRole('button', { name: /Submit Application/ }).click();
+        await page.getByText('Application Received', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+        const betaSuccess = await page.getByText('Application Received', { exact: true }).count();
+
         await page.goto(${JSON.stringify(`${BASE_URL}/refer-a-coach`)});
         await page.setViewportSize({ width: 390, height: 844 });
         const submit = page.getByRole('button', { name: 'Send to coach' });
@@ -1406,22 +2407,35 @@ async function runCertificationBrowserScenario(scenarioId) {
         await submit.click();
         await page.getByText('Referral sent', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
         return {
-          initiallyDisabled,
+          initiallyDisabled, contactInitiallyDisabled, betaInitiallyInvalid, contactSuccess, betaSuccess,
+          referralSuccess: await page.getByText('Referral sent', { exact: true }).count(),
+          viewportFits,
           fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
           consoleErrors,
+          unexpectedResponses,
         };
       } finally {
         page.off('console', onConsole);
         page.off('pageerror', onPageError);
+        page.off('response', onResponse);
       }
     }`], { sensitive: true }));
     expectEqual(form.initiallyDisabled, true, 'marketing visible empty-form validation');
+    expectEqual(form.contactInitiallyDisabled, true, 'marketing visible contact validation');
+    expectEqual(form.betaInitiallyInvalid, true, 'marketing visible beta validation');
+    expectEqual(form.contactSuccess, 1, 'marketing visible contact success');
+    expectEqual(form.betaSuccess, 1, 'marketing visible beta success');
+    expectEqual(form.referralSuccess, 1, 'marketing visible referral success');
+    expectEqual(form.viewportFits.every(Boolean), true, 'marketing full form states two viewports');
     expectEqual(form.fits, true, 'marketing submitted form mobile containment');
-    expectEqual(form.consoleErrors.length, 0, 'marketing submitted form console errors');
+    expectEqual(form.consoleErrors.length, 0, 'marketing submitted forms console errors');
+    expectEqual(form.unexpectedResponses.length, 0, 'marketing submitted forms unexpected responses');
     expectEqual(
-      await deleteFirestoreMatches('parent_coach_referrals', 'coachEmail', coachEmail, 'owner'),
-      1,
-      'marketing browser referral exact cleanup',
+      await deleteFirestoreMatches('parent_coach_referrals', 'coachEmail', coachEmail, 'owner') +
+        await deleteFirestoreMatches('contact_inquiries', 'email', contactEmail, cleanupIdentity.body.idToken) +
+        await deleteFirestoreMatches('beta_applications', 'email', betaEmail, cleanupIdentity.body.idToken),
+      3,
+      'marketing browser submissions exact cleanup',
     );
     return;
   }
@@ -1431,6 +2445,14 @@ async function runCertificationBrowserScenario(scenarioId) {
     expectEqual(browserProtectedReturnAudit(), '/facilities', 'login protected deep-link return');
     browserLoginDoubleSubmitAudit();
     runIdentityStateBrowserAudit();
+    browserLoginFailureAudit(
+      `unknown-${FIXTURES.runId}@phase2.test`,
+      password,
+      '/login',
+      'Login Failed',
+      'unknown-user visible generic failure parity',
+    );
+    browserLoginTimeoutAndFormStateAudit();
     const session = openAnonymousBrowser('cert-login-responsive');
     assertTwoViewportRoutes(session, [{ path: '/login', expected: '/login' }], 'login surface');
     return;
@@ -1442,13 +2464,20 @@ async function runCertificationBrowserScenario(scenarioId) {
     expectEqual(logout.peerPath, '/login', 'cert logout peer denial');
     expectEqual(logout.directPath, '/login', 'cert logout Back reload direct denial');
     expectEqual(logout.sessionStatus, 401, 'cert logout session denial');
+    expectEqual(logout.protectedContentBefore, true, 'cert logout protected listener content present before revocation');
+    expectEqual(logout.protectedContentAfter, false, 'cert logout protected cache content cleared after revocation');
+    expectEqual(logout.desktopFits, true, 'cert logout desktop containment');
     expectEqual(logout.fits, true, 'cert logout mobile containment');
+    expectEqual(logout.consoleErrors.length, 0, 'cert logout workflow console errors');
+    expectEqual(logout.failedResponses.length, 0, 'cert logout workflow unexpected responses');
     expectEqual(browserPath(owner, '/dashboard'), '/login', 'cert logout direct route denial');
+    await browserAdminOpenTabRevocationAudit();
     return;
   }
   if (scenarioId === 'authentication-password-reset') {
     browserResetRequestAudit(`unknown-${FIXTURES.runId}@phase2.test`, 'A reset link was sent', 'unknown', { mobile: true });
-    browserResetRequestAudit(emailForAlias('qa-coach-owner-b'), 'A reset link was sent', 'known-provider-block');
+    browserResetRequestAudit(emailForAlias('qa-coach-owner-b'), 'A reset link was sent', 'known-provider-block', { doubleSubmit: true });
+    await browserResetActionAudit();
     return;
   }
   if (scenarioId === 'account-lifecycle-disable-delete-cancel-purge') {
@@ -1456,6 +2485,10 @@ async function runCertificationBrowserScenario(scenarioId) {
     const owner = await browserLogin('qa-owner-delete-blocked', '/dashboard', `cert-lifecycle-owner-${process.pid}`);
     assertTwoViewportRoutes(trusted, [{ path: '/admin', expected: '/admin' }], 'lifecycle admin surface');
     assertTwoViewportRoutes(owner, [{ path: '/settings', expected: '/settings' }], 'lifecycle settings surface');
+    const adminObserved = browserRouteAudit(trusted, '/admin');
+    const settingsObserved = browserRouteAudit(owner, '/settings', { mobile: true });
+    expectEqual(adminObserved.consoleErrors.length + settingsObserved.consoleErrors.length, 0, 'lifecycle browser workflow console errors');
+    expectEqual(adminObserved.failedResponses.length + settingsObserved.failedResponses.length, 0, 'lifecycle browser workflow unexpected responses');
     return;
   }
   if (scenarioId === 'signup-onboarding-coach-admin-league-parent-adult-player-signup') {
@@ -1475,8 +2508,24 @@ async function runCertificationBrowserScenario(scenarioId) {
         const session = openAnonymousBrowser(`cert-signup-${role.id}`);
         try {
           const signup = JSON.parse(cli(session, ['run-code', `async page => {
+            const consoleErrors = [];
+            const unexpectedResponses = [];
+            const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+            const onPageError = error => consoleErrors.push(error.message);
+            const onResponse = response => {
+              const responseUrl = response.url();
+              if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+                unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+              }
+            };
+            page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+            try {
             await page.goto(${JSON.stringify(`${BASE_URL}/signup`)});
-            await page.setViewportSize(${index % 2 === 0 ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+            const viewportFits = [];
+            for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+              await page.setViewportSize(viewport);
+              viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+            }
             await page.getByRole('radio', { name: new RegExp(${JSON.stringify(`^${role.name}`)}) }).click();
             await page.getByRole('button', { name: 'Continue' }).click();
             ${role.id === 'self' || role.id === 'child'
@@ -1484,10 +2533,10 @@ async function runCertificationBrowserScenario(scenarioId) {
               : role.plan
                 ? `await page.getByText(${JSON.stringify(role.plan)}, { exact: true }).click(); await page.getByRole('button', { name: 'Continue' }).click();`
                 : "await page.getByRole('button', { name: 'Continue' }).click();"}
-            await page.getByLabel('Full Name').fill(${JSON.stringify(`Certification ${role.name}`)});
-            await page.getByLabel('Email Address').fill(${JSON.stringify(email)});
+            await page.locator('#signup-name').fill(${JSON.stringify(`Certification ${role.name}`)});
+            await page.locator('#signup-email').fill(${JSON.stringify(email)});
             await page.locator('#signup-password').fill(${JSON.stringify(password)});
-            await page.getByLabel('Confirm Password').fill(${JSON.stringify(password)});
+            await page.locator('#signup-password-confirmation').fill(${JSON.stringify(password)});
             const submit = page.getByRole('button', { name: /Create Account/ });
             ${index === 0 ? `const bounds = await submit.boundingBox();
             if (!bounds) throw new Error('Create-account button has no clickable bounds.');
@@ -1496,11 +2545,21 @@ async function runCertificationBrowserScenario(scenarioId) {
             return {
               pathname: await page.evaluate(() => window.location.pathname),
               fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+              viewportFits, consoleErrors, unexpectedResponses,
             };
+            } finally {
+              page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse);
+            }
           }`], { sensitive: true }));
           expectEqual(signup.pathname, '/verify-email', `signup ${role.id} UI verification gate`);
           expectEqual(signup.fits, true, `signup ${role.id} viewport containment`);
+          expectEqual(signup.viewportFits.every(Boolean), true, `signup ${role.id} two viewport states`);
+          expectEqual(signup.consoleErrors.length, 0, `signup ${role.id} workflow console errors`);
+          expectEqual(signup.unexpectedResponses.length, 0, `signup ${role.id} workflow unexpected responses`);
           createdUser = await authAdmin.getUserByEmail(email);
+          registerDynamicAuthIdentity(createdUser.uid, `signup-browser-${role.id}`);
+          registerDynamicFirestoreRoot(`users/${createdUser.uid}`, `signup-browser-${role.id}`);
+          registerDynamicFirestoreRoot(`players/p_${createdUser.uid}`, `signup-browser-${role.id}-player`);
           expectEqual(createdUser.emailVerified, false, `signup ${role.id} preverification state`);
           const preverification = await signInEmail(email);
           expectEqual(await apiStatus('/api/auth/session', preverification.body.idToken, { method: 'POST' }), 403, `signup ${role.id} preverification session denial`);
@@ -1524,14 +2583,24 @@ async function runCertificationBrowserScenario(scenarioId) {
           const refreshed = await authAdmin.getUser(createdUser.uid);
           expectEqual(refreshed.customClaims?.role === 'superadmin', false, `signup ${role.id} privileged claim denial`);
         } finally {
-          if (!createdUser) createdUser = await authAdmin.getUserByEmail(email).catch(() => null);
-          if (createdUser) {
-            await firestoreAdmin.collection('users').doc(createdUser.uid).delete().catch(() => undefined);
-            await firestoreAdmin.collection('players').doc(`p_${createdUser.uid}`).delete().catch(() => undefined);
-            await authAdmin.deleteUser(createdUser.uid).catch(() => undefined);
+          if (!createdUser) {
+            createdUser = await getAuthUserByEmailIfPresent(authAdmin, email);
+            if (createdUser) {
+              registerDynamicAuthIdentity(createdUser.uid, `signup-browser-${role.id}-fallback`);
+              registerDynamicFirestoreRoot(`users/${createdUser.uid}`, `signup-browser-${role.id}-fallback`);
+              registerDynamicFirestoreRoot(`players/p_${createdUser.uid}`, `signup-browser-${role.id}-player-fallback`);
+            }
           }
           await closeBrowserSessionNow(session);
         }
+      }
+      for (const mode of ['aborted', 'provider-failure']) {
+        const failedEmail = browserSignupFailureAudit(mode);
+        const retained = await authAdmin.getUserByEmail(failedEmail).then(() => true, error => {
+          if (error?.code === 'auth/user-not-found') return false;
+          throw error;
+        });
+        expectEqual(retained, false, `signup ${mode} delivery account cleanup`);
       }
     });
     return;
@@ -1546,8 +2615,12 @@ async function runCertificationBrowserScenario(scenarioId) {
     await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
       const playerRef = firestoreAdmin.collection('players').doc(player.data.id);
       const originalPlayer = (await playerRef.get()).data();
+      const youthBrowserCleanupRegistry = createResourceRegistry({ maxAttempts: 3 });
       let inviteToken = null;
       let createdUid = null;
+      let primaryFailure = null;
+      registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-browser-player');
+      registerFirestoreDocumentRestoration(playerRef.path, originalPlayer, 'youth-browser-player', youthBrowserCleanupRegistry);
       try {
         const invite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
           method: 'POST', body: JSON.stringify({
@@ -1557,9 +2630,28 @@ async function runCertificationBrowserScenario(scenarioId) {
         });
         expectEqual(invite.status, 200, 'youth browser invitation setup');
         inviteToken = registerSensitiveValue(invite.body.token);
+        registerDynamicFirestoreRoot(`invites/${inviteToken}`, 'youth-browser-invite');
+        registerDynamicFirestoreRoot(`invites/${inviteToken}`, 'youth-browser-invite', youthBrowserCleanupRegistry);
         const session = browserSessionName(`cert-youth-active-${process.pid}`);
         cli(session, ['open', `${BASE_URL}/signup/youth?token=${inviteToken}`, '--browser', 'chrome'], { sensitive: true });
         const active = JSON.parse(cli(session, ['run-code', `async page => {
+          const consoleErrors = [];
+          const unexpectedResponses = [];
+          const onConsole = message => {
+            if (message.type() !== 'error') return;
+            const value = message.text();
+            if (value.includes('Failed to load resource:') && value.includes('404 (Not Found)')) return;
+            consoleErrors.push(value);
+          };
+          const onPageError = error => consoleErrors.push(error.message);
+          const onResponse = response => {
+            const responseUrl = response.url();
+            if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+              unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+            }
+          };
+          page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+          try {
           await page.getByText('Create Your Password', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
           const observations = [];
           for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
@@ -1588,24 +2680,49 @@ async function runCertificationBrowserScenario(scenarioId) {
             pathname: await page.evaluate(() => window.location.pathname),
             shortPasswordInvalid,
             consumedReloadDenied: await page.getByText('Invitation Error', { exact: true }).count(),
+            consoleErrors,
+            unexpectedResponses: unexpectedResponses.filter(item => !(item.status === 404 && item.pathname === '/api/invites/youth')),
           };
+          } finally {
+            page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse);
+          }
         }`], { sensitive: true }));
         expectEqual(active.pathname, '/signup/youth', 'youth active invitation browser path');
         expectEqual(active.observations.every(Boolean), true, 'youth active invitation two viewports');
         expectEqual(active.shortPasswordInvalid, true, 'youth browser short password validation');
         expectEqual(active.consumedReloadDenied, 1, 'youth browser consumed invitation reload denial');
+        expectEqual(active.consoleErrors.join(' | '), '', 'youth activation workflow console errors');
+        expectEqual(JSON.stringify(active.unexpectedResponses), '[]', 'youth activation workflow unexpected responses');
         const youth = await authAdmin.getUserByEmail(youthEmail);
         createdUid = youth.uid;
+        registerDynamicAuthIdentity(createdUid, 'youth-browser');
+        registerDynamicFirestoreRoot(`users/${createdUid}`, 'youth-browser');
+        registerDynamicFirestoreRoot(`teams/${FIXTURES.teams.find(team => team.alias === 'qa-team-c').id}/members/${createdUid}`, 'youth-browser-team-member');
+        registerDynamicAuthIdentity(createdUid, 'youth-browser', youthBrowserCleanupRegistry);
+        registerDynamicFirestoreRoot(`users/${createdUid}`, 'youth-browser', youthBrowserCleanupRegistry);
+        registerDynamicFirestoreRoot(`teams/${FIXTURES.teams.find(team => team.alias === 'qa-team-c').id}/members/${createdUid}`, 'youth-browser-team-member', youthBrowserCleanupRegistry);
         const linkedPlayer = (await playerRef.get()).data();
         expectEqual(linkedPlayer.userId, createdUid, 'youth browser exact player linkage');
+      } catch (error) {
+        primaryFailure = error;
+        throw error;
       } finally {
-        if (!createdUid) createdUid = (await authAdmin.getUserByEmail(youthEmail).catch(() => null))?.uid || null;
-        if (createdUid) {
-          await firestoreAdmin.collection('users').doc(createdUid).delete().catch(() => undefined);
-          await authAdmin.deleteUser(createdUid).catch(() => undefined);
+        if (!createdUid) {
+          createdUid = (await getAuthUserByEmailIfPresent(authAdmin, youthEmail))?.uid || null;
+          if (createdUid) {
+            registerDynamicAuthIdentity(createdUid, 'youth-browser-fallback');
+            registerDynamicFirestoreRoot(`users/${createdUid}`, 'youth-browser-fallback');
+            registerDynamicFirestoreRoot(`teams/${FIXTURES.teams.find(team => team.alias === 'qa-team-c').id}/members/${createdUid}`, 'youth-browser-team-member-fallback');
+            registerDynamicAuthIdentity(createdUid, 'youth-browser-fallback', youthBrowserCleanupRegistry);
+            registerDynamicFirestoreRoot(`users/${createdUid}`, 'youth-browser-fallback', youthBrowserCleanupRegistry);
+            registerDynamicFirestoreRoot(`teams/${FIXTURES.teams.find(team => team.alias === 'qa-team-c').id}/members/${createdUid}`, 'youth-browser-team-member-fallback', youthBrowserCleanupRegistry);
+          }
         }
-        if (inviteToken) await firestoreAdmin.collection('invites').doc(inviteToken).delete().catch(() => undefined);
-        if (originalPlayer) await playerRef.set(originalPlayer);
+        const browserCleanup = await youthBrowserCleanupRegistry.cleanup();
+        completedDynamicCleanupRuns.push(browserCleanup);
+        if (browserCleanup.state !== 'OBSERVED' && !primaryFailure) {
+          throw new Error('Youth browser cleanup retained owned resources.');
+        }
         expectEqual((await playerRef.get()).data()?.userId, originalPlayer?.userId, 'youth browser exact cleanup');
       }
     });
@@ -1613,20 +2730,81 @@ async function runCertificationBrowserScenario(scenarioId) {
   }
   if (scenarioId === 'signup-onboarding-missing-profile-onboarding') {
     const anonymous = openAnonymousBrowser('cert-onboarding-anonymous');
-    assertTwoViewportRoutes(anonymous, [{ path: '/onboarding', expected: '/login' }], 'missing-profile unauthenticated denial');
+    try {
+      const anonymousDenial = JSON.parse(cli(anonymous, ['run-code', `async page => {
+        const consoleErrors = [];
+        const unexpectedResponses = [];
+        const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+        const onPageError = error => consoleErrors.push(error.message);
+        const onResponse = response => {
+          const responseUrl = response.url();
+          if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+            unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+          }
+        };
+        page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+        try {
+          const viewports = [];
+          for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+            await page.setViewportSize(viewport);
+            await page.goto(${JSON.stringify(`${BASE_URL}/onboarding`)}, { waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 15000 });
+            viewports.push({
+              pathname: await page.evaluate(() => window.location.pathname),
+              fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            });
+          }
+          return { viewports, consoleErrors, unexpectedResponses };
+        } finally {
+          page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse);
+        }
+      }`]));
+      expectEqual(
+        anonymousDenial.viewports.every(item => item.pathname === '/login' && item.fits),
+        true,
+        'missing-profile anonymous onboarding redirect two viewports',
+      );
+      expectEqual(anonymousDenial.consoleErrors.length, 0, 'missing-profile anonymous onboarding console errors');
+      expectEqual(anonymousDenial.unexpectedResponses.length, 0, 'missing-profile anonymous onboarding unexpected responses');
+    } finally {
+      await closeBrowserSessionNow(anonymous);
+    }
     await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
       const email = `${FIXTURES.runId}-missing-profile-browser@phase2.test`;
       const account = await authAdmin.createUser({ email, password, emailVerified: true, displayName: 'Browser Missing Profile' });
+      registerDynamicAuthIdentity(account.uid, 'missing-profile-browser');
+      registerDynamicFirestoreRoot(`users/${account.uid}`, 'missing-profile-browser');
+      registerDynamicFirestoreRoot(`players/p_${account.uid}`, 'missing-profile-browser-player');
       try {
         const session = await browserLoginCredentials(email, password, '/onboarding', `cert-onboarding-missing-${process.pid}`, 'missing-profile browser identity');
         const completion = JSON.parse(cli(session, ['run-code', `async page => {
           const clientErrors = [];
+          const unexpectedResponses = [];
+          let profileWrites = 0;
           const onConsole = message => { if (message.type() === 'error') clientErrors.push(message.text()); };
           const onPageError = error => clientErrors.push(error.stack || error.message);
+          const onRequest = request => {
+            if (
+              request.url().includes('google.firestore.v1.Firestore/Write/channel') &&
+              decodeURIComponent(request.postData() || '').includes(${JSON.stringify(account.uid)})
+            ) profileWrites += 1;
+          };
+          const onResponse = response => {
+            const responseUrl = response.url();
+            if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+              unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+            }
+          };
           page.on('console', onConsole);
           page.on('pageerror', onPageError);
+          page.on('request', onRequest);
+          page.on('response', onResponse);
           try {
-          await page.setViewportSize({ width: 390, height: 844 });
+          const viewportFits = [];
+          for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+            await page.setViewportSize(viewport);
+            viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+          }
           const profileFormReady = await page.locator('#onboarding-name')
             .waitFor({ state: 'visible', timeout: 20000 }).then(() => true, () => false);
           if (!profileFormReady) {
@@ -1637,20 +2815,66 @@ async function runCertificationBrowserScenario(scenarioId) {
               clientErrors,
             };
           }
+          let injectedReadFailures = 0;
+          const listenPattern = 'http://127.0.0.1:8080/**';
+          const preFaultErrorCount = clientErrors.length;
+          const failOneRead = async route => {
+            injectedReadFailures += 1;
+            if (injectedReadFailures === 1) {
+              await route.abort('failed');
+              resolveInjectedRead();
+            } else await route.continue();
+          };
+          let resolveInjectedRead;
+          const injectedRead = new Promise(resolve => { resolveInjectedRead = resolve; });
+          await page.route(listenPattern, failOneRead);
+          const readRequest = page.waitForRequest(request => request.url().startsWith('http://127.0.0.1:8080/'));
+          await page.reload();
+          await readRequest;
+          await injectedRead;
+          await page.unroute(listenPattern, failOneRead);
+          await page.reload();
+          await page.locator('#onboarding-name').waitFor({ state: 'visible', timeout: 15000 });
+          const faultConsoleErrors = clientErrors.splice(preFaultErrorCount);
+          const expectedReadFaultConsoleCount = faultConsoleErrors.filter(value => value === 'Failed to load resource: net::ERR_FAILED').length;
+          clientErrors.push(...faultConsoleErrors.filter(value => value !== 'Failed to load resource: net::ERR_FAILED'));
+          const form = page.locator('form');
+          await page.locator('#onboarding-name').fill('');
+          const emptyInvalid = await form.evaluate(element => !element.checkValidity());
+          await page.locator('#onboarding-name').evaluate(element => {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+            setter.call(element, 'x'.repeat(121));
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+          });
+          await page.getByRole('button', { name: 'Continue' }).click();
+          await page.getByText('Valid name required', { exact: true }).waitFor({ state: 'visible', timeout: 10000 });
+          const overlongDenied = await page.getByText('Valid name required', { exact: true }).count();
+          await page.locator('#onboarding-name').fill('Draft Name');
+          await page.locator('#role-admin').click();
+          await page.reload();
+          await page.locator('#onboarding-name').waitFor({ state: 'visible', timeout: 15000 });
+          const midRefreshReset = (await page.locator('#onboarding-name').inputValue()) === 'Browser Missing Profile' && await page.locator('#role-adult_player').isChecked();
           await page.locator('#onboarding-name').fill('Browser Completed Profile');
           await page.locator('#role-coach').click();
+          profileWrites = 0;
           const button = page.getByRole('button', { name: 'Continue' });
-          await button.click();
+          const bounds = await button.boundingBox();
+          if (!bounds) throw new Error('Onboarding button has no clickable bounds.');
+          await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { clickCount: 2, delay: 20 });
           await page.waitForFunction(() => window.location.pathname === '/teams/new', null, { timeout: 15000 });
           await page.reload();
           await page.waitForFunction(() => window.location.pathname === '/teams/new', null, { timeout: 15000 });
           return {
             pathname: await page.evaluate(() => window.location.pathname),
             fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            emptyInvalid, overlongDenied, midRefreshReset, profileWrites, viewportFits, clientErrors, unexpectedResponses,
+            injectedReadFailures, expectedReadFaultConsoleCount,
           };
           } finally {
             page.off('console', onConsole);
             page.off('pageerror', onPageError);
+            page.off('request', onRequest);
+            page.off('response', onResponse);
           }
         }`], { sensitive: true }));
         if (completion.profileFormReady === false) {
@@ -1659,31 +2883,103 @@ async function runCertificationBrowserScenario(scenarioId) {
         }
         expectEqual(completion.pathname, '/teams/new', 'missing profile completed-role landing and reload');
         expectEqual(completion.fits, true, 'missing profile mobile completion containment');
+        expectEqual(completion.emptyInvalid, true, 'onboarding empty validation');
+        expectEqual(completion.overlongDenied, 1, 'onboarding overlong validation');
+        expectEqual(completion.midRefreshReset, true, 'onboarding mid-form refresh reset');
+        expectEqual(completion.profileWrites, 1, 'onboarding double-submit single profile write');
+        expectEqual(completion.viewportFits.every(Boolean), true, 'onboarding real forms two viewports');
+        expectEqual(completion.clientErrors.join(' | '), '', 'onboarding workflows console errors');
+        expectEqual(JSON.stringify(completion.unexpectedResponses), '[]', 'onboarding workflows unexpected responses');
+        expectEqual(completion.expectedReadFaultConsoleCount, 1, 'onboarding injected read failure console signal');
+        expectEqual(completion.injectedReadFailures >= 1, true, 'onboarding transient read failure recovery');
         const profile = await firestoreAdmin.collection('users').doc(account.uid).get();
         expectEqual(profile.data()?.role, 'coach', 'missing profile browser completion persistence');
+        expectEqual(completion.pathname, '/teams/new', 'onboarding role coach completion destination');
+        const relogin = await browserLoginCredentials(email, password, '/dashboard', `cert-onboarding-relogin-coach-${process.pid}`, 'onboarding role coach');
+        expectEqual(browserPath(relogin, '/dashboard'), '/dashboard', 'onboarding role coach relogin destination');
       } finally {
-        await firestoreAdmin.collection('users').doc(account.uid).delete().catch(() => undefined);
-        await firestoreAdmin.collection('players').doc(`p_${account.uid}`).delete().catch(() => undefined);
-        await authAdmin.deleteUser(account.uid).catch(() => undefined);
+        // The global registry owns exact deletion and postcondition proof.
+      }
+    });
+    const remainingRoles = [
+      { role: 'adult_player', destination: '/teams/join', relogin: '/dashboard' },
+      { role: 'parent', destination: '/family', relogin: '/family' },
+      { role: 'admin', destination: '/teams/new', relogin: '/club' },
+      { role: 'league_creator', destination: '/competition', relogin: '/competition' },
+    ];
+    await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+      for (const item of remainingRoles) {
+        const email = `${FIXTURES.runId}-missing-${item.role}@phase2.test`;
+        const account = await authAdmin.createUser({ email, password, emailVerified: true, displayName: `Missing ${item.role}` });
+        registerDynamicAuthIdentity(account.uid, `missing-profile-${item.role}`);
+        registerDynamicFirestoreRoot(`users/${account.uid}`, `missing-profile-${item.role}`);
+        registerDynamicFirestoreRoot(`players/p_${account.uid}`, `missing-profile-${item.role}-player`);
+        try {
+          const session = await browserLoginCredentials(email, password, '/onboarding', `cert-onboarding-${item.role}-${process.pid}`, `onboarding role ${item.role}`);
+          const result = JSON.parse(cli(session, ['run-code', `async page => {
+            await page.locator('#onboarding-name').waitFor({ state: 'visible', timeout: 15000 });
+            const planPromptCount = await page.getByText(/choose.*plan/i).count();
+            await page.locator('#onboarding-name').fill(${JSON.stringify(`Completed ${item.role}`)});
+            await page.locator(${JSON.stringify(`#role-${item.role}`)}).click();
+            await page.getByRole('button', { name: 'Continue' }).click();
+            await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(item.destination)}, { timeout: 15000 });
+            return { pathname: await page.evaluate(() => window.location.pathname), planPromptCount };
+          }`]));
+          expectEqual(result.pathname, item.destination, `onboarding role ${item.role} completion destination`);
+          if (item.role === 'adult_player') expectEqual(result.planPromptCount, 0, 'onboarding role without plan state');
+          const persisted = await firestoreAdmin.collection('users').doc(account.uid).get();
+          expectEqual(persisted.data()?.role, item.role, `onboarding role ${item.role} persisted role`);
+          await closeBrowserSessionNow(session);
+          const relogin = await browserLoginCredentials(email, password, item.relogin, `cert-onboarding-relogin-${item.role}-${process.pid}`, `onboarding role ${item.role}`);
+          expectEqual(browserPath(relogin, item.relogin), item.relogin, `onboarding role ${item.role} relogin destination`);
+        } finally {
+          // The shared dynamic registry owns deletion, retries, and postcondition proof.
+        }
       }
     });
     return;
   }
   if (scenarioId === 'demo-seed-use-exit-expiry-cleanup') {
     const session = openAnonymousBrowser('cert-demo');
+    const peerSession = openAnonymousBrowser('cert-demo-peer-context');
     assertTwoViewportRoutes(session, [{ path: '/', expected: '/' }], 'demo public surfaces');
+    const peerJourney = JSON.parse(cli(peerSession, ['run-code', `async page => {
+      await page.goto(${JSON.stringify(`${BASE_URL}/`)});
+      await page.getByRole('button', { name: 'Experience Demo' }).click();
+      await page.getByRole('button', { name: /Open Starter Plan Demo/ }).click();
+      await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
+      await page.getByText('Demo Mode', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
+      const sessionResponse = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)});
+      return { status: sessionResponse.status(), uid: (await sessionResponse.json()).uid };
+    }`]));
+    expectEqual(peerJourney.status, 200, 'demo peer browser context session');
     const journey = JSON.parse(cli(session, ['run-code', `async page => {
       const consoleErrors = [];
+      const unexpectedResponses = [];
       const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
       const onPageError = error => consoleErrors.push(error.message);
+      const onResponse = response => {
+        const responseUrl = response.url();
+        if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+          unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+        }
+      };
       page.on('console', onConsole);
       page.on('pageerror', onPageError);
+      page.on('response', onResponse);
       try {
         await page.goto(${JSON.stringify(`${BASE_URL}/`)});
         await page.getByRole('button', { name: 'Experience Demo' }).click();
         await page.getByRole('button', { name: /Open Starter Plan Demo/ }).click();
         await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
         await page.getByText('Demo Mode', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
+        const sessionResponse = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)});
+        const uid = (await sessionResponse.json()).uid;
+        const viewportFits = [];
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          viewportFits.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+        }
         await page.setViewportSize({ width: 390, height: 844 });
         await page.reload();
         await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
@@ -1701,18 +2997,28 @@ async function runCertificationBrowserScenario(scenarioId) {
           exitStatus: exit.status(),
           pathname: await page.evaluate(() => window.location.pathname),
           fits,
+          uid,
+          viewportFits,
           consoleErrors,
+          unexpectedResponses,
         };
       } finally {
         page.off('console', onConsole);
         page.off('pageerror', onPageError);
+        page.off('response', onResponse);
       }
     }`]));
     expectEqual(journey.exitStatus, 204, 'demo browser exact exit cleanup');
     expectEqual(journey.pathname, '/login', 'demo browser exited direct-route denial');
     expectEqual(journey.fits, true, 'demo browser mobile containment');
+    expectEqual(journey.uid !== peerJourney.uid, true, 'demo two-browser-context workspace use');
+    expectEqual(journey.viewportFits.every(Boolean), true, 'demo browser two viewport states');
     if (journey.consoleErrors.length > 0) console.log(`demo browser console diagnostic: ${JSON.stringify(journey.consoleErrors)}`);
     expectEqual(journey.consoleErrors.length, 0, 'demo browser console errors');
+    expectEqual(journey.unexpectedResponses.length, 0, 'demo browser unexpected responses');
+    const peerExit = exitDemoBrowserContext(peerSession);
+    expectEqual(peerExit.status, 204, 'demo peer browser exact exit cleanup');
+    expectEqual(peerExit.pathname, '/login', 'demo peer browser direct-route denial');
     return;
   }
   if (scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
@@ -1722,19 +3028,73 @@ async function runCertificationBrowserScenario(scenarioId) {
       try {
         session = await browserLogin(alias, fixture.expectedLanding, `cert-dashboard-${alias}-${process.pid}`);
         browserLandingPersistenceAudit(session, fixture.expectedLanding, `dashboard ${alias}`);
+        const directCases = [{ path: fixture.expectedLanding, expected: fixture.expectedLanding }];
+        if (alias !== 'qa-superadmin') directCases.push({ path: '/admin', expected: '/dashboard', waitForPathChange: true });
+        const desktopPolicy = browserSurfaceSweep(session, directCases);
+        assertSurfaceSweep(desktopPolicy, `dashboard direct policy ${alias}`);
+        const mobilePolicy = browserSurfaceSweep(session, directCases, { mobile: true });
+        assertSurfaceSweep(mobilePolicy, `dashboard mobile policy ${alias}`);
+        expectEqual(desktopPolicy.results[0].actual, fixture.expectedLanding, `dashboard complete route policy ${alias}`);
+        expectEqual(
+          desktopPolicy.results.every(item => item.mobileFits) && mobilePolicy.results.every(item => item.mobileFits),
+          true,
+          `dashboard policy two viewport containment ${alias}`,
+        );
+        if (alias !== 'qa-superadmin') {
+          expectEqual(desktopPolicy.results[1].actual, '/dashboard', `dashboard policy denied route ${alias}`);
+        }
+        const visibleNavigation = browserVisibleAdminNavigationAudit(session, alias === 'qa-superadmin');
+        expectEqual(visibleNavigation.agreement, true, `dashboard visible navigation agreement ${alias}`);
+        expectEqual(visibleNavigation.fits, true, `dashboard visible navigation two viewport containment ${alias}`);
       } finally {
         if (session) await closeBrowserSessionNow(session);
       }
+    }
+    for (const blockedIdentity of BLOCKED_AUDIT_PLAN.browser) {
+      browserLoginFailureAudit(
+        blockedIdentity.alias,
+        password,
+        blockedIdentity.browserPath,
+        blockedIdentity.browserTitle,
+        `dashboard blocked-state protected data denial ${blockedIdentity.alias}`,
+      );
     }
     await runSurfaceSmokeAudit({ remainderOnly: true });
     return;
   }
   if (scenarioId === 'administration-access-and-user-directory') {
     const trusted = await browserLogin('qa-superadmin', '/admin', `cert-admin-trusted-${process.pid}`);
-    const fake = await browserLogin('qa-fake-superadmin', '/dashboard', `cert-admin-fake-${process.pid}`);
     assertTwoViewportRoutes(trusted, [{ path: '/admin', expected: '/admin' }], 'trusted administration surface');
-    assertTwoViewportRoutes(fake, [{ path: '/admin', expected: '/dashboard' }], 'fake administration denial');
+    for (const alias of FIXTURES.activeAliases.filter(alias => alias !== 'qa-superadmin')) {
+      const fixture = identityByAlias.get(alias);
+      let session;
+      try {
+        session = await browserLogin(alias, fixture.expectedLanding, `cert-admin-denial-${alias}-${process.pid}`);
+        const denial = browserSurfaceSweep(session, [
+          { path: '/admin', expected: '/dashboard', waitForPathChange: true },
+        ], { mobile: true });
+        assertSurfaceSweep(denial, `admin browser non-SA policy ${alias}`);
+        expectEqual(denial.results[0].actual, '/dashboard', `admin browser non-SA route denial ${alias}`);
+      } finally {
+        if (session) await closeBrowserSessionNow(session);
+      }
+    }
+    for (const blocked of BLOCKED_AUDIT_PLAN.browser) {
+      browserLoginFailureAudit(blocked.alias, password, blocked.browserPath, blocked.browserTitle, `admin browser non-SA route denial ${blocked.alias}`);
+    }
     const directory = JSON.parse(cli(trusted, ['run-code', `async page => {
+      const consoleErrors = [];
+      const unexpectedResponses = [];
+      const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+      const onPageError = error => consoleErrors.push(error.message);
+      const onResponse = response => {
+        const responseUrl = response.url();
+        if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+          unexpectedResponses.push({ status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
+        }
+      };
+      page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+      try {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.getByRole('button', { name: /Users Directory/ }).click();
       const search = page.getByPlaceholder('Search by name, email, phone, or org...');
@@ -1744,75 +3104,167 @@ async function runCertificationBrowserScenario(scenarioId) {
       await target.waitFor({ state: 'visible', timeout: 15000 });
       const targetCount = await target.count();
       const otherCount = await page.getByText(${JSON.stringify(emailForAlias('qa-parent-a'))}, { exact: true }).count();
-      await page.getByRole('button', { name: new RegExp('Name / Email') }).click();
-      await page.getByRole('button', { name: new RegExp('Name / Email') }).click();
-      return { targetCount, otherCount, fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
+      const targetButton = page.locator('button').filter({ hasText: ${JSON.stringify(emailForAlias('qa-team-member'))} }).first();
+      await targetButton.click();
+      const firstTargetDetails = await page.getByText(${JSON.stringify(identityByAlias.get('qa-team-member').uid)}, { exact: true }).count();
+      await search.fill(${JSON.stringify(emailForAlias('qa-parent-a'))});
+      const second = page.getByText(${JSON.stringify(emailForAlias('qa-parent-a'))}, { exact: true });
+      await second.waitFor({ state: 'visible', timeout: 15000 });
+      const firstDetailsAfterSubstitution = await page.getByText(${JSON.stringify(identityByAlias.get('qa-team-member').uid)}, { exact: true }).count();
+      await search.fill('');
+      const rows = page.locator('button').filter({ has: page.locator('p.font-mono') });
+      await page.waitForFunction(() => document.querySelectorAll('button p.font-mono').length > 2, null, { timeout: 15000 });
+      const header = page.getByRole('button', { name: new RegExp('Name / Email') });
+      await header.click();
+      const ascending = await rows.locator('p.text-sm.font-black').allInnerTexts();
+      await header.click();
+      const descending = await rows.locator('p.text-sm.font-black').allInnerTexts();
+      const ascSorted = [...ascending].sort((a, b) => a.localeCompare(b));
+      const descSorted = [...ascending].sort((a, b) => b.localeCompare(a));
+      const actualAscending = JSON.stringify(ascending) === JSON.stringify(ascSorted) || JSON.stringify(ascending) === JSON.stringify(descSorted);
+      const actualDescending = JSON.stringify(descending) === JSON.stringify([...ascending].reverse());
+      await page.setViewportSize({ width: 390, height: 844 });
+      const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      return {
+        targetCount, otherCount, firstTargetDetails, firstDetailsAfterSubstitution,
+        actualAscending, actualDescending, mobileFits,
+        fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors, unexpectedResponses,
+      };
+      } finally {
+        page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse);
+      }
     }`]));
     expectEqual(directory.targetCount >= 1, true, 'admin directory target search visibility');
     expectEqual(directory.otherCount, 0, 'admin directory search isolation');
     expectEqual(directory.fits, true, 'admin directory desktop containment');
+    expectEqual(directory.firstTargetDetails, 1, 'admin directory detail target binding');
+    expectEqual(directory.firstDetailsAfterSubstitution, 0, 'admin detail target substitution denied');
+    expectEqual(directory.actualAscending, true, 'admin directory actual ascending sort');
+    expectEqual(directory.actualDescending, true, 'admin directory actual descending sort');
+    expectEqual(directory.mobileFits, true, 'admin directory mobile containment');
+    expectEqual(directory.consoleErrors.length, 0, 'admin directory workflow console errors');
+    expectEqual(directory.unexpectedResponses.length, 0, 'admin directory workflow unexpected responses');
+    await browserAdminOpenTabRevocationAudit('admin open page');
   }
 }
 
-async function runCertificationIdentityScenarios() {
+export async function executeCertificationScenarioStages({
+  scenarioIds,
+  runBrowser: browserEnabled,
+  runApiScenario,
+  runBrowserScenario,
+  closeScenarioBrowsers,
+  recordFailure,
+  recordSkipped,
+}) {
   const failures = [];
-  for (const scenarioId of IDENTITY_EXECUTION_ORDER.filter(id => selectedIdentityScenarios.has(id))) {
-    shutdownState.throwIfRequested();
-    const scenarioStartedAt = new Date().toISOString();
-    activeCertificationScenario = scenarioId;
-    activeCertificationAssertions = [];
-    let apiPassed = false;
-    let browserPassed = !runBrowser;
-    try {
-      await runCertificationApiScenario(scenarioId);
-      apiPassed = true;
-    } catch (error) {
-      const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId].network[0];
-      recordCertificationFailure(scenarioId, 'network', caseId, error);
-      failures.push({ scenarioId, stage: 'api' });
+  let stopped = false;
+  for (const scenarioId of scenarioIds) {
+    if (stopped) {
+      recordSkipped(scenarioId);
+      continue;
     }
-    if (runBrowser) {
-      const sessionBaseline = new Set(ownedBrowserSessions);
+    try {
+      await runApiScenario(scenarioId);
+      if (browserEnabled) await runBrowserScenario(scenarioId);
+    } catch (error) {
+      const failure = { scenarioId, stage: error?.certificationStage || 'api', error };
+      failures.push(failure);
+      recordFailure(failure);
+      stopped = true;
+    } finally {
+      try {
+        await closeScenarioBrowsers(scenarioId);
+      } catch (error) {
+        const failure = { scenarioId, stage: 'browser-cleanup', error };
+        failures.push(failure);
+        recordFailure(failure);
+        stopped = true;
+      }
+    }
+  }
+  return { failures };
+}
+
+async function runCertificationIdentityScenarios() {
+  const scenarioIds = IDENTITY_EXECUTION_ORDER.filter(id => selectedIdentityScenarios.has(id));
+  let sessionBaseline = new Set();
+  const result = await executeCertificationScenarioStages({
+    scenarioIds,
+    runBrowser,
+    async runApiScenario(scenarioId) {
+      shutdownState.throwIfRequested();
+      activeCertificationScenario = scenarioId;
+      activeCertificationAssertions = [];
+      sessionBaseline = new Set(ownedBrowserSessions);
+      await runCertificationApiScenario(scenarioId);
+    },
+    async runBrowserScenario(scenarioId) {
       try {
         await runCertificationBrowserScenario(scenarioId);
-        browserPassed = true;
+        recordCompletedCertificationCases(scenarioId);
       } catch (error) {
-        const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId].console[0];
-        recordCertificationFailure(scenarioId, 'console', caseId, error);
-        failures.push({ scenarioId, stage: 'browser' });
-      } finally {
-        try {
-          await closeBrowserSessionsCreatedAfter(ownedBrowserSessions, sessionBaseline, async session => {
-            run(playwrightCli, [`-s=${session}`, '--raw', 'close'], { stdio: 'pipe' });
-          });
-        } catch (error) {
-          const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId].console[0];
-          recordCertificationFailure(scenarioId, 'console', caseId, error);
-          failures.push({ scenarioId, stage: 'browser-cleanup' });
-          browserPassed = false;
-        } finally {
-          syncBrowserSessionRegistry();
-        }
+        error.certificationStage = 'browser';
+        throw error;
       }
-    }
-    if (apiPassed) {
-      for (const dimension of DIMENSION_NAMES.filter(value => !['console', 'responsive'].includes(value))) {
-        for (const caseId of LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId][dimension]) {
-          recordCertificationCase(scenarioId, dimension, caseId, `${activeCertificationAssertions.length} actual local assertions passed`, 'locally safe contract completed', scenarioStartedAt);
-        }
+    },
+    async closeScenarioBrowsers() {
+      await closeBrowserSessionsCreatedAfter(ownedBrowserSessions, sessionBaseline, async session => {
+        run(playwrightCli, [`-s=${session}`, '--raw', 'close'], { stdio: 'pipe' });
+      });
+      syncBrowserSessionRegistry();
+      activeCertificationScenario = null;
+      activeCertificationAssertions = [];
+    },
+    recordFailure({ scenarioId, stage, error }) {
+      const dimension = stage === 'api' ? 'network' : 'console';
+      const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId][dimension][0];
+      recordCertificationFailure(scenarioId, dimension, caseId, error);
+    },
+    recordSkipped(scenarioId) {
+      emitCertificationEvent({ type: 'scenario-skipped', scenarioId, reason: 'Stopped after the first certification failure; cleanup only.' });
+    },
+  });
+  if (result.failures.length > 0) throw new Error(`${result.failures.length} selected certification scenario stage(s) failed with structured case evidence.`);
+}
+
+function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin) {
+  const observations = JSON.parse(cli(session, ['run-code', `async page => {
+    const observations = [];
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      let visibleAdminItems;
+      if (viewport.width < 640) {
+        await page.getByRole('button', { name: 'More', exact: true }).click();
+        const mobileAdminLink = page.getByRole('link', { name: 'Go to Admin Page' });
+        visibleAdminItems = await mobileAdminLink.count() > 0 && await mobileAdminLink.isVisible() ? 1 : 0;
+      } else {
+        await page.getByRole('button', { name: 'Open account menu' }).click();
+        const desktopAdminItem = page.getByRole('menuitem', { name: 'Go to Admin Page' });
+        visibleAdminItems = await desktopAdminItem.count() > 0 && await desktopAdminItem.isVisible() ? 1 : 0;
       }
+      observations.push({
+        visibleAdminItems,
+        fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      });
+      await page.keyboard.press('Escape');
     }
-    if (browserPassed && runBrowser) {
-      for (const dimension of ['console', 'responsive']) {
-        for (const caseId of LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId][dimension]) {
-          recordCertificationCase(scenarioId, dimension, caseId, `${activeCertificationAssertions.length} actual local assertions including real-browser checks passed`, 'locally safe browser contract completed', scenarioStartedAt);
-        }
-      }
-    }
-    activeCertificationScenario = null;
-    activeCertificationAssertions = [];
-  }
-  if (failures.length > 0) throw new Error(`${failures.length} selected certification scenario stage(s) failed with structured case evidence.`);
+    return observations;
+  }`]));
+  return {
+    agreement: observations.every(item => item.visibleAdminItems === (shouldExposeAdmin ? 1 : 0)),
+    fits: observations.every(item => item.fits),
+  };
+}
+
+function exitDemoBrowserContext(session) {
+  return JSON.parse(cli(session, ['run-code', `async page => {
+    const response = await page.request.post(${JSON.stringify(`${BASE_URL}/api/demo/exit`)});
+    await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+    await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 15000 });
+    return { status: response.status(), pathname: await page.evaluate(() => window.location.pathname) };
+  }`]));
 }
 
 function browserSurfaceSweep(session, cases, { mobile = false } = {}) {
@@ -1822,34 +3274,44 @@ function browserSurfaceSweep(session, cases, { mobile = false } = {}) {
     let activePath = '';
     const consoleErrors = [];
     const failedResponses = [];
-    page.on('console', message => {
+    const onConsole = message => {
       if (message.type() === 'error') consoleErrors.push({ path: activePath, message: message.text() });
-    });
-    page.on('pageerror', error => consoleErrors.push({ path: activePath, message: error.message }));
-    page.on('response', response => {
-      if (response.status() >= 500) failedResponses.push({ path: activePath, status: response.status(), url: response.url() });
-    });
-    await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
-    for (const item of cases) {
-      activePath = item.path;
-      await page.goto(${JSON.stringify(BASE_URL)} + item.path);
-      await page.waitForTimeout(1400);
-      if (item.waitForPathChange && await page.evaluate(requested => window.location.pathname === requested, item.path)) {
-        await page.waitForFunction(requested => window.location.pathname !== requested, item.path, { timeout: 10000 }).catch(() => undefined);
-        await page.waitForTimeout(800);
+    };
+    const onPageError = error => consoleErrors.push({ path: activePath, message: error.message });
+    const onResponse = response => {
+      const responseUrl = response.url();
+      if (responseUrl.startsWith(${JSON.stringify(`${BASE_URL}/`)}) && response.status() >= 400) {
+        failedResponses.push({ path: activePath, status: response.status(), pathname: responseUrl.slice(${BASE_URL.length}).split(/[?#]/, 1)[0] });
       }
-      results.push({
-        requested: item.path,
-        expected: item.expected,
-        expectRestricted: item.expectRestricted === true,
-        expectRestrictedOn: item.expectRestrictedOn || '',
-        actual: await page.evaluate(() => window.location.pathname),
-        applicationError: await page.getByText(/Application error: a client-side exception/).count(),
-        restricted: await page.getByText(/Access Restricted|Access Denied|Institutional Hub Locked|Elite Upgrade Required/i).count(),
-        mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-      });
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+      for (const item of cases) {
+        activePath = item.path;
+        await page.goto(${JSON.stringify(BASE_URL)} + item.path, { waitUntil: 'domcontentloaded' });
+        if (item.waitForPathChange === true) {
+          await page.waitForFunction(requested => window.location.pathname !== requested, item.path, { timeout: 15000 });
+        }
+        results.push({
+          requested: item.path,
+          expected: item.expected,
+          expectRestricted: item.expectRestricted === true,
+          expectRestrictedOn: item.expectRestrictedOn || '',
+          actual: await page.evaluate(() => window.location.pathname),
+          applicationError: await page.getByText(/Application error: a client-side exception/).count(),
+          restricted: await page.getByText(/Access Restricted|Access Denied|Institutional Hub Locked|Elite Upgrade Required/i).count(),
+          mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        });
+      }
+      return { results, consoleErrors, failedResponses };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
     }
-    return { results, consoleErrors, failedResponses };
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
 }
@@ -3112,6 +4574,10 @@ async function runBrowserAudit() {
 async function cleanup() {
   if (cleanupStarted) return;
   cleanupStarted = true;
+  let dynamicCleanup = {
+    state: 'OBSERVED', counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 },
+    reconciled: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, selectors: [], residuals: [], diagnostics: [],
+  };
   if (runBrowser && playwrightCli) {
     try {
       await closeOwnedBrowserSessions(ownedBrowserSessions, async session => {
@@ -3124,6 +4590,18 @@ async function cleanup() {
       syncBrowserSessionRegistry();
     }
   }
+  try {
+    const finalDynamicCleanup = await dynamicResourceRegistry.cleanup();
+    dynamicCleanup = mergeResourceCleanupResults([...completedDynamicCleanupRuns, finalDynamicCleanup]);
+    if (dynamicCleanup.state !== 'OBSERVED') {
+      console.error(`Dynamic cleanup retained ${dynamicCleanup.residuals.length} owned resource(s).`);
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    console.error(redact(error instanceof Error ? error.message : error));
+    dynamicCleanup = { ...dynamicCleanup, state: 'FAIL', diagnostics: [{ diagnostic: 'dynamic cleanup execution failed' }] };
+    process.exitCode = 1;
+  }
   if (fixturesSeeded) {
     try {
       const cleanupOutput = run(process.execPath, ['scripts/qa/seed-phase2-emulator-fixtures.mjs', '--cleanup-only']);
@@ -3132,19 +4610,23 @@ async function cleanup() {
         true,
         'post-cleanup Storage object is absent',
       );
+      const measuredLine = cleanupOutput.split(/\r?\n/).find(line => line.startsWith('FIXTURE_CLEANUP_RESULT '));
+      if (!measuredLine) throw new Error('Fixture cleanup did not return measured operation counts.');
+      const measuredCleanup = JSON.parse(measuredLine.slice('FIXTURE_CLEANUP_RESULT '.length));
       const cleanupCounts = {
-        deleted: FIXTURES.identities.length + FIXTURES.firestoreDocuments.length +
-          FIXTURES.storageObjects.filter(object => object.lifecycle !== 'delete-after-write' && object.payloadGenerator !== 'exact-size-v1').length,
-        restored: 0,
-        retainedAuditRecords: 0,
+        deleted: measuredCleanup.counts.deleted + dynamicCleanup.counts.deleted,
+        restored: measuredCleanup.counts.restored + dynamicCleanup.counts.restored,
+        retainedAuditRecords: measuredCleanup.counts.retainedAuditRecords + dynamicCleanup.counts.retainedAuditRecords,
       };
+      const cleanupState = dynamicCleanup.state === 'OBSERVED' ? 'OBSERVED' : 'FAIL';
       mkdirSync(path.join(certificationArtifactDir, 'cleanup'), { recursive: true });
-      writeFileSync(path.join(certificationArtifactDir, 'cleanup/fixture-cleanup-marker.json'), `${JSON.stringify({
+      writeFileSync(path.join(certificationArtifactDir, 'cleanup/fixture-cleanup-marker.json'), `${JSON.stringify(sanitizeCertificationArtifact({
         runId: FIXTURES.runId,
-        state: 'OBSERVED',
+        state: cleanupState,
         counts: cleanupCounts,
+        measured: { fixture: measuredCleanup.measured, dynamic: dynamicCleanup },
         capturedAt: new Date().toISOString(),
-      }, null, 2)}\n`, { mode: 0o600 });
+      }), null, 2)}\n`, { mode: 0o600 });
       emitCertificationEvent({
         type: 'cleanup',
         cleanupId: `fixture-cleanup-${FIXTURES.runId}`,
@@ -3152,9 +4634,10 @@ async function cleanup() {
           `auth:${FIXTURES.cleanupSelectors.auth.uids.length}-exact-uids`,
           `firestore:${FIXTURES.cleanupSelectors.firestore.recursiveRoots.length}-exact-roots`,
           `storage:${FIXTURES.cleanupSelectors.storage.objectPaths.length}-exact-paths`,
+          ...dynamicCleanup.selectors,
         ],
         counts: cleanupCounts,
-        state: 'OBSERVED',
+        state: cleanupState,
         proof: ['cleanup/fixture-cleanup-marker.json'],
       });
     } catch (error) {

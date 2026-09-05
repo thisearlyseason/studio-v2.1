@@ -82,26 +82,47 @@ function materializeFixtureValue(value) {
   );
 }
 
+async function countDocumentTree(documentRef) {
+  let count = (await documentRef.get()).exists ? 1 : 0;
+  for (const collection of await documentRef.listCollections()) {
+    const snapshot = await collection.get();
+    for (const document of snapshot.docs) count += await countDocumentTree(document.ref);
+  }
+  return count;
+}
+
 async function cleanupFirestore(db) {
+  let deleted = 0;
   for (const rootPath of CATALOG.cleanupSelectors.firestore.recursiveRoots) {
+    deleted += await countDocumentTree(db.doc(rootPath));
     await db.recursiveDelete(db.doc(rootPath));
   }
+  return deleted;
 }
 
 async function cleanupAuth(auth) {
-  await Promise.all(CATALOG.cleanupSelectors.auth.uids.map(async uid => {
+  let deleted = 0;
+  for (const uid of CATALOG.cleanupSelectors.auth.uids) {
     try {
+      await auth.getUser(uid);
       await auth.deleteUser(uid);
+      deleted += 1;
     } catch (error) {
       if (error?.code !== 'auth/user-not-found') throw error;
     }
-  }));
+  }
+  return deleted;
 }
 
 async function cleanupStorage(bucket) {
-  await Promise.all(CATALOG.cleanupSelectors.storage.objectPaths.map(path => (
-    bucket.file(path).delete({ ignoreNotFound: true })
-  )));
+  let deleted = 0;
+  for (const path of CATALOG.cleanupSelectors.storage.objectPaths) {
+    const file = bucket.file(path);
+    const [exists] = await file.exists();
+    await file.delete({ ignoreNotFound: true });
+    if (exists) deleted += 1;
+  }
+  return deleted;
 }
 
 async function assertStorageAbsent(bucket) {
@@ -224,12 +245,23 @@ async function main() {
   const db = getFirestore(app);
   const bucket = getStorage(app).bucket();
 
-  await cleanupFirestore(db);
-  await cleanupAuth(auth);
-  await cleanupStorage(bucket);
+  const cleanupCounts = {
+    firestore: await cleanupFirestore(db),
+    auth: await cleanupAuth(auth),
+    storage: await cleanupStorage(bucket),
+  };
 
   if (process.argv.includes('--cleanup-only')) {
     await assertStorageAbsent(bucket);
+    console.log(`FIXTURE_CLEANUP_RESULT ${JSON.stringify({
+      state: 'OBSERVED',
+      counts: {
+        deleted: cleanupCounts.firestore + cleanupCounts.auth + cleanupCounts.storage,
+        restored: 0,
+        retainedAuditRecords: 0,
+      },
+      measured: cleanupCounts,
+    })}`);
     console.log(`Cleaned exact Auth, Firestore, and Storage selectors for ${CATALOG.runId}.`);
     await deleteApp(app);
     return;

@@ -654,6 +654,9 @@ test('contact inquiries use a protected server delivery route', async () => {
   assert.match(route, /deliveryStatus: 'accepted'/);
   assert.match(route, /resendEmailId: data\.id/);
   assert.match(route, /deliveryStatus: 'failed'/);
+  assert.match(route, /isApprovedLocalMailSink/);
+  assert.match(route, /deliveryStatus: 'accepted_local_sink'/);
+  assert.match(route, /deliveryTransport: 'memory-sink'/);
 });
 
 test('superadmin account controls link to the admin page without exposing it to other roles', async () => {

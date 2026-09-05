@@ -6,7 +6,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createEvidenceRecorder as defaultCreateEvidenceRecorder } from './local/evidence.mjs';
 import { startLocalHarness as defaultStartLocalHarness } from './local/harness.mjs';
-import { runIdentityBatch as defaultRunIdentityBatch } from './local/batches/identity.mjs';
+import {
+  LOCAL_IDENTITY_CASE_REQUIREMENTS,
+  runIdentityBatch as defaultRunIdentityBatch,
+} from './local/batches/identity.mjs';
 import {
   SCENARIO_BATCH_ASSIGNMENTS,
   groupScenariosByBatch,
@@ -28,6 +31,7 @@ function createRunSuffix(now, randomBytes) {
 
 export function installCleanupSignalHandlers(signalSource, getHarness) {
   let handling = false;
+  let requestedExitCode = null;
   const listeners = new Map();
   const remove = () => {
     for (const [signal, listener] of listeners) signalSource.removeListener(signal, listener);
@@ -37,6 +41,7 @@ export function installCleanupSignalHandlers(signalSource, getHarness) {
     const listener = async () => {
       if (handling) return;
       handling = true;
+      requestedExitCode = exitCode;
       try {
         await getHarness()?.close();
       } finally {
@@ -47,6 +52,7 @@ export function installCleanupSignalHandlers(signalSource, getHarness) {
     listeners.set(signal, listener);
     signalSource.on(signal, listener);
   }
+  remove.getExitCode = () => requestedExitCode;
   return remove;
 }
 
@@ -83,6 +89,7 @@ export async function main(argv, dependencies = {}) {
   const commit = getCommit(rootDir);
   let harness;
   let removeSignalHandlers = () => undefined;
+  const signalSource = dependencies.signalSource || process;
 
   try {
     harness = await startHarness({
@@ -92,12 +99,13 @@ export async function main(argv, dependencies = {}) {
       browser: parsed.browser,
       baseEnvironment: environment,
     });
-    removeSignalHandlers = installCleanupSignalHandlers(process, () => harness);
+    removeSignalHandlers = installCleanupSignalHandlers(signalSource, () => harness);
     const recorder = evidenceFactory({
       scenarios,
       runId: harness.runId,
       commit,
       outputDir: path.join(outputRoot, 'task-3', harness.runId),
+      caseRequirements: LOCAL_IDENTITY_CASE_REQUIREMENTS,
     });
     const context = {
       ...harness,
@@ -118,7 +126,7 @@ export async function main(argv, dependencies = {}) {
     const summary = await recorder.writeSummary({ markdownPath });
     const failed = (summary.runErrors || []).length > 0 || results.some(result => result.outcome === 'FAIL');
     log.log(`Task 3 local identity observations written for ${results.length} scenario(s); final matrix PASS was not inferred.`);
-    return { exitCode: failed ? 1 : 0, summary };
+    return { exitCode: removeSignalHandlers.getExitCode?.() || (failed ? 1 : 0), summary };
   } finally {
     removeSignalHandlers();
     await harness?.close();
@@ -130,6 +138,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     .then(result => { process.exitCode = result.exitCode; })
     .catch(error => {
       console.error(error instanceof Error ? error.message : error);
-      process.exitCode = 1;
+      if (![130, 143].includes(process.exitCode)) process.exitCode = 1;
     });
 }

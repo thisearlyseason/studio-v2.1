@@ -22,6 +22,7 @@ function caseEvent(scenarioId, dimension, caseId = LOCAL_IDENTITY_CASE_REQUIREME
   const scenario = scenarios.find(value => value.id === scenarioId);
   return {
     type: 'case', scenarioId, caseId, dimension,
+    actorAliases: ['qa-synthetic-actor'],
     role: scenario.roles.join('/'), tenantAlias: scenario.roles.includes('V') ? 'not-applicable' : 'catalog-scoped',
     expected: `${caseId} expected local behavior`, observed: `${caseId} observed local behavior`, state: 'OBSERVED',
     startedAt: now, completedAt: '2026-09-04T18:00:01.000Z', artifacts: [`cases/${caseId}.json`],
@@ -122,4 +123,42 @@ test('case failure stays with its scenario and shared runner failure stays separ
   const shared = await runIdentityBatch(context({ runLegacyIdentityAudit: async () => { throw new Error('shared sanitized startup failure'); } }), selected);
   assert.equal(shared.results.every(value => value.outcome === 'BLOCKED_PRECONDITION'), true);
   assert.deepEqual(shared.runErrors, [{ stage: 'identity-child', diagnostic: 'shared sanitized startup failure' }]);
+});
+
+test('multiple diagnostics for one failed case are retained without duplicate case IDs', async () => {
+  const [selected] = scenarios.filter(item => item.id === 'authentication-email-password-login');
+  const first = { ...caseEvent(selected.id, 'console'), state: 'FAIL', observed: 'browser assertion failed' };
+  const second = { ...first, observed: 'browser cleanup also failed', completedAt: '2026-09-04T18:00:02.000Z' };
+  const result = await runIdentityBatch(context({
+    runLegacyIdentityAudit: async () => ({
+      code: 1, stdout: [eventLine(first), eventLine(second)].join('\n'), stderr: '',
+      startedAt: now, completedAt: '2026-09-04T18:02:00.000Z',
+    }),
+  }), [selected]);
+  assert.equal(result.results[0].cases.length, 1);
+  assert.deepEqual(result.results[0].cases[0].diagnostics, ['browser assertion failed', 'browser cleanup also failed']);
+  assert.equal(result.results[0].outcome, 'FAIL');
+});
+
+test('scenario timestamps span every case instead of depending on case emission order', async () => {
+  const [selected] = scenarios;
+  const events = parseCertificationEvents(successfulOutput([selected]));
+  const caseEvents = events.filter(event => event.type === 'case').map(event => ({
+    ...event,
+    startedAt: '2026-09-04T18:00:05.000Z',
+    completedAt: '2026-09-04T18:00:06.000Z',
+  }));
+  caseEvents[1] = { ...caseEvents[1], startedAt: '2026-09-04T18:00:01.000Z', completedAt: '2026-09-04T18:00:09.000Z' };
+  const cleanup = events.find(event => event.type === 'cleanup');
+  const result = await runIdentityBatch(context({
+    runLegacyIdentityAudit: async () => ({
+      code: 0,
+      stdout: [...caseEvents, cleanup].map(eventLine).join('\n'),
+      stderr: '',
+      startedAt: now,
+      completedAt: '2026-09-04T18:02:00.000Z',
+    }),
+  }), [selected]);
+  assert.equal(result.results[0].startedAt, '2026-09-04T18:00:01.000Z');
+  assert.equal(result.results[0].completedAt, '2026-09-04T18:00:09.000Z');
 });

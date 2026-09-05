@@ -9,6 +9,7 @@ import * as auditRunner from '../scripts/qa/run-phase2-emulator-audit.mjs';
 const { processEnv, resetEnv } = nextEnvironment;
 
 const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+const seederSource = await readFile(new URL('../scripts/qa/seed-phase2-emulator-fixtures.mjs', import.meta.url), 'utf8');
 
 test('certification identity mode accepts a unique local scope without changing legacy defaults', () => {
   const configured = auditRunner.resolveAuditRuntimeConfiguration({
@@ -368,6 +369,39 @@ test('Task 3 login browser waits on state and sends a real rapid double click', 
   assert.match(doubleSubmit, /page\.waitForTimeout\(750\)/);
   assert.doesNotMatch(doubleSubmit, /new Promise\(resolve => setTimeout/);
   assert.doesNotMatch(doubleSubmit, /submit\.dblclick/);
+  assert.match(source, /delayPastClientTimeout[\s\S]*?page\.waitForTimeout\(16000\)/);
+});
+
+test('Task 3 login timeout records the expected client-aborted route without swallowing errors', () => {
+  assert.match(source, /lateClientAbortCount \+= 1/);
+  assert.match(source, /routeHandlerComplete = new Promise/);
+  assert.match(source, /login timeout route lifecycle reconciled/);
+  assert.match(source, /login timeout route handler errors/);
+});
+
+test('Task 3 reset action correlates generic resource console noise with exact response statuses', () => {
+  assert.match(source, /reset action console errors/);
+  assert.match(source, /reset action unexpected responses/);
+  assert.match(source, /value\.includes\('Failed to load resource:'\)/);
+  assert.match(source, /JSON\.stringify\(\[400, 200, 400\]\)/);
+});
+
+test('Task 3 revoked admin sessions deny both open and fresh tabs at login', () => {
+  assert.match(source, /result\.openPaths\.every\(pathname => pathname === '\/login'\)/);
+  assert.match(source, /expectEqual\(result\.freshPath, '\/login'/);
+  assert.match(source, /revocation expected session denial responses/);
+});
+
+test('Task 3 visible admin navigation uses the desktop account menu and mobile More sheet', () => {
+  const visibleAudit = source.match(/function browserVisibleAdminNavigationAudit[\s\S]*?\n}\n\nfunction browserSurfaceSweep/)?.[0] || '';
+  assert.match(visibleAudit, /name: 'Open account menu'/);
+  assert.match(visibleAudit, /name: 'More', exact: true/);
+  assert.match(visibleAudit, /getByRole\('link', \{ name: 'Go to Admin Page' \}\)/);
+});
+
+test('Task 3 admin non-SA browser denials wait through client navigation', () => {
+  assert.match(source, /admin browser non-SA policy/);
+  assert.match(source, /path: '\/admin', expected: '\/dashboard', waitForPathChange: true/);
 });
 
 test('Task 3 emitted browser programs use serialization-safe selectors and real signup clicks', () => {
@@ -377,7 +411,12 @@ test('Task 3 emitted browser programs use serialization-safe selectors and real 
   assert.doesNotMatch(reset, /getByLabel\('Email Address'\)/);
   assert.match(reset, /getByText\([^\n]+\{ exact: false \}\)\.first\(\)\.waitFor/);
   assert.match(scenarios, /known-provider-block/);
+  assert.match(scenarios, /page\.locator\('#application-form form:visible'\)\.last\(\)/);
+  assert.match(scenarios, /betaForm\.locator\('#' \+ id\)\.fill/);
   assert.match(reset, /failedResponses/);
+  assert.match(reset, /function browserResetActionAudit/);
+  assert.match(reset, /missing newPassword/);
+  assert.match(reset, /password has been successfully updated/);
   assert.match(reset, /page\.off\('response'/);
   assert.match(source, /function browserResetRequestAudit\(email, expectedText, label/);
   assert.match(scenarios, /new RegExp\('Name \/ Email'\)/);
@@ -391,12 +430,39 @@ test('Task 3 emitted browser programs use serialization-safe selectors and real 
   assert.match(scenarios, /Activate My Account/);
   assert.match(scenarios, /Account Created!/);
   assert.match(scenarios, /youth browser consumed invitation reload denial/);
+  assert.doesNotMatch(source, /new URL\((?:response|request)\.url\(\)\)/);
+  assert.match(scenarios, /\{ path: '\/admin', expected: '\/dashboard', waitForPathChange: true \}/);
+  assert.match(source, /function browserVisibleAdminNavigationAudit/);
+  assert.match(scenarios, /dashboard visible navigation agreement/);
+});
+
+test('Task 3 anonymous onboarding denial waits for the client redirect in both viewports', () => {
+  assert.match(source, /missing-profile anonymous onboarding redirect two viewports/);
+  assert.match(source, /window\.location\.pathname === '\/login'/);
+  assert.match(source, /missing-profile anonymous onboarding console errors/);
+  assert.match(source, /missing-profile anonymous onboarding unexpected responses/);
+});
+
+test('Task 3 onboarding double-submit counts the actual Firestore write channel after reset', () => {
+  assert.match(source, /google\.firestore\.v1\.Firestore\/Write\/channel/);
+  assert.match(source, /decodeURIComponent\(request\.postData\(\) \|\| ''\)/);
+  assert.match(source, /profileWrites = 0;[\s\S]*clickCount: 2/);
+});
+
+test('Task 3 missing-profile read fault targets the actual Firestore batch-get request', () => {
+  assert.match(source, /127\.0\.0\.1:8080\/\*\*/);
+  assert.match(source, /waitForRequest\(request => request\.url\(\)\.startsWith\('http:\/\/127\.0\.0\.1:8080\/'\)/);
+  assert.match(source, /injectedRead = new Promise/);
+  assert.match(source, /await injectedRead/);
+  assert.match(source, /onboarding injected read failure console signal/);
+  assert.match(source, /onboarding transient read failure recovery/);
 });
 
 test('Task 3 legacy route observations remove listeners and avoid fixed settle sleeps', () => {
   const browserPath = source.match(/function browserPath[\s\S]*?\n}\n\nfunction browserRouteAudit/)?.[0] || '';
   const routeAudit = source.match(/function browserRouteAudit[\s\S]*?\n}\n\nfunction browserLoginFailureAudit/)?.[0] || '';
   const loginFailure = source.match(/function browserLoginFailureAudit[\s\S]*?\n}\n\nfunction browserProtectedReturnAudit/)?.[0] || '';
+  const surfaceSweep = source.match(/function browserSurfaceSweep[\s\S]*?\n}\n\nfunction assertSurfaceSweep/)?.[0] || '';
   assert.doesNotMatch(browserPath, /waitForTimeout/);
   assert.doesNotMatch(routeAudit, /waitForTimeout/);
   assert.match(routeAudit, /page\.off\('console'/);
@@ -405,6 +471,111 @@ test('Task 3 legacy route observations remove listeners and avoid fixed settle s
   assert.match(loginFailure, /page\.off\('console'/);
   assert.match(loginFailure, /page\.off\('pageerror'/);
   assert.match(loginFailure, /page\.off\('response'/);
+  assert.doesNotMatch(surfaceSweep, /waitForTimeout/);
+  assert.doesNotMatch(surfaceSweep, /waitForFunction[\s\S]*?\.catch\(\(\) => undefined\)/);
+  assert.match(surfaceSweep, /goto\([^\n]+\{ waitUntil: 'domcontentloaded' \}\)/);
+  assert.match(surfaceSweep, /page\.off\('console'/);
+  assert.match(surfaceSweep, /page\.off\('pageerror'/);
+  assert.match(surfaceSweep, /page\.off\('response'/);
+});
+
+test('Task 3 scenario execution stops normal mutations after the first failure', async () => {
+  assert.equal(typeof auditRunner.executeCertificationScenarioStages, 'function');
+  const calls = [];
+  const result = await auditRunner.executeCertificationScenarioStages({
+    scenarioIds: ['authentication-email-password-login', 'authentication-password-reset'],
+    runBrowser: true,
+    async runApiScenario(id) { calls.push(`${id}:api`); throw new Error('sanitized first failure'); },
+    async runBrowserScenario(id) { calls.push(`${id}:browser`); },
+    async closeScenarioBrowsers(id) { calls.push(`${id}:cleanup`); },
+    recordFailure(failure) { calls.push(`${failure.scenarioId}:failure:${failure.stage}`); },
+    recordSkipped(id) { calls.push(`${id}:skipped`); },
+  });
+  assert.deepEqual(calls, [
+    'authentication-email-password-login:api',
+    'authentication-email-password-login:failure:api',
+    'authentication-email-password-login:cleanup',
+    'authentication-password-reset:skipped',
+  ]);
+  assert.equal(result.failures.length, 1);
+});
+
+test('Task 3 scenario handlers never swallow owned cleanup failures', () => {
+  const handlers = source.match(/async function runCertificationApiScenario[\s\S]*?async function runCertificationIdentityScenarios/)?.[0] || '';
+  assert.doesNotMatch(handlers, /catch\(\(\) => undefined\)/);
+});
+
+test('Task 3 case artifacts sanitize actor values before writing', () => {
+  assert.equal(typeof auditRunner.sanitizeCertificationArtifact, 'function');
+  const sanitized = auditRunner.sanitizeCertificationArtifact({
+    tenantAlias: 'qa-parent-a',
+    email: 'synthetic-user@phase2.test',
+    detail: 'Authorization: Bearer token-value',
+    nested: { actionUrl: 'http://127.0.0.1:9001/reset?oobCode=secret' },
+  });
+  assert.equal(sanitized.tenantAlias, 'qa-parent-a');
+  assert.equal(sanitized.email, '[synthetic-email]');
+  assert.doesNotMatch(JSON.stringify(sanitized), /token-value|oobCode=secret/);
+});
+
+test('Task 3 case selection requires every exact assertion and excludes unrelated scenario assertions', () => {
+  assert.equal(typeof auditRunner.selectCertificationCaseAssertions, 'function');
+  const assertions = [
+    { label: 'contact stored once', observed: '1' },
+    { label: 'beta stored once', observed: '1' },
+    { label: 'unrelated login', observed: '/dashboard' },
+  ];
+  assert.deepEqual(
+    auditRunner.selectCertificationCaseAssertions(assertions, [/^contact stored once$/, /^beta stored once$/]),
+    assertions.slice(0, 2),
+  );
+  assert.throws(
+    () => auditRunner.selectCertificationCaseAssertions(assertions, [/^missing required assertion$/]),
+    /missing required assertion/i,
+  );
+});
+
+test('Task 3 signup negative case matches the executed provider-failure label', () => {
+  assert.match(source, /signup provider-failure delivery UI recovery/);
+  assert.doesNotMatch(source, /signup provider failure UI recovery/);
+});
+
+test('Task 3 case completion cannot promote a successful no-op or partial scenario', () => {
+  assert.equal(typeof auditRunner.buildCompletedCertificationCases, 'function');
+  assert.deepEqual(auditRunner.buildCompletedCertificationCases('authentication-email-password-login', []), []);
+  assert.deepEqual(auditRunner.buildCompletedCertificationCases('authentication-email-password-login', [
+    { label: 'qa-coach-owner-a certification sign-in', observed: '200' },
+  ]), []);
+});
+
+test('Task 3 fixture cleanup consumes measured operation counts instead of catalog arithmetic', () => {
+  assert.match(seederSource, /FIXTURE_CLEANUP_RESULT/);
+  assert.match(seederSource, /countDocumentTree/);
+  assert.doesNotMatch(source, /deleted:\s*FIXTURES\.identities\.length/);
+});
+
+test('Task 3 youth browser mutations use an immediate measured cleanup registry', () => {
+  assert.match(source, /const youthBrowserCleanupRegistry = createResourceRegistry/);
+  assert.match(source, /registerFirestoreDocumentRestoration\(playerRef\.path, originalPlayer, 'youth-browser-player', youthBrowserCleanupRegistry\)/);
+  assert.match(source, /const browserCleanup = await youthBrowserCleanupRegistry\.cleanup\(\)/);
+  assert.doesNotMatch(source, /if \(originalPlayer\) await playerRef\.set\(originalPlayer\)/);
+});
+
+test('Task 3 demo expiry boundary is strict and deterministic', () => {
+  const lifetime = 15 * 60 * 1000;
+  assert.equal(auditRunner.isExpiredDemoCreation(1_000, 1_000 + lifetime, lifetime), false);
+  assert.equal(auditRunner.isExpiredDemoCreation(1_000, 1_001 + lifetime, lifetime), true);
+});
+
+test('Task 3 peer demo context waits for hydrated demo state before exit', () => {
+  const peerJourney = source.match(/const peerJourney = JSON\.parse[\s\S]*?expectEqual\(peerJourney\.status/)?.[0] || '';
+  assert.match(peerJourney, /getByText\('Demo Mode', \{ exact: true \}\)\.waitFor/);
+  assert.match(source, /const response = await page\.request\.post\([^\n]+\/api\/demo\/exit/);
+});
+
+test('Task 3 deletion purge boundary includes the exact due instant', () => {
+  assert.equal(auditRunner.isDeletionPurgeDue(10_001, 10_000), false);
+  assert.equal(auditRunner.isDeletionPurgeDue(10_000, 10_000), true);
 });
 
 test('Task 3 local HTTP helpers avoid stale pooled sockets across dev-server compilation', () => {

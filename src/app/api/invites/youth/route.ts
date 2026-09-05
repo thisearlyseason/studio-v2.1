@@ -196,6 +196,12 @@ export async function PUT(req: NextRequest) {
         transaction.get(adminDb.collection('players').doc(invite.childId)),
       ]);
       const freshInvite = freshInviteSnapshot.data() || {};
+      const playerData = playerSnapshot.data() || {};
+      const teamId =
+        cleanChildId(playerData.primaryTeamId) ||
+        (Array.isArray(playerData.joinedTeamIds)
+          ? playerData.joinedTeamIds.find(value => cleanChildId(value))
+          : null);
       if (!freshInviteSnapshot.exists || !inviteIsUsable(freshInvite)) {
         throw new Error('Invitation no longer available.');
       }
@@ -203,13 +209,20 @@ export async function PUT(req: NextRequest) {
         freshInvite.childId !== invite.childId ||
         freshInvite.email !== invite.email ||
         !playerSnapshot.exists ||
-        playerSnapshot.data()?.parentId !== freshInvite.parentId
+        playerData.parentId !== freshInvite.parentId ||
+        !teamId
       ) {
         throw new Error('Invitation data does not match the child profile.');
       }
 
+      const teamRef = adminDb.collection('teams').doc(teamId);
+      const teamSnapshot = await transaction.get(teamRef);
+      if (!teamSnapshot.exists) throw new Error('Invitation team no longer exists.');
+      const team = teamSnapshot.data() || {};
+
       const userRef = adminDb.collection('users').doc(userRecord.uid);
       const playerRef = adminDb.collection('players').doc(freshInvite.childId);
+      const joinedAt = new Date().toISOString();
       transaction.create(userRef, {
         id: userRecord.uid,
         fullName: displayName,
@@ -218,7 +231,7 @@ export async function PUT(req: NextRequest) {
         role: 'youth_player',
         linkedPlayerId: freshInvite.childId,
         parentId: freshInvite.parentId,
-        createdAt: new Date().toISOString(),
+        createdAt: joinedAt,
         avatarUrl: `https://picsum.photos/seed/${userRecord.uid}/150/150`,
         notificationsEnabled: true,
         upcomingEventNotificationsEnabled: true,
@@ -232,6 +245,44 @@ export async function PUT(req: NextRequest) {
         inviteSentAt: admin.firestore.FieldValue.delete(),
         inviteExpiresAt: admin.firestore.FieldValue.delete(),
       });
+      transaction.create(
+        adminDb.collection('teams').doc(teamId).collection('members').doc(userRecord.uid),
+        {
+          id: userRecord.uid,
+          userId: userRecord.uid,
+          name: displayName,
+          email: invite.email,
+          role: 'Member',
+          position: 'Player',
+          status: 'active',
+          isDeleted: false,
+          playerId: freshInvite.childId,
+          ownerUserId: team.ownerUserId || null,
+          joinedAt,
+        }
+      );
+      transaction.create(
+        adminDb.collection('users').doc(userRecord.uid).collection('teamMemberships').doc(teamId),
+        {
+          teamId,
+          name: team.teamName || team.name || 'Squad',
+          teamName: team.teamName || team.name || 'Squad',
+          userId: userRecord.uid,
+          status: 'active',
+          role: 'Member',
+          position: 'Player',
+          playerId: freshInvite.childId,
+          ownerUserId: team.ownerUserId || null,
+          planId: team.planId || null,
+          plan_type: team.plan_type || 'free',
+          isPro: team.isPro === true,
+          isDemo: team.isDemo === true,
+          outboundProvidersEnabled: team.outboundProvidersEnabled === true,
+          type: team.type || 'team',
+          ...(team.schoolId ? { schoolId: team.schoolId } : {}),
+          joinedAt,
+        }
+      );
       transaction.delete(inviteRef);
     });
 

@@ -127,10 +127,28 @@ export function parseCertificationEvents(output) {
 
 function resultForScenario({ scenario, context, events, cleanup, execution }) {
   const requirements = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenario.id];
-  const cases = events.filter(event =>
+  const rawCases = events.filter(event =>
     event.type === 'case' && event.scenarioId === scenario.id &&
     DIMENSION_NAMES.includes(event.dimension) &&
     requirements[event.dimension].includes(event.caseId));
+  const casesById = new Map();
+  for (const event of rawCases) {
+    const existing = casesById.get(event.caseId);
+    if (!existing) {
+      casesById.set(event.caseId, { ...event, diagnostics: [event.observed] });
+      continue;
+    }
+    casesById.set(event.caseId, {
+      ...existing,
+      state: existing.state === 'FAIL' || event.state === 'FAIL' ? 'FAIL' : 'OBSERVED',
+      observed: existing.state === 'FAIL' ? existing.observed : event.observed,
+      startedAt: [existing.startedAt, event.startedAt].sort()[0],
+      completedAt: [existing.completedAt, event.completedAt].sort().at(-1),
+      artifacts: [...new Set([...(existing.artifacts || []), ...(event.artifacts || [])])],
+      diagnostics: [...existing.diagnostics, event.observed],
+    });
+  }
+  const cases = [...casesById.values()];
   const dimensions = {};
   for (const dimension of DIMENSION_NAMES) {
     const required = requirements[dimension];
@@ -166,10 +184,15 @@ function resultForScenario({ scenario, context, events, cleanup, execution }) {
   return {
     scenarioId: scenario.id,
     environment: 'local-emulator',
+    environmentGaps: scenario.environments.filter(value => value !== 'local-emulator'),
     commit: context.commit,
     revision: 'local',
-    startedAt: cases[0]?.startedAt || execution.startedAt,
-    completedAt: cases.at(-1)?.completedAt || execution.completedAt,
+    startedAt: cases.length > 0
+      ? cases.map(item => item.startedAt).sort()[0]
+      : execution.startedAt,
+    completedAt: cases.length > 0
+      ? cases.map(item => item.completedAt).sort().at(-1)
+      : execution.completedAt,
     role: scenario.roles.join('/'),
     tenantAlias: scenario.roles.includes('V') ? 'not-applicable' : 'catalog-scoped',
     dimensions,
@@ -179,9 +202,9 @@ function resultForScenario({ scenario, context, events, cleanup, execution }) {
       reference: sharedCleanup.cleanupId,
       selectors: [...sharedCleanup.selectors],
       counts: { ...sharedCleanup.counts },
-      state: hasExecutedCase && sharedCleanup.state === 'OBSERVED' && !backgroundOwned
+      state: sharedCleanup.state === 'OBSERVED' && !backgroundOwned
         ? 'OBSERVED'
-        : 'BLOCKED_PRECONDITION',
+        : backgroundOwned ? 'BLOCKED_PRECONDITION' : sharedCleanup.state,
       proof: [...sharedCleanup.proof],
     },
     artifacts: [...new Set(cases.flatMap(item => item.artifacts || []))],

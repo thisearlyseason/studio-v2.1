@@ -4,6 +4,7 @@ import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
 import { verificationEmail } from '@/lib/email-templates';
 import { ensureAdminInit } from '@/lib/firebase-admin';
 import { getResend } from '@/lib/server-resend-client';
+import { isApprovedLocalMailSink } from '@/lib/server-outbound-provider-policy';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -48,6 +49,9 @@ export async function POST(req: NextRequest) {
     const verificationLink = await admin.auth().generateEmailVerificationLink(authResult.email, {
       url: `${appUrl}/login?verified=1`,
     });
+    if (isApprovedLocalMailSink()) {
+      return NextResponse.json({ success: true, transport: 'memory-sink' });
+    }
     const email = verificationEmail({
       name: name || account.displayName || '',
       email: authResult.email,

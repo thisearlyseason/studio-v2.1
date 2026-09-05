@@ -119,3 +119,24 @@ test('runner persists shared run errors without attributing them to a scenario',
     stage: 'identity-child', diagnostic: 'sanitized startup failure',
   });
 });
+
+test('main preserves the first signal exit status after awaited cleanup', async () => {
+  const signalSource = new EventEmitter();
+  signalSource.exitCode = undefined;
+  const deps = dependencies({
+    signalSource,
+    runIdentityBatch: async () => {
+      signalSource.emit('SIGTERM');
+      await new Promise(resolve => setImmediate(resolve));
+      return { results: [], runErrors: [] };
+    },
+    createEvidenceRecorder: () => ({
+      recordScenario() {},
+      recordRunError() {},
+      async writeSummary() { return { results: [], runErrors: [] }; },
+    }),
+  });
+  const result = await main(['--scenario', 'authentication-password-reset'], deps);
+  assert.equal(result.exitCode, 143);
+  assert.equal(signalSource.exitCode, 143);
+});

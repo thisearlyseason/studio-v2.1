@@ -26,6 +26,8 @@ test('email-password signup requires verification before plan or tenant access',
   assert.match(verificationRoute, /generateEmailVerificationLink/);
   assert.match(verificationRoute, /noreply@thesquad\.pro/);
   assert.match(verificationRoute, /verification-email/);
+  assert.match(verificationRoute, /isApprovedLocalMailSink\(\)/);
+  assert.match(verificationRoute, /transport: 'memory-sink'/);
   assert.match(templates, /export function verificationEmail/);
   assert.match(templates, /Verify My Email/);
   assert.match(auth, /auth\/email-not-verified/);

@@ -131,6 +131,7 @@ export async function startLocalHarness({
   validateBoundary({ projectId, endpoints, runSuffix, browser, playwrightCli });
   const randomBytes = dependencies.randomBytes || nodeRandomBytes;
   const execute = dependencies.execute || defaultExecute;
+  const closeTimeoutMs = dependencies.closeTimeoutMs || 10_000;
   const runtimeSecret = randomBytes(32).toString('base64url');
   const runId = `final-cert-${runSuffix}`;
   const sessionPrefix = `cert-${runId}-identity`;
@@ -165,8 +166,24 @@ export async function startLocalHarness({
     closeRequested = true;
     if (closingPromise) return closingPromise;
     closingPromise = (async () => {
-      if (activeChild && !activeChild.killed) activeChild.kill('SIGTERM');
-      if (activeExecution) await activeExecution.catch(() => undefined);
+      if (activeChild && activeChild.exitCode == null) activeChild.kill('SIGTERM');
+      if (activeExecution) {
+        const waitForExecution = async () => {
+          let timer;
+          try {
+            return await Promise.race([
+              activeExecution.then(() => true, () => true),
+              new Promise(resolve => { timer = setTimeout(() => resolve(false), closeTimeoutMs); }),
+            ]);
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+        };
+        if (!await waitForExecution()) {
+          if (activeChild && activeChild.exitCode == null) activeChild.kill('SIGKILL');
+          if (!await waitForExecution()) throw new Error('Identity audit child did not terminate after forced shutdown.');
+        }
+      }
       if (browser) {
         await closeRegisteredBrowserSessions({
           registryPath: browserSessionRegistry,

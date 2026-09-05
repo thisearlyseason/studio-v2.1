@@ -152,3 +152,22 @@ test('run suffixes reject legacy or unsafe values', async () => {
   await assert.rejects(() => startLocalHarness(options({ runSuffix: 'phase2' })), /unique Task 3 run suffix/);
   await assert.rejects(() => startLocalHarness(options({ runSuffix: 'Task 3 unsafe' })), /lowercase run suffix/);
 });
+
+test('outer close escalates and finishes when the audit child ignores SIGTERM', async () => {
+  let terminateCalls = 0;
+  let resolveExecution;
+  const execution = new Promise(resolve => { resolveExecution = resolve; });
+  const child = { killed: false, kill(signal) { terminateCalls += 1; this.killed = signal === 'SIGKILL'; if (signal === 'SIGKILL') resolveExecution({ code: 137, stdout: '', stderr: '' }); } };
+  const harness = await startLocalHarness(options({
+    dependencies: {
+      ...options().dependencies,
+      execute: async ({ registerChild }) => { registerChild(child); return execution; },
+      closeTimeoutMs: 5,
+    },
+  }));
+  const running = harness.runLegacyIdentityAudit();
+  await new Promise(resolve => setImmediate(resolve));
+  await harness.close();
+  await assert.rejects(running, /exited 137/);
+  assert.equal(terminateCalls, 2);
+});

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { adminDb } from '@/lib/firebase-admin';
 import { escapeHtml } from '@/lib/html-escape';
+import { isApprovedLocalMailSink } from '@/lib/server-outbound-provider-policy';
 import {
   enforcePublicRateLimit,
   readJsonBodyWithLimit,
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     const reservation = await adminDb.runTransaction(async transaction => {
       const snapshot = await transaction.get(inquiryRef);
       const existing = snapshot.data();
-      if (['accepted', 'delivered'].includes(existing?.deliveryStatus)) return 'accepted';
+      if (['accepted', 'delivered', 'accepted_local_sink'].includes(existing?.deliveryStatus)) return 'accepted';
       if (
         existing?.deliveryStatus === 'pending' &&
         typeof existing?.deliveryStartedAt === 'number' &&
@@ -91,6 +92,16 @@ export async function POST(request: NextRequest) {
         { error: 'This inquiry is already being sent. Please wait a moment.' },
         { status: 409 }
       );
+    }
+
+    if (isApprovedLocalMailSink()) {
+      await inquiryRef.set({
+        deliveryStatus: 'accepted_local_sink',
+        deliveryTransport: 'memory-sink',
+        deliveryError: null,
+        updatedAt: new Date(),
+      }, { merge: true });
+      return NextResponse.json({ success: true, localTransport: true });
     }
 
     const subjectName = name.replace(/[\r\n]/g, ' ');

@@ -18,4 +18,9 @@ test('youth invite possession completes email verification without exposing invi
     route.slice(route.indexOf('export async function GET'), route.indexOf('export async function POST')),
     /email:\s*data\.email/,
   );
+  assert.match(route, /collection\('teams'\)\.doc\(teamId\)\.collection\('members'\)\.doc\(userRecord\.uid\)/);
+  assert.match(route, /collection\('users'\)\.doc\(userRecord\.uid\)\.collection\('teamMemberships'\)\.doc\(teamId\)/);
+  assert.match(route, /playerId: freshInvite\.childId/);
+  assert.match(route, /cleanChildId\(playerData\.primaryTeamId\)/);
+  assert.match(route, /playerData\.joinedTeamIds\.find\(value => cleanChildId\(value\)\)/);
 });
