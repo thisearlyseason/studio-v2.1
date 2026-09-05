@@ -89,6 +89,12 @@ export async function DELETE(req: NextRequest) {
     const child = await ownedChild(auth.uid, body.childId);
     if (!child) return NextResponse.json({ error: 'Athlete not found.' }, { status: 404 });
     const data = child.snapshot.data() || {};
+    // A child with any account linkage requires the dedicated account-lifecycle
+    // flow. Deleting only the player and team-member documents would leave the
+    // independently authenticated youth account with stale user projections.
+    if (data.hasLogin === true || (typeof data.userId === 'string' && data.userId.trim())) {
+      return NextResponse.json({ error: 'Login-enabled athlete removal requires account lifecycle support.' }, { status: 409 });
+    }
     const memberId = typeof data.userId === 'string' && data.userId ? data.userId : child.snapshot.id;
     const teamIds = Array.isArray(data.joinedTeamIds) ? data.joinedTeamIds.filter((id): id is string => typeof id === 'string' && ID_PATTERN.test(id)) : [];
     const batch = adminDb.batch();

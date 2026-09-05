@@ -58,7 +58,30 @@ const OPERATION_BY_DIMENSION = Object.freeze({
   console: 'read', network: 'read', responsive: 'read',
 });
 
-export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
+const FAMILY_RUNTIME_CHILD_CASE_IDS = new Set([
+  'family-children-child-edit-and-two-card-refresh',
+  'family-children-workflow-console',
+  'family-children-workflow-responsive',
+]);
+
+function validatedFamilyRuntimeTarget(runtimeTarget) {
+  if (!runtimeTarget || typeof runtimeTarget !== 'object') {
+    throw new Error('Family runtime workflow requires a registered runtime child target.');
+  }
+  const { alias, resourcePath, registeredAt } = runtimeTarget;
+  if (typeof alias !== 'string' || !/^run-family-child-[A-Za-z0-9_-]{1,180}$/.test(alias)) {
+    throw new Error('Family runtime child target must use a run-owned alias.');
+  }
+  if (typeof resourcePath !== 'string' || !/^players\/child_t4_[A-Za-z0-9_-]{1,200}$/.test(resourcePath)) {
+    throw new Error('Family runtime child target must bind an exact run-owned player path.');
+  }
+  if (typeof registeredAt !== 'string' || !Number.isFinite(Date.parse(registeredAt))) {
+    throw new Error('Family runtime child target requires a registration timestamp.');
+  }
+  return Object.freeze({ alias, resourcePath, registeredAt });
+}
+
+export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '', runtimeTarget = null) {
   const base = TENANT_SCENARIO_ASSOCIATION_BASE[scenarioId];
   if (!base || !OPERATION_BY_DIMENSION[dimension]) return null;
   if (scenarioId === 'teams-create-and-capacity') {
@@ -140,6 +163,9 @@ export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
           ['roster-lifecycle-role-boundary', 'roster-lifecycle-cross-tenant-denial', 'roster-lifecycle-workflow-network'].includes(caseId)
         ? 'qa-roster-accented-player'
         : base[1];
+  if (scenarioId === 'family-children-invites-team-cards' && FAMILY_RUNTIME_CHILD_CASE_IDS.has(caseId)) {
+    return Object.freeze({ actorAlias, targetAlias: validatedFamilyRuntimeTarget(runtimeTarget).alias, operation });
+  }
   return Object.freeze({ actorAlias, targetAlias, operation });
 }
 

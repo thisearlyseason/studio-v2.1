@@ -450,6 +450,58 @@ test('tenant evidence binds exact actor, target, operation, observations, and cl
   }), options), /non-allowlisted execution fields/i);
 });
 
+test('runtime family evidence rejects missing, mismatched, static, or late-registered child targets', () => {
+  const tenantScenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'family-children-invites-team-cards');
+  const caseId = 'family-children-child-edit-and-two-card-refresh';
+  const runtimeTarget = {
+    alias: 'run-family-child-final-cert-t4-evidence',
+    resourcePath: 'players/child_t4_final_cert_t4_evidence',
+    registeredAt: '2026-09-04T18:00:00.000Z',
+  };
+  const association = tenantCaseAssociationFor(tenantScenario.id, 'happyPath', caseId, runtimeTarget);
+  const caseRecord = {
+    actorAliases: ['qa-parent-a'], ...association, runtimeTarget, caseId, dimension: 'happyPath',
+    role: tenantScenario.roles.join('/'), tenantAlias: 'qa-team-a', expected: 'exact runtime child lifecycle',
+    observed: 'exact runtime child lifecycle', state: 'OBSERVED',
+    startedAt: '2026-09-04T18:00:01.000Z', completedAt: '2026-09-04T18:00:02.000Z', artifacts: [],
+    network: { transport: 'loopback-http', observed: true, reason: 'case-owned runtime request capture' },
+    console: { observed: false, reason: 'separate browser case' },
+    responsive: { observed: false, reason: 'separate browser case' }, cleanupRefs: ['fixture-cleanup-runtime-target'],
+    execution: {
+      startedAt: '2026-09-04T18:00:01.000Z', completedAt: '2026-09-04T18:00:02.000Z', runtimeTarget,
+      requests: [{ transport: 'loopback-http', method: 'POST', route: '/api/family/children', status: 201,
+        executorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation: 'create',
+        startedAt: '2026-09-04T18:00:01.100Z', completedAt: '2026-09-04T18:00:01.200Z' }],
+      adminTargets: [],
+      observations: [{ kind: 'case-work', actorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation: 'update',
+        startedAt: '2026-09-04T18:00:01.300Z', completedAt: '2026-09-04T18:00:01.900Z' }],
+      reconciliations: [],
+    },
+  };
+  const result = {
+    scenarioId: tenantScenario.id, environment: 'local-emulator',
+    environmentGaps: tenantScenario.environments.filter(value => value !== 'local-emulator'),
+    commit: '0123456789abcdef0123456789abcdef01234567', revision: 'local',
+    startedAt: '2026-09-04T18:00:00.000Z', completedAt: '2026-09-04T18:01:00.000Z',
+    role: tenantScenario.roles.join('/'), tenantAlias: 'qa-team-a',
+    dimensions: Object.fromEntries(DIMENSION_NAMES.map(name => [name,
+      makeDimension(name === 'happyPath' ? 'OBSERVED' : 'BLOCKED_PRECONDITION', name === 'happyPath' ? [caseId] : [], 'exact local state'),
+    ])),
+    cases: [caseRecord],
+    cleanup: { owner: tenantScenario.cleanupOwner, reference: 'fixture-cleanup-runtime-target', selectors: ['dynamic:runtime-child'],
+      counts: { deleted: 1, restored: 0, retainedAuditRecords: 0 }, state: 'OBSERVED', proof: ['cleanup/runtime-target.json'] },
+    artifacts: [], missingDimensions: DIMENSION_NAMES.filter(name => name !== 'happyPath'), externalRequirements: ['exact staging revision'], outcome: 'BLOCKED_PRECONDITION',
+  };
+  const options = { caseShape: 'tenant', caseRequirements: { [tenantScenario.id]: { happyPath: [caseId] } }, caseAssociationResolver: tenantCaseAssociationFor, operationContracts: { [tenantScenario.id]: [] } };
+  assert.equal(validateScenarioResults([tenantScenario], [result], options)[0].cases[0].targetAlias, runtimeTarget.alias);
+  const replace = replacement => [{ ...result, cases: [{ ...caseRecord, ...replacement }] }];
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ runtimeTarget: undefined }), options), /registered runtime child target/i);
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ targetAlias: 'qa-player-youth-a' }), options), /runtime target|association/i);
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ runtimeTarget: { ...runtimeTarget, resourcePath: 'players/qa-player-youth-a' } }), options), /run-owned runtime target/i);
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ execution: { ...caseRecord.execution, runtimeTarget: { ...runtimeTarget, alias: 'run-family-child-other' } } }), options), /bind its execution evidence/i);
+  assert.throws(() => validateScenarioResults([tenantScenario], replace({ runtimeTarget: { ...runtimeTarget, registeredAt: '2026-09-04T18:00:01.500Z' }, execution: { ...caseRecord.execution, runtimeTarget: { ...runtimeTarget, registeredAt: '2026-09-04T18:00:01.500Z' } } }), options), /not registered before/i);
+});
+
 test('recorder writes sanitized JSON and Markdown with explicit external blockers', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'task3-evidence-'));
   try {

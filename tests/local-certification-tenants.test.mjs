@@ -84,14 +84,46 @@ test('youth browser evidence is attributed to the activated youth session', () =
 });
 
 test('scenario workflow evidence records the mutation operation rather than a generic read', () => {
+  const familyRuntimeTarget = {
+    alias: 'run-family-child-final-cert-t4-operation',
+    resourcePath: 'players/child_t4_final_cert_t4_operation',
+    registeredAt: instant,
+  };
   for (const [scenarioId, caseId] of [
     ['teams-profile-branding-settings', 'team-settings-owner-settings-and-branding-edit'],
     ['organization-create-allocate-remove-squads', 'organization-squads-seat-release-and-reallocation'],
     ['recruiting-private-profile-crud', 'recruiting-private-profile-metrics-contact-media-edit'],
     ['family-children-invites-team-cards', 'family-children-child-edit-and-two-card-refresh'],
   ]) {
-    assert.equal(tenantCaseAssociationFor(scenarioId, 'happyPath', caseId).operation, 'update');
+    assert.equal(tenantCaseAssociationFor(
+      scenarioId, 'happyPath', caseId,
+      scenarioId === 'family-children-invites-team-cards' ? familyRuntimeTarget : null,
+    ).operation, 'update');
   }
+});
+
+test('family runtime workflow requires a registered run-owned child target instead of a fixture alias', () => {
+  const runtimeTarget = {
+    alias: 'run-family-child-final-cert-t4-regression',
+    resourcePath: 'players/child_t4_final_cert_t4_regression',
+    registeredAt: instant,
+  };
+  assert.deepEqual(
+    tenantCaseAssociationFor(
+      'family-children-invites-team-cards',
+      'happyPath',
+      'family-children-child-edit-and-two-card-refresh',
+      runtimeTarget,
+    ),
+    { actorAlias: 'qa-parent-a', targetAlias: runtimeTarget.alias, operation: 'update' },
+  );
+  assert.throws(() => tenantCaseAssociationFor(
+    'family-children-invites-team-cards', 'happyPath', 'family-children-child-edit-and-two-card-refresh',
+  ), /registered runtime child target/i);
+  assert.throws(() => tenantCaseAssociationFor(
+    'family-children-invites-team-cards', 'happyPath', 'family-children-child-edit-and-two-card-refresh',
+    { ...runtimeTarget, alias: 'qa-player-youth-a' },
+  ), /run-owned/i);
 });
 
 test('post-operation reconciliation cases do not masquerade as the mutation writer', () => {

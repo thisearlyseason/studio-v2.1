@@ -68,6 +68,15 @@ test('tenant workflow evidence rejects fixture reads posing as child lifecycle o
   }));
 });
 
+test('family child creation resolves its run-owned target from requestId before request evidence is emitted', () => {
+  const start = source.indexOf('function recordTenantRequest(');
+  const end = source.indexOf('async function patchFirestoreFields', start);
+  const requestRecorder = source.slice(start, end);
+  assert.match(requestRecorder, /pathname === '\/api\/family\/children'/);
+  assert.match(requestRecorder, /`child_\$\{parsedBody\.requestId\}`/);
+  assert.match(requestRecorder, /runtimeTargetAlias \|\|/);
+});
+
 test('tenant workflow evidence requires unsorted runtime schedule and exact rendered ledger values', () => {
   assert.throws(() => auditRunner.assertTenantWorkflowObservation('family-schedule-payments', {
     fixtureRows: [{ status: 'paid' }],

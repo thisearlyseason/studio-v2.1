@@ -46,3 +46,20 @@ test('verified guardian creates, unlinks, and removes only their own disposable 
   assert.equal(removed.status,200); assert.equal(records.has(`players/${childId}`),false);
   assert.equal((await route.DELETE(request('DELETE',{childId:'other'}))).status,404);
 });
+
+test('guardian cannot partially remove a child with an independently enabled login', async()=>{
+  const {db,records}=memoryDb({
+    'users/parent-a':{role:'parent'},
+    'players/activated-child':{parentId:'parent-a',userId:'youth-user',hasLogin:true,joinedTeamIds:['team-a']},
+    'teams/team-a/members/youth-user':{playerId:'activated-child',userId:'youth-user'},
+    'users/youth-user/teamMemberships/team-a':{teamId:'team-a'},
+  });
+  globalThis.__FAMILY_CHILD_DB=db; globalThis.__FAMILY_CHILD_AUTH={uid:'parent-a',role:'parent'};
+  const route=await loadRoute();
+  const removed=await route.DELETE(request('DELETE',{childId:'activated-child'}));
+  assert.equal(removed.status,409);
+  assert.match((await removed.json()).error,/login-enabled athlete/i);
+  assert.equal(records.has('players/activated-child'),true);
+  assert.equal(records.has('teams/team-a/members/youth-user'),true);
+  assert.equal(records.has('users/youth-user/teamMemberships/team-a'),true);
+});

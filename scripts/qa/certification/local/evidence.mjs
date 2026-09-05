@@ -211,7 +211,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
   for (const caseRecord of result.cases) {
     assertClosedObject(caseRecord, [
       'actorAliases', 'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive',
-      'cleanupRefs', 'execution', 'caseId', 'dimension', 'role', 'tenantAlias', 'expected', 'observed',
+      'cleanupRefs', 'execution', 'runtimeTarget', 'caseId', 'dimension', 'role', 'tenantAlias', 'expected', 'observed',
       'state', 'startedAt', 'completedAt', 'artifacts', 'artifactEvents', 'type', 'scenarioId', 'runId', 'commit',
       'diagnostic', 'diagnostics', 'originalDiagnostic', 'restorationDiagnostics',
     ], 'Case');
@@ -253,6 +253,18 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
       assertClosedObject(caseRecord.network, ['transport', 'observed', 'reason'], 'Network observation');
       assertClosedObject(caseRecord.console, ['observed', 'reason'], 'Console observation');
       assertClosedObject(caseRecord.responsive, ['observed', 'reason'], 'Responsive observation');
+      if (caseRecord.runtimeTarget !== undefined) {
+        const runtimeTarget = caseRecord.runtimeTarget;
+        assertClosedObject(runtimeTarget, ['alias', 'resourcePath', 'registeredAt'], 'Runtime target');
+        if (typeof runtimeTarget.alias !== 'string' || !/^run-family-child-[A-Za-z0-9_-]{1,180}$/.test(runtimeTarget.alias) ||
+            typeof runtimeTarget.resourcePath !== 'string' || !/^players\/child_t4_[A-Za-z0-9_-]{1,200}$/.test(runtimeTarget.resourcePath)) {
+          throw new Error(`${caseRecord.caseId} has an invalid run-owned runtime target.`);
+        }
+        if (caseRecord.targetAlias !== runtimeTarget.alias) {
+          throw new Error(`${caseRecord.caseId} runtime target must match its exact target alias.`);
+        }
+        parseTimestamp(runtimeTarget.registeredAt, 'runtime target registeredAt');
+      }
       if (operationContracts && caseRecord.state === 'OBSERVED') {
         const execution = caseRecord.execution;
         if (!execution || !Array.isArray(execution.requests) || !Array.isArray(execution.adminTargets) ||
@@ -260,12 +272,15 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           throw new Error(`${caseRecord.caseId} requires runtime request and Admin-reconciliation evidence.`);
         }
         assertClosedObject(execution, [
-          'startedAt', 'completedAt', 'requests', 'adminTargets', 'observations', 'reconciliations',
+          'startedAt', 'completedAt', 'requests', 'adminTargets', 'observations', 'reconciliations', 'runtimeTarget',
         ], 'Execution');
         const executionStartedAt = parseTimestamp(execution.startedAt, 'execution startedAt');
         const executionCompletedAt = parseTimestamp(execution.completedAt, 'execution completedAt');
         if (executionStartedAt < caseStartedAt || executionCompletedAt > caseCompletedAt || executionCompletedAt < executionStartedAt) {
           throw new Error(`${caseRecord.caseId} execution interval is outside its case interval.`);
+        }
+        if (caseRecord.runtimeTarget !== undefined && JSON.stringify(execution.runtimeTarget) !== JSON.stringify(caseRecord.runtimeTarget)) {
+          throw new Error(`${caseRecord.caseId} runtime target must bind its execution evidence.`);
         }
         for (const request of execution.requests) {
           const allowed = new Set([
@@ -323,11 +338,18 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
             item.targetAlias === caseRecord.targetAlias && item.operation === caseRecord.operation)) {
           throw new Error(`${caseRecord.caseId} runtime operation does not match its claimed actor, target, and operation.`);
         }
+        if (caseRecord.runtimeTarget !== undefined) {
+          const registeredAt = parseTimestamp(caseRecord.runtimeTarget.registeredAt, 'runtime target registeredAt');
+          const boundOperations = runtimeOperations.filter(item => item.targetAlias === caseRecord.targetAlias);
+          if (boundOperations.length === 0 || boundOperations.some(item => parseTimestamp(item.startedAt, 'runtime target operation startedAt') < registeredAt)) {
+            throw new Error(`${caseRecord.caseId} runtime target was not registered before its bound operation.`);
+          }
+        }
       }
       if (!caseRecord.actorAliases.includes(caseRecord.actorAlias)) {
         throw new Error(`${caseRecord.caseId} actorAlias must be one of its exact actor aliases.`);
       }
-      const expectedAssociation = caseAssociationResolver?.(result.scenarioId, caseRecord.dimension, caseRecord.caseId);
+      const expectedAssociation = caseAssociationResolver?.(result.scenarioId, caseRecord.dimension, caseRecord.caseId, caseRecord.runtimeTarget);
       if (expectedAssociation && (caseRecord.actorAlias !== expectedAssociation.actorAlias ||
           caseRecord.targetAlias !== expectedAssociation.targetAlias || caseRecord.operation !== expectedAssociation.operation)) {
         throw new Error(`${caseRecord.caseId} tenant actor, target, or operation association does not match its contract.`);
@@ -379,7 +401,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         assertNoProtectedEvidence(parsed, `artifact ${artifact}`);
         assertClosedObject(parsed, [
           'runId', 'commit', 'scenarioId', 'caseId', 'dimension', 'actorAliases', 'role', 'tenantAlias',
-          'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs',
+          'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs', 'runtimeTarget',
           'execution', 'expected', 'observed', 'diagnostic', 'originalDiagnostic', 'restorationDiagnostics',
           'assertions', 'capturedAt',
         ], 'Artifact');
@@ -393,7 +415,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           throw new Error(`${caseRecord.caseId} artifact actor provenance does not match its case.`);
         }
         if (caseShape === 'tenant') {
-          for (const key of ['actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs', ...(operationContracts ? ['execution'] : [])]) {
+          for (const key of ['actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive', 'cleanupRefs', 'runtimeTarget', ...(operationContracts ? ['execution'] : [])]) {
             if (JSON.stringify(parsed[key]) !== JSON.stringify(caseRecord[key])) {
               throw new Error(`${caseRecord.caseId} artifact tenant association ${key} does not match its case.`);
             }

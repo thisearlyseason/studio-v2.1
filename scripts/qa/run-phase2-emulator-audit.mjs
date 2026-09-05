@@ -117,6 +117,7 @@ const tenantTokenActors = new Map();
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
 const tenantRuntimeConsumerPaths = new Map();
+const tenantRuntimeTargets = new Map();
 const tenantFixtureMutations = createFixtureMutations({
   projectId: PROJECT_ID,
   runId: certificationTenants ? certificationRunId : 'final-cert-inactive-import',
@@ -266,12 +267,14 @@ function certificationActorAliases(scenarioId) {
 }
 
 function tenantCaseAssociations(scenarioId, dimension, caseId, execution = null) {
-  const association = tenantCaseAssociationFor(scenarioId, dimension, caseId);
+  const runtimeTarget = execution?.runtimeTarget || null;
+  const association = tenantCaseAssociationFor(scenarioId, dimension, caseId, runtimeTarget);
   if (!association) return {};
   const browserCaptured = ['console', 'responsive'].includes(dimension);
   const requestCaptured = (execution?.requests?.length || 0) > 0;
   return {
     ...association,
+    ...(runtimeTarget ? { runtimeTarget } : {}),
     network: {
       transport: 'loopback-http', observed: requestCaptured || browserCaptured,
       reason: requestCaptured ? 'case-owned runtime request capture'
@@ -960,6 +963,9 @@ async function signInEmail(email, suppliedPassword = password) {
 function tenantTargetAliasFromValue(value) {
   if (!value) return null;
   const raw = String(value);
+  const runtimeTarget = [...tenantRuntimeTargets.values()].find(target =>
+    raw === target.resourcePath || raw.includes(target.resourcePath) || raw.includes(target.resourcePath.split('/').at(-1)));
+  if (runtimeTarget) return runtimeTarget.alias;
   const team = FIXTURES.teams.find(item => item.id === raw || raw.includes(`/teams/${item.id}`) || raw.startsWith(`teams/${item.id}`));
   if (team) {
     if (team.alias === 'qa-disposable-team') return 'run-created-reset-squad';
@@ -976,6 +982,29 @@ function tenantTargetAliasFromValue(value) {
   if (raw.includes(`reset-${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180))) return 'run-created-reset-squad';
   if ([...(tenantRuntimeConsumerPaths.values())].flat().some(pathname => pathname.includes(raw) || raw.includes(pathname))) return 'run-created-squad';
   return null;
+}
+
+function registerFamilyRuntimeChildTarget(childId) {
+  if (typeof childId !== 'string' || !/^child_t4_[A-Za-z0-9_-]{1,200}$/.test(childId)) {
+    throw new Error('Family runtime child registration requires a run-owned child identifier.');
+  }
+  const runtimeTarget = Object.freeze({
+    alias: `run-family-child-${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180)}`,
+    resourcePath: `players/${childId}`,
+    registeredAt: new Date().toISOString(),
+  });
+  tenantRuntimeTargets.set(runtimeTarget.resourcePath, runtimeTarget);
+  return runtimeTarget;
+}
+
+function bindTenantRuntimeTarget(runtimeTarget) {
+  if (!runtimeTarget || tenantRuntimeTargets.get(runtimeTarget.resourcePath) !== runtimeTarget || !activeTenantExecution) {
+    throw new Error('A registered runtime target must be bound to an active tenant evidence case.');
+  }
+  if (activeTenantExecution.runtimeTarget && activeTenantExecution.runtimeTarget.alias !== runtimeTarget.alias) {
+    throw new Error('A tenant evidence case cannot change runtime targets after registration.');
+  }
+  activeTenantExecution.runtimeTarget = runtimeTarget;
 }
 
 function tenantOperationFromRequest(pathname, method, status) {
@@ -996,9 +1025,12 @@ function recordTenantRequest({ pathname, method = 'GET', status, token = null, d
   const codedTeam = parsedBody.code ? FIXTURES.teams.find(team =>
     [team.code, team.teamCode, team.inviteCode].filter(Boolean).some(code =>
       String(code).toUpperCase() === String(parsedBody.code).toUpperCase())) : null;
-  const targetAlias = (pathname === '/api/teams/create' && status === 201) ? 'run-created-squad' : codedTeam?.alias || tenantTargetAliasFromValue(
+  const createdFamilyChildId = pathname === '/api/family/children' && typeof parsedBody.requestId === 'string'
+    ? `child_${parsedBody.requestId}` : '';
+  const runtimeTargetAlias = tenantTargetAliasFromValue(documentPath || parsedBody.childId || parsedBody.playerId || createdFamilyChildId);
+  const targetAlias = runtimeTargetAlias || ((pathname === '/api/teams/create' && status === 201) ? 'run-created-squad' : codedTeam?.alias || tenantTargetAliasFromValue(
     documentPath || parsedBody.teamId || parsedBody.childId || parsedBody.playerId || pathname,
-  );
+  ));
   const completed = completedAt || new Date().toISOString();
   activeTenantExecution.requests.push({
     transport: 'loopback-http', method: String(method).toUpperCase(),
@@ -4239,20 +4271,20 @@ async function runCertificationIdentityScenarios() {
   if (result.failures.length > 0) throw new Error(`${result.failures.length} selected certification scenario stage(s) failed with structured case evidence.`);
 }
 
-async function recordObservedTenantCase(scenarioId, dimension, caseId, work, expected) {
+async function recordObservedTenantCase(scenarioId, dimension, caseId, work, expected, runtimeTarget = null) {
   const assertionStart = activeCertificationAssertions.length;
   const caseStartedAt = new Date().toISOString();
   const previousExecution = activeTenantExecution;
   activeTenantExecution = {
     startedAt: caseStartedAt,
     completedAt: caseStartedAt,
-    requests: [], adminTargets: [], observations: [], reconciliations: [],
+    requests: [], adminTargets: [], observations: [], reconciliations: [], runtimeTarget,
   };
   try {
     const observed = await work();
     const caseCompletedAt = new Date().toISOString();
     activeTenantExecution.completedAt = caseCompletedAt;
-    const association = tenantCaseAssociationFor(scenarioId, dimension, caseId);
+    const association = tenantCaseAssociationFor(scenarioId, dimension, caseId, activeTenantExecution.runtimeTarget);
     if (association) {
       activeTenantExecution.observations.push({
         kind: ['console', 'responsive'].includes(dimension) ? 'browser-work' : 'case-work',
@@ -5203,7 +5235,7 @@ function tenantLifecycleMutation(scenarioId) {
   })[scenarioId] || null;
 }
 
-async function executeTenantLifecycleMutation(scenarioId) {
+async function executeTenantLifecycleMutation(scenarioId, runtimeTarget = null) {
   if (scenarioId === 'family-schedule-waivers-payments') {
     const parent = await signIn('qa-parent-a');
     const otherParent = await signIn('qa-parent-b');
@@ -5541,6 +5573,8 @@ async function executeTenantLifecycleMutation(scenarioId) {
     const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
     const childId = `child_t4_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
     const childPath = `players/${childId}`;
+    const target = runtimeTarget || registerFamilyRuntimeChildTarget(childId);
+    bindTenantRuntimeTarget(target);
     for (const [path, label] of [[childPath, 'tenant-family-runtime-child'], [`teams/${teamA.id}/members/${childId}`, 'tenant-family-runtime-team-a-member'], [`teams/${teamC.id}/members/${childId}`, 'tenant-family-runtime-team-c-member']]) {
       registerDynamicFirestoreRoot(path, label);
     }
@@ -5780,8 +5814,11 @@ async function runTenantSupplementalApiCases(scenarioId) {
     }, 'The case-scoped loopback request has an explicit status and no outbound transport.');
   }
   if (!['teams-join-by-code', 'family-enable-youth-login', 'recruiting-public-scout-projection'].includes(scenarioId)) {
+    const runtimeTarget = scenarioId === 'family-children-invites-team-cards'
+      ? registerFamilyRuntimeChildTarget(`child_t4_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`)
+      : null;
     await recordObservedTenantCase(scenarioId, 'happyPath', requirements.happyPath[1], async () => {
-      const mutation = await executeTenantLifecycleMutation(scenarioId);
+      const mutation = await executeTenantLifecycleMutation(scenarioId, runtimeTarget);
       if (mutation) {
         return `The named product actor changed ${mutation.path} through enforced Firestore rules, Admin reconciliation observed the exact field, and the registered overlay restored its before-image.`;
       }
@@ -5789,7 +5826,7 @@ async function runTenantSupplementalApiCases(scenarioId) {
       expectEqual(values.length, paths.length, `tenant ${scenarioId} consumer graph cardinality`);
       expectEqual(values.every(Boolean), true, `tenant ${scenarioId} linked lifecycle graph`);
       return 'Every linked root in the scenario lifecycle graph resolved together.';
-    }, 'The complete linked consumer graph is coherent, not a fixture-label preview.');
+    }, 'The complete linked consumer graph is coherent, not a fixture-label preview.', runtimeTarget);
   }
   if (scenarioId !== 'teams-join-by-code') await recordObservedTenantCase(scenarioId, 'negativePath', requirements.negativePath[1], async () => {
     const negativeActor = scenarioId === 'teams-create-and-capacity' ? await signIn('qa-fresh-coach')
@@ -5891,8 +5928,9 @@ async function runTenantBrowserScenario(scenarioId) {
     const parent = await signIn('qa-parent-a');
     const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
     const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
-    const requestId = `browser_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
-    const childId = `child_${requestId}`;
+    const childId = `child_t4_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+    const requestId = childId.slice('child_'.length);
+    const runtimeTarget = registerFamilyRuntimeChildTarget(childId);
     const markerFirst = `Runtime${FIXTURES.runId.replace(/[^A-Za-z0-9]/g, '').slice(-8)}`;
     const markerFull = `${markerFirst} FamilyLifecycle`;
     const ownedPaths = [
@@ -5962,6 +6000,7 @@ async function runTenantBrowserScenario(scenarioId) {
         removed: removeResult.status === 200 && removeResult.removed, absentAfterReload: persisted.every(value => value === null),
       };
       await recordObservedTenantCase(scenarioId, 'console', 'family-children-workflow-console', async () => {
+        bindTenantRuntimeTarget(runtimeTarget);
         const consoleErrors=[...renderResult.consoleErrors,...unlinkResult.consoleErrors,...removeResult.consoleErrors];
         const failures=[...renderResult.failures,...unlinkResult.failures,...removeResult.failures];
         expectEqual(consoleErrors.length, 0, 'tenant family child lifecycle console errors');
@@ -5973,12 +6012,13 @@ async function runTenantBrowserScenario(scenarioId) {
         expectEqual(removeResult.bodyLength > 0, true, 'tenant family browser remove response body present');
         assertTenantWorkflowObservation('family-child-lifecycle', observation);
         return `A disposable athlete was created and linked to its squad, Team A and Team C family cards rendered for Parent A, Parent B was excluded, and the runtime athlete was unlinked and removed; PATCH returned ${unlinkResult.status}/${unlinkResult.bodyLength} bytes and DELETE returned ${removeResult.status}/${removeResult.bodyLength} bytes.`;
-      }, 'The Family child lifecycle is runtime-created and scoped to the verified guardian.');
+      }, 'The Family child lifecycle is runtime-created and scoped to the verified guardian.', runtimeTarget);
       await recordObservedTenantCase(scenarioId, 'responsive', 'family-children-workflow-responsive', async () => {
+        bindTenantRuntimeTarget(runtimeTarget);
         expectEqual(renderResult.observations.length, 2, 'tenant family child exact viewports');
         expectEqual(renderResult.observations.every(item => item.fits), true, 'tenant family child lifecycle viewport containment');
         return 'The same runtime child and Team A/Team C cards rendered at both frozen viewports.';
-      }, 'Family runtime cards render at 1440x900 and 390x844.');
+      }, 'Family runtime cards render at 1440x900 and 390x844.', runtimeTarget);
     });
   }
   if (scenarioId === 'teams-module-visibility') {
