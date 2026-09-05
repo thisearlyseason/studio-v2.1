@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
     }
     const playerId = requestedPlayerId || selfPlayers?.docs[0]?.id || `p_${auth.uid}`;
     const joiningLinkedChild = requestedPlayerId.length > 0;
-    if ((!CODE_PATTERN.test(code) && sessionToken.length < 32) || !/^p_[A-Za-z0-9_-]{1,200}$/.test(playerId)) {
+    if ((!CODE_PATTERN.test(code) && sessionToken.length < 32) || !ID_PATTERN.test(playerId)) {
       return NextResponse.json({ error: 'A valid squad invitation and athlete are required.' }, { status: 400 });
     }
 

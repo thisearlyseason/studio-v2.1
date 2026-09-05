@@ -3129,22 +3129,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const upgradeChildToLogin = useCallback(async (childId: string) => { if (db) await updateDoc(doc(db, 'players', childId), { hasLogin: true }); }, [db]);
   const registerChild = useCallback(async (first: string, last: string, dob: string, email?: string) => { 
-    if (!firebaseUser || !db) return null; 
-    const cid = `child_${Date.now()}`; 
-    await setDoc(doc(db, 'players', cid), clean({ 
-      id: cid, 
-      firstName: first, 
-      lastName: last, 
-      dateOfBirth: dob, 
-      isMinor: true, 
-      parentId: firebaseUser.uid, 
-      joinedTeamIds: [], 
-      recruitingProfileEnabled: false,
-      pendingInviteEmail: email || null,
-      createdAt: new Date().toISOString() 
-    }));
-    return cid;
-  }, [db, firebaseUser]);
+    if (!firebaseUser || !firebaseAuth) return null;
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/family/children', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ firstName: first, lastName: last, dateOfBirth: dob, email }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to create athlete.');
+    return typeof payload.childId === 'string' ? payload.childId : null;
+  }, [firebaseAuth, firebaseUser]);
 
   const updateChild = useCallback(async (childId: string, updates: Partial<PlayerProfile>) => { 
     if (db) await updateDoc(doc(db, 'players', childId), clean(updates)); 

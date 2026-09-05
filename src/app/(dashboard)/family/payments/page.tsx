@@ -132,7 +132,7 @@ export default function PaymentsPage() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="rounded-[2rem] border-none shadow-xl bg-black text-white overflow-hidden">
+        <Card data-testid="family-payment-total-paid" className="rounded-[2rem] border-none shadow-xl bg-black text-white overflow-hidden">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-3">
               <div className="bg-green-500/20 p-2 rounded-xl"><CheckCircle2 className="h-5 w-5 text-green-400" /></div>
@@ -142,7 +142,7 @@ export default function PaymentsPage() {
             <p className="text-3xl font-black">${stats.paid.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
+        <Card data-testid="family-payment-outstanding" className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
           <CardContent className="p-6">
             <div className="mb-3">
               <div className="bg-amber-500/10 p-2 rounded-xl w-fit"><Clock className="h-5 w-5 text-amber-500" /></div>
@@ -151,7 +151,7 @@ export default function PaymentsPage() {
             <p className="text-3xl font-black text-amber-600">${stats.outstanding.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
+        <Card data-testid="family-payment-overdue" className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
           <CardContent className="p-6">
             <div className="mb-3">
               <div className="bg-red-500/10 p-2 rounded-xl w-fit"><AlertCircle className="h-5 w-5 text-red-500" /></div>
@@ -216,7 +216,7 @@ export default function PaymentsPage() {
             const dateStr = (() => { try { return format(parseISO(payment.date), 'MMM d, yyyy'); } catch { return payment.date; } })();
             const dueDateStr = payment.dueDate ? (() => { try { return format(parseISO(payment.dueDate), 'MMM d, yyyy'); } catch { return payment.dueDate; } })() : null;
             return (
-              <Card key={payment.id} className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 hover:shadow-lg transition-all hover:-translate-y-0.5 duration-200 overflow-hidden">
+              <Card data-testid={`family-payment-${payment.id}`} key={payment.id} className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 hover:shadow-lg transition-all hover:-translate-y-0.5 duration-200 overflow-hidden">
                 <CardContent className="p-0">
                   <div className="flex items-stretch">
                     <div className={`w-1.5 shrink-0 ${payment.status === 'paid' ? 'bg-green-500' : payment.status === 'overdue' ? 'bg-red-500' : 'bg-amber-400'}`} />

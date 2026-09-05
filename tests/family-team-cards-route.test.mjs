@@ -90,4 +90,7 @@ test('family cards merge server-derived child squads into every family consumer'
   assert.match(source, /fetch\('\/api\/family\/teams'/);
   assert.match(source, /const familyTeams = useMemo/);
   assert.match(source, /<ChildCard key=\{child\.id\} child=\{child\} teams=\{familyTeams\}/);
+  assert.match(source, /fetch\('\/api\/family\/children'/);
+  assert.match(source, /Unlink from/);
+  assert.match(source, /Remove Athlete/);
 });

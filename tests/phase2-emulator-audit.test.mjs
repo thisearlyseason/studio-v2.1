@@ -28,6 +28,73 @@ test('module API-denial assertion is recorded inside the module console evidence
   assert.match(moduleConsoleCase, /tenant module persona and API denial matrix/);
 });
 
+test('tenant workflow evidence rejects branding labels without the complete two-viewport UI lifecycle', () => {
+  assert.throws(() => auditRunner.assertTenantWorkflowObservation('branding', {
+    oversizedStatus: 403,
+  }), /branding upload render replacement delete fallback/i);
+  assert.doesNotThrow(() => auditRunner.assertTenantWorkflowObservation('branding', {
+    viewports: [1440, 390],
+    uploadRendered: [true, true],
+    replacementRendered: [true, true],
+    deleteFallbackRendered: [true, true],
+    reloadedWithoutLogo: [true, true],
+  }));
+});
+
+test('branding browser lifecycle uses a browser-native file and never relies on Node globals', () => {
+  const start = source.indexOf("if (scenarioId === 'teams-profile-branding-settings')", source.indexOf('async function runTenantBrowserScenario'));
+  const end = source.indexOf("if (scenarioId === 'family-children-invites-team-cards')", start);
+  const brandingBlock = source.slice(start, end);
+  assert.match(brandingBlock, /new File\(\[bytes\],value\.name/);
+  assert.match(brandingBlock, /new DataTransfer\(\)/);
+  assert.doesNotMatch(brandingBlock, /Buffer\.from/);
+});
+
+test('tenant workflow evidence rejects fixture reads posing as child lifecycle observations', () => {
+  assert.throws(() => auditRunner.assertTenantWorkflowObservation('family-child-lifecycle', {
+    fixtureChildCount: 2,
+    expectedTextsVisible: true,
+  }), /create link relink unlink remove/i);
+  assert.doesNotThrow(() => auditRunner.assertTenantWorkflowObservation('family-child-lifecycle', {
+    runtimeChildId: 'child-run-1',
+    created: true,
+    linkedTeamA: true,
+    relinked: true,
+    renderedTeams: ['team-a', 'team-c'],
+    parentBExcluded: true,
+    unlinkedTeamA: true,
+    removed: true,
+    absentAfterReload: true,
+  }));
+});
+
+test('tenant workflow evidence requires unsorted runtime schedule and exact rendered ledger values', () => {
+  assert.throws(() => auditRunner.assertTenantWorkflowObservation('family-schedule-payments', {
+    fixtureRows: [{ status: 'paid' }],
+    preSortedExpected: ['a', 'b'],
+  }), /runtime event payment chronological grouping totals negative matrix/i);
+  assert.doesNotThrow(() => auditRunner.assertTenantWorkflowObservation('family-schedule-payments', {
+    runtimeEventIds: ['event-late', 'event-early'],
+    sourceOrder: ['event-late', 'event-early'],
+    renderedOrder: ['event-early', 'event-late'],
+    childTeamGroups: ['child-a:team-a', 'child-b:team-c'],
+    runtimePaymentIds: ['paid', 'pending', 'overdue'],
+    renderedAmounts: { paid: '12.34', pending: '23.45', overdue: '34.56', outstanding: '58.01' },
+    negativeStatuses: { duplicate: 409, inactive: 409, wrongChild: 403, wrongTeam: 403 },
+  }));
+});
+
+test('family aggregate browser evidence derives ordering and grouping from rendered runtime nodes', () => {
+  const start = source.indexOf("if (scenarioId === 'family-schedule-waivers-payments')", source.indexOf('async function runTenantBrowserScenario'));
+  const end = source.indexOf("if (!['teams-join-by-code'", start);
+  const aggregateBlock = source.slice(start, end);
+  assert.match(aggregateBlock, /scheduleOrder=eventIds\.map/);
+  assert.match(aggregateBlock, /getAttribute\('data-child-id'\)/);
+  assert.match(aggregateBlock, /renderedOrder: first\.scheduleOrder/);
+  assert.match(aggregateBlock, /childTeamGroups: first\.schedule\.groups/);
+  assert.doesNotMatch(aggregateBlock, /renderedOrder: \[eventSpecs\[1\]\.id/);
+});
+
 test('organization last-seat race constrains and restores the persisted owner capacity', () => {
   assert.match(source, /const ownerProfilePath = `users\/\$\{identityByAlias\.get\('qa-school-owner'\)\.uid\}`/);
   assert.match(source, /withFirestoreOverlay\(\[`teams\/\$\{squad\.id\}`, projectionPath, ownerProfilePath\]/);

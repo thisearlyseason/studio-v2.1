@@ -56,7 +56,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from '@/hooks/use-toast';
-import { doc, updateDoc } from 'firebase/firestore';
+import { deleteField, doc, updateDoc } from 'firebase/firestore';
 import { cn, compressImage } from '@/lib/utils';
 import { useUser, useAuth } from '@/firebase';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
@@ -222,6 +222,20 @@ export default function TeamProfilePage() {
         setIsUpdatingLogo(false);
         toast({ title: "Branding Failed", description: "Identity synchronization interrupted.", variant: "destructive" });
       }
+    }
+  };
+
+  const handleLogoDelete = async () => {
+    if ((!isStaff && !isSuperAdmin) || !activeTeam?.id || !db) return;
+    setIsUpdatingLogo(true);
+    try {
+      await updateDoc(doc(db, 'teams', activeTeam.id), { teamLogoUrl: deleteField() });
+      setActiveTeam({ ...activeTeam, teamLogoUrl: '' });
+      toast({ title: 'Squad Branding Removed', description: 'The default no-logo identity is restored.' });
+    } catch {
+      toast({ title: 'Branding Removal Failed', variant: 'destructive' });
+    } finally {
+      setIsUpdatingLogo(false);
     }
   };
 
@@ -558,7 +572,7 @@ export default function TeamProfilePage() {
                           </div>
                         </>
                       ) : (
-                        <div className="text-center p-6 space-y-3">
+                        <div data-testid="team-logo-fallback" className="text-center p-6 space-y-3">
                            <div className="bg-primary/10 h-16 w-16 rounded-3xl flex items-center justify-center mx-auto text-primary">
                              {isUpdatingLogo ? <Loader2 className="h-8 w-8 animate-spin" /> : <Plus className="h-8 w-8" />}
                            </div>
@@ -594,6 +608,16 @@ export default function TeamProfilePage() {
                      >
                        {activeTeam.teamLogoUrl ? "Update Identity Asset" : "Initialize Branding"}
                      </Button>
+                     {activeTeam.teamLogoUrl && (
+                       <Button
+                         variant="ghost"
+                         className="h-10 px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest text-red-600 hover:bg-red-50 hover:text-red-700 w-full sm:w-auto"
+                         onClick={handleLogoDelete}
+                         disabled={isUpdatingLogo}
+                       >
+                         Remove Identity Asset
+                       </Button>
+                     )}
                   </div>
                </div>
             </CardContent>

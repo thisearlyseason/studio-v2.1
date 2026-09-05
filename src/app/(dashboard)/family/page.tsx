@@ -346,6 +346,7 @@ function LoginEnabledInfoModal() {
 // --- Child Card ---
 function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
   const { sendChildInvite, revokeChildInvite, setActiveTeam } = useTeam();
+  const auth = useAuth();
   const router = useRouter();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoginInfoOpen, setIsLoginInfoOpen] = useState(false);
@@ -365,6 +366,7 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
   const [isRevoking, setIsRevoking] = useState(false);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [sharedUrl, setSharedUrl] = useState('');
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const age = safeAge(child.dateOfBirth);
   const childTeams = (teams || []).filter(t => child.joinedTeamIds?.includes(t.id));
@@ -398,10 +400,48 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
     }
   };
 
+  const mutateChild = async (method: 'PATCH' | 'DELETE', body: Record<string, string>) => {
+    if (!auth) throw new Error('Your session has expired.');
+    const token = await getAuthToken(auth);
+    const response = await fetch('/api/family/children', {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ childId: child.id, ...body }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update athlete.');
+  };
+
+  const handleUnlinkTeam = async (team: Team) => {
+    if (!window.confirm(`Unlink ${child.firstName} from ${team.name}?`)) return;
+    setIsRemoving(true);
+    try {
+      await mutateChild('PATCH', { teamId: team.id });
+      toast({ title: 'Team Unlinked', description: `${child.firstName} is no longer linked to ${team.name}.` });
+    } catch (error: any) {
+      toast({ title: 'Unlink Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
+  const handleRemoveChild = async () => {
+    if (!window.confirm(`Remove ${child.firstName} ${child.lastName} from your family?`)) return;
+    setIsRemoving(true);
+    try {
+      await mutateChild('DELETE', {});
+      toast({ title: 'Athlete Removed' });
+    } catch (error: any) {
+      toast({ title: 'Removal Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
   const isInviteExpired = child.inviteExpiresAt ? !isFuture(parseISO(child.inviteExpiresAt)) : false;
 
   return (
-    <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group transition-all hover:ring-primary/20">
+    <Card data-testid={`family-child-${child.id}`} className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group transition-all hover:ring-primary/20">
       <div className="h-2 hero-gradient w-full" />
       <CardContent className="p-8 lg:p-10 space-y-6 flex-1">
 
@@ -489,16 +529,18 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
           </p>
           <div className="space-y-2">
             {childTeams.map(t => (
-              <div 
+              <div data-team-id={t.id}
                 key={t.id} 
-                onClick={() => { setActiveTeam(t); router.push('/calendar'); }}
                 className="flex items-center justify-between p-3 bg-muted/20 rounded-2xl border transition-all hover:bg-white hover:shadow-sm cursor-pointer"
               >
-                <div className="flex items-center gap-3">
+                <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => { setActiveTeam(t); router.push('/calendar'); }}>
                   <Users className="h-4 w-4 text-primary" />
                   <span className="text-xs font-black uppercase tracking-tight truncate text-foreground">{t.name}</span>
-                </div>
-                <ChevronRight className="h-4 w-4 opacity-20 text-foreground" />
+                  <ChevronRight className="h-4 w-4 opacity-20 text-foreground" />
+                </button>
+                <Button variant="ghost" size="sm" disabled={isRemoving} className="text-[8px] font-black uppercase text-red-600" onClick={() => handleUnlinkTeam(t)}>
+                  Unlink from {t.name}
+                </Button>
               </div>
             ))}
             {childTeams.length === 0 && (
@@ -694,6 +736,9 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
         <Button className="w-full h-14 rounded-2xl bg-black text-white font-black uppercase text-xs tracking-widest shadow-xl group-hover:bg-primary transition-colors active:scale-95 border-none" onClick={() => router.push('/teams/join')}>
           Join Another Team <ArrowRight className="ml-2 h-5 w-5" />
         </Button>
+        <Button variant="ghost" disabled={isRemoving} className="w-full text-red-600 font-black uppercase text-[10px]" onClick={handleRemoveChild}>
+          <Trash2 className="mr-2 h-4 w-4" /> Remove Athlete
+        </Button>
       </CardFooter>
     </Card>
   );
@@ -717,7 +762,7 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {consolidatedTeams.map(({ team, members }) => (
-          <Card 
+          <Card data-testid={`family-team-${team.id}`}
             key={team.id}
             className="group relative rounded-[2rem] border-none shadow-lg bg-white/40 backdrop-blur-xl overflow-hidden ring-1 ring-black/5 hover:ring-primary/40 transition-all cursor-pointer h-32 flex flex-col justify-end p-6"
             onClick={() => router.push(`/feed?teamId=${team.id}`)}
@@ -1528,7 +1573,7 @@ export default function FamilyPage() {
                   {events.length > 0 ? events.map((event) => {
                     const team = familyTeams.find(t => t.id === event.teamId);
                     return (
-                      <Card key={event.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white hover:-translate-y-0.5 duration-300">
+                      <Card data-testid={`family-event-${event.id}`} data-team-id={event.teamId} data-child-id={child.id} key={event.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white hover:-translate-y-0.5 duration-300">
                         <CardContent className="p-0">
                           <div className="flex items-stretch h-20">
                             <div className="w-16 bg-muted/20 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">

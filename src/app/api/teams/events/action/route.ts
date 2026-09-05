@@ -152,14 +152,17 @@ export async function POST(req: NextRequest) {
     const action = String(body.action || '');
     const teamId = String(body.teamId || '');
     const requestedEventId = String(body.eventId || '');
-    if (!ID_PATTERN.test(teamId) || (action !== 'create' && !ID_PATTERN.test(requestedEventId))) {
+    const requestedCreateId = action === 'create' && requestedEventId ? requestedEventId : '';
+    if (!ID_PATTERN.test(teamId) || (action !== 'create' && !ID_PATTERN.test(requestedEventId)) || (requestedCreateId && !ID_PATTERN.test(requestedCreateId))) {
       return NextResponse.json({ error: 'Invalid squad or event.' }, { status: 400 });
     }
 
     const access = await teamAccess(teamId, auth.uid, auth.role);
     if (!access?.isMember) return NextResponse.json({ error: 'Squad membership required.' }, { status: 403 });
     const eventRef = action === 'create'
-      ? access.teamRef.collection('events').doc()
+      ? requestedCreateId
+        ? access.teamRef.collection('events').doc(requestedCreateId)
+        : access.teamRef.collection('events').doc()
       : access.teamRef.collection('events').doc(requestedEventId);
     const eventId = eventRef.id;
 
@@ -232,6 +235,7 @@ export async function POST(req: NextRequest) {
       const result = await withScheduleMutationLock(async () => {
         const existing = await eventRef.get();
         if (action !== 'create' && !existing.exists) return { status: 'missing' as const };
+        if (action === 'create' && existing.exists) return { status: 'conflict' as const };
         const existingData = existing.data() || {};
         if (existingData.sourceType === 'league' || existingData.sourceType === 'tournament' ||
             existingData.leagueId || existingData.sourceGameId) {
@@ -311,6 +315,7 @@ export async function POST(req: NextRequest) {
         return { status: action === 'create' ? 'created' as const : 'updated' as const, eventId };
       });
       if (result.status === 'missing') return NextResponse.json({ error: 'Event not found.' }, { status: 404 });
+      if (result.status === 'conflict') return NextResponse.json({ error: 'Event request already exists.' }, { status: 409 });
       if (result.status === 'managed') {
         return NextResponse.json({ error: 'Published schedule events must be changed through their schedule.' }, { status: 409 });
       }

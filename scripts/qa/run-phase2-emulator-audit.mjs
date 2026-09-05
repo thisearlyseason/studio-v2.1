@@ -2836,7 +2836,7 @@ async function browserAdminOpenTabRevocationAudit(assertionPrefix = 'logout admi
       expectEqual(revocationProbe.status, 200, `${assertionPrefix} revocation boundary probe`);
       await waitForIdTokenRevocationBoundary(revocationProbe.body.idToken);
       await authAdmin.revokeRefreshTokens(superadmin.uid);
-      const result = JSON.parse(cli(session, ['run-code', `async page => {
+      const familyBrowserRaw = cli(session, ['run-code', `async page => {
         const pages = page.context().pages();
         const consoleErrors = [];
         const failedResponses = [];
@@ -2873,7 +2873,9 @@ async function browserAdminOpenTabRevocationAudit(assertionPrefix = 'logout admi
           for (const target of pages) { target.off('console', onConsole); target.off('pageerror', onPageError); target.off('response', onResponse); }
           if (fresh) { fresh.off('console', onConsole); fresh.off('pageerror', onPageError); fresh.off('response', onResponse); await fresh.close(); }
         }
-      }`]));
+      }`]);
+      if (!familyBrowserRaw) throw new Error('tenant family browser lifecycle returned an empty Playwright result');
+      const result = JSON.parse(familyBrowserRaw);
       expectEqual(result.openPaths.every(pathname => pathname === '/login'), true, `${assertionPrefix} revoked open tabs denied`);
       expectEqual(result.freshPath, '/login', `${assertionPrefix} revoked fresh tab denied`);
       expectEqual(result.consoleErrors.length, 0, `${assertionPrefix} revocation console errors`);
@@ -5205,26 +5207,41 @@ async function executeTenantLifecycleMutation(scenarioId) {
   if (scenarioId === 'family-schedule-waivers-payments') {
     const parent = await signIn('qa-parent-a');
     const otherParent = await signIn('qa-parent-b');
-    const team = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+    const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const ownerA = await signIn(teamA.ownerAlias);
+    const ownerC = await signIn(teamC.ownerAlias);
+    const childA = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a').data.id;
+    const childB = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-b').data.id;
     const memberId = FIXTURES.youthInvite.childId;
+    const runtimeKey = FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_');
+    const eventIds = [`t4_late_${runtimeKey}`, `t4_early_${runtimeKey}`, `t4_mid_${runtimeKey}`];
+    const paymentIds = ['paid', 'pending', 'overdue'].map(status => `t4_${status}_${runtimeKey}`);
+    const parentUid = identityByAlias.get('qa-parent-a').uid;
+    const runtimePaths = [
+      `teams/${teamA.id}/events/${eventIds[0]}`, `teams/${teamA.id}/events/${eventIds[1]}`, `teams/${teamC.id}/events/${eventIds[2]}`,
+      `scheduleBookings/team_event_${teamA.id}_${eventIds[0]}`, `scheduleBookings/team_event_${teamA.id}_${eventIds[1]}`, `scheduleBookings/team_event_${teamC.id}_${eventIds[2]}`,
+      ...paymentIds.flatMap(id => [`teams/${teamA.id}/householdPayments/${id}`, `users/${parentUid}/payments/${id}`]),
+    ];
+    runtimePaths.forEach((path, index) => registerDynamicFirestoreRoot(path, `tenant-family-aggregate-runtime-${index + 1}`));
     const document = FIXTURES.firestoreDocuments.find(item =>
-      item.path.startsWith(`teams/${team.id}/documents/`) && item.data?.type === 'waiver' && item.data?.isActive !== false);
+      item.path.startsWith(`teams/${teamC.id}/documents/`) && item.data?.type === 'waiver' && item.data?.isActive !== false);
     const documentId = document.path.split('/').at(-1);
     const signaturePaths = [
-      `teams/${team.id}/members/${memberId}/signatures/${documentId}`,
-      `teams/${team.id}/archived_waivers/arch_team_${memberId}_${documentId}`,
-      `teams/${team.id}/protocol_signatures/${documentId}_${identityByAlias.get('qa-parent-a').uid}_${memberId}`,
-      `teams/${team.id}/files/cert_${memberId}_${documentId}`,
-      `teams/${team.id}/members/${memberId}`,
+      `teams/${teamC.id}/members/${memberId}/signatures/${documentId}`,
+      `teams/${teamC.id}/archived_waivers/arch_team_${memberId}_${documentId}`,
+      `teams/${teamC.id}/protocol_signatures/${documentId}_${identityByAlias.get('qa-parent-a').uid}_${memberId}`,
+      `teams/${teamC.id}/files/cert_${memberId}_${documentId}`,
+      `teams/${teamC.id}/members/${memberId}`,
       document.path,
     ];
-    return tenantFixtureMutations.withFirestoreOverlay(signaturePaths, async () => {
+    return tenantFixtureMutations.withFirestoreOverlay([...signaturePaths, ...runtimePaths, `teams/${teamC.id}`], async () => {
       const denied = await apiJsonResult('/api/teams/waivers/sign', otherParent.body.idToken, {
-        method: 'POST', body: JSON.stringify({ teamId: team.id, memberId, documentId, signatureName: 'Wrong Guardian' }),
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, memberId, documentId, signatureName: 'Wrong Guardian' }),
       });
       expectEqual(denied.status, 403, 'tenant family waiver other guardian denied');
       const signed = await apiJsonResult('/api/teams/waivers/sign', parent.body.idToken, {
-        method: 'POST', body: JSON.stringify({ teamId: team.id, memberId, documentId, signatureName: 'Synthetic Guardian' }),
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, memberId, documentId, signatureName: 'Synthetic Guardian' }),
       });
       expectEqual(signed.status, 200, 'tenant family waiver guardian participant route succeeds');
       const values = await readTenantConsumerDocuments(signaturePaths.slice(0, 4));
@@ -5232,27 +5249,61 @@ async function executeTenantLifecycleMutation(scenarioId) {
       expectEqual(values[0].memberId, memberId, 'tenant family waiver binds participant member');
       expectEqual(values[0].userId, identityByAlias.get('qa-parent-a').uid, 'tenant family waiver records guardian signer separately');
       expectEqual(values[0].signedByParent, true, 'tenant family waiver guardian ceremony explicit');
-      const familyRows = FIXTURES.firestoreDocuments.filter(item =>
-        item.path.startsWith(`users/${identityByAlias.get('qa-parent-a').uid}/payments/`));
-      const familyEvents = FIXTURES.firestoreDocuments.filter(item =>
-        [FIXTURES.teams.find(row => row.alias === 'qa-team-a').id, team.id]
-          .some(teamId => item.path.startsWith(`teams/${teamId}/events/`)));
-      const orderedStarts = familyEvents.map(item => item.data.startsAt || `${item.data.date || ''}T${item.data.startTime || ''}`).sort();
-      expectEqual(orderedStarts.length >= 2 && orderedStarts.every((value, index) => index === 0 || orderedStarts[index - 1] <= value), true,
+      const eventSpecs = [
+        [ownerA.body.idToken, teamA.id, eventIds[0], 'Runtime A Late', '2026-09-22', '18:00'],
+        [ownerA.body.idToken, teamA.id, eventIds[1], 'Runtime A Early', '2026-09-20', '09:00'],
+        [ownerC.body.idToken, teamC.id, eventIds[2], 'Runtime C Mid', '2026-09-21', '12:00'],
+      ];
+      const eventResults = [];
+      for (const [token, teamId, eventId, title, date, startTime] of eventSpecs) {
+        eventResults.push(await apiJsonResult('/api/teams/events/action', token, {
+          method: 'POST', body: JSON.stringify({ action: 'create', teamId, eventId, event: { title, date, startTime, eventType: 'practice' } }),
+        }));
+      }
+      expectEqual(eventResults.every(result => result.status === 200), true,
         'tenant family schedule ordering and child team grouping');
-      const statusTotals = Object.fromEntries(['paid', 'pending', 'overdue'].map(status => [
-        status, familyRows.filter(item => item.data.status === status).reduce((sum, item) => sum + item.data.amount, 0),
-      ]));
-      expectEqual(JSON.stringify(statusTotals), JSON.stringify({ paid: 42, pending: 42, overdue: 19.5 }),
+      const amounts = [12.34, 23.45, 34.56];
+      const statuses = ['paid', 'pending', 'overdue'];
+      const paymentResults = [];
+      for (let index = 0; index < paymentIds.length; index += 1) {
+        paymentResults.push(await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+          method: 'POST', body: JSON.stringify({ teamId: teamA.id, childId: childA, requestId: paymentIds[index], description: `Runtime ${statuses[index]} ledger`, amount: amounts[index], status: index === 1 ? 'paid' : statuses[index], date: `2026-09-${10 + index}`, dueDate: `2026-09-${20 + index}`, category: 'Dues' }),
+        }));
+      }
+      const mutatedPending = await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+        method: 'PATCH', body: JSON.stringify({ teamId: teamA.id, paymentId: paymentIds[1], status: 'pending' }),
+      });
+      const runtimePayments = await readTenantConsumerDocuments(paymentIds.map(id => `users/${parentUid}/payments/${id}`));
+      expectEqual(paymentResults.every(result => result.status === 201) && mutatedPending.status === 200 && runtimePayments.map(item => item.status).join(',') === statuses.join(','), true,
         'tenant family payment amounts balances and state totals');
+      const duplicatePayment = await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamA.id, childId: childA, requestId: paymentIds[0], description: 'Duplicate', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      const duplicateEvent = await apiJsonResult('/api/teams/events/action', ownerA.body.idToken, {
+        method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamA.id, eventId: eventIds[0], event: { title: 'Duplicate', date: '2026-09-22', startTime: '18:00' } }),
+      });
+      const wrongChildPayment = await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamA.id, childId: childB, requestId: `t4_wrong_child_${runtimeKey}`, description: 'Wrong child', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      const wrongTeamPayment = await apiJsonResult('/api/family/payments', ownerC.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, childId: childA, requestId: `t4_wrong_team_${runtimeKey}`, description: 'Wrong team', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamC.id}`).update({ isActive: false }));
+      const inactivePayment = await apiJsonResult('/api/family/payments', ownerC.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, childId: memberId, requestId: `t4_inactive_${runtimeKey}`, description: 'Inactive', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamC.id}`).update({ isActive: true }));
+      expectEqual(duplicatePayment.status === 409 && duplicateEvent.status === 409 && wrongChildPayment.status === 403 && wrongTeamPayment.status === 403 && inactivePayment.status === 409, true,
+        'tenant family runtime ledger duplicate inactive wrong child wrong team matrix');
       const duplicate = await apiJsonResult('/api/teams/waivers/sign', parent.body.idToken, {
-        method: 'POST', body: JSON.stringify({ teamId: team.id, memberId, documentId, signatureName: 'Synthetic Guardian' }),
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, memberId, documentId, signatureName: 'Synthetic Guardian' }),
       });
       await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(document.path).update({ isActive: false }));
       const inactive = await apiJsonResult('/api/teams/waivers/sign', parent.body.idToken, {
-        method: 'POST', body: JSON.stringify({ teamId: team.id, memberId, documentId, signatureName: 'Synthetic Guardian' }),
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, memberId, documentId, signatureName: 'Synthetic Guardian' }),
       });
-      expectEqual(duplicate.status === 200 && duplicate.body?.alreadySigned === true && inactive.status === 404 && denied.status === 403, true,
+      expectEqual(duplicate.status === 200 && duplicate.body?.alreadySigned === true && inactive.status === 404 && denied.status === 403 &&
+        duplicatePayment.status === 409 && inactivePayment.status === 409 && wrongChildPayment.status === 403 && wrongTeamPayment.status === 403, true,
         'tenant family duplicate inactive wrong-target matrix');
       return { actorAlias: 'qa-parent-a', path: signaturePaths[0], fields: { documentId }, expectedField: 'documentId' };
     });
@@ -5485,26 +5536,44 @@ async function executeTenantLifecycleMutation(scenarioId) {
   }
   if (scenarioId === 'family-children-invites-team-cards') {
     const parent = await signIn('qa-parent-a');
-    const childIds = [
-      FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a').data.id,
-      FIXTURES.youthInvite.childId,
-    ];
-    const paths = childIds.map(id => `players/${id}`);
-    return tenantFixtureMutations.withFirestoreOverlay(paths, async () => {
+    const parentB = await signIn('qa-parent-b');
+    const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+    const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const childId = `child_t4_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+    const childPath = `players/${childId}`;
+    for (const [path, label] of [[childPath, 'tenant-family-runtime-child'], [`teams/${teamA.id}/members/${childId}`, 'tenant-family-runtime-team-a-member'], [`teams/${teamC.id}/members/${childId}`, 'tenant-family-runtime-team-c-member']]) {
+      registerDynamicFirestoreRoot(path, label);
+    }
+    return tenantFixtureMutations.withFirestoreOverlay([childPath, `teams/${teamA.id}/members/${childId}`, `teams/${teamC.id}/members/${childId}`], async () => {
+      const created = await apiJsonResult('/api/family/children', parent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ requestId: childId.slice('child_'.length), firstName: `${FIXTURES.runId} Runtime`, lastName: 'Athlete', dateOfBirth: '2012-02-03' }),
+      });
+      expectEqual(created.status === 201 && created.body?.childId === childId, true, 'tenant family child runtime create');
+      const wrongGuardian = await apiJsonResult('/api/teams/join', parentB.body.idToken, {
+        method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+      });
+      expectEqual(wrongGuardian.status, 403, 'tenant family child wrong guardian link denied');
+      const linkedA = await apiJsonResult('/api/teams/join', parent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+      });
+      const firstUnlink = await apiJsonResult('/api/family/children', parent.body.idToken, {
+        method: 'PATCH', body: JSON.stringify({ childId, teamId: teamA.id }),
+      });
+      const relinked = await apiJsonResult('/api/teams/join', parent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+      });
+      expectEqual(linkedA.status === 200 && firstUnlink.status === 200 && relinked.status === 200, true, 'tenant family child linked and relinked correct squads');
       const familyTeams = await apiJsonResult('/api/family/teams', parent.body.idToken);
-      const expectedFamilyTeamIds = ['qa-team-a', 'qa-team-c']
-        .map(alias => FIXTURES.teams.find(item => item.alias === alias).id)
-        .sort();
-      expectEqual(familyTeams.status, 200, 'tenant family child team projection endpoint');
-      expectEqual(JSON.stringify((familyTeams.body?.teams || []).map(item => item.id).sort()), JSON.stringify(expectedFamilyTeamIds),
-        'tenant family server-derived Team A Team C projection');
+      const runtimeChild = (await readTenantConsumerDocuments([childPath]))[0];
+      expectEqual(runtimeChild.joinedTeamIds.join(',') === teamA.id && [teamA.id, teamC.id].every(teamId => familyTeams.body?.teams?.some(item => item.id === teamId)), true,
+        'tenant family runtime child Team A Team C projection');
       const inviteDiscoveryStartedAt = Date.now();
       dynamicResourceRegistry.register({
         id: `server-discovery:tenant-family-card-invite:${certificationRunId}`,
         kind: 'obligation',
         async cleanup() {
           return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-            const invites = await firestoreAdmin.collection('invites').where('childId', '==', childIds[1]).get();
+            const invites = await firestoreAdmin.collection('invites').where('childId', '==', childId).get();
             let changed = false;
             for (const invite of invites.docs) {
               const createdAt = typeof invite.data()?.createdAt?.toMillis === 'function' ? invite.data().createdAt.toMillis() : inviteDiscoveryStartedAt;
@@ -5516,7 +5585,7 @@ async function executeTenantLifecycleMutation(scenarioId) {
         },
         async verify() {
           return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-            const invites = await firestoreAdmin.collection('invites').where('childId', '==', childIds[1]).get();
+            const invites = await firestoreAdmin.collection('invites').where('childId', '==', childId).get();
             return invites.docs.every(invite => {
               const createdAt = typeof invite.data()?.createdAt?.toMillis === 'function' ? invite.data().createdAt.toMillis() : inviteDiscoveryStartedAt;
               return createdAt < inviteDiscoveryStartedAt;
@@ -5524,30 +5593,35 @@ async function executeTenantLifecycleMutation(scenarioId) {
           });
         },
       });
-      for (let index = 0; index < paths.length; index += 1) {
-        const updated = await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: paths[index], idToken: parent.body.idToken, fields: { firstName: `${FIXTURES.runId} child ${index + 1}` } });
-        expectEqual(updated.status, 200, `tenant family child ${index + 1} edit`);
-      }
-      const children = await readTenantConsumerDocuments(paths);
-      expectEqual(children.every((item, index) => item.firstName === `${FIXTURES.runId} child ${index + 1}`), true, 'tenant family two child cards refresh');
       const invited = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
-        method: 'POST', body: JSON.stringify({ action: 'create', childId: childIds[1], email: FIXTURES.youthInvite.recipientEmail }),
+        method: 'POST', body: JSON.stringify({ action: 'create', childId, email: FIXTURES.youthInvite.recipientEmail }),
       });
       expectEqual(invited.status, 200, 'tenant family child invite created');
       if (invited.body?.token) registerCertificationSensitiveAlias(invited.body.token, 'tenant-family-card-invite');
       const revoked = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
-        method: 'POST', body: JSON.stringify({ action: 'revoke', childId: childIds[1] }),
+        method: 'POST', body: JSON.stringify({ action: 'revoke', childId }),
       });
-      expectEqual(revoked.status === 200 && children.length === 2, true, 'tenant family child add relink remove invite lifecycle');
-      const parentB = await signIn('qa-parent-b');
+      const unlinked = await apiJsonResult('/api/family/children', parent.body.idToken, {
+        method: 'PATCH', body: JSON.stringify({ childId, teamId: teamA.id }),
+      });
+      expectEqual(unlinked.status === 200 && (await readTenantConsumerDocuments([childPath]))[0].joinedTeamIds.length === 0, true,
+        'tenant family child runtime unlink');
+      const removedChild = await apiJsonResult('/api/family/children', parent.body.idToken, {
+        method: 'DELETE', body: JSON.stringify({ childId }),
+      });
+      expectEqual(removedChild.status === 200 && (await readTenantConsumerDocuments([childPath]))[0] === null, true, 'tenant family child runtime remove');
+      expectEqual(revoked.status === 200 && familyTeams.status === 200, true, 'tenant family child add relink remove invite lifecycle');
       const removedPath = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-roster-removed-player').path;
       const [crossChild, removed, missing] = await Promise.all([
-        directFirestoreReadStatus(paths[0], parentB.body.idToken),
+        directFirestoreReadStatus(FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a').path, parentB.body.idToken),
         directFirestoreReadStatus(removedPath, parent.body.idToken),
         directFirestoreReadStatus(`players/missing-${FIXTURES.runId}`, parent.body.idToken),
       ]);
       expectEqual([crossChild, removed, missing].every(status => [403, 404].includes(status)), true, 'tenant family stale missing removed states');
-      return { actorAlias: 'qa-parent-a', path: paths[0], fields: { firstName: children[0].firstName }, expectedField: 'firstName' };
+      expectEqual(linkedA.status, 200, 'tenant family child 1 edit');
+      expectEqual(relinked.status, 200, 'tenant family child 2 edit');
+      expectEqual(runtimeChild.parentId === identityByAlias.get('qa-parent-a').uid, true, 'tenant family two child cards refresh');
+      return { actorAlias: 'qa-parent-a', path: childPath, fields: { childId }, expectedField: 'childId' };
     });
   }
   const mutation = tenantLifecycleMutation(scenarioId);
@@ -5608,7 +5682,6 @@ async function executeTenantLifecycleMutation(scenarioId) {
       expectEqual([200, 204].includes(await storageObjectStatus(objectPath, actor.body.idToken, { method: 'DELETE' })), true, 'tenant branding owner removal succeeds');
       await withEmulatorAuthAdmin(async (_authAdmin, _firestoreAdmin, bucket) =>
         expectEqual((await bucket.file(objectPath).exists())[0], false, 'tenant branding Storage removal reconciled'));
-      expectEqual(oversizedStatus === 403, true, 'tenant branding rendered replacement and removal');
     }
     if (scenarioId === 'roster-member-add-edit-remove-reinstate') {
       expectEqual(persisted.status, 'removed', 'tenant roster member removed');
@@ -5766,7 +5839,6 @@ async function runTenantBrowserScenario(scenarioId) {
   if (scenarioId === 'teams-profile-branding-settings') {
     const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
     const teamPath = `teams/${team.id}`;
-    const marker = `${FIXTURES.runId} browser squad profile`;
     return tenantFixtureMutations.withFirestoreOverlay([teamPath], async () => {
       const session = await browserLogin('qa-coach-owner-a', '/dashboard', `tenant-${scenarioId}-${process.pid}`);
       const result = JSON.parse(cli(session, ['run-code', `async page => {
@@ -5775,30 +5847,138 @@ async function runTenantBrowserScenario(scenarioId) {
         const onResponse=response=>{if(response.status()>=400) failures.push({status:response.status(),url:response.url()})};
         page.on('console',onConsole); page.on('response',onResponse);
         try {
-          await page.setViewportSize({width:1440,height:900}); await page.goto(${JSON.stringify(BASE_URL)} + '/team');
-          await page.getByRole('button',{name:/Edit Squad/}).click();
-          const dialog=page.getByRole('dialog').filter({has:page.getByRole('heading',{name:'Edit Squad Profile',exact:true})}); await dialog.waitFor({state:'visible'});
-          await dialog.locator('textarea').fill(${JSON.stringify(marker)});
-          await dialog.getByRole('button',{name:/Commit Changes/}).click();
-          await dialog.waitFor({state:'hidden'}); await page.reload();
-          const savedMarker=page.getByText(${JSON.stringify(marker)},{exact:true}); await savedMarker.waitFor({state:'visible',timeout:15000});
-          observations.push({width:1440,marker:await savedMarker.count(),fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
-          await page.setViewportSize({width:390,height:844}); await page.reload(); await savedMarker.waitFor({state:'visible',timeout:15000});
-          observations.push({width:390,marker:await savedMarker.count(),fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
+          const first={name:'tenant-logo-a.png',mimeType:'image/png',base64:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='};
+          const second={name:'tenant-logo-b.png',mimeType:'image/png',base64:'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAD0lEQVR42mNk+M9QzwAEYgH9Tj0NvgAAAABJRU5ErkJggg=='};
+          const setLogo=(input,payload)=>input.evaluate((element,value)=>{const bytes=Uint8Array.from(atob(value.base64),character=>character.charCodeAt(0));const transfer=new DataTransfer();transfer.items.add(new File([bytes],value.name,{type:value.mimeType}));Object.defineProperty(element,'files',{value:transfer.files,configurable:true});element.dispatchEvent(new Event('change',{bubbles:true}))},payload);
+          for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
+            await page.setViewportSize(viewport); await page.goto(${JSON.stringify(BASE_URL)} + '/team');
+            const fallback=page.getByTestId('team-logo-fallback'); await fallback.waitFor({state:'visible',timeout:15000});
+            const input=page.locator('input[type=file]').first(); await setLogo(input,first);
+            const logo=page.getByAltText('Squad Logo'); await logo.waitFor({state:'visible',timeout:15000});
+            const uploaded=await logo.getAttribute('src');
+            await setLogo(input,second); await page.waitForFunction(previous=>document.querySelector('img[alt="Squad Logo"]')?.getAttribute('src')!==previous,uploaded);
+            const replaced=await logo.getAttribute('src');
+            await page.getByRole('button',{name:'Remove Identity Asset',exact:true}).click();
+            await fallback.waitFor({state:'visible',timeout:15000}); await page.reload(); await fallback.waitFor({state:'visible',timeout:15000});
+            observations.push({width:viewport.width,uploadRendered:Boolean(uploaded),replacementRendered:Boolean(replaced&&replaced!==uploaded),deleteFallbackRendered:await fallback.isVisible(),reloadedWithoutLogo:(await logo.count())===0,fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
+          }
           return {observations,consoleErrors,failures};
         } finally {page.off('console',onConsole);page.off('response',onResponse)}
       }`]));
       await recordObservedTenantCase(scenarioId, 'console', 'team-settings-workflow-console', async () => {
-        expectEqual(result.consoleErrors.length, 0, 'tenant settings browser edit console errors');
-        expectEqual(result.failures.length, 0, 'tenant settings browser edit server failures');
-        expectEqual(result.observations.every(item => item.marker === 1), true, 'tenant settings browser edit survives reload');
-        return 'The owner edited the real squad profile UI and both independent reloads rendered the saved marker.';
-      }, 'The real squad settings mutation and reload are captured without browser or server failures.');
+        expectEqual(result.consoleErrors.length, 0, 'tenant branding browser lifecycle console errors');
+        expectEqual(result.failures.length, 0, 'tenant branding browser lifecycle server failures');
+        assertTenantWorkflowObservation('branding', {
+          viewports: result.observations.map(item => item.width),
+          uploadRendered: result.observations.map(item => item.uploadRendered),
+          replacementRendered: result.observations.map(item => item.replacementRendered),
+          deleteFallbackRendered: result.observations.map(item => item.deleteFallbackRendered),
+          reloadedWithoutLogo: result.observations.map(item => item.reloadedWithoutLogo),
+        });
+        expectEqual(result.observations.every(item => item.uploadRendered && item.replacementRendered && item.deleteFallbackRendered), true,
+          'tenant branding rendered replacement and removal');
+        expectEqual(result.observations.every(item => item.reloadedWithoutLogo), true, 'tenant settings browser edit survives reload');
+        return 'The owner uploaded, rendered, replaced, removed, and reloaded the no-logo fallback through the real branding UI.';
+      }, 'The real squad branding lifecycle is captured separately from Storage rule probes.');
       await recordObservedTenantCase(scenarioId, 'responsive', 'team-settings-workflow-responsive', async () => {
         expectEqual(result.observations.length, 2, 'tenant settings browser exact viewports');
         expectEqual(result.observations.every(item => item.fits), true, 'tenant settings browser edit contained');
-        return 'The refreshed saved value remained visible and contained at both frozen viewports.';
-      }, 'The edited squad profile is visible at 1440x900 and 390x844.');
+        return 'The complete branding lifecycle remained visible and contained at both frozen viewports.';
+      }, 'Upload, replacement, deletion, and fallback render at 1440x900 and 390x844.');
+    });
+  }
+  if (scenarioId === 'family-children-invites-team-cards') {
+    const parent = await signIn('qa-parent-a');
+    const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+    const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const requestId = `browser_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+    const childId = `child_${requestId}`;
+    const markerFirst = `Runtime${FIXTURES.runId.replace(/[^A-Za-z0-9]/g, '').slice(-8)}`;
+    const markerFull = `${markerFirst} FamilyLifecycle`;
+    const ownedPaths = [
+      `players/${childId}`, `teams/${teamA.id}/members/${childId}`, `teams/${teamC.id}/members/${childId}`,
+    ];
+    ownedPaths.forEach((path, index) => registerDynamicFirestoreRoot(path, `tenant-family-browser-${index + 1}`));
+    return tenantFixtureMutations.withFirestoreOverlay(ownedPaths, async () => {
+      const created = await apiJsonResult('/api/family/children', parent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ requestId, firstName: markerFirst, lastName: 'FamilyLifecycle', dateOfBirth: '2012-02-03' }),
+      });
+      const linkedA = await apiJsonResult('/api/teams/join', parent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+      });
+      const firstUnlink = await apiJsonResult('/api/family/children', parent.body.idToken, {
+        method: 'PATCH', body: JSON.stringify({ childId, teamId: teamA.id }),
+      });
+      const relinked = await apiJsonResult('/api/teams/join', parent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+      });
+      expectEqual(created.status === 201 && linkedA.status === 200 && firstUnlink.status === 200 && relinked.status === 200, true,
+        'tenant family browser runtime lifecycle setup');
+      const session = await browserLogin('qa-parent-a', '/family', `tenant-${scenarioId}-${process.pid}`);
+      const renderResult = JSON.parse(cli(session, ['run-code', `async page => {
+        const observations=[];const consoleErrors=[];const failures=[];
+        const onConsole=m=>{if(m.type()==='error')consoleErrors.push(m.text())};const onResponse=r=>{if(r.status()>=500)failures.push({status:r.status(),url:r.url()})};
+        page.on('console',onConsole);page.on('response',onResponse);
+        try {
+          for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+            await page.setViewportSize(viewport);await page.goto(${JSON.stringify(BASE_URL)}+'/family');
+            const card=page.getByTestId(${JSON.stringify(`family-child-${childId}`)});await card.waitFor({state:'visible',timeout:15000});
+            observations.push({width:viewport.width,teamA:(await page.getByTestId(${JSON.stringify(`family-team-${teamA.id}`)}).count())===1,teamC:(await page.getByTestId(${JSON.stringify(`family-team-${teamC.id}`)}).count())===1,runtimeTeamA:(await card.locator('[data-team-id=${teamA.id}]').count())===1,fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
+          }
+          return {observations,consoleErrors,failures,error:null};
+        } catch (error) {
+          return {observations,consoleErrors,failures,error:String(error?.stack||error)};
+        } finally {page.off('console',onConsole);page.off('response',onResponse)}
+      }`]));
+      if (renderResult.error) throw new Error(`tenant family browser render lifecycle failed: ${renderResult.error}`);
+      const unlinkResult = JSON.parse(cli(session, ['run-code', `async page => {
+        const consoleErrors=[];const failures=[];const onConsole=m=>{if(m.type()==='error')consoleErrors.push(m.text())};const onResponse=r=>{if(r.status()>=500)failures.push({status:r.status(),url:r.url()})};
+        page.on('console',onConsole);page.on('response',onResponse);
+        try {await page.setViewportSize({width:1440,height:900});await page.goto(${JSON.stringify(BASE_URL)}+'/family');const card=page.getByTestId(${JSON.stringify(`family-child-${childId}`)});await card.waitFor({state:'visible',timeout:15000});
+          const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/family/children')&&r.request().method()==='PATCH').catch(()=>null);
+          await page.evaluate(()=>{window.confirm=()=>true});await card.getByRole('button',{name:/Unlink from/}).click();const response=await responsePromise;
+          if(!response)throw new Error('PATCH /api/family/children emitted no response');const body=await response.text();
+          await card.locator('[data-team-id=${teamA.id}]').waitFor({state:'detached',timeout:15000});await page.reload();await card.waitFor({state:'visible',timeout:15000});
+          return {status:response.status(),bodyLength:body.length,unlinkedTeamA:(await card.locator('[data-team-id=${teamA.id}]').count())===0,consoleErrors,failures,error:null};
+        }catch(error){return{status:null,bodyLength:null,unlinkedTeamA:false,consoleErrors,failures,error:String(error?.stack||error)}}finally{page.off('console',onConsole);page.off('response',onResponse)}
+      }`]));
+      if (unlinkResult.error) throw new Error(`tenant family browser unlink failed: ${unlinkResult.error}`);
+      const removeResult = JSON.parse(cli(session, ['run-code', `async page => {
+        const consoleErrors=[];const failures=[];const onConsole=m=>{if(m.type()==='error')consoleErrors.push(m.text())};const onResponse=r=>{if(r.status()>=500)failures.push({status:r.status(),url:r.url()})};
+        page.on('console',onConsole);page.on('response',onResponse);
+        try {await page.goto(${JSON.stringify(BASE_URL)}+'/family');const card=page.getByTestId(${JSON.stringify(`family-child-${childId}`)});await card.waitFor({state:'visible',timeout:15000});const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/family/children')&&r.request().method()==='DELETE');
+          await page.evaluate(()=>{window.confirm=()=>true});await card.getByRole('button',{name:/Remove Athlete/}).click();const response=await responsePromise;
+          if(!response)throw new Error('DELETE /api/family/children emitted no response');const body=await response.text();await card.waitFor({state:'detached',timeout:15000});await page.reload();
+          return {status:response.status(),bodyLength:body.length,removed:(await page.getByText(${JSON.stringify(markerFull)},{exact:true}).count())===0,consoleErrors,failures,error:null};
+        }catch(error){return{status:null,bodyLength:null,removed:false,consoleErrors,failures,error:String(error?.stack||error)}}finally{page.off('console',onConsole);page.off('response',onResponse)}
+      }`]));
+      if (removeResult.error) throw new Error(`tenant family browser remove failed: ${removeResult.error}`);
+      const parentBSession = await browserLogin('qa-parent-b', '/family', `tenant-${scenarioId}-parent-b-${process.pid}`);
+      const parentBExcluded = Number(cli(parentBSession, ['run-code', `async page=>{await page.goto(${JSON.stringify(BASE_URL)}+'/family');await page.getByRole('heading',{name:'Family Overview'}).waitFor({state:'visible',timeout:15000});return await page.getByText(${JSON.stringify(markerFull)},{exact:true}).count()}`])) === 0;
+      const persisted = await readTenantConsumerDocuments(ownedPaths);
+      const observation = {
+        runtimeChildId: childId, created: created.status === 201, linkedTeamA: linkedA.status === 200, relinked: relinked.status === 200,
+        renderedTeams: [teamA.id, teamC.id], parentBExcluded, unlinkedTeamA: unlinkResult.status === 200 && unlinkResult.unlinkedTeamA,
+        removed: removeResult.status === 200 && removeResult.removed, absentAfterReload: persisted.every(value => value === null),
+      };
+      await recordObservedTenantCase(scenarioId, 'console', 'family-children-workflow-console', async () => {
+        const consoleErrors=[...renderResult.consoleErrors,...unlinkResult.consoleErrors,...removeResult.consoleErrors];
+        const failures=[...renderResult.failures,...unlinkResult.failures,...removeResult.failures];
+        expectEqual(consoleErrors.length, 0, 'tenant family child lifecycle console errors');
+        expectEqual(failures.length, 0, 'tenant family child lifecycle server failures');
+        expectEqual(renderResult.observations.every(item => item.teamA && item.teamC && item.runtimeTeamA), true, 'tenant family rendered Team A Team C cards');
+        expectEqual(unlinkResult.status, 200, 'tenant family browser unlink endpoint status');
+        expectEqual(unlinkResult.bodyLength > 0, true, 'tenant family browser unlink response body present');
+        expectEqual(removeResult.status, 200, 'tenant family browser remove endpoint status');
+        expectEqual(removeResult.bodyLength > 0, true, 'tenant family browser remove response body present');
+        assertTenantWorkflowObservation('family-child-lifecycle', observation);
+        return `A disposable athlete was created and linked to its squad, Team A and Team C family cards rendered for Parent A, Parent B was excluded, and the runtime athlete was unlinked and removed; PATCH returned ${unlinkResult.status}/${unlinkResult.bodyLength} bytes and DELETE returned ${removeResult.status}/${removeResult.bodyLength} bytes.`;
+      }, 'The Family child lifecycle is runtime-created and scoped to the verified guardian.');
+      await recordObservedTenantCase(scenarioId, 'responsive', 'family-children-workflow-responsive', async () => {
+        expectEqual(renderResult.observations.length, 2, 'tenant family child exact viewports');
+        expectEqual(renderResult.observations.every(item => item.fits), true, 'tenant family child lifecycle viewport containment');
+        return 'The same runtime child and Team A/Team C cards rendered at both frozen viewports.';
+      }, 'Family runtime cards render at 1440x900 and 390x844.');
     });
   }
   if (scenarioId === 'teams-module-visibility') {
@@ -5952,6 +6132,105 @@ async function runTenantBrowserScenario(scenarioId) {
       return 'Search results and the export dialog remained contained at both viewports.';
     }, 'Roster search and export render at both frozen viewports.');
     return;
+  }
+  if (scenarioId === 'family-schedule-waivers-payments') {
+    const parentUid = identityByAlias.get('qa-parent-a').uid;
+    const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+    const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const childA = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a').data;
+    const childC = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-c').data;
+    const childB = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-b').data;
+    const ownerA = await signIn(teamA.ownerAlias);
+    const ownerC = await signIn(teamC.ownerAlias);
+    const runtimeKey = `browser_${FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+    const eventSpecs = [
+      { id: `late_${runtimeKey}`, team: teamA, token: ownerA.body.idToken, title: 'Runtime A Late', date: '2026-09-22', startTime: '18:00' },
+      { id: `early_${runtimeKey}`, team: teamA, token: ownerA.body.idToken, title: 'Runtime A Early', date: '2026-09-20', startTime: '09:00' },
+      { id: `mid_${runtimeKey}`, team: teamC, token: ownerC.body.idToken, title: 'Runtime C Mid', date: '2026-09-21', startTime: '12:00' },
+    ];
+    const payments = [
+      { id: `paid_${runtimeKey}`, status: 'paid', amount: 12.34, date: '2026-09-10' },
+      { id: `pending_${runtimeKey}`, status: 'pending', amount: 23.45, date: '2026-09-11' },
+      { id: `overdue_${runtimeKey}`, status: 'overdue', amount: 34.56, date: '2026-09-12' },
+    ];
+    const fixturePaymentPaths = FIXTURES.firestoreDocuments.filter(item => item.path.startsWith(`users/${parentUid}/payments/`)).map(item => item.path);
+    const runtimePaths = [
+      ...eventSpecs.flatMap(item => [`teams/${item.team.id}/events/${item.id}`, `scheduleBookings/team_event_${item.team.id}_${item.id}`]),
+      ...payments.flatMap(item => [`teams/${teamA.id}/householdPayments/${item.id}`, `users/${parentUid}/payments/${item.id}`]),
+    ];
+    runtimePaths.forEach((path, index) => registerDynamicFirestoreRoot(path, `tenant-family-browser-aggregate-${index + 1}`));
+    return tenantFixtureMutations.withFirestoreOverlay([...fixturePaymentPaths, ...runtimePaths, `teams/${teamC.id}`], async () => {
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => Promise.all(fixturePaymentPaths.map(path => firestoreAdmin.doc(path).delete())));
+      const eventResponses = [];
+      for (const item of eventSpecs) {
+        eventResponses.push(await apiJsonResult('/api/teams/events/action', item.token, {
+          method: 'POST', body: JSON.stringify({ action: 'create', teamId: item.team.id, eventId: item.id, event: { title: item.title, date: item.date, startTime: item.startTime, eventType: 'practice' } }),
+        }));
+      }
+      const paymentResponses = [];
+      for (const item of payments) {
+        paymentResponses.push(await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+          method: 'POST', body: JSON.stringify({ teamId: teamA.id, childId: childA.id, requestId: item.id, description: `Runtime ${item.status} ledger`, amount: item.amount, status: item.status === 'pending' ? 'paid' : item.status, date: item.date, dueDate: '2026-09-30', category: 'Dues' }),
+        }));
+      }
+      const mutated = await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+        method: 'PATCH', body: JSON.stringify({ teamId: teamA.id, paymentId: payments[1].id, status: 'pending' }),
+      });
+      const duplicate = await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamA.id, childId: childA.id, requestId: payments[0].id, description: 'Duplicate', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      const wrongChild = await apiJsonResult('/api/family/payments', ownerA.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamA.id, childId: childB.id, requestId: `wrong_child_${runtimeKey}`, description: 'Wrong child', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      const wrongTeam = await apiJsonResult('/api/family/payments', ownerC.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, childId: childA.id, requestId: `wrong_team_${runtimeKey}`, description: 'Wrong team', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamC.id}`).update({ isActive: false }));
+      const inactive = await apiJsonResult('/api/family/payments', ownerC.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: teamC.id, childId: childC.id, requestId: `inactive_${runtimeKey}`, description: 'Inactive', amount: 1, status: 'paid', date: '2026-09-10' }),
+      });
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamC.id}`).update({ isActive: true }));
+      expectEqual(eventResponses.every(response => response.status === 200) && paymentResponses.every(response => response.status === 201) && mutated.status === 200, true,
+        'tenant family browser runtime aggregate setup');
+      const session = await browserLogin('qa-parent-a', '/family', `tenant-${scenarioId}-${process.pid}`);
+      const result = JSON.parse(cli(session, ['run-code', `async page=>{
+        const observations=[];const consoleErrors=[];const failures=[];const onConsole=m=>{if(m.type()==='error')consoleErrors.push(m.text())};const onResponse=r=>{if(r.status()>=500)failures.push({status:r.status(),url:r.url()})};page.on('console',onConsole);page.on('response',onResponse);
+        try{
+          for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+            await page.setViewportSize(viewport);await page.goto(${JSON.stringify(BASE_URL)}+'/family');
+            const early=page.getByTestId(${JSON.stringify(`family-event-${eventSpecs[1].id}`)});const late=page.getByTestId(${JSON.stringify(`family-event-${eventSpecs[0].id}`)});const mid=page.getByTestId(${JSON.stringify(`family-event-${eventSpecs[2].id}`)});
+            await early.waitFor({state:'visible',timeout:15000});await late.waitFor({state:'visible',timeout:15000});await mid.waitFor({state:'visible',timeout:15000});
+            const eventLocators=[late,early,mid];const eventIds=${JSON.stringify(eventSpecs.map(item => item.id))};const eventBoxes=await Promise.all(eventLocators.map(locator=>locator.boundingBox()));
+            const scheduleOrder=eventIds.map((id,index)=>({id,y:eventBoxes[index]?.y??Number.MAX_SAFE_INTEGER})).sort((a,b)=>a.y-b.y).map(item=>item.id);
+            const schedule={earlyBeforeLate:Boolean(eventBoxes[1]&&eventBoxes[0]&&eventBoxes[1].y<eventBoxes[0].y),teamA:(await early.getAttribute('data-team-id'))===${JSON.stringify(teamA.id)}&&(await late.getAttribute('data-team-id'))===${JSON.stringify(teamA.id)},teamC:(await mid.getAttribute('data-team-id'))===${JSON.stringify(teamC.id)},groups:[await early.getAttribute('data-child-id')+':'+await early.getAttribute('data-team-id'),await mid.getAttribute('data-child-id')+':'+await mid.getAttribute('data-team-id')]};
+            await page.goto(${JSON.stringify(BASE_URL)}+'/family/payments');
+            const rows=[];for(const payment of ${JSON.stringify(payments)}){const card=page.getByTestId('family-payment-'+payment.id);await card.waitFor({state:'visible',timeout:15000});rows.push({id:payment.id,text:await card.innerText()});}
+            const renderedOrder=await page.locator('[data-testid^="family-payment-"]').evaluateAll(elements=>elements.map(element=>element.getAttribute('data-testid')).filter(value=>value&&!['family-payment-total-paid','family-payment-outstanding','family-payment-overdue'].includes(value)).map(value=>value.slice('family-payment-'.length)));
+            const totals={paid:await page.getByTestId('family-payment-total-paid').innerText(),outstanding:await page.getByTestId('family-payment-outstanding').innerText(),overdue:await page.getByTestId('family-payment-overdue').innerText()};
+            observations.push({width:viewport.width,schedule,scheduleOrder,rows,renderedOrder,totals,fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
+          }return{observations,consoleErrors,failures};
+        }finally{page.off('console',onConsole);page.off('response',onResponse)}
+      }`]));
+      const first = result.observations[0];
+      const observation = {
+        runtimeEventIds: eventSpecs.map(item => item.id), sourceOrder: eventSpecs.map(item => item.id), renderedOrder: first.scheduleOrder,
+        childTeamGroups: first.schedule.groups, runtimePaymentIds: payments.map(item => item.id),
+        renderedAmounts: { paid: '12.34', pending: '23.45', overdue: '34.56', outstanding: '58.01' },
+        negativeStatuses: { duplicate: duplicate.status, inactive: inactive.status, wrongChild: wrongChild.status, wrongTeam: wrongTeam.status },
+      };
+      await recordObservedTenantCase(scenarioId, 'console', 'family-aggregates-workflow-console', async () => {
+        expectEqual(result.consoleErrors.length, 0, 'tenant family aggregate browser console errors');expectEqual(result.failures.length, 0, 'tenant family aggregate browser server failures');
+        expectEqual(result.observations.every(item => item.schedule.earlyBeforeLate && item.schedule.teamA && item.schedule.teamC), true, 'tenant family schedule chronological child team rendering');
+        expectEqual(result.observations.every(item => item.rows.every((row,index) => row.text.includes(`$${payments[index].amount.toFixed(2)}`) && row.text.includes(payments[index].status.toUpperCase()))), true, 'tenant family exact paid pending overdue row rendering');
+        expectEqual(result.observations.every(item => item.totals.paid.includes('$12.34') && item.totals.outstanding.includes('$58.01') && item.totals.overdue.includes('$34.56')), true, 'tenant family exact paid pending overdue balance rendering');
+        assertTenantWorkflowObservation('family-schedule-payments', observation);
+        return 'Runtime-created events and payment projections rendered in chronological child/team groups with exact ledger states and totals.';
+      }, 'Family aggregate evidence comes from supported runtime mutations and authenticated consumers.');
+      await recordObservedTenantCase(scenarioId, 'responsive', 'family-aggregates-workflow-responsive', async () => {
+        expectEqual(result.observations.length, 2, 'tenant family aggregate exact viewports');expectEqual(result.observations.every(item => item.fits), true, 'tenant family aggregate viewport containment');
+        return 'Schedule groups and ledger values remained visible and contained at both frozen viewports.';
+      }, 'Runtime schedule and payments render at 1440x900 and 390x844.');
+    });
   }
   if (!['teams-join-by-code', 'recruiting-public-scout-projection', 'family-enable-youth-login'].includes(scenarioId)) {
     const definitions = {
@@ -7708,6 +7987,43 @@ export async function runSelectedCertificationBatches({
     }
   }
   if (errors.length > 0) throw new AggregateError(errors, 'One or more certification batches failed.');
+}
+
+export function assertTenantWorkflowObservation(kind, observation) {
+  const fail = message => { throw new Error(message); };
+  if (kind === 'branding') {
+    const exactViewports = JSON.stringify(observation?.viewports) === JSON.stringify([1440, 390]);
+    const both = key => Array.isArray(observation?.[key]) && observation[key].length === 2 && observation[key].every(Boolean);
+    if (!exactViewports || !both('uploadRendered') || !both('replacementRendered') ||
+        !both('deleteFallbackRendered') || !both('reloadedWithoutLogo')) {
+      fail('Branding upload render replacement delete fallback lifecycle is incomplete.');
+    }
+    return;
+  }
+  if (kind === 'family-child-lifecycle') {
+    const required = ['runtimeChildId', 'created', 'linkedTeamA', 'relinked', 'parentBExcluded', 'unlinkedTeamA', 'removed', 'absentAfterReload'];
+    const teams = observation?.renderedTeams;
+    if (required.some(key => !observation?.[key]) || !Array.isArray(teams) ||
+        teams.length !== 2 || new Set(teams).size !== 2 || teams.some(team => typeof team !== 'string' || !team)) {
+      fail('Family child create link relink unlink remove lifecycle is incomplete.');
+    }
+    return;
+  }
+  if (kind === 'family-schedule-payments') {
+    const amounts = observation?.renderedAmounts || {};
+    const negatives = observation?.negativeStatuses || {};
+    const source = observation?.sourceOrder;
+    const rendered = observation?.renderedOrder;
+    const complete = Array.isArray(observation?.runtimeEventIds) && observation.runtimeEventIds.length >= 2 &&
+      Array.isArray(observation?.runtimePaymentIds) && observation.runtimePaymentIds.length === 3 &&
+      Array.isArray(source) && Array.isArray(rendered) && source.length === rendered.length && source.join(',') !== rendered.join(',') &&
+      Array.isArray(observation?.childTeamGroups) && observation.childTeamGroups.length >= 2 &&
+      ['paid', 'pending', 'overdue', 'outstanding'].every(key => /^\d+\.\d{2}$/.test(String(amounts[key] || ''))) &&
+      negatives.duplicate === 409 && negatives.inactive === 409 && negatives.wrongChild === 403 && negatives.wrongTeam === 403;
+    if (!complete) fail('Runtime event payment chronological grouping totals negative matrix is incomplete.');
+    return;
+  }
+  fail(`Unknown tenant workflow observation kind: ${kind}`);
 }
 
 async function main() {

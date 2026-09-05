@@ -270,12 +270,18 @@ export const LOCAL_TENANT_OPERATION_CONTRACTS = Object.freeze({
     'tenant family child add relink remove invite lifecycle', 'tenant family rendered Team A Team C cards',
     'tenant family stale missing removed states',
     'tenant family child 1 edit', 'tenant family child 2 edit', 'tenant family two child cards refresh',
+    'tenant family child runtime create', 'tenant family child wrong guardian link denied',
+    'tenant family child linked and relinked correct squads', 'tenant family runtime child Team A Team C projection',
+    'tenant family child runtime unlink', 'tenant family child runtime remove',
   ]),
   'family-schedule-waivers-payments': Object.freeze([
     'tenant family schedule ordering and child team grouping', 'tenant family payment amounts balances and state totals',
     'tenant family duplicate inactive wrong-target matrix',
     'tenant family waiver other guardian denied', 'tenant family waiver guardian participant route succeeds',
     'tenant family waiver records guardian signer separately', 'tenant family waiver guardian ceremony explicit',
+    'tenant family runtime ledger duplicate inactive wrong child wrong team matrix',
+    'tenant family schedule chronological child team rendering', 'tenant family exact paid pending overdue row rendering',
+    'tenant family exact paid pending overdue balance rendering',
   ]),
   'family-enable-youth-login': Object.freeze([
     'tenant youth enable revoke reissue lifecycle', 'tenant youth expired wrong-account activation race',

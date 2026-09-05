@@ -126,6 +126,21 @@ test('guardian child enrollment preserves the accountless child identity', async
   assert.equal(records.get('users/parent-1/teamMemberships/team-a').teamId, 'team-a');
 });
 
+test('guardian enrollment accepts server-issued child ids without weakening ownership checks', async () => {
+  const { db, records } = memoryDb({
+    'teams/team-a': { id: 'team-a', name: 'Team A', code: 'TEAMCODE1', isActive: true },
+    'users/parent-1': { id: 'parent-1', role: 'parent', fullName: 'Parent One' },
+    'players/child_runtime1': { id: 'child_runtime1', firstName: 'Run', lastName: 'Child', parentId: 'parent-1', userId: null, joinedTeamIds: [] },
+  });
+  globalThis.__TASK4_JOIN_DB = db;
+  globalThis.__TASK4_JOIN_AUTH = { uid: 'parent-1', email: 'parent@example.test', role: 'parent' };
+  const route = await loadRoute();
+  const response = await route.POST(request('/api/teams/join', { code: 'TEAMCODE1', playerId: 'child_runtime1', enrollmentIntent: 'player' }));
+  assert.equal(response.status, 200);
+  assert.equal(records.get('players/child_runtime1').parentId, 'parent-1');
+  assert.equal(records.get('teams/team-a/members/child_runtime1').userId, null);
+});
+
 test('adult self enrollment resolves the persisted player identity from the authenticated account', async () => {
   const { db, records } = memoryDb({
     'teams/team-a': { id: 'team-a', name: 'Team A', code: 'TEAMCODE1', isActive: true },
