@@ -668,10 +668,105 @@ test('Task 3 demo ownership cleanup survives identity-only, partial-seed, and di
   }
 });
 
+test('Task 3 demo graph cleanup retries a saved public view after its league parent is deleted', async () => {
+  const registry = createResourceRegistry({ maxAttempts: 3 });
+  const roots = new Set(['publicLeagueViews/league-a', 'leagues/league-a']);
+  const attempts = new Map();
+  const order = [];
+  auditRunner.registerOwnedDemoGraphRoots({
+    uid: 'demo-owner-a',
+    label: 'demo-a',
+    registry,
+    rootPaths: ['publicLeagueViews/league-a', 'leagues/league-a'],
+    async cleanupRoot(rootPath) {
+      order.push(rootPath);
+      attempts.set(rootPath, (attempts.get(rootPath) || 0) + 1);
+      const existed = roots.has(rootPath);
+      if (rootPath === 'publicLeagueViews/league-a' && attempts.get(rootPath) === 1) {
+        throw new Error('transient public view delete failure');
+      }
+      roots.delete(rootPath);
+      return existed;
+    },
+    async verifyRoot(rootPath) {
+      return !roots.has(rootPath);
+    },
+  });
+
+  const cleanup = await registry.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.deepEqual([...roots], []);
+  assert.equal(attempts.get('leagues/league-a'), 1);
+  assert.equal(attempts.get('publicLeagueViews/league-a'), 2);
+  assert.deepEqual(order, ['leagues/league-a', 'publicLeagueViews/league-a', 'publicLeagueViews/league-a']);
+  assert.equal(cleanup.counts.deleted, 2);
+  assert.equal(cleanup.reconciled.deleted, 2);
+});
+
+test('Task 3 demo graph cleanup retries an exact recursive root after its parent document is gone', async () => {
+  const registry = createResourceRegistry({ maxAttempts: 3 });
+  const rootState = { document: true, descendants: true };
+  let attempts = 0;
+  auditRunner.registerOwnedDemoGraphRoots({
+    uid: 'demo-owner-b',
+    label: 'demo-b',
+    registry,
+    rootPaths: ['teams/team-a'],
+    async cleanupRoot() {
+      attempts += 1;
+      const existed = rootState.document || rootState.descendants;
+      rootState.document = false;
+      if (attempts === 1) throw new Error('transient recursive child delete failure');
+      rootState.descendants = false;
+      return existed;
+    },
+    async verifyRoot() {
+      return !rootState.document && !rootState.descendants;
+    },
+  });
+
+  const cleanup = await registry.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.deepEqual(rootState, { document: false, descendants: false });
+  assert.equal(attempts, 2);
+  assert.equal(cleanup.counts.deleted, 1);
+});
+
+test('Task 3 demo recovery attempts both contexts and preserves the original scenario failure', async () => {
+  for (const failingSession of ['peer-session', 'main-session']) {
+    const originalFailure = new Error(`original scenario failure for ${failingSession}`);
+    const registered = [];
+    let caught;
+    try {
+      await auditRunner.recoverOwnedDemoBrowserContexts({
+        contexts: [
+          { session: 'peer-session', label: 'demo-browser-peer', knownUid: failingSession === 'main-session' ? 'peer-uid' : null },
+          { session: 'main-session', label: 'demo-browser-main', knownUid: failingSession === 'peer-session' ? 'main-uid' : null },
+        ],
+        originalError: originalFailure,
+        async recoverUid(session) {
+          if (session === failingSession) throw new Error(`recovery failed for ${session}`);
+          return `${session}-uid`;
+        },
+        async registerUid(uid, label) {
+          registered.push([uid, label]);
+        },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    assert.equal(caught instanceof AggregateError, true);
+    assert.equal(caught.errors[0], originalFailure);
+    assert.match(caught.errors[1].message, new RegExp(`recovery failed for ${failingSession}`));
+    assert.equal(registered.length, 1);
+    assert.equal(registered[0][0], failingSession === 'peer-session' ? 'main-uid' : 'peer-uid');
+  }
+});
+
 test('Task 3 demo and youth fallback ownership is recovered before browser/session teardown', () => {
   const browserHandlers = source.slice(source.indexOf('async function runCertificationBrowserScenario'));
   const demoScenario = browserHandlers.match(/if \(scenarioId === 'demo-seed-use-exit-expiry-cleanup'\)[\s\S]*?if \(scenarioId === 'dashboard-shell/)?.[0] || '';
-  assert.match(demoScenario, /finally \{[\s\S]*recoverBrowserDemoUid\(browserSession\)[\s\S]*registerBrowserDemoGraph/);
+  assert.match(demoScenario, /finally \{[\s\S]*recoverOwnedDemoBrowserContexts/);
   const demoCleanup = source.match(/async function demoGraphSnapshots[\s\S]*?function recoverBrowserDemoUid/)?.[0] || '';
   for (const requiredRoot of ['demoSessionOwnerId', 'demoOwnerUserId', 'publicLeagueViews', 'scheduleBookings']) {
     assert.match(demoCleanup, new RegExp(requiredRoot));

@@ -260,6 +260,18 @@ test('validation reconciles successful case provenance with its observed dimensi
   assert.equal(validateScenarioResults([scenario], [result])[0].cases[0].caseId, caseRecord.caseId);
   assert.throws(() => validateScenarioResults([scenario], [{ ...result, cases: [{ ...caseRecord, dimension: 'network' }] }]), /dimension mismatch/);
   assert.throws(() => validateScenarioResults([scenario], [{ ...result, cases: [caseRecord, caseRecord] }]), /duplicate case ID/);
+  assert.throws(() => validateScenarioResults([scenario], [{
+    ...result,
+    cases: [{
+      ...caseRecord,
+      artifactEvents: [{
+        expected: caseRecord.expected,
+        observed: 'cleanup failed',
+        state: 'FAIL',
+        artifacts: [...caseRecord.artifacts],
+      }],
+    }],
+  }]), /artifact event state/i);
 });
 
 test('validation requires exactly one complete result per selected scenario', () => {

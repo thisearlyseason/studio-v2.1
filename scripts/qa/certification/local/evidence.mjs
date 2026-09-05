@@ -194,6 +194,14 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         throw new Error(`${caseRecord.caseId} has invalid artifact event provenance.`);
       }
     }
+    const derivedArtifactEventState = artifactEvents.some(event => event.state === 'FAIL')
+      ? 'FAIL'
+      : artifactEvents.some(event => event.state === 'NOT_OBSERVED')
+        ? 'NOT_OBSERVED'
+        : 'OBSERVED';
+    if (caseRecord.state !== derivedArtifactEventState) {
+      throw new Error(`${caseRecord.caseId} artifact event state does not reconcile with its case state.`);
+    }
     const eventArtifactUnion = [...new Set(artifactEvents.flatMap(event => event.artifacts))];
     if (JSON.stringify(eventArtifactUnion) !== JSON.stringify(caseRecord.artifacts)) {
       throw new Error(`${caseRecord.caseId} artifact event provenance does not reconcile with its artifacts.`);

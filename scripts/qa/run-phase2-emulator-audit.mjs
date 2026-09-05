@@ -1099,62 +1099,113 @@ export function registerOwnedDemoCleanup({ uid, label, registry, cleanupGraph, v
   });
 }
 
-const registeredBrowserDemoUids = new Set();
+export function registerOwnedDemoGraphRoots({ uid, label, registry, rootPaths, cleanupRoot, verifyRoot }) {
+  if (!Array.isArray(rootPaths) || typeof cleanupRoot !== 'function' || typeof verifyRoot !== 'function') {
+    throw new Error('Demo graph cleanup requires exact root paths and cleanup handlers.');
+  }
+  for (const rootPath of [...new Set(rootPaths)]) {
+    if (typeof rootPath !== 'string' || !rootPath || rootPath.includes('..')) {
+      throw new Error('Demo graph cleanup root paths must be exact document paths.');
+    }
+    registry.register({
+      id: `firestore:${label}:${uid}:${rootPath}`,
+      kind: 'deleted',
+      cleanup: () => cleanupRoot(rootPath),
+      verify: () => verifyRoot(rootPath),
+    });
+  }
+}
+
+export async function recoverOwnedDemoBrowserContexts({ contexts, originalError = null, recoverUid, registerUid }) {
+  const recoveryFailures = [];
+  for (const { session, label, knownUid = null } of contexts) {
+    let uid = knownUid;
+    if (!uid) {
+      try {
+        uid = await recoverUid(session);
+      } catch (error) {
+        recoveryFailures.push(new Error(`${label} recovery failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }));
+        continue;
+      }
+    }
+    if (!uid) continue;
+    try {
+      await registerUid(uid, label);
+    } catch (error) {
+      recoveryFailures.push(new Error(`${label} cleanup registration failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error }));
+    }
+  }
+  if (recoveryFailures.length > 0) {
+    const failures = [...(originalError ? [originalError] : []), ...recoveryFailures];
+    throw new AggregateError(failures, failures.map(error => error.message).join('; '));
+  }
+  if (originalError) throw originalError;
+}
+
+const registeredBrowserDemoUids = new Map();
 
 async function registerBrowserDemoGraph(uid, label) {
-  if (!uid || registeredBrowserDemoUids.has(uid)) return;
-  registeredBrowserDemoUids.add(uid);
-  const discoveredLeagueIds = new Set();
-  registerOwnedDemoCleanup({
+  if (!uid) return;
+  let registered = registeredBrowserDemoUids.get(uid);
+  if (!registered) {
+    registered = { rootPaths: new Set() };
+    registeredBrowserDemoUids.set(uid, registered);
+    registerCertificationSensitiveAlias(uid, `${label}-auth`);
+    dynamicResourceRegistry.register({
+      id: `auth:${label}:${uid}`,
+      kind: 'deleted',
+      cleanup: () => withEmulatorAuthAdmin(async authAdmin => {
+        try {
+          await authAdmin.getUser(uid);
+          await authAdmin.deleteUser(uid);
+          return true;
+        } catch (error) {
+          if (error?.code === 'auth/user-not-found') return false;
+          throw error;
+        }
+      }),
+      verify: () => withEmulatorAuthAdmin(async authAdmin => {
+        try {
+          await authAdmin.getUser(uid);
+          return false;
+        } catch (error) {
+          if (error?.code === 'auth/user-not-found') return true;
+          throw error;
+        }
+      }),
+    });
+  }
+
+  const rootPaths = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const graph = await demoGraphSnapshots(firestoreAdmin, uid);
+    return [
+      `users/${uid}`,
+      ...graph.facilities.map(item => item.ref.path),
+      ...graph.players.map(item => item.ref.path),
+      ...graph.leagues.map(item => `publicLeagueViews/${item.id}`),
+      ...graph.leagues.map(item => item.ref.path),
+      ...graph.teams.map(item => item.ref.path),
+      ...graph.bookings.map(item => item.ref.path),
+    ];
+  });
+  const unregisteredRootPaths = [...new Set(rootPaths)].filter(rootPath => !registered.rootPaths.has(rootPath));
+  registerOwnedDemoGraphRoots({
     uid,
     label,
     registry: dynamicResourceRegistry,
-    cleanupAuth: () => withEmulatorAuthAdmin(async authAdmin => {
-      try {
-        await authAdmin.getUser(uid);
-        await authAdmin.deleteUser(uid);
-        return true;
-      } catch (error) {
-        if (error?.code === 'auth/user-not-found') return false;
-        throw error;
-      }
+    rootPaths: unregisteredRootPaths,
+    cleanupRoot: rootPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const ref = firestoreAdmin.doc(rootPath);
+      const existed = (await ref.get()).exists || (await ref.listCollections()).length > 0;
+      await firestoreAdmin.recursiveDelete(ref);
+      return existed;
     }),
-    verifyAuth: () => withEmulatorAuthAdmin(async authAdmin => {
-      try {
-        await authAdmin.getUser(uid);
-        return false;
-      } catch (error) {
-        if (error?.code === 'auth/user-not-found') return true;
-        throw error;
-      }
-    }),
-    cleanupGraph: () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-      const graph = await demoGraphSnapshots(firestoreAdmin, uid);
-      const userRef = firestoreAdmin.collection('users').doc(uid);
-      const userExists = (await userRef.get()).exists || (await userRef.listCollections()).length > 0;
-      for (const booking of graph.bookings) await firestoreAdmin.recursiveDelete(booking.ref);
-      for (const team of graph.teams) await firestoreAdmin.recursiveDelete(team.ref);
-      for (const league of graph.leagues) {
-        discoveredLeagueIds.add(league.id);
-        await firestoreAdmin.recursiveDelete(league.ref);
-        await firestoreAdmin.recursiveDelete(firestoreAdmin.collection('publicLeagueViews').doc(league.id));
-      }
-      for (const player of graph.players) await firestoreAdmin.recursiveDelete(player.ref);
-      for (const facility of graph.facilities) await firestoreAdmin.recursiveDelete(facility.ref);
-      await firestoreAdmin.recursiveDelete(userRef);
-      return userExists || Object.values(graph).some(items => items.length > 0);
-    }),
-    verifyGraph: () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-      const graph = await demoGraphSnapshots(firestoreAdmin, uid);
-      const userRef = firestoreAdmin.collection('users').doc(uid);
-      graph.leagues.forEach(league => discoveredLeagueIds.add(league.id));
-      const publicViews = await Promise.all([...discoveredLeagueIds].map(leagueId =>
-        firestoreAdmin.collection('publicLeagueViews').doc(leagueId).get()));
-      return Object.values(graph).every(items => items.length === 0) &&
-        !(await userRef.get()).exists && (await userRef.listCollections()).length === 0 &&
-        publicViews.every(snapshot => !snapshot.exists);
+    verifyRoot: rootPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const ref = firestoreAdmin.doc(rootPath);
+      return !(await ref.get()).exists && (await ref.listCollections()).length === 0;
     }),
   });
+  for (const rootPath of unregisteredRootPaths) registered.rootPaths.add(rootPath);
 }
 
 function recoverBrowserDemoUid(session) {
@@ -3422,6 +3473,9 @@ async function runCertificationBrowserScenario(scenarioId) {
   if (scenarioId === 'demo-seed-use-exit-expiry-cleanup') {
     const session = openAnonymousBrowser('cert-demo');
     const peerSession = openAnonymousBrowser('cert-demo-peer-context');
+    let peerKnownUid = null;
+    let mainKnownUid = null;
+    let demoScenarioFailure = null;
     try {
     assertTwoViewportRoutes(session, [{ path: '/', expected: '/' }], 'demo public surfaces');
     const peerJourney = JSON.parse(cli(peerSession, ['run-code', `async page => {
@@ -3456,6 +3510,7 @@ async function runCertificationBrowserScenario(scenarioId) {
       }
     }`]));
     expectEqual(peerJourney.status, 200, 'demo peer browser context session');
+    peerKnownUid = peerJourney.uid;
     await registerBrowserDemoGraph(peerJourney.uid, 'demo-browser-peer');
     expectEqual(peerJourney.viewportFits.every(Boolean), true, 'demo peer browser two viewport states');
     expectEqual(peerJourney.consoleErrors.length, 0, 'demo peer browser console errors');
@@ -3481,6 +3536,7 @@ async function runCertificationBrowserScenario(scenarioId) {
       } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
     }`]));
     expectEqual(mainSeed.status, 200, 'demo main browser context session');
+    mainKnownUid = mainSeed.uid;
     await registerBrowserDemoGraph(mainSeed.uid, 'demo-browser-main');
     expectEqual(mainSeed.consoleErrors.length, 0, 'demo main seed workflow console errors');
     expectEqual(mainSeed.unexpectedResponses.length, 0, 'demo main seed workflow unexpected responses');
@@ -3552,17 +3608,21 @@ async function runCertificationBrowserScenario(scenarioId) {
     expectEqual(peerExit.consoleErrors.length, 0, 'demo peer exit workflow console errors');
     expectEqual(peerExit.unexpectedResponses.length, 0, 'demo peer exit workflow unexpected responses');
     return;
+    } catch (error) {
+      demoScenarioFailure = error;
     } finally {
       // Recover ownership while both pages still exist. This catches failures
       // after anonymous Auth creation, during partial seed, and before the
       // normal session/UI result can return a UID.
-      for (const [browserSession, label] of [
-        [peerSession, 'demo-browser-peer'],
-        [session, 'demo-browser-main'],
-      ]) {
-        const recoveredUid = recoverBrowserDemoUid(browserSession);
-        if (recoveredUid) await registerBrowserDemoGraph(recoveredUid, label);
-      }
+      await recoverOwnedDemoBrowserContexts({
+        contexts: [
+          { session: peerSession, label: 'demo-browser-peer', knownUid: peerKnownUid },
+          { session, label: 'demo-browser-main', knownUid: mainKnownUid },
+        ],
+        originalError: demoScenarioFailure,
+        recoverUid: recoverBrowserDemoUid,
+        registerUid: registerBrowserDemoGraph,
+      });
     }
   }
   if (scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
