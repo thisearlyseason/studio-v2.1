@@ -137,6 +137,25 @@ test('team waiver requires one coach or staff signature from every sub-squad', (
   assert.equal(complete.completedTeams, 2);
 });
 
+test('team waiver rejects matching signatures from parents, removed staff, and the wrong team or document', () => {
+  const deployment = policy.groupGlobalWaiverDeployments(documents.map(document => ({ ...document, waiverAudience: 'team' })))[0];
+  const members = [
+    { id: 'parent-a', userId: 'parent-user-a', teamId: 'team-a', position: 'Parent', status: 'active' },
+    { id: 'coach-a', userId: 'coach-user-a', teamId: 'team-a', position: 'Coach', status: 'removed' },
+    { id: 'coach-b', userId: 'coach-user-b', teamId: 'team-b', position: 'Coach', status: 'active' },
+  ];
+  const result = policy.calculateGlobalWaiverCompletion({
+    deployment, teamIds: ['team-a'], members, participantSignatures: [],
+    coachSignatures: [
+      { teamId: 'team-a', signedBy: 'parent-user-a', waiverDocId: 'protocol_1720000000000_0' },
+      { teamId: 'team-a', signedBy: 'coach-user-a', waiverDocId: 'protocol_1720000000000_0' },
+      { teamId: 'team-a', signedBy: 'coach-user-b', waiverDocId: 'protocol_1720000000000_0' },
+      { teamId: 'team-a', signedBy: 'coach-user-b', waiverDocId: 'wrong-document' },
+    ],
+  });
+  assert.deepEqual({ signed: result.signed, isComplete: result.isComplete }, { signed: 0, isComplete: false });
+});
+
 test('waiver library exposes assigned active documents after signing as well as before', () => {
   assert.equal(typeof policy.getVisibleWaiverDocuments, 'function');
   const visible = policy.getVisibleWaiverDocuments({

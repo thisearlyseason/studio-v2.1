@@ -8,6 +8,7 @@ import {
   LOCAL_TENANT_CASE_REQUIREMENTS,
   TENANT_EXECUTION_ORDER,
   runTenantsBatch,
+  tenantCaseAssociationFor,
 } from '../scripts/qa/certification/local/batches/tenants.mjs';
 
 const scenarios = selectLocalScenarios({ batches: ['tenants'] });
@@ -34,6 +35,52 @@ test('tenant batch owns exactly 16 scenarios and a complete seven-dimension case
     assert.ok(Object.values(LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id]).every(value => value.length >= 1));
     assert.ok(['happyPath', 'negativePath', 'permission', 'persistence']
       .every(dimension => LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id][dimension].length >= 2));
+  }
+});
+
+test('tenant contracts name scenario-specific mandatory workflows instead of generic lifecycle substitutes', () => {
+  const requiredFragments = {
+    'teams-create-and-capacity': 'fresh-role-creator-graph',
+    'teams-join-by-code': 'guardian-child-enrollment-race',
+    'teams-profile-branding-settings': 'owner-settings-and-branding-edit',
+    'teams-module-visibility': 'all-eight-toggle-and-direct-denial',
+    'teams-seasonal-reset-delete-quota-resolution': 'complete-reset-projection-reconciliation',
+    'organization-club-school-overview': 'constituent-count-and-visibility-refresh',
+    'organization-create-allocate-remove-squads': 'seat-release-and-reallocation',
+    'organization-global-waivers-documents-admins': 'master-copy-update-and-admin-boundary',
+    'roster-member-add-edit-remove-reinstate': 'remove-reinstate-projection',
+    'roster-search-filter-sort-export': 'accented-filter-and-manifest-download',
+    'roster-parent-player-self-views': 'guardian-child-edit-and-sibling-boundary',
+    'recruiting-private-profile-crud': 'profile-metrics-contact-media-edit',
+    'recruiting-public-scout-projection': 'canonical-editor-status-transitions',
+    'family-children-invites-team-cards': 'child-edit-and-two-card-refresh',
+    'family-schedule-waivers-payments': 'guardian-signature-and-ledger-refresh',
+    'family-enable-youth-login': 'guardian-invite-and-youth-activation',
+  };
+  for (const [scenarioId, fragment] of Object.entries(requiredFragments)) {
+    const caseIds = Object.values(LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId]).flat();
+    assert.ok(caseIds.some(caseId => caseId.includes(fragment)), `${scenarioId} requires ${fragment}`);
+    assert.equal(caseIds.some(caseId => /-(?:lifecycle|edge-cases|tenant-isolation)$/.test(caseId)), false);
+  }
+});
+
+test('youth browser evidence is attributed to the activated youth session', () => {
+  for (const dimension of ['console', 'responsive']) {
+    assert.deepEqual(
+      tenantCaseAssociationFor('family-enable-youth-login', dimension, `family-youth-login-${dimension}`),
+      { actorAlias: 'qa-youth-invite', targetAlias: 'qa-player-youth-c', operation: 'read' },
+    );
+  }
+});
+
+test('scenario workflow evidence records the mutation operation rather than a generic read', () => {
+  for (const [scenarioId, caseId] of [
+    ['teams-profile-branding-settings', 'team-settings-owner-settings-and-branding-edit'],
+    ['organization-create-allocate-remove-squads', 'organization-squads-seat-release-and-reallocation'],
+    ['recruiting-private-profile-crud', 'recruiting-private-profile-metrics-contact-media-edit'],
+    ['family-children-invites-team-cards', 'family-children-child-edit-and-two-card-refresh'],
+  ]) {
+    assert.equal(tenantCaseAssociationFor(scenarioId, 'happyPath', caseId).operation, 'update');
   }
 });
 

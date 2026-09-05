@@ -18,6 +18,7 @@ export type TeamSeasonResetAdapter = {
   list(collectionPath: string): Promise<ResetRecord[]>;
   remove(path: string): Promise<void>;
   update(path: string, patch: Record<string, unknown>): Promise<void>;
+  removePlayerTeamAssociation(path: string, teamId: string): Promise<void>;
   removeStorage(path: string): Promise<void>;
 };
 
@@ -91,7 +92,7 @@ export async function executeTeamSeasonReset({
   const records = (await Promise.all(collectionNames.map(name => adapter.list(`teams/${teamId}/${name}`)))).flat();
   const ownerMemberPath = `teams/${teamId}/members/${ownerUid}`;
   const removals = new Set<string>();
-  const playerUpdates = new Map<string, string[]>();
+  const playerUpdates = new Set<string>();
   const storagePaths = new Set<string>();
 
   for (const record of records) {
@@ -102,8 +103,8 @@ export async function executeTeamSeasonReset({
       if (userId && userId !== ownerUid) removals.add(`users/${userId}/teamMemberships/${teamId}`);
       const playerId = typeof record.data.playerId === 'string' ? record.data.playerId : '';
       if (playerId) {
-        const player = await adapter.get(`players/${playerId}`);
-        if (player) playerUpdates.set(`players/${playerId}`, Array.isArray(player.joinedTeamIds) ? player.joinedTeamIds.filter((id: unknown) => id !== teamId) : []);
+        const playerPath = `players/${playerId}`;
+        if (await adapter.get(playerPath)) playerUpdates.add(playerPath);
       }
     }
     if (record.path.startsWith(`teams/${teamId}/files/`) && typeof record.data.storagePath === 'string') {
@@ -121,13 +122,16 @@ export async function executeTeamSeasonReset({
     await retry(`storage:${path}`, () => adapter.removeStorage(path), maxAttempts);
     storageDeleted += 1;
   }
+  // Reconcile the projection before deleting the member document that acts as
+  // the durable discovery source for retry. The adapter owns the transaction,
+  // so a concurrent join cannot be overwritten by a stale captured array.
+  for (const path of playerUpdates) {
+    await retry(`firestore:${path}`, () => adapter.removePlayerTeamAssociation(path, teamId), maxAttempts);
+    projectionsUpdated += 1;
+  }
   for (const path of removals) {
     await retry(`firestore:${path}`, () => adapter.remove(path), maxAttempts);
     firestoreDeleted += 1;
-  }
-  for (const [path, joinedTeamIds] of playerUpdates) {
-    await retry(`firestore:${path}`, () => adapter.update(path, { joinedTeamIds }), maxAttempts);
-    projectionsUpdated += 1;
   }
 
   return Object.freeze({

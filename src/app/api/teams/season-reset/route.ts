@@ -35,6 +35,20 @@ export async function POST(request: NextRequest) {
         async update(path, patch) {
           await adminDb.doc(path).set(patch, { merge: true });
         },
+        async removePlayerTeamAssociation(path, activeTeamId) {
+          const playerRef = adminDb.doc(path);
+          await adminDb.runTransaction(async transaction => {
+            const snapshot = await transaction.get(playerRef);
+            if (!snapshot.exists) return;
+            const player = snapshot.data() || {};
+            const joinedTeamIds = Array.isArray(player.joinedTeamIds)
+              ? [...new Set(player.joinedTeamIds.filter((id): id is string => typeof id === 'string' && id !== activeTeamId))]
+              : [];
+            const patch: Record<string, unknown> = { joinedTeamIds };
+            if (player.primaryTeamId === activeTeamId) patch.primaryTeamId = joinedTeamIds[0] || null;
+            transaction.set(playerRef, patch, { merge: true });
+          });
+        },
         async removeStorage(path) {
           ensureAdminInit();
           await admin.storage().bucket(getAdminStorageBucketName()).file(path).delete({ ignoreNotFound: true });

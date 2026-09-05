@@ -42,6 +42,22 @@ test('dynamic cleanup refuses baseline destruction and retains failed resources'
   assert.equal(cleanup.residuals.length, 1);
 });
 
+test('dynamic cleanup removes and verifies descendants even when the registered root document is absent', async () => {
+  const records = new Map([['teams/run-created/games/orphan', { id: 'orphan' }]]);
+  const firestore = {
+    async read(path) { return records.get(path) ?? null; },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
+    async write(path, value) { records.set(path, value); },
+    async remove(path) { for (const candidate of [...records.keys()]) if (candidate === path || candidate.startsWith(`${path}/`)) records.delete(candidate); },
+  };
+  const mutations = createFixtureMutations({ projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', firestore });
+  mutations.registerDynamicDocument('run-created', 'teams/run-created');
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.equal(records.size, 0);
+  assert.equal(cleanup.counts.deleted, 1);
+});
+
 test('overlay restoration attempts every path and final cleanup retries exact residuals', async () => {
   const records = new Map([
     ['teams/run-team/settings/a', { value: 'before-a' }],
@@ -76,6 +92,27 @@ test('overlay restoration attempts every path and final cleanup retries exact re
   assert.equal(cleanup.counts.restored, 2);
   assert.deepEqual(records.get('teams/run-team/settings/b'), { value: 'before-b' });
   assert.equal(cleanup.residuals.length, 0);
+});
+
+test('overlay reports both the original callback failure and restoration failure without replacing either', async () => {
+  const records = new Map([['teams/run-team', { value: 'before' }]]);
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', maxAttempts: 1,
+    firestore: {
+      async read(path) { return records.get(path) ?? null; },
+      async write() { throw new Error('restore failed'); },
+      async remove(path) { records.delete(path); },
+    },
+  });
+  await assert.rejects(
+    () => mutations.withFirestoreOverlay(['teams/run-team'], async () => {
+      records.set('teams/run-team', { value: 'during' });
+      throw new Error('operation failed');
+    }),
+    error => error instanceof AggregateError &&
+      error.errors.some(item => item.message === 'operation failed') &&
+      error.errors.some(item => item.message === 'restore failed')
+  );
 });
 
 test('overlay verification treats Firestore field reordering as the same before-image', async () => {
@@ -128,4 +165,32 @@ test('two-party timeout aborts and settles both participants before returning', 
   );
   assert.equal(slowSettled, true);
   assert.equal(lateMutation, false);
+});
+
+test('two-party timeout terminates a noncooperative participant within the owned bound', async () => {
+  let stopped = false;
+  let settled = false;
+  const startedAt = Date.now();
+  await assert.rejects(() => runTwoParty('stuck-http', [
+    async () => {
+      while (!stopped) await new Promise(resolve => setTimeout(resolve, 1));
+      settled = true;
+    },
+    async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
+  ], {
+    timeoutMs: 5,
+    settleTimeoutMs: 5,
+    async terminate() { stopped = true; },
+  }), /timed out/);
+  assert.equal(settled, true);
+  assert.ok(Date.now() - startedAt < 250);
+});
+
+test('eventual assertion bounds a probe that never resolves', async () => {
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => awaitEventually('stuck projection', () => new Promise(() => {}), Boolean, { timeoutMs: 10 }),
+    /stuck projection/
+  );
+  assert.ok(Date.now() - startedAt < 250);
 });

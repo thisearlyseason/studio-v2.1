@@ -86,6 +86,19 @@ test('tenant capabilities fail closed and include dynamic cleanup ownership', ()
   const forged = { ...catalog, youthInvite: null };
   assert.ok(inspectTenantCapabilities(forged).missing.includes('youth-invite'));
 
+  const invalidWaiverCopy = {
+    ...catalog,
+    firestoreDocuments: catalog.firestoreDocuments.map(item => item.path === catalog.globalWaiverDeployment.copyPaths[0]
+      ? { ...item, data: { ...item.data, isClubMaster: false, waiverAudience: 'all' } }
+      : item),
+  };
+  assert.ok(inspectTenantCapabilities(invalidWaiverCopy).missing.includes('global-waiver'));
+  const missingWaiverMaster = {
+    ...catalog,
+    firestoreDocuments: catalog.firestoreDocuments.filter(item => item.path !== catalog.globalWaiverDeployment.masterPath),
+  };
+  assert.ok(inspectTenantCapabilities(missingWaiverMaster).missing.includes('global-waiver'));
+
   const withoutConsumerRoots = {
     ...catalog,
     firestoreDocuments: catalog.firestoreDocuments.filter(item =>

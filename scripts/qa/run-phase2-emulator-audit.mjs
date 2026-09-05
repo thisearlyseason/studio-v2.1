@@ -110,6 +110,7 @@ let fixturesSeeded = false;
 let cleanupStarted = false;
 let activeCertificationScenario = null;
 let activeCertificationAssertions = [];
+let activeCertificationCaseIds = new Set();
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
 const tenantRuntimeConsumerPaths = new Map();
@@ -127,6 +128,13 @@ const tenantFixtureMutations = createFixtureMutations({
     }),
     remove: documentPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
       await firestoreAdmin.recursiveDelete(firestoreAdmin.doc(documentPath));
+    }),
+    hasDescendants: documentPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const collections = await firestoreAdmin.doc(documentPath).listCollections();
+      for (const collection of collections) {
+        if (!(await collection.limit(1).get()).empty) return true;
+      }
+      return false;
     }),
   },
   auth: {
@@ -232,18 +240,18 @@ function certificationActorAliases(scenarioId) {
     'signup-onboarding-missing-profile-onboarding': ['missing-adult_player', 'missing-parent', 'missing-coach', 'missing-admin', 'missing-league_creator'],
     'demo-seed-use-exit-expiry-cleanup': ['qa-demo-a', 'qa-demo-b', 'qa-coach-owner-a'],
     'administration-access-and-user-directory': ['qa-superadmin', ...FIXTURES.activeAliases.filter(alias => alias !== 'qa-superadmin'), ...BLOCKED_AUDIT_PLAN.api.map(item => item.alias)],
-    'teams-join-by-code': ['qa-public-submitter', 'qa-coach-owner-b', 'qa-parent-a', 'qa-parent-b'],
+    'teams-join-by-code': ['qa-public-submitter', 'qa-parent-a', 'qa-parent-b'],
     'teams-create-and-capacity': ['qa-fresh-coach', 'qa-fresh-admin', 'qa-fresh-league-creator', 'qa-coach-owner-b'],
-    'teams-profile-branding-settings': ['qa-coach-owner-a', 'qa-team-assistant', 'qa-team-member', 'qa-coach-owner-b'],
-    'teams-module-visibility': ['qa-coach-owner-a', 'qa-team-assistant', 'qa-parent-a', 'qa-team-member', 'qa-coach-owner-b'],
-    'teams-seasonal-reset-delete-quota-resolution': ['qa-owner-delete-blocked', 'qa-team-assistant', 'qa-coach-owner-b'],
-    'organization-club-school-overview': ['qa-school-owner', 'qa-school-delegate', 'qa-elite-owner', 'qa-coach-owner-b'],
-    'organization-create-allocate-remove-squads': ['qa-school-owner', 'qa-school-delegate', 'qa-coach-owner-b'],
-    'organization-global-waivers-documents-admins': ['qa-school-owner', 'qa-school-delegate', 'qa-parent-a', 'qa-coach-owner-b'],
-    'roster-member-add-edit-remove-reinstate': ['qa-coach-owner-a', 'qa-team-assistant', 'qa-team-member', 'qa-coach-owner-b'],
-    'roster-search-filter-sort-export': ['qa-coach-owner-a', 'qa-parent-a', 'qa-team-member', 'qa-coach-owner-b'],
-    'roster-parent-player-self-views': ['qa-parent-a', 'qa-parent-b', 'qa-adult-player-a', 'qa-youth-active', 'qa-coach-owner-b'],
-    'recruiting-private-profile-crud': ['qa-coach-owner-a', 'qa-adult-player-a', 'qa-parent-a', 'qa-coach-owner-b'],
+    'teams-profile-branding-settings': ['qa-coach-owner-a', 'qa-coach-owner-b'],
+    'teams-module-visibility': ['qa-coach-owner-a', 'qa-team-member', 'qa-coach-owner-b'],
+    'teams-seasonal-reset-delete-quota-resolution': ['qa-owner-delete-blocked', 'qa-coach-owner-b'],
+    'organization-club-school-overview': ['qa-school-owner', 'qa-school-delegate', 'qa-coach-owner-b'],
+    'organization-create-allocate-remove-squads': ['qa-school-owner', 'qa-coach-owner-b'],
+    'organization-global-waivers-documents-admins': ['qa-school-owner', 'qa-coach-owner-b'],
+    'roster-member-add-edit-remove-reinstate': ['qa-coach-owner-a', 'qa-coach-owner-b'],
+    'roster-search-filter-sort-export': ['qa-coach-owner-a', 'qa-coach-owner-b'],
+    'roster-parent-player-self-views': ['qa-parent-a', 'qa-parent-b', 'qa-adult-player-a', 'qa-coach-owner-b'],
+    'recruiting-private-profile-crud': ['qa-coach-owner-a', 'qa-coach-owner-b'],
     'recruiting-public-scout-projection': ['qa-public-submitter', 'qa-coach-owner-a', 'qa-coach-owner-b'],
     'family-children-invites-team-cards': ['qa-parent-a', 'qa-parent-b'],
     'family-schedule-waivers-payments': ['qa-parent-a', 'qa-parent-b'],
@@ -621,6 +629,7 @@ function recordCertificationCase(
   caseStartedAt = null,
   { assertions = activeCertificationAssertions, role, tenantAlias } = {},
 ) {
+  if (activeCertificationCaseIds.has(caseId)) throw new Error(`Certification case ${caseId} was already emitted.`);
   const scenario = certificationScenarioById.get(scenarioId);
   const startedAt = new Date().toISOString();
   const relativeArtifact = `cases/${caseId}.json`;
@@ -645,9 +654,14 @@ function recordCertificationCase(
     expected: String(expected), observed: String(observed), state: 'OBSERVED',
     startedAt: caseStartedAt || startedAt, completedAt: new Date().toISOString(), artifacts: [relativeArtifact],
   });
+  activeCertificationCaseIds.add(caseId);
 }
 
 function recordCertificationFailure(scenarioId, dimension, caseId, error) {
+  if (activeCertificationCaseIds.has(caseId)) {
+    recordCertificationRunFailure(scenarioId, error);
+    return;
+  }
   const scenario = certificationScenarioById.get(scenarioId);
   const timestamp = new Date().toISOString();
   const diagnostic = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
@@ -675,6 +689,15 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
     ...tenantCaseAssociations(scenarioId, dimension, caseId),
     expected: 'locally safe contract completed', observed: diagnostic, state: 'FAIL',
     startedAt: timestamp, completedAt: timestamp, artifacts: [relativeArtifact],
+  });
+  activeCertificationCaseIds.add(caseId);
+}
+
+function recordCertificationRunFailure(scenarioId, error) {
+  emitCertificationEvent({
+    type: 'scenario-error', scenarioId, runId: certificationRunId, commit: certificationCommit,
+    stage: 'scenario-cleanup-or-runner',
+    diagnostic: redact(error instanceof Error ? error.message : String(error)).slice(0, 500),
   });
 }
 
@@ -943,8 +966,11 @@ export function isDeletionPurgeDue(purgeAtMs, nowMs) {
 async function apiStatus(pathname, token, init = {}) {
   let response;
   try {
+    const deadlineSignal = AbortSignal.timeout(20_000);
+    const signal = init.signal ? AbortSignal.any([init.signal, deadlineSignal]) : deadlineSignal;
     response = await fetch(`${BASE_URL}${pathname}`, {
       ...init,
+      signal,
       headers: {
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
         Authorization: `Bearer ${token}`,
@@ -965,8 +991,11 @@ async function apiJsonResult(pathname, token, init = {}) {
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
+      const deadlineSignal = AbortSignal.timeout(20_000);
+      const signal = init.signal ? AbortSignal.any([init.signal, deadlineSignal]) : deadlineSignal;
       response = await fetch(`${BASE_URL}${pathname}`, {
         ...init,
+        signal,
         headers: {
           ...(init.body ? { 'Content-Type': 'application/json' } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -978,6 +1007,7 @@ async function apiJsonResult(pathname, token, init = {}) {
       break;
     } catch (error) {
       lastError = error;
+      if (init.signal?.aborted) break;
       if (attempt < maxAttempts) await new Promise(resolve => setTimeout(resolve, attempt * 100));
     }
   }
@@ -985,6 +1015,38 @@ async function apiJsonResult(pathname, token, init = {}) {
   let body = null;
   try { body = await response.json(); } catch { /* status remains authoritative */ }
   return { status: response.status, body, headers: { cacheControl: response.headers.get('cache-control') || '' } };
+}
+
+export function buildStorageUploadRequest(objectPath, contentType, body) {
+  const boundary = `certification-${randomBytes(12).toString('hex')}`;
+  const metadata = JSON.stringify({ name: objectPath, contentType });
+  return Object.freeze({
+    headers: Object.freeze({
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      'X-Goog-Upload-Protocol': 'multipart',
+    }),
+    body: Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=utf-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`),
+      Buffer.from(body),
+      Buffer.from(`\r\n--${boundary}--`),
+    ]),
+  });
+}
+
+async function storageObjectStatus(objectPath, token, { method = 'POST', contentType = 'image/png', body = Buffer.alloc(0) } = {}) {
+  const bucket = `${PROJECT_ID}.appspot.com`;
+  const encodedPath = encodeURIComponent(objectPath);
+  const url = method === 'POST'
+    ? `http://127.0.0.1:9199/v0/b/${bucket}/o?name=${encodedPath}`
+    : `http://127.0.0.1:9199/v0/b/${bucket}/o/${encodedPath}`;
+  const upload = method === 'POST' ? buildStorageUploadRequest(objectPath, contentType, body) : null;
+  const response = await fetch(url, {
+    method,
+    headers: { Authorization: `Firebase ${token}`, ...(upload?.headers || {}), Connection: 'close' },
+    ...(upload ? { body: upload.body } : {}),
+    signal: AbortSignal.timeout(20_000),
+  });
+  return response.status;
 }
 
 async function publicJsonStatus(pathname, body, headers = {}) {
@@ -4093,21 +4155,28 @@ function tenantReadActorFor(scenarioId, documentPath) {
 async function runTenantApiScenario(scenarioId) {
   const plan = buildTenantApiProbePlan(FIXTURES);
   if (scenarioId === 'teams-create-and-capacity') {
-    const creator = await signIn('qa-fresh-coach');
-    const marker = `${FIXTURES.runId} owned creation`;
+    const creatorAliases = ['qa-fresh-coach', 'qa-fresh-admin', 'qa-fresh-league-creator'];
+    const creators = new Map(await Promise.all(creatorAliases.map(async alias => [alias, await signIn(alias)])));
+    const markers = new Map(creatorAliases.map(alias => [alias, `${FIXTURES.runId} ${alias} owned creation`]));
     let createdTeamId = '';
+    const createdTeamIds = new Map();
     dynamicResourceRegistry.register({
       id: `firestore-discovery:tenant-created-team:${certificationRunId}`,
       kind: 'obligation',
       async cleanup() {
         return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-          const snapshots = createdTeamId
-            ? [await firestoreAdmin.doc(`teams/${createdTeamId}`).get()]
-            : (await firestoreAdmin.collection('teams').where('teamName', '==', marker).get()).docs;
+          const snapshots = [];
+          for (const alias of creatorAliases) {
+            const knownId = createdTeamIds.get(alias);
+            if (knownId) snapshots.push(await firestoreAdmin.doc(`teams/${knownId}`).get());
+            else snapshots.push(...(await firestoreAdmin.collection('teams').where('teamName', '==', markers.get(alias)).get()).docs);
+          }
           let changed = false;
           for (const snapshot of snapshots.filter(item => item.exists)) {
             await firestoreAdmin.recursiveDelete(snapshot.ref);
-            await firestoreAdmin.recursiveDelete(firestoreAdmin.doc(`users/${identityByAlias.get('qa-fresh-coach').uid}/teamMemberships/${snapshot.id}`));
+            for (const alias of creatorAliases) {
+              await firestoreAdmin.recursiveDelete(firestoreAdmin.doc(`users/${identityByAlias.get(alias).uid}/teamMemberships/${snapshot.id}`));
+            }
             changed = true;
           }
           return changed;
@@ -4115,20 +4184,31 @@ async function runTenantApiScenario(scenarioId) {
       },
       async verify() {
         return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-          const teams = await firestoreAdmin.collection('teams').where('teamName', '==', marker).get();
-          if (!teams.empty) return false;
-          return !createdTeamId || !(await firestoreAdmin.doc(`users/${identityByAlias.get('qa-fresh-coach').uid}/teamMemberships/${createdTeamId}`).get()).exists;
+          for (const alias of creatorAliases) {
+            if (!(await firestoreAdmin.collection('teams').where('teamName', '==', markers.get(alias)).get()).empty) return false;
+            const knownId = createdTeamIds.get(alias);
+            if (knownId && (await firestoreAdmin.doc(`users/${identityByAlias.get(alias).uid}/teamMemberships/${knownId}`).get()).exists) return false;
+          }
+          return true;
         });
       },
     });
     let created;
     await recordObservedTenantCase(scenarioId, 'happyPath', 'team-create-happyPath', async () => {
-      created = await apiJsonResult('/api/teams/create', creator.body.idToken, {
-        method: 'POST', body: JSON.stringify({ name: marker, type: 'team', position: 'Head Coach' }),
-      });
-      expectEqual(created.status, 201, 'tenant team create succeeds');
-      createdTeamId = created.body?.teamId || '';
-      expectEqual(/^team_[A-Za-z0-9]+$/.test(createdTeamId), true, 'tenant team create server identifier');
+      for (const alias of creatorAliases) {
+        const response = await apiJsonResult('/api/teams/create', creators.get(alias).body.idToken, {
+          method: 'POST', body: JSON.stringify({ name: markers.get(alias), type: 'team', position: 'Head Coach' }),
+        });
+        expectEqual(response.status, 201, `tenant team create ${alias} succeeds`);
+        const teamId = response.body?.teamId || '';
+        expectEqual(/^team_[A-Za-z0-9]+$/.test(teamId), true, `tenant team create ${alias} server identifier`);
+        createdTeamIds.set(alias, teamId);
+        if (alias === 'qa-fresh-coach') { created = response; createdTeamId = teamId; }
+        await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const team = await firestoreAdmin.doc(`teams/${teamId}`).get();
+          expectEqual(team.data()?.ownerUserId, identityByAlias.get(alias).uid, `tenant team create ${alias} owner server-derived`);
+        });
+      }
       tenantRuntimeConsumerPaths.set(scenarioId, [
         `teams/${createdTeamId}`,
         `users/${identityByAlias.get('qa-fresh-coach').uid}/teamMemberships/${createdTeamId}`,
@@ -4146,15 +4226,15 @@ async function runTenantApiScenario(scenarioId) {
       return 'The fresh coach created a run-owned squad with coherent team, member, and user projections.';
     }, 'A supported team is created atomically with server-derived ownership.');
     await recordObservedTenantCase(scenarioId, 'negativePath', 'team-create-negativePath', async () => {
-      const invalid = await apiJsonResult('/api/teams/create', creator.body.idToken, {
-        method: 'POST', body: JSON.stringify({ name: marker, type: 'forged', position: 'Coach' }),
+      const invalid = await apiJsonResult('/api/teams/create', creators.get('qa-fresh-coach').body.idToken, {
+        method: 'POST', body: JSON.stringify({ name: markers.get('qa-fresh-coach'), type: 'forged', position: 'Coach' }),
       });
       expectEqual(invalid.status, 400, 'tenant team create unsupported type denied');
       return 'An unsupported type was rejected before any graph was created.';
     }, 'Invalid team fields fail closed without a partial graph.');
     await recordObservedTenantCase(scenarioId, 'permission', 'team-create-permission', async () => {
-      const forged = await apiJsonResult('/api/teams/create', creator.body.idToken, {
-        method: 'POST', body: JSON.stringify({ name: marker, type: 'team', position: 'Coach', overrideOwnerId: identityByAlias.get('qa-coach-owner-b').uid }),
+      const forged = await apiJsonResult('/api/teams/create', creators.get('qa-fresh-coach').body.idToken, {
+        method: 'POST', body: JSON.stringify({ name: markers.get('qa-fresh-coach'), type: 'team', position: 'Coach', overrideOwnerId: identityByAlias.get('qa-coach-owner-b').uid }),
       });
       expectEqual(forged.status, 403, 'tenant team create owner tampering denied');
       return 'Client-supplied owner authority was denied without a validated organization context.';
@@ -4162,7 +4242,7 @@ async function runTenantApiScenario(scenarioId) {
     await recordObservedTenantCase(scenarioId, 'persistence', 'team-create-persistence', async () => {
       const values = await readTenantConsumerDocuments(tenantRuntimeConsumerPaths.get(scenarioId));
       expectEqual(values.every(Boolean), true, 'tenant team create graph reload');
-      expectEqual(values[0].teamName, marker, 'tenant team create marker persisted');
+      expectEqual(values[0].teamName, markers.get('qa-fresh-coach'), 'tenant team create marker persisted');
       return 'An independent Admin reader observed the exact created team and membership projection.';
     }, 'The complete created graph persists after the route returns.');
     await recordObservedTenantCase(scenarioId, 'network', 'team-create-network', async () => {
@@ -4206,7 +4286,7 @@ async function runTenantApiScenario(scenarioId) {
         batch.set(firestoreAdmin.doc(projectionPath), { teamId, userId: memberUid, status: 'active' });
         const player = await firestoreAdmin.doc(playerPath).get();
         batch.set(firestoreAdmin.doc(playerPath), {
-          ...player.data(), joinedTeamIds: [...new Set([...(player.data()?.joinedTeamIds || []), teamId])],
+          ...player.data(), joinedTeamIds: [...new Set([...(player.data()?.joinedTeamIds || []), teamId])], primaryTeamId: teamId,
         });
         await batch.commit();
         await bucket.file(storagePath).save(Buffer.from('local reset contract'), { contentType: 'text/plain' });
@@ -4260,6 +4340,7 @@ async function runTenantApiScenario(scenarioId) {
           expectEqual(member.exists, false, 'tenant seasonal nonowner roster removed');
           expectEqual(projection.exists, false, 'tenant seasonal user membership removed');
           expectEqual(player.data()?.joinedTeamIds?.includes(teamId), false, 'tenant seasonal player team projection removed');
+          expectEqual(player.data()?.primaryTeamId === teamId, false, 'tenant seasonal primary team reconciled');
           expectEqual((await bucket.file(storagePath).exists())[0], false, 'tenant seasonal exact Storage removed');
         });
         return 'Complete reset persisted exact descendant, user-membership, player-team, and Storage cleanup while retaining owner controls.';
@@ -4316,13 +4397,15 @@ async function runTenantApiScenario(scenarioId) {
     const playerPath = `players/${childId}`;
     const parentProjectionPath = `users/${identityByAlias.get('qa-parent-a').uid}/teamMemberships/${teamA.id}`;
     await tenantFixtureMutations.withFirestoreOverlay([memberPath, playerPath, parentProjectionPath], async () => {
-      await recordObservedTenantCase(scenarioId, 'happyPath', 'team-join-lifecycle', async () => {
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'team-join-guardian-child-enrollment-race', async () => {
         const requests = await runTwoParty('tenant-child-join-race', [
-          () => apiJsonResult('/api/teams/join', parent.body.idToken, {
+          signal => apiJsonResult('/api/teams/join', parent.body.idToken, {
             method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+            signal,
           }),
-          () => apiJsonResult('/api/teams/join', parent.body.idToken, {
+          signal => apiJsonResult('/api/teams/join', parent.body.idToken, {
             method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
+            signal,
           }),
         ], { timeoutMs: 20_000 });
         expectEqual(requests.every(item => item.status === 'fulfilled' && item.value.status === 200), true, 'tenant join concurrent duplicate requests settle');
@@ -4342,7 +4425,7 @@ async function runTenantApiScenario(scenarioId) {
       }, 'Actual linked-child POST enrollment is idempotent, race-safe, and never assigns guardian identity to the child.');
     });
     await tenantFixtureMutations.withFirestoreOverlay([`teams/${teamA.id}`, memberPath, playerPath, parentProjectionPath], async () => {
-      await recordObservedTenantCase(scenarioId, 'negativePath', 'team-join-edge-cases', async () => {
+      await recordObservedTenantCase(scenarioId, 'negativePath', 'team-join-inactive-code-current-state-denial', async () => {
         await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}`).set({ isActive: false }, { merge: true }));
         const inactive = await apiJsonResult('/api/teams/join', parent.body.idToken, {
           method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
@@ -4352,7 +4435,7 @@ async function runTenantApiScenario(scenarioId) {
         return 'Code-only POST rechecked current team state and denied the inactive squad without a member write.';
       }, 'Inactive current state fails closed at POST, including the transactional boundary.');
     });
-    await recordObservedTenantCase(scenarioId, 'permission', 'team-join-tenant-isolation', async () => {
+    await recordObservedTenantCase(scenarioId, 'permission', 'team-join-cross-guardian-enrollment-denial', async () => {
       const denied = await apiJsonResult('/api/teams/join', otherParent.body.idToken, {
         method: 'POST', body: JSON.stringify({ code: teamA.code, playerId: childId, enrollmentIntent: 'player' }),
       });
@@ -4398,10 +4481,17 @@ async function runTenantApiScenario(scenarioId) {
       return 'Public response contained only the allowlisted recruiting projection.';
     }, 'The public endpoint omits private player, guardian, and evaluation fields.');
     const profilePath = `players/${probe.activePlayerId}/recruitingProfile/profile`;
+    const editor = await signIn('qa-coach-owner-b');
+    const editorTeamId = FIXTURES.teams.find(team => team.alias === 'qa-team-b').id;
     await tenantFixtureMutations.withFirestoreOverlay([profilePath], async () => {
-      await recordObservedTenantCase(scenarioId, 'happyPath', 'recruiting-public-lifecycle', async () => {
-        const setStatus = status => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
-          firestoreAdmin.doc(profilePath).set({ status }, { merge: true }));
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'recruiting-public-canonical-editor-status-transitions', async () => {
+        const setStatus = async status => {
+          const result = await patchFirestoreFields({
+            projectId: PROJECT_ID, documentPath: profilePath, idToken: editor.body.idToken,
+            fields: { status, updatedByTeamId: editorTeamId },
+          });
+          expectEqual(result.status, 200, `tenant recruiting editor saves ${status}`);
+        };
         await setStatus('hidden');
         const hidden = await apiJsonResult(`/api/public/recruiting/${probe.activePlayerId}`, null);
         expectEqual(hidden.status, 404, 'tenant recruiting active-to-hidden transition');
@@ -4426,7 +4516,45 @@ async function runTenantApiScenario(scenarioId) {
     const parent = await signIn('qa-parent-a');
     const otherParent = await signIn('qa-parent-b');
     const childId = FIXTURES.youthInvite.childId;
+    const recipientEmail = FIXTURES.youthInvite.recipientEmail;
     let token = '';
+    // Register recipient/child-bound recovery before the first server mutation.
+    // This owns invite/Auth/projection cleanup even when a response is lost
+    // after the server commits and before its generated IDs reach the runner.
+    dynamicResourceRegistry.register({
+      id: `server-discovery:tenant-youth:${certificationRunId}`,
+      kind: 'obligation',
+      async cleanup() {
+        return withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+          let changed = false;
+          const invites = await firestoreAdmin.collection('invites')
+            .where('parentId', '==', identityByAlias.get('qa-parent-a').uid).get();
+          for (const invite of invites.docs.filter(item => item.data()?.childId === childId)) {
+            registerCertificationSensitiveAlias(invite.id, 'tenant-youth-invite');
+            await firestoreAdmin.recursiveDelete(invite.ref);
+            changed = true;
+          }
+          const user = await getAuthUserByEmailIfPresent(authAdmin, recipientEmail);
+          if (user) {
+            registerCertificationSensitiveAlias(user.uid, 'tenant-youth-activation');
+            const memberRows = await firestoreAdmin.collectionGroup('members').where('userId', '==', user.uid).get();
+            for (const member of memberRows.docs) await firestoreAdmin.recursiveDelete(member.ref);
+            await firestoreAdmin.recursiveDelete(firestoreAdmin.doc(`users/${user.uid}`));
+            await authAdmin.deleteUser(user.uid);
+            changed = true;
+          }
+          return changed;
+        });
+      },
+      async verify() {
+        return withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+          const invites = await firestoreAdmin.collection('invites')
+            .where('parentId', '==', identityByAlias.get('qa-parent-a').uid).get();
+          if (invites.docs.some(item => item.data()?.childId === childId)) return false;
+          return await getAuthUserByEmailIfPresent(authAdmin, recipientEmail) === null;
+        });
+      },
+    });
     return tenantFixtureMutations.withFirestoreOverlay([
       `players/${childId}`,
       `teams/${FIXTURES.youthInvite.teamId}/members/${childId}`,
@@ -4439,7 +4567,6 @@ async function runTenantApiScenario(scenarioId) {
         expectEqual(created.status, 200, 'tenant youth invite created by guardian');
         token = registerSensitiveValue(created.body?.token || '');
         expectEqual(/^[a-f0-9]{48}$/.test(token), true, 'tenant youth invite token format');
-        registerDynamicFirestoreRoot(`invites/${token}`, 'tenant-youth-invite');
         const canonical = await apiJsonResult(`/api/invites/youth?token=${encodeURIComponent(token)}`, null);
         const alias = await apiJsonResult(`/api/youth-invites?token=${encodeURIComponent(token)}`, null);
         expectEqual(canonical.status, 200, 'tenant youth canonical invite lookup');
@@ -4476,7 +4603,7 @@ async function runTenantApiScenario(scenarioId) {
         expectEqual(JSON.stringify(alias.body), JSON.stringify(canonical.body), 'tenant youth modified-token route equivalence');
         return 'Canonical and compatibility endpoints returned the same sanitized contract.';
       }, 'The duplicate route does not diverge from the canonical youth-invite API.');
-      await recordObservedTenantCase(scenarioId, 'happyPath', 'family-youth-login-lifecycle', async () => {
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'family-youth-login-guardian-invite-and-youth-activation', async () => {
         const redeemed = await apiJsonResult('/api/invites/youth', null, {
           method: 'PUT', body: JSON.stringify({ token, password }),
         });
@@ -4484,12 +4611,6 @@ async function runTenantApiScenario(scenarioId) {
         const youth = await signIn('qa-youth-invite');
         expectEqual(youth.status, 200, 'tenant youth activated identity sign-in');
         const youthUid = youth.body.localId;
-        registerDynamicAuthIdentity(youthUid, 'tenant-youth-activation');
-        registerDynamicFirestoreRoot(`users/${youthUid}`, 'tenant-youth-activation-user');
-        registerDynamicFirestoreRoot(
-          `teams/${FIXTURES.youthInvite.teamId}/members/${youthUid}`,
-          'tenant-youth-activation-member',
-        );
         await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
           const [player, member, projection] = await Promise.all([
             firestoreAdmin.doc(`players/${childId}`).get(),
@@ -4506,6 +4627,53 @@ async function runTenantApiScenario(scenarioId) {
         })).status, 404, 'tenant youth invitation single-use denial');
         return 'The invitation activated a separate youth Auth identity and coherent player, member, and user projections; reuse was denied.';
       }, 'A youth invite activates exactly one distinct child identity and all server-derived projections.');
+      if (runBrowser) {
+        const session = await browserLogin('qa-youth-invite', '/dashboard', `tenant-${scenarioId}-${process.pid}`);
+        const result = JSON.parse(cli(session, ['run-code', `async page => {
+          const observations=[]; const consoleErrors=[]; const failures=[];
+          const onConsole=message=>{if(message.type()==='error') consoleErrors.push(message.text())};
+          const onResponse=response=>{if(response.status()>=400) failures.push({status:response.status(),url:response.url()})};
+          const openSelfView=async target=>{
+            const selfView=target.getByRole('button',{name:'My Profile'}); await selfView.waitFor({state:'visible',timeout:15000});
+            await target.waitForTimeout(500);
+            const waiverReminder=target.getByRole('button',{name:'Remind Me Later'});
+            if(await waiverReminder.isVisible().catch(()=>false)){
+              await waiverReminder.click();
+              await waiverReminder.waitFor({state:'hidden',timeout:5000});
+            }
+            await selfView.click();
+          };
+          page.on('console',onConsole); page.on('response',onResponse);
+          try {
+            for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+              await page.setViewportSize(viewport);
+              await page.goto(${JSON.stringify(BASE_URL)} + '/dashboard');
+              await page.waitForFunction(() => window.location.pathname === '/dashboard', null, {timeout:15000});
+              await page.reload();
+              await openSelfView(page);
+              await page.waitForFunction(() => window.location.pathname === '/roster', null, {timeout:15000});
+              observations.push({width:viewport.width,pathname:await page.evaluate(()=>window.location.pathname),fits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)});
+            }
+            const peer=await page.context().newPage(); await peer.goto(${JSON.stringify(BASE_URL)} + '/dashboard');
+            await peer.waitForFunction(() => window.location.pathname === '/dashboard', null, {timeout:15000});
+            await peer.getByRole('button',{name:'My Profile'}).waitFor({state:'visible',timeout:15000});
+            const peerPath=await peer.evaluate(()=>window.location.pathname); await peer.close();
+            return {observations,peerPath,consoleErrors,failures};
+          } finally {page.off('console',onConsole);page.off('response',onResponse)}
+        }`]));
+        await recordObservedTenantCase(scenarioId, 'console', 'family-youth-login-console', async () => {
+          if (result.consoleErrors.length > 0 || result.failures.length > 0) {
+            throw new Error(`tenant youth activated browser diagnostics: ${JSON.stringify({ consoleErrors: result.consoleErrors, failures: result.failures }).slice(0, 1200)}`);
+          }
+          expectEqual(result.peerPath, '/dashboard', 'tenant youth activated new-tab dashboard');
+          return 'The activated youth—not the guardian—opened, refreshed, and reopened the player profile without browser failures.';
+        }, 'The distinct youth identity owns the browser session and survives refresh/new tab.');
+        await recordObservedTenantCase(scenarioId, 'responsive', 'family-youth-login-responsive', async () => {
+          expectEqual(result.observations.every(item => item.pathname === '/roster'), true, 'tenant youth player self-view route both viewports');
+          expectEqual(result.observations.every(item => item.fits), true, 'tenant youth player profile containment');
+          return 'The activated youth profile rendered at both frozen viewports without overflow.';
+        }, 'The activated youth journey renders at 1440x900 and 390x844.');
+      }
       } finally {
         if (token) {
           const revoked = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
@@ -4570,15 +4738,14 @@ function tenantLifecycleMutation(scenarioId) {
   const youthA = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a')?.data?.id;
   const rosterId = FIXTURES.rosterVariants[0]?.id;
   const marker = `${FIXTURES.runId} lifecycle`;
-  const signatureId = `tenant-${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180);
   return ({
     'teams-profile-branding-settings': {
       actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}`,
-      fields: { description: `${marker} settings` }, expectedField: 'description',
+      fields: { description: `${marker} settings`, contactPhone: '555-0199', contactEmail: 'team-a-settings@phase2.test' }, expectedField: 'description',
     },
     'teams-module-visibility': {
       actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}`,
-      fields: { features: { chat: false, roster: true, schedule: true, recruiting: true } }, expectedField: 'features',
+      fields: { features: { feed: false, roster: false, practice: false, playbook: false, volunteer: false, fundraising: false, tacticalChat: false, library: false } }, expectedField: 'features',
     },
     'organization-club-school-overview': {
       actorAlias: 'qa-school-owner', path: `teams/${school.id}`,
@@ -4594,7 +4761,7 @@ function tenantLifecycleMutation(scenarioId) {
     },
     'roster-member-add-edit-remove-reinstate': {
       actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}/members/${rosterId}`,
-      fields: { notes: `${marker} safe roster edit`, status: 'active' }, expectedField: 'notes',
+      fields: { notes: `${marker} safe roster edit`, status: 'removed', removalReason: 'certification lifecycle' }, expectedField: 'notes',
     },
     'roster-search-filter-sort-export': {
       actorAlias: 'qa-coach-owner-a', path: `teams/${teamA.id}/members/${rosterId}`,
@@ -4606,22 +4773,186 @@ function tenantLifecycleMutation(scenarioId) {
     },
     'recruiting-private-profile-crud': {
       actorAlias: 'qa-coach-owner-a', path: `players/${adultA}/recruitingProfile/profile`,
-      fields: { headline: `${marker} prospect` }, expectedField: 'headline',
+      fields: { headline: `${marker} prospect`, status: 'active', updatedByTeamId: teamA.id }, expectedField: 'headline',
     },
     'family-children-invites-team-cards': {
       actorAlias: 'qa-parent-a', path: `players/${youthA}`,
       fields: { firstName: `${marker} family child` }, expectedField: 'firstName',
     },
-    'family-schedule-waivers-payments': {
-      actorAlias: 'qa-parent-a',
-      path: `teams/${teamA.id}/coachWaiverSignatures/${signatureId}`,
-      fields: { signedBy: identityByAlias.get('qa-parent-a').uid, waiverId: FIXTURES.globalWaiverDeployment.deploymentId, fixtureRunId: FIXTURES.runId },
-      expectedField: 'waiverId',
-    },
   })[scenarioId] || null;
 }
 
 async function executeTenantLifecycleMutation(scenarioId) {
+  if (scenarioId === 'family-schedule-waivers-payments') {
+    const parent = await signIn('qa-parent-a');
+    const otherParent = await signIn('qa-parent-b');
+    const team = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const memberId = FIXTURES.youthInvite.childId;
+    const document = FIXTURES.firestoreDocuments.find(item =>
+      item.path.startsWith(`teams/${team.id}/documents/`) && item.data?.type === 'waiver' && item.data?.isActive !== false);
+    const documentId = document.path.split('/').at(-1);
+    const signaturePaths = [
+      `teams/${team.id}/members/${memberId}/signatures/${documentId}`,
+      `teams/${team.id}/archived_waivers/arch_team_${memberId}_${documentId}`,
+      `teams/${team.id}/protocol_signatures/${documentId}_${identityByAlias.get('qa-parent-a').uid}_${memberId}`,
+      `teams/${team.id}/files/cert_${memberId}_${documentId}`,
+      `teams/${team.id}/members/${memberId}`,
+      document.path,
+    ];
+    return tenantFixtureMutations.withFirestoreOverlay(signaturePaths, async () => {
+      const denied = await apiJsonResult('/api/teams/waivers/sign', otherParent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: team.id, memberId, documentId, signatureName: 'Wrong Guardian' }),
+      });
+      expectEqual(denied.status, 403, 'tenant family waiver other guardian denied');
+      const signed = await apiJsonResult('/api/teams/waivers/sign', parent.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: team.id, memberId, documentId, signatureName: 'Synthetic Guardian' }),
+      });
+      expectEqual(signed.status, 200, 'tenant family waiver guardian participant route succeeds');
+      const values = await readTenantConsumerDocuments(signaturePaths.slice(0, 4));
+      expectEqual(values.every(Boolean), true, 'tenant family waiver consumer graph created');
+      expectEqual(values[0].memberId, memberId, 'tenant family waiver binds participant member');
+      expectEqual(values[0].userId, identityByAlias.get('qa-parent-a').uid, 'tenant family waiver records guardian signer separately');
+      expectEqual(values[0].signedByParent, true, 'tenant family waiver guardian ceremony explicit');
+      return { actorAlias: 'qa-parent-a', path: signaturePaths[0], fields: { documentId }, expectedField: 'documentId' };
+    });
+  }
+  if (scenarioId === 'organization-create-allocate-remove-squads') {
+    const owner = await signIn('qa-school-owner');
+    const outsider = await signIn('qa-coach-owner-b');
+    const hub = FIXTURES.teams.find(item => item.alias === 'qa-school-hub');
+    const squad = FIXTURES.teams.find(item => item.alias === 'qa-school-squad-1');
+    const projectionPath = `users/${identityByAlias.get('qa-school-owner').uid}/teamMemberships/${squad.id}`;
+    return tenantFixtureMutations.withFirestoreOverlay([`teams/${squad.id}`, projectionPath], async () => {
+      const denied = await apiJsonResult('/api/organizations/squads', outsider.body.idToken, {
+        method: 'DELETE', body: JSON.stringify({ teamId: squad.id, hubTeamId: hub.id }),
+      });
+      expectEqual(denied.status, 403, 'tenant organization outsider allocation denied');
+      const released = await apiJsonResult('/api/organizations/squads', owner.body.idToken, {
+        method: 'DELETE', body: JSON.stringify({ teamId: squad.id, hubTeamId: hub.id }),
+      });
+      expectEqual(released.status, 200, 'tenant organization squad seat released');
+      expectEqual((await readTenantConsumerDocuments([`teams/${squad.id}`]))[0].isPro, false, 'tenant organization released squad keeps root');
+      const allocated = await apiJsonResult('/api/organizations/squads', owner.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: squad.id, hubTeamId: hub.id }),
+      });
+      expectEqual(allocated.status, 200, 'tenant organization squad seat allocated');
+      const [persisted, projection] = await readTenantConsumerDocuments([`teams/${squad.id}`, projectionPath]);
+      expectEqual(persisted.isPro, true, 'tenant organization allocated squad pro state');
+      expectEqual(projection.isPro, true, 'tenant organization allocation projection reconciled');
+      return { actorAlias: 'qa-school-owner', path: `teams/${squad.id}`, fields: { isPro: true }, expectedField: 'isPro' };
+    });
+  }
+  if (scenarioId === 'organization-club-school-overview') {
+    const owner = await signIn('qa-school-owner');
+    const delegate = await signIn('qa-school-delegate');
+    const outsider = await signIn('qa-coach-owner-b');
+    const hub = FIXTURES.teams.find(item => item.alias === 'qa-school-hub');
+    const squad = FIXTURES.teams.find(item => item.alias === 'qa-school-squad-1');
+    const path = `teams/${squad.id}`;
+    return tenantFixtureMutations.withFirestoreOverlay([path], async () => {
+      const route = `/api/organizations/squads?hubTeamId=${encodeURIComponent(hub.id)}`;
+      const before = await apiJsonResult(route, owner.body.idToken);
+      expectEqual(before.status, 200, 'tenant school overview owner aggregate');
+      expectEqual(before.body?.teams?.some(item => item.id === squad.id), true, 'tenant school overview contains exact squad');
+      expectEqual((await apiJsonResult(route, delegate.body.idToken)).status, 200, 'tenant school overview delegated administrator');
+      expectEqual((await apiJsonResult(route, outsider.body.idToken)).status, 403, 'tenant school overview other institution denied');
+      const description = `${FIXTURES.runId} constituent refresh`;
+      expectEqual((await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: path, idToken: owner.body.idToken, fields: { description } })).status, 200, 'tenant school overview constituent edit');
+      const refreshed = await apiJsonResult(route, owner.body.idToken);
+      expectEqual(refreshed.body?.teams?.find(item => item.id === squad.id)?.description, description, 'tenant school overview constituent refresh visible');
+      return { actorAlias: 'qa-school-owner', path, fields: { description }, expectedField: 'description' };
+    });
+  }
+  if (scenarioId === 'organization-global-waivers-documents-admins') {
+    const owner = await signIn('qa-school-owner');
+    const outsider = await signIn('qa-coach-owner-b');
+    const deployment = FIXTURES.globalWaiverDeployment;
+    const hub = FIXTURES.teams.find(item => item.alias === 'qa-school-hub');
+    const targetUid = identityByAlias.get('qa-coach-owner-b').uid;
+    const paths = [deployment.masterPath, ...deployment.copyPaths, `teams/${hub.id}`, `teams/${hub.id}/members/${targetUid}`, `users/${targetUid}/teamMemberships/${hub.id}`];
+    const documentId = deployment.masterPath.split('/').at(-1);
+    return tenantFixtureMutations.withFirestoreOverlay(paths, async () => {
+      const denied = await apiJsonResult('/api/organizations/waivers', outsider.body.idToken, {
+        method: 'PATCH', body: JSON.stringify({ documentId, title: 'Forbidden revision' }),
+      });
+      expectEqual(denied.status, 404, 'tenant global waiver cross-organization denial');
+      const revisedTitle = `${FIXTURES.runId} global waiver v3`;
+      const updated = await apiJsonResult('/api/organizations/waivers', owner.body.idToken, {
+        method: 'PATCH', body: JSON.stringify({ documentId, title: revisedTitle, waiverAudience: 'participant' }),
+      });
+      expectEqual(updated.status, 200, 'tenant global waiver deployment updated');
+      expectEqual(updated.body?.updatedCopies, deployment.copyPaths.length + 1, 'tenant global waiver exact copy count');
+      const copies = await readTenantConsumerDocuments(paths);
+      expectEqual(copies.slice(0, deployment.copyPaths.length + 1).every(item => item?.title === revisedTitle), true, 'tenant global waiver master and copies reconcile');
+      const added = await apiJsonResult('/api/schools/admins', owner.body.idToken, {
+        method: 'POST', body: JSON.stringify({ teamId: hub.id, email: emailForAlias('qa-coach-owner-b') }),
+      });
+      expectEqual(added.status, 200, 'tenant school administrator existing account added');
+      expectEqual(added.body?.userId, targetUid, 'tenant school administrator server-resolved target');
+      const [hubAfterAdd, memberAfterAdd, projectionAfterAdd] = await readTenantConsumerDocuments(paths.slice(-3));
+      expectEqual(hubAfterAdd.schoolAdminIds?.includes(targetUid), true, 'tenant school administrator hub authority added');
+      expectEqual(memberAfterAdd.role, 'Admin', 'tenant school administrator member projection');
+      expectEqual(projectionAfterAdd.role, 'Admin', 'tenant school administrator user projection');
+      const removed = await apiJsonResult('/api/schools/admins', owner.body.idToken, {
+        method: 'DELETE', body: JSON.stringify({ teamId: hub.id, userId: targetUid }),
+      });
+      expectEqual(removed.status, 200, 'tenant school administrator removed');
+      const [hubAfterRemove, memberAfterRemove, projectionAfterRemove] = await readTenantConsumerDocuments(paths.slice(-3));
+      expectEqual(hubAfterRemove.schoolAdminIds?.includes(targetUid), false, 'tenant school administrator hub authority revoked');
+      expectEqual(memberAfterRemove, null, 'tenant school administrator member projection revoked');
+      expectEqual(projectionAfterRemove, null, 'tenant school administrator user projection revoked');
+      return { actorAlias: 'qa-school-owner', path: deployment.masterPath, fields: { title: revisedTitle }, expectedField: 'title' };
+    });
+  }
+  if (scenarioId === 'recruiting-private-profile-crud') {
+    const actor = await signIn('qa-coach-owner-a');
+    const outsider = await signIn('qa-coach-owner-b');
+    const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+    const playerId = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-adult-a').data.id;
+    const paths = [
+      `players/${playerId}/recruitingProfile/profile`,
+      `players/${playerId}/recruitingProfile/metrics`,
+      `players/${playerId}/recruitingContact/contact`,
+      FIXTURES.firestoreDocuments.find(item => item.path.startsWith(`players/${playerId}/videos/`))?.path,
+    ].filter(Boolean);
+    return tenantFixtureMutations.withFirestoreOverlay(paths, async () => {
+      const payloads = [
+        { headline: `${FIXTURES.runId} prospect`, status: 'active', updatedByTeamId: team.id },
+        { sprint40: 4.7, verticalJump: 31, updatedByTeamId: team.id },
+        { coachEmail: 'coach-a@phase2.test', updatedByTeamId: team.id },
+        { title: `${FIXTURES.runId} highlight`, startTime: 3, endTime: 12, updatedByTeamId: team.id },
+      ];
+      for (let index = 0; index < paths.length; index += 1) {
+        const updated = await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: paths[index], idToken: actor.body.idToken, fields: payloads[index] });
+        expectEqual(updated.status, 200, `tenant recruiting private editor updates ${index + 1}`);
+      }
+      const denied = await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: paths[0], idToken: outsider.body.idToken, fields: { headline: 'cross-team overwrite', updatedByTeamId: FIXTURES.teams.find(item => item.alias === 'qa-team-b').id } });
+      expectEqual(denied.status, 403, 'tenant recruiting private cross-team editor denied');
+      const persisted = await readTenantConsumerDocuments(paths);
+      expectEqual(persisted[0].headline, payloads[0].headline, 'tenant recruiting private profile reload');
+      expectEqual(persisted[1].sprint40, payloads[1].sprint40, 'tenant recruiting private metrics reload');
+      expectEqual(persisted[2].coachEmail, payloads[2].coachEmail, 'tenant recruiting private contact reload');
+      expectEqual(persisted[3].title, payloads[3].title, 'tenant recruiting private video reload');
+      return { actorAlias: 'qa-coach-owner-a', path: paths[0], fields: payloads[0], expectedField: 'headline' };
+    });
+  }
+  if (scenarioId === 'family-children-invites-team-cards') {
+    const parent = await signIn('qa-parent-a');
+    const childIds = [
+      FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-youth-a').data.id,
+      FIXTURES.youthInvite.childId,
+    ];
+    const paths = childIds.map(id => `players/${id}`);
+    return tenantFixtureMutations.withFirestoreOverlay(paths, async () => {
+      for (let index = 0; index < paths.length; index += 1) {
+        const updated = await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: paths[index], idToken: parent.body.idToken, fields: { firstName: `${FIXTURES.runId} child ${index + 1}` } });
+        expectEqual(updated.status, 200, `tenant family child ${index + 1} edit`);
+      }
+      const children = await readTenantConsumerDocuments(paths);
+      expectEqual(children.every((item, index) => item.firstName === `${FIXTURES.runId} child ${index + 1}`), true, 'tenant family two child cards refresh');
+      return { actorAlias: 'qa-parent-a', path: paths[0], fields: { firstName: children[0].firstName }, expectedField: 'firstName' };
+    });
+  }
   const mutation = tenantLifecycleMutation(scenarioId);
   if (!mutation) return null;
   const actor = await signIn(mutation.actorAlias);
@@ -4640,6 +4971,33 @@ async function executeTenantLifecycleMutation(scenarioId) {
       true,
       `tenant ${scenarioId} lifecycle field reconciled`,
     );
+    if (scenarioId === 'teams-module-visibility') {
+      expectEqual(Object.keys(persisted.features || {}).sort().join(','), 'feed,fundraising,library,playbook,practice,roster,tacticalChat,volunteer', 'tenant all eight module keys persisted');
+      expectEqual(Object.values(persisted.features || {}).every(value => value === false), true, 'tenant all eight modules disabled');
+    }
+    if (scenarioId === 'teams-profile-branding-settings') {
+      const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+      const objectPath = `teams/${team.id}/branding/${certificationRunId}-logo.png`;
+      tenantFixtureMutations.registerDynamicStoragePath('tenant-settings-branding', objectPath);
+      const outsider = await signIn('qa-coach-owner-b');
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+      expectEqual(await storageObjectStatus(objectPath, outsider.body.idToken, { body: png }), 403, 'tenant branding outsider upload denied');
+      expectEqual(await storageObjectStatus(objectPath, actor.body.idToken, { contentType: 'text/html', body: Buffer.from('not an image') }), 403, 'tenant branding unsafe type denied');
+      expectEqual(await storageObjectStatus(objectPath, actor.body.idToken, { body: png }), 200, 'tenant branding owner upload succeeds');
+      expectEqual(await storageObjectStatus(objectPath, actor.body.idToken, { body: png }), 200, 'tenant branding owner replacement succeeds');
+      expectEqual([200, 204].includes(await storageObjectStatus(objectPath, actor.body.idToken, { method: 'DELETE' })), true, 'tenant branding owner removal succeeds');
+      await withEmulatorAuthAdmin(async (_authAdmin, _firestoreAdmin, bucket) =>
+        expectEqual((await bucket.file(objectPath).exists())[0], false, 'tenant branding Storage removal reconciled'));
+    }
+    if (scenarioId === 'roster-member-add-edit-remove-reinstate') {
+      expectEqual(persisted.status, 'removed', 'tenant roster member removed');
+      const reinstated = await patchFirestoreFields({
+        projectId: PROJECT_ID, documentPath: mutation.path, idToken: actor.body.idToken,
+        fields: { status: 'active', notes: `${FIXTURES.runId} reinstated` },
+      });
+      expectEqual(reinstated.status, 200, 'tenant roster member reinstated');
+      expectEqual((await readTenantConsumerDocuments([mutation.path]))[0].status, 'active', 'tenant roster reinstate persisted');
+    }
     return mutation;
   });
 }
@@ -4722,20 +5080,95 @@ async function runTenantSupplementalApiCases(scenarioId) {
 
 async function runTenantBrowserScenario(scenarioId) {
   if (scenarioId === 'family-enable-youth-login') {
-    const session = await browserLogin('qa-parent-a', '/family', `tenant-${scenarioId}-${process.pid}`);
-    const desktop = browserRouteAudit(session, '/family');
-    const mobile = browserRouteAudit(session, '/family', { mobile: true });
-    await recordObservedTenantCase(scenarioId, 'console', 'family-youth-login-console', async () => {
-      expectEqual(desktop.consoleErrors.length + mobile.consoleErrors.length, 0, 'tenant youth Family console errors');
-      expectEqual(desktop.failedResponses.length + mobile.failedResponses.length, 0, 'tenant youth Family server failures');
-      return 'The owning guardian’s real Family surface completed in both viewports without console or server failures.';
-    }, 'The Family activation entry surface has case-owned console and response capture.');
-    await recordObservedTenantCase(scenarioId, 'responsive', 'family-youth-login-responsive', async () => {
-      expectEqual(desktop.pathname, '/family', 'tenant youth Family desktop route');
-      expectEqual(mobile.pathname, '/family', 'tenant youth Family mobile route');
-      expectEqual(desktop.fits && mobile.fits, true, 'tenant youth Family viewport containment');
-      return 'The owning guardian’s Family surface remained visible and contained at both frozen viewports.';
-    }, 'The Family activation surface renders at 1440x900 and 390x844 without page overflow.');
+    return;
+  }
+  if (scenarioId === 'teams-module-visibility') {
+    const owner = await signIn('qa-coach-owner-a');
+    const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+    const teamPath = `teams/${team.id}`;
+    return tenantFixtureMutations.withFirestoreOverlay([teamPath], async () => {
+      const features = { feed: false, roster: false, practice: false, playbook: false, volunteer: false, fundraising: false, tacticalChat: false, library: false };
+      expectEqual((await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: teamPath, idToken: owner.body.idToken, fields: { features } })).status, 200, 'tenant module browser setup all eight keys');
+      const session = await browserLogin('qa-team-member', '/dashboard', `tenant-${scenarioId}-${process.pid}`);
+      const result = JSON.parse(cli(session, ['run-code', `async page => {
+        const routes = ['/feed','/roster','/practice','/drills','/volunteers','/fundraising','/chats','/files'];
+        const observations = [];
+        const consoleErrors = [];
+        const failures = [];
+        const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+        const onResponse = response => { if (response.status() >= 500) failures.push(response.status()); };
+        page.on('console', onConsole); page.on('response', onResponse);
+        try {
+          for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
+            await page.setViewportSize(viewport);
+            await page.goto(${JSON.stringify(BASE_URL)} + '/dashboard');
+            const hiddenLinks = [];
+            for (const route of routes) hiddenLinks.push(await page.locator('a[href=' + JSON.stringify(route) + ']:visible').count());
+            const denied = [];
+            for (const route of routes) {
+              await page.goto(${JSON.stringify(BASE_URL)} + route);
+              await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 15000 });
+              denied.push(await page.evaluate(() => window.location.pathname));
+            }
+            observations.push({ width: viewport.width, hiddenLinks, denied, fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) });
+          }
+          return { observations, consoleErrors, failures };
+        } finally { page.off('console', onConsole); page.off('response', onResponse); }
+      }`]));
+      await recordObservedTenantCase(scenarioId, 'console', 'team-modules-workflow-console', async () => {
+        expectEqual(result.consoleErrors.length, 0, 'tenant module eight-route console errors');
+        expectEqual(result.failures.length, 0, 'tenant module eight-route server failures');
+        expectEqual(result.observations.every(item => item.hiddenLinks.every(count => count === 0)), true, 'tenant module eight navigation entries hidden');
+        expectEqual(result.observations.every(item => item.denied.every(pathname => pathname === '/dashboard')), true, 'tenant module eight direct routes denied');
+        return 'All eight disabled module navigation entries were hidden and every direct route returned to the dashboard in both viewports.';
+      }, 'All eight module keys enforce navigation and direct-route denial without browser errors.');
+      await recordObservedTenantCase(scenarioId, 'responsive', 'team-modules-workflow-responsive', async () => {
+        expectEqual(result.observations.length, 2, 'tenant module two viewport executions');
+        expectEqual(result.observations.every(item => item.fits), true, 'tenant module denied routes contained');
+        return 'All eight denial journeys completed at 1440x900 and 390x844 without overflow.';
+      }, 'All eight module denial states remain contained at both viewports.');
+    });
+  }
+  if (scenarioId === 'roster-search-filter-sort-export') {
+    const session = await browserLogin('qa-coach-owner-a', '/dashboard', `tenant-${scenarioId}-${process.pid}`);
+    const accentedName = FIXTURES.rosterVariants.find(item => item.variant === 'accented').name;
+    const result = JSON.parse(cli(session, ['run-code', `async page => {
+      const observations = []; const consoleErrors = []; const failures = [];
+      const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+      const onResponse = response => { if (response.status() >= 500) failures.push(response.status()); };
+      page.on('console', onConsole); page.on('response', onResponse);
+      try {
+        for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
+          await page.setViewportSize(viewport); await page.goto(${JSON.stringify(BASE_URL)} + '/roster');
+          const search = page.getByPlaceholder('Search squad roster...'); await search.waitFor({state:'visible',timeout:15000});
+          await search.fill(${JSON.stringify(accentedName)});
+          const accented = await page.getByText(${JSON.stringify(accentedName)}, {exact:true}).count();
+          await search.fill('Removed Falcon'); const removed = await page.getByText('Removed Falcon', {exact:true}).count();
+          await search.fill('');
+          await page.getByRole('button', {name:/Export Emails/}).click();
+          const dialog = page.getByRole('dialog'); await dialog.waitFor({state:'visible'});
+          const label = await dialog.getByText(/Validated Contacts/).innerText();
+          const downloadPromise = page.waitForEvent('download');
+          await dialog.getByRole('button', {name:/Download/}).click();
+          const download = await downloadPromise;
+          observations.push({width:viewport.width, accented, removed, label, filename:download.suggestedFilename(), fits:await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)});
+          await page.keyboard.press('Escape');
+        }
+        return {observations,consoleErrors,failures};
+      } finally { page.off('console',onConsole); page.off('response',onResponse); }
+    }`]));
+    await recordObservedTenantCase(scenarioId, 'console', 'roster-discovery-workflow-console', async () => {
+      expectEqual(result.consoleErrors.length, 0, 'tenant roster search export console errors');
+      expectEqual(result.failures.length, 0, 'tenant roster search export server failures');
+      expectEqual(result.observations.every(item => item.accented === 1 && item.removed === 0), true, 'tenant roster accented search and removed filter');
+      expectEqual(result.observations.every(item => /^Team_Manifest_\d+\.txt$/.test(item.filename)), true, 'tenant roster real manifest download');
+      return 'Accented search matched exactly, removed members stayed excluded, and the real filtered contact manifest downloaded.';
+    }, 'Roster search/filter and real export execute without browser or server failures.');
+    await recordObservedTenantCase(scenarioId, 'responsive', 'roster-discovery-workflow-responsive', async () => {
+      expectEqual(result.observations.length, 2, 'tenant roster search export two viewports');
+      expectEqual(result.observations.every(item => item.fits), true, 'tenant roster export dialog containment');
+      return 'Search results and the export dialog remained contained at both viewports.';
+    }, 'Roster search and export render at both frozen viewports.');
     return;
   }
   if (!['teams-join-by-code', 'recruiting-public-scout-projection', 'family-enable-youth-login'].includes(scenarioId)) {
@@ -4889,6 +5322,7 @@ async function runCertificationTenantScenarios() {
     const sessionBaseline = new Set(ownedBrowserSessions);
     activeCertificationScenario = scenarioId;
     activeCertificationAssertions = [];
+    activeCertificationCaseIds = new Set();
     try {
       await runTenantApiScenario(scenarioId);
       await runTenantSupplementalApiCases(scenarioId);
@@ -4907,8 +5341,11 @@ async function runCertificationTenantScenarios() {
     } catch (error) {
       failureCount += 1;
       if (!error?.certificationCaseRecorded) {
-        const caseId = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].network[0];
-        recordCertificationFailure(scenarioId, 'network', caseId, error);
+        const nextCase = Object.entries(LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId])
+          .flatMap(([dimension, caseIds]) => caseIds.map(caseId => ({ dimension, caseId })))
+          .find(item => !activeCertificationCaseIds.has(item.caseId));
+        if (nextCase) recordCertificationFailure(scenarioId, nextCase.dimension, nextCase.caseId, error);
+        else recordCertificationRunFailure(scenarioId, error);
       }
       if (certificationFailFast) throw error;
       console.error(redact(`Tenant scenario ${scenarioId} failed: ${error instanceof Error ? error.message : error}`));
@@ -4919,6 +5356,7 @@ async function runCertificationTenantScenarios() {
       syncBrowserSessionRegistry();
       activeCertificationScenario = null;
       activeCertificationAssertions = [];
+      activeCertificationCaseIds = new Set();
     }
   }
   if (failureCount > 0) throw new Error(`${failureCount} selected tenant scenario(s) failed with structured case evidence.`);
@@ -6447,9 +6885,19 @@ export async function runSelectedCertificationBatches({
   certificationTenants: runTenantsSelected,
   runIdentity,
   runTenants,
+  failFast: stopOnFailure = false,
 }) {
-  if (runIdentitySelected) await runIdentity();
-  if (runTenantsSelected) await runTenants();
+  const errors = [];
+  for (const [selected, run] of [[runIdentitySelected, runIdentity], [runTenantsSelected, runTenants]]) {
+    if (!selected) continue;
+    try {
+      await run();
+    } catch (error) {
+      if (stopOnFailure) throw error;
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) throw new AggregateError(errors, 'One or more certification batches failed.');
 }
 
 async function main() {
@@ -6471,6 +6919,7 @@ async function main() {
       certificationTenants,
       runIdentity: runCertificationIdentityScenarios,
       runTenants: runCertificationTenantScenarios,
+      failFast: certificationFailFast,
     });
   } else {
     if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();

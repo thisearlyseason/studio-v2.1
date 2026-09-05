@@ -369,3 +369,21 @@ test('guardians cannot forge child waiver signatures directly and must use the v
     { ...signature, userId: 'child-1', signedByParent: false },
   ));
 });
+
+test('coach waiver signatures require active staff authority and exact document binding', async () => {
+  await seed('teams/team-1', { id: 'team-1', ownerUserId: 'coach-1', teamName: 'Team One' });
+  await seedTeamWithMember('parent-1', { position: 'Parent', role: 'Member', status: 'active' });
+  await seedTeamWithMember('staff-1', { position: 'Assistant Coach', role: 'Coach', status: 'active' });
+  await seedTeamWithMember('removed-staff', { position: 'Coach', role: 'Coach', status: 'removed' });
+  await seed('teams/team-1/documents/waiver-1', { id: 'waiver-1', teamId: 'team-1', type: 'waiver', isActive: true, waiverAudience: 'team' });
+  const signature = uid => ({
+    waiverDocId: 'waiver-1', waiverTitle: 'Staff waiver', signedBy: uid,
+    signedByName: 'Authorized signer', signedAt: new Date(), isGlobal: true,
+    isClubMaster: true, teamId: 'team-1',
+  });
+  await assertFails(setDoc(doc(userDb('parent-1'), 'teams/team-1/coachWaiverSignatures/waiver-1'), signature('parent-1')));
+  await assertFails(setDoc(doc(userDb('removed-staff'), 'teams/team-1/coachWaiverSignatures/waiver-1'), signature('removed-staff')));
+  await assertFails(setDoc(doc(userDb('staff-1'), 'teams/team-1/coachWaiverSignatures/wrong-id'), signature('staff-1')));
+  await assertFails(setDoc(doc(userDb('staff-1'), 'teams/team-1/coachWaiverSignatures/waiver-1'), { ...signature('staff-1'), teamId: 'team-2' }));
+  await assertSucceeds(setDoc(doc(userDb('staff-1'), 'teams/team-1/coachWaiverSignatures/waiver-1'), signature('staff-1')));
+});

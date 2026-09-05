@@ -142,9 +142,13 @@ export function calculateGlobalWaiverCompletion({
   const teams = uniqueTeamIds.map(teamId => {
     const documentId = documentIdByTeam.get(teamId);
     if (audience === 'team') {
+      const activeStaffUserIds = new Set(members
+        .filter(member => member.teamId === teamId && member.status !== 'removed' && isWaiverStaffMember(member))
+        .map(member => member.userId)
+        .filter((id): id is string => Boolean(id)));
       const hasSignature = Boolean(documentId) && coachSignatures.some(signature =>
-        signature.teamId === teamId &&
-        signature.waiverDocId === documentId
+        signature.teamId === teamId && signature.waiverDocId === documentId &&
+        Boolean(signature.signedBy && activeStaffUserIds.has(signature.signedBy))
       );
       return { teamId, required: 1, signed: hasSignature ? 1 : 0, isComplete: hasSignature };
     }

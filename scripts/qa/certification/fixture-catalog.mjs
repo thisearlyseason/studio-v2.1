@@ -1027,14 +1027,14 @@ export function buildFixtureCatalog(runSuffix) {
   addDocument('compliance', {
     alias: 'qa-school-global-waiver',
     path: globalWaiverDeployment.masterPath,
-    data: { id: scopedId('qa-school-global-waiver-v2'), title: `${visibleMarker('SCHOOL-GREEN')} Global Waiver`, content: 'Synthetic global waiver', version: 2, type: 'waiver', ownerUserId: globalWaiverDeployment.ownerUserId, isClubMaster: true, isGlobal: true, deploymentId: globalWaiverDeployment.deploymentId, waiverAudience: 'all', createdAt: timestamp(FIXED_NOW) },
+    data: { id: scopedId('qa-school-global-waiver-v2'), title: `${visibleMarker('SCHOOL-GREEN')} Global Waiver`, content: 'Synthetic global waiver', version: 2, type: 'waiver', ownerUserId: globalWaiverDeployment.ownerUserId, isClubMaster: true, isGlobal: true, deploymentId: globalWaiverDeployment.deploymentId, waiverAudience: 'participant', createdAt: timestamp(FIXED_NOW) },
   });
   globalWaiverDeployment.copyPaths.forEach((copyPath, index) => {
     const teamAlias = organizations[1].squadAliases[index];
     addDocument('compliance', {
       alias: `qa-school-global-waiver-copy-${index + 1}`,
       path: copyPath,
-      data: { id: copyPath.split('/').at(-1), teamId: teamIdFor(teamAlias), title: `${visibleMarker('SCHOOL-GREEN')} Global Waiver`, content: 'Synthetic global waiver', type: 'waiver', ownerUserId: globalWaiverDeployment.ownerUserId, isClubMaster: false, isGlobal: true, deploymentId: globalWaiverDeployment.deploymentId, sourceGlobalDocumentId: scopedId('qa-school-global-waiver-v2'), waiverAudience: 'all', createdAt: timestamp(FIXED_NOW) },
+      data: { id: copyPath.split('/').at(-1), teamId: teamIdFor(teamAlias), title: `${visibleMarker('SCHOOL-GREEN')} Global Waiver`, content: 'Synthetic global waiver', type: 'waiver', ownerUserId: globalWaiverDeployment.ownerUserId, isClubMaster: true, isGlobal: false, deploymentId: globalWaiverDeployment.deploymentId, sourceGlobalDocumentId: scopedId('qa-school-global-waiver-v2'), waiverAudience: 'participant', assignedTo: ['all'], createdAt: timestamp(FIXED_NOW) },
     });
   });
   addDocument('compliance', {

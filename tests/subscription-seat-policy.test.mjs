@@ -12,7 +12,7 @@ const {
   isActiveSubscriptionMutationLock,
   isEntitledSubscriptionStatus,
 } = seatPolicy;
-const { isBillableSquadSeat } = teamSeatPolicy;
+const { buildOrganizationAssociationFields, isBillableSquadSeat } = teamSeatPolicy;
 
 test('administrative organization hubs never consume paid squad seats', () => {
   assert.equal(isBillableSquadSeat({ type: 'school', isPro: true }), false);
@@ -26,6 +26,24 @@ test('playable and legacy squads consume paid squad seats', () => {
   assert.equal(isBillableSquadSeat({ type: 'youth', isPro: true }), true);
   assert.equal(isBillableSquadSeat({ type: 'adult', isPro: true }), true);
   assert.equal(isBillableSquadSeat({ isPro: true }), true);
+});
+
+test('releasing a school squad preserves the association required for later reallocation', () => {
+  assert.deepEqual(buildOrganizationAssociationFields({
+    ownerId: 'school-owner', hubId: 'school-hub', type: 'school',
+  }), {
+    organizationOwnerUserId: 'school-owner',
+    organizationHubId: 'school-hub',
+    organizationType: 'school',
+    schoolId: 'school-hub',
+  });
+  assert.deepEqual(buildOrganizationAssociationFields({
+    ownerId: 'club-owner', hubId: null, type: 'club',
+  }), {
+    organizationOwnerUserId: 'club-owner',
+    organizationType: 'club',
+    clubId: 'club-owner',
+  });
 });
 
 test('paid seats are capped deterministically after a downgrade', () => {

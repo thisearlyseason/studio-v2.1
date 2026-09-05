@@ -19,7 +19,8 @@ export const DIMENSION_NAMES = Object.freeze([
   'responsive',
 ]);
 
-const PROTECTED_KEY_PATTERN = /(?:password|cookie|authorization|actionurl|actionlink|oobcode|rawproviderpayload|(?:^|_)token|(?:^|_)uid|userid|sessiontoken|sessioncode|refreshtoken|idtoken|providersecret|joincode|teamcode|invitecode|medicalnotes|parentemail|privatecontact)/i;
+const PROTECTED_KEY_PATTERN = /(?:password|cookie|authorization|actionurl|actionlink|oobcode|rawproviderpayload|parentuid|invitetoken|(?:^|_)token|(?:^|_)uid|userid|sessiontoken|sessioncode|refreshtoken|idtoken|providersecret|joincode|teamcode|invitecode|medicalnotes|parentemail|privatecontact)/i;
+const PROTECTED_NORMALIZED_KEYS = new Set(['parentuid', 'invitetoken']);
 const PROTECTED_VALUE_PATTERN = /(?:password\s*[=:]|cookie\s*[=:]|authorization\s*[=:]|bearer\s+[a-z0-9._~-]+|oobcode=|mode=(?:resetpassword|verifyemail)|sk_live_[a-z0-9]+|rk_live_[a-z0-9]+|synthetic-private-[a-z0-9_-]+|\b[a-f0-9]{48}\b)/i;
 const URL_QUERY_PATTERN = /(?:https?:\/\/|\/)\S*\?\S+/i;
 
@@ -58,7 +59,7 @@ function assertNoProtectedEvidence(value, pathLabel = 'evidence') {
   }
   if (value && typeof value === 'object') {
     for (const [key, child] of Object.entries(value)) {
-      if (PROTECTED_KEY_PATTERN.test(key)) {
+      if (PROTECTED_KEY_PATTERN.test(key) || PROTECTED_NORMALIZED_KEYS.has(key.replace(/[^A-Za-z0-9]/g, '').toLowerCase())) {
         throw new Error(`Found protected evidence value at ${pathLabel}.${key}.`);
       }
       assertNoProtectedEvidence(child, `${pathLabel}.${key}`);

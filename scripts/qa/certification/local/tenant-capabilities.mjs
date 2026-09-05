@@ -88,7 +88,23 @@ function capabilityChecks(catalog) {
       Boolean(teamRoot('qa-disposable-team')) && ['games', 'events', 'documents'].every(collection =>
         documents.some(item => item.path.startsWith(`teams/${teamId('qa-disposable-team')}/${collection}/`))) &&
       (catalog?.storageObjects || []).some(item => item.path.startsWith(`teams/${teamId('qa-disposable-team')}/`) && item.lifecycle === 'present'),
-    'global-waiver': Boolean(catalog?.globalWaiverDeployment?.masterPath) && catalog.globalWaiverDeployment.copyPaths.every(path => paths.get(path)?.deploymentId === catalog.globalWaiverDeployment.deploymentId),
+    'global-waiver': (() => {
+      const deployment = catalog?.globalWaiverDeployment;
+      if (!deployment?.masterPath || !Array.isArray(deployment.copyPaths) || deployment.copyPaths.length === 0) return false;
+      const master = paths.get(deployment.masterPath);
+      if (!master || master.isClubMaster !== true || master.isGlobal !== true ||
+          master.deploymentId !== deployment.deploymentId || !['participant', 'team'].includes(master.waiverAudience)) return false;
+      const teamIds = new Set();
+      for (const path of deployment.copyPaths) {
+        const copy = paths.get(path);
+        const pathTeamId = path.split('/')[1];
+        if (!copy || copy.isClubMaster !== true || copy.isGlobal !== false || copy.teamId !== pathTeamId ||
+            copy.deploymentId !== deployment.deploymentId || copy.waiverAudience !== master.waiverAudience ||
+            copy.sourceGlobalDocumentId !== master.id || teamIds.has(copy.teamId)) return false;
+        teamIds.add(copy.teamId);
+      }
+      return true;
+    })(),
     'dynamic-cleanup': catalog?.dynamicCleanupContract?.registrationRequiredBeforeWrite === true && ['firestore', 'auth', 'storage', 'browser'].every(kind => catalog.dynamicCleanupContract.resourceKinds.includes(kind)),
   };
 }

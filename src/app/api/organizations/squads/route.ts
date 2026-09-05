@@ -1,9 +1,8 @@
-import { FieldValue } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { isEntitledSubscriptionStatus } from '@/lib/subscription-seat-policy';
-import { isBillableSquadSeat } from '@/lib/team-seat-policy';
+import { buildOrganizationAssociationFields, isBillableSquadSeat } from '@/lib/team-seat-policy';
 
 const ORGANIZATION_PLANS = new Set(['elite', 'league', 'school']);
 
@@ -88,12 +87,7 @@ function projection(
     ...(team.type ? { type: team.type } : {}),
     isPro: allocated,
     planId: allocated ? organization.planId : 'free',
-    organizationOwnerUserId: allocated ? organization.ownerId : FieldValue.delete(),
-    organizationType: allocated ? organization.type : FieldValue.delete(),
-    schoolId:
-      allocated && organization.hubId ? organization.hubId : FieldValue.delete(),
-    clubId:
-      allocated && !organization.hubId ? organization.ownerId : FieldValue.delete(),
+    ...buildOrganizationAssociationFields(organization),
     last_plan_sync: now,
   };
 }
@@ -143,14 +137,7 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
       transaction.update(teamRef, {
         isPro: allocated,
         planId: allocated ? organization.planId : 'free',
-        organizationOwnerUserId: allocated ? organization.ownerId : FieldValue.delete(),
-        organizationHubId:
-          allocated && organization.hubId ? organization.hubId : FieldValue.delete(),
-        organizationType: allocated ? organization.type : FieldValue.delete(),
-        schoolId:
-          allocated && organization.hubId ? organization.hubId : FieldValue.delete(),
-        clubId:
-          allocated && !organization.hubId ? organization.ownerId : FieldValue.delete(),
+        ...buildOrganizationAssociationFields(organization),
         last_plan_sync: now,
       });
 

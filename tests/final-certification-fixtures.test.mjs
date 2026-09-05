@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { groupGlobalWaiverDeployments } from '../src/lib/global-waiver-policy.ts';
 import { build } from 'esbuild';
 import nextEnvironment from '@next/env';
 
@@ -928,6 +929,20 @@ test('Task 4 public recruiting fixture does not trigger outbound media fetches',
   const catalog = buildFixtureCatalog('t4-public-media-boundary');
   const playerId = 'p_qa-player-adult-b-t4-public-media-boundary';
   assert.equal(catalog.firestoreDocuments.some(document => document.path.startsWith(`players/${playerId}/videos/`)), false);
+});
+
+test('Task 4 global waiver master and copies are accepted by the production grouping consumer', () => {
+  const catalog = buildFixtureCatalog('t4-waiver-consumer');
+  const paths = new Map(catalog.firestoreDocuments.map(item => [item.path, { id: item.path.split('/').at(-1), ...item.data }]));
+  const deployment = catalog.globalWaiverDeployment;
+  const grouped = groupGlobalWaiverDeployments([
+    paths.get(deployment.masterPath),
+    ...deployment.copyPaths.map(path => paths.get(path)),
+  ]);
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].deploymentId, deployment.deploymentId);
+  assert.deepEqual(grouped[0].teamDocuments.map(item => item.id), deployment.copyPaths.map(path => path.split('/').at(-1)));
+  assert.equal(grouped[0].document.waiverAudience, 'participant');
 });
 
 test('seeder refuses production and every non-loopback emulator target before connecting', () => {

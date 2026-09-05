@@ -14,17 +14,25 @@ export const TENANT_EXECUTION_ORDER = Object.freeze([
   'teams-seasonal-reset-delete-quota-resolution',
 ]);
 
-const caseSet = prefix => Object.freeze(Object.fromEntries(DIMENSION_NAMES.map(dimension => [
-  dimension, Object.freeze([
-    `${prefix}-${dimension}`,
-    ...({
-      happyPath: [`${prefix}-lifecycle`],
-      negativePath: [`${prefix}-edge-cases`],
-      permission: [`${prefix}-tenant-isolation`],
-      persistence: [`${prefix}-reload`],
-    }[dimension] || []),
-  ]),
-])));
+const scenarioCaseSet = (prefix, workflow) => Object.freeze({
+  happyPath: Object.freeze([`${prefix}-authorized-consumer-graph`, `${prefix}-${workflow}`]),
+  negativePath: Object.freeze([`${prefix}-validation-boundaries`, `${prefix}-missing-target-denial`]),
+  permission: Object.freeze([`${prefix}-role-boundary`, `${prefix}-cross-tenant-denial`]),
+  persistence: Object.freeze([`${prefix}-saved-state-refresh`, `${prefix}-independent-session-reload`]),
+  console: Object.freeze([`${prefix}-workflow-console`]),
+  network: Object.freeze([`${prefix}-workflow-network`]),
+  responsive: Object.freeze([`${prefix}-workflow-responsive`]),
+});
+
+const specializedCaseSet = (prefix, cases) => Object.freeze({
+  happyPath: Object.freeze([`${prefix}-happyPath`, `${prefix}-${cases.happyPath}`]),
+  negativePath: Object.freeze([`${prefix}-negativePath`, `${prefix}-${cases.negativePath}`]),
+  permission: Object.freeze([`${prefix}-permission`, `${prefix}-${cases.permission}`]),
+  persistence: Object.freeze([`${prefix}-persistence`, `${prefix}-${cases.persistence}`]),
+  console: Object.freeze([`${prefix}-console`]),
+  network: Object.freeze([`${prefix}-network`]),
+  responsive: Object.freeze([`${prefix}-responsive`]),
+});
 
 const TENANT_SCENARIO_ASSOCIATION_BASE = Object.freeze({
   'teams-create-and-capacity': ['qa-fresh-coach', 'run-created-squad'],
@@ -62,16 +70,22 @@ export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
           : dimension === 'persistence' ? 'persistence' : 'read',
     });
   }
-  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-lifecycle')) {
+  if (scenarioId === 'teams-module-visibility' && ['console', 'responsive'].includes(dimension)) {
+    return Object.freeze({ actorAlias: 'qa-team-member', targetAlias: base[1], operation: 'read' });
+  }
+  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-guardian-child-enrollment-race')) {
     return Object.freeze({ actorAlias: 'qa-parent-a', targetAlias: base[1], operation: 'create' });
   }
-  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-edge-cases')) {
+  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-inactive-code-current-state-denial')) {
     return Object.freeze({ actorAlias: 'qa-parent-a', targetAlias: base[1], operation: 'permission' });
   }
-  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-tenant-isolation')) {
+  if (scenarioId === 'teams-join-by-code' && caseId.endsWith('-cross-guardian-enrollment-denial')) {
     return Object.freeze({ actorAlias: 'qa-parent-b', targetAlias: base[1], operation: 'permission' });
   }
-  if (scenarioId === 'recruiting-public-scout-projection' && caseId.endsWith('-lifecycle')) {
+  if (scenarioId === 'family-enable-youth-login' && ['console', 'responsive'].includes(dimension)) {
+    return Object.freeze({ actorAlias: 'qa-youth-invite', targetAlias: base[1], operation: 'read' });
+  }
+  if (scenarioId === 'recruiting-public-scout-projection' && caseId.endsWith('-canonical-editor-status-transitions')) {
     return Object.freeze({ actorAlias: 'qa-coach-owner-b', targetAlias: base[1], operation: 'update' });
   }
   if (scenarioId === 'teams-seasonal-reset-delete-quota-resolution') {
@@ -93,34 +107,50 @@ export function tenantCaseAssociationFor(scenarioId, dimension, caseId = '') {
   const specialized = ['teams-join-by-code', 'recruiting-public-scout-projection', 'family-enable-youth-login'].includes(scenarioId);
   const outsider = scenarioId === 'recruiting-public-scout-projection' ? 'qa-coach-owner-a'
     : scenarioId.startsWith('family-') ? 'qa-parent-b' : 'qa-coach-owner-b';
-  const actorAlias = scenarioId === 'family-enable-youth-login' && caseId.endsWith('-lifecycle') ? 'qa-youth-invite'
+  const actorAlias = scenarioId === 'family-enable-youth-login' && caseId.endsWith('-guardian-invite-and-youth-activation') ? 'qa-youth-invite'
     : dimension === 'negativePath' || dimension === 'network' ? 'qa-public-submitter'
     : dimension === 'permission' ? (specialized && !caseId.endsWith('-tenant-isolation') ? 'qa-public-submitter' : outsider)
       : base[0];
+  const isMandatoryMutationCase = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId]?.happyPath?.[1] === caseId;
   const operation = dimension === 'happyPath' && scenarioId === 'family-enable-youth-login' ? 'create'
-    : dimension === 'happyPath' && caseId.endsWith('-lifecycle') && mutationLifecycleScenarios.has(scenarioId) ? 'update'
+    : dimension === 'happyPath' && isMandatoryMutationCase && mutationLifecycleScenarios.has(scenarioId) ? 'update'
     : dimension === 'happyPath' ? 'read' : OPERATION_BY_DIMENSION[dimension];
   return Object.freeze({ actorAlias, targetAlias: base[1], operation });
 }
 
-export const LOCAL_TENANT_CASE_REQUIREMENTS = Object.freeze(Object.fromEntries([
-  ['teams-create-and-capacity', 'team-create'],
-  ['teams-join-by-code', 'team-join'],
-  ['teams-profile-branding-settings', 'team-settings'],
-  ['teams-module-visibility', 'team-modules'],
-  ['teams-seasonal-reset-delete-quota-resolution', 'team-destructive'],
-  ['organization-club-school-overview', 'organization-overview'],
-  ['organization-create-allocate-remove-squads', 'organization-squads'],
-  ['organization-global-waivers-documents-admins', 'organization-documents'],
-  ['roster-member-add-edit-remove-reinstate', 'roster-lifecycle'],
-  ['roster-search-filter-sort-export', 'roster-discovery'],
-  ['roster-parent-player-self-views', 'roster-self'],
-  ['recruiting-private-profile-crud', 'recruiting-private'],
-  ['recruiting-public-scout-projection', 'recruiting-public'],
-  ['family-children-invites-team-cards', 'family-children'],
-  ['family-schedule-waivers-payments', 'family-aggregates'],
-  ['family-enable-youth-login', 'family-youth-login'],
-].map(([id, prefix]) => [id, caseSet(prefix)])));
+export const LOCAL_TENANT_CASE_REQUIREMENTS = Object.freeze({
+  'teams-create-and-capacity': specializedCaseSet('team-create', {
+    happyPath: 'fresh-role-creator-graph', negativePath: 'missing-target-denial',
+    permission: 'cross-tenant-created-team-denial', persistence: 'created-graph-independent-read',
+  }),
+  'teams-join-by-code': specializedCaseSet('team-join', {
+    happyPath: 'guardian-child-enrollment-race', negativePath: 'inactive-code-current-state-denial',
+    permission: 'cross-guardian-enrollment-denial', persistence: 'opaque-session-independent-reload',
+  }),
+  'teams-profile-branding-settings': scenarioCaseSet('team-settings', 'owner-settings-and-branding-edit'),
+  'teams-module-visibility': scenarioCaseSet('team-modules', 'all-eight-toggle-and-direct-denial'),
+  'teams-seasonal-reset-delete-quota-resolution': specializedCaseSet('team-destructive', {
+    happyPath: 'complete-reset-projection-reconciliation', negativePath: 'missing-target-denial',
+    permission: 'cross-tenant-reset-denial', persistence: 'repeat-reset-state-reconciliation',
+  }),
+  'organization-club-school-overview': scenarioCaseSet('organization-overview', 'constituent-count-and-visibility-refresh'),
+  'organization-create-allocate-remove-squads': scenarioCaseSet('organization-squads', 'seat-release-and-reallocation'),
+  'organization-global-waivers-documents-admins': scenarioCaseSet('organization-documents', 'master-copy-update-and-admin-boundary'),
+  'roster-member-add-edit-remove-reinstate': scenarioCaseSet('roster-lifecycle', 'remove-reinstate-projection'),
+  'roster-search-filter-sort-export': scenarioCaseSet('roster-discovery', 'accented-filter-and-manifest-download'),
+  'roster-parent-player-self-views': scenarioCaseSet('roster-self', 'guardian-child-edit-and-sibling-boundary'),
+  'recruiting-private-profile-crud': scenarioCaseSet('recruiting-private', 'profile-metrics-contact-media-edit'),
+  'recruiting-public-scout-projection': specializedCaseSet('recruiting-public', {
+    happyPath: 'canonical-editor-status-transitions', negativePath: 'missing-target-denial',
+    permission: 'cross-tenant-private-root-denial', persistence: 'canonical-profile-independent-read',
+  }),
+  'family-children-invites-team-cards': scenarioCaseSet('family-children', 'child-edit-and-two-card-refresh'),
+  'family-schedule-waivers-payments': scenarioCaseSet('family-aggregates', 'guardian-signature-and-ledger-refresh'),
+  'family-enable-youth-login': specializedCaseSet('family-youth-login', {
+    happyPath: 'guardian-invite-and-youth-activation', negativePath: 'missing-target-denial',
+    permission: 'cross-household-child-denial', persistence: 'activated-child-independent-read',
+  }),
+});
 
 function resultForScenario({ scenario, context, events, cleanup, execution, capabilities }) {
   const requirements = LOCAL_TENANT_CASE_REQUIREMENTS[scenario.id];
@@ -169,6 +199,10 @@ export async function runTenantsBatch(context, scenarios) {
   const observation = context.certificationObservation;
   const events = parseCertificationEvents(observation?.stdout || '');
   const cleanup = events.find(event => event.type === 'cleanup');
+  const scenarioErrors = events.filter(event => event.type === 'scenario-error').map(event => ({
+    stage: event.stage || `tenant-scenario:${event.scenarioId}`,
+    diagnostic: String(event.diagnostic || 'Tenant scenario failed outside a case boundary.').slice(0, 500),
+  }));
   const hasStructuredFailure = events.some(event => event.type === 'case' && event.state === 'FAIL');
   const execution = { startedAt: observation?.startedAt || context.now(), completedAt: observation?.completedAt || context.now() };
   const runErrors = !observation
@@ -179,7 +213,7 @@ export async function runTenantsBatch(context, scenarios) {
           diagnostic: (context.redact ? context.redact(observation.stderr) : String(observation.stderr || ''))
             .trim().slice(0, 500) || `Tenant child exited with code ${observation.code}.`,
         }]
-      : [];
+      : scenarioErrors;
   return {
     results: scenarios.map(scenario => resultForScenario({ scenario, context, events, cleanup, execution, capabilities })),
     runErrors,

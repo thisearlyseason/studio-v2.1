@@ -36,7 +36,7 @@ test('tenant mutation probe encodes nested values and sends an authenticated mas
 });
 
 test('tenant mutation probe rejects authority-bearing fields and non-loopback projects', async () => {
-  for (const field of ['ownerUserId', 'userId', 'parentId', 'guardianIds', 'isPro', 'planId', 'plan', 'isDemo', 'demoSessionOwnerId']) {
+  for (const field of ['ownerUserId', 'userId', 'parentId', 'parentUid', 'parent_uid', 'inviteToken', 'invite_token', 'guardianIds', 'isPro', 'planId', 'plan', 'isDemo', 'demoSessionOwnerId']) {
     await assert.rejects(() => patchFirestoreFields({
       projectId: 'demo-tenant-certification', documentPath: 'teams/run-team', idToken: 'token',
       fields: { [field]: 'forged' }, fetchImpl: async () => { throw new Error('must not request'); },

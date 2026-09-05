@@ -2,6 +2,7 @@ const AUTHORITY_FIELDS = new Set([
   'ownerUserId', 'userId', 'parentId', 'guardianIds',
   'isPro', 'planId', 'plan', 'isDemo', 'demoSessionOwnerId',
 ]);
+const PROTECTED_NORMALIZED_FIELDS = new Set(['parentuid', 'invitetoken']);
 
 export function encodeFirestoreValue(value) {
   if (value === null) return { nullValue: null };
@@ -36,7 +37,8 @@ export async function patchFirestoreFields({
   const entries = Object.entries(fields || {});
   if (entries.length === 0) throw new Error('Tenant mutation probes require at least one field.');
   for (const [field] of entries) {
-    if (!field || field.includes('.') || AUTHORITY_FIELDS.has(field)) {
+    const normalizedField = field.replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+    if (!field || field.includes('.') || AUTHORITY_FIELDS.has(field) || PROTECTED_NORMALIZED_FIELDS.has(normalizedField)) {
       throw new Error(`Tenant mutation probe rejected authority-bearing field ${field || '<empty>'}.`);
     }
   }

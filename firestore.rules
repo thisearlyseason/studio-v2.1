@@ -503,15 +503,22 @@ service cloud.firestore {
       }
 
       // ─── Coach Waiver Signatures (hub-deployed global waivers for staff) ────
-      // Any team member (coach, assistant, staff) can write their own signature.
-      // Only the team owner can read all signatures for compliance auditing.
+      // Only active staff may attest for a team. Guardian/participant signatures
+      // are created by the validated waiver signing API under the member path.
       match /coachWaiverSignatures/{waiverDocId} {
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-        // A member can create/update only their OWN signature record
-        allow write: if isSuperAdmin() || (isSignedIn() && (
-          isTeamMember(teamId) &&
-          request.resource.data.signedBy == request.auth.uid
-        ) || isTeamOwner(teamId));
+        allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+          request.resource.data.signedBy == request.auth.uid &&
+          request.resource.data.teamId == teamId &&
+          request.resource.data.waiverDocId == waiverDocId &&
+          request.resource.data.keys().hasOnly([
+            'waiverDocId', 'waiverTitle', 'signedBy', 'signedByName',
+            'signedAt', 'isGlobal', 'isClubMaster', 'teamId'
+          ]) &&
+          exists(/databases/$(database)/documents/teams/$(teamId)/documents/$(waiverDocId)) &&
+          get(/databases/$(database)/documents/teams/$(teamId)/documents/$(waiverDocId)).data.get('type', '') == 'waiver' &&
+          get(/databases/$(database)/documents/teams/$(teamId)/documents/$(waiverDocId)).data.get('waiverAudience', 'participant') == 'team'
+        );
       }
 
       // Compatibility path for tournament responses created before entries

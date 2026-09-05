@@ -54,6 +54,7 @@ test('legacy configurable runtime exposes explicit fail-fast without conflating 
   });
   assert.equal(configured.failFast, true);
   assert.equal(configured.runBrowser, false);
+  assert.match(source, /runSelectedCertificationBatches\(\{[\s\S]*?failFast:\s*certificationFailFast,/);
 });
 
 test('combined certification dispatch executes identity then tenants', async () => {
@@ -65,6 +66,26 @@ test('combined certification dispatch executes identity then tenants', async () 
     runTenants: async () => calls.push('tenants'),
   });
   assert.deepEqual(calls, ['identity', 'tenants']);
+});
+
+test('combined certification dispatch continues after identity failure unless fail-fast is selected', async () => {
+  const calls = [];
+  await assert.rejects(() => auditRunner.runSelectedCertificationBatches({
+    certificationIdentity: true, certificationTenants: true, failFast: false,
+    runIdentity: async () => { calls.push('identity'); throw new Error('identity failed'); },
+    runTenants: async () => { calls.push('tenants'); throw new Error('tenants failed'); },
+  }), error => error instanceof AggregateError && error.errors.map(item => item.message).join(',') === 'identity failed,tenants failed');
+  assert.deepEqual(calls, ['identity', 'tenants']);
+});
+
+test('combined certification dispatch stops immediately when fail-fast is selected', async () => {
+  const calls = [];
+  await assert.rejects(() => auditRunner.runSelectedCertificationBatches({
+    certificationIdentity: true, certificationTenants: true, failFast: true,
+    runIdentity: async () => { calls.push('identity'); throw new Error('identity failed'); },
+    runTenants: async () => calls.push('tenants'),
+  }), /identity failed/);
+  assert.deepEqual(calls, ['identity']);
 });
 
 test('legacy configurable runtime rejects off-loopback and ambiguous app origins', () => {
@@ -439,6 +460,25 @@ test('Task 4 certification mode executes tenant stages instead of setup-only suc
   assert.match(source, /recordCertificationCase\([\s\S]*family-youth-login-happyPath/);
   assert.match(source, /async function runTenantBrowserScenario\(scenarioId\)/);
   assert.match(source, /closeBrowserSessionsCreatedAfter\(ownedBrowserSessions, sessionBaseline/);
+});
+
+test('Task 4 Storage probes use the Firebase authorization scheme and retain the exact outsider actor', () => {
+  assert.match(source, /Authorization:\s*`Firebase \$\{token\}`/);
+  assert.match(source, /'teams-create-and-capacity':\s*\[[^\]]*'qa-coach-owner-b'/);
+  const request = auditRunner.buildStorageUploadRequest('teams/team-a/branding/logo.png', 'image/png', Buffer.from('png'));
+  assert.equal(request.headers['X-Goog-Upload-Protocol'], 'multipart');
+  assert.match(request.headers['Content-Type'], /^multipart\/related; boundary=/);
+  assert.match(request.body.toString('utf8'), /"name":"teams\/team-a\/branding\/logo\.png"/);
+  assert.match(request.body.toString('utf8'), /Content-Type: image\/png/);
+});
+
+test('Task 4 global waiver execution counts only the deployment master and copies', () => {
+  assert.match(source, /updated\.body\?\.updatedCopies,\s*deployment\.copyPaths\.length \+ 1/);
+  assert.doesNotMatch(source, /updated\.body\?\.updatedCopies,\s*paths\.length/);
+});
+
+test('Task 4 youth self-view settles the pending-waiver dialog before navigation', () => {
+  assert.match(source, /getByRole\('button',\{name:'Remind Me Later'\}\)/);
 });
 
 test('Task 4 probes seeded consumer documents and Storage before the first scenario mutation', () => {

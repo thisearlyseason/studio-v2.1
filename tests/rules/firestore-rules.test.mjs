@@ -181,6 +181,9 @@ beforeEach(async () => {
         answers: { email: 'legacy@example.test' },
         status: 'pending',
       }),
+      setDoc(doc(db, 'teams', 'team-a', 'documents', 'staff-waiver'), {
+        id: 'staff-waiver', teamId: 'team-a', type: 'waiver', isActive: true, waiverAudience: 'team',
+      }),
       setDoc(doc(db, 'teams', 'team-a', 'alerts', 'coaches-only'), {
         audience: 'coaches',
         title: 'Private staff alert',
@@ -818,6 +821,18 @@ test('parents and players cannot read staff-only channels or their messages', as
     await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat')));
     await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat', 'messages', 'staff-message')));
   }
+});
+
+test('team waiver attestation is staff-only and exactly bound to the waiver document', async () => {
+  const signature = uid => ({
+    waiverDocId: 'staff-waiver', waiverTitle: 'Staff waiver', signedBy: uid,
+    signedByName: 'Signer', signedAt: new Date(), isGlobal: true,
+    isClubMaster: true, teamId: 'team-a',
+  });
+  await assertFails(setDoc(doc(authenticatedDb('member'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), signature('member')));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/wrong-waiver'), signature('staff')));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), { ...signature('staff'), teamId: 'attacker-team' }));
+  await assertSucceeds(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), signature('staff')));
 });
 
 test('team alert audiences and targets are enforced by rules, not only the UI', async () => {

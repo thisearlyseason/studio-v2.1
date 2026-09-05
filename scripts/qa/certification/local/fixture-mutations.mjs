@@ -39,8 +39,17 @@ export function createFixtureMutations({
     registry.register({
       id: `firestore:${alias}`,
       kind: 'deleted',
-      async cleanup() { const existing = await firestore.read(path); if (existing === null) return false; await firestore.remove(path); return true; },
-      async verify() { return await firestore.read(path) === null; },
+      async cleanup() {
+        const rootExists = await firestore.read(path) !== null;
+        const descendantsExist = typeof firestore.hasDescendants === 'function' && await firestore.hasDescendants(path);
+        if (!rootExists && !descendantsExist) return false;
+        await firestore.remove(path);
+        return true;
+      },
+      async verify() {
+        return await firestore.read(path) === null &&
+          (typeof firestore.hasDescendants !== 'function' || !await firestore.hasDescendants(path));
+      },
     });
   }
 
@@ -72,22 +81,29 @@ export function createFixtureMutations({
       });
       snapshots.push({ path, before, restore });
     }
+    let value;
+    let operationError;
     try {
-      return await callback();
+      value = await callback();
+    } catch (error) {
+      operationError = error;
     } finally {
-      const errors = [];
+      const restorationErrors = [];
       for (const snapshot of snapshots.reverse()) {
         try {
           await snapshot.restore();
         } catch (error) {
-          errors.push(error);
+          restorationErrors.push(error);
         }
       }
-      if (errors.length > 0) {
-        const detail = errors.map(error => error instanceof Error ? error.message : String(error)).join(' | ');
-        throw new AggregateError(errors, `Overlay restoration failed: ${detail}`);
+      if (restorationErrors.length > 0) {
+        const errors = operationError ? [operationError, ...restorationErrors] : restorationErrors;
+        const detail = restorationErrors.map(error => error instanceof Error ? error.message : String(error)).join(' | ');
+        throw new AggregateError(errors, `Overlay restoration failed${operationError ? ' after operation failure' : ''}: ${detail}`, { cause: operationError });
       }
     }
+    if (operationError) throw operationError;
+    return value;
   }
 
   function registerDynamicAuthUid(alias, uid) {
