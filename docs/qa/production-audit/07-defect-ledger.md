@@ -4,6 +4,19 @@
 **Environment:** local development plus isolated Firebase preview  
 **Status:** Phase 2 findings followed up through 2026-09-05; thirty defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
+## Task 11 audit runner — Demo discovery failure loses Firestore cleanup ownership (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | IMPORTANT (audit evidence integrity; not an application defect ID) |
+| Feature | Local certification runner — anonymous demo cleanup registration |
+| Description | After a browser fallback recovered an owned demo UID, a failure in the first Firestore graph-discovery read left only Auth registered. A later healthy cleanup could remove Auth and report an observed cleanup without owning the undiscovered Firestore graph. |
+| Expected behavior | Before any graph read, the known UID must own an exact user-root cleanup and a retryable discovery obligation. Successful discovery must register every exact user, team, league, public-view, player, facility, and booking root. Exhausted discovery must fail with residual evidence and retain Auth ownership. |
+| Root cause | Round 5 moved from a lazy graph callback to exact per-root registrations, but those registrations occurred only after the initial discovery promise resolved. The older regression exercised the retired callback helper instead of the live browser registration path. |
+| Fix | The live path now registers `users/{uid}` and an unmeasured UID-scoped discovery obligation before the first read. Cleanup can add newly discovered exact resources while active and gives each its own bounded retries and measured postcondition. Auth deletion is gated on completed discovery and all registered roots verifying absent. |
+| Verification | Red/green tests cover identity-only and partial setup, recovered UID with transient discovery, exact root and public-view retries after parent deletion, original-error preservation, exhausted discovery with discovery/Auth residuals, unchanged exact counts, and sequential all-root verification. Exact local Chrome run `final-cert-t3-260905-122645-90d8` on implementation candidate `93b769b7` recorded 5 observed / 2 truthful not-observed / 0 failed demo cases, zero run errors, and cleanup 249 deleted / 0 restored / 0 retained; 39 dynamic selectors reconciled with zero diagnostics. |
+| Status | RESOLVED LOCALLY — HOSTED/WORKER ROW REMAINS BLOCKED |
+
 ## BUG-031 — Linked player identity can inherit unrelated tenant and staff authority (resolved)
 
 | Field | Evidence |

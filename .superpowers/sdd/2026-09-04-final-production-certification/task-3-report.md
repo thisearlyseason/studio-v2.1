@@ -15,6 +15,31 @@ candidate is not deployed to staging, no approved mailbox receipt indicator is
 available, and real hosted session/background Function evidence is absent.
 Production was neither queried nor changed. No matrix row was promoted to PASS.
 
+## Task 11 Cleanup Remediation
+
+- Reviewer finding R5-A was reproduced: if the final browser fallback recovered
+  a demo UID and the first graph-discovery read failed, only Auth remained in the
+  live registry and later cleanup could report success without owning Firestore.
+- Browser demo registration now records the exact `users/{uid}` root and a
+  UID-scoped discovery obligation before its first Firestore read. Discovery is
+  retryable during final cleanup; once it succeeds, the live registry adds exact
+  user, facility, player, public-view, league, team, and schedule-booking roots.
+- Each discovered root keeps its own retry budget, mutation count, and
+  postcondition even after a parent deletion. Auth cleanup remains pending until
+  discovery succeeds and every registered root verifies absent. Exhausted
+  discovery produces explicit discovery/Auth residuals and a `FAIL` state.
+- The obsolete `registerOwnedDemoCleanup` regression was replaced with tests of
+  the registration path used by `registerBrowserDemoGraph`, including
+  identity-only setup, recovered UID plus transient discovery, exhausted
+  discovery, original-error preservation, exact counts, and root retention.
+- An intermediate local browser run correctly failed when the new Auth gate
+  exposed concurrent Firebase Admin app-name collisions. A second red/green
+  regression moved those exact verification reads to an all-attempted sequential
+  pass. Final exact-candidate run `final-cert-t3-260905-122645-90d8` on
+  `93b769b769b427a2ae5c3be1a75e8fdbfa044a3b` then recorded five observed demo
+  cases, two unchanged worker `NOT_OBSERVED` cases, zero failures, zero run
+  errors, and zero cleanup residuals.
+
 ## Round 5 Findings
 
 - Demo cleanup snapshots every exact owned user, team, league, public league
@@ -144,6 +169,13 @@ cleanup `fixture-cleanup-final-cert-t3-260905-120539-16c3` then reconciled 249
 measured deletions, zero restorations, and zero residual audit records using the
 new exact per-root registry.
 
+Task 11 adds the earlier registration/discovery failure seam. Focused browser
+cleanup `fixture-cleanup-final-cert-t3-260905-122645-90d8` is `OBSERVED`: 249
+measured fixture deletions, zero restorations, and zero retained audit records.
+The dynamic registry reconciled 39 exact Auth/Firestore selectors with zero
+residuals or diagnostics; visible exit had already deleted those resources, so
+their measured mutation count correctly remained zero.
+
 Lifecycle's `background-batch` contribution remains `BLOCKED_PRECONDITION`.
 The demo scheduler expiry/pending-recovery cases likewise remain
 `NOT_OBSERVED`; local registry cleanup is not represented as worker evidence.
@@ -196,6 +228,17 @@ integration proof.
 - Round 5 affected demo browser run: `final-cert-t3-260905-120539-16c3` on
   candidate `b93bc1b6`, 5 observed / 2 not observed / 0 failed, 12 case-owned
   assertions, zero run errors; cleanup 249 deleted / 0 restored / 0 retained.
+- Task 11 focused cleanup/demo suites: 75 passed, 0 failed. The new regressions
+  were observed red before implementation, including the live discovery gap and
+  the Firebase Admin verification-collision follow-up.
+- Task 11 affected demo browser run: `final-cert-t3-260905-122645-90d8` on
+  candidate `93b769b7`, 5 observed / 2 not observed / 0 failed, 12 case-owned
+  assertions, zero run errors; cleanup 249 deleted / 0 restored / 0 retained,
+  with 39 dynamic selectors reconciled and zero residuals or diagnostics.
+- Task 11 `npm test`: 599 passed, 0 failed.
+- Task 11 `npm run typecheck`: exit 0.
+- Task 11 `npm run build`: exit 0; optimized production build completed with
+  the same existing repository lint, Tailwind, and workspace-root warnings.
 - `npm run test:rules`: 41 passed, 0 failed.
 - Round 5 focused local-certification suite: 126 passed, 0 failed.
 - `npm test`: 595 passed, 0 failed.
@@ -206,7 +249,7 @@ integration proof.
 
 ## Remaining Blockers
 
-Deploy and correlate exact candidate commit `b93bc1b6` before hosted evidence.
+Deploy and correlate exact implementation candidate commit `93b769b7` before hosted evidence.
 Then provide explicit authorization for run-prefixed staging mutations and
 trusted-claim restoration, an approved disposable QA mailbox with a receipt
 indicator, durable role/session fixtures, and an allowlisted real

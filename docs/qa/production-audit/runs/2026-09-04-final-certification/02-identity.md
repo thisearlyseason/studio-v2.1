@@ -4,6 +4,8 @@
 - Full-run commit: `5d3c9283393c61f7258e023de648a64372c197bc`
 - Round 5 demo cleanup supplement: `final-cert-t3-260905-120539-16c3`
 - Round 5 candidate: `b93bc1b6c2f9166868fa313bb35d4784e08749be`
+- Task 11 cleanup-remediation supplement: `final-cert-t3-260905-122645-90d8`
+- Task 11 implementation candidate: `93b769b769b427a2ae5c3be1a75e8fdbfa044a3b`
 - Environment: loopback Firebase emulators and local Next server only
 - Result boundary: local observations do not constitute final coverage-matrix PASS
 
@@ -21,9 +23,10 @@
 | `dashboard-shell-role-landing-and-route-policy` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 | `administration-access-and-user-directory` | BLOCKED_PRECONDITION | happyPath, negativePath, permission, persistence, console, network, responsive | none |
 
-The Round 5 supplement repeated the demo row on the new candidate: 5 observed,
-2 unchanged `NOT_OBSERVED`, 0 failed, 12 case-owned assertions, and zero run
-errors. It does not replace or widen the full eleven-scenario run.
+The Task 11 supplement repeated only the affected demo row on the remediation
+candidate: 5 observed, 2 unchanged `NOT_OBSERVED`, 0 failed, 12 case-owned
+assertions, and zero run errors. It does not replace or widen the full
+eleven-scenario run.
 
 ## Remaining external requirements
 
@@ -54,5 +57,6 @@ errors. It does not replace or widen the full eleven-scenario run.
   - `dashboard-shell-role-landing-and-route-policy` (local-batch): OBSERVED.
   - `administration-access-and-user-directory` (local-batch): OBSERVED.
 - Round 5 demo proof `fixture-cleanup-final-cert-t3-260905-120539-16c3`: OBSERVED; deleted 249, restored 0, retained audit records 0.
-  - Exact per-root selectors cover both browser demo users, players, leagues, public league views, and teams.
-  - Red/green regressions prove a transient public-view deletion remains retryable after its league parent is gone, a recursive root remains retryable after its document is gone, and failure recovering one browser context does not skip the other.
+- Task 11 demo proof `fixture-cleanup-final-cert-t3-260905-122645-90d8`: OBSERVED; deleted 249, restored 0, retained audit records 0.
+  - The live registry reconciled 39 dynamic Auth and exact Firestore selectors with zero residuals or diagnostics; visible demo exit had already removed them, so their measured deletion count correctly remained zero.
+  - Red/green regressions cover identity-only setup, recovered UID plus transient discovery, exhausted discovery with retained Auth ownership, public-view and recursive-root retry, and sequential exact-root verification.
