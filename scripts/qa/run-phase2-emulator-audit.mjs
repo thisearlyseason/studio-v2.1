@@ -3718,7 +3718,13 @@ function browserSurfaceSweep(session, cases, { mobile = false } = {}) {
         } catch (error) {
           if (!String(error?.message || error).includes('net::ERR_ABORTED')) throw error;
         }
-        await page.waitForFunction(expectedPaths => expectedPaths.includes(window.location.pathname), expectedPaths, { timeout: 15000 });
+        const transitionTimeout = item.waitForPathChange ? 30000 : 15000;
+        try {
+          await page.waitForFunction(expectedPaths => expectedPaths.includes(window.location.pathname), expectedPaths, { timeout: transitionTimeout });
+        } catch (error) {
+          const actualPath = await page.evaluate(() => window.location.pathname);
+          throw new Error('route sweep timeout requested=' + item.path + ' expected=' + JSON.stringify(expectedPaths) + ' actual=' + actualPath + ': ' + String(error?.message || error));
+        }
         results.push({
           requested: item.path,
           expected: item.expected,

@@ -435,7 +435,9 @@ test('Task 3 admin non-SA browser denials wait through client navigation', () =>
 test('Task 3 route sweeps reconcile client redirects before starting the next navigation', () => {
   const sweep = source.match(/function browserSurfaceSweep[\s\S]*?\n}\n\nfunction assertSurfaceSweep/)?.[0] || '';
   assert.match(sweep, /if \(!String\(error\?\.message \|\| error\)\.includes\('net::ERR_ABORTED'\)\) throw error/);
-  assert.match(sweep, /await page\.waitForFunction\(expectedPaths => expectedPaths\.includes\(window\.location\.pathname\)/);
+  assert.match(sweep, /item\.waitForPathChange \? 30000 : 15000/);
+  assert.match(sweep, /route sweep timeout requested=/);
+  assert.match(sweep, /expected=.*actual=/);
 });
 
 test('Task 3 emitted browser programs use serialization-safe selectors and real signup clicks', () => {
