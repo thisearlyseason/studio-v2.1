@@ -330,6 +330,8 @@ test('chat unread state is recipient-specific, persisted by the server, and clea
   assert.match(chat, /export async function PATCH/);
   assert.match(chat, /team-chat-read/);
   assert.match(chat, /\[`unreadBy\.\$\{auth\.uid\}`\]: 0/);
+  assert.match(chat, /await chatRef\.update\(\{ \[`unreadBy\.\$\{auth\.uid\}`\]: 0, \[`lastReadAtBy\.\$\{auth\.uid\}`\]: new Date\(\)\.toISOString\(\) \}\);/);
+  assert.doesNotMatch(chat, /await chatRef\.set\(\{ \[`unreadBy\.\$\{auth\.uid\}`\]: 0/);
   assert.match(chat, /findActiveTeamMember\(teamId, auth\.uid\)/);
   assert.match(list, /chat\.unreadBy\?\.\[user\?\.id \|\| ''\]/);
   assert.match(room, /method: 'PATCH'/);

@@ -174,7 +174,7 @@ export async function PATCH(req: NextRequest) {
     if (!chat.exists || (!isOwner && auth.role !== 'superadmin' && (!member || !chat.data()?.memberIds?.includes(auth.uid)))) {
       return NextResponse.json({ error: 'You are no longer authorized for this chat.' }, { status: 403 });
     }
-    await chatRef.set({ [`unreadBy.${auth.uid}`]: 0, [`lastReadAtBy.${auth.uid}`]: new Date().toISOString() }, { merge: true });
+    await chatRef.update({ [`unreadBy.${auth.uid}`]: 0, [`lastReadAtBy.${auth.uid}`]: new Date().toISOString() });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
