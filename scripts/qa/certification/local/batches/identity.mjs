@@ -243,7 +243,7 @@ export async function runIdentityBatch(context, scenarios) {
   const runErrors = [];
   const startedAt = context.now();
   try {
-    observation = await context.runLegacyIdentityAudit(selectedIds);
+    observation = context.certificationObservation || await context.runLegacyIdentityAudit(selectedIds);
     events = parseCertificationEvents(observation.stdout);
     if (observation.code !== 0 && !events.some(event => event.type === 'case' && event.state === 'FAIL')) {
       runErrors.push({ stage: 'identity-child', diagnostic: 'Identity child exited unsuccessfully without a case event.' });

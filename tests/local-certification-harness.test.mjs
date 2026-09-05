@@ -75,7 +75,7 @@ test('one legacy identity execution receives a unique scope and stripped outboun
     'authentication-email-password-login',
   ]);
   assert.equal(calls[0].env.AUDIT_FIXTURE_RUN_SUFFIX, 't3-20260904-180000-a1');
-  assert.equal(calls[0].env.AUDIT_BROWSER_SESSION_PREFIX, 'cert-final-cert-t3-20260904-180000-a1-identity');
+  assert.equal(calls[0].env.AUDIT_BROWSER_SESSION_PREFIX, 'cert-final-cert-t3-20260904-180000-a1');
   assert.equal(calls[0].env.AUDIT_OUTBOUND_PROVIDER_MODE, 'block');
   assert.equal(calls[0].env.NEXT_PUBLIC_APP_URL, 'http://127.0.0.1:9001');
   assert.equal(calls[0].env.STRIPE_SECRET_KEY, '');
@@ -101,12 +101,12 @@ test('outer harness never performs global browser cleanup for no-browser or brow
 
 test('outer cleanup closes every exact registry session, retries failures, and leaves unrelated sessions alone', async () => {
   const registryPath = path.join(await mkdtemp(path.join(os.tmpdir(), 'cert-session-registry-')), 'sessions.txt');
-  await writeFile(registryPath, 'cert-final-cert-safe-identity-a\ncert-final-cert-safe-identity-b\n');
+  await writeFile(registryPath, 'cert-final-cert-safe-a\ncert-final-cert-safe-b\n');
   const attempts = [];
   const failedOnce = new Set();
   await closeRegisteredBrowserSessions({
     registryPath,
-    sessionPrefix: 'cert-final-cert-safe-identity',
+    sessionPrefix: 'cert-final-cert-safe',
     closeBrowserSession: async session => {
       attempts.push(session);
       if (session.endsWith('-a') && !failedOnce.has(session)) {
@@ -116,9 +116,9 @@ test('outer cleanup closes every exact registry session, retries failures, and l
     },
   });
   assert.deepEqual(attempts, [
-    'cert-final-cert-safe-identity-b',
-    'cert-final-cert-safe-identity-a',
-    'cert-final-cert-safe-identity-a',
+    'cert-final-cert-safe-b',
+    'cert-final-cert-safe-a',
+    'cert-final-cert-safe-a',
   ]);
 });
 
@@ -224,7 +224,7 @@ test('outer close kills a registered detached descendant after force-killing its
   };
   const harness = await startLocalHarness(options({ dependencies }));
   const running = harness.runLegacyIdentityAudit();
-  const rejected = assert.rejects(running, /Identity audit child exited/);
+  const rejected = assert.rejects(running, /Certification audit child exited/);
   try {
     for (let count = 0; count < 100 && descendantPid === null; count += 1) {
       await new Promise(resolve => setTimeout(resolve, 10));

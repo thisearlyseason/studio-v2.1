@@ -53,13 +53,15 @@ export function createBrowserClient({
   run,
   baseUrl,
   runId,
+  batch = 'identity',
   artifactsDir,
   emailForAlias,
   secretForAlias,
 }) {
   if (!cliPath) throw new Error('Browser client requires a Playwright CLI path.');
+  if (!['identity', 'tenants'].includes(batch)) throw new Error('Browser client requires a known certification batch.');
   const baseOrigin = parseLoopbackHttpOrigin(baseUrl, 'Browser client loopback base URL');
-  const prefix = `cert-${safeLabel(runId)}-identity`;
+  const prefix = `cert-${safeLabel(runId)}-${batch}`;
   const sessions = new Set();
   const knownSecrets = [];
   let closed = false;
@@ -100,6 +102,8 @@ export function createBrowserClient({
     viewport = 'desktop',
     expectedPath = path,
     allowStatuses = [],
+    allowResponses = [],
+    caseId = '',
   }) {
     const destination = resolveLoopbackUrl(path, baseOrigin);
     const expectedDestination = resolveLoopbackUrl(expectedPath, baseOrigin, 'Expected browser path');
@@ -147,11 +151,53 @@ export function createBrowserClient({
     if (result.applicationErrors.length > 0) throw new Error(`Browser observed an application error at ${result.actualPath}.`);
     if (result.consoleErrors.length > 0) throw new Error(`Browser observed a console error at ${result.actualPath}.`);
     for (const response of result.failedResponses) {
-      if (!allowStatuses.includes(response.status)) {
+      const exactlyAllowed = allowResponses.some(allowed => allowed.caseId === caseId &&
+        String(allowed.method).toUpperCase() === response.method &&
+        safePath(allowed.path, baseOrigin) === response.path && Number(allowed.status) === response.status);
+      if (!allowStatuses.includes(response.status) && !exactlyAllowed) {
         throw new Error(`Browser observed unallowlisted HTTP ${response.status} at ${response.path}.`);
       }
     }
     return Object.freeze(result);
+  }
+
+  async function openPath(session, path, options = {}) {
+    return observe(session, { ...options, path });
+  }
+
+  async function download(session, locator, { syntheticMarkers = [] } = {}) {
+    const code = `async page => {
+      const downloadPromise = page.waitForEvent('download');
+      await page.locator(${JSON.stringify(locator)}).click();
+      const download = await downloadPromise;
+      const stream = await download.createReadStream();
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      const bytes = Buffer.concat(chunks);
+      const { createHash } = await import('node:crypto');
+      const filename = download.suggestedFilename();
+      const text = /\\.(?:csv|tsv|txt)$/i.test(filename) ? bytes.toString('utf8') : '';
+      const rows = text ? text.split(/\\r?\\n/).filter(Boolean) : [];
+      const separator = /\\.tsv$/i.test(filename) ? '\\t' : ',';
+      return { filename, sha256: createHash('sha256').update(bytes).digest('hex'), byteCount: bytes.length,
+        rowCount: rows.length, columnCount: rows.length ? rows[0].split(separator).length : 0,
+        syntheticMarkers: ${JSON.stringify(syntheticMarkers)}.filter(marker => text.includes(marker)) };
+    }`;
+    const raw = JSON.parse(await invoke(session, ['run-code', code]));
+    const filename = String(raw.filename || '').split(/[\\/]/).at(-1);
+    if (!filename || !/^[a-f0-9]{64}$/i.test(String(raw.sha256 || '')) || !Number.isInteger(raw.byteCount) || raw.byteCount < 0) {
+      throw new Error('Browser download did not return a sanitized summary.');
+    }
+    return Object.freeze({ filename, sha256: String(raw.sha256).toLowerCase(), byteCount: raw.byteCount,
+      rowCount: Number.isInteger(raw.rowCount) ? raw.rowCount : 0,
+      columnCount: Number.isInteger(raw.columnCount) ? raw.columnCount : 0,
+      syntheticMarkers: Array.isArray(raw.syntheticMarkers) ? raw.syntheticMarkers.map(String) : [] });
+  }
+
+  async function closeSession(session) {
+    if (!sessions.has(session) && !session.startsWith(`${prefix}-`)) throw new Error('Cannot close an unowned browser session.');
+    await invoke(session, ['close']);
+    sessions.delete(session);
   }
 
   async function closeAll() {
@@ -171,6 +217,6 @@ export function createBrowserClient({
     }
   }
 
-  return Object.freeze({ sessionName, login, observe, closeAll });
+  return Object.freeze({ sessionName, login, observe, openPath, download, closeSession, closeAll });
 }
 import { parseLoopbackHttpOrigin, resolveLoopbackUrl } from './boundary.mjs';

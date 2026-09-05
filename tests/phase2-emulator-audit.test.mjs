@@ -28,6 +28,7 @@ test('certification identity mode accepts a unique local scope without changing 
     fixtureRunSuffix: 't3-20260904-180000-a1',
     browserSessionPrefix: 'cert-final-cert-t3-20260904-180000-a1-identity',
     certificationIdentity: true,
+    certificationTenants: false,
     runBrowser: true,
     selectedScenarios: [],
   });
@@ -38,6 +39,7 @@ test('certification identity mode accepts a unique local scope without changing 
     fixtureRunSuffix: 'phase2',
     browserSessionPrefix: 'phase2',
     certificationIdentity: false,
+    certificationTenants: false,
     runBrowser: false,
     selectedScenarios: [],
   });
@@ -391,6 +393,30 @@ test('Task 3 reset action correlates generic resource console noise with exact r
   assert.match(source, /reset action unexpected responses/);
   assert.match(source, /value\.includes\('Failed to load resource:'\)/);
   assert.match(source, /JSON\.stringify\(\[400, 200, 400\]\)/);
+});
+
+test('Task 4 tenant API probes are derived only from frozen fixture aliases', () => {
+  const plan = auditRunner.buildTenantApiProbePlan(buildFixtureCatalog('t4-tenant-probes'));
+  assert.deepEqual(Object.keys(plan).sort(), [
+    'family-enable-youth-login',
+    'recruiting-public-scout-projection',
+    'teams-join-by-code',
+  ]);
+  assert.match(plan['teams-join-by-code'].activePath, /^\/api\/teams\/join\?teamId=/);
+  assert.match(plan['teams-join-by-code'].activePath, /&code=/);
+  assert.notEqual(plan['recruiting-public-scout-projection'].activePlayerId, plan['recruiting-public-scout-projection'].hiddenPlayerId);
+  assert.equal(plan['family-enable-youth-login'].canonicalPath, '/api/invites/youth?token=modified');
+  assert.equal(plan['family-enable-youth-login'].aliasPath, '/api/youth-invites?token=modified');
+});
+
+test('Task 4 certification mode executes tenant stages instead of setup-only success', () => {
+  assert.match(source, /else if \(certificationTenants\) \{\s*await runCertificationTenantScenarios\(\);/);
+  assert.match(source, /async function runCertificationTenantScenarios\(\)/);
+  assert.match(source, /recordCertificationCase\([\s\S]*team-join-happyPath/);
+  assert.match(source, /recordCertificationCase\([\s\S]*recruiting-public-happyPath/);
+  assert.match(source, /recordCertificationCase\([\s\S]*family-youth-login-happyPath/);
+  assert.match(source, /async function runTenantBrowserScenario\(scenarioId\)/);
+  assert.match(source, /closeBrowserSessionsCreatedAfter\(ownedBrowserSessions, sessionBaseline/);
 });
 
 test('Task 3 revoked admin sessions deny both open and fresh tabs at login', () => {

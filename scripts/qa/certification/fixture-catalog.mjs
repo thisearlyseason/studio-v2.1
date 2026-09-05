@@ -132,6 +132,9 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-public-submitter', 'public-only', 'visitor', 'accountless', [], 'free', null],
     ['qa-demo-a', 'anonymous-session', 'demo', 'anonymous', [], 'free', '/dashboard'],
     ['qa-demo-b', 'anonymous-session', 'demo', 'anonymous', [], 'free', '/dashboard'],
+    ['qa-fresh-coach', 'registered', 'coach', 'active', [], 'free', '/teams/new'],
+    ['qa-fresh-admin', 'registered', 'admin', 'active', [], 'free', '/teams/new'],
+    ['qa-fresh-league-creator', 'registered', 'league_creator', 'active', [], 'league', '/teams/new'],
   ];
 
   const identities = identityDefinitions.map(([
@@ -187,6 +190,10 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-disposable-team', 'qa-owner-delete-blocked', visibleMarker('DISPOSABLE-OWNER'), 'Disposable Owner Guard', 'Soccer', 'free', '#374151', null, 'youth'],
   ];
 
+  const routeCode = (prefix, alias) => `${prefix}_${alias}`
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .toUpperCase()
+    .slice(0, 32);
   const teams = teamDefinitions.map(([
     alias,
     ownerAlias,
@@ -237,6 +244,9 @@ export function buildFixtureCatalog(runSuffix) {
       fundraising: true,
       tacticalChat: true,
     },
+    code: routeCode('JOIN', alias),
+    teamCode: routeCode('TEAM', alias),
+    inviteCode: routeCode('INVITE', alias),
   }));
 
   const organizations = [
@@ -438,6 +448,18 @@ export function buildFixtureCatalog(runSuffix) {
         ? 'delete-after-write'
         : 'present',
   })).concat({
+    alias: 'qa-team-logo',
+    case: 'branding-logo',
+    path: `teams/${teamIdFor('qa-team-a')}/branding/${scopedId('qa-team-logo')}.png`,
+    ownerAlias: 'qa-coach-owner-a',
+    access: 'private',
+    contentType: 'image/png',
+    detectedMime: 'image/png',
+    sizeBytes: 103,
+    payloadGenerator: 'solid-png-v1',
+    payloadSeed: `${runId}:qa-team-logo`,
+    lifecycle: 'present',
+  }, {
     alias: 'qa-file-pending-delete',
     case: 'pending-delete',
     path: `players/${scopedId('qa-player-pending-delete')}/videos/${scopedId('qa-file-pending-delete')}.mp4`,
@@ -470,18 +492,19 @@ export function buildFixtureCatalog(runSuffix) {
   }));
 
   const raceFixtures = [
-    ['qa-race-team-capacity', 'team-capacity', ['qa-elite-owner', 'qa-school-owner']],
-    ['qa-race-join-code', 'join-code', ['qa-parent-a', 'qa-adult-player-b']],
-    ['qa-race-rsvp', 'rsvp', ['qa-team-member', 'qa-adult-player-a']],
-    ['qa-race-poll-vote', 'poll-vote', ['qa-team-member', 'qa-adult-player-a']],
-    ['qa-race-booking', 'facility-booking', ['qa-coach-owner-a', 'qa-team-assistant']],
-    ['qa-race-registration', 'public-registration', ['qa-public-submitter', 'qa-demo-a']],
-  ].map(([alias, fixtureCase, participantAliases]) => ({
+    ['qa-race-team-capacity', 'team-capacity', ['qa-elite-owner', 'qa-elite-owner'], 'qa-elite-owner'],
+    ['qa-race-join-code', 'join-code', ['qa-parent-a', 'qa-parent-a'], 'qa-player-youth-c'],
+    ['qa-race-rsvp', 'rsvp', ['qa-team-member', 'qa-adult-player-a'], 'qa-time-current'],
+    ['qa-race-poll-vote', 'poll-vote', ['qa-team-member', 'qa-adult-player-a'], 'qa-team-a-poll'],
+    ['qa-race-booking', 'facility-booking', ['qa-coach-owner-a', 'qa-team-assistant'], 'qa-facility-a'],
+    ['qa-race-registration', 'public-registration', ['qa-public-submitter', 'qa-demo-a'], 'qa-event-registration'],
+  ].map(([alias, fixtureCase, participantAliases, targetAlias]) => ({
     alias,
     id: scopedId(alias),
     case: fixtureCase,
     barrierKey: `${runId}:${fixtureCase}:barrier`,
     participantAliases,
+    targetAlias,
     expectedWinnerCount: 1,
   }));
 
@@ -641,15 +664,17 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-player-pending-delete', 'qa-pending-delete', null, 'qa-team-a', 'Delete', visibleMarker('DISPOSABLE'), false],
   ];
   for (const [alias, userAlias, parentAlias, teamAlias, firstName, lastName, publicEnabled] of players) {
+    const playerId = scopedId(alias);
+    const teamId = teamIdFor(teamAlias);
     addDocument('roster', {
       alias,
-      path: `players/${scopedId(alias)}`,
+      path: `players/${playerId}`,
       data: {
-        id: scopedId(alias),
+        id: playerId,
         userId: userAlias ? uidFor(userAlias) : null,
         parentId: parentAlias ? uidFor(parentAlias) : null,
-        primaryTeamId: teamIdFor(teamAlias),
-        joinedTeamIds: [teamIdFor(teamAlias)],
+        primaryTeamId: teamId,
+        joinedTeamIds: [teamId],
         firstName,
         lastName,
         email: userAlias ? emailFor(userAlias) : null,
@@ -660,24 +685,83 @@ export function buildFixtureCatalog(runSuffix) {
     });
     addDocument('recruiting', {
       alias: `${alias}-profile`,
-      path: `players/${scopedId(alias)}/recruitingProfiles/${scopedId('qa-recruiting-profile')}`,
+      path: `players/${playerId}/recruitingProfile/profile`,
       data: {
-        playerId: scopedId(alias),
-        publicEnabled,
-        metric: alias.includes('b') ? 'BLUEBIRD-B-82' : 'FALCON-A-71',
-        contactNote: `${lastName} synthetic private recruiting contact`,
-        videoUrl: `https://example.test/${runId}/${alias}/highlight`,
+        playerId,
+        status: publicEnabled ? 'active' : 'hidden',
+        headline: `${firstName} ${lastName} synthetic prospect`,
+        position: 'Guard',
+        gradYear: 2028,
+        updatedAt: timestamp(FIXED_NOW),
+        updatedByTeamId: teamId,
       },
     });
     addDocument('recruiting', {
+      alias: `${alias}-metrics`,
+      path: `players/${playerId}/recruitingProfile/metrics`,
+      data: { height: '5ft 10in', weight: 155, sprintSeconds: 5.1, updatedAt: timestamp(FIXED_NOW), updatedByTeamId: teamId },
+    });
+    addDocument('recruiting', {
+      alias: `${alias}-contact`,
+      path: `players/${playerId}/recruitingContact/contact`,
+      data: { email: `private-${alias}.${runSuffix}@phase2.test`, phone: '+15550100101', contactNote: `${lastName} synthetic private recruiting contact`, updatedByTeamId: teamId },
+    });
+    addDocument('recruiting', {
+      alias: `${alias}-stat`,
+      path: `players/${playerId}/stats/${scopedId(`${alias}-stat`)}`,
+      data: { season: '2026', gamesPlayed: 12, points: alias.includes('-b') ? 82 : 71, assists: 14, createdAt: timestamp(FIXED_NOW), updatedByTeamId: teamId },
+    });
+    addDocument('recruiting', {
       alias: `${alias}-evaluation`,
-      path: `players/${scopedId(alias)}/evaluations/${scopedId('qa-evaluation')}`,
+      path: `players/${playerId}/evaluations/${scopedId('qa-evaluation')}`,
       data: {
-        playerId: scopedId(alias),
+        playerId,
         score: alias.includes('b') ? 82 : 71,
         notes: `${lastName} synthetic private evaluation`,
         createdAt: timestamp(FIXED_NOW),
+        evaluatorId: uidFor(teamAlias === 'qa-team-b' ? 'qa-coach-owner-b' : teamAlias === 'qa-team-c' ? 'qa-league-owner-a' : 'qa-coach-owner-a'),
+        updatedByTeamId: teamId,
       },
+    });
+    // The browser-visible public profile must not attempt any outbound media
+    // fetch during a no-outbound certification run. Other private fixtures keep
+    // video rows so CRUD and projection-denial coverage remains available.
+    if (alias !== 'qa-player-adult-b') {
+      addDocument('recruiting', {
+        alias: `${alias}-video`,
+        path: `players/${playerId}/videos/${scopedId(`${alias}-video`)}`,
+        data: { playerId, title: `${firstName} synthetic highlight`, url: `https://media.example.test/${runId}/${alias}/highlight.mp4`, createdAt: timestamp(FIXED_NOW), updatedByTeamId: teamId },
+      });
+    }
+  }
+
+  const accountlessMembers = [
+    ['qa-team-c', 'qa-player-youth-c', 'qa-parent-a', 'Youth C', visibleMarker('GOLDEN-C')],
+    ['qa-team-b', 'qa-player-youth-b', 'qa-parent-b', 'Youth B', visibleMarker('BLUEBIRD-B')],
+  ];
+  for (const [teamAlias, playerAlias, parentAlias, firstName, lastName] of accountlessMembers) {
+    const team = teams.find(value => value.alias === teamAlias);
+    const playerId = scopedId(playerAlias);
+    addDocument('roster', {
+      alias: `${teamAlias}-${playerAlias}-member`,
+      path: `teams/${team.id}/members/${playerId}`,
+      data: { id: playerId, playerId, parentId: uidFor(parentAlias), teamId: team.id, ownerUserId: team.ownerUserId, firstName, lastName, name: `${firstName} ${lastName}`, role: 'Member', position: 'Player', status: 'active', isMinor: true },
+    });
+  }
+
+  const rosterVariants = [
+    ['qa-roster-accented', 'accented', 'José Álvarez', 'active'],
+    ['qa-roster-mixed-case', 'mixed-case', 'aLEX Falcon', 'active'],
+    ['qa-roster-duplicate-a', 'duplicate-name', 'Jordan Falcon', 'active'],
+    ['qa-roster-duplicate-b', 'duplicate-name', 'Jordan Falcon', 'active'],
+    ['qa-roster-long', 'long-value', `Synthetic ${'Long'.repeat(24)} Member`, 'active'],
+    ['qa-roster-removed', 'removed', 'Removed Falcon', 'removed'],
+  ].map(([alias, variant, name, status], index) => ({ alias, variant, name, status, id: scopedId(alias), index }));
+  for (const row of rosterVariants) {
+    addDocument('roster', {
+      alias: row.alias,
+      path: `teams/${teamIdFor('qa-team-a')}/members/${row.id}`,
+      data: { id: row.id, playerId: row.id, teamId: teamIdFor('qa-team-a'), ownerUserId: uidFor('qa-coach-owner-a'), name: row.name, firstName: row.name.split(' ')[0], lastName: row.name.split(' ').slice(1).join(' '), role: 'Member', position: row.index % 2 ? 'Forward' : 'Guard', jersey: String(30 + row.index), status: row.status, email: `shared-contact-${row.index % 2}.${runSuffix}@phase2.test`, parentEmail: `parent-marker-${row.index}.${runSuffix}@phase2.test`, phone: `+15550100${200 + row.index}`, medicalClearance: row.index % 2 === 0, amountOwed: row.index * 10, feesPaid: row.index === 0, notes: `synthetic-private-roster-${row.index}` },
     });
   }
 
@@ -706,33 +790,45 @@ export function buildFixtureCatalog(runSuffix) {
       },
     });
   }
-  addDocument('family', {
-    alias: 'qa-youth-invite-record',
-    path: `youthInvites/${scopedId('qa-youth-invite-record')}`,
-    data: {
-      parentId: uidFor('qa-parent-a'),
-      playerId: scopedId('qa-player-youth-c'),
-      recipientAlias: 'qa-youth-invite',
-      recipientEmail: emailFor('qa-youth-invite'),
-      status: 'pending',
-      expiresAt: timestamp('2026-09-11T18:00:00.000Z'),
-    },
-  });
+  const youthInvite = {
+    alias: 'qa-youth-invite-contract',
+    collection: 'invites',
+    tokenFormat: '48-hex',
+    childId: scopedId('qa-player-youth-c'),
+    parentId: uidFor('qa-parent-a'),
+    teamId: teamIdFor('qa-team-c'),
+    recipientAlias: 'qa-youth-invite',
+    recipientEmail: emailFor('qa-youth-invite'),
+    startState: 'no-active-invite',
+    deliveryAdapter: 'memory-sink',
+    cleanupKinds: ['invite', 'auth', 'profile', 'player-overlay'],
+  };
   for (const household of households) {
-    for (const child of household.children) {
+    for (const [index, child] of household.children.entries()) {
       addDocument('family', {
         alias: `${household.alias}-${child.playerAlias}-balance`,
-        path: `teams/${teamIdFor(child.teamAlias)}/payments/${scopedId(`${child.playerAlias}-balance`)}`,
+        path: `users/${household.parentUserId}/payments/${scopedId(`${child.playerAlias}-balance`)}`,
         data: {
-          userId: household.parentUserId,
-          playerId: scopedId(child.playerAlias),
-          amountCents: child.teamAlias === 'qa-team-b' ? 7800 : 4200,
+          childId: scopedId(child.playerAlias),
+          childName: child.playerAlias.replaceAll('-', ' '),
+          teamId: teamIdFor(child.teamAlias),
+          teamName: teams.find(team => team.alias === child.teamAlias).name,
+          description: `${teams.find(team => team.alias === child.teamAlias).visibleMarker} synthetic family fee`,
+          amount: child.teamAlias === 'qa-team-b' ? 78 : 42,
           status: child.teamAlias === 'qa-team-c' ? 'pending' : 'paid',
-          currency: 'cad',
+          date: `2026-09-${String(10 + index).padStart(2, '0')}`,
+          dueDate: `2026-10-${String(10 + index).padStart(2, '0')}`,
+          invoiceNumber: `${visibleMarker('INV')}-${index + 1}`,
+          category: 'team-fee',
         },
       });
     }
   }
+  addDocument('family', {
+    alias: 'qa-household-a-overdue-balance',
+    path: `users/${uidFor('qa-parent-a')}/payments/${scopedId('qa-household-a-overdue-balance')}`,
+    data: { childId: scopedId('qa-player-youth-a'), childName: 'Youth A', teamId: teamIdFor('qa-team-a'), teamName: teams.find(team => team.alias === 'qa-team-a').name, description: `${visibleMarker('FALCON-A')} overdue synthetic family fee`, amount: 19.5, status: 'overdue', date: '2026-09-09', dueDate: '2026-09-15', invoiceNumber: visibleMarker('INV-OVERDUE'), category: 'equipment' },
+  });
 
   for (const timeFixture of timeFixtures) {
     const marker = teams.find(team => team.alias === timeFixture.teamAlias).visibleMarker;
@@ -865,7 +961,7 @@ export function buildFixtureCatalog(runSuffix) {
   for (const [teamAlias, marker, ownerAlias] of [
     ['qa-team-a', visibleMarker('FALCON-A'), 'qa-coach-owner-a'],
     ['qa-team-b', visibleMarker('BLUEBIRD-B'), 'qa-coach-owner-b'],
-    ['qa-team-c', visibleMarker('GOLDEN-C'), 'qa-coach-owner-a'],
+    ['qa-team-c', visibleMarker('GOLDEN-C'), 'qa-league-owner-a'],
   ]) {
     addDocument('compliance', {
       alias: `${teamAlias}-waiver`,
@@ -887,10 +983,27 @@ export function buildFixtureCatalog(runSuffix) {
       data: { title: `${marker} Synthetic Incident`, subjectPlayerId: scopedId(teamAlias === 'qa-team-b' ? 'qa-player-youth-b' : 'qa-player-youth-a'), immutable: true },
     });
   }
+  const globalWaiverDeployment = {
+    alias: 'qa-school-global-waiver',
+    deploymentId: scopedId('qa-school-waiver-deployment-v2'),
+    ownerUserId: uidFor('qa-school-owner'),
+    masterPath: `users/${uidFor('qa-school-owner')}/clubDocuments/${scopedId('qa-school-global-waiver-v2')}`,
+    copyPaths: organizations[1].squadAliases.slice(0, 2).map((teamAlias, index) => (
+      `teams/${teamIdFor(teamAlias)}/documents/${scopedId(`qa-school-global-waiver-copy-${index + 1}`)}`
+    )),
+  };
   addDocument('compliance', {
     alias: 'qa-school-global-waiver',
-    path: `organizations/${scopedId('qa-school')}/waivers/${scopedId('qa-school-global-waiver-v2')}`,
-    data: { title: `${visibleMarker('SCHOOL-GREEN')} Global Waiver`, version: 2, status: 'published', squadIds: organizations[1].squadAliases.map(teamIdFor) },
+    path: globalWaiverDeployment.masterPath,
+    data: { id: scopedId('qa-school-global-waiver-v2'), title: `${visibleMarker('SCHOOL-GREEN')} Global Waiver`, content: 'Synthetic global waiver', version: 2, type: 'waiver', ownerUserId: globalWaiverDeployment.ownerUserId, isClubMaster: true, isGlobal: true, deploymentId: globalWaiverDeployment.deploymentId, waiverAudience: 'all', createdAt: timestamp(FIXED_NOW) },
+  });
+  globalWaiverDeployment.copyPaths.forEach((copyPath, index) => {
+    const teamAlias = organizations[1].squadAliases[index];
+    addDocument('compliance', {
+      alias: `qa-school-global-waiver-copy-${index + 1}`,
+      path: copyPath,
+      data: { id: copyPath.split('/').at(-1), teamId: teamIdFor(teamAlias), title: `${visibleMarker('SCHOOL-GREEN')} Global Waiver`, content: 'Synthetic global waiver', type: 'waiver', ownerUserId: globalWaiverDeployment.ownerUserId, isClubMaster: false, isGlobal: true, deploymentId: globalWaiverDeployment.deploymentId, sourceGlobalDocumentId: scopedId('qa-school-global-waiver-v2'), waiverAudience: 'all', createdAt: timestamp(FIXED_NOW) },
+    });
   });
   addDocument('compliance', {
     alias: 'qa-registration-form-a',
@@ -1404,6 +1517,14 @@ export function buildFixtureCatalog(runSuffix) {
     { alias: 'qa-suspended', signInStatus: 400, authError: 'USER_DISABLED', reason: 'account-suspended', browserPath: '/login', browserTitle: 'Login Failed' },
     { alias: 'qa-pending-delete', signInStatus: 200, sessionStatus: 403, reason: 'deletion-pending', browserPath: '/login', browserTitle: 'Session Setup Failed' },
   ];
+  const creationActors = ['qa-fresh-coach', 'qa-fresh-admin', 'qa-fresh-league-creator']
+    .map(alias => identityByAlias.get(alias));
+  const dynamicCleanupContract = {
+    registrationRequiredBeforeWrite: true,
+    resourceKinds: ['firestore', 'auth', 'storage', 'browser'],
+    destructiveBaselineAliases: ['qa-team-a', 'qa-team-b', 'qa-team-c', 'qa-disposable-team'],
+    evidenceShape: ['kind', 'alias', 'count', 'state'],
+  };
 
   return deepFreeze({
     runSuffix,
@@ -1423,6 +1544,11 @@ export function buildFixtureCatalog(runSuffix) {
     storageObjects,
     timeFixtures,
     raceFixtures,
+    creationActors,
+    rosterVariants,
+    youthInvite,
+    globalWaiverDeployment,
+    dynamicCleanupContract,
     fixtures,
     providers,
     firestoreDocuments,

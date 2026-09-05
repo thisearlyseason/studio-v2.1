@@ -2,14 +2,19 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { adminDb } from '@/lib/firebase-admin';
 import { isValidFirestoreDocumentId } from '@/lib/firestore-document-id';
+import { isProspectActivated } from '@/lib/prospect-activation';
 
 type Props = { children: React.ReactNode; params: Promise<{ playerId: string }> };
 
 async function publicPlayer(playerId: string) {
   if (!isValidFirestoreDocumentId(playerId)) return null;
-  const snapshot = await adminDb.collection('players').doc(playerId).get();
+  const playerRef = adminDb.collection('players').doc(playerId);
+  const [snapshot, profileSnapshot] = await Promise.all([
+    playerRef.get(),
+    playerRef.collection('recruitingProfile').doc('profile').get(),
+  ]);
   const player = snapshot.data();
-  return snapshot.exists && player?.recruitingProfileEnabled === true ? player : null;
+  return snapshot.exists && isProspectActivated(profileSnapshot.data()) ? player : null;
 }
 
 export async function generateMetadata({ params }: Omit<Props, 'children'>): Promise<Metadata> {

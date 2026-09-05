@@ -16,6 +16,7 @@ function clientWithResult(result, overrides = {}) {
     },
     baseUrl: 'http://127.0.0.1:9001',
     runId: 'final-cert-t3-browser-a1',
+    batch: 'identity',
     artifactsDir: '/tmp/task3-browser-artifacts',
     emailForAlias: alias => `${alias}@phase2.test`,
     secretForAlias: () => 'runtime-secret-never-report',
@@ -146,4 +147,36 @@ test('observe removes listeners and waits for a stable expected path instead of 
   assert.match(code, /page\.off\('console'/);
   assert.match(code, /page\.off\('pageerror'/);
   assert.match(code, /page\.off\('response'/);
+});
+
+test('tenant sessions, exact response allowlists, per-session close, and download summaries stay owned and sanitized', async () => {
+  const outputs = [
+    JSON.stringify({ ...cleanObservation, failedResponses: [{ method: 'POST', url: 'http://127.0.0.1:9001/api/teams/join?code=secret', status: 403 }] }),
+    JSON.stringify({ filename: 'roster.csv', sha256: 'a'.repeat(64), byteCount: 120, rowCount: 3, columnCount: 4, syntheticMarkers: ['FALCON-A'] }),
+    '',
+  ];
+  const { client, calls } = clientWithResult(() => outputs.shift(), { batch: 'tenants' });
+  assert.equal(client.sessionName('parent'), 'cert-final-cert-t3-browser-a1-tenants-parent');
+  const observation = await client.openPath('cert-final-cert-t3-browser-a1-tenants-parent', '/dashboard', {
+    allowResponses: [{ caseId: 'join-denial', method: 'POST', path: '/api/teams/join', status: 403 }],
+    caseId: 'join-denial',
+  });
+  assert.deepEqual(observation.failedResponses[0], { method: 'POST', path: '/api/teams/join', status: 403 });
+  const summary = await client.download('cert-final-cert-t3-browser-a1-tenants-parent', 'button[name="Export"]');
+  assert.deepEqual(summary, { filename: 'roster.csv', sha256: 'a'.repeat(64), byteCount: 120, rowCount: 3, columnCount: 4, syntheticMarkers: ['FALCON-A'] });
+  assert.equal('contents' in summary, false);
+  await client.closeSession('cert-final-cert-t3-browser-a1-tenants-parent');
+  assert.equal(calls.filter(call => call.args.includes('close')).length, 1);
+});
+
+test('an exact response allowlist cannot authorize the wrong method, path, status, or case', async () => {
+  for (const allowed of [
+    [{ caseId: 'case-a', method: 'GET', path: '/api/teams/join', status: 403 }],
+    [{ caseId: 'case-a', method: 'POST', path: '/api/teams/create', status: 403 }],
+    [{ caseId: 'case-a', method: 'POST', path: '/api/teams/join', status: 400 }],
+    [{ caseId: 'case-b', method: 'POST', path: '/api/teams/join', status: 403 }],
+  ]) {
+    const { client } = clientWithResult({ ...cleanObservation, failedResponses: [{ method: 'POST', url: 'http://127.0.0.1:9001/api/teams/join', status: 403 }] }, { batch: 'tenants' });
+    await assert.rejects(() => client.observe('session', { path: '/dashboard', caseId: 'case-a', allowResponses: allowed }), /unallowlisted HTTP 403/);
+  }
 });

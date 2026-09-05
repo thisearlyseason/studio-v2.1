@@ -101,6 +101,9 @@ export async function GET(req: NextRequest) {
   const teamSnapshot = await findTeamByCode(code);
   if (!teamSnapshot) return NextResponse.json({ error: 'Squad code not found.' }, { status: 404 });
   const team = teamSnapshot.data() || {};
+  if (!teamAcceptsRegistrations(team)) {
+    return NextResponse.json({ error: 'Squad code not found.' }, { status: 404 });
+  }
   return NextResponse.json({ teamId: teamSnapshot.id, teamName: String(team.name || team.teamName || 'Squad') });
 }
 

@@ -183,6 +183,7 @@ export async function startLocalHarness({
     app: 'http://127.0.0.1:9001',
   },
   baseEnvironment = process.env,
+  batches = ['identity'],
   dependencies = {},
 }) {
   validateBoundary({ projectId, endpoints, runSuffix, browser, playwrightCli });
@@ -191,8 +192,10 @@ export async function startLocalHarness({
   const closeTimeoutMs = dependencies.closeTimeoutMs || 10_000;
   const runtimeSecret = randomBytes(32).toString('base64url');
   const runId = `final-cert-${runSuffix}`;
-  const sessionPrefix = `cert-${runId}-identity`;
-  const artifactDir = path.join(rootDir, 'output/playwright/2026-09-04-final-certification/task-3', runId);
+  const sessionPrefix = `cert-${runId}`;
+  const taskDirectory = batches.length === 1 && batches[0] === 'identity' ? 'task-3'
+    : batches.length === 1 && batches[0] === 'tenants' ? 'task-4' : 'local';
+  const artifactDir = path.join(rootDir, 'output/playwright/2026-09-04-final-certification', taskDirectory, runId);
   const browserSessionRegistry = path.join(artifactDir, 'owned-browser-sessions.txt');
   const processGroupRegistry = path.join(artifactDir, 'owned-service-process-groups.txt');
   // A Task 3 run suffix is unique in production use. Clearing a stale registry
@@ -246,7 +249,7 @@ export async function startLocalHarness({
         };
         if (!await waitForExecution()) {
           if (activeChild && activeChild.exitCode == null) activeChild.kill('SIGKILL');
-          if (!await waitForExecution()) throw new Error('Identity audit child did not terminate after forced shutdown.');
+          if (!await waitForExecution()) throw new Error('Certification audit child did not terminate after forced shutdown.');
         }
       }
       await closeRegisteredProcessGroups({
@@ -278,16 +281,19 @@ export async function startLocalHarness({
     runSuffix,
     baseUrl: endpoints.app,
     browserEnabled: browser,
+    fixtures: (await import('../fixture-catalog.mjs')).buildFixtureCatalog(runSuffix),
+    artifactDir,
     redact(value) {
       return redactText(value, runtimeSecret);
     },
-    async runLegacyIdentityAudit(selectedScenarioIds = []) {
-      if (executed) throw new Error('The local harness permits one identity execution per invocation.');
+    async runLegacyCertificationAudit({ batches: selectedBatches = batches, selectedScenarioIds = [] } = {}) {
+      if (executed) throw new Error('The local harness permits one certification execution per invocation.');
       if (closed || closeRequested) throw new Error('The local harness is already closed.');
       executed = true;
       const args = [
         'scripts/qa/run-phase2-emulator-audit.mjs',
-        '--certification-identity',
+        ...(selectedBatches.includes('identity') ? ['--certification-identity'] : []),
+        ...(selectedBatches.includes('tenants') ? ['--certification-tenants'] : []),
         ...(browser ? ['--browser'] : []),
         ...selectedScenarioIds.flatMap(scenarioId => ['--scenario', scenarioId]),
       ];
@@ -304,7 +310,7 @@ export async function startLocalHarness({
       activeExecution = null;
       const completedAt = new Date().toISOString();
       if (result.code !== 0) {
-        throw new Error(redactText(`Identity audit child exited ${result.code}.\n${result.stdout}\n${result.stderr}`, runtimeSecret));
+        throw new Error(redactText(`Certification audit child exited ${result.code}.\n${result.stdout}\n${result.stderr}`, runtimeSecret));
       }
       return Object.freeze({
         code: result.code,
@@ -313,6 +319,9 @@ export async function startLocalHarness({
         startedAt,
         completedAt,
       });
+    },
+    async runLegacyIdentityAudit(selectedScenarioIds = []) {
+      return this.runLegacyCertificationAudit({ batches: ['identity'], selectedScenarioIds });
     },
     close,
   });

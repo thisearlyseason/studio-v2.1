@@ -14,6 +14,7 @@ import {
   IDENTITY_EXECUTION_ORDER,
   LOCAL_IDENTITY_CASE_REQUIREMENTS,
 } from './certification/local/batches/identity.mjs';
+import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER } from './certification/local/batches/tenants.mjs';
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES } from './certification/local/evidence.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
@@ -31,16 +32,22 @@ export function resolveAuditRuntimeConfiguration({ environment = process.env, ar
     selectedScenarios.push(scenarioId);
     index += 1;
   }
-  const allowedScenarios = new Set(IDENTITY_EXECUTION_ORDER);
+  const certificationIdentity = argv.includes('--certification-identity');
+  const certificationTenants = argv.includes('--certification-tenants');
+  const allowedScenarios = new Set([
+    ...(certificationIdentity || (!certificationIdentity && !certificationTenants) ? IDENTITY_EXECUTION_ORDER : []),
+    ...(certificationTenants || (!certificationIdentity && !certificationTenants) ? TENANT_EXECUTION_ORDER : []),
+  ]);
   for (const scenarioId of selectedScenarios) {
-    if (!allowedScenarios.has(scenarioId)) throw new Error(`Unknown Task 3 identity scenario ${scenarioId}.`);
+    if (!allowedScenarios.has(scenarioId)) throw new Error(`Unknown selected certification scenario ${scenarioId}.`);
   }
   return {
     projectId: environment.AUDIT_FIREBASE_PROJECT_ID || 'demo-the-squad-audit',
     baseUrl,
     fixtureRunSuffix: environment.AUDIT_FIXTURE_RUN_SUFFIX || 'phase2',
     browserSessionPrefix: environment.AUDIT_BROWSER_SESSION_PREFIX || 'phase2',
-    certificationIdentity: argv.includes('--certification-identity'),
+    certificationIdentity,
+    certificationTenants,
     runBrowser: argv.includes('--browser'),
     selectedScenarios: [...new Set(selectedScenarios)],
   };
@@ -54,10 +61,16 @@ const BROWSER_SESSION_PREFIX = runtimeConfiguration.browserSessionPrefix;
 const FIXTURES = buildFixtureCatalog(FIXTURE_RUN_SUFFIX);
 const runBrowser = runtimeConfiguration.runBrowser;
 const certificationIdentity = runtimeConfiguration.certificationIdentity;
+const certificationTenants = runtimeConfiguration.certificationTenants;
 const selectedIdentityScenarios = new Set(
   runtimeConfiguration.selectedScenarios.length > 0
     ? runtimeConfiguration.selectedScenarios
     : IDENTITY_EXECUTION_ORDER,
+);
+const selectedTenantScenarios = new Set(
+  runtimeConfiguration.selectedScenarios.length > 0
+    ? runtimeConfiguration.selectedScenarios
+    : TENANT_EXECUTION_ORDER,
 );
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const teamSwitchOnly = process.argv.includes('--team-switch-only');
@@ -164,8 +177,31 @@ function certificationActorAliases(scenarioId) {
     'signup-onboarding-missing-profile-onboarding': ['missing-adult_player', 'missing-parent', 'missing-coach', 'missing-admin', 'missing-league_creator'],
     'demo-seed-use-exit-expiry-cleanup': ['qa-demo-a', 'qa-demo-b', 'qa-coach-owner-a'],
     'administration-access-and-user-directory': ['qa-superadmin', ...FIXTURES.activeAliases.filter(alias => alias !== 'qa-superadmin'), ...BLOCKED_AUDIT_PLAN.api.map(item => item.alias)],
+    'teams-join-by-code': ['qa-public-submitter'],
+    'recruiting-public-scout-projection': ['qa-public-submitter'],
+    'family-enable-youth-login': ['qa-parent-a', 'qa-parent-b', 'qa-youth-invite'],
   };
   return actors[scenarioId] || ['catalog-scenario-actor'];
+}
+
+function tenantCaseAssociations(scenarioId, dimension) {
+  const values = {
+    'teams-join-by-code': { actorAlias: 'qa-public-submitter', targetAlias: 'qa-team-a', operation: 'read' },
+    'recruiting-public-scout-projection': { actorAlias: 'qa-public-submitter', targetAlias: 'qa-player-adult-b', operation: 'read' },
+    'family-enable-youth-login': { actorAlias: 'qa-parent-a', targetAlias: 'qa-player-youth-c', operation: 'create' },
+  };
+  if (!values[scenarioId]) return {};
+  return {
+    ...values[scenarioId],
+    network: { transport: 'loopback-http', observed: true },
+    console: dimension === 'console'
+      ? { observed: true, reason: 'case-owned browser console capture' }
+      : { observed: false, reason: 'server probe; browser console is a separate dimension' },
+    responsive: dimension === 'responsive'
+      ? { observed: true, reason: 'case-owned desktop and mobile viewport capture' }
+      : { observed: false, reason: 'server probe; viewport is a separate dimension' },
+    cleanupRefs: [`fixture-cleanup-${FIXTURES.runId}`],
+  };
 }
 
 function certificationTenantAlias(scenarioId) {
@@ -539,6 +575,7 @@ function recordCertificationCase(
     actorAliases: certificationActorAliases(scenarioId),
     role: role || scenario.roles.join('/'),
     tenantAlias: tenantAlias || certificationTenantAlias(scenarioId),
+    ...tenantCaseAssociations(scenarioId, dimension),
     expected: String(expected), observed: String(observed), state: 'OBSERVED',
     startedAt: caseStartedAt || startedAt, completedAt: new Date().toISOString(), artifacts: [relativeArtifact],
   });
@@ -567,6 +604,7 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
     runId: certificationRunId, commit: certificationCommit,
     actorAliases: certificationActorAliases(scenarioId),
     role: scenario.roles.join('/'), tenantAlias: certificationTenantAlias(scenarioId),
+    ...tenantCaseAssociations(scenarioId, dimension),
     expected: 'locally safe contract completed', observed: diagnostic, state: 'FAIL',
     startedAt: timestamp, completedAt: timestamp, artifacts: [relativeArtifact],
   });
@@ -666,6 +704,31 @@ export function buildIdentityApiRequestPlan(fixtures) {
     Object.freeze({ alias: 'qa-removed-member', pathname: `/api/teams/chat?teamId=${teamAId}`, expectedStatus: 403 }),
     Object.freeze({ alias: 'qa-pending-delete', pathname: `/api/teams/chat?teamId=${teamBId}`, expectedStatus: 403 }),
   ]);
+}
+
+export function buildTenantApiProbePlan(fixtures) {
+  const team = alias => fixtures.teams.find(value => value.alias === alias);
+  const document = alias => fixtures.firestoreDocuments.find(value => value.data?.fixtureAlias === alias);
+  const teamA = team('qa-team-a');
+  const activePlayer = document('qa-player-adult-b');
+  const hiddenPlayer = document('qa-player-adult-a');
+  if (!teamA || !activePlayer || !hiddenPlayer) {
+    throw new Error('Tenant API probes require the frozen Team A and recruiting fixtures.');
+  }
+  return Object.freeze({
+    'teams-join-by-code': Object.freeze({
+      activePath: `/api/teams/join?teamId=${encodeURIComponent(teamA.id)}&code=${encodeURIComponent(teamA.code)}`,
+      invalidPath: `/api/teams/join?teamId=${encodeURIComponent(teamA.id)}&code=INVALID-CODE`,
+    }),
+    'recruiting-public-scout-projection': Object.freeze({
+      activePlayerId: activePlayer.data.id,
+      hiddenPlayerId: hiddenPlayer.data.id,
+    }),
+    'family-enable-youth-login': Object.freeze({
+      canonicalPath: '/api/invites/youth?token=modified',
+      aliasPath: '/api/youth-invites?token=modified',
+    }),
+  });
 }
 
 const BLOCKED_AUDIT_PLAN = buildBlockedAuditPlan(FIXTURES.blockedAliases);
@@ -3918,6 +3981,262 @@ async function runCertificationIdentityScenarios() {
   if (result.failures.length > 0) throw new Error(`${result.failures.length} selected certification scenario stage(s) failed with structured case evidence.`);
 }
 
+async function recordObservedTenantCase(scenarioId, dimension, caseId, work, expected) {
+  const assertionStart = activeCertificationAssertions.length;
+  const caseStartedAt = new Date().toISOString();
+  const observed = await work();
+  recordCertificationCase(
+    scenarioId,
+    dimension,
+    caseId,
+    observed,
+    expected,
+    caseStartedAt,
+    { assertions: activeCertificationAssertions.slice(assertionStart) },
+  );
+}
+
+async function directFirestoreReadStatus(documentPath, token = null) {
+  const response = await fetch(
+    `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/${documentPath}`,
+    { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), Connection: 'close' } },
+  );
+  return response.status;
+}
+
+async function runTenantApiScenario(scenarioId) {
+  const plan = buildTenantApiProbePlan(FIXTURES);
+  if (scenarioId === 'teams-join-by-code') {
+    const probe = plan[scenarioId];
+    let activeBody;
+    await recordObservedTenantCase(scenarioId, 'happyPath', 'team-join-happyPath', async () => {
+      const active = await apiJsonResult(probe.activePath, null);
+      expectEqual(active.status, 200, 'tenant join active invitation resolves');
+      expectEqual(typeof active.body?.data?.sessionToken, 'string', 'tenant join issues opaque session');
+      activeBody = active.body;
+      return 'Active frozen squad invitation resolved through the public server boundary.';
+    }, 'Active squad invitation resolves without exposing the team document.');
+    await recordObservedTenantCase(scenarioId, 'negativePath', 'team-join-negativePath', async () => {
+      const invalid = await apiJsonResult(probe.invalidPath, null);
+      expectEqual(invalid.status, 404, 'tenant join modified code denied');
+      return 'Modified invitation code returned nondisclosing not-found.';
+    }, 'A mismatched team and invitation code is denied.');
+    await recordObservedTenantCase(scenarioId, 'permission', 'team-join-permission', async () => {
+      const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+      const status = await directFirestoreReadStatus(`teams/${teamA.id}`);
+      expectEqual([401, 403].includes(status), true, 'tenant join anonymous direct team read denied');
+      return 'Anonymous direct Firestore team read was denied while the server returned a minimal projection.';
+    }, 'Anonymous callers cannot bypass the join projection to read the team root.');
+    await recordObservedTenantCase(scenarioId, 'persistence', 'team-join-persistence', async () => {
+      const token = activeBody?.data?.sessionToken || '';
+      const hash = (await import('node:crypto')).createHash('sha256').update(token).digest('hex');
+      registerDynamicFirestoreRoot(`team_join_sessions/${hash}`, 'tenant-join-session');
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const snapshot = await firestoreAdmin.collection('team_join_sessions').doc(hash).get();
+        expectEqual(snapshot.exists, true, 'tenant join session persisted');
+        expectEqual(snapshot.data()?.teamId, FIXTURES.teams.find(team => team.alias === 'qa-team-a').id, 'tenant join session bound to exact team');
+      });
+      return 'Opaque join session persisted under its digest and remained bound to Team A.';
+    }, 'The session is persisted only as a digest and bound to the resolved team.');
+    await recordObservedTenantCase(scenarioId, 'network', 'team-join-network', async () => {
+      expectEqual(Boolean(activeBody?.data?.team?.id), true, 'tenant join response has minimal team identity');
+      expectEqual('ownerUserId' in (activeBody?.data?.team || {}), false, 'tenant join response omits owner authority');
+      return 'Expected 200/404 responses were observed with a minimal public payload.';
+    }, 'Join requests use the expected route and expose no authority-bearing fields.');
+    return;
+  }
+
+  if (scenarioId === 'recruiting-public-scout-projection') {
+    const probe = plan[scenarioId];
+    let publicBody;
+    await recordObservedTenantCase(scenarioId, 'happyPath', 'recruiting-public-happyPath', async () => {
+      const response = await apiJsonResult(`/api/public/recruiting/${probe.activePlayerId}`, null);
+      expectEqual(response.status, 200, 'tenant recruiting active profile published');
+      publicBody = response.body;
+      return 'Canonical active recruiting profile returned the public scout projection.';
+    }, 'An active canonical recruiting profile is publicly available.');
+    await recordObservedTenantCase(scenarioId, 'negativePath', 'recruiting-public-negativePath', async () => {
+      const response = await apiJsonResult(`/api/public/recruiting/${probe.hiddenPlayerId}`, null);
+      expectEqual(response.status, 404, 'tenant recruiting hidden profile denied');
+      return 'Canonical hidden profile returned nondisclosing not-found.';
+    }, 'A hidden canonical recruiting profile is not public.');
+    await recordObservedTenantCase(scenarioId, 'permission', 'recruiting-public-permission', async () => {
+      const status = await directFirestoreReadStatus(`players/${probe.activePlayerId}/recruitingContact/contact`);
+      expectEqual([401, 403].includes(status), true, 'tenant recruiting private contact direct read denied');
+      return 'Anonymous direct access to recruiting contact data was denied.';
+    }, 'Private recruiting contact data remains protected from public callers.');
+    await recordObservedTenantCase(scenarioId, 'persistence', 'recruiting-public-persistence', async () => {
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const active = await firestoreAdmin.doc(`players/${probe.activePlayerId}/recruitingProfile/profile`).get();
+        const hidden = await firestoreAdmin.doc(`players/${probe.hiddenPlayerId}/recruitingProfile/profile`).get();
+        expectEqual(active.data()?.status, 'active', 'tenant recruiting canonical active status persisted');
+        expectEqual(hidden.data()?.status, 'hidden', 'tenant recruiting canonical hidden status persisted');
+      });
+      return 'Server projection matched the two persisted canonical profile statuses.';
+    }, 'Public availability follows recruitingProfile/profile.status.');
+    await recordObservedTenantCase(scenarioId, 'network', 'recruiting-public-network', async () => {
+      const serialized = JSON.stringify(publicBody || {});
+      expectEqual(serialized.includes('medicalNotes'), false, 'tenant recruiting response omits medical notes');
+      expectEqual(serialized.includes('parentEmail'), false, 'tenant recruiting response omits guardian contact');
+      expectEqual(serialized.includes('emergencyContact'), false, 'tenant recruiting response omits emergency contact');
+      return 'Public response contained only the allowlisted recruiting projection.';
+    }, 'The public endpoint omits private player, guardian, and evaluation fields.');
+    return;
+  }
+
+  if (scenarioId === 'family-enable-youth-login') {
+    const probe = plan[scenarioId];
+    const parent = await signIn('qa-parent-a');
+    const otherParent = await signIn('qa-parent-b');
+    const childId = FIXTURES.youthInvite.childId;
+    let token = '';
+    try {
+      await recordObservedTenantCase(scenarioId, 'happyPath', 'family-youth-login-happyPath', async () => {
+        const created = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ action: 'create', childId, email: FIXTURES.youthInvite.recipientEmail }),
+        });
+        expectEqual(created.status, 200, 'tenant youth invite created by guardian');
+        token = registerSensitiveValue(created.body?.token || '');
+        expectEqual(/^[a-f0-9]{48}$/.test(token), true, 'tenant youth invite token format');
+        registerDynamicFirestoreRoot(`invites/${token}`, 'tenant-youth-invite');
+        const canonical = await apiJsonResult(`/api/invites/youth?token=${encodeURIComponent(token)}`, null);
+        const alias = await apiJsonResult(`/api/youth-invites?token=${encodeURIComponent(token)}`, null);
+        expectEqual(canonical.status, 200, 'tenant youth canonical invite lookup');
+        expectEqual(alias.status, 200, 'tenant youth alias invite lookup');
+        expectEqual(JSON.stringify(alias.body), JSON.stringify(canonical.body), 'tenant youth alias response equivalence');
+        return 'Guardian-created invite resolved identically through canonical and compatibility routes.';
+      }, 'The guardian can create an invite and both supported route names share one contract.');
+      await recordObservedTenantCase(scenarioId, 'negativePath', 'family-youth-login-negativePath', async () => {
+        const denied = await apiJsonResult('/api/invites/youth', otherParent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ action: 'create', childId, email: FIXTURES.youthInvite.recipientEmail }),
+        });
+        expectEqual(denied.status, 404, 'tenant youth cross-guardian invite denied');
+        expectEqual((await apiJsonResult(probe.canonicalPath, null)).status, 404, 'tenant youth canonical modified token denied');
+        expectEqual((await apiJsonResult(probe.aliasPath, null)).status, 404, 'tenant youth alias modified token denied');
+        return 'Cross-guardian creation and modified-token lookups were denied without disclosure.';
+      }, 'Only the owning guardian can create an invite and modified tokens are rejected.');
+      await recordObservedTenantCase(scenarioId, 'permission', 'family-youth-login-permission', async () => {
+        const status = await directFirestoreReadStatus(`invites/${token}`);
+        expectEqual([401, 403].includes(status), true, 'tenant youth direct invite read denied');
+        return 'Anonymous direct Firestore access to the invitation was denied.';
+      }, 'Invite data is reachable only through the narrow public projection.');
+      await recordObservedTenantCase(scenarioId, 'persistence', 'family-youth-login-persistence', async () => {
+        await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+          const invite = await firestoreAdmin.doc(`invites/${token}`).get();
+          const player = await firestoreAdmin.doc(`players/${childId}`).get();
+          expectEqual(invite.data()?.parentId, identityByAlias.get('qa-parent-a').uid, 'tenant youth invite persisted guardian authority');
+          expectEqual(player.data()?.inviteToken === token, true, 'tenant youth player projection persisted exact token');
+        });
+        return 'Invite and child projection persisted with server-derived guardian authority.';
+      }, 'The invitation is bound to the authenticated guardian and exact child.');
+      await recordObservedTenantCase(scenarioId, 'network', 'family-youth-login-network', async () => {
+        const canonical = await apiJsonResult(probe.canonicalPath, null);
+        const alias = await apiJsonResult(probe.aliasPath, null);
+        expectEqual(JSON.stringify(alias.body), JSON.stringify(canonical.body), 'tenant youth modified-token route equivalence');
+        return 'Canonical and compatibility endpoints returned the same sanitized contract.';
+      }, 'The duplicate route does not diverge from the canonical youth-invite API.');
+    } finally {
+      if (token) {
+        const revoked = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ action: 'revoke', childId }),
+        });
+        expectEqual(revoked.status, 200, 'tenant youth invite exact cleanup');
+      }
+    }
+  }
+}
+
+async function runTenantBrowserScenario(scenarioId) {
+  const plan = buildTenantApiProbePlan(FIXTURES);
+  let pathname;
+  let expectedText;
+  if (scenarioId === 'teams-join-by-code') {
+    const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+    pathname = `/register/squad/${encodeURIComponent(teamA.id)}?code=${encodeURIComponent(teamA.code)}`;
+    expectedText = teamA.name;
+  } else if (scenarioId === 'recruiting-public-scout-projection') {
+    pathname = `/recruit/player/${encodeURIComponent(plan[scenarioId].activePlayerId)}`;
+    expectedText = 'Blair';
+  } else {
+    return;
+  }
+
+  const session = browserSessionName(`tenant-${scenarioId}-${process.pid}`);
+  cli(session, ['open', 'about:blank', '--browser', 'chrome']);
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.stack || error.message);
+    const onResponse = response => { if (response.status() >= 500) failedResponses.push({ status: response.status(), path: response.url().split(${JSON.stringify(BASE_URL)})[1]?.split('?')[0] || '/' }); };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      const observations = [];
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        await page.goto(${JSON.stringify(`${BASE_URL}${pathname}`)}, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(expected => (document.body?.innerText || '').includes(expected), ${JSON.stringify(expectedText)}, { timeout: 20000 });
+        const bodyText = await page.locator('body').innerText();
+        observations.push({
+          viewport,
+          pathname: page.url().split(${JSON.stringify(BASE_URL)})[1]?.split('?')[0] || '/',
+          markerCount: bodyText.includes(${JSON.stringify(expectedText)}) ? 1 : 0,
+          bodyExcerpt: bodyText.slice(0, 300),
+          scrollWidth: await page.evaluate(() => document.documentElement.scrollWidth),
+          clientWidth: await page.evaluate(() => document.documentElement.clientWidth),
+        });
+      }
+      return { observations, consoleErrors, failedResponses };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`]));
+
+  const prefix = scenarioId === 'teams-join-by-code' ? 'team-join' : 'recruiting-public';
+  await recordObservedTenantCase(scenarioId, 'console', `${prefix}-console`, async () => {
+    if (result.consoleErrors.length > 0) {
+      throw new Error(`tenant ${scenarioId} browser console errors: ${result.consoleErrors.join(' | ').slice(0, 800)}`);
+    }
+    expectEqual(result.consoleErrors.length, 0, `tenant ${scenarioId} browser console errors`);
+    expectEqual(result.failedResponses.length, 0, `tenant ${scenarioId} browser unexpected server responses`);
+    return 'Desktop and mobile journeys completed without console errors or 5xx responses.';
+  }, 'The public journey has no console errors or unexpected server failures.');
+  await recordObservedTenantCase(scenarioId, 'responsive', `${prefix}-responsive`, async () => {
+    expectEqual(result.observations.length, 2, `tenant ${scenarioId} viewport observations`);
+    expectEqual(result.observations.every(item => item.markerCount > 0), true, `tenant ${scenarioId} marker visible at both viewports`);
+    expectEqual(result.observations.every(item => item.scrollWidth <= item.clientWidth), true, `tenant ${scenarioId} no horizontal overflow`);
+    return 'The exact public marker remained visible without page-level overflow at desktop and mobile widths.';
+  }, 'The journey renders its exact fixture at 1440x900 and 390x844 without horizontal overflow.');
+}
+
+async function runCertificationTenantScenarios() {
+  const scenarioIds = TENANT_EXECUTION_ORDER.filter(id => selectedTenantScenarios.has(id));
+  for (const scenarioId of scenarioIds) {
+    const sessionBaseline = new Set(ownedBrowserSessions);
+    activeCertificationScenario = scenarioId;
+    activeCertificationAssertions = [];
+    try {
+      await runTenantApiScenario(scenarioId);
+      if (runBrowser) await runTenantBrowserScenario(scenarioId);
+    } catch (error) {
+      const caseId = LOCAL_TENANT_CASE_REQUIREMENTS[scenarioId].network[0];
+      recordCertificationFailure(scenarioId, 'network', caseId, error);
+      throw error;
+    } finally {
+      await closeBrowserSessionsCreatedAfter(ownedBrowserSessions, sessionBaseline, async session => {
+        run(playwrightCli, [`-s=${session}`, '--raw', 'close'], { stdio: 'pipe' });
+      });
+      syncBrowserSessionRegistry();
+      activeCertificationScenario = null;
+      activeCertificationAssertions = [];
+    }
+  }
+}
+
 function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonicalPath) {
   const observations = JSON.parse(cli(session, ['run-code', `async page => {
     const baseUrl = ${JSON.stringify(BASE_URL)};
@@ -5443,6 +5762,8 @@ async function main() {
 
   if (certificationIdentity) {
     await runCertificationIdentityScenarios();
+  } else if (certificationTenants) {
+    await runCertificationTenantScenarios();
   } else {
     if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
     if (runBrowser) await runBrowserAudit();

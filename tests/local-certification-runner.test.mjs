@@ -37,12 +37,19 @@ function dependencies(overrides = {}) {
         runId: `final-cert-${options.runSuffix}`,
         runSuffix: options.runSuffix,
         browserEnabled: options.browser,
-        runLegacyIdentityAudit: async () => ({ code: 0, stdout: '', stderr: '' }),
+        runLegacyCertificationAudit: async ({ batches }) => {
+          events.push(['child', batches]);
+          return { code: 0, stdout: '', stderr: '', startedAt: '2026-09-04T18:00:00.000Z', completedAt: '2026-09-04T18:00:00.000Z' };
+        },
         close: async () => events.push(['close']),
       };
     },
     runIdentityBatch: async (_context, scenarios) => {
       events.push(['batch', scenarios.map(scenario => scenario.id)]);
+      return { results: scenarios.map(scenario => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' })), runErrors: [] };
+    },
+    runTenantsBatch: async (_context, scenarios) => {
+      events.push(['tenants', scenarios.map(scenario => scenario.id)]);
       return { results: scenarios.map(scenario => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' })), runErrors: [] };
     },
     createEvidenceRecorder: ({ scenarios }) => ({
@@ -74,7 +81,27 @@ test('runner executes selected scenarios, writes summary, and always closes harn
   const result = await main(['--scenario', 'authentication-password-reset'], deps);
   assert.equal(result.exitCode, 0);
   assert.deepEqual(deps.scenariosRecorded.map(value => value.scenarioId), ['authentication-password-reset']);
-  assert.deepEqual(deps.events.map(([name]) => name), ['start', 'batch', 'write', 'log', 'close']);
+  assert.deepEqual(deps.events.map(([name]) => name), ['start', 'child', 'batch', 'write', 'log', 'close']);
+});
+
+test('tenant-only and combined selections use one child lifecycle and isolated evidence targets', async () => {
+  const recorderOptions = [];
+  const deps = dependencies({
+    markdownPath: undefined,
+    createEvidenceRecorder: options => {
+      recorderOptions.push(options);
+      return {
+        recordScenario(result) { deps.scenariosRecorded.push(result); },
+        recordRunError() {},
+        async writeSummary({ markdownPath }) { return { results: [], runErrors: [], markdownPath }; },
+      };
+    },
+  });
+  await main(['--scenario', 'teams-create-and-capacity'], deps);
+  assert.equal(deps.events.filter(([name]) => name === 'child').length, 1);
+  assert.deepEqual(deps.events.find(([name]) => name === 'child')[1], ['tenants']);
+  assert.match(recorderOptions[0].outputDir, /task-4/);
+  assert.match(recorderOptions[0].markdownPath || '', /03-tenants\.md$/);
 });
 
 test('browser selection refuses a missing wrapper before starting any process', async () => {
@@ -88,7 +115,7 @@ test('runner closes the harness when the batch throws', async () => {
     runIdentityBatch: async () => { throw new Error('sanitized batch failure'); },
   });
   await assert.rejects(() => main(['identity'], deps), /sanitized batch failure/);
-  assert.deepEqual(deps.events.map(([name]) => name), ['start', 'close']);
+  assert.deepEqual(deps.events.map(([name]) => name), ['start', 'child', 'close']);
 });
 
 test('runner returns a failing exit code when any scenario outcome is FAIL', async () => {

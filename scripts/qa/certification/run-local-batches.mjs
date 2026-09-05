@@ -11,6 +11,10 @@ import {
   runIdentityBatch as defaultRunIdentityBatch,
 } from './local/batches/identity.mjs';
 import {
+  LOCAL_TENANT_CASE_REQUIREMENTS,
+  runTenantsBatch as defaultRunTenantsBatch,
+} from './local/batches/tenants.mjs';
+import {
   SCENARIO_BATCH_ASSIGNMENTS,
   groupScenariosByBatch,
   parseLocalBatchArgs,
@@ -23,10 +27,11 @@ function defaultGetCommit(rootDir) {
   return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: rootDir, encoding: 'utf8' }).trim();
 }
 
-function createRunSuffix(now, randomBytes) {
+function createRunSuffix(now, randomBytes, batches) {
   const iso = now.toISOString();
   const compact = `${iso.slice(2, 10).replaceAll('-', '')}-${iso.slice(11, 19).replaceAll(':', '')}`;
-  return `t3-${compact}-${randomBytes(2).toString('hex')}`;
+  const prefix = batches.length === 1 ? (batches[0] === 'identity' ? 't3' : 't4') : 'local';
+  return `${prefix}-${compact}-${randomBytes(2).toString('hex')}`;
 }
 
 export function installCleanupSignalHandlers(signalSource, getHarness) {
@@ -77,15 +82,13 @@ export async function main(argv, dependencies = {}) {
   const getCommit = dependencies.getCommit || defaultGetCommit;
   const startHarness = dependencies.startHarness || defaultStartLocalHarness;
   const runIdentityBatch = dependencies.runIdentityBatch || defaultRunIdentityBatch;
+  const runTenantsBatch = dependencies.runTenantsBatch || defaultRunTenantsBatch;
   const evidenceFactory = dependencies.createEvidenceRecorder || defaultCreateEvidenceRecorder;
   const outputRoot = dependencies.outputRoot || path.join(rootDir, 'output/playwright/2026-09-04-final-certification');
-  const markdownPath = dependencies.markdownPath || path.join(
-    rootDir,
-    'docs/qa/production-audit/runs/2026-09-04-final-certification/02-identity.md',
-  );
   const scenarios = selectLocalScenarios(parsed);
   const groups = groupScenariosByBatch(scenarios);
-  const runSuffix = createRunSuffix(now(), randomBytes);
+  const selectedBatches = [...groups.keys()];
+  const runSuffix = createRunSuffix(now(), randomBytes, selectedBatches);
   const commit = getCommit(rootDir);
   let harness;
   let removeSignalHandlers = () => undefined;
@@ -99,34 +102,54 @@ export async function main(argv, dependencies = {}) {
       playwrightCli,
       browser: parsed.browser,
       baseEnvironment: environment,
+      batches: selectedBatches,
     });
     removeSignalHandlers = installCleanupSignalHandlers(signalSource, () => harness);
-    const recorder = evidenceFactory({
-      scenarios,
-      runId: harness.runId,
-      commit,
-      outputDir: path.join(outputRoot, 'task-3', harness.runId),
-      caseRequirements: LOCAL_IDENTITY_CASE_REQUIREMENTS,
+    const certificationObservation = await harness.runLegacyCertificationAudit({
+      batches: selectedBatches,
+      selectedScenarioIds: scenarios.map(scenario => scenario.id),
     });
     const context = {
       ...harness,
       commit,
       now: () => now().toISOString(),
+      certificationObservation,
     };
     const results = [];
+    const summaries = [];
+    const batchDefinitions = {
+      identity: { run: runIdentityBatch, task: 'task-3', markdown: '02-identity.md', title: 'Task 3 identity', caseRequirements: LOCAL_IDENTITY_CASE_REQUIREMENTS },
+      tenants: { run: runTenantsBatch, task: 'task-4', markdown: '03-tenants.md', title: 'Task 4 tenant and family', caseRequirements: LOCAL_TENANT_CASE_REQUIREMENTS },
+    };
     for (const [batch, selected] of groups) {
-      if (batch !== 'identity') throw new Error(`No local runner is installed for batch ${batch}.`);
-      const batchOutput = await runIdentityBatch(context, selected);
+      const definition = batchDefinitions[batch];
+      if (!definition) throw new Error(`No local runner is installed for batch ${batch}.`);
+      const batchOutputDir = path.join(outputRoot, definition.task, harness.runId);
+      const markdownPath = dependencies.markdownPath && groups.size === 1
+        ? dependencies.markdownPath
+        : path.join(rootDir, 'docs/qa/production-audit/runs/2026-09-04-final-certification', definition.markdown);
+      const recorder = evidenceFactory({
+        scenarios: selected,
+        runId: harness.runId,
+        commit,
+        outputDir: batchOutputDir,
+        markdownPath,
+        title: definition.title,
+        batch,
+        caseRequirements: definition.caseRequirements,
+      });
+      const batchOutput = await definition.run(context, selected);
       for (const runError of batchOutput.runErrors) recorder.recordRunError(runError);
       for (const result of batchOutput.results) {
         results.push(result);
         recorder.recordScenario(result);
       }
+      summaries.push(await recorder.writeSummary({ markdownPath }));
       if (parsed.failFast && (batchOutput.runErrors.length > 0 || batchOutput.results.some(result => result.outcome === 'FAIL'))) break;
     }
-    const summary = await recorder.writeSummary({ markdownPath });
-    const failed = (summary.runErrors || []).length > 0 || results.some(result => result.outcome === 'FAIL');
-    log.log(`Task 3 local identity observations written for ${results.length} scenario(s); final matrix PASS was not inferred.`);
+    const summary = { runId: harness.runId, commit, results, runErrors: summaries.flatMap(item => item.runErrors || []), batches: summaries };
+    const failed = summary.runErrors.length > 0 || results.some(result => result.outcome === 'FAIL');
+    log.log(`Local certification observations written for ${results.length} scenario(s); final matrix PASS was not inferred.`);
     return { exitCode: removeSignalHandlers.getExitCode?.() || (failed ? 1 : 0), summary };
   } finally {
     removeSignalHandlers();

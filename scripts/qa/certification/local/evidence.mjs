@@ -19,7 +19,7 @@ export const DIMENSION_NAMES = Object.freeze([
   'responsive',
 ]);
 
-const PROTECTED_KEY_PATTERN = /(?:password|cookie|authorization|actionurl|actionlink|oobcode|rawproviderpayload|sessiontoken|refreshtoken|idtoken|providersecret)/i;
+const PROTECTED_KEY_PATTERN = /(?:password|cookie|authorization|actionurl|actionlink|oobcode|rawproviderpayload|sessiontoken|sessioncode|refreshtoken|idtoken|providersecret|joincode|teamcode|invitecode|medicalnotes|parentemail|privatecontact)/i;
 const PROTECTED_VALUE_PATTERN = /(?:password\s*[=:]|cookie\s*[=:]|authorization\s*[=:]|bearer\s+[a-z0-9._~-]+|oobcode=|mode=(?:resetpassword|verifyemail)|sk_live_[a-z0-9]+|rk_live_[a-z0-9]+)/i;
 const URL_QUERY_PATTERN = /https?:\/\/[^\s]+\?[^\s]+/i;
 
@@ -127,7 +127,7 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
   }
 }
 
-function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit } = {}) {
+function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape } = {}) {
   assertNoProtectedEvidence(result);
   assertPlainString(result.environment, 'environment');
   if (!scenario.environments.includes(result.environment)) {
@@ -178,6 +178,16 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (!['OBSERVED', 'NOT_OBSERVED', 'FAIL'].includes(caseRecord.state)) throw new Error(`${caseRecord.caseId} has invalid case state.`);
     if (!DIMENSION_NAMES.includes(caseRecord.dimension)) throw new Error(`${caseRecord.caseId} has invalid case dimension.`);
     if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
+    if (caseShape === 'tenant') {
+      assertPlainString(caseRecord.actorAlias, 'case actorAlias');
+      assertPlainString(caseRecord.targetAlias, 'case targetAlias');
+      if (!['create', 'read', 'update', 'delete', 'permission', 'persistence'].includes(caseRecord.operation)) {
+        throw new Error(`${caseRecord.caseId} requires a tenant operation.`);
+      }
+      if (!caseRecord.network || !caseRecord.console || !caseRecord.responsive || !Array.isArray(caseRecord.cleanupRefs)) {
+        throw new Error(`${caseRecord.caseId} requires tenant network, console, responsive, and cleanup associations.`);
+      }
+    }
     const artifactEvents = Array.isArray(caseRecord.artifactEvents)
       ? caseRecord.artifactEvents
       : [{
@@ -317,9 +327,9 @@ export function validateScenarioResults(scenarios, results, options = {}) {
   return Object.freeze(scenarios.map(scenario => validateResult(scenario, resultsById.get(scenario.id), options)));
 }
 
-export function markdownForSummary({ runId, commit, results, runErrors }) {
+export function markdownForSummary({ runId, commit, results, runErrors, title = 'Local certification' }) {
   const lines = [
-    '# Task 3 identity local certification observations',
+    `# ${title} local certification observations`,
     '',
     `- Run: \`${runId}\``,
     `- Commit: \`${commit}\``,
@@ -370,7 +380,7 @@ async function writeAtomically(filePath, contents) {
   await rename(temporaryPath, filePath);
 }
 
-export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, caseRequirements }) {
+export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, caseRequirements, title = 'Local certification', batch }) {
   const recorded = [];
   const runErrors = [];
   return Object.freeze({
@@ -389,8 +399,9 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
         caseRequirements,
         expectedRunId: runId,
         expectedCommit: commit,
+        caseShape: batch === 'tenants' ? 'tenant' : 'identity',
       });
-      const summary = { runId, commit, generatedAt: new Date().toISOString(), runErrors, results };
+      const summary = { runId, commit, title, generatedAt: new Date().toISOString(), runErrors, results };
       assertNoProtectedEvidence(summary);
       await writeAtomically(path.join(outputDir, 'results.json'), `${JSON.stringify(summary, null, 2)}\n`);
       await writeAtomically(markdownPath, markdownForSummary(summary));

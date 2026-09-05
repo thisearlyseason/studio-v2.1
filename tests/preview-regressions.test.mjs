@@ -80,6 +80,7 @@ test('recruitment page resolves the linked squad and requires confirmation', asy
   assert.match(route, /team_join_sessions/);
   assert.match(route, /sessionToken\.length >= 32/);
   assert.match(route, /data:\s*\{\s*team:/s);
+  assert.match(route, /if \(!teamAcceptsRegistrations\(team\)\)[\s\S]*Squad code not found/);
   assert.match(rapidJoinPage, /`p_\$\{firebaseUser\?\.uid\}`/);
   assert.match(rapidJoinPage, /sessionToken: joinData\.sessionToken/);
 });

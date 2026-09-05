@@ -1816,7 +1816,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const addPlayerVideo = useCallback(async (playerId: string, data: Partial<PlayerVideo>) => { if (!db) return; await addDoc(collection(db, 'players', playerId, 'videos'), { ...clean(data), createdAt: serverTimestamp(), ...(activeTeam?.id ? { updatedByTeamId: activeTeam.id } : {}) }); }, [db, activeTeam?.id]);
   const updatePlayerVideo = useCallback(async (playerId: string, videoId: string, data: Partial<PlayerVideo>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'videos', videoId), { ...clean(data), ...(activeTeam?.id ? { updatedByTeamId: activeTeam.id } : {}) }, { merge: true }); }, [db, activeTeam?.id]);
   const deletePlayerVideo = useCallback(async (playerId: string, videoId: string) => { if (!db) return; await deleteDoc(doc(db, 'players', playerId, 'videos', videoId)); }, [db]);
-  const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => { if (!db) return; await setDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled, ...(activeTeam?.id ? { updatedByTeamId: activeTeam.id } : {}) }, { merge: true }); }, [db, activeTeam?.id]);
+  const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => {
+    if (!db) return;
+    const batch = writeBatch(db);
+    const authority = activeTeam?.id ? { updatedByTeamId: activeTeam.id } : {};
+    batch.set(doc(db, 'players', playerId, 'recruitingProfile', 'profile'), {
+      status: enabled ? 'active' : 'hidden',
+      updatedAt: serverTimestamp(),
+      ...authority,
+    }, { merge: true });
+    // Keep the legacy root projection in sync for existing roster controls. Public
+    // availability is decided only from recruitingProfile/profile.status.
+    batch.set(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled, ...authority }, { merge: true });
+    await batch.commit();
+  }, [db, activeTeam?.id]);
   const updateStaffEvaluation = useCallback(async (memberId: string, notes: string) => { if (!activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current'), { notes, updatedAt: new Date().toISOString() }); }, [activeTeam, db]);
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeam?.id || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeam, db]);
 

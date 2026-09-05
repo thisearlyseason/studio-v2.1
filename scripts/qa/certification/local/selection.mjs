@@ -1,6 +1,6 @@
 import { CERTIFICATION_SCENARIOS } from '../scenario-catalog.mjs';
 
-export const LOCAL_BATCH_ORDER = Object.freeze(['identity']);
+export const LOCAL_BATCH_ORDER = Object.freeze(['identity', 'tenants']);
 
 export const SCENARIO_BATCH_ASSIGNMENTS = Object.freeze({
   identity: Object.freeze([
@@ -16,13 +16,37 @@ export const SCENARIO_BATCH_ASSIGNMENTS = Object.freeze({
     'dashboard-shell-role-landing-and-route-policy',
     'administration-access-and-user-directory',
   ]),
+  tenants: Object.freeze([
+    'teams-create-and-capacity',
+    'teams-join-by-code',
+    'teams-profile-branding-settings',
+    'teams-module-visibility',
+    'teams-seasonal-reset-delete-quota-resolution',
+    'organization-club-school-overview',
+    'organization-create-allocate-remove-squads',
+    'organization-global-waivers-documents-admins',
+    'roster-member-add-edit-remove-reinstate',
+    'roster-search-filter-sort-export',
+    'roster-parent-player-self-views',
+    'recruiting-private-profile-crud',
+    'recruiting-public-scout-projection',
+    'family-children-invites-team-cards',
+    'family-schedule-waivers-payments',
+    'family-enable-youth-login',
+  ]),
 });
 
-const assignmentByScenarioId = new Map(
-  Object.entries(SCENARIO_BATCH_ASSIGNMENTS).flatMap(([batch, ids]) => (
-    ids.map(id => [id, batch])
-  )),
-);
+const assignmentEntries = Object.entries(SCENARIO_BATCH_ASSIGNMENTS).flatMap(([batch, ids]) => (
+  ids.map(id => [id, batch])
+));
+const assignmentByScenarioId = new Map(assignmentEntries);
+if (assignmentByScenarioId.size !== assignmentEntries.length) {
+  throw new Error('A certification scenario cannot be assigned to more than one local batch.');
+}
+const frozenScenarioIds = new Set(CERTIFICATION_SCENARIOS.map(scenario => scenario.id));
+for (const [id] of assignmentEntries) {
+  if (!frozenScenarioIds.has(id)) throw new Error(`Assigned certification scenario ${id} is absent from the frozen catalog.`);
+}
 
 function readValue(argv, index, flag) {
   const value = argv[index + 1];
@@ -93,7 +117,7 @@ export function selectLocalScenarios({
   for (const id of scenarioIds) {
     if (!byId.has(id)) throw new Error(`Unknown certification scenario ${id}.`);
     if (!assignmentByScenarioId.has(id)) {
-      throw new Error(`Certification scenario ${id} is not assigned to a local Task 3 batch.`);
+      throw new Error(`Certification scenario ${id} is not assigned to a local batch.`);
     }
     requestedIds.add(id);
   }

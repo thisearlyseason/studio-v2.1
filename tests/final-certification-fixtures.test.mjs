@@ -81,6 +81,9 @@ const REQUIRED_ALIASES = [
   'qa-public-submitter',
   'qa-demo-a',
   'qa-demo-b',
+  'qa-fresh-coach',
+  'qa-fresh-admin',
+  'qa-fresh-league-creator',
 ];
 
 const REQUIRED_DOMAINS = [
@@ -910,6 +913,21 @@ test('catalog is deeply frozen so later batches cannot rewrite fixture ownership
   assert.equal(Object.isFrozen(catalog.cleanupSelectors.firestore.recursiveRoots), true);
   assert.throws(() => catalog.identities.push({ alias: 'forged' }), TypeError);
   assert.throws(() => { catalog.cleanupSelectors.fixtureRunId = 'forged'; }, TypeError);
+});
+
+test('Task 4 team invitation aliases satisfy the production route contract', () => {
+  const catalog = buildFixtureCatalog('t4-route-code-contract');
+  for (const team of catalog.teams) {
+    for (const field of ['code', 'teamCode', 'inviteCode']) {
+      assert.match(team[field], /^[A-Z0-9_-]{4,32}$/, `${team.alias}.${field}`);
+    }
+  }
+});
+
+test('Task 4 public recruiting fixture does not trigger outbound media fetches', () => {
+  const catalog = buildFixtureCatalog('t4-public-media-boundary');
+  const playerId = 'qa-player-adult-b-t4-public-media-boundary';
+  assert.equal(catalog.firestoreDocuments.some(document => document.path.startsWith(`players/${playerId}/videos/`)), false);
 });
 
 test('seeder refuses production and every non-loopback emulator target before connecting', () => {

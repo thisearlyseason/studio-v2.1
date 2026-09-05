@@ -52,6 +52,15 @@ test('private player documents are no longer the public recruiting transport', (
   assert.doesNotMatch(publicPage, /recruitingContact/);
 });
 
+test('public recruiting metadata and API share the authoritative profile status gate', () => {
+  const layout = fs.readFileSync(new URL('../src/app/recruit/player/[playerId]/layout.tsx', import.meta.url), 'utf8');
+  const provider = fs.readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
+  assert.match(layout, /recruitingProfile.*profile/s);
+  assert.match(layout, /isProspectActivated/);
+  assert.doesNotMatch(layout, /recruitingProfileEnabled/);
+  assert.match(provider, /toggleRecruitingProfile[\s\S]*recruitingProfile', 'profile'[\s\S]*status: enabled \? 'active' : 'hidden'/);
+});
+
 test('a guardian retains update access to their own child without making the record public', () => {
   const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
   assert.match(rules, /resource\.data\.get\('parentId', ''\) == request\.auth\.uid/);
