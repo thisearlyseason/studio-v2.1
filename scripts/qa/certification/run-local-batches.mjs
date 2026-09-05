@@ -26,6 +26,30 @@ function createRunSuffix(now, randomBytes) {
   return `t3-${compact}-${randomBytes(2).toString('hex')}`;
 }
 
+export function installCleanupSignalHandlers(signalSource, getHarness) {
+  let handling = false;
+  const listeners = new Map();
+  const remove = () => {
+    for (const [signal, listener] of listeners) signalSource.removeListener(signal, listener);
+    listeners.clear();
+  };
+  for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+    const listener = async () => {
+      if (handling) return;
+      handling = true;
+      try {
+        await getHarness()?.close();
+      } finally {
+        remove();
+        signalSource.exitCode = exitCode;
+      }
+    };
+    listeners.set(signal, listener);
+    signalSource.on(signal, listener);
+  }
+  return remove;
+}
+
 export async function main(argv, dependencies = {}) {
   const parsed = parseLocalBatchArgs(argv);
   const log = dependencies.console || console;
@@ -58,6 +82,7 @@ export async function main(argv, dependencies = {}) {
   const runSuffix = createRunSuffix(now(), randomBytes);
   const commit = getCommit(rootDir);
   let harness;
+  let removeSignalHandlers = () => undefined;
 
   try {
     harness = await startHarness({
@@ -67,6 +92,7 @@ export async function main(argv, dependencies = {}) {
       browser: parsed.browser,
       baseEnvironment: environment,
     });
+    removeSignalHandlers = installCleanupSignalHandlers(process, () => harness);
     const recorder = evidenceFactory({
       scenarios,
       runId: harness.runId,
@@ -81,18 +107,20 @@ export async function main(argv, dependencies = {}) {
     const results = [];
     for (const [batch, selected] of groups) {
       if (batch !== 'identity') throw new Error(`No local runner is installed for batch ${batch}.`);
-      const batchResults = await runIdentityBatch(context, selected);
-      for (const result of batchResults) {
+      const batchOutput = await runIdentityBatch(context, selected);
+      for (const runError of batchOutput.runErrors) recorder.recordRunError(runError);
+      for (const result of batchOutput.results) {
         results.push(result);
         recorder.recordScenario(result);
       }
-      if (parsed.failFast && batchResults.some(result => result.outcome === 'FAIL')) break;
+      if (parsed.failFast && (batchOutput.runErrors.length > 0 || batchOutput.results.some(result => result.outcome === 'FAIL'))) break;
     }
     const summary = await recorder.writeSummary({ markdownPath });
-    const failed = results.some(result => result.outcome === 'FAIL');
+    const failed = (summary.runErrors || []).length > 0 || results.some(result => result.outcome === 'FAIL');
     log.log(`Task 3 local identity observations written for ${results.length} scenario(s); final matrix PASS was not inferred.`);
     return { exitCode: failed ? 1 : 0, summary };
   } finally {
+    removeSignalHandlers();
     await harness?.close();
   }
 }

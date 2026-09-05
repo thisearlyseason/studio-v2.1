@@ -66,16 +66,19 @@ export async function POST(req: NextRequest) {
 
     const { subject, html } = passwordResetEmail({ email: normalizedEmail, resetLink });
 
-    const { error } = await getResend().emails.send({
-      from: FROM,
-      to: [normalizedEmail],
-      subject,
-      html,
-    });
-
-    if (error) {
-      console.error('[Resend] Password reset email error:', error);
-      return NextResponse.json({ error: 'Email delivery failed' }, { status: 502 });
+    try {
+      const { error } = await getResend().emails.send({
+        from: FROM,
+        to: [normalizedEmail],
+        subject,
+        html,
+      });
+      if (error) console.error('[Reset Password] Delivery was not accepted.');
+    } catch {
+      // The public response stays neutral for known and unknown identities.
+      // Provider failures are monitored server-side and must never become an
+      // account-enumeration signal in the browser.
+      console.error('[Reset Password] Delivery was unavailable.');
     }
 
     return NextResponse.json({ success: true });

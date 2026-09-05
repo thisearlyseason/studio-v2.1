@@ -238,7 +238,7 @@ function AuthorizedClubManagementPage() {
   const remainingSquadSeats = Math.max(0, organizationSeatLimit - allocatedSquadCount);
 
   useEffect(() => {
-    if (!firebaseAuth || !organizationOwnerId) return;
+    if (!firebaseAuth || !organizationOwnerId || isHubDataLoading) return;
     let cancelled = false;
     const loadCapacity = async () => {
       try {
@@ -267,7 +267,7 @@ function AuthorizedClubManagementPage() {
     };
     loadCapacity();
     return () => { cancelled = true; };
-  }, [firebaseAuth, organizationOwnerId, isSchoolMode, schoolHub?.id, schoolHub?.type, clubTeams.length]);
+  }, [firebaseAuth, organizationOwnerId, isHubDataLoading, isSchoolMode, schoolHub?.id, schoolHub?.type, clubTeams.length]);
 
   // Fetch members from ALL squad sub-collections independently so we don't
   // rely on a collectionGroup+in composite index (which causes partial results).

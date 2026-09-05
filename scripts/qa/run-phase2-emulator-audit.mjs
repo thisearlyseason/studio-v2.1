@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { mkdirSync, openSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,15 +8,39 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { buildFixtureCatalog, inspectFixtureMedia } from './certification/fixture-catalog.mjs';
+import { parseLoopbackHttpOrigin } from './certification/local/boundary.mjs';
+import {
+  IDENTITY_EXECUTION_ORDER,
+  LOCAL_IDENTITY_CASE_REQUIREMENTS,
+} from './certification/local/batches/identity.mjs';
+import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
+import { DIMENSION_NAMES } from './certification/local/evidence.mjs';
 
 export function resolveAuditRuntimeConfiguration({ environment = process.env, argv = process.argv.slice(2) } = {}) {
+  const baseUrl = parseLoopbackHttpOrigin(
+    environment.AUDIT_BASE_URL || 'http://127.0.0.1:9001',
+    'Legacy audit loopback base URL',
+  );
+  const selectedScenarios = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== '--scenario') continue;
+    const scenarioId = argv[index + 1];
+    if (!scenarioId || scenarioId.startsWith('--')) throw new Error('--scenario requires a scenario ID.');
+    selectedScenarios.push(scenarioId);
+    index += 1;
+  }
+  const allowedScenarios = new Set(IDENTITY_EXECUTION_ORDER);
+  for (const scenarioId of selectedScenarios) {
+    if (!allowedScenarios.has(scenarioId)) throw new Error(`Unknown Task 3 identity scenario ${scenarioId}.`);
+  }
   return {
     projectId: environment.AUDIT_FIREBASE_PROJECT_ID || 'demo-the-squad-audit',
-    baseUrl: environment.AUDIT_BASE_URL || 'http://127.0.0.1:9001',
+    baseUrl,
     fixtureRunSuffix: environment.AUDIT_FIXTURE_RUN_SUFFIX || 'phase2',
     browserSessionPrefix: environment.AUDIT_BROWSER_SESSION_PREFIX || 'phase2',
     certificationIdentity: argv.includes('--certification-identity'),
     runBrowser: argv.includes('--browser'),
+    selectedScenarios: [...new Set(selectedScenarios)],
   };
 }
 
@@ -28,6 +52,11 @@ const BROWSER_SESSION_PREFIX = runtimeConfiguration.browserSessionPrefix;
 const FIXTURES = buildFixtureCatalog(FIXTURE_RUN_SUFFIX);
 const runBrowser = runtimeConfiguration.runBrowser;
 const certificationIdentity = runtimeConfiguration.certificationIdentity;
+const selectedIdentityScenarios = new Set(
+  runtimeConfiguration.selectedScenarios.length > 0
+    ? runtimeConfiguration.selectedScenarios
+    : IDENTITY_EXECUTION_ORDER,
+);
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const teamSwitchOnly = process.argv.includes('--team-switch-only');
 const alertsOnly = process.argv.includes('--alerts-only');
@@ -45,10 +74,91 @@ const workflowFacilitiesOnly = process.argv.includes('--workflow-facilities-only
 const workflowEquipmentOnly = process.argv.includes('--workflow-equipment-only');
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
+const sensitiveValues = new Set([password]);
 const children = [];
+const ownedBrowserSessions = new Set();
 const logDir = path.join(os.tmpdir(), `the-squad-phase2-${process.pid}`);
+const certificationArtifactDir = process.env.AUDIT_ARTIFACT_DIR || path.join(logDir, 'certification-artifacts');
+const browserSessionRegistry = process.env.AUDIT_BROWSER_SESSION_REGISTRY || '';
 let fixturesSeeded = false;
 let cleanupStarted = false;
+let activeCertificationScenario = null;
+let activeCertificationAssertions = [];
+const certificationScenarioById = new Map(CERTIFICATION_SCENARIOS.map(scenario => [scenario.id, scenario]));
+
+export function createAuditShutdownState() {
+  let exitCode = null;
+  return Object.freeze({
+    get exitCode() { return exitCode; },
+    request(requestedExitCode) {
+      if (exitCode === null) exitCode = requestedExitCode;
+    },
+    throwIfRequested() {
+      if (exitCode === null) return;
+      const error = new Error('Local certification was interrupted; exact cleanup will now run.');
+      error.exitCode = exitCode;
+      throw error;
+    },
+  });
+}
+
+const shutdownState = createAuditShutdownState();
+
+function emitCertificationEvent(event) {
+  const sanitized = JSON.parse(redact(JSON.stringify(event)));
+  console.log(`CERTIFICATION_EVENT ${JSON.stringify(sanitized)}`);
+}
+
+function recordCertificationCase(scenarioId, dimension, caseId, observed, expected = 'locally safe contract completed', caseStartedAt = null) {
+  const scenario = certificationScenarioById.get(scenarioId);
+  const startedAt = new Date().toISOString();
+  const relativeArtifact = `cases/${caseId}.json`;
+  mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
+  const artifact = {
+    scenarioId, caseId, dimension, expected: String(expected), observed: String(observed),
+    assertions: activeCertificationAssertions,
+    capturedAt: startedAt,
+  };
+  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify(artifact, null, 2)}\n`, { mode: 0o600 });
+  emitCertificationEvent({
+    type: 'case', scenarioId, caseId, dimension,
+    role: scenario.roles.join('/'),
+    tenantAlias: scenario.roles.includes('V') ? 'not-applicable' : 'catalog-scoped',
+    expected: String(expected), observed: String(observed), state: 'OBSERVED',
+    startedAt: caseStartedAt || startedAt, completedAt: new Date().toISOString(), artifacts: [relativeArtifact],
+  });
+}
+
+function recordCertificationFailure(scenarioId, dimension, caseId, error) {
+  const scenario = certificationScenarioById.get(scenarioId);
+  const timestamp = new Date().toISOString();
+  const diagnostic = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
+  const relativeArtifact = `cases/${caseId}.json`;
+  mkdirSync(path.join(certificationArtifactDir, 'cases'), { recursive: true });
+  writeFileSync(path.join(certificationArtifactDir, relativeArtifact), `${JSON.stringify({ scenarioId, caseId, dimension, diagnostic, capturedAt: timestamp }, null, 2)}\n`, { mode: 0o600 });
+  emitCertificationEvent({
+    type: 'case', scenarioId, caseId, dimension,
+    role: scenario.roles.join('/'), tenantAlias: scenario.roles.includes('V') ? 'not-applicable' : 'catalog-scoped',
+    expected: 'locally safe contract completed', observed: diagnostic, state: 'FAIL',
+    startedAt: timestamp, completedAt: timestamp, artifacts: [relativeArtifact],
+  });
+}
+
+function recordScenarioDimensions(scenarioId, { browserObserved }) {
+  for (const [dimension, caseIds] of Object.entries(LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId])) {
+    if (!browserObserved && (dimension === 'console' || dimension === 'responsive')) continue;
+    for (const caseId of caseIds) {
+      recordCertificationCase(
+        scenarioId,
+        dimension,
+        caseId,
+        browserObserved || !['console', 'responsive'].includes(dimension)
+          ? 'actual local emulator/API/browser checks passed'
+          : 'not observed',
+      );
+    }
+  }
+}
 
 const firebaseConfig = JSON.stringify({
   projectId: PROJECT_ID,
@@ -135,6 +245,17 @@ export function buildIdentityApiTargets(fixtures) {
   return Object.freeze({ teamAId, teamBId });
 }
 
+export function buildIdentityApiRequestPlan(fixtures) {
+  const { teamAId, teamBId } = buildIdentityApiTargets(fixtures);
+  return Object.freeze([
+    Object.freeze({ alias: 'qa-coach-owner-a', pathname: `/api/teams/chat?teamId=${teamAId}`, expectedStatus: 200 }),
+    Object.freeze({ alias: 'qa-coach-owner-a', pathname: `/api/teams/chat?teamId=${teamBId}`, expectedStatus: 403 }),
+    Object.freeze({ alias: 'qa-coach-owner-b', pathname: `/api/teams/chat?teamId=${teamAId}`, expectedStatus: 403 }),
+    Object.freeze({ alias: 'qa-removed-member', pathname: `/api/teams/chat?teamId=${teamAId}`, expectedStatus: 403 }),
+    Object.freeze({ alias: 'qa-pending-delete', pathname: `/api/teams/chat?teamId=${teamBId}`, expectedStatus: 403 }),
+  ]);
+}
+
 const BLOCKED_AUDIT_PLAN = buildBlockedAuditPlan(FIXTURES.blockedAliases);
 
 function emailForAlias(alias) {
@@ -148,7 +269,14 @@ function storageObjectUrl(objectPath) {
 }
 
 function redact(value) {
-  return String(value || '').replaceAll(password, '[redacted]');
+  let output = String(value || '');
+  for (const secret of sensitiveValues) output = output.replaceAll(secret, '[redacted]');
+  return output.replace(/Bearer\s+\S+/gi, '[redacted]');
+}
+
+function registerSensitiveValue(value) {
+  if (typeof value === 'string' && value) sensitiveValues.add(value);
+  return value;
 }
 
 function waitForPort(port, timeoutMs = 30_000) {
@@ -187,9 +315,35 @@ async function waitForHttp(url, timeoutMs = 60_000) {
 function startProcess(command, args, logName) {
   const logPath = path.join(logDir, logName);
   const output = openSync(logPath, 'a');
-  const child = spawn(command, args, { cwd: process.cwd(), env, stdio: ['ignore', output, output] });
+  const child = spawn(command, args, {
+    cwd: process.cwd(), env, stdio: ['ignore', output, output], detached: process.platform !== 'win32',
+  });
   children.push(child);
   return child;
+}
+
+export function terminateChildProcessTree(child, signal = 'SIGTERM', killProcess = process.kill, platform = process.platform) {
+  if (!child || child.killed || !Number.isInteger(child.pid)) return;
+  try {
+    if (platform === 'win32') child.kill(signal);
+    else killProcess(-child.pid, signal);
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
+  }
+}
+
+async function terminateOwnedChildAndWait(child) {
+  if (!child || child.exitCode !== null || child.signalCode) return;
+  const exited = new Promise(resolve => child.once('exit', resolve));
+  terminateChildProcessTree(child);
+  const completed = await Promise.race([
+    exited.then(() => true),
+    new Promise(resolve => setTimeout(() => resolve(false), 5_000)),
+  ]);
+  if (!completed) {
+    terminateChildProcessTree(child, 'SIGKILL');
+    await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 2_000))]);
+  }
 }
 
 function run(command, args, options = {}) {
@@ -201,69 +355,709 @@ function run(command, args, options = {}) {
     ...options,
   });
   if (result.status !== 0) {
-    throw new Error(redact(`${command} ${args.join(' ')} failed.\n${result.stdout}\n${result.stderr}`));
+    const output = `${result.stderr || ''}\n${result.stdout || ''}`.trim();
+    const diagnostic = output.length > 2_000 ? output.slice(-2_000) : output;
+    throw new Error(redact(`${path.basename(command)} exited ${result.status}.\n${diagnostic}`));
   }
   return result.stdout.trim();
 }
 
-async function signIn(alias) {
+async function signIn(alias, suppliedPassword = password) {
+  return signInEmail(emailForAlias(alias), suppliedPassword);
+}
+
+async function signInEmail(email, suppliedPassword = password) {
   const response = await fetch(
     'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=phase2',
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailForAlias(alias), password, returnSecureToken: true }),
+      headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+      body: JSON.stringify({ email, password: suppliedPassword, returnSecureToken: true }),
     },
   );
   const body = await response.json();
   return { status: response.status, body };
 }
 
+export function localTransportDiagnostic(method, pathname, error) {
+  const rawCode = error?.cause?.code || error?.code || error?.name || 'unknown';
+  const code = String(rawCode).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64) || 'unknown';
+  return `Local ${String(method || 'GET').toUpperCase()} ${pathname} transport failed (${code}).`;
+}
+
 async function apiStatus(pathname, token, init = {}) {
-  const response = await fetch(`${BASE_URL}${pathname}`, {
-    ...init,
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      Authorization: `Bearer ${token}`,
-      ...(init.headers || {}),
-    },
-    redirect: 'manual',
-  });
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${pathname}`, {
+      ...init,
+      headers: {
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        Authorization: `Bearer ${token}`,
+        ...(init.headers || {}),
+        'Connection': 'close',
+      },
+      redirect: 'manual',
+    });
+  } catch (error) {
+    throw new Error(localTransportDiagnostic(init.method, pathname, error));
+  }
   return response.status;
 }
 
+async function apiJsonResult(pathname, token, init = {}) {
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${pathname}`, {
+      ...init,
+      headers: {
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers || {}),
+        'Connection': 'close',
+      },
+      redirect: 'manual',
+    });
+  } catch (error) {
+    throw new Error(localTransportDiagnostic(init.method, pathname, error));
+  }
+  let body = null;
+  try { body = await response.json(); } catch { /* status remains authoritative */ }
+  return { status: response.status, body };
+}
+
+async function publicJsonStatus(pathname, body, headers = {}) {
+  try {
+    return (await fetch(`${BASE_URL}${pathname}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers, 'Connection': 'close' },
+      body: JSON.stringify(body),
+      redirect: 'manual',
+    })).status;
+  } catch (error) {
+    throw new Error(localTransportDiagnostic('POST', pathname, error));
+  }
+}
+
+async function createDisposableIdentity(label, { anonymous = false } = {}) {
+  const endpoint = anonymous ? 'accounts:signUp' : 'accounts:signUp';
+  const body = anonymous
+    ? { returnSecureToken: true }
+    : { email: `${FIXTURES.runId}-${label}@phase2.test`, password, returnSecureToken: true };
+  const response = await fetch(`http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/${endpoint}?key=phase2`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Connection': 'close' }, body: JSON.stringify(body),
+  });
+  const payload = await response.json();
+  if (response.status !== 200) throw new Error(`Disposable identity ${label} creation returned ${response.status}.`);
+  return payload;
+}
+
+async function deleteDisposableIdentity(idToken) {
+  const response = await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:delete?key=phase2', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Connection': 'close' }, body: JSON.stringify({ idToken }),
+  });
+  if (response.status !== 200) throw new Error(`Disposable identity cleanup returned ${response.status}.`);
+}
+
+async function createSessionCookie(idToken) {
+  const response = await fetch(`${BASE_URL}/api/auth/session`, {
+    method: 'POST', headers: { Authorization: `Bearer ${idToken}` }, redirect: 'manual',
+  });
+  if (response.status !== 200) throw new Error(`Session creation returned ${response.status}.`);
+  const cookies = typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : [response.headers.get('set-cookie') || ''];
+  return cookies.map(value => value.split(';')[0]).filter(Boolean).join('; ');
+}
+
+async function deleteFirestoreMatches(collectionId, fieldPath, stringValue, authorizationToken) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(authorizationToken ? { Authorization: `Bearer ${authorizationToken}` } : {}),
+  };
+  const response = await fetch(`http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ structuredQuery: {
+      from: [{ collectionId }],
+      where: { fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: { stringValue } } },
+    } }),
+  });
+  if (response.status !== 200) throw new Error(`Firestore cleanup query returned ${response.status}.`);
+  const rows = await response.json();
+  let deleted = 0;
+  for (const row of rows) {
+    const name = row.document?.name;
+    if (!name) continue;
+    const deletion = await fetch(`http://127.0.0.1:8080/v1/${name}`, { method: 'DELETE', headers });
+    if (![200, 404].includes(deletion.status)) throw new Error(`Firestore cleanup delete returned ${deletion.status}.`);
+    deleted += 1;
+  }
+  return deleted;
+}
+
+export function selectLatestOob(payload, email, requestType, excludedCodes = new Set()) {
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const match = [...(payload?.oobCodes || [])].reverse().find(item =>
+    String(item.email || '').trim().toLowerCase() === normalizedEmail &&
+    item.requestType === requestType &&
+    typeof item.oobCode === 'string' && !excludedCodes.has(item.oobCode));
+  const actionLabel = requestType === 'PASSWORD_RESET' ? 'password-reset' : requestType;
+  if (!match) throw new Error(`No ${actionLabel} OOB was found for the selected synthetic recipient.`);
+  return match;
+}
+
+export function selectLatestPasswordResetOob(payload, email, excludedCodes = new Set()) {
+  return selectLatestOob(payload, email, 'PASSWORD_RESET', excludedCodes);
+}
+
+async function readEmulatorOobCodes() {
+  const response = await fetch(`http://127.0.0.1:9099/emulator/v1/projects/${PROJECT_ID}/oobCodes`, { headers: { 'Connection': 'close' } });
+  if (response.status !== 200) throw new Error(`Auth emulator OOB query returned ${response.status}.`);
+  return response.json();
+}
+
+async function redeemPasswordReset(oobCode, newPassword) {
+  return fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:resetPassword?key=phase2', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+    body: JSON.stringify({ oobCode, newPassword }),
+  });
+}
+
+async function redeemEmailVerification(oobCode) {
+  return fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:update?key=phase2', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Connection': 'close' }, body: JSON.stringify({ oobCode }),
+  });
+}
+
+export function withRoleClaim(claims, role) {
+  return { ...(claims || {}), role };
+}
+
+export function fixtureDocumentByAlias(catalog, alias) {
+  const document = catalog.firestoreDocuments.find(value => value.data.fixtureAlias === alias);
+  if (!document) throw new Error(`Missing fixture document for alias ${alias}.`);
+  return document;
+}
+
+export async function deleteOwnedAdminApp(app) {
+  await app.delete();
+}
+
+export async function waitForIdTokenRevocationBoundary(idToken, {
+  now = () => Date.now(),
+  wait = delay => new Promise(resolve => setTimeout(resolve, delay)),
+} = {}) {
+  let authTime;
+  try {
+    authTime = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString('utf8')).auth_time;
+  } catch {
+    authTime = undefined;
+  }
+  if (!Number.isInteger(authTime)) throw new Error('ID token does not contain a valid auth_time.');
+  const boundary = (authTime + 1) * 1000;
+  while (now() < boundary) await wait(boundary - now());
+}
+
+async function withEmulatorAuthAdmin(callback) {
+  const adminModule = await import('firebase-admin');
+  const admin = adminModule.default || adminModule;
+  const appName = `task3-auth-admin-${process.pid}-${Date.now()}`;
+  const app = admin.initializeApp({ projectId: PROJECT_ID }, appName);
+  try {
+    return await callback(admin.auth(app), admin.firestore(app));
+  } finally {
+    await deleteOwnedAdminApp(app);
+  }
+}
+
+async function runCertificationApiScenario(scenarioId) {
+  if (scenarioId === 'marketing-legal-contact-beta-coach-referral') {
+    expectEqual(await publicJsonStatus('/api/public/submissions', { type: 'contact', values: {} }), 400, 'marketing malformed submission denial');
+    expectEqual(await publicJsonStatus('/api/referrals/coach', { website: 'bot-filled' }), 200, 'marketing honeypot neutral response');
+    const suffix = FIXTURES.runId.slice(-24);
+    const contactEmail = `contact-${suffix}@phase2.test`;
+    const betaEmail = `beta-${suffix}@phase2.test`;
+    const coachEmail = `coach-${suffix}@phase2.test`;
+    const cleanupIdentity = await signIn('qa-superadmin');
+    expectEqual(cleanupIdentity.status, 200, 'marketing cleanup authorization');
+    try {
+      expectEqual(await publicJsonStatus('/api/public/submissions', {
+        type: 'contact', name: 'Oversize', email: contactEmail, organization: 'Task 3', inquiry: 'x'.repeat(25_000),
+      }, { 'x-forwarded-for': `oversize-${suffix}` }), 413, 'marketing oversized payload denial');
+      const rateStatuses = [];
+      for (let index = 0; index < 7; index += 1) {
+        rateStatuses.push(await publicJsonStatus('/api/public/submissions', { type: 'contact', values: {} }, {
+          'x-forwarded-for': `rate-${suffix}`,
+        }));
+      }
+      expectEqual(rateStatuses.slice(0, 6).every(status => status === 400), true, 'marketing rate-limit prethreshold validation');
+      expectEqual(rateStatuses[6], 429, 'marketing rate-limit enforcement');
+      expectEqual(await publicJsonStatus('/api/public/submissions', {
+        type: 'contact', name: 'Certification Visitor', email: contactEmail, organization: 'Task 3', inquiry: 'Local isolated inquiry', status: 'attacker-controlled',
+      }, { 'x-forwarded-for': `contact-${suffix}` }), 200, 'marketing local contact persistence');
+      expectEqual(await publicJsonStatus('/api/public/submissions', {
+        type: 'beta', fullName: 'Certification Coach', email: betaEmail, role: 'coach', organization: 'Task 3',
+        sports: 'Soccer', scale: 'One team', currentTools: 'Local test', frustrations: 'Synthetic local-only case',
+        mustHave: 'Safe deterministic flow', whyBeta: 'Certification', tested_before: 'no', frequency: 'Weekly',
+        address_street: '1 Test Way', address_city: 'Edmonton', address_state: 'AB', address_zip: 'T0T0T0',
+      }, { 'x-forwarded-for': `beta-${suffix}` }), 200, 'marketing local beta persistence');
+      const referralBody = {
+        parentName: 'Certification Parent', coachName: 'Certification Coach', coachEmail,
+        submissionId: `task3-${suffix}-referral`, website: '',
+      };
+      const referral = await apiJsonResult('/api/referrals/coach', null, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `referral-${suffix}` },
+        body: JSON.stringify(referralBody),
+      });
+      expectEqual(referral.status, 200, 'marketing accepted local mail transport');
+      expectEqual(referral.body?.localTransport, true, 'marketing no-outbound memory sink');
+      const duplicate = await apiJsonResult('/api/referrals/coach', null, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `referral-${suffix}` },
+        body: JSON.stringify(referralBody),
+      });
+      expectEqual(duplicate.status, 200, 'marketing duplicate referral idempotency');
+      expectEqual(duplicate.body?.duplicate, true, 'marketing duplicate delivered once marker');
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const contactRows = await firestoreAdmin.collection('contact_inquiries').where('email', '==', contactEmail).get();
+        const betaRows = await firestoreAdmin.collection('beta_applications').where('email', '==', betaEmail).get();
+        const referralRows = await firestoreAdmin.collection('parent_coach_referrals').where('coachEmail', '==', coachEmail).get();
+        expectEqual(contactRows.size, 1, 'marketing contact stored once');
+        expectEqual(contactRows.docs[0]?.data().status, 'new', 'marketing contact privileged status ignored');
+        expectEqual(betaRows.size, 1, 'marketing beta stored once');
+        expectEqual(referralRows.size, 1, 'marketing referral stored once');
+        expectEqual(referralRows.docs[0]?.data().deliveryStatus, 'accepted_local_sink', 'marketing local sink persistence');
+      });
+    } finally {
+      const deleted = await deleteFirestoreMatches('contact_inquiries', 'email', contactEmail, cleanupIdentity.body.idToken) +
+        await deleteFirestoreMatches('beta_applications', 'email', betaEmail, cleanupIdentity.body.idToken) +
+        await deleteFirestoreMatches('parent_coach_referrals', 'coachEmail', coachEmail, 'owner');
+      expectEqual(deleted, 3, 'marketing exact dynamic cleanup');
+    }
+    return;
+  }
+
+  if (scenarioId === 'authentication-email-password-login') {
+    const tokens = new Map();
+    for (const alias of FIXTURES.activeAliases) {
+      const result = await signIn(alias);
+      expectEqual(result.status, 200, `${alias} certification sign-in`);
+      expectEqual(await apiStatus('/api/auth/session', result.body.idToken, { method: 'POST' }), 200, `${alias} certification session`);
+      tokens.set(alias, result.body.idToken);
+    }
+    const unknown = await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=phase2', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+      body: JSON.stringify({ email: `unknown-${FIXTURES.runId}@phase2.test`, password, returnSecureToken: true }),
+    });
+    expectEqual(unknown.status, 400, 'unknown identity generic Auth denial');
+    const wrong = await signIn('qa-coach-owner-a', 'definitely-wrong');
+    expectEqual(wrong.status, 400, 'wrong password generic Auth denial');
+    for (const blockedIdentity of BLOCKED_AUDIT_PLAN.api) {
+      const result = await signIn(blockedIdentity.alias);
+      expectEqual(result.status, blockedIdentity.signInStatus, `${blockedIdentity.alias} certification blocked state`);
+      if (result.status === 200) tokens.set(blockedIdentity.alias, result.body.idToken);
+    }
+    for (const target of buildIdentityApiRequestPlan(FIXTURES)) {
+      expectEqual(await apiStatus(target.pathname, tokens.get(target.alias)), target.expectedStatus, `scoped tenant request ${target.alias} ${target.expectedStatus}`);
+    }
+    return;
+  }
+
+  if (scenarioId === 'authentication-password-reset') {
+    expectEqual(await publicJsonStatus('/api/email/reset-password', { email: 'invalid' }), 400, 'reset invalid email denial');
+    expectEqual(await publicJsonStatus('/api/email/reset-password', { email: `unknown-${FIXTURES.runId}@phase2.test` }), 200, 'reset unknown email nonenumeration');
+    const knownStatus = await publicJsonStatus('/api/email/reset-password', { email: emailForAlias('qa-coach-owner-b') });
+    expectEqual(knownStatus, 200, 'reset known local no-outbound neutral response after OOB generation');
+    const targetEmail = emailForAlias('qa-coach-owner-b');
+    const resetCode = selectLatestPasswordResetOob(await readEmulatorOobCodes(), targetEmail);
+    registerSensitiveValue(resetCode.oobCode);
+    expectEqual(resetCode.email.toLowerCase(), targetEmail.toLowerCase(), 'reset OOB recipient binding');
+    expectEqual((await redeemPasswordReset(`${resetCode.oobCode}modified`, 'replacement-password-a')).status, 400, 'reset modified OOB denial');
+    const replacementPassword = `replacement-${FIXTURES.runId}`;
+    expectEqual((await redeemPasswordReset(resetCode.oobCode, replacementPassword)).status, 200, 'reset valid OOB redemption');
+    expectEqual((await redeemPasswordReset(resetCode.oobCode, 'reused-password')).status, 400, 'reset reused OOB denial');
+    expectEqual((await signIn('qa-coach-owner-b')).status, 400, 'reset old password denial');
+    expectEqual((await signIn('qa-coach-owner-b', replacementPassword)).status, 200, 'reset new password acceptance');
+
+    const restoreStatus = await publicJsonStatus('/api/email/reset-password', { email: targetEmail });
+    expectEqual(restoreStatus, 200, 'reset restoration OOB generation with neutral response');
+    const restoreCode = selectLatestPasswordResetOob(await readEmulatorOobCodes(), targetEmail, new Set([resetCode.oobCode]));
+    registerSensitiveValue(restoreCode.oobCode);
+    expectEqual((await redeemPasswordReset(restoreCode.oobCode, password)).status, 200, 'reset exact password restoration');
+    expectEqual((await signIn('qa-coach-owner-b')).status, 200, 'reset restored identity sign-in');
+    return;
+  }
+
+  if (scenarioId === 'authentication-logout-revocation-multi-tab') {
+    const active = await signIn('qa-coach-owner-a');
+    expectEqual(active.status, 200, 'logout active identity sign-in');
+    const cookie = await createSessionCookie(active.body.idToken);
+    expectEqual((await fetch(`${BASE_URL}/api/auth/session`, { headers: { Cookie: cookie } })).status, 200, 'logout active session cookie accepted');
+    const cleared = await fetch(`${BASE_URL}/api/auth/session`, {
+      method: 'DELETE', headers: { Origin: BASE_URL, Cookie: cookie }, redirect: 'manual',
+    });
+    expectEqual(cleared.status, 200, 'logout cookie clear response');
+    expectEqual((await fetch(`${BASE_URL}/api/auth/session`)).status, 401, 'logout direct API denial without cookie');
+    await withEmulatorAuthAdmin(async authAdmin => {
+      await waitForIdTokenRevocationBoundary(active.body.idToken);
+      await authAdmin.revokeRefreshTokens(identityByAlias.get('qa-coach-owner-a').uid);
+    });
+    expectEqual((await fetch(`${BASE_URL}/api/auth/session`, { headers: { Cookie: cookie } })).status, 401, 'logout emulator-admin revoked cookie denial');
+    const refreshed = await signIn('qa-coach-owner-a');
+    expectEqual(refreshed.status, 200, 'logout post-revocation fresh sign-in');
+    expectEqual(await apiStatus('/api/auth/session', refreshed.body.idToken, { method: 'POST' }), 200, 'logout post-revocation fresh session');
+    return;
+  }
+
+  if (scenarioId === 'account-lifecycle-disable-delete-cancel-purge') {
+    const trusted = await signIn('qa-superadmin');
+    expectEqual(trusted.status, 200, 'lifecycle trusted administrator sign-in');
+    const ownerBlocked = identityByAlias.get('qa-owner-delete-blocked');
+    expectEqual(await apiStatus(`/api/admin/users/${ownerBlocked.uid}/account-control`, trusted.body.idToken, {
+      method: 'POST', body: JSON.stringify({ action: 'schedule_deletion', confirmationEmail: ownerBlocked.email }),
+    }), 409, 'lifecycle owner guard');
+    expectEqual(await apiStatus(`/api/admin/users/${identityByAlias.get('qa-pro-owner').uid}/account-control`, trusted.body.idToken, {
+      method: 'POST', body: JSON.stringify({ action: 'schedule_deletion', confirmationEmail: emailForAlias('qa-pro-owner') }),
+    }), 409, 'lifecycle subscription guard');
+    expectEqual(await apiStatus('/api/admin/users/not%2Fa-valid-id/account-control', trusted.body.idToken, {
+      method: 'POST', body: JSON.stringify({ action: 'suspend' }),
+    }), 400, 'lifecycle malformed target denial');
+    const target = identityByAlias.get('qa-team-member');
+    const targetPath = `/api/admin/users/${target.uid}/account-control`;
+    const targetAction = (action, confirmationEmail) => apiStatus(targetPath, trusted.body.idToken, {
+      method: 'POST', body: JSON.stringify({ action, ...(confirmationEmail ? { confirmationEmail } : {}) }),
+    });
+    const nonAdmin = await signIn('qa-parent-a');
+    expectEqual(await apiStatus(targetPath, nonAdmin.body.idToken, {
+      method: 'POST', body: JSON.stringify({ action: 'suspend' }),
+    }), 403, 'lifecycle cross-user nonadmin denial');
+    try {
+      expectEqual(await targetAction('cancel_deletion'), 409, 'lifecycle invalid cancel transition denial');
+      expectEqual(await targetAction('schedule_deletion', target.email), 200, 'lifecycle schedule deletion');
+      expectEqual(await targetAction('schedule_deletion', target.email), 200, 'lifecycle idempotent schedule retry');
+      expectEqual(await targetAction('suspend'), 409, 'lifecycle suspend while pending denial');
+      expectEqual((await signIn('qa-team-member')).status, 400, 'lifecycle pending identity sign-in denial');
+      expectEqual(await targetAction('cancel_deletion'), 200, 'lifecycle cancel deletion');
+      expectEqual((await signIn('qa-team-member')).status, 200, 'lifecycle canceled identity sign-in restored');
+      expectEqual(await targetAction('suspend'), 200, 'lifecycle suspend account');
+      expectEqual((await signIn('qa-team-member')).status, 400, 'lifecycle suspended identity sign-in denial');
+      expectEqual(await targetAction('restore'), 200, 'lifecycle restore account');
+      expectEqual((await signIn('qa-team-member')).status, 200, 'lifecycle restored identity sign-in');
+    } finally {
+      await targetAction('cancel_deletion').catch(() => undefined);
+      await targetAction('restore').catch(() => undefined);
+      const deletedLogs = await deleteFirestoreMatches('adminAuditLogs', 'targetUid', target.uid, 'owner');
+      expectEqual(deletedLogs >= 4, true, 'lifecycle exact audit-log cleanup');
+    }
+    return;
+  }
+
+  if (scenarioId === 'signup-onboarding-coach-admin-league-parent-adult-player-signup') {
+    for (const role of ['coach', 'admin', 'league', 'parent', 'adult-player']) {
+      const identity = await createDisposableIdentity(`signup-${role}`);
+      try {
+        expectEqual(await apiStatus('/api/auth/session', identity.idToken, { method: 'POST' }), 403, `signup ${role} preverification gate`);
+      } finally {
+        await deleteDisposableIdentity(identity.idToken);
+      }
+    }
+    const duplicate = await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=phase2', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+      body: JSON.stringify({ email: emailForAlias('qa-coach-owner-a'), password, returnSecureToken: true }),
+    });
+    expectEqual(duplicate.status, 400, 'signup duplicate email denial');
+    return;
+  }
+
+  if (scenarioId === 'signup-onboarding-youth-invitation-signup') {
+    expectEqual((await fetch(`${BASE_URL}/api/invites/youth?token=modified`)).status, 404, 'youth modified token denial');
+    expectEqual(await publicJsonStatus('/api/invites/youth', { token: 'modified', password: 'long-enough' }), 401, 'youth unauthenticated invite mutation denial');
+    const parent = await signIn('qa-parent-a');
+    const otherParent = await signIn('qa-parent-b');
+    const player = fixtureDocumentByAlias(FIXTURES, 'qa-player-youth-c');
+    const youthEmail = emailForAlias('qa-youth-invite');
+    expectEqual(await apiStatus('/api/invites/youth', otherParent.body.idToken, {
+      method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: youthEmail }),
+    }), 404, 'youth cross-guardian target nondisclosure');
+    await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+      const playerRef = firestoreAdmin.collection('players').doc(player.data.id);
+      const originalPlayer = (await playerRef.get()).data();
+      const createdInviteTokens = new Set();
+      let conflictingIdentity = null;
+      let createdYouthUid = null;
+      try {
+        const expired = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: youthEmail }),
+        });
+        expectEqual(expired.status, 200, 'youth fresh expiring invitation create');
+        createdInviteTokens.add(registerSensitiveValue(expired.body.token));
+        await firestoreAdmin.collection('invites').doc(expired.body.token).update({ expiresAt: new Date(Date.now() - 1000).toISOString() });
+        expectEqual((await fetch(`${BASE_URL}/api/invites/youth?token=${expired.body.token}`)).status, 404, 'youth expired token denial');
+
+        const activeInvite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({ action: 'create', childId: player.data.id, email: youthEmail }),
+        });
+        expectEqual(activeInvite.status, 200, 'youth fresh invitation create');
+        createdInviteTokens.add(registerSensitiveValue(activeInvite.body.token));
+        const lookup = await apiJsonResult(`/api/invites/youth?token=${activeInvite.body.token}`, null);
+        expectEqual(lookup.status, 200, 'youth invitation lookup');
+        expectEqual(
+          Object.keys(lookup.body.invite).sort().join(','),
+          'childFirstName,childLastName',
+          'youth invite PII allowlist',
+        );
+
+        conflictingIdentity = await createDisposableIdentity('youth-wrong-account');
+        await authAdmin.updateUser(conflictingIdentity.localId, { email: youthEmail });
+        expectEqual((await apiJsonResult('/api/invites/youth', null, {
+          method: 'PUT', body: JSON.stringify({ token: activeInvite.body.token, password }),
+        })).status, 409, 'youth wrong-existing-account denial');
+        await deleteDisposableIdentity(conflictingIdentity.idToken);
+        conflictingIdentity = null;
+
+        expectEqual((await apiJsonResult('/api/invites/youth', null, {
+          method: 'PUT', body: JSON.stringify({ token: activeInvite.body.token, password }),
+        })).status, 200, 'youth invitation redemption');
+        expectEqual((await apiJsonResult('/api/invites/youth', null, {
+          method: 'PUT', body: JSON.stringify({ token: activeInvite.body.token, password }),
+        })).status, 404, 'youth reused invitation denial');
+        const youth = await signIn('qa-youth-invite');
+        expectEqual(youth.status, 200, 'youth activated identity sign-in');
+        createdYouthUid = youth.body.localId;
+        expectEqual(await apiStatus('/api/auth/session', youth.body.idToken, { method: 'POST' }), 200, 'youth activated session');
+        const linkedPlayer = (await playerRef.get()).data();
+        expectEqual(linkedPlayer.userId, createdYouthUid, 'youth player login linkage');
+        expectEqual(linkedPlayer.hasLogin, true, 'youth player login state');
+        const youthProfile = await firestoreAdmin.collection('users').doc(createdYouthUid).get();
+        expectEqual(youthProfile.data()?.linkedPlayerId, player.data.id, 'youth profile player linkage');
+      } finally {
+        if (conflictingIdentity) await authAdmin.deleteUser(conflictingIdentity.localId).catch(() => undefined);
+        if (!createdYouthUid) {
+          const user = await authAdmin.getUserByEmail(youthEmail).catch(() => null);
+          createdYouthUid = user?.uid || null;
+        }
+        if (createdYouthUid) {
+          await firestoreAdmin.collection('users').doc(createdYouthUid).delete().catch(() => undefined);
+          await authAdmin.deleteUser(createdYouthUid).catch(() => undefined);
+        }
+        for (const token of createdInviteTokens) {
+          await firestoreAdmin.collection('invites').doc(token).delete().catch(() => undefined);
+        }
+        if (originalPlayer) await playerRef.set(originalPlayer);
+      }
+    });
+    return;
+  }
+
+  if (scenarioId === 'signup-onboarding-missing-profile-onboarding') {
+    await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+      const email = `${FIXTURES.runId}-missing-profile@phase2.test`;
+      const account = await authAdmin.createUser({ email, password, emailVerified: true, displayName: 'Missing Profile' });
+      const userRef = firestoreAdmin.collection('users').doc(account.uid);
+      try {
+        const missing = await signInEmail(email);
+        expectEqual(missing.status, 200, 'missing profile verified identity sign-in');
+        expectEqual(await apiStatus('/api/auth/session', missing.body.idToken, { method: 'POST' }), 200, 'missing profile session establishment');
+        expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'missing profile privileged API denial');
+        await userRef.set({ id: account.uid, email, fullName: 'Partial Profile' });
+        expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'partial profile privileged API denial');
+        await userRef.set({ role: 'adult_player', notificationsEnabled: false }, { merge: true });
+        const persisted = await userRef.get();
+        expectEqual(persisted.data()?.role, 'adult_player', 'missing profile role completion persistence');
+        expectEqual(await apiStatus('/api/admin/newsletter', missing.body.idToken), 403, 'completed nonadmin profile API denial');
+      } finally {
+        await userRef.delete().catch(() => undefined);
+        await firestoreAdmin.collection('players').doc(`p_${account.uid}`).delete().catch(() => undefined);
+        await authAdmin.deleteUser(account.uid).catch(() => undefined);
+      }
+    });
+    return;
+  }
+
+  if (scenarioId === 'demo-seed-use-exit-expiry-cleanup') {
+    const contexts = [await createDisposableIdentity('demo-a', { anonymous: true }), await createDisposableIdentity('demo-b', { anonymous: true })];
+    const remaining = new Set(contexts.map(identity => identity.idToken));
+    try {
+      for (const [index, identity] of contexts.entries()) {
+        expectEqual(await apiStatus('/api/demo/seed', identity.idToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) }), 200, `demo context ${index + 1} seed`);
+        expectEqual(await apiStatus('/api/demo/seed', identity.idToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) }), 200, `demo context ${index + 1} duplicate seed idempotency`);
+        expectEqual(await apiStatus('/api/stripe/connect/status?userId=other&teamId=other', identity.idToken), 403, `demo context ${index + 1} billing denial`);
+      }
+      const registered = await signIn('qa-coach-owner-a');
+      expectEqual(await apiStatus('/api/demo/seed', registered.body.idToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) }), 403, 'demo registered-account exclusion');
+      expectEqual(await apiStatus('/api/demo/seed', contexts[0].idToken, { method: 'POST', body: JSON.stringify({ planId: 'invalid' }) }), 400, 'demo invalid plan denial');
+      for (const [index, identity] of contexts.entries()) {
+        const cookie = await createSessionCookie(identity.idToken);
+        const response = await fetch(`${BASE_URL}/api/demo/exit`, {
+          method: 'POST', headers: { Origin: BASE_URL, Cookie: cookie }, redirect: 'manual',
+        });
+        expectEqual(response.status, 204, `demo context ${index + 1} exact exit cleanup`);
+        expectEqual((await fetch(`${BASE_URL}/api/auth/session`, { headers: { Cookie: cookie } })).status, 401, `demo context ${index + 1} exited session denial`);
+        if (index === 0) {
+          const peerCookie = await createSessionCookie(contexts[1].idToken);
+          expectEqual((await fetch(`${BASE_URL}/api/auth/session`, { headers: { Cookie: peerCookie } })).status, 200, 'demo peer-context exit isolation');
+        }
+        remaining.delete(identity.idToken);
+      }
+      expectEqual((await fetch(`${BASE_URL}/api/demo/exit`, {
+        method: 'POST', headers: { Origin: 'http://127.0.0.1:65535' }, redirect: 'manual',
+      })).status, 403, 'demo cross-origin exit denial');
+    } finally {
+      for (const idToken of remaining) await deleteDisposableIdentity(idToken).catch(() => undefined);
+    }
+    return;
+  }
+
+  if (scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
+    for (const alias of FIXTURES.activeAliases) {
+      const result = await signIn(alias);
+      expectEqual(result.status, 200, `${alias} dashboard policy sign-in`);
+      expectEqual(await apiStatus('/api/auth/session', result.body.idToken, { method: 'POST' }), 200, `${alias} dashboard policy session`);
+    }
+    return;
+  }
+
+  if (scenarioId === 'administration-access-and-user-directory') {
+    const trusted = await signIn('qa-superadmin');
+    expectEqual(await apiStatus('/api/admin/newsletter', trusted.body.idToken), 200, 'admin trusted directory access');
+    for (const alias of FIXTURES.activeAliases.filter(alias => alias !== 'qa-superadmin')) {
+      const result = await signIn(alias);
+      expectEqual(await apiStatus('/api/admin/newsletter', result.body.idToken), 403, `admin non-SA denial ${alias}`);
+    }
+    expectEqual(await apiStatus('/api/admin/users/not%2Fvalid/account-control', trusted.body.idToken, {
+      method: 'POST', body: JSON.stringify({ action: 'suspend' }),
+    }), 400, 'admin malformed target denial');
+    await withEmulatorAuthAdmin(async authAdmin => {
+      const superadmin = identityByAlias.get('qa-superadmin');
+      const user = await authAdmin.getUser(superadmin.uid);
+      const originalClaims = { ...(user.customClaims || {}) };
+      try {
+        await authAdmin.setCustomUserClaims(superadmin.uid, withRoleClaim(originalClaims, 'coach'));
+        await waitForIdTokenRevocationBoundary(trusted.body.idToken);
+        await authAdmin.revokeRefreshTokens(superadmin.uid);
+        expectEqual(await apiStatus('/api/admin/newsletter', trusted.body.idToken), 401, 'admin revoked already-issued token denial');
+        const revoked = await signIn('qa-superadmin');
+        expectEqual(revoked.status, 200, 'admin revoked-claim identity can refresh');
+        expectEqual(await apiStatus('/api/admin/newsletter', revoked.body.idToken), 403, 'admin refreshed token denied after claim revoke');
+      } finally {
+        await authAdmin.setCustomUserClaims(superadmin.uid, originalClaims);
+        await authAdmin.revokeRefreshTokens(superadmin.uid);
+      }
+      const restored = await signIn('qa-superadmin');
+      expectEqual(restored.status, 200, 'admin restored-claim identity refresh');
+      expectEqual(await apiStatus('/api/admin/newsletter', restored.body.idToken), 200, 'admin restored claim access');
+    });
+  }
+}
+
 function expectEqual(actual, expected, label) {
+  const assertion = { label, expected: String(expected), observed: String(actual), capturedAt: new Date().toISOString() };
+  if (activeCertificationScenario) activeCertificationAssertions.push(assertion);
   if (actual !== expected) throw new Error(`${label}: expected ${expected}, received ${actual}.`);
   console.log(`PASS ${label}: ${actual}`);
 }
 
 function cli(session, args, { sensitive = false } = {}) {
+  shutdownState.throwIfRequested();
   const output = run(playwrightCli, [`-s=${session}`, '--raw', ...args], sensitive ? { stdio: 'pipe' } : {});
+  shutdownState.throwIfRequested();
   return output;
 }
 
 function browserSessionName(label) {
-  return `${BROWSER_SESSION_PREFIX}-${label}`;
+  const session = `${BROWSER_SESSION_PREFIX}-${label}`;
+  ownedBrowserSessions.add(session);
+  syncBrowserSessionRegistry();
+  return session;
+}
+
+function syncBrowserSessionRegistry() {
+  if (!browserSessionRegistry) return;
+  mkdirSync(path.dirname(browserSessionRegistry), { recursive: true });
+  writeFileSync(
+    browserSessionRegistry,
+    ownedBrowserSessions.size > 0 ? `${[...ownedBrowserSessions].join('\n')}\n` : '',
+    { mode: 0o600 },
+  );
+}
+
+export async function closeOwnedBrowserSessions(sessions, closeSession, maxAttempts = 2) {
+  let pending = [...sessions].reverse();
+  const failures = new Map();
+  for (let attempt = 1; attempt <= maxAttempts && pending.length > 0; attempt += 1) {
+    const retry = [];
+    for (const session of pending) {
+      try {
+        await closeSession(session);
+        sessions.delete(session);
+        failures.delete(session);
+      } catch (error) {
+        failures.set(session, error);
+        retry.push(session);
+      }
+    }
+    pending = retry;
+  }
+  if (sessions.size > 0) {
+    throw new Error(`Failed to close ${sessions.size} owned browser session(s) after ${maxAttempts} attempts.`);
+  }
+}
+
+export async function closeBrowserSessionsCreatedAfter(sessions, baseline, closeSession, maxAttempts = 2) {
+  const created = new Set([...sessions].filter(session => !baseline.has(session)));
+  const createdNames = [...created];
+  try {
+    await closeOwnedBrowserSessions(created, closeSession, maxAttempts);
+  } finally {
+    for (const session of createdNames) {
+      if (!created.has(session)) sessions.delete(session);
+    }
+  }
+}
+
+export async function closeOneOwnedBrowserSession(sessions, session, closeSession, maxAttempts = 2) {
+  if (!sessions.has(session)) throw new Error('Cannot close a browser session that is not owned by this audit.');
+  const exact = new Set([session]);
+  await closeOwnedBrowserSessions(exact, closeSession, maxAttempts);
+  sessions.delete(session);
+}
+
+async function closeBrowserSessionNow(session) {
+  await closeOneOwnedBrowserSession(ownedBrowserSessions, session, async exactSession => {
+    run(playwrightCli, [`-s=${exactSession}`, '--raw', 'close'], { stdio: 'pipe' });
+  });
+  syncBrowserSessionRegistry();
 }
 
 async function browserLogin(alias, expectedPath, sessionLabel = alias) {
+  return browserLoginCredentials(emailForAlias(alias), password, expectedPath, sessionLabel, alias);
+}
+
+async function browserLoginCredentials(email, suppliedPassword, expectedPath, sessionLabel, diagnosticLabel = 'disposable identity') {
   const session = browserSessionName(sessionLabel);
   cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
   const code = `async page => {
     const consoleErrors = [];
     const failedResponses = [];
-    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
-    page.on('pageerror', error => consoleErrors.push(error.stack || error.message));
-    page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
-    await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias(alias))});
-    await page.locator('#password').fill(${JSON.stringify(password)});
-    await page.getByRole('button', { name: 'Sign In' }).click();
-    await page.waitForTimeout(5000);
-    return {
-      url: page.url(),
-      loginFailed: await page.getByText('Login Failed', { exact: true }).count(),
-      sessionFailed: await page.getByText('Session Setup Failed', { exact: true }).count(),
-    };
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.stack || error.message);
+    const onResponse = response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.getByLabel('Email Address').fill(${JSON.stringify(email)});
+      await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
+      await page.getByRole('button', { name: 'Sign In' }).click();
+      await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(expectedPath)}, { timeout: 20000 });
+      return {
+        url: page.url(),
+        loginFailed: await page.getByText('Login Failed', { exact: true }).count(),
+        sessionFailed: await page.getByText('Session Setup Failed', { exact: true }).count(),
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
   }`;
   const result = JSON.parse(cli(session, ['run-code', code], { sensitive: true }));
   result.pathname = new URL(result.url).pathname;
@@ -271,18 +1065,17 @@ async function browserLogin(alias, expectedPath, sessionLabel = alias) {
     const consoleErrors = cli(session, ['console', 'error']);
     const requests = cli(session, ['requests']);
     throw new Error(
-      `${alias} remained at ${result.pathname}; loginFailed=${result.loginFailed}, ` +
+      `${diagnosticLabel} remained at ${result.pathname}; loginFailed=${result.loginFailed}, ` +
       `sessionFailed=${result.sessionFailed}.\n${consoleErrors}\n${requests}`,
     );
   }
-  expectEqual(result.pathname, expectedPath, `${alias} login destination`);
+  expectEqual(result.pathname, expectedPath, `${diagnosticLabel} login destination`);
   return session;
 }
 
 function browserPath(session, pathname) {
   const code = `async page => {
     await page.goto(${JSON.stringify(`${BASE_URL}${pathname}`)});
-    await page.waitForTimeout(1200);
     return { url: page.url() };
   }`;
   return new URL(JSON.parse(cli(session, ['run-code', code])).url).pathname;
@@ -292,18 +1085,27 @@ function browserRouteAudit(session, pathname, { mobile = false } = {}) {
   const code = `async page => {
     const consoleErrors = [];
     const failedResponses = [];
-    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
-    page.on('pageerror', error => consoleErrors.push(error.message));
-    page.on('response', response => { if (response.status() >= 500) failedResponses.push(response.url()); });
-    await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
-    await page.goto(${JSON.stringify(`${BASE_URL}${pathname}`)});
-    await page.waitForTimeout(1800);
-    return {
-      pathname: await page.evaluate(() => window.location.pathname),
-      fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-      consoleErrors,
-      failedResponses,
-    };
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => { if (response.status() >= 500) failedResponses.push(response.url()); };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+      await page.goto(${JSON.stringify(`${BASE_URL}${pathname}`)});
+      await page.waitForFunction(() => document.readyState === 'complete', null, { timeout: 15000 });
+      return {
+        pathname: await page.evaluate(() => window.location.pathname),
+        fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors,
+        failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
 }
@@ -314,21 +1116,30 @@ function browserLoginFailureAudit(alias, suppliedPassword, expectedPath, expecte
   const code = `async page => {
     const consoleErrors = [];
     const failedResponses = [];
-    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
-    page.on('pageerror', error => consoleErrors.push(error.stack || error.message));
-    page.on('response', response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); });
-    await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias(alias))});
-    await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
-    await page.getByRole('button', { name: 'Sign In' }).click();
-    await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true })
-      .waitFor({ state: 'visible', timeout: 15000 });
-    return {
-      pathname: await page.evaluate(() => window.location.pathname),
-      expectedTitle: await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true }).count(),
-      body: (await page.locator('body').innerText()).slice(0, 500),
-      consoleErrors,
-      failedResponses,
-    };
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.stack || error.message);
+    const onResponse = response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), url: response.url() }); };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias(alias))});
+      await page.locator('#password').fill(${JSON.stringify(suppliedPassword)});
+      await page.getByRole('button', { name: 'Sign In' }).click();
+      await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true })
+        .waitFor({ state: 'visible', timeout: 15000 });
+      return {
+        pathname: await page.evaluate(() => window.location.pathname),
+        expectedTitle: await page.getByText(${JSON.stringify(expectedTitle)}, { exact: true }).count(),
+        body: (await page.locator('body').innerText()).slice(0, 500),
+        consoleErrors,
+        failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
   }`;
   const result = JSON.parse(cli(session, ['run-code', code], { sensitive: true }));
   expectEqual(result.pathname, expectedPath, `${sessionLabel} path`);
@@ -358,16 +1169,26 @@ function browserLogoutAudit(session) {
   const code = `async page => {
     const peer = await page.context().newPage();
     await peer.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
-    await peer.waitForTimeout(1200);
+    await peer.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 15000 });
     await page.goto(${JSON.stringify(`${BASE_URL}/settings`)});
     await page.getByRole('button', { name: 'Sign Out' }).click();
     await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
     await peer.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
     const sessionResponse = await page.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)});
+    await page.goBack();
+    await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
+    await page.reload();
+    await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
+    const direct = await page.context().newPage();
+    await direct.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+    await direct.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 10000 });
+    await page.setViewportSize({ width: 390, height: 844 });
     return {
       primaryPath: await page.evaluate(() => window.location.pathname),
       peerPath: await peer.evaluate(() => window.location.pathname),
+      directPath: await direct.evaluate(() => window.location.pathname),
       sessionStatus: sessionResponse.status(),
+      fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     };
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
@@ -420,6 +1241,578 @@ function runIdentityStateBrowserAudit() {
   browserLoginFailureAudit('qa-suspended', password, '/login', 'Login Failed', 'disabled login uses generic failure copy');
   browserLoginFailureAudit('qa-unverified', password, '/verify-email', 'Verify Your Email', 'unverified login reaches verification gate');
   browserLoginFailureAudit('qa-pending-delete', password, '/login', 'Session Setup Failed', 'deletion-pending login is denied');
+}
+
+function openAnonymousBrowser(label) {
+  const session = browserSessionName(`${label}-${process.pid}`);
+  cli(session, ['open', `${BASE_URL}/`, '--browser', 'chrome']);
+  return session;
+}
+
+function assertTwoViewportRoutes(session, cases, label) {
+  assertSurfaceSweep(browserSurfaceSweep(session, cases), `${label} desktop`);
+  assertSurfaceSweep(browserSurfaceSweep(session, cases, { mobile: true }), `${label} mobile`);
+}
+
+async function runAllActiveBrowserLandings(labelPrefix, { retainAliases = [] } = {}) {
+  const sessions = new Map();
+  const retained = new Set(retainAliases);
+  for (const alias of FIXTURES.activeAliases) {
+    const fixture = identityByAlias.get(alias);
+    const session = await browserLogin(alias, fixture.expectedLanding, `${labelPrefix}-${alias}-${process.pid}`);
+    if (retained.has(alias)) sessions.set(alias, session);
+    else await closeBrowserSessionNow(session);
+  }
+  return sessions;
+}
+
+function browserLandingPersistenceAudit(session, expectedPath, label) {
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() < 400) return;
+      const responseUrl = response.url();
+      const localPath = responseUrl.startsWith(${JSON.stringify(BASE_URL)})
+        ? responseUrl.slice(${JSON.stringify(BASE_URL)}.length).split('?')[0]
+        : 'external-origin';
+      failedResponses.push({ status: response.status(), path: localPath });
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload();
+      await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(expectedPath)}, { timeout: 15000 });
+      const peer = await page.context().newPage();
+      await peer.goto(${JSON.stringify(`${BASE_URL}${expectedPath}`)});
+      await peer.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(expectedPath)}, { timeout: 15000 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/login`)});
+      await page.goBack();
+      await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(expectedPath)}, { timeout: 15000 });
+      const output = {
+        pathname: await page.evaluate(() => window.location.pathname),
+        peerPathname: await peer.evaluate(() => window.location.pathname),
+        fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors,
+        failedResponses,
+      };
+      await peer.close();
+      return output;
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`]));
+  expectEqual(result.pathname, expectedPath, `${label} refresh and Back destination`);
+  expectEqual(result.peerPathname, expectedPath, `${label} new-tab destination`);
+  expectEqual(result.fits, true, `${label} mobile containment`);
+  if (result.consoleErrors.length > 0) console.log(`${label} persistence console diagnostic: ${JSON.stringify(result.consoleErrors)}`);
+  if (result.failedResponses.length > 0) console.log(`${label} persistence failed response diagnostic: ${JSON.stringify(result.failedResponses)}`);
+  expectEqual(result.consoleErrors.length, 0, `${label} persistence console errors`);
+  expectEqual(result.failedResponses.length, 0, `${label} persistence failed responses`);
+}
+
+function browserLoginDoubleSubmitAudit() {
+  const session = openAnonymousBrowser('cert-login-delayed-double-submit');
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    let sessionRequests = 0;
+    const routePattern = '**/api/auth/session';
+    const delayed = async route => {
+      sessionRequests += 1;
+      await page.waitForTimeout(750);
+      await route.continue();
+    };
+    await page.route(routePattern, delayed);
+    try {
+      await page.goto(${JSON.stringify(`${BASE_URL}/login`)});
+      await page.getByLabel('Email Address').fill(${JSON.stringify(emailForAlias('qa-coach-owner-a'))});
+      await page.locator('#password').fill(${JSON.stringify(password)});
+      const submit = page.getByRole('button', { name: 'Sign In' });
+      const bounds = await submit.boundingBox();
+      if (!bounds) throw new Error('Sign-in button has no clickable bounds.');
+      await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { clickCount: 2, delay: 20 });
+      await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 20000 });
+      return { pathname: await page.evaluate(() => window.location.pathname), sessionRequests };
+    } finally {
+      await page.unroute(routePattern, delayed);
+    }
+  }`], { sensitive: true }));
+  expectEqual(result.pathname, '/dashboard', 'login delayed response eventual destination');
+  expectEqual(result.sessionRequests, 1, 'login double-submit single session request');
+}
+
+function browserResetRequestAudit(email, expectedText, label, { mobile = false, expectedFailureStatus = null } = {}) {
+  const session = openAnonymousBrowser(`cert-reset-${label}`);
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => { if (response.status() >= 400) failedResponses.push({ status: response.status(), pathname: new URL(response.url()).pathname }); };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+      await page.goto(${JSON.stringify(`${BASE_URL}/login`)});
+      await page.getByRole('button', { name: 'Forgot?' }).click();
+      await page.getByLabel('Account Email').fill(${JSON.stringify(email)});
+      await page.getByRole('button', { name: 'Send Reset Link' }).click();
+      await page.getByText(${JSON.stringify(expectedText)}, { exact: false }).first().waitFor({ state: 'visible', timeout: 15000 });
+      return {
+        pathname: await page.evaluate(() => window.location.pathname),
+        fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors,
+        failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`], { sensitive: true }));
+  expectEqual(result.pathname, '/login', `${label} reset request path`);
+  expectEqual(result.fits, true, `${label} reset request viewport`);
+  const expectedFailures = expectedFailureStatus === null ? [] : [{ status: expectedFailureStatus, pathname: '/api/email/reset-password' }];
+  expectEqual(JSON.stringify(result.failedResponses), JSON.stringify(expectedFailures), `${label} reset request expected failure response`);
+  const expectedResourceConsoleErrors = expectedFailureStatus === null ? 0 : 1;
+  expectEqual(result.consoleErrors.length, expectedResourceConsoleErrors, `${label} reset request allowlisted console errors`);
+}
+
+async function runCertificationBrowserScenario(scenarioId) {
+  if (scenarioId === 'marketing-legal-contact-beta-coach-referral') {
+    const session = openAnonymousBrowser('cert-marketing');
+    assertTwoViewportRoutes(session, ['/', '/privacy', '/terms', '/safety', '/beta', '/refer-a-coach'].map(pathname => ({ path: pathname, expected: pathname })), 'marketing public surfaces');
+    const coachEmail = `browser-coach-${FIXTURES.runId.slice(-20)}@phase2.test`;
+    const form = JSON.parse(cli(session, ['run-code', `async page => {
+      const consoleErrors = [];
+      const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+      const onPageError = error => consoleErrors.push(error.message);
+      page.on('console', onConsole);
+      page.on('pageerror', onPageError);
+      try {
+        await page.goto(${JSON.stringify(`${BASE_URL}/refer-a-coach`)});
+        await page.setViewportSize({ width: 390, height: 844 });
+        const submit = page.getByRole('button', { name: 'Send to coach' });
+        const initiallyDisabled = await submit.isDisabled();
+        await page.getByLabel('Your name').fill('Browser Parent');
+        await page.getByLabel("Coach’s name").fill('Browser Coach');
+        await page.getByLabel("Coach’s email").fill(${JSON.stringify(coachEmail)});
+        await submit.click();
+        await page.getByText('Referral sent', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+        return {
+          initiallyDisabled,
+          fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+          consoleErrors,
+        };
+      } finally {
+        page.off('console', onConsole);
+        page.off('pageerror', onPageError);
+      }
+    }`], { sensitive: true }));
+    expectEqual(form.initiallyDisabled, true, 'marketing visible empty-form validation');
+    expectEqual(form.fits, true, 'marketing submitted form mobile containment');
+    expectEqual(form.consoleErrors.length, 0, 'marketing submitted form console errors');
+    expectEqual(
+      await deleteFirestoreMatches('parent_coach_referrals', 'coachEmail', coachEmail, 'owner'),
+      1,
+      'marketing browser referral exact cleanup',
+    );
+    return;
+  }
+  if (scenarioId === 'authentication-email-password-login') {
+    const sessions = await runAllActiveBrowserLandings('cert-login', { retainAliases: ['qa-coach-owner-a'] });
+    browserLandingPersistenceAudit(sessions.get('qa-coach-owner-a'), '/dashboard', 'login owner session');
+    expectEqual(browserProtectedReturnAudit(), '/facilities', 'login protected deep-link return');
+    browserLoginDoubleSubmitAudit();
+    runIdentityStateBrowserAudit();
+    const session = openAnonymousBrowser('cert-login-responsive');
+    assertTwoViewportRoutes(session, [{ path: '/login', expected: '/login' }], 'login surface');
+    return;
+  }
+  if (scenarioId === 'authentication-logout-revocation-multi-tab') {
+    const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `cert-logout-${process.pid}`);
+    const logout = browserLogoutAudit(owner);
+    expectEqual(logout.primaryPath, '/login', 'cert logout primary denial');
+    expectEqual(logout.peerPath, '/login', 'cert logout peer denial');
+    expectEqual(logout.directPath, '/login', 'cert logout Back reload direct denial');
+    expectEqual(logout.sessionStatus, 401, 'cert logout session denial');
+    expectEqual(logout.fits, true, 'cert logout mobile containment');
+    expectEqual(browserPath(owner, '/dashboard'), '/login', 'cert logout direct route denial');
+    return;
+  }
+  if (scenarioId === 'authentication-password-reset') {
+    browserResetRequestAudit(`unknown-${FIXTURES.runId}@phase2.test`, 'A reset link was sent', 'unknown', { mobile: true });
+    browserResetRequestAudit(emailForAlias('qa-coach-owner-b'), 'A reset link was sent', 'known-provider-block');
+    return;
+  }
+  if (scenarioId === 'account-lifecycle-disable-delete-cancel-purge') {
+    const trusted = await browserLogin('qa-superadmin', '/admin', `cert-lifecycle-admin-${process.pid}`);
+    const owner = await browserLogin('qa-owner-delete-blocked', '/dashboard', `cert-lifecycle-owner-${process.pid}`);
+    assertTwoViewportRoutes(trusted, [{ path: '/admin', expected: '/admin' }], 'lifecycle admin surface');
+    assertTwoViewportRoutes(owner, [{ path: '/settings', expected: '/settings' }], 'lifecycle settings surface');
+    return;
+  }
+  if (scenarioId === 'signup-onboarding-coach-admin-league-parent-adult-player-signup') {
+    const surface = openAnonymousBrowser('cert-signup-surface');
+    assertTwoViewportRoutes(surface, [{ path: '/signup', expected: '/signup' }], 'five-role signup surface');
+    const roles = [
+      { id: 'self', name: 'Adult Athlete', expectedRole: 'adult_player', destination: '/teams/join' },
+      { id: 'child', name: 'Parent / Guardian', expectedRole: 'parent', destination: '/family' },
+      { id: 'coach', name: 'Coach / Team Manager', expectedRole: 'coach', destination: '/teams/new', plan: 'Starter' },
+      { id: 'school_ad', name: 'School / Athletic Director', expectedRole: 'admin', destination: '/pricing' },
+      { id: 'league_creator', name: 'League / Tournament Organizer', expectedRole: 'league_creator', destination: '/competition', plan: 'Starter' },
+    ];
+    await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+      for (const [index, role] of roles.entries()) {
+        const email = `${FIXTURES.runId}-ui-${role.id}@phase2.test`;
+        let createdUser = null;
+        const session = openAnonymousBrowser(`cert-signup-${role.id}`);
+        try {
+          const signup = JSON.parse(cli(session, ['run-code', `async page => {
+            await page.goto(${JSON.stringify(`${BASE_URL}/signup`)});
+            await page.setViewportSize(${index % 2 === 0 ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+            await page.getByRole('radio', { name: new RegExp(${JSON.stringify(`^${role.name}`)}) }).click();
+            await page.getByRole('button', { name: 'Continue' }).click();
+            ${role.id === 'self' || role.id === 'child'
+              ? "await page.getByRole('button', { name: 'Continue' }).click();"
+              : role.plan
+                ? `await page.getByText(${JSON.stringify(role.plan)}, { exact: true }).click(); await page.getByRole('button', { name: 'Continue' }).click();`
+                : "await page.getByRole('button', { name: 'Continue' }).click();"}
+            await page.getByLabel('Full Name').fill(${JSON.stringify(`Certification ${role.name}`)});
+            await page.getByLabel('Email Address').fill(${JSON.stringify(email)});
+            await page.locator('#signup-password').fill(${JSON.stringify(password)});
+            await page.getByLabel('Confirm Password').fill(${JSON.stringify(password)});
+            const submit = page.getByRole('button', { name: /Create Account/ });
+            ${index === 0 ? `const bounds = await submit.boundingBox();
+            if (!bounds) throw new Error('Create-account button has no clickable bounds.');
+            await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { clickCount: 2, delay: 20 });` : 'await submit.click();'}
+            await page.waitForFunction(() => window.location.pathname === '/verify-email', null, { timeout: 20000 });
+            return {
+              pathname: await page.evaluate(() => window.location.pathname),
+              fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            };
+          }`], { sensitive: true }));
+          expectEqual(signup.pathname, '/verify-email', `signup ${role.id} UI verification gate`);
+          expectEqual(signup.fits, true, `signup ${role.id} viewport containment`);
+          createdUser = await authAdmin.getUserByEmail(email);
+          expectEqual(createdUser.emailVerified, false, `signup ${role.id} preverification state`);
+          const preverification = await signInEmail(email);
+          expectEqual(await apiStatus('/api/auth/session', preverification.body.idToken, { method: 'POST' }), 403, `signup ${role.id} preverification session denial`);
+          const action = selectLatestOob(await readEmulatorOobCodes(), email, 'VERIFY_EMAIL');
+          registerSensitiveValue(action.oobCode);
+          expectEqual((await redeemEmailVerification(action.oobCode)).status, 200, `signup ${role.id} in-memory verification action`);
+          const landing = JSON.parse(cli(session, ['run-code', `async page => {
+            await page.getByRole('button', { name: "I've Verified My Email" }).click();
+            await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(role.destination)}, { timeout: 20000 });
+            await page.reload();
+            await page.waitForFunction(expected => window.location.pathname === expected, ${JSON.stringify(role.destination)}, { timeout: 20000 });
+            return {
+              pathname: await page.evaluate(() => window.location.pathname),
+              fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            };
+          }`], { sensitive: true }));
+          expectEqual(landing.pathname, role.destination, `signup ${role.id} verified destination and reload`);
+          expectEqual(landing.fits, true, `signup ${role.id} verified viewport containment`);
+          const profile = await firestoreAdmin.collection('users').doc(createdUser.uid).get();
+          expectEqual(profile.data()?.role, role.expectedRole, `signup ${role.id} persisted role`);
+          const refreshed = await authAdmin.getUser(createdUser.uid);
+          expectEqual(refreshed.customClaims?.role === 'superadmin', false, `signup ${role.id} privileged claim denial`);
+        } finally {
+          if (!createdUser) createdUser = await authAdmin.getUserByEmail(email).catch(() => null);
+          if (createdUser) {
+            await firestoreAdmin.collection('users').doc(createdUser.uid).delete().catch(() => undefined);
+            await firestoreAdmin.collection('players').doc(`p_${createdUser.uid}`).delete().catch(() => undefined);
+            await authAdmin.deleteUser(createdUser.uid).catch(() => undefined);
+          }
+          await closeBrowserSessionNow(session);
+        }
+      }
+    });
+    return;
+  }
+  if (scenarioId === 'signup-onboarding-youth-invitation-signup') {
+    const invalid = openAnonymousBrowser('cert-youth-invalid');
+    assertTwoViewportRoutes(invalid, [{ path: '/signup/youth', expected: '/signup/youth' }], 'youth invalid invitation surface');
+    await closeBrowserSessionNow(invalid);
+    const parent = await signIn('qa-parent-a');
+    const player = fixtureDocumentByAlias(FIXTURES, 'qa-player-youth-c');
+    const youthEmail = emailForAlias('qa-youth-invite');
+    await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+      const playerRef = firestoreAdmin.collection('players').doc(player.data.id);
+      const originalPlayer = (await playerRef.get()).data();
+      let inviteToken = null;
+      let createdUid = null;
+      try {
+        const invite = await apiJsonResult('/api/invites/youth', parent.body.idToken, {
+          method: 'POST', body: JSON.stringify({
+            action: 'create', childId: player.data.id,
+            email: youthEmail,
+          }),
+        });
+        expectEqual(invite.status, 200, 'youth browser invitation setup');
+        inviteToken = registerSensitiveValue(invite.body.token);
+        const session = browserSessionName(`cert-youth-active-${process.pid}`);
+        cli(session, ['open', `${BASE_URL}/signup/youth?token=${inviteToken}`, '--browser', 'chrome'], { sensitive: true });
+        const active = JSON.parse(cli(session, ['run-code', `async page => {
+          await page.getByText('Create Your Password', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+          const observations = [];
+          for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+            await page.setViewportSize(viewport);
+            observations.push(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+          }
+          const passwordField = page.locator('#youth-password');
+          const confirmation = page.locator('#youth-password-confirmation');
+          await passwordField.fill('short');
+          await confirmation.fill('different');
+          const shortPasswordInvalid = await passwordField.evaluate(element => !element.checkValidity());
+          await passwordField.fill(${JSON.stringify(password)});
+          await confirmation.fill('different-password');
+          await page.getByRole('button', { name: 'Activate My Account' }).click();
+          await page.getByText('Passwords do not match', { exact: true }).first().waitFor({ state: 'visible', timeout: 10000 });
+          await confirmation.fill(${JSON.stringify(password)});
+          const submit = page.getByRole('button', { name: 'Activate My Account' });
+          const bounds = await submit.boundingBox();
+          if (!bounds) throw new Error('Youth activation button has no clickable bounds.');
+          await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2, { clickCount: 2, delay: 20 });
+          await page.getByText('Account Created!', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+          await page.reload();
+          await page.getByText('Invitation Error', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+          return {
+            observations,
+            pathname: await page.evaluate(() => window.location.pathname),
+            shortPasswordInvalid,
+            consumedReloadDenied: await page.getByText('Invitation Error', { exact: true }).count(),
+          };
+        }`], { sensitive: true }));
+        expectEqual(active.pathname, '/signup/youth', 'youth active invitation browser path');
+        expectEqual(active.observations.every(Boolean), true, 'youth active invitation two viewports');
+        expectEqual(active.shortPasswordInvalid, true, 'youth browser short password validation');
+        expectEqual(active.consumedReloadDenied, 1, 'youth browser consumed invitation reload denial');
+        const youth = await authAdmin.getUserByEmail(youthEmail);
+        createdUid = youth.uid;
+        const linkedPlayer = (await playerRef.get()).data();
+        expectEqual(linkedPlayer.userId, createdUid, 'youth browser exact player linkage');
+      } finally {
+        if (!createdUid) createdUid = (await authAdmin.getUserByEmail(youthEmail).catch(() => null))?.uid || null;
+        if (createdUid) {
+          await firestoreAdmin.collection('users').doc(createdUid).delete().catch(() => undefined);
+          await authAdmin.deleteUser(createdUid).catch(() => undefined);
+        }
+        if (inviteToken) await firestoreAdmin.collection('invites').doc(inviteToken).delete().catch(() => undefined);
+        if (originalPlayer) await playerRef.set(originalPlayer);
+        expectEqual((await playerRef.get()).data()?.userId, originalPlayer?.userId, 'youth browser exact cleanup');
+      }
+    });
+    return;
+  }
+  if (scenarioId === 'signup-onboarding-missing-profile-onboarding') {
+    const anonymous = openAnonymousBrowser('cert-onboarding-anonymous');
+    assertTwoViewportRoutes(anonymous, [{ path: '/onboarding', expected: '/login' }], 'missing-profile unauthenticated denial');
+    await withEmulatorAuthAdmin(async (authAdmin, firestoreAdmin) => {
+      const email = `${FIXTURES.runId}-missing-profile-browser@phase2.test`;
+      const account = await authAdmin.createUser({ email, password, emailVerified: true, displayName: 'Browser Missing Profile' });
+      try {
+        const session = await browserLoginCredentials(email, password, '/onboarding', `cert-onboarding-missing-${process.pid}`, 'missing-profile browser identity');
+        const completion = JSON.parse(cli(session, ['run-code', `async page => {
+          const clientErrors = [];
+          const onConsole = message => { if (message.type() === 'error') clientErrors.push(message.text()); };
+          const onPageError = error => clientErrors.push(error.stack || error.message);
+          page.on('console', onConsole);
+          page.on('pageerror', onPageError);
+          try {
+          await page.setViewportSize({ width: 390, height: 844 });
+          const profileFormReady = await page.locator('#onboarding-name')
+            .waitFor({ state: 'visible', timeout: 20000 }).then(() => true, () => false);
+          if (!profileFormReady) {
+            return {
+              profileFormReady,
+              pathname: await page.evaluate(() => window.location.pathname),
+              body: (await page.locator('body').innerText()).slice(0, 500),
+              clientErrors,
+            };
+          }
+          await page.locator('#onboarding-name').fill('Browser Completed Profile');
+          await page.locator('#role-coach').click();
+          const button = page.getByRole('button', { name: 'Continue' });
+          await button.click();
+          await page.waitForFunction(() => window.location.pathname === '/teams/new', null, { timeout: 15000 });
+          await page.reload();
+          await page.waitForFunction(() => window.location.pathname === '/teams/new', null, { timeout: 15000 });
+          return {
+            pathname: await page.evaluate(() => window.location.pathname),
+            fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+          };
+          } finally {
+            page.off('console', onConsole);
+            page.off('pageerror', onPageError);
+          }
+        }`], { sensitive: true }));
+        if (completion.profileFormReady === false) {
+          const bufferedConsole = cli(session, ['console', 'error']);
+          throw new Error(`Missing-profile onboarding form did not become ready at ${completion.pathname}: ${completion.body}; clientErrors=${JSON.stringify(completion.clientErrors)}; console=${bufferedConsole}`);
+        }
+        expectEqual(completion.pathname, '/teams/new', 'missing profile completed-role landing and reload');
+        expectEqual(completion.fits, true, 'missing profile mobile completion containment');
+        const profile = await firestoreAdmin.collection('users').doc(account.uid).get();
+        expectEqual(profile.data()?.role, 'coach', 'missing profile browser completion persistence');
+      } finally {
+        await firestoreAdmin.collection('users').doc(account.uid).delete().catch(() => undefined);
+        await firestoreAdmin.collection('players').doc(`p_${account.uid}`).delete().catch(() => undefined);
+        await authAdmin.deleteUser(account.uid).catch(() => undefined);
+      }
+    });
+    return;
+  }
+  if (scenarioId === 'demo-seed-use-exit-expiry-cleanup') {
+    const session = openAnonymousBrowser('cert-demo');
+    assertTwoViewportRoutes(session, [{ path: '/', expected: '/' }], 'demo public surfaces');
+    const journey = JSON.parse(cli(session, ['run-code', `async page => {
+      const consoleErrors = [];
+      const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+      const onPageError = error => consoleErrors.push(error.message);
+      page.on('console', onConsole);
+      page.on('pageerror', onPageError);
+      try {
+        await page.goto(${JSON.stringify(`${BASE_URL}/`)});
+        await page.getByRole('button', { name: 'Experience Demo' }).click();
+        await page.getByRole('button', { name: /Open Starter Plan Demo/ }).click();
+        await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
+        await page.getByText('Demo Mode', { exact: true }).waitFor({ state: 'visible', timeout: 30000 });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.reload();
+        await page.waitForFunction(() => window.location.pathname === '/dashboard', null, { timeout: 30000 });
+        const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        const exitResponse = page.waitForResponse(response =>
+          response.url().endsWith('/api/demo/exit') && response.request().method() === 'POST',
+          { timeout: 15000 },
+        );
+        await page.getByRole('button', { name: 'Open account menu' }).click();
+        await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+        const exit = await exitResponse;
+        await page.waitForFunction(() => window.location.pathname === '/login', null, { timeout: 15000 });
+        return {
+          exitStatus: exit.status(),
+          pathname: await page.evaluate(() => window.location.pathname),
+          fits,
+          consoleErrors,
+        };
+      } finally {
+        page.off('console', onConsole);
+        page.off('pageerror', onPageError);
+      }
+    }`]));
+    expectEqual(journey.exitStatus, 204, 'demo browser exact exit cleanup');
+    expectEqual(journey.pathname, '/login', 'demo browser exited direct-route denial');
+    expectEqual(journey.fits, true, 'demo browser mobile containment');
+    if (journey.consoleErrors.length > 0) console.log(`demo browser console diagnostic: ${JSON.stringify(journey.consoleErrors)}`);
+    expectEqual(journey.consoleErrors.length, 0, 'demo browser console errors');
+    return;
+  }
+  if (scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
+    for (const alias of FIXTURES.activeAliases) {
+      const fixture = identityByAlias.get(alias);
+      let session;
+      try {
+        session = await browserLogin(alias, fixture.expectedLanding, `cert-dashboard-${alias}-${process.pid}`);
+        browserLandingPersistenceAudit(session, fixture.expectedLanding, `dashboard ${alias}`);
+      } finally {
+        if (session) await closeBrowserSessionNow(session);
+      }
+    }
+    await runSurfaceSmokeAudit({ remainderOnly: true });
+    return;
+  }
+  if (scenarioId === 'administration-access-and-user-directory') {
+    const trusted = await browserLogin('qa-superadmin', '/admin', `cert-admin-trusted-${process.pid}`);
+    const fake = await browserLogin('qa-fake-superadmin', '/dashboard', `cert-admin-fake-${process.pid}`);
+    assertTwoViewportRoutes(trusted, [{ path: '/admin', expected: '/admin' }], 'trusted administration surface');
+    assertTwoViewportRoutes(fake, [{ path: '/admin', expected: '/dashboard' }], 'fake administration denial');
+    const directory = JSON.parse(cli(trusted, ['run-code', `async page => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.getByRole('button', { name: /Users Directory/ }).click();
+      const search = page.getByPlaceholder('Search by name, email, phone, or org...');
+      await search.waitFor({ state: 'visible', timeout: 15000 });
+      await search.fill(${JSON.stringify(emailForAlias('qa-team-member'))});
+      const target = page.getByText(${JSON.stringify(emailForAlias('qa-team-member'))}, { exact: true });
+      await target.waitFor({ state: 'visible', timeout: 15000 });
+      const targetCount = await target.count();
+      const otherCount = await page.getByText(${JSON.stringify(emailForAlias('qa-parent-a'))}, { exact: true }).count();
+      await page.getByRole('button', { name: new RegExp('Name / Email') }).click();
+      await page.getByRole('button', { name: new RegExp('Name / Email') }).click();
+      return { targetCount, otherCount, fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
+    }`]));
+    expectEqual(directory.targetCount >= 1, true, 'admin directory target search visibility');
+    expectEqual(directory.otherCount, 0, 'admin directory search isolation');
+    expectEqual(directory.fits, true, 'admin directory desktop containment');
+  }
+}
+
+async function runCertificationIdentityScenarios() {
+  const failures = [];
+  for (const scenarioId of IDENTITY_EXECUTION_ORDER.filter(id => selectedIdentityScenarios.has(id))) {
+    shutdownState.throwIfRequested();
+    const scenarioStartedAt = new Date().toISOString();
+    activeCertificationScenario = scenarioId;
+    activeCertificationAssertions = [];
+    let apiPassed = false;
+    let browserPassed = !runBrowser;
+    try {
+      await runCertificationApiScenario(scenarioId);
+      apiPassed = true;
+    } catch (error) {
+      const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId].network[0];
+      recordCertificationFailure(scenarioId, 'network', caseId, error);
+      failures.push({ scenarioId, stage: 'api' });
+    }
+    if (runBrowser) {
+      const sessionBaseline = new Set(ownedBrowserSessions);
+      try {
+        await runCertificationBrowserScenario(scenarioId);
+        browserPassed = true;
+      } catch (error) {
+        const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId].console[0];
+        recordCertificationFailure(scenarioId, 'console', caseId, error);
+        failures.push({ scenarioId, stage: 'browser' });
+      } finally {
+        try {
+          await closeBrowserSessionsCreatedAfter(ownedBrowserSessions, sessionBaseline, async session => {
+            run(playwrightCli, [`-s=${session}`, '--raw', 'close'], { stdio: 'pipe' });
+          });
+        } catch (error) {
+          const caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId].console[0];
+          recordCertificationFailure(scenarioId, 'console', caseId, error);
+          failures.push({ scenarioId, stage: 'browser-cleanup' });
+          browserPassed = false;
+        } finally {
+          syncBrowserSessionRegistry();
+        }
+      }
+    }
+    if (apiPassed) {
+      for (const dimension of DIMENSION_NAMES.filter(value => !['console', 'responsive'].includes(value))) {
+        for (const caseId of LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId][dimension]) {
+          recordCertificationCase(scenarioId, dimension, caseId, `${activeCertificationAssertions.length} actual local assertions passed`, 'locally safe contract completed', scenarioStartedAt);
+        }
+      }
+    }
+    if (browserPassed && runBrowser) {
+      for (const dimension of ['console', 'responsive']) {
+        for (const caseId of LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId][dimension]) {
+          recordCertificationCase(scenarioId, dimension, caseId, `${activeCertificationAssertions.length} actual local assertions including real-browser checks passed`, 'locally safe browser contract completed', scenarioStartedAt);
+        }
+      }
+    }
+    activeCertificationScenario = null;
+    activeCertificationAssertions = [];
+  }
+  if (failures.length > 0) throw new Error(`${failures.length} selected certification scenario stage(s) failed with structured case evidence.`);
 }
 
 function browserSurfaceSweep(session, cases, { mobile = false } = {}) {
@@ -1720,7 +3113,16 @@ async function cleanup() {
   if (cleanupStarted) return;
   cleanupStarted = true;
   if (runBrowser && playwrightCli) {
-    spawnSync(playwrightCli, ['close-all'], { cwd: process.cwd(), env, stdio: 'ignore' });
+    try {
+      await closeOwnedBrowserSessions(ownedBrowserSessions, async session => {
+        run(playwrightCli, [`-s=${session}`, '--raw', 'close'], { stdio: 'pipe' });
+      });
+    } catch (error) {
+      console.error(redact(error instanceof Error ? error.message : error));
+      process.exitCode = 1;
+    } finally {
+      syncBrowserSessionRegistry();
+    }
   }
   if (fixturesSeeded) {
     try {
@@ -1730,20 +3132,43 @@ async function cleanup() {
         true,
         'post-cleanup Storage object is absent',
       );
+      const cleanupCounts = {
+        deleted: FIXTURES.identities.length + FIXTURES.firestoreDocuments.length +
+          FIXTURES.storageObjects.filter(object => object.lifecycle !== 'delete-after-write' && object.payloadGenerator !== 'exact-size-v1').length,
+        restored: 0,
+        retainedAuditRecords: 0,
+      };
+      mkdirSync(path.join(certificationArtifactDir, 'cleanup'), { recursive: true });
+      writeFileSync(path.join(certificationArtifactDir, 'cleanup/fixture-cleanup-marker.json'), `${JSON.stringify({
+        runId: FIXTURES.runId,
+        state: 'OBSERVED',
+        counts: cleanupCounts,
+        capturedAt: new Date().toISOString(),
+      }, null, 2)}\n`, { mode: 0o600 });
+      emitCertificationEvent({
+        type: 'cleanup',
+        cleanupId: `fixture-cleanup-${FIXTURES.runId}`,
+        selectors: [
+          `auth:${FIXTURES.cleanupSelectors.auth.uids.length}-exact-uids`,
+          `firestore:${FIXTURES.cleanupSelectors.firestore.recursiveRoots.length}-exact-roots`,
+          `storage:${FIXTURES.cleanupSelectors.storage.objectPaths.length}-exact-paths`,
+        ],
+        counts: cleanupCounts,
+        state: 'OBSERVED',
+        proof: ['cleanup/fixture-cleanup-marker.json'],
+      });
     } catch (error) {
       console.error(redact(error instanceof Error ? error.message : error));
       process.exitCode = 1;
     }
   }
-  for (const child of children.reverse()) {
-    if (!child.killed) child.kill('SIGTERM');
-  }
+  await Promise.all(children.reverse().map(child => terminateOwnedChildAndWait(child)));
 }
 
 async function main() {
   await import('node:fs/promises').then(fs => fs.mkdir(logDir, { recursive: true }));
-  process.once('SIGINT', () => cleanup().finally(() => process.exit(130)));
-  process.once('SIGTERM', () => cleanup().finally(() => process.exit(143)));
+  process.once('SIGINT', () => shutdownState.request(130));
+  process.once('SIGTERM', () => shutdownState.request(143));
 
   startProcess('npx', ['firebase', '--project', PROJECT_ID, 'emulators:start', '--only', 'auth,firestore,storage'], 'firebase.log');
   await Promise.all([waitForPort(9099), waitForPort(8080), waitForPort(9199)]);
@@ -1753,16 +3178,20 @@ async function main() {
   startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (certificationIdentity || (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly)) await runApiAudit();
-  if (runBrowser) await runBrowserAudit();
+  if (certificationIdentity) {
+    await runCertificationIdentityScenarios();
+  } else {
+    if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
+    if (runBrowser) await runBrowserAudit();
+  }
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()
     .catch(error => {
-      console.error(redact(error instanceof Error ? error.message : error));
-      process.exitCode = 1;
+      if (shutdownState.exitCode === null) console.error(redact(error instanceof Error ? error.message : error));
+      process.exitCode = shutdownState.exitCode || 1;
     })
     .finally(cleanup);
 }

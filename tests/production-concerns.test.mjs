@@ -128,10 +128,11 @@ test('anonymous cleanup retains retry evidence until every demo projection is re
   assert.doesNotMatch(cleanup, /auth\.deleteUsers\(usersToDelete\)/);
 });
 
-test('anonymous demos survive reloads and clean up abandoned sessions with the scheduler as fallback', async () => {
-  const [layout, provider, endpoint, cleanup, functions] = await Promise.all([
+test('anonymous demos survive reloads and clean up visible exits and abandoned sessions', async () => {
+  const [layout, provider, shell, endpoint, cleanup, functions] = await Promise.all([
     source('../src/app/(dashboard)/layout.tsx'),
     source('../src/firebase/provider.tsx'),
+    source('../src/components/layout/Shell.tsx'),
     source('../src/app/api/demo/exit/route.ts'),
     source('../src/lib/server-demo-cleanup.ts'),
     source('../functions/src/index.ts'),
@@ -144,8 +145,8 @@ test('anonymous demos survive reloads and clean up abandoned sessions with the s
   assert.doesNotMatch(layout, /navigator\.sendBeacon\('\/api\/demo\/exit'\)/);
   assert.match(layout, /isDemoInitializing \|\|\s+isSeedingDemo \|\|\s+!userProfile\?\.isDemo/);
   assert.match(layout, /user\?\.isAnonymous/);
-  assert.match(endpoint, /getTrustedAppOrigin/);
-  assert.match(endpoint, /origin !== getTrustedAppOrigin\(request\)/);
+  assert.match(endpoint, /isTrustedRequestOrigin/);
+  assert.match(endpoint, /!isTrustedRequestOrigin\(request\)/);
   assert.doesNotMatch(endpoint, /origin !== request\.nextUrl\.origin/);
   assert.match(endpoint, /verifySessionCookie\(sessionCookie, true\)/);
   assert.match(endpoint, /sign_in_provider !== 'anonymous'/);
@@ -153,6 +154,8 @@ test('anonymous demos survive reloads and clean up abandoned sessions with the s
   assert.match(provider, /sessionStorage\.getItem\(DEMO_START_KEY\)/);
   assert.match(provider, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(provider, /await signOut\(auth\)/);
+  assert.match(shell, /if \(hasDemoBanner\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\);\s+if \(!response\.ok\) throw new Error\('Demo cleanup failed'\);\s+\}/);
+  assert.ok(shell.indexOf("await fetch('/api/demo/exit'") < shell.indexOf('await clearBrowserSession()'));
   assert.match(cleanup, /user\.providerData\.length > 0/);
   assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);
   assert.ok(cleanup.indexOf("recursiveDelete(adminDb.collection('users').doc(uid))") < cleanup.indexOf('auth.deleteUser(uid)'));

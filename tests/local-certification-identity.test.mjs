@@ -4,105 +4,122 @@ import test from 'node:test';
 import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
 import {
   IDENTITY_EXECUTION_ORDER,
-  parseLegacyPassLabels,
+  LOCAL_IDENTITY_CASE_REQUIREMENTS,
+  parseCertificationEvents,
   runIdentityBatch,
 } from '../scripts/qa/certification/local/batches/identity.mjs';
+import { DIMENSION_NAMES } from '../scripts/qa/certification/local/evidence.mjs';
 import { selectLocalScenarios } from '../scripts/qa/certification/local/selection.mjs';
 
 const scenarios = selectLocalScenarios({ batches: ['identity'], catalog: CERTIFICATION_SCENARIOS });
+const now = '2026-09-04T18:00:00.000Z';
 
-const successfulOutput = [
-  'PASS qa-coach-owner-a active session for /dashboard: 200',
-  'PASS qa-unverified blocked session creation: 403',
-  'PASS qa-suspended blocked Auth error: USER_DISABLED',
-  'PASS pending-delete blocked session creation: 403',
-  'PASS removed member denied former team context: 403',
-  'PASS protected deep link resumes after login: /facilities',
-  'PASS logout revokes the browser session: /login',
-  'PASS second tab observes logout: /login',
-  'PASS logged-out session endpoint denial: 401',
-  'PASS profile-only fake superadmin denied admin API: 403',
-  'PASS claim-controlled superadmin reaches admin API: 200',
-  'PASS post-cleanup Storage object is absent: true',
-].join('\n');
+function eventLine(value) {
+  return `CERTIFICATION_EVENT ${JSON.stringify(value)}`;
+}
+
+function caseEvent(scenarioId, dimension, caseId = LOCAL_IDENTITY_CASE_REQUIREMENTS[scenarioId][dimension][0]) {
+  const scenario = scenarios.find(value => value.id === scenarioId);
+  return {
+    type: 'case', scenarioId, caseId, dimension,
+    role: scenario.roles.join('/'), tenantAlias: scenario.roles.includes('V') ? 'not-applicable' : 'catalog-scoped',
+    expected: `${caseId} expected local behavior`, observed: `${caseId} observed local behavior`, state: 'OBSERVED',
+    startedAt: now, completedAt: '2026-09-04T18:00:01.000Z', artifacts: [`cases/${caseId}.json`],
+  };
+}
+
+function successfulOutput(selected = scenarios) {
+  const events = [];
+  for (const scenario of selected) {
+    for (const dimension of DIMENSION_NAMES) {
+      for (const caseId of LOCAL_IDENTITY_CASE_REQUIREMENTS[scenario.id][dimension]) {
+        events.push(caseEvent(scenario.id, dimension, caseId));
+      }
+    }
+  }
+  events.push({
+    type: 'cleanup', cleanupId: 'shared-fixture-cleanup',
+    selectors: ['auth:23-exact-uids', 'firestore:81-exact-roots', 'storage:7-exact-paths'],
+    counts: { deleted: 250, restored: 0, retainedAuditRecords: 0 }, state: 'OBSERVED',
+    proof: ['cleanup/shared-fixture-cleanup.json'],
+  });
+  return events.map(eventLine).join('\n');
+}
 
 function context(overrides = {}) {
   return {
-    runId: 'final-cert-t3-identity-a1',
-    runSuffix: 't3-identity-a1',
-    browserEnabled: true,
+    runId: 'final-cert-t3-identity-a1', runSuffix: 't3-identity-a1', browserEnabled: true,
     commit: '0123456789abcdef0123456789abcdef01234567',
-    runLegacyIdentityAudit: async () => ({ code: 0, stdout: successfulOutput, stderr: '' }),
-    now: (() => {
-      let second = 0;
-      return () => `2026-09-04T18:00:${String(second++).padStart(2, '0')}.000Z`;
-    })(),
+    runLegacyIdentityAudit: async () => ({ code: 0, stdout: successfulOutput(), stderr: '', startedAt: now, completedAt: '2026-09-04T18:02:00.000Z' }),
+    now: () => now,
     ...overrides,
   };
 }
 
 test('identity execution order keeps blocked-state checks before lifecycle mutations and purge last', () => {
-  assert.ok(IDENTITY_EXECUTION_ORDER.indexOf('authentication-email-password-login') <
-    IDENTITY_EXECUTION_ORDER.indexOf('account-lifecycle-disable-delete-cancel-purge'));
+  assert.ok(IDENTITY_EXECUTION_ORDER.indexOf('authentication-email-password-login') < IDENTITY_EXECUTION_ORDER.indexOf('account-lifecycle-disable-delete-cancel-purge'));
   assert.equal(IDENTITY_EXECUTION_ORDER.at(-1), 'account-lifecycle-disable-delete-cancel-purge');
   assert.deepEqual(new Set(IDENTITY_EXECUTION_ORDER), new Set(scenarios.map(scenario => scenario.id)));
-  assert.ok(Object.isFrozen(IDENTITY_EXECUTION_ORDER));
 });
 
-test('legacy PASS parsing retains labels only and discards diagnostic payload text', () => {
-  const labels = parseLegacyPassLabels(`${successfulOutput}\npassword=do-not-retain\ntoken=do-not-retain`);
-  assert.equal(labels.has('logout revokes the browser session'), true);
-  assert.equal(labels.has('password=do-not-retain'), false);
-  assert.equal(labels.has('token=do-not-retain'), false);
+test('every exact Task 3 scenario declares locally executable cases for all seven dimensions', () => {
+  assert.deepEqual(Object.keys(LOCAL_IDENTITY_CASE_REQUIREMENTS), scenarios.map(scenario => scenario.id));
+  for (const scenario of scenarios) {
+    assert.deepEqual(Object.keys(LOCAL_IDENTITY_CASE_REQUIREMENTS[scenario.id]), DIMENSION_NAMES);
+    for (const dimension of DIMENSION_NAMES) assert.ok(LOCAL_IDENTITY_CASE_REQUIREMENTS[scenario.id][dimension].length > 0);
+  }
+  assert.ok(Object.isFrozen(LOCAL_IDENTITY_CASE_REQUIREMENTS));
 });
 
-test('identity batch returns each selected frozen ID exactly once in catalog order', async () => {
-  const results = await runIdentityBatch(context(), scenarios);
-  assert.deepEqual(results.map(result => result.scenarioId), scenarios.map(scenario => scenario.id));
-  assert.equal(new Set(results.map(result => result.scenarioId)).size, 11);
-  assert.equal(results.every(result => result.outcome !== 'PASS'), true);
-  assert.equal(results.every(result => result.environment === 'local-emulator'), true);
+test('structured event parsing retains provenance and rejects non-event diagnostics', () => {
+  const event = caseEvent('authentication-email-password-login', 'negativePath');
+  assert.deepEqual(parseCertificationEvents(`${eventLine(event)}\npassword=discard\nPASS generic: true`), [event]);
 });
 
-test('successful compatibility assertions map only supported local dimensions', async () => {
-  const results = await runIdentityBatch(context(), scenarios);
-  const login = results.find(result => result.scenarioId === 'authentication-email-password-login');
-  const logout = results.find(result => result.scenarioId === 'authentication-logout-revocation-multi-tab');
-  const signup = results.find(result => result.scenarioId.startsWith('signup-onboarding-coach'));
-  assert.equal(login.dimensions.permission.state, 'OBSERVED');
-  assert.equal(login.dimensions.negativePath.state, 'NOT_OBSERVED');
-  assert.equal(login.dimensions.responsive.state, 'NOT_OBSERVED');
-  assert.equal(logout.dimensions.happyPath.state, 'OBSERVED');
-  assert.equal(logout.dimensions.network.state, 'OBSERVED');
-  assert.equal(logout.dimensions.negativePath.state, 'NOT_OBSERVED');
-  assert.equal(signup.dimensions.happyPath.state, 'NOT_OBSERVED');
+test('identity batch dispatches only selected scenarios and records complete structured local dimensions', async () => {
+  const selected = scenarios.filter(scenario => ['authentication-password-reset', 'signup-onboarding-youth-invitation-signup'].includes(scenario.id));
+  const calls = [];
+  const result = await runIdentityBatch(context({
+    runLegacyIdentityAudit: async selectedIds => {
+      calls.push(selectedIds);
+      return { code: 0, stdout: successfulOutput(selected), stderr: '', startedAt: now, completedAt: '2026-09-04T18:02:00.000Z' };
+    },
+  }), selected);
+  assert.deepEqual(calls, [[
+    'signup-onboarding-youth-invitation-signup',
+    'authentication-password-reset',
+  ]]);
+  assert.deepEqual(result.results.map(value => value.scenarioId), selected.map(scenario => scenario.id));
+  assert.equal(result.results.every(value => DIMENSION_NAMES.every(name => value.dimensions[name].state === 'OBSERVED')), true);
+  assert.equal(result.results.every(value => value.outcome === 'BLOCKED_PRECONDITION'), true);
+  assert.equal(result.results.every(value => value.cases.every(item => item.role !== 'catalog alias')), true);
+  assert.equal(result.runErrors.length, 0);
 });
 
-test('mailbox, hosted persistence, and background ownership remain explicit blockers', async () => {
-  const results = await runIdentityBatch(context(), scenarios);
-  const reset = results.find(result => result.scenarioId === 'authentication-password-reset');
-  const lifecycle = results.find(result => result.scenarioId === 'account-lifecycle-disable-delete-cancel-purge');
-  const demo = results.find(result => result.scenarioId === 'demo-seed-use-exit-expiry-cleanup');
-  assert.match(reset.externalRequirements.join(' '), /approved QA mailbox/);
-  assert.match(reset.externalRequirements.join(' '), /exact staging revision/);
-  assert.equal(lifecycle.cleanup.owner, 'background-batch');
-  assert.equal(lifecycle.cleanup.state, 'BLOCKED_PRECONDITION');
-  assert.match(lifecycle.externalRequirements.join(' '), /Function\/scheduler/);
-  assert.match(demo.externalRequirements.join(' '), /scheduled cleanup adapter/);
+test('browser-disabled execution blocks browser dimensions without manufacturing observations', async () => {
+  const selected = scenarios.filter(scenario => scenario.id === 'authentication-password-reset');
+  const nonBrowserEvents = parseCertificationEvents(successfulOutput(selected)).filter(event =>
+    event.type !== 'case' || !['console', 'responsive'].includes(event.dimension));
+  const result = await runIdentityBatch(context({
+    browserEnabled: false,
+    runLegacyIdentityAudit: async () => ({ code: 0, stdout: nonBrowserEvents.map(eventLine).join('\n'), stderr: '', startedAt: now, completedAt: now }),
+  }), selected);
+  assert.equal(result.results[0].dimensions.console.state, 'BLOCKED_PRECONDITION');
+  assert.equal(result.results[0].dimensions.responsive.state, 'BLOCKED_PRECONDITION');
+  assert.match(result.results[0].dimensions.responsive.note, /browser capability/i);
 });
 
-test('single-scenario selection returns only that row without manufacturing adjacent outcomes', async () => {
-  const selected = selectLocalScenarios({ scenarioIds: ['authentication-password-reset'] });
-  const results = await runIdentityBatch(context(), selected);
-  assert.deepEqual(results.map(result => result.scenarioId), ['authentication-password-reset']);
-  assert.equal(results[0].outcome, 'BLOCKED_PRECONDITION');
-});
+test('case failure stays with its scenario and shared runner failure stays separate', async () => {
+  const selected = scenarios.slice(0, 2);
+  const failedCase = { ...caseEvent(selected[1].id, 'network'), state: 'FAIL', observed: 'sanitized HTTP mismatch', defectId: 'BUG-024' };
+  const failed = await runIdentityBatch(context({
+    runLegacyIdentityAudit: async () => ({ code: 1, stdout: eventLine(failedCase), stderr: 'sanitized child failure', startedAt: now, completedAt: now }),
+  }), selected);
+  assert.equal(failed.results[1].outcome, 'FAIL');
+  assert.equal(failed.results[0].outcome, 'BLOCKED_PRECONDITION');
+  assert.equal(failed.runErrors.length, 0);
 
-test('a compatibility-run failure records FAIL once and leaves later rows blocked', async () => {
-  const failing = context({ runLegacyIdentityAudit: async () => { throw new Error('sanitized child failure'); } });
-  const results = await runIdentityBatch(failing, scenarios);
-  assert.equal(results[0].outcome, 'FAIL');
-  assert.equal(results[0].dimensions.network.state, 'FAIL');
-  assert.equal(results.slice(1).every(result => result.outcome === 'BLOCKED_PRECONDITION'), true);
-  assert.equal(results.flatMap(result => result.cases).some(value => /password|token|cookie/i.test(JSON.stringify(value))), false);
+  const shared = await runIdentityBatch(context({ runLegacyIdentityAudit: async () => { throw new Error('shared sanitized startup failure'); } }), selected);
+  assert.equal(shared.results.every(value => value.outcome === 'BLOCKED_PRECONDITION'), true);
+  assert.deepEqual(shared.runErrors, [{ stage: 'identity-child', diagnostic: 'shared sanitized startup failure' }]);
 });

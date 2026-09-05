@@ -283,6 +283,7 @@ test('organization squad seats are explicit, capacity-bound, and organizer-contr
 
   assert.match(hub, /if \(!allocatedMembershipIds\.has\(team\.id\)\) return false/);
   assert.match(hub, /isBillableSquadSeat\(t\)/);
+  assert.match(hub, /if \(!firebaseAuth \|\| !organizationOwnerId \|\| isHubDataLoading\) return/);
   assert.match(hub, /Math\.max\(0, limit - remaining\)/);
   assert.match(hub, /allocated: payload\.allocated, remaining: payload\.remaining/);
   assert.match(hub, /Available Starter Squads/);

@@ -1,11 +1,28 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
-import { main } from '../scripts/qa/certification/run-local-batches.mjs';
+import { installCleanupSignalHandlers, main } from '../scripts/qa/certification/run-local-batches.mjs';
+
+test('runner signal handlers await exact harness cleanup and remove every listener', async () => {
+  const signalSource = new EventEmitter();
+  signalSource.exitCode = undefined;
+  let closeCalls = 0;
+  installCleanupSignalHandlers(signalSource, () => ({
+    async close() { closeCalls += 1; },
+  }));
+  signalSource.emit('SIGINT');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(closeCalls, 1);
+  assert.equal(signalSource.exitCode, 130);
+  assert.equal(signalSource.listenerCount('SIGINT'), 0);
+  assert.equal(signalSource.listenerCount('SIGTERM'), 0);
+});
 
 function dependencies(overrides = {}) {
   const events = [];
   const scenariosRecorded = [];
+  const runErrors = [];
   return {
     events,
     scenariosRecorded,
@@ -26,13 +43,14 @@ function dependencies(overrides = {}) {
     },
     runIdentityBatch: async (_context, scenarios) => {
       events.push(['batch', scenarios.map(scenario => scenario.id)]);
-      return scenarios.map(scenario => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' }));
+      return { results: scenarios.map(scenario => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' })), runErrors: [] };
     },
     createEvidenceRecorder: ({ scenarios }) => ({
       recordScenario(result) { scenariosRecorded.push(result); },
+      recordRunError(error) { runErrors.push(error); events.push(['run-error', error]); },
       async writeSummary() {
         events.push(['write']);
-        return { results: scenariosRecorded, selected: scenarios.map(scenario => scenario.id) };
+        return { results: scenariosRecorded, runErrors, selected: scenarios.map(scenario => scenario.id) };
       },
     }),
     rootDir: new URL('..', import.meta.url).pathname,
@@ -75,12 +93,29 @@ test('runner closes the harness when the batch throws', async () => {
 
 test('runner returns a failing exit code when any scenario outcome is FAIL', async () => {
   const deps = dependencies({
-    runIdentityBatch: async (_context, scenarios) => scenarios.map((scenario, index) => ({
-      scenarioId: scenario.id,
-      outcome: index === 0 ? 'FAIL' : 'BLOCKED_PRECONDITION',
-    })),
+    runIdentityBatch: async (_context, scenarios) => ({
+      results: scenarios.map((scenario, index) => ({
+        scenarioId: scenario.id,
+        outcome: index === 0 ? 'FAIL' : 'BLOCKED_PRECONDITION',
+      })),
+      runErrors: [],
+    }),
   });
   const result = await main(['--batch', 'identity'], deps);
   assert.equal(result.exitCode, 1);
   assert.equal(deps.events.at(-1)[0], 'close');
+});
+
+test('runner persists shared run errors without attributing them to a scenario', async () => {
+  const deps = dependencies({
+    runIdentityBatch: async (_context, scenarios) => ({
+      results: scenarios.map(scenario => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' })),
+      runErrors: [{ stage: 'identity-child', diagnostic: 'sanitized startup failure' }],
+    }),
+  });
+  const result = await main(['--scenario', 'authentication-password-reset'], deps);
+  assert.equal(result.exitCode, 1);
+  assert.deepEqual(deps.events.find(([name]) => name === 'run-error')[1], {
+    stage: 'identity-child', diagnostic: 'sanitized startup failure',
+  });
 });

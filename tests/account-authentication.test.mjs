@@ -83,6 +83,15 @@ test('blocked accounts cannot hydrate protected data or remain Firebase-authenti
   assert.match(login, /establishBrowserSession\(user\)[\s\S]*catch[\s\S]*clearBrowserSession\(\)[\s\S]*signOut\(auth\)/);
 });
 
+test('missing-profile onboarding does not start protected TeamProvider listeners', async () => {
+  const provider = await source('../src/components/providers/team-provider.tsx');
+
+  assert.match(
+    provider,
+    /isAuthGatePath = pathname === '\/login' \|\| pathname === '\/verify-email' \|\| pathname === '\/onboarding'/,
+  );
+});
+
 test('verification-email route reports provider configuration failures without a generic 500', async () => {
   const route = await source('../src/app/api/email/verify-email/route.ts');
 

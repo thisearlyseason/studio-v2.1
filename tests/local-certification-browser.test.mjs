@@ -41,6 +41,21 @@ test('browser sessions use the exact run and identity prefix', () => {
   assert.equal(client.sessionName('Owner unsafe/label'), 'cert-final-cert-t3-browser-a1-identity-owner-unsafe-label');
 });
 
+test('browser rejects parsed off-loopback bases and cross-origin navigation before invoking the CLI', async () => {
+  for (const baseUrl of [
+    'http://127.0.0.1:9001@example.invalid',
+    'https://127.0.0.1:9001',
+    'http://localhost',
+    'http://[::1]:9001/path',
+  ]) {
+    assert.throws(() => clientWithResult(cleanObservation, { baseUrl }), /loopback/);
+  }
+  const { client, calls } = clientWithResult(cleanObservation);
+  await assert.rejects(() => client.observe('session-a', { path: 'https://example.invalid/dashboard' }), /same loopback origin/);
+  await assert.rejects(() => client.observe('session-a', { path: '//example.invalid/dashboard' }), /same loopback origin/);
+  assert.equal(calls.length, 0);
+});
+
 test('observe uses exact desktop and mobile viewports and returns a redacted capture shape', async () => {
   const results = [
     { ...cleanObservation, failedResponses: [{ method: 'POST', url: 'http://127.0.0.1:9001/api/session?token=abc', status: 400 }] },
@@ -97,4 +112,38 @@ test('closeAll closes each owned session and is idempotent after failures', asyn
   const closeCommands = calls.filter(call => call.args.includes('close'));
   assert.equal(closeCommands.length, 1);
   assert.equal(closeCommands[0].session, 'cert-final-cert-t3-browser-a1-identity-owner');
+});
+
+test('closeAll attempts every owned session and retries only failed closures', async () => {
+  const closeAttempts = new Map();
+  const { client, calls } = clientWithResult(input => {
+    if (input.args.includes('run-code')) return JSON.stringify({ actualPath: '/dashboard', status: 200 });
+    if (input.args.includes('close')) {
+      const attempts = (closeAttempts.get(input.session) || 0) + 1;
+      closeAttempts.set(input.session, attempts);
+      if (input.session.endsWith('-owner') && attempts === 1) throw new Error('first close failed');
+    }
+    return '';
+  });
+  await client.login('qa-coach-owner-a', '/dashboard', { label: 'owner' });
+  await client.login('qa-team-member', '/dashboard', { label: 'member' });
+  await assert.rejects(() => client.closeAll(), /failed to close 1 owned browser session/);
+  await client.closeAll();
+  const closes = calls.filter(call => call.args.includes('close')).map(call => call.session);
+  assert.deepEqual(closes, [
+    'cert-final-cert-t3-browser-a1-identity-member',
+    'cert-final-cert-t3-browser-a1-identity-owner',
+    'cert-final-cert-t3-browser-a1-identity-owner',
+  ]);
+});
+
+test('observe removes listeners and waits for a stable expected path instead of fixed sleeps', async () => {
+  const { client, calls } = clientWithResult(cleanObservation);
+  await client.observe('session-a', { path: '/dashboard' });
+  const code = calls[0].args.at(-1);
+  assert.match(code, /waitForFunction/);
+  assert.doesNotMatch(code, /waitForTimeout\(1200\)/);
+  assert.match(code, /page\.off\('console'/);
+  assert.match(code, /page\.off\('pageerror'/);
+  assert.match(code, /page\.off\('response'/);
 });

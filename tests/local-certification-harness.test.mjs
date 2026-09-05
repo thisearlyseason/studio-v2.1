@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
-import { startLocalHarness } from '../scripts/qa/certification/local/harness.mjs';
+import { closeRegisteredBrowserSessions, startLocalHarness } from '../scripts/qa/certification/local/harness.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 
@@ -61,18 +64,61 @@ test('one legacy identity execution receives a unique scope and stripped outboun
     playwrightCli: '/Users/tylerans/.codex/skills/playwright/scripts/playwright_cli.sh',
     dependencies,
   }));
-  const observation = await harness.runLegacyIdentityAudit();
+  const observation = await harness.runLegacyIdentityAudit(['authentication-email-password-login']);
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].args, ['scripts/qa/run-phase2-emulator-audit.mjs', '--certification-identity', '--browser']);
+  assert.deepEqual(calls[0].args, [
+    'scripts/qa/run-phase2-emulator-audit.mjs',
+    '--certification-identity',
+    '--browser',
+    '--scenario',
+    'authentication-email-password-login',
+  ]);
   assert.equal(calls[0].env.AUDIT_FIXTURE_RUN_SUFFIX, 't3-20260904-180000-a1');
   assert.equal(calls[0].env.AUDIT_BROWSER_SESSION_PREFIX, 'cert-final-cert-t3-20260904-180000-a1-identity');
   assert.equal(calls[0].env.AUDIT_OUTBOUND_PROVIDER_MODE, 'block');
+  assert.equal(calls[0].env.NEXT_PUBLIC_APP_URL, 'http://127.0.0.1:9001');
   assert.equal(calls[0].env.STRIPE_SECRET_KEY, '');
   assert.equal(calls[0].env.RESEND_API_KEY, '');
   assert.equal(calls[0].env.INTERNAL_API_SECRET, '');
   assert.equal(observation.stdout.includes('protected deep link'), true);
   assert.equal('password' in harness, false);
   await harness.close();
+});
+
+test('outer harness never performs global browser cleanup for no-browser or browser runs', async () => {
+  let closeBrowserCalls = 0;
+  const dependencies = {
+    ...options().dependencies,
+    closeBrowserSessions: async () => { closeBrowserCalls += 1; },
+  };
+  const withoutBrowser = await startLocalHarness(options({ dependencies }));
+  await withoutBrowser.close();
+  const withBrowser = await startLocalHarness(options({ browser: true, playwrightCli: '/tmp/playwright-cli', dependencies }));
+  await withBrowser.close();
+  assert.equal(closeBrowserCalls, 0);
+});
+
+test('outer cleanup closes every exact registry session, retries failures, and leaves unrelated sessions alone', async () => {
+  const registryPath = path.join(await mkdtemp(path.join(os.tmpdir(), 'cert-session-registry-')), 'sessions.txt');
+  await writeFile(registryPath, 'cert-final-cert-safe-identity-a\ncert-final-cert-safe-identity-b\n');
+  const attempts = [];
+  const failedOnce = new Set();
+  await closeRegisteredBrowserSessions({
+    registryPath,
+    sessionPrefix: 'cert-final-cert-safe-identity',
+    closeBrowserSession: async session => {
+      attempts.push(session);
+      if (session.endsWith('-a') && !failedOnce.has(session)) {
+        failedOnce.add(session);
+        throw new Error('transient');
+      }
+    },
+  });
+  assert.deepEqual(attempts, [
+    'cert-final-cert-safe-identity-b',
+    'cert-final-cert-safe-identity-a',
+    'cert-final-cert-safe-identity-a',
+  ]);
 });
 
 test('runtime credentials are redacted and cleanup remains idempotent after a child failure', async () => {
@@ -99,7 +145,7 @@ test('runtime credentials are redacted and cleanup remains idempotent after a ch
   );
   await harness.close();
   await harness.close();
-  assert.equal(closeCalls, 1);
+  assert.equal(closeCalls, 0);
 });
 
 test('run suffixes reject legacy or unsafe values', async () => {

@@ -566,7 +566,7 @@ test('dotenv-loaded credentials cannot escape actual account and team provider e
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'fixture-reset@phase2.test' }),
     }));
-    assert.equal(passwordResponse.status, 500, 'password-reset handler must fail closed in audit mode');
+    assert.equal(passwordResponse.status, 200, 'password-reset handler must stay non-enumerating while outbound delivery is blocked');
 
     const genericEmailRoute = await importActualRouteWithBoundaryStubs(
       '../src/app/api/email/send/route.ts',
@@ -755,6 +755,18 @@ test('isolated server provider boundary blocks inherited Stripe and Resend crede
     () => serverBoundary.assertOutboundProviderAllowed('resend', isolatedEnvironment),
     /blocked for the isolated emulator audit/,
   );
+  assert.equal(serverBoundary.isApprovedLocalMailSink({
+    AUDIT_OUTBOUND_PROVIDER_MODE: 'block',
+    AUDIT_LOCAL_MAIL_TRANSPORT: 'memory-sink',
+    GCLOUD_PROJECT: 'demo-task3-certification',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080',
+  }), true);
+  assert.equal(serverBoundary.isApprovedLocalMailSink({
+    AUDIT_OUTBOUND_PROVIDER_MODE: 'block',
+    AUDIT_LOCAL_MAIL_TRANSPORT: 'memory-sink',
+    GCLOUD_PROJECT: 'production-project',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080',
+  }), false);
 
   const previous = {
     AUDIT_OUTBOUND_PROVIDER_MODE: process.env.AUDIT_OUTBOUND_PROVIDER_MODE,

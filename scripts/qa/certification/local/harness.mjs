@@ -1,5 +1,7 @@
 import { randomBytes as nodeRandomBytes } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import process from 'node:process';
 
 import { buildIsolatedAuditEnvironment } from '../../run-phase2-emulator-audit.mjs';
@@ -41,9 +43,56 @@ function defaultExecute({ command, args, cwd, env, registerChild }) {
   });
 }
 
-function defaultCloseBrowserSessions(playwrightCli, rootDir, env) {
-  if (!playwrightCli) return;
-  spawnSync(playwrightCli, ['close-all'], { cwd: rootDir, env, stdio: 'ignore' });
+function defaultCloseBrowserSession({ playwrightCli, session, cwd }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(playwrightCli, [`-s=${session}`, '--raw', 'close'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.once('error', reject);
+    child.once('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(`Exact browser session cleanup exited ${code}: ${stderr.slice(0, 200)}`));
+    });
+  });
+}
+
+export async function closeRegisteredBrowserSessions({
+  registryPath,
+  sessionPrefix,
+  closeBrowserSession,
+  maxAttempts = 2,
+}) {
+  let contents = '';
+  try {
+    contents = await readFile(registryPath, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return;
+    throw error;
+  }
+  const sessions = [...new Set(contents.split('\n').map(value => value.trim()).filter(Boolean))];
+  for (const session of sessions) {
+    if (!session.startsWith(`${sessionPrefix}-`) || session.length > 255) {
+      throw new Error('Browser session registry contains a non-owned session.');
+    }
+  }
+  let pending = sessions.reverse();
+  for (let attempt = 1; attempt <= maxAttempts && pending.length > 0; attempt += 1) {
+    const retry = [];
+    for (const session of pending) {
+      try {
+        await closeBrowserSession(session);
+      } catch {
+        retry.push(session);
+      }
+    }
+    pending = retry;
+  }
+  if (pending.length > 0) {
+    await writeFile(registryPath, `${pending.join('\n')}\n`, { mode: 0o600 });
+    throw new Error(`Failed to close ${pending.length} registered browser session(s) after ${maxAttempts} attempts.`);
+  }
+  await rm(registryPath, { force: true });
 }
 
 function validateBoundary({ projectId, endpoints, runSuffix, browser, playwrightCli }) {
@@ -82,16 +131,21 @@ export async function startLocalHarness({
   validateBoundary({ projectId, endpoints, runSuffix, browser, playwrightCli });
   const randomBytes = dependencies.randomBytes || nodeRandomBytes;
   const execute = dependencies.execute || defaultExecute;
-  const closeBrowserSessions = dependencies.closeBrowserSessions || defaultCloseBrowserSessions;
   const runtimeSecret = randomBytes(32).toString('base64url');
   const runId = `final-cert-${runSuffix}`;
   const sessionPrefix = `cert-${runId}-identity`;
+  const artifactDir = path.join(rootDir, 'output/playwright/2026-09-04-final-certification/task-3', runId);
+  const browserSessionRegistry = path.join(artifactDir, 'owned-browser-sessions.txt');
   const env = buildIsolatedAuditEnvironment(baseEnvironment, {
     AUDIT_FIXTURE_PASSWORD: runtimeSecret,
     AUDIT_FIXTURE_RUN_SUFFIX: runSuffix,
     AUDIT_FIREBASE_PROJECT_ID: projectId,
     AUDIT_BROWSER_SESSION_PREFIX: sessionPrefix,
     AUDIT_BASE_URL: endpoints.app,
+    AUDIT_ARTIFACT_DIR: artifactDir,
+    AUDIT_BROWSER_SESSION_REGISTRY: browserSessionRegistry,
+    AUDIT_LOCAL_MAIL_TRANSPORT: 'memory-sink',
+    NEXT_PUBLIC_APP_URL: endpoints.app,
     FIREBASE_AUTH_EMULATOR_HOST: endpoints.auth,
     FIRESTORE_EMULATOR_HOST: endpoints.firestore,
     FIREBASE_STORAGE_EMULATOR_HOST: endpoints.storage,
@@ -100,14 +154,35 @@ export async function startLocalHarness({
     PLAYWRIGHT_CLI: playwrightCli,
   });
   let activeChild = null;
+  let activeExecution = null;
   let closed = false;
+  let closeRequested = false;
+  let closingPromise = null;
   let executed = false;
 
   const close = async () => {
     if (closed) return;
-    closed = true;
-    if (activeChild && !activeChild.killed) activeChild.kill('SIGTERM');
-    await closeBrowserSessions(playwrightCli, rootDir, env);
+    closeRequested = true;
+    if (closingPromise) return closingPromise;
+    closingPromise = (async () => {
+      if (activeChild && !activeChild.killed) activeChild.kill('SIGTERM');
+      if (activeExecution) await activeExecution.catch(() => undefined);
+      if (browser) {
+        await closeRegisteredBrowserSessions({
+          registryPath: browserSessionRegistry,
+          sessionPrefix,
+          closeBrowserSession: session => (dependencies.closeBrowserSession || defaultCloseBrowserSession)({
+            playwrightCli, session, cwd: rootDir,
+          }),
+        });
+      }
+      closed = true;
+    })();
+    try {
+      await closingPromise;
+    } finally {
+      if (!closed) closingPromise = null;
+    }
   };
 
   return Object.freeze({
@@ -118,23 +193,28 @@ export async function startLocalHarness({
     redact(value) {
       return redactText(value, runtimeSecret);
     },
-    async runLegacyIdentityAudit() {
+    async runLegacyIdentityAudit(selectedScenarioIds = []) {
       if (executed) throw new Error('The local harness permits one identity execution per invocation.');
-      if (closed) throw new Error('The local harness is already closed.');
+      if (closed || closeRequested) throw new Error('The local harness is already closed.');
       executed = true;
       const args = [
         'scripts/qa/run-phase2-emulator-audit.mjs',
         '--certification-identity',
         ...(browser ? ['--browser'] : []),
+        ...selectedScenarioIds.flatMap(scenarioId => ['--scenario', scenarioId]),
       ];
-      const result = await execute({
+      const startedAt = new Date().toISOString();
+      activeExecution = execute({
         command: process.execPath,
         args,
         cwd: rootDir,
         env,
         registerChild(child) { activeChild = child; },
       });
+      const result = await activeExecution;
       activeChild = null;
+      activeExecution = null;
+      const completedAt = new Date().toISOString();
       if (result.code !== 0) {
         throw new Error(redactText(`Identity audit child exited ${result.code}.\n${result.stdout}\n${result.stderr}`, runtimeSecret));
       }
@@ -142,6 +222,8 @@ export async function startLocalHarness({
         code: result.code,
         stdout: redactText(result.stdout, runtimeSecret),
         stderr: redactText(result.stderr, runtimeSecret),
+        startedAt,
+        completedAt,
       });
     },
     close,

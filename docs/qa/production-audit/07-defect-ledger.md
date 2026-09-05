@@ -2,7 +2,71 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-04; twenty-two defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-04; twenty-six defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-027 — Delegated school hub loads organization capacity before hub resolution (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | School hub — organization capacity |
+| Role | Delegated school administrator |
+| Page or route | `/club`, `/api/organizations/squads` |
+| Description | A delegated school administrator received two transient HTTP 403 responses while refreshing or opening a second hub tab. |
+| Expected behavior | Capacity loading waits for the authoritative school hub and sends its hub identifier; authorized delegates see no rejected bootstrap request. |
+| Actual behavior | The capacity effect ran against incomplete membership projections before the school hub type was resolved, omitted `hubTeamId`, and temporarily evaluated the delegate as an organization owner. |
+| Root cause | The effect did not wait for `isHubDataLoading` to settle before requesting organization capacity. |
+| Fix | Capacity loading is gated until authoritative hub data resolves, and the loading state is an explicit effect dependency. |
+| Verification | A source regression failed before the guard and passed after it. The focused dashboard rerun passed 172 assertions across all 20 active aliases; the school delegate then completed refresh, new-tab, Back, mobile-fit, console, and failed-response checks with zero errors. The final exact local run `final-cert-t3-260905-022702-06e8` repeated that result. |
+| Status | RESOLVED |
+
+## BUG-026 — Visible demo sign-out skips exact demo cleanup (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Anonymous demo — visible exit |
+| Role | Anonymous demo visitor |
+| Page or route | Shell `Sign Out`, `/api/demo/exit` |
+| Description | The visible account-menu sign-out cleared the browser session without first invoking exact server-side demo cleanup. |
+| Expected behavior | Visible demo exit removes only that demo's owned roots, invalidates its session, signs out the client, and leaves peer demo contexts intact. |
+| Actual behavior | Direct API cleanup could succeed, but the actual visible control bypassed it; deleting server roots underneath an active client also produced a Firestore permission error. |
+| Root cause | `Shell.handleLogout` treated anonymous demos like registered accounts and never called the dedicated cleanup endpoint. |
+| Fix | Demo sign-out now requires a successful `/api/demo/exit` response before clearing the browser session and signing out. The certification journey uses the visible account-menu control and waits for that response. |
+| Verification | The regression was red before the Shell fix. The repaired focused journey passed 24 assertions, returned cleanup HTTP 204, redirected to `/login`, preserved mobile containment, and emitted zero console errors. The exact full local run `final-cert-t3-260905-022702-06e8` repeated it with peer-context isolation and exact cleanup. |
+| Status | RESOLVED |
+
+## BUG-025 — Password-reset provider failure reveals known accounts (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Authentication — password reset request |
+| Role | Visitor |
+| Page or route | `/api/email/reset-password`, login forgot-password dialog |
+| Description | Under the enforced no-outbound provider boundary, an unknown email returned neutral HTTP 200 while a known account returned a provider error, revealing account existence. |
+| Expected behavior | Known and unknown reset requests return the same neutral response; delivery failures remain server-side diagnostics and never become an enumeration signal. |
+| Actual behavior | The known-account path surfaced the blocked delivery exception as an error while the unknown path did not attempt delivery. |
+| Root cause | The route coupled reset-code generation/delivery outcome to the public response. |
+| Fix | Reset delivery is attempted behind the server boundary, but provider failures now retain generic server-side diagnostics and return the same neutral success as unknown accounts. |
+| Verification | The route regression failed before the change and passed after it. Emulator OOB redemption changed the password once, rejected modified/reused and old credentials, restored the original password, and bound the code to the intended recipient. Known and unknown visible requests both showed `A reset link was sent`, returned no failed response, and emitted zero console errors in the final exact run. |
+| Status | RESOLVED |
+
+## BUG-024 — Missing-profile onboarding starts protected team listeners (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Signup/onboarding — missing profile |
+| Role | Verified registered identity without a profile |
+| Page or route | `/onboarding` |
+| Description | A verified Auth identity with no `users/{uid}` document reached onboarding, but `TeamProvider` started protected Firestore listeners and the page fell into the global error boundary. |
+| Expected behavior | Missing-profile onboarding loads without protected team/profile listeners and grants no default tenant or management authority. |
+| Actual behavior | `/onboarding` was absent from the provider's auth-gate route set, so protected hydration began before the profile existed. |
+| Root cause | The route-level listener guard covered login/signup/verification but omitted onboarding. |
+| Fix | `/onboarding` is now an auth-gate path for `TeamProvider`, preventing protected listener startup until the profile is complete. |
+| Verification | A source regression failed before the route was added and passed afterward. The focused and final exact local browser runs signed in a fresh verified missing-profile identity, rendered the visible onboarding form, completed the coach role, reached `/teams/new`, persisted across reload, fit 390x844, and cleaned the Auth/profile/player records. |
+| Status | RESOLVED |
 
 ## BUG-023 — Identity audit API probes used fixed historical fixture IDs (resolved)
 
@@ -17,7 +81,7 @@
 | Actual behavior | The fixed historical identifiers returned false 404s and prevented the identity certification batch from exercising the seeded tenant boundary. |
 | Root cause | The API path strings predated run-scoped fixture IDs and were not derived from the fixture object. |
 | Fix | Added a pure target builder that requires the seeded fixture IDs and constructs every Team A/Team B API path from them. |
-| Verification | A focused regression proves non-default run-scoped IDs are present in every target path and no fixed `qa-team-a` or `qa-team-b` segment remains. The exact local identity batch `final-cert-t3-260904-233419-8ece` on implementation commit `a6b8a410100a956333df8c50e9f4ccac54a2e9b9` then passed all scoped API probes. |
+| Verification | A focused helper regression proves the run-scoped Team A/B IDs resolve from the catalog. A separate request-plan regression proves all five affected tenant requests use those IDs and contain no fixed historical team segment. The exact local identity batch `final-cert-t3-260905-022702-06e8` then passed every scoped tenant API probe. |
 | Status | RESOLVED |
 
 ## BUG-022 — Firestore timestamps crash the member feed (resolved)
@@ -48,7 +112,7 @@
 | Expected behavior | Same-origin anonymous demos can delete their disposable workspace immediately; foreign origins remain denied. |
 | Actual behavior | The route compared the browser `Origin` header with `request.nextUrl.origin`, which reflects the internal proxy origin in App Hosting rather than the configured public origin. |
 | Root cause | The CSRF boundary trusted proxy-derived URL state instead of the configured application origin already used by server request guards. |
-| Fix | Demo cleanup now compares the request origin with `getTrustedAppOrigin(request)`, retaining production configured-origin and local-development loopback restrictions. |
+| Fix | Demo cleanup now uses the shared parsed `isTrustedRequestOrigin(request)` boundary, retaining production configured-origin and local-development loopback restrictions without trusting proxy-derived URL state. |
 | Verification | The regression was observed failing before the repair and passing after it. Protected release gate `33911442472` and staging workflow `33911749713` passed for commit `e796fde6aafd478d8f25855ed10f7cdabad79c5d`; App Hosting revision `studio-build-2026-09-04-012` returned HTTP 204 to the same hosted Playwright cleanup request. The deleted Auth identity could no longer be looked up, `/dashboard` redirected to expired login, and direct checks returned HTTP 404 for the user, team, team children, league, facility, and player roots. |
 | Status | RESOLVED |
 

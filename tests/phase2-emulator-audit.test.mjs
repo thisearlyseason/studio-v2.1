@@ -27,6 +27,7 @@ test('certification identity mode accepts a unique local scope without changing 
     browserSessionPrefix: 'cert-final-cert-t3-20260904-180000-a1-identity',
     certificationIdentity: true,
     runBrowser: true,
+    selectedScenarios: [],
   });
 
   assert.deepEqual(auditRunner.resolveAuditRuntimeConfiguration({ environment: {}, argv: [] }), {
@@ -36,7 +37,22 @@ test('certification identity mode accepts a unique local scope without changing 
     browserSessionPrefix: 'phase2',
     certificationIdentity: false,
     runBrowser: false,
+    selectedScenarios: [],
   });
+});
+
+test('legacy configurable runtime rejects off-loopback and ambiguous app origins', () => {
+  for (const baseUrl of [
+    'http://127.0.0.1:9001@example.invalid',
+    'https://127.0.0.1:9001',
+    'http://localhost',
+    'http://127.0.0.1:9001/path',
+  ]) {
+    assert.throws(() => auditRunner.resolveAuditRuntimeConfiguration({
+      environment: { AUDIT_BASE_URL: baseUrl },
+      argv: ['--certification-identity'],
+    }), /loopback/);
+  }
 });
 
 test('identity API targets follow uniquely scoped fixture team IDs', () => {
@@ -47,9 +63,141 @@ test('identity API targets follow uniquely scoped fixture team IDs', () => {
   });
 });
 
+test('identity API request plan applies scoped team IDs to every tenant target', () => {
+  const catalog = buildFixtureCatalog('t3-identity-request-plan-a1');
+  const plan = auditRunner.buildIdentityApiRequestPlan(catalog);
+  assert.equal(plan.length, 5);
+  assert.equal(plan.filter(item => item.pathname.includes(catalog.teams.find(team => team.alias === 'qa-team-a').id)).length, 3);
+  assert.equal(plan.filter(item => item.pathname.includes(catalog.teams.find(team => team.alias === 'qa-team-b').id)).length, 2);
+  assert.equal(plan.some(item => /qa-team-[ab](?:[/?]|$)/.test(item.pathname)), false);
+});
+
+test('owned legacy browser cleanup attempts all sessions and retries failures only', async () => {
+  const sessions = new Set(['cert-run-owner', 'cert-run-member', 'sentinel-unrelated']);
+  const owned = new Set(['cert-run-owner', 'cert-run-member']);
+  const attempts = [];
+  const failedOnce = new Set();
+  await auditRunner.closeOwnedBrowserSessions(owned, async session => {
+    attempts.push(session);
+    if (session === 'cert-run-owner' && !failedOnce.has(session)) {
+      failedOnce.add(session);
+      throw new Error('transient close');
+    }
+    sessions.delete(session);
+  });
+  assert.deepEqual(attempts, ['cert-run-member', 'cert-run-owner', 'cert-run-owner']);
+  assert.deepEqual([...sessions], ['sentinel-unrelated']);
+  assert.equal(owned.size, 0);
+});
+
+test('scenario browser cleanup closes only sessions created after its baseline', async () => {
+  const sessions = new Set(['cert-earlier', 'sentinel-unrelated', 'cert-current-a', 'cert-current-b']);
+  const baseline = new Set(['cert-earlier', 'sentinel-unrelated']);
+  const attempts = [];
+  await auditRunner.closeBrowserSessionsCreatedAfter(sessions, baseline, async session => {
+    attempts.push(session);
+  });
+  assert.deepEqual(attempts, ['cert-current-b', 'cert-current-a']);
+  assert.deepEqual([...sessions], ['cert-earlier', 'sentinel-unrelated']);
+});
+
+test('one-session cleanup removes only the exact completed session and retries it', async () => {
+  const sessions = new Set(['cert-complete', 'cert-still-running']);
+  let attempts = 0;
+  await auditRunner.closeOneOwnedBrowserSession(sessions, 'cert-complete', async session => {
+    attempts += 1;
+    assert.equal(session, 'cert-complete');
+    if (attempts === 1) throw new Error('transient close');
+  });
+  assert.equal(attempts, 2);
+  assert.deepEqual([...sessions], ['cert-still-running']);
+});
+
+test('local service cleanup terminates the owned process group, not only the wrapper process', () => {
+  const calls = [];
+  auditRunner.terminateChildProcessTree({ pid: 43210, killed: false }, 'SIGTERM', (pid, signal) => {
+    calls.push([pid, signal]);
+  }, 'darwin');
+  assert.deepEqual(calls, [[-43210, 'SIGTERM']]);
+});
+
+test('legacy shutdown defers cleanup until the active command boundary and preserves the first signal', () => {
+  const shutdown = auditRunner.createAuditShutdownState();
+  assert.equal(shutdown.exitCode, null);
+  shutdown.request(130);
+  shutdown.request(143);
+  assert.equal(shutdown.exitCode, 130);
+  assert.throws(
+    () => shutdown.throwIfRequested(),
+    error => error.exitCode === 130 && /interrupted/i.test(error.message),
+  );
+});
+
+test('trusted-claim mutation preserves unrelated claims while replacing only role', () => {
+  assert.deepEqual(
+    auditRunner.withRoleClaim({ role: 'superadmin', tenant: 'fixture-a', feature: true }, 'coach'),
+    { role: 'coach', tenant: 'fixture-a', feature: true },
+  );
+});
+
+test('legacy audit resolves fixture documents through the catalog-owned fixtureAlias field', () => {
+  const catalog = buildFixtureCatalog('identity-fixture-alias-a1');
+  const player = auditRunner.fixtureDocumentByAlias(catalog, 'qa-player-youth-c');
+  assert.equal(player.data.fixtureAlias, 'qa-player-youth-c');
+  assert.equal(player.path, `players/${player.data.id}`);
+  assert.throws(
+    () => auditRunner.fixtureDocumentByAlias(catalog, 'missing-fixture-alias'),
+    /Missing fixture document/,
+  );
+});
+
+test('legacy audit tears down the exact Firebase Admin app instance', async () => {
+  const calls = [];
+  const app = { async delete() { calls.push('delete'); } };
+  await auditRunner.deleteOwnedAdminApp(app);
+  assert.deepEqual(calls, ['delete']);
+});
+
+test('token revocation waits beyond the ID token auth_time second', async () => {
+  const payload = Buffer.from(JSON.stringify({ auth_time: 100 })).toString('base64url');
+  const token = `header.${payload}.signature`;
+  let now = 100_250;
+  const waits = [];
+  await auditRunner.waitForIdTokenRevocationBoundary(token, {
+    now: () => now,
+    wait: async delay => { waits.push(delay); now += delay; },
+  });
+  assert.deepEqual(waits, [750]);
+  await assert.rejects(
+    () => auditRunner.waitForIdTokenRevocationBoundary('malformed'),
+    /auth_time/,
+  );
+});
+
+test('password-reset OOB selection is recipient-scoped and chooses the newest unused code', () => {
+  const selected = auditRunner.selectLatestPasswordResetOob({ oobCodes: [
+    { email: 'other@phase2.test', requestType: 'PASSWORD_RESET', oobCode: 'wrong' },
+    { email: 'target@phase2.test', requestType: 'VERIFY_EMAIL', oobCode: 'verify' },
+    { email: 'target@phase2.test', requestType: 'PASSWORD_RESET', oobCode: 'older' },
+    { email: 'TARGET@phase2.test', requestType: 'PASSWORD_RESET', oobCode: 'newest' },
+  ] }, 'target@phase2.test', new Set(['older']));
+  assert.equal(selected.oobCode, 'newest');
+  assert.throws(() => auditRunner.selectLatestPasswordResetOob({ oobCodes: [] }, 'target@phase2.test'), /No password-reset OOB/);
+});
+
+test('verification OOB selection never crosses recipients or action types', () => {
+  const selected = auditRunner.selectLatestOob({ oobCodes: [
+    { email: 'target@phase2.test', requestType: 'PASSWORD_RESET', oobCode: 'reset' },
+    { email: 'other@phase2.test', requestType: 'VERIFY_EMAIL', oobCode: 'other' },
+    { email: 'TARGET@phase2.test', requestType: 'VERIFY_EMAIL', oobCode: 'verify' },
+  ] }, 'target@phase2.test', 'VERIFY_EMAIL');
+  assert.equal(selected.oobCode, 'verify');
+});
+
 test('emulator audit creates runtime-only credentials and redacts failures', () => {
   assert.match(source, /randomBytes\(24\)/);
-  assert.match(source, /replaceAll\(password, '\[redacted\]'\)/);
+  assert.match(source, /for \(const secret of sensitiveValues\) output = output\.replaceAll\(secret, '\[redacted\]'\)/);
+  assert.doesNotMatch(source, /args\.join\(' '\)\} failed/);
   assert.doesNotMatch(source, /AUDIT_FIXTURE_PASSWORD:\s*['"][^'"]+['"]/);
 });
 
@@ -60,6 +208,22 @@ test('emulator audit covers tenant, lifecycle, and trusted-claim boundaries', ()
   assert.match(source, /deletion-pending account denied server API/);
   assert.match(source, /profile-only fake superadmin denied admin API/);
   assert.match(source, /fake superadmin browser route denial/);
+});
+
+test('demo browser certification exits through the visible account control', () => {
+  const demoBlock = source
+    .split("if (scenarioId === 'demo-seed-use-exit-expiry-cleanup')")
+    .find(block => block.includes("openAnonymousBrowser('cert-demo')"))
+    ?.split("if (scenarioId === 'dashboard-shell-role-landing-and-route-policy')")[0] || '';
+  assert.match(demoBlock, /getByRole\('button', \{ name: 'Open account menu' \}\)\.click\(\)/);
+  assert.match(demoBlock, /getByRole\('menuitem', \{ name: 'Sign Out' \}\)\.click\(\)/);
+  assert.doesNotMatch(demoBlock, /page\.request\.post/);
+});
+
+test('browser evidence waits for the filtered admin row and preserves console diagnostics', () => {
+  assert.match(source, /target\.waitFor\(\{ state: 'visible', timeout: 15000 \}\)/);
+  assert.match(source, /console\.log\(`\$\{label\} persistence console diagnostic:/);
+  assert.match(source, /console\.log\(`\$\{label\} persistence failed response diagnostic:/);
 });
 
 test('default API and browser audits consume every blocked session expectation', () => {
@@ -193,6 +357,73 @@ test('emulator audit drives every seeded active persona and session boundary in 
   assert.match(source, /disabled login uses generic failure copy/);
   assert.match(source, /unverified login reaches verification gate/);
   assert.match(source, /deletion-pending login is denied/);
+});
+
+test('Task 3 login browser waits on state and sends a real rapid double click', () => {
+  const login = source.match(/async function browserLoginCredentials[\s\S]*?\n}\n\nfunction browserPath/)?.[0] || '';
+  const doubleSubmit = source.match(/function browserLoginDoubleSubmitAudit[\s\S]*?\n}\n\nfunction browserResetRequestAudit/)?.[0] || '';
+  assert.match(login, /waitForFunction/);
+  assert.doesNotMatch(login, /waitForTimeout/);
+  assert.match(doubleSubmit, /page\.mouse\.click/);
+  assert.match(doubleSubmit, /page\.waitForTimeout\(750\)/);
+  assert.doesNotMatch(doubleSubmit, /new Promise\(resolve => setTimeout/);
+  assert.doesNotMatch(doubleSubmit, /submit\.dblclick/);
+});
+
+test('Task 3 emitted browser programs use serialization-safe selectors and real signup clicks', () => {
+  const reset = source.match(/function browserResetRequestAudit[\s\S]*?\n}\n\nasync function runCertificationBrowserScenario/)?.[0] || '';
+  const scenarios = source.match(/async function runCertificationBrowserScenario[\s\S]*?\n}\n\nasync function runCertificationIdentityScenarios/)?.[0] || '';
+  assert.match(reset, /getByLabel\('Account Email'\)/);
+  assert.doesNotMatch(reset, /getByLabel\('Email Address'\)/);
+  assert.match(reset, /getByText\([^\n]+\{ exact: false \}\)\.first\(\)\.waitFor/);
+  assert.match(scenarios, /known-provider-block/);
+  assert.match(reset, /failedResponses/);
+  assert.match(reset, /page\.off\('response'/);
+  assert.match(source, /function browserResetRequestAudit\(email, expectedText, label/);
+  assert.match(scenarios, /new RegExp\('Name \/ Email'\)/);
+  assert.doesNotMatch(scenarios, /name: \/Name \\\/ Email\//);
+  assert.match(scenarios, /signup.*page\.mouse\.click/is);
+  assert.doesNotMatch(scenarios, /submit\.evaluate\(element => \{ element\.click\(\); element\.click\(\); \}\)/);
+  assert.match(scenarios, /assertTwoViewportRoutes\(session, \[\{ path: '\/', expected: '\/' \}\], 'demo public surfaces'\)/);
+  assert.doesNotMatch(scenarios, /\{ path: '\/pricing', expected: '\/pricing' \}\], 'demo public surfaces'/);
+  assert.match(scenarios, /locator\('#youth-password'\)/);
+  assert.match(scenarios, /locator\('#youth-password-confirmation'\)/);
+  assert.match(scenarios, /Activate My Account/);
+  assert.match(scenarios, /Account Created!/);
+  assert.match(scenarios, /youth browser consumed invitation reload denial/);
+});
+
+test('Task 3 legacy route observations remove listeners and avoid fixed settle sleeps', () => {
+  const browserPath = source.match(/function browserPath[\s\S]*?\n}\n\nfunction browserRouteAudit/)?.[0] || '';
+  const routeAudit = source.match(/function browserRouteAudit[\s\S]*?\n}\n\nfunction browserLoginFailureAudit/)?.[0] || '';
+  const loginFailure = source.match(/function browserLoginFailureAudit[\s\S]*?\n}\n\nfunction browserProtectedReturnAudit/)?.[0] || '';
+  assert.doesNotMatch(browserPath, /waitForTimeout/);
+  assert.doesNotMatch(routeAudit, /waitForTimeout/);
+  assert.match(routeAudit, /page\.off\('console'/);
+  assert.match(routeAudit, /page\.off\('pageerror'/);
+  assert.match(routeAudit, /page\.off\('response'/);
+  assert.match(loginFailure, /page\.off\('console'/);
+  assert.match(loginFailure, /page\.off\('pageerror'/);
+  assert.match(loginFailure, /page\.off\('response'/);
+});
+
+test('Task 3 local HTTP helpers avoid stale pooled sockets across dev-server compilation', () => {
+  for (const name of ['signInEmail', 'apiStatus', 'apiJsonResult', 'publicJsonStatus']) {
+    const helper = source.match(new RegExp(`async function ${name}[\\s\\S]*?\\n}`))?.[0] || '';
+    assert.match(helper, /['"]Connection['"]:\s*['"]close['"]/);
+  }
+});
+
+test('Task 3 transport diagnostics retain only local method, path, and error code', () => {
+  const nested = new TypeError('fetch failed', { cause: Object.assign(new Error('socket closed'), { code: 'UND_ERR_SOCKET' }) });
+  assert.equal(
+    auditRunner.localTransportDiagnostic('POST', '/api/invites/youth', nested),
+    'Local POST /api/invites/youth transport failed (UND_ERR_SOCKET).',
+  );
+  assert.equal(
+    auditRunner.localTransportDiagnostic('GET', '/api/test', new Error('boom token=secret')),
+    'Local GET /api/test transport failed (Error).',
+  );
 });
 
 test('emulator audit sweeps remaining role surfaces for rendering and route-policy failures', () => {

@@ -4,6 +4,10 @@ import { Resend } from 'resend';
 import { adminDb } from '@/lib/firebase-admin';
 import { escapeHtml } from '@/lib/html-escape';
 import {
+  assertOutboundProviderAllowed,
+  isApprovedLocalMailSink,
+} from '@/lib/server-outbound-provider-policy';
+import {
   enforcePublicRateLimit,
   readJsonBodyWithLimit,
   RequestBodyError,
@@ -22,6 +26,7 @@ function isEmail(value: string) {
 }
 
 function resendClient() {
+  assertOutboundProviderAllowed('resend');
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error('RESEND_API_KEY is not configured.');
   return new Resend(apiKey);
@@ -131,7 +136,7 @@ export async function POST(request: NextRequest) {
     const reservation = await adminDb.runTransaction(async transaction => {
       const snapshot = await transaction.get(referralRef);
       const existing = snapshot.data();
-      if (existing?.deliveryStatus === 'sent') return 'sent';
+      if (existing?.deliveryStatus === 'sent' || existing?.deliveryStatus === 'accepted_local_sink') return 'sent';
       if (
         existing?.deliveryStatus === 'pending' &&
         typeof existing.deliveryStartedAt === 'number' &&
@@ -161,6 +166,16 @@ export async function POST(request: NextRequest) {
         { error: 'This referral is already being sent. Please wait a moment.' },
         { status: 409 }
       );
+    }
+
+
+    if (isApprovedLocalMailSink()) {
+      await referralRef.set({
+        deliveryStatus: 'accepted_local_sink',
+        deliveryTransport: 'memory-sink',
+        updatedAt: new Date(),
+      }, { merge: true });
+      return NextResponse.json({ success: true, localTransport: true });
     }
 
     try {

@@ -56,6 +56,7 @@ test('parent referral is a fixed-content, rate-limited, idempotent server email'
   assert.match(route, /runTransaction/);
   assert.match(route, /escapeHtml/);
   assert.match(route, /parent_coach_referrals/);
+  assert.match(route, /assertOutboundProviderAllowed\('resend'\)/);
   assert.match(page, /fetch\('\/api\/referrals\/coach'/);
   assert.match(page, /Preview the exact email/);
   assert.match(links, /Refer Your Coach/);

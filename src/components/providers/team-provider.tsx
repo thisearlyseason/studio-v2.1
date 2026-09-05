@@ -1016,7 +1016,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const storage = useStorage();
   const router = useRouter();
   const pathname = usePathname();
-  const isAuthGatePath = pathname === '/login' || pathname === '/verify-email';
+  const isAuthGatePath = pathname === '/login' || pathname === '/verify-email' || pathname === '/onboarding';
   
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);

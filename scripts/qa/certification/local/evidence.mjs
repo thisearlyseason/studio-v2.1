@@ -65,12 +65,22 @@ function validateCleanup(scenario, result) {
       !Number.isInteger(cleanup.counts.retainedAuditRecords)) {
     throw new Error(`${result.scenarioId} requires cleanup counts.`);
   }
+  if (Object.values(cleanup.counts).some(value => value < 0)) {
+    throw new Error(`${result.scenarioId} requires nonnegative cleanup counts.`);
+  }
+  if (!Array.isArray(cleanup.selectors) || cleanup.selectors.length === 0) {
+    throw new Error(`${result.scenarioId} requires cleanup selectors.`);
+  }
+  if (!Array.isArray(cleanup.proof) || cleanup.proof.length === 0) {
+    throw new Error(`${result.scenarioId} requires cleanup proof.`);
+  }
   if (!OBSERVATION_STATES.includes(cleanup.state)) {
     throw new Error(`${result.scenarioId} cleanup has invalid state ${cleanup.state}.`);
   }
 }
 
 function validateResult(scenario, result) {
+  assertNoProtectedEvidence(result);
   assertPlainString(result.environment, 'environment');
   assertPlainString(result.commit, 'commit');
   assertPlainString(result.revision, 'revision');
@@ -84,6 +94,27 @@ function validateResult(scenario, result) {
   if (!result.dimensions || typeof result.dimensions !== 'object') {
     throw new Error(`${result.scenarioId} requires dimensions.`);
   }
+  if (!Array.isArray(result.cases) || !Array.isArray(result.artifacts) ||
+      !Array.isArray(result.missingDimensions) || !Array.isArray(result.externalRequirements)) {
+    throw new Error(`${result.scenarioId} requires case, artifact, missing-dimension, and external-requirement arrays.`);
+  }
+  const casesById = new Map();
+  for (const caseRecord of result.cases) {
+    assertPlainString(caseRecord.caseId, 'caseId');
+    if (casesById.has(caseRecord.caseId)) throw new Error(`${result.scenarioId} has duplicate case ID ${caseRecord.caseId}.`);
+    assertPlainString(caseRecord.dimension, 'case dimension');
+    assertPlainString(caseRecord.role, 'case role');
+    assertPlainString(caseRecord.tenantAlias, 'case tenantAlias');
+    assertPlainString(caseRecord.expected, 'case expected');
+    assertPlainString(caseRecord.observed, 'case observed');
+    assertPlainString(caseRecord.startedAt, 'case startedAt');
+    assertPlainString(caseRecord.completedAt, 'case completedAt');
+    if (!['OBSERVED', 'FAIL'].includes(caseRecord.state)) throw new Error(`${caseRecord.caseId} has invalid case state.`);
+    if (!DIMENSION_NAMES.includes(caseRecord.dimension)) throw new Error(`${caseRecord.caseId} has invalid case dimension.`);
+    if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
+    casesById.set(caseRecord.caseId, caseRecord);
+  }
+  const referencedCases = new Set();
   for (const name of DIMENSION_NAMES) {
     const dimension = result.dimensions[name];
     if (!dimension) throw new Error(`${result.scenarioId} is missing dimension ${name}.`);
@@ -93,13 +124,33 @@ function validateResult(scenario, result) {
     if (!Array.isArray(dimension.caseIds)) {
       throw new Error(`${result.scenarioId} dimension ${name} requires caseIds.`);
     }
+    if (dimension.state === 'OBSERVED' && dimension.caseIds.length === 0) {
+      throw new Error(`${result.scenarioId} observed dimension ${name} requires cases.`);
+    }
+    for (const caseId of dimension.caseIds) {
+      const caseRecord = casesById.get(caseId);
+      if (!caseRecord) throw new Error(`${result.scenarioId} is missing referenced case ${caseId}.`);
+      if (caseRecord.dimension !== name) throw new Error(`${caseId} dimension mismatch: expected ${name}.`);
+      if (dimension.state === 'OBSERVED' && caseRecord.state !== 'OBSERVED') {
+        throw new Error(`${caseId} cannot support observed dimension ${name}.`);
+      }
+      referencedCases.add(caseId);
+    }
+  }
+  for (const caseId of casesById.keys()) {
+    if (!referencedCases.has(caseId)) throw new Error(`${result.scenarioId} has unreferenced case ${caseId}.`);
+  }
+  const derivedMissing = DIMENSION_NAMES.filter(name => result.dimensions[name].state !== 'OBSERVED');
+  if (JSON.stringify(result.missingDimensions) !== JSON.stringify(derivedMissing)) {
+    throw new Error(`${result.scenarioId} missingDimensions do not match dimension states.`);
+  }
+  const hasFailure = DIMENSION_NAMES.some(name => result.dimensions[name].state === 'FAIL') ||
+    result.cases.some(caseRecord => caseRecord.state === 'FAIL');
+  if ((result.outcome === 'FAIL') !== hasFailure) throw new Error(`${result.scenarioId} outcome does not match case failures.`);
+  if (result.outcome === 'OBSERVED' && (derivedMissing.length > 0 || result.externalRequirements.length > 0)) {
+    throw new Error(`${result.scenarioId} observed outcome conflicts with missing or external requirements.`);
   }
   validateCleanup(scenario, result);
-  if (!Array.isArray(result.cases) || !Array.isArray(result.artifacts) ||
-      !Array.isArray(result.missingDimensions) || !Array.isArray(result.externalRequirements)) {
-    throw new Error(`${result.scenarioId} requires case, artifact, missing-dimension, and external-requirement arrays.`);
-  }
-  assertNoProtectedEvidence(result);
   return result;
 }
 
@@ -117,7 +168,7 @@ export function validateScenarioResults(scenarios, results) {
   return Object.freeze(scenarios.map(scenario => validateResult(scenario, resultsById.get(scenario.id))));
 }
 
-function markdownForSummary({ runId, commit, results }) {
+function markdownForSummary({ runId, commit, results, runErrors }) {
   const lines = [
     '# Task 3 identity local certification observations',
     '',
@@ -133,6 +184,10 @@ function markdownForSummary({ runId, commit, results }) {
     const observed = DIMENSION_NAMES.filter(name => result.dimensions[name].state === 'OBSERVED');
     const missing = DIMENSION_NAMES.filter(name => result.dimensions[name].state !== 'OBSERVED');
     lines.push(`| \`${result.scenarioId}\` | ${result.outcome} | ${observed.join(', ') || 'none'} | ${missing.join(', ') || 'none'} |`);
+  }
+  if (runErrors.length > 0) {
+    lines.push('', '## Shared run errors', '');
+    for (const error of runErrors) lines.push(`- ${error.stage}: ${error.diagnostic}`);
   }
   lines.push('', '## Remaining external requirements', '');
   for (const result of results) {
@@ -159,13 +214,20 @@ async function writeAtomically(filePath, contents) {
 
 export function createEvidenceRecorder({ scenarios, runId, commit, outputDir }) {
   const recorded = [];
+  const runErrors = [];
   return Object.freeze({
     recordScenario(result) {
       recorded.push(result);
     },
+    recordRunError(error) {
+      assertPlainString(error?.stage, 'run error stage');
+      assertPlainString(error?.diagnostic, 'run error diagnostic');
+      assertNoProtectedEvidence(error);
+      runErrors.push({ stage: error.stage, diagnostic: error.diagnostic });
+    },
     async writeSummary({ markdownPath }) {
       const results = validateScenarioResults(scenarios, recorded);
-      const summary = { runId, commit, generatedAt: new Date().toISOString(), results };
+      const summary = { runId, commit, generatedAt: new Date().toISOString(), runErrors, results };
       assertNoProtectedEvidence(summary);
       await writeAtomically(path.join(outputDir, 'results.json'), `${JSON.stringify(summary, null, 2)}\n`);
       await writeAtomically(markdownPath, markdownForSummary(summary));

@@ -626,6 +626,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     try {
+      if (hasDemoBanner) {
+        const response = await fetch('/api/demo/exit', { method: 'POST' });
+        if (!response.ok) throw new Error('Demo cleanup failed');
+      }
       await clearBrowserSession();
       await signOut(auth);
       router.push('/login');

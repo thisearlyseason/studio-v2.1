@@ -32,9 +32,10 @@ function validResult(overrides = {}) {
     cases: [],
     cleanup: {
       owner: scenario.cleanupOwner,
-      selectors: [],
+      selectors: ['fixture-run:final-cert-t3-evidence-a1'],
       counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 },
       state: 'OBSERVED',
+      proof: ['cleanup-marker-final-cert-t3-evidence-a1'],
     },
     artifacts: [],
     missingDimensions: [...DIMENSION_NAMES],
@@ -55,6 +56,55 @@ test('evidence states and dimensions match the strict local observation schema',
     state: 'OBSERVED', caseIds: ['case-a'], note: 'sanitized note',
   });
   assert.ok(Object.isFrozen(makeDimension('OBSERVED')));
+});
+
+test('validation rejects internally inconsistent observed dimensions, cases, gaps, and cleanup', () => {
+  const observed = validResult({
+    dimensions: Object.fromEntries(DIMENSION_NAMES.map(name => [
+      name,
+      makeDimension(name === 'happyPath' ? 'OBSERVED' : 'BLOCKED_PRECONDITION', name === 'happyPath' ? ['case-a'] : [], 'local evidence'),
+    ])),
+    missingDimensions: DIMENSION_NAMES.filter(name => name !== 'happyPath'),
+  });
+  assert.throws(() => validateScenarioResults([scenario], [observed]), /missing referenced case case-a/);
+  assert.throws(() => validateScenarioResults([scenario], [validResult({ missingDimensions: [] })]), /missingDimensions/);
+  assert.throws(() => validateScenarioResults([scenario], [validResult({ cleanup: {
+    ...validResult().cleanup,
+    counts: { deleted: -1, restored: 0, retainedAuditRecords: 0 },
+  } })]), /nonnegative cleanup counts/);
+  assert.throws(() => validateScenarioResults([scenario], [validResult({ cleanup: {
+    ...validResult().cleanup,
+    selectors: [],
+  } })]), /cleanup selectors/);
+  assert.throws(() => validateScenarioResults([scenario], [validResult({ cleanup: {
+    ...validResult().cleanup,
+    proof: [],
+  } })]), /cleanup proof/);
+});
+
+test('validation reconciles successful case provenance with its observed dimension', () => {
+  const caseRecord = {
+    caseId: 'marketing-happy-local',
+    dimension: 'happyPath',
+    role: 'V',
+    tenantAlias: 'not-applicable',
+    expected: 'HTTP 202 accepted once',
+    observed: 'HTTP 202 accepted once',
+    state: 'OBSERVED',
+    startedAt: '2026-09-04T18:00:01.000Z',
+    completedAt: '2026-09-04T18:00:02.000Z',
+    artifacts: ['cases/marketing-happy-local.json'],
+  };
+  const dimensions = { ...validResult().dimensions, happyPath: makeDimension('OBSERVED', [caseRecord.caseId], 'local transport observed') };
+  const result = validResult({
+    dimensions,
+    cases: [caseRecord],
+    artifacts: [...caseRecord.artifacts],
+    missingDimensions: DIMENSION_NAMES.filter(name => name !== 'happyPath'),
+  });
+  assert.equal(validateScenarioResults([scenario], [result])[0].cases[0].caseId, caseRecord.caseId);
+  assert.throws(() => validateScenarioResults([scenario], [{ ...result, cases: [{ ...caseRecord, dimension: 'network' }] }]), /dimension mismatch/);
+  assert.throws(() => validateScenarioResults([scenario], [{ ...result, cases: [caseRecord, caseRecord] }]), /duplicate case ID/);
 });
 
 test('validation requires exactly one complete result per selected scenario', () => {
@@ -111,11 +161,13 @@ test('recorder writes sanitized JSON and Markdown with explicit external blocker
       outputDir: directory,
     });
     recorder.recordScenario(validResult());
+    recorder.recordRunError({ stage: 'preflight', diagnostic: 'sanitized shared failure' });
     const written = await recorder.writeSummary({ markdownPath: path.join(directory, '02-identity.md') });
     assert.equal(written.results.length, 1);
     const json = JSON.parse(await readFile(path.join(directory, 'results.json'), 'utf8'));
     const markdown = await readFile(path.join(directory, '02-identity.md'), 'utf8');
     assert.equal(json.runId, 'final-cert-t3-evidence-a1');
+    assert.deepEqual(json.runErrors, [{ stage: 'preflight', diagnostic: 'sanitized shared failure' }]);
     assert.match(markdown, /BLOCKED_PRECONDITION/);
     assert.match(markdown, /exact staging revision/);
     assert.doesNotMatch(markdown, /password|cookie|oobCode|Bearer/i);
