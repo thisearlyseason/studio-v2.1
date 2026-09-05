@@ -7078,6 +7078,7 @@ function browserOwnerCommunicationVerify(session, marker) {
     const channelCard = page.locator(${JSON.stringify(`a[href="/chats/qa-team-chat?teamId=${TEAM_A_ID}"]`)});
     await channelCard.waitFor({ timeout: 10000 });
     const unreadBeforeOpen = await channelCard.locator('div.bg-primary.text-white').count();
+    const markReadResponse = page.waitForResponse(response => response.request().method() === 'PATCH' && response.url().includes('/api/teams/chat'));
     await channelCard.click();
     const message = page.getByText(${JSON.stringify(`QA Chat ${marker}`)}, { exact: true });
     const chatVisible = await message.waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
@@ -7089,7 +7090,8 @@ function browserOwnerCommunicationVerify(session, marker) {
         failedResponses,
       }));
     }
-    await page.waitForTimeout(300);
+    const markReadStatus = (await markReadResponse).status();
+    if (markReadStatus !== 200) throw new Error('owner chat read acknowledgement returned ' + markReadStatus);
     await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
     await channelCard.waitFor({ timeout: 10000 });
     const unreadAfterOpen = await channelCard.locator('div.bg-primary.text-white').count();
@@ -7103,6 +7105,7 @@ function browserOwnerCommunicationVerify(session, marker) {
       chatVisible: await message.count(),
       unreadBeforeOpen,
       unreadAfterOpen,
+      markReadStatus,
       mobileFits,
       consoleErrors,
       failedResponses,
@@ -7159,6 +7162,7 @@ async function runCommunicationWorkflowAudit() {
   expectEqual(ownerResult.chatVisible, 1, 'member chat message persists for owner');
   expectEqual(ownerResult.unreadBeforeOpen > 0, true, 'member chat message increments owner unread state');
   expectEqual(ownerResult.unreadAfterOpen, 0, 'opening the channel clears only owner unread state');
+  expectEqual(ownerResult.markReadStatus, 200, 'owner chat read acknowledgement succeeds');
   expectEqual(ownerResult.mobileFits, true, 'chat channel list remains within the mobile viewport');
   expectEqual(ownerResult.consoleErrors.length, 0, 'owner chat verification console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'owner chat verification failed responses');

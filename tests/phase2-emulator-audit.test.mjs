@@ -196,6 +196,7 @@ test('managed operations chat dispatch emits one attributable result for each lo
   assert.doesNotMatch(operationsBlock, /recordBlockedOperationsCases\(scenarioId,[\s\S]*?390x844/);
   assert.match(source, /const emptySendDisabled = await page\.getByRole\('button', \{ name: 'Send message' \}\)\.isDisabled\(\)/);
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
+  assert.match(source, /page\.waitForResponse\(response => response\.request\(\)\.method\(\) === 'PATCH' && response\.url\(\)\.includes\('\/api\/teams\/chat'\)\)/);
 });
 
 test('communication browser workflow uses the run-scoped Team A identifier for its chat target', () => {
