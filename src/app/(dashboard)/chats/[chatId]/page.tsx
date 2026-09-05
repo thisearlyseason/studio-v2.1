@@ -50,7 +50,8 @@ import { useTeam, Message, Member } from '@/components/providers/team-provider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { useFirestore, useDoc, useMemoFirebase, useCollection } from '@/firebase';
+import { useFirestore, useDoc, useMemoFirebase, useCollection, useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { collection, query, orderBy, limit, doc, updateDoc, arrayUnion, limitToLast } from 'firebase/firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
@@ -72,6 +73,7 @@ function ChatRoomInner() {
     isStaff 
   } = useTeam();
   const db = useFirestore();
+  const auth = useAuth();
 
   // For hub channels opened by an organizer who has no activeTeam selected,
   // the teamId is passed as a URL query param so we can query Firestore directly
@@ -115,6 +117,17 @@ function ChatRoomInner() {
     () => (rawMessages ? rawMessages.map(normalizeChatMessage) as Message[] : []),
     [rawMessages],
   );
+
+  useEffect(() => {
+    if (!effectiveTeamId || !chatId || !user?.id || isMessagesLoading) return;
+    getAuthToken(auth).then(token => {
+      if (!token) return;
+      return fetch('/api/teams/chat', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: effectiveTeamId, chatId }),
+      });
+    }).catch(() => undefined);
+  }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messages.length]);
 
   // Scroll to bottom whenever new messages arrive
   useEffect(() => {

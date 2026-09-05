@@ -83,9 +83,13 @@ export default function ChatsPage() {
           .map(chat => [chat.id, chat])
       ).values()
     ).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-    if (!searchTerm.trim()) return raw;
-    return raw.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [chatsData, sharedChatsData, searchTerm]);
+    const withUnread = raw.map(chat => ({
+      ...chat,
+      unread: Math.max(0, Number(chat.unreadBy?.[user?.id || ''] || 0)),
+    }));
+    if (!searchTerm.trim()) return withUnread;
+    return withUnread.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [chatsData, sharedChatsData, searchTerm, user?.id]);
 
   // Governance: Filter member list based on position
   const filteredMembers = useMemo(() => {

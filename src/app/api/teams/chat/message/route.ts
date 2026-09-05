@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { findActiveTeamMember } from '@/lib/server-team-access';
 import { sendNotificationToUsers } from '@/lib/server-notification-delivery';
@@ -86,10 +87,27 @@ export async function POST(req: NextRequest) {
       poll: safePoll,
       createdAt,
     });
-    await chatRef.set({ lastMessage: content || (type === 'poll' ? 'New poll' : 'Shared an image'), lastMessageAt: createdAt }, { merge: true });
     const chatRecipientIds = chatMembers.filter(
       (memberId): memberId is string => typeof memberId === 'string' && memberId !== auth.uid
     );
+    const recipientMemberships = await Promise.all(
+      chatRecipientIds.map(memberId => findActiveTeamMember(teamId, memberId))
+    );
+    const recipientUserIds = recipientMemberships.flatMap((member, index) => {
+      if (!member) return [];
+      const linkedUserId = member.data.userId;
+      const resolvedUserId = typeof linkedUserId === 'string' && linkedUserId.trim()
+        ? linkedUserId.trim()
+        : chatRecipientIds[index];
+      return resolvedUserId && resolvedUserId !== auth.uid ? [resolvedUserId] : [];
+    });
+    const unreadUpdate: Record<string, unknown> = {
+      lastMessage: content || (type === 'poll' ? 'New poll' : 'Shared an image'),
+      lastMessageAt: createdAt,
+      [`unreadBy.${auth.uid}`]: 0,
+    };
+    for (const recipientId of recipientUserIds) unreadUpdate[`unreadBy.${recipientId}`] = FieldValue.increment(1);
+    await chatRef.set(unreadUpdate, { merge: true });
     const channelName = typeof chat.data()?.name === 'string'
       ? chat.data()!.name.trim().slice(0, 100) || 'Team Chat'
       : 'Team Chat';
@@ -100,17 +118,6 @@ export async function POST(req: NextRequest) {
       webPushFailureCount: 0,
     };
     try {
-      const members = await Promise.all(
-        chatRecipientIds.map(memberId => findActiveTeamMember(teamId, memberId))
-      );
-      const recipientUserIds = members.flatMap((member, index) => {
-        if (!member) return [];
-        const linkedUserId = member.data.userId;
-        const resolvedUserId = typeof linkedUserId === 'string' && linkedUserId.trim()
-          ? linkedUserId.trim()
-          : chatRecipientIds[index];
-        return resolvedUserId && resolvedUserId !== auth.uid ? [resolvedUserId] : [];
-      });
       notificationResult = await sendNotificationToUsers({
         recipientUserIds,
         title: `New message in ${channelName}`,

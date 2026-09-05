@@ -157,6 +157,32 @@ export async function GET(req: NextRequest) {
   }
 }
 
+/** Clears only the current active member's unread count for one channel. */
+export async function PATCH(req: NextRequest) {
+  const auth = await verifyFirebaseToken(req);
+  if (auth instanceof NextResponse) return auth;
+  try {
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
+    const teamId = typeof body.teamId === 'string' && ID_PATTERN.test(body.teamId) ? body.teamId : '';
+    const chatId = typeof body.chatId === 'string' && ID_PATTERN.test(body.chatId) ? body.chatId : '';
+    if (!teamId || !chatId) return NextResponse.json({ error: 'Invalid tactical channel.' }, { status: 400 });
+    const rateLimit = await enforceUserRateLimit(auth.uid, 'team-chat-read', 120, 5 * 60 * 1000);
+    if (rateLimit) return rateLimit;
+    const chatRef = adminDb.collection('teams').doc(teamId).collection('groupChats').doc(chatId);
+    const [chat, member] = await Promise.all([chatRef.get(), findActiveTeamMember(teamId, auth.uid)]);
+    const isOwner = (await adminDb.collection('teams').doc(teamId).get()).data()?.ownerUserId === auth.uid;
+    if (!chat.exists || (!isOwner && auth.role !== 'superadmin' && (!member || !chat.data()?.memberIds?.includes(auth.uid)))) {
+      return NextResponse.json({ error: 'You are no longer authorized for this chat.' }, { status: 403 });
+    }
+    await chatRef.set({ [`unreadBy.${auth.uid}`]: 0, [`lastReadAtBy.${auth.uid}`]: new Date().toISOString() }, { merge: true });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
+    console.error('[teams/chat PATCH] Error:', error);
+    return NextResponse.json({ error: 'Unable to mark this chat as read.' }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;

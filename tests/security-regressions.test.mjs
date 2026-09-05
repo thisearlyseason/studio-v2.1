@@ -313,3 +313,23 @@ test('incident originals are write-once and client transitions are status-only a
   assert.match(provider, /action: `status:\$\{status\}`/);
   assert.doesNotMatch(detail, /Edit Report/);
 });
+
+test('chat unread state is recipient-specific, persisted by the server, and cleared only by an authorized reader', async () => {
+  const [message, chat, list, room] = await Promise.all([
+    readSource('../src/app/api/teams/chat/message/route.ts'),
+    readSource('../src/app/api/teams/chat/route.ts'),
+    readSource('../src/app/(dashboard)/chats/page.tsx'),
+    readSource('../src/app/(dashboard)/chats/[chatId]/page.tsx'),
+  ]);
+  assert.match(message, /FieldValue\.increment\(1\)/);
+  assert.match(message, /\[`unreadBy\.\$\{auth\.uid\}`\]: 0/);
+  assert.match(message, /chatRecipientIds\.map\(memberId => findActiveTeamMember\(teamId, memberId\)\)/);
+  assert.match(message, /for \(const recipientId of recipientUserIds\)/);
+  assert.match(chat, /export async function PATCH/);
+  assert.match(chat, /team-chat-read/);
+  assert.match(chat, /\[`unreadBy\.\$\{auth\.uid\}`\]: 0/);
+  assert.match(chat, /findActiveTeamMember\(teamId, auth\.uid\)/);
+  assert.match(list, /chat\.unreadBy\?\.\[user\?\.id \|\| ''\]/);
+  assert.match(room, /method: 'PATCH'/);
+  assert.match(room, /body: JSON\.stringify\(\{ teamId: effectiveTeamId, chatId \}\)/);
+});
