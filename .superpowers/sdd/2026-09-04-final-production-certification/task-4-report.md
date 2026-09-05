@@ -43,6 +43,15 @@ PATCHes, DELETE, three browser-render observations, and the exact
 create/link/relink, unlink, and removal reconciliations for the same runtime
 target and interval.
 
+Fresh post-evidence verification on the repaired worktree passed `npm test`
+(713/713), `npm run test:rules` (42/42), `npm run typecheck`, and `npm run
+build`. The shared active-team Chrome regression passed its two-tenant rapid
+switch, reload/Back, mobile containment, console, and response checks. The
+shared Alerts Chrome regression passed its exact two eligible alerts, audience
+exclusions, acknowledgement/history/reload, mobile, console, and response
+checks; it exited successfully with cleanup `299 deleted / 0 restored / 0
+retained`.
+
 ## Implemented and Executed Work
 
 - The tenant runner requires scenario-specific assertion sets for all 16 rows;
