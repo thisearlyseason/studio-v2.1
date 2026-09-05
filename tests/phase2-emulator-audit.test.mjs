@@ -420,6 +420,7 @@ test('Task 3 dashboard browser executes every route-policy branch and checks all
   assert.match(source, /function buildDashboardPolicyCases/);
   assert.match(source, /browserVisibleSensitiveNavigationAudit/);
   assert.match(source, /institutionHubButton/);
+  assert.match(source, /adminMenuItem/);
   assert.match(source, /dashboard visible navigation denied links/);
   assert.match(source, /dashboard visible navigation required links/);
   assert.match(source, /dashboard complete route policy/);

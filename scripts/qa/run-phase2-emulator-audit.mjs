@@ -3647,6 +3647,10 @@ function browserVisibleSensitiveNavigationAudit(session, allowedPaths, requiredP
         if (!visiblePaths.includes('/club') && await institutionHubButton.count() > 0 && await institutionHubButton.first().isVisible()) {
           visiblePaths.push('/club');
         }
+        const adminMenuItem = page.getByRole('menuitem', { name: 'Go to Admin Page' });
+        if (!visiblePaths.includes('/admin') && await adminMenuItem.count() > 0 && await adminMenuItem.first().isVisible()) {
+          visiblePaths.push('/admin');
+        }
         observations.push({
           viewport: viewport.width,
           deniedVisible: visiblePaths.filter(pathname => !allowedPaths.has(pathname)),
