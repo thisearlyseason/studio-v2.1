@@ -146,14 +146,22 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
         assertClosedObject(parsed.measured, ['fixture', 'dynamic'], 'Cleanup measurement');
         assertClosedObject(parsed.measured.fixture, ['firestore', 'auth', 'storage'], 'Fixture cleanup measurement');
         const dynamic = parsed.measured.dynamic;
-        assertClosedObject(dynamic, ['state', 'counts', 'reconciled', 'selectors', 'residuals', 'diagnostics'], 'Dynamic cleanup measurement');
+        assertClosedObject(dynamic, ['state', 'counts', 'reconciled', 'selectors', 'residuals', 'diagnostics', 'outcomes'], 'Dynamic cleanup measurement');
         assertClosedObject(dynamic.counts, ['deleted', 'restored', 'retainedAuditRecords'], 'Dynamic cleanup count');
         assertClosedObject(dynamic.reconciled, ['deleted', 'restored', 'retainedAuditRecords'], 'Dynamic cleanup reconciliation');
-        if (!Array.isArray(dynamic.selectors) || !Array.isArray(dynamic.residuals) || !Array.isArray(dynamic.diagnostics)) {
+        if (!Array.isArray(dynamic.selectors) || !Array.isArray(dynamic.residuals) || !Array.isArray(dynamic.diagnostics) || !Array.isArray(dynamic.outcomes)) {
           throw new Error(`${result.scenarioId} cleanup measurement arrays are invalid.`);
         }
         for (const residual of dynamic.residuals) assertClosedObject(residual, ['id', 'kind'], 'Cleanup residual');
         for (const diagnostic of dynamic.diagnostics) assertClosedObject(diagnostic, ['id', 'attempt', 'diagnostic'], 'Cleanup diagnostic');
+        for (const outcome of dynamic.outcomes) {
+          assertClosedObject(outcome, ['selector', 'kind', 'mutation', 'state', 'attempts'], 'Cleanup selector outcome');
+          if (!dynamic.selectors.includes(outcome.selector) || !['deleted', 'restored', 'retainedAuditRecord', 'obligation'].includes(outcome.kind) ||
+              !['deleted', 'restored', 'retained', 'none'].includes(outcome.mutation) || !['RECONCILED', 'RESIDUAL'].includes(outcome.state) ||
+              !Number.isInteger(outcome.attempts) || outcome.attempts < 1) {
+            throw new Error(`${result.scenarioId} cleanup selector outcome is invalid.`);
+          }
+        }
       }
       if ((expectedRunId && parsed.runId !== expectedRunId) || (expectedCommit && parsed.commit !== expectedCommit)) {
         throw new Error(`${result.scenarioId} cleanup proof run/candidate provenance does not match.`);

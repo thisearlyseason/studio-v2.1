@@ -204,7 +204,7 @@ test('physical-device-owned rows retain local cleanup proof while their external
     await writeFile(path.join(directory, 'cleanup/fixture-cleanup-marker.json'), JSON.stringify({
       runId, commit, fixtureRunId: 'reminder-fixture', state: 'OBSERVED',
       counts: { deleted: 4, restored: 0, retainedAuditRecords: 0 },
-      measured: { fixture: { firestore: 4, auth: 0, storage: 0 }, dynamic: { state: 'OBSERVED', counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, reconciled: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, selectors: [], residuals: [], diagnostics: [] } },
+      measured: { fixture: { firestore: 4, auth: 0, storage: 0 }, dynamic: { state: 'OBSERVED', counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, reconciled: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, selectors: ['storage:film-video'], residuals: [], diagnostics: [], outcomes: [{ selector: 'storage:film-video', kind: 'deleted', mutation: 'none', state: 'RECONCILED', attempts: 1 }] } },
       capturedAt: '2026-09-04T18:02:00.000Z',
     }));
     const result = {

@@ -38,6 +38,10 @@ test('dynamic registry retries deletion and restoration and returns measured cle
   assert.equal(deleteAttempts, 2);
   assert.equal(restoreAttempts, 2);
   assert.deepEqual(result.selectors, ['auth:signup-coach', 'claim:trusted-admin']);
+  assert.deepEqual(result.outcomes, [
+    { selector: 'auth:signup-coach', kind: 'deleted', mutation: 'deleted', state: 'RECONCILED', attempts: 2 },
+    { selector: 'claim:trusted-admin', kind: 'restored', mutation: 'restored', state: 'RECONCILED', attempts: 2 },
+  ]);
 });
 
 test('dynamic registry attempts every resource and reports residual postconditions', async () => {
@@ -62,6 +66,10 @@ test('dynamic registry attempts every resource and reports residual postconditio
   assert.equal(demoAttempts, 2);
   assert.deepEqual(result.counts, { deleted: 0, restored: 0, retainedAuditRecords: 0 });
   assert.deepEqual(result.residuals.map(item => item.id), ['demo:context-a', 'firestore:invite-youth']);
+  assert.deepEqual(result.outcomes, [
+    { selector: 'firestore:invite-youth', kind: 'deleted', mutation: 'none', state: 'RESIDUAL', attempts: 2 },
+    { selector: 'demo:context-a', kind: 'deleted', mutation: 'none', state: 'RESIDUAL', attempts: 2 },
+  ]);
   assert.equal(result.diagnostics.length >= 3, true);
 });
 
@@ -92,6 +100,9 @@ test('dynamic registry reconciles an already-absent resource without counting a 
   assert.equal(result.state, 'OBSERVED');
   assert.deepEqual(result.counts, { deleted: 0, restored: 0, retainedAuditRecords: 0 });
   assert.deepEqual(result.reconciled, { deleted: 1, restored: 0, retainedAuditRecords: 0 });
+  assert.deepEqual(result.outcomes, [
+    { selector: 'auth:already-absent', kind: 'deleted', mutation: 'none', state: 'RECONCILED', attempts: 1 },
+  ]);
 });
 
 test('dynamic registry preserves a measured mutation when verification fails transiently', async () => {
@@ -176,6 +187,7 @@ test('cleanup results merge immediate scenario cleanup with final fallback clean
   assert.deepEqual(merged.counts, { deleted: 6, restored: 1, retainedAuditRecords: 1 });
   assert.deepEqual(merged.reconciled, { deleted: 7, restored: 1, retainedAuditRecords: 1 });
   assert.deepEqual(merged.selectors, ['auth:youth', 'firestore:youth', 'auth:signup']);
+  assert.deepEqual(merged.outcomes, []);
   assert.deepEqual(merged.residuals, [{ id: 'auth:signup', kind: 'deleted' }]);
   assert.equal(merged.diagnostics.length, 1);
 });

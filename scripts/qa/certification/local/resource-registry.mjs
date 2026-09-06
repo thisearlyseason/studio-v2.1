@@ -10,6 +10,7 @@ export function mergeResourceCleanupResults(results) {
   const selectorSet = new Set();
   const residuals = [];
   const diagnostics = [];
+  const outcomes = [];
   let state = 'OBSERVED';
   for (const result of results) {
     if (!result) continue;
@@ -26,6 +27,7 @@ export function mergeResourceCleanupResults(results) {
     }
     residuals.push(...(result.residuals || []));
     diagnostics.push(...(result.diagnostics || []));
+    outcomes.push(...(result.outcomes || []));
   }
   return Object.freeze({
     state,
@@ -34,6 +36,7 @@ export function mergeResourceCleanupResults(results) {
     selectors: Object.freeze(selectors),
     residuals: Object.freeze(residuals),
     diagnostics: Object.freeze(diagnostics),
+    outcomes: Object.freeze(outcomes),
   });
 }
 
@@ -102,6 +105,18 @@ export function createResourceRegistry({ maxAttempts = 2 } = {}) {
         reconciled[key] += 1;
         if (resource.kind === 'retainedAuditRecord' || mutated.get(resource.id)) counts[key] += 1;
       }
+      const exhaustedIds = new Set(exhausted.map(resource => resource.id));
+      const outcomes = [...resources.values()].map(resource => Object.freeze({
+        selector: resource.id,
+        kind: resource.kind,
+        mutation: resource.kind === 'retainedAuditRecord'
+          ? 'retained'
+          : mutated.get(resource.id) === true
+            ? resource.kind
+            : 'none',
+        state: exhaustedIds.has(resource.id) ? 'RESIDUAL' : 'RECONCILED',
+        attempts: attempts.get(resource.id) || 0,
+      }));
       completed = Object.freeze({
         state: exhausted.length === 0 ? 'OBSERVED' : 'FAIL',
         counts: Object.freeze(counts),
@@ -109,6 +124,7 @@ export function createResourceRegistry({ maxAttempts = 2 } = {}) {
         selectors: Object.freeze([...resources.keys()]),
         residuals: Object.freeze(exhausted.map(resource => Object.freeze({ id: resource.id, kind: resource.kind }))),
         diagnostics: Object.freeze(diagnostics.map(item => Object.freeze(item))),
+        outcomes: Object.freeze(outcomes),
       });
       return completed;
     },

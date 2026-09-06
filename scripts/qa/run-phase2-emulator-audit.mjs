@@ -11836,7 +11836,7 @@ async function cleanup() {
   cleanupStarted = true;
   let dynamicCleanup = {
     state: 'OBSERVED', counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 },
-    reconciled: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, selectors: [], residuals: [], diagnostics: [],
+    reconciled: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, selectors: [], residuals: [], diagnostics: [], outcomes: [],
   };
   if (runBrowser && playwrightCli) {
     try {
