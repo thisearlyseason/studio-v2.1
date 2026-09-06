@@ -28,6 +28,10 @@ test('Calendar view-mode buttons retain accessible names when their labels are v
   }
 });
 
+test('Calendar filter trigger retains an accessible name when its label is visually hidden on mobile', () => {
+  assert.match(source, /PopoverTrigger asChild><Button aria-label="Filters"/);
+});
+
 test('Calendar defaults a parent to every authorized household team, not only the active squad', () => {
   assert.match(source, /if \(!isParent && activeTeam\?\.id && discoveryTeamIds\.includes\(activeTeam\.id\)\)/);
   assert.match(source, /setSelectedTeamIds\(discoveryTeamIds\)/);
