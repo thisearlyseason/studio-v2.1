@@ -9,17 +9,15 @@ import {
   USER_MAP_TARGETS,
 } from "./account-deletion";
 import {
-  buildUpcomingEventMessage,
   candidateDateKeys,
-  normalizeEventKind,
-  shouldSendSameDayReminder,
 } from "./event-reminders";
 import {
   canClaimReminderDelivery,
-  selectReminderDeliveryTargets,
   type WebPushSubscription,
 } from "./reminder-delivery";
 import { buildCalendarFeed, CalendarFeedEvent, CalendarFeedTeam } from "./calendar-feed";
+import { publicCalendarFeedFailure } from "./calendar-feed-public-boundary";
+import { runUpcomingEventReminderCore } from "./event-reminder-runner";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -279,7 +277,8 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
   const token = typeof queryToken === "string" ? queryToken : pathToken;
 
   if (!token || !/^[a-f0-9]{64}$/.test(token)) {
-    res.status(400).send("Command Invalid: Mission Critical Token Missing.");
+    const failure = publicCalendarFeedFailure("malformed");
+    res.status(failure.status).send(failure.body);
     return;
   }
 
@@ -291,20 +290,23 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
       feedSnap.data()?.active !== true ||
       feedSnap.data()?.serverIssued !== true
     ) {
-      res.status(403).send("Tactical Error: Feed Token Denied or Decommissioned.");
+      const failure = publicCalendarFeedFailure("inactive");
+      res.status(failure.status).send(failure.body);
       return;
     }
 
     const { type, userId, teamId, teamIds } = feedSnap.data()!;
     if (typeof userId !== "string" || !userId) {
-      res.status(403).send("Tactical Error: Feed Owner Invalid.");
+      const failure = publicCalendarFeedFailure("invalid-scope");
+      res.status(failure.status).send(failure.body);
       return;
     }
 
     let resolvedTeamIds: string[] = [];
     if (type === "team") {
       if (typeof teamId !== "string" || !(await hasCurrentCalendarTeamAccess(teamId, userId))) {
-        res.status(403).send("Tactical Error: Squad Access Revoked.");
+        const failure = publicCalendarFeedFailure("unauthorized");
+        res.status(failure.status).send(failure.body);
         return;
       }
       resolvedTeamIds = [teamId];
@@ -315,21 +317,24 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
         teamIds.length > 25 ||
         teamIds.some(value => typeof value !== "string")
       ) {
-        res.status(403).send("Tactical Error: Feed Scope Invalid.");
+        const failure = publicCalendarFeedFailure("invalid-scope");
+        res.status(failure.status).send(failure.body);
         return;
       }
       const access = await Promise.all(
         (teamIds as string[]).map(id => hasCurrentCalendarTeamAccess(id, userId))
       );
       if (access.some(allowed => !allowed)) {
-        res.status(403).send("Tactical Error: Squad Access Revoked.");
+        const failure = publicCalendarFeedFailure("unauthorized");
+        res.status(failure.status).send(failure.body);
         return;
       }
       resolvedTeamIds = teamIds as string[];
     } else if (type === "user") {
       resolvedTeamIds = await getCurrentCalendarTeamIds(userId);
     } else {
-      res.status(403).send("Tactical Error: Feed Type Invalid.");
+      const failure = publicCalendarFeedFailure("invalid-scope");
+      res.status(failure.status).send(failure.body);
       return;
     }
 
@@ -651,105 +656,67 @@ export const sendUpcomingEventReminders = onSchedule({
   memory: '512MiB',
 }, async () => {
   const now = new Date();
-  const eventSnaps = await db.collectionGroup("events")
-    .where("date", "in", candidateDateKeys(now))
-    .get();
   const teamCache = new Map<string, admin.firestore.DocumentSnapshot>();
-  let sentCount = 0;
-
-  for (const eventSnap of eventSnaps.docs) {
-    const teamRef = eventSnap.ref.parent.parent;
-    if (!teamRef) continue;
-    const teamId = teamRef.id;
-    let teamSnap = teamCache.get(teamId);
-    if (!teamSnap) {
-      teamSnap = await teamRef.get();
-      teamCache.set(teamId, teamSnap);
-    }
-    if (!teamSnap.exists) continue;
-
-    const eventData = eventSnap.data();
-    const teamData = teamSnap.data() || {};
-    const timeZone = typeof eventData.timeZone === "string"
-      ? eventData.timeZone
-      : (typeof teamData.timeZone === "string" ? teamData.timeZone : "America/Edmonton");
-    if (!shouldSendSameDayReminder(eventData, now, timeZone)) continue;
-
-    const members = await teamRef.collection("members").get();
-    const userIds = [...new Set(members.docs
-      .filter((member) => member.data().status !== "removed" && member.data().isDeleted !== true)
-      .map((member) => member.data().userId)
-      .filter((userId): userId is string => typeof userId === "string" && !!userId))];
-    if (!userIds.length) continue;
-
-    const users = await Promise.all(userIds.map((userId) => db.collection("users").doc(userId).get()));
-    for (const userSnap of users) {
-      if (!userSnap.exists) continue;
-      const user = userSnap.data() || {};
-      const targets = selectReminderDeliveryTargets(user);
-      if (!targets.fcmTokens.length && !targets.webPushSubscriptions.length) continue;
-
-      const deliveryRef = db.collection("eventReminderDeliveries")
-        .doc(`${teamId}_${eventSnap.id}_${userSnap.id}`);
-      const claimed = await db.runTransaction(async (transaction) => {
-        const delivery = await transaction.get(deliveryRef);
-        const data = delivery.data() || {};
+  const result = await runUpcomingEventReminderCore({
+    now,
+    listEvents: async () => {
+      const eventSnaps = await db.collectionGroup("events").where("date", "in", candidateDateKeys(now)).get();
+      return eventSnaps.docs.flatMap(snapshot => {
+        const teamRef = snapshot.ref.parent.parent;
+        return teamRef ? [{ teamId: teamRef.id, eventId: snapshot.id, event: snapshot.data() }] : [];
+      });
+    },
+    getTeam: async teamId => {
+      let snapshot = teamCache.get(teamId);
+      if (!snapshot) {
+        snapshot = await db.collection("teams").doc(teamId).get();
+        teamCache.set(teamId, snapshot);
+      }
+      return snapshot.exists ? snapshot.data() || {} : null;
+    },
+    listMembers: async teamId => (await db.collection("teams").doc(teamId).collection("members").get()).docs.map(item => item.data()),
+    getUser: async userId => {
+      const snapshot = await db.collection("users").doc(userId).get();
+      return snapshot.exists ? snapshot.data() || {} : null;
+    },
+    claim: async entry => {
+      const ref = db.collection("eventReminderDeliveries").doc(`${entry.teamId}_${entry.eventId}_${entry.userId}`);
+      return db.runTransaction(async transaction => {
+        const snapshot = await transaction.get(ref);
+        const data = snapshot.data() || {};
         const leaseExpiresAt = data.leaseExpiresAt?.toMillis?.() || 0;
-        if (!canClaimReminderDelivery({ status: data.status, leaseExpiresAt }, Date.now())) return false;
-        transaction.set(deliveryRef, {
-          teamId,
-          eventId: eventSnap.id,
-          userId: userSnap.id,
-          status: "processing",
-          attempts: Number(data.attempts || 0) + 1,
-          leaseExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + (5 * 60 * 1000)),
+        if (!canClaimReminderDelivery({ status: data.status, leaseExpiresAt }, now.getTime())) return false;
+        transaction.set(ref, {
+          ...entry, status: "processing", attempts: Number(data.attempts || 0) + 1,
+          leaseExpiresAt: admin.firestore.Timestamp.fromMillis(now.getTime() + (5 * 60 * 1000)),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
         return true;
       });
-      if (!claimed) continue;
-
-      try {
-        const title = `Upcoming ${normalizeEventKind(eventData).replace(/^./, (letter) => letter.toUpperCase())}`;
-        const body = buildUpcomingEventMessage(eventData);
-        const [fcm, webPush] = await Promise.all([
-          targets.fcmTokens.length
-            ? admin.messaging().sendEachForMulticast({
-              tokens: targets.fcmTokens,
-              notification: { title, body },
-              webpush: {
-                notification: {
-                  icon: "/favicon-192.png",
-                  badge: "/favicon-192.png",
-                },
-                fcmOptions: { link: "/calendar" },
-              },
-            })
-            : Promise.resolve({ successCount: 0, failureCount: 0 }),
-          sendReminderWebPush(targets.webPushSubscriptions, title, body),
-        ]);
-        const successCount = fcm.successCount + webPush.successCount;
-        const failureCount = fcm.failureCount + webPush.failureCount;
-        if (successCount < 1) throw new Error("No registered device accepted the reminder.");
-        await deliveryRef.set({
-          status: "sent",
-          successCount,
-          failureCount,
-          sentAt: admin.firestore.FieldValue.serverTimestamp(),
-          leaseExpiresAt: admin.firestore.FieldValue.delete(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        sentCount += 1;
-      } catch (error) {
-        await deliveryRef.set({
-          status: "failed",
-          error: error instanceof Error ? error.message : "Reminder delivery failed.",
-          leaseExpiresAt: admin.firestore.FieldValue.delete(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-      }
-    }
-  }
-
-  console.log(`[event-reminders] Sent ${sentCount} same-day player/parent reminder(s).`);
+    },
+    markSent: async entry => {
+      await db.collection("eventReminderDeliveries").doc(`${entry.teamId}_${entry.eventId}_${entry.userId}`).set({
+        status: "sent", successCount: entry.successCount, failureCount: entry.failureCount,
+        sentAt: admin.firestore.FieldValue.serverTimestamp(), leaseExpiresAt: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    },
+    markFailed: async entry => {
+      await db.collection("eventReminderDeliveries").doc(`${entry.teamId}_${entry.eventId}_${entry.userId}`).set({
+        status: "failed", error: entry.diagnostic, leaseExpiresAt: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    },
+    deliver: async ({ targets, title, body }) => {
+      const [fcm, webPush] = await Promise.all([
+        targets.fcmTokens.length ? admin.messaging().sendEachForMulticast({
+          tokens: targets.fcmTokens, notification: { title, body },
+          webpush: { notification: { icon: "/favicon-192.png", badge: "/favicon-192.png" }, fcmOptions: { link: "/calendar" } },
+        }) : Promise.resolve({ successCount: 0, failureCount: 0 }),
+        sendReminderWebPush(targets.webPushSubscriptions, title, body),
+      ]);
+      return { successCount: fcm.successCount + webPush.successCount, failureCount: fcm.failureCount + webPush.failureCount };
+    },
+  });
+  console.log(`[event-reminders] Sent ${result.sentCount} same-day player/parent reminder(s); ${result.failedCount} failed for retry.`);
 });

@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { OPERATIONS_SCENARIO_IDS } from '../scripts/qa/certification/local/selection.mjs';
-import { assertOperationsHandlerExactness, handlers, LOCAL_OPERATIONS_CASE_REQUIREMENTS } from '../scripts/qa/certification/local/batches/operations.mjs';
+import {
+  assertOperationsHandlerExactness,
+  handlers,
+  LOCAL_OPERATIONS_CASE_REQUIREMENTS,
+  selectCaseOwnedOperationAssertions,
+} from '../scripts/qa/certification/local/batches/operations.mjs';
 
 test('operations handler registry is an exact immutable match for the frozen Task 5 assignment', () => {
   assert.doesNotThrow(() => assertOperationsHandlerExactness(handlers));
@@ -27,4 +32,18 @@ test('every operations scenario has an explicit case contract for every local di
       assert.equal(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension].length, 1);
     }
   }
+});
+
+test('operations evidence assigns an assertion to only its declared exact case', () => {
+  const assertions = [
+    { label: 'owner event create persists after reload' },
+    { label: 'member cannot edit team event' },
+    { label: 'owner event create console errors' },
+  ];
+  const selected = selectCaseOwnedOperationAssertions(assertions, [/owner event create persists after reload/]);
+  assert.deepEqual(selected, [assertions[0]]);
+  assert.throws(
+    () => selectCaseOwnedOperationAssertions(assertions, [/missing schedule assertion/]),
+    /Missing required operation assertion/,
+  );
 });

@@ -103,6 +103,7 @@ test('notification controls are enforced by the UI, API, rules, and scheduler', 
   const notificationDelivery = fs.readFileSync(new URL('../src/lib/server-notification-delivery.ts', import.meta.url), 'utf8');
   const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
   const scheduler = fs.readFileSync(new URL('../functions/src/index.ts', import.meta.url), 'utf8');
+  const schedulerCore = fs.readFileSync(new URL('../functions/src/event-reminder-runner.ts', import.meta.url), 'utf8');
 
   assert.match(settings, /Game-Day Reminders/);
   assert.match(settings, /upcomingEventNotificationsEnabled/);
@@ -110,7 +111,8 @@ test('notification controls are enforced by the UI, API, rules, and scheduler', 
   assert.match(notificationDelivery, /notificationsEnabled === false/);
   assert.match(rules, /upcomingEventNotificationsEnabled/);
   assert.match(scheduler, /eventReminderDeliveries/);
-  assert.match(scheduler, /selectReminderDeliveryTargets\(user\)/);
+  assert.match(scheduler, /runUpcomingEventReminderCore/);
+  assert.match(schedulerCore, /selectReminderDeliveryTargets\(user\)/);
   assert.match(scheduler, /sendReminderWebPush/);
 });
 

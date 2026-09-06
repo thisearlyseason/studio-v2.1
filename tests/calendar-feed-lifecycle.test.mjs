@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { resolveCalendarFeedMutation } from '../src/lib/calendar-feed-lifecycle.ts';
+import { publicCalendarFeedFailure } from '../functions/src/calendar-feed-public-boundary.ts';
 
 const activeTeamFeed = {
   id: 'a'.repeat(64),
@@ -65,4 +66,13 @@ test('calendar feed create reuses only an active server-issued feed with the exa
     token: 'e'.repeat(64),
     deactivateIds: [],
   });
+});
+
+test('public calendar fetch failures are intentionally non-enumerating not-found responses', () => {
+  for (const reason of ['malformed', 'unknown', 'inactive', 'revoked', 'unauthorized', 'invalid-scope']) {
+    assert.deepEqual(publicCalendarFeedFailure(reason), {
+      status: 404,
+      body: 'Calendar feed not found.',
+    });
+  }
 });

@@ -187,12 +187,14 @@ test('operations certification selection remains explicit and does not widen leg
   assert.deepEqual(configured.selectedScenarios, ['events-event-crud-recurrence']);
 });
 
-test('managed operations chat dispatch emits one attributable result for each local dimension', () => {
+test('managed operations dispatch keeps each emitted dimension tied to its exact assertions', () => {
   const start = source.indexOf('function recordBlockedOperationsCases(');
   const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
   const operationsBlock = source.slice(start, end);
   assert.match(operationsBlock, /function recordBlockedOperationsCases\(scenarioId, reason, dimensions = DIMENSION_NAMES\)/);
-  assert.match(operationsBlock, /const firstCapturedAt = activeCertificationAssertions\.map\(assertion => assertion\.capturedAt\)\.filter\(Boolean\)\.sort\(\)\[0\] \|\| null;/);
+  assert.match(operationsBlock, /selectCaseOwnedOperationAssertions\(activeCertificationAssertions, patterns\)/);
+  assert.match(operationsBlock, /const firstCapturedAt = assertions\.map\(assertion => assertion\.capturedAt\)\.filter\(Boolean\)\.sort\(\)\[0\] \|\| null;/);
+  assert.doesNotMatch(operationsBlock, /\{ assertions: \[\.\.\.activeCertificationAssertions\] \}/);
   assert.match(operationsBlock, /for \(const dimension of \['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'\]\)/);
   assert.doesNotMatch(operationsBlock, /recordBlockedOperationsCases\(scenarioId,[\s\S]*?390x844/);
   assert.match(source, /const emptySendDisabled = await page\.getByRole\('button', \{ name: 'Send message' \}\)\.isDisabled\(\)/);

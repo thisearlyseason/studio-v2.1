@@ -17,7 +17,7 @@ import {
 } from './certification/local/batches/identity.mjs';
 import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER, tenantCaseAssociationFor } from './certification/local/batches/tenants.mjs';
 import { OPERATIONS_SCENARIO_IDS } from './certification/local/selection.mjs';
-import { LOCAL_OPERATIONS_CASE_REQUIREMENTS } from './certification/local/batches/operations.mjs';
+import { LOCAL_OPERATIONS_CASE_REQUIREMENTS, selectCaseOwnedOperationAssertions } from './certification/local/batches/operations.mjs';
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
@@ -6613,8 +6613,48 @@ function recordBlockedOperationsCases(scenarioId, reason, dimensions = DIMENSION
   }
 }
 
+const OPERATION_CASE_ASSERTION_PATTERNS = Object.freeze({
+  'events-event-crud-recurrence': Object.freeze({
+    happyPath: [/owner event create persists after reload/],
+    negativePath: [/event rejects incomplete activity/],
+    permission: [/member cannot edit team event/],
+    persistence: [/owner event edit persists after reload/],
+    console: [/event .* console errors$/], network: [/event .* failed responses$/],
+    responsive: [/weekly recurrence controls fit mobile viewport/],
+  }),
+  'events-rsvp-attendance-details': Object.freeze({
+    happyPath: [/parent child RSVP persists through the browser/], negativePath: [/cancelled activity RSVP is denied/],
+    permission: [/other-household RSVP forge is denied/], persistence: [/parent browser RSVP writes the linked youth member identity/],
+    console: [/parent RSVP workflow console errors/], network: [/parent RSVP workflow failed responses/], responsive: [/parent RSVP dialog fits mobile viewport/],
+  }),
+  'attendance-practice-event-member-attendance': Object.freeze({
+    happyPath: [/member attendance RSVP response/], negativePath: [], permission: [], persistence: [/staff attendance override persisted/],
+    console: [/staff attendance workflow console errors/], network: [/staff attendance workflow failed responses/], responsive: [/staff attendance page fits mobile viewport/],
+  }),
+  'calendar-team-family-views-and-filters': Object.freeze({
+    happyPath: [/Calendar exposes the authenticated owner squad filter choices/], negativePath: [/Calendar empty filter state hides household schedule entries/],
+    permission: [/Calendar parent cannot discover another household team filter/], persistence: [],
+    console: [/Calendar .* workflow console errors/], network: [/Calendar .* workflow failed responses/], responsive: [/Calendar .* fits the mobile viewport/],
+  }),
+  'calendar-ics-create-fetch-revoke': Object.freeze({
+    happyPath: [/Calendar feed issue, rotation, and revoke responses/], negativePath: [], permission: [],
+    persistence: [/Calendar feed issue, rotation, and revoke responses/], console: [/Calendar feed lifecycle console errors/],
+    network: [/Calendar feed lifecycle failed responses/], responsive: [/Calendar feed controls fit the mobile viewport/],
+  }),
+  'reminders-same-day-fcm-scheduler': Object.freeze({
+    happyPath: [], negativePath: [/Reminder scheduler local eligibility, exclusion, idempotency, and retry suite/], permission: [],
+    persistence: [/Reminder scheduler local eligibility, exclusion, idempotency, and retry suite/], console: [], network: [], responsive: [],
+  }),
+});
+
 function recordObservedOperationsCase(scenarioId, dimension, observed) {
-  const firstCapturedAt = activeCertificationAssertions.map(assertion => assertion.capturedAt).filter(Boolean).sort()[0] || null;
+  const patterns = OPERATION_CASE_ASSERTION_PATTERNS[scenarioId]?.[dimension] || [];
+  if (patterns.length === 0) {
+    recordBlockedOperationsCases(scenarioId, `No exact case-owned ${dimension} assertion was observed for this local operation.`, [dimension]);
+    return;
+  }
+  const assertions = selectCaseOwnedOperationAssertions(activeCertificationAssertions, patterns);
+  const firstCapturedAt = assertions.map(assertion => assertion.capturedAt).filter(Boolean).sort()[0] || null;
   recordCertificationCase(
     scenarioId,
     dimension,
@@ -6622,7 +6662,7 @@ function recordObservedOperationsCase(scenarioId, dimension, observed) {
     observed,
     'case-owned local browser/API assertions completed',
     firstCapturedAt,
-    { assertions: [...activeCertificationAssertions] },
+    { assertions },
   );
 }
 

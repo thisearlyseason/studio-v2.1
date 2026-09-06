@@ -20,6 +20,18 @@ function parseCertificationEvents(output) {
   });
 }
 
+// Operations must never inherit the whole scenario assertion bag.  A case
+// artifact may contain only assertions that its declared contract selected.
+export function selectCaseOwnedOperationAssertions(assertions, requiredPatterns) {
+  const selected = [];
+  for (const pattern of requiredPatterns) {
+    const matches = assertions.filter(assertion => pattern.test(assertion.label));
+    if (matches.length === 0) throw new Error(`Missing required operation assertion: ${pattern}.`);
+    for (const assertion of matches) if (!selected.includes(assertion)) selected.push(assertion);
+  }
+  return Object.freeze(selected);
+}
+
 function externalRequirementsFor(scenario) {
   return scenario.environments.filter(environment => environment !== 'local-emulator').map(environment => {
     if (environment === 'staging') return 'exact staging revision';
