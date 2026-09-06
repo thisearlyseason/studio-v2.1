@@ -127,6 +127,7 @@ let activeCertificationAssertions = [];
 let activeCertificationCaseIds = new Set();
 let activeTenantExecution = null;
 let activeTenantExecutionGroup = null;
+let rsvpAttendanceWorkflowInvocation = 0;
 const tenantTokenActors = new Map();
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
@@ -7887,7 +7888,10 @@ async function addAttendanceFixtureMembership(teamId, memberUid, memberName) {
 }
 
 async function runRsvpAndAttendanceWorkflowAudit() {
-  const marker = `phase2-rsvp-${process.pid}`;
+  // Attendance and RSVP rows both use this real workflow when selected in one
+  // local batch. Scope each disposable event to the invocation so the second
+  // row tests the product instead of colliding with the first fixture.
+  const marker = `phase2-rsvp-${process.pid}-${++rsvpAttendanceWorkflowInvocation}`;
   const teamAId = FIXTURES.teams.find(team => team.alias === 'qa-team-a')?.id;
   const proTeamId = FIXTURES.teams.find(team => team.alias === 'qa-pro-team')?.id;
   if (!teamAId || !proTeamId) throw new Error('Required RSVP/attendance fixture team is missing.');
