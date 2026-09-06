@@ -31,7 +31,7 @@ import { operationActorAliases } from './certification/local/operation-actors.mj
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
 import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark, observeFilmDeletionReconciliation } from './certification/local/film-playback.mjs';
-import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate} from './certification/local/practice-browser.mjs';
+import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent} from './certification/local/practice-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -7382,8 +7382,9 @@ async function runPracticePlanWorkflowAudit() {
         await dialog.getByText(${JSON.stringify(drillTitle)},{exact:true}).waitFor({timeout:15000});
         measurements.push(await (${measurePracticeBounds.toString()})(page,{dialog,drill:dialog.getByText(${JSON.stringify(drillTitle)},{exact:true}),close:dialog.getByRole('button',{name:'Close event details',exact:true})}));
         await dialog.getByRole('button',{name:'Close event details',exact:true}).click();
+        await dialog.waitFor({state:'hidden',timeout:5000});
       }
-      return{visible:await page.getByText(${JSON.stringify(eventTitle)},{exact:true}).count(),measurements,...observer.finish()};
+      return{visible:await (${findPracticeAssignedEvent.toString()})(page,${JSON.stringify(eventTitle)}).count(),measurements,...observer.finish()};
     }finally{observer.finish();}
   }`]));
   expectEqual(memberResult.visible, 1, 'Practice member sees the exact assigned plan event');

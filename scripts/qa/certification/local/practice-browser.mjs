@@ -1,4 +1,5 @@
 // Case-scoped Practice browser evidence and responsive measurements.
+export function findPracticeAssignedEvent(page,title) {return page.getByRole('heading',{name:title,level:4,exact:true});}
 export async function deleteUnusedPracticeTemplate(page,title,dismissAlerts) {
   await dismissAlerts(page);
   const heading=page.getByRole('heading',{name:title,exact:true});
