@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
 import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
+import {libraryDataUrlBlob} from '@/lib/library-client-upload';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
@@ -2733,7 +2734,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!['Game Tape','Practice Session','Highlights'].includes(c) && u.startsWith('data:')) {
       if(!firebaseAuth)throw new Error('Authentication unavailable.');
       const token=await getAuthToken(firebaseAuth);if(!token)throw new Error('Please sign in again.');
-      const payload=await (await fetch(u)).blob();
+      const payload=libraryDataUrlBlob(u);
       const params=new URLSearchParams({teamId:activeTeam.id,name:n,category:c,description:d||''});
       const response=await fetch('/api/teams/library?'+params,{method:'POST',headers:{...authHeader(token),'Content-Type':payload.type},body:payload});
       if(!response.ok)throw new Error((await response.json()).error||'File upload failed.');
