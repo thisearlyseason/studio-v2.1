@@ -33,7 +33,7 @@ import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from 
 import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark, observeFilmDeletionReconciliation } from './certification/local/film-playback.mjs';
 import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent, reorderPracticeDrill, waitForPracticeDeleteResponse} from './certification/local/practice-browser.mjs';
 import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs';
-import {createPollBrowserObserver} from './certification/local/poll-browser.mjs';
+import {createPollBrowserObserver,findPollCard} from './certification/local/poll-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -8328,7 +8328,7 @@ async function runPollWorkflowAudit() {
     const result=JSON.parse(cli(session,['run-code',`async page=>{
       const observer=(${createPollBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)},chatId:${JSON.stringify(chatId)}});
       const dismissAlerts=${dismissFilmTeamAlert.toString()},measure=${measurePracticeBounds.toString()};
-      const card=()=>page.getByRole('heading',{name:${JSON.stringify(question)},exact:true}).locator('xpath=../../..');
+      const card=()=>(${findPollCard.toString()})(page,${JSON.stringify(question)});
       const mutation=route=>page.waitForResponse(response=>response.url()===${JSON.stringify(BASE_URL)}+'/api/teams/chat/'+route&&response.request().method()==='POST',{timeout:15000});
       observer.start(${JSON.stringify(cases)});
       let value;try{value=await(async()=>{${body}})();}finally{var observation=observer.finish();}return{value,...observation};

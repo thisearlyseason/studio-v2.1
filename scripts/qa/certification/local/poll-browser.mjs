@@ -1,4 +1,5 @@
 // Serialized into the owned Playwright CLI VM; no unsupported URL globals.
+export function findPollCard(page,question){return page.getByRole('heading',{name:question,level:4,exact:true}).locator('xpath=../../..');}
 export function createPollBrowserObserver(page,{baseUrl,chatId}) {
   let tags=[];
   const requests=new WeakMap(),observedResponses=[],consoleErrors=[],failedResponses=[];
