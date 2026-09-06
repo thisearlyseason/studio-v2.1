@@ -1,8 +1,8 @@
 // Case-scoped Practice browser evidence and responsive measurements.
 export async function deleteUnusedPracticeTemplate(page,title,dismissAlerts) {
+  await dismissAlerts(page);
   const heading=page.getByRole('heading',{name:title,exact:true});
   await heading.waitFor({state:'visible',timeout:15000});
-  await dismissAlerts(page);
   await page.getByRole('button',{name:`Delete ${title}`,exact:true}).click();
   await page.getByText('Protocol Deleted',{exact:true}).waitFor({timeout:15000});
   await heading.waitFor({state:'detached',timeout:15000});
