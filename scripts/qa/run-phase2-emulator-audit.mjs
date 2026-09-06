@@ -31,7 +31,7 @@ import { operationActorAliases } from './certification/local/operation-actors.mj
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
 import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark, observeFilmDeletionReconciliation } from './certification/local/film-playback.mjs';
-import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent} from './certification/local/practice-browser.mjs';
+import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent, reorderPracticeDrill, waitForPracticeDeleteResponse} from './certification/local/practice-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -7501,8 +7501,7 @@ async function runPracticeDrillWorkflowAudit() {
       await search.fill(''); const emptyCount = await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count();
       stage = 'reorder drills';
       observer.start(['drill-reorder','drill-persistence']);
-      await page.getByRole('button', { name: ${JSON.stringify(`Move ${orderedTitles[1]} earlier`)} }).click();
-      await page.reload();
+      await (${reorderPracticeDrill.toString()})(page,${JSON.stringify(orderedTitles[1])});
       await page.getByText(${JSON.stringify(orderedTitles[0])}, { exact: true }).waitFor({ timeout: 15000 });
       await page.getByText(${JSON.stringify(orderedTitles[1])}, { exact: true }).waitFor({ timeout: 15000 });
       const renderedOrder = await page.locator('h3').filter({ hasText: /^QA (?:Alpha|Bravo) Drill/ }).allTextContents();
@@ -7596,7 +7595,9 @@ async function runPracticeDrillWorkflowAudit() {
       await page.setViewportSize({width:1440,height:900});await page.goto(${JSON.stringify(`${BASE_URL}/drills`)});
       await (${dismissFilmTeamAlert.toString()})(page);
       const drill=page.getByRole('heading',{name:${JSON.stringify(editedMarker)},exact:true,level:3});await drill.waitFor({timeout:15000});
+      const response=(${waitForPracticeDeleteResponse.toString()})(page,${JSON.stringify(crud.id)});
       await page.getByRole('button',{name:${JSON.stringify(`Delete ${editedMarker}`)},exact:true}).click();
+      const status=(await response).status();if(status!==200)throw new Error('Drill delete write response '+status);
       await drill.waitFor({state:'detached',timeout:15000});return observer.finish();
     }finally{observer.finish();}
   }`]));

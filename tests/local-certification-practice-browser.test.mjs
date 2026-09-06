@@ -50,3 +50,21 @@ test('Practice unused delete drains the aria-hiding overlay before locating any 
   },getByText(){return{async waitFor(){assert.equal(deleted,true);}};}};
   assert.equal(await practice.deleteUnusedPracticeTemplate(page,'Unused',async()=>{covered=false;}),true);
 });
+
+test('Drill reorder waits for the supported write acknowledgement before navigation can discard responses',async()=>{
+  let saved=false;
+  const page={getByRole(){return{async click(){}};},getByText(text){assert.equal(text,'Playbook Reordered');return{async waitFor(){saved=true;}};},async reload(){assert.equal(saved,true,'reload must follow write acknowledgement');}};
+  await practice.reorderPracticeDrill(page,'Bravo');
+});
+
+test('Drill deletion response wait accepts only the actual exact document delete, not handshakes or other writes',async()=>{
+  let predicate;
+  const page={waitForResponse(check,options){predicate=check;assert.equal(options.timeout,10000);return Promise.resolve({status:()=>200});}};
+  await practice.waitForPracticeDeleteResponse(page,'owned');
+  const response=(writes,method='POST',origin='http://127.0.0.1:8080')=>({url:()=>origin+'/google.firestore.v1.Firestore/Write/channel?private=secret',request:()=>({method:()=>method,postData:()=> 'req0___data__='+encodeURIComponent(JSON.stringify({writes}))})});
+  assert.equal(predicate(response([{delete:'projects/demo/databases/(default)/documents/teams/a/drills/owned'}])),true);
+  assert.equal(predicate(response([{delete:'projects/demo/databases/(default)/documents/teams/a/drills/other'}])),false);
+  assert.equal(predicate(response([{update:{name:'projects/demo/databases/(default)/documents/teams/a/drills/owned'}}])),false);
+  assert.equal(predicate(response([])),false);
+  assert.equal(predicate(response([{delete:'teams/a/drills/owned'}],'POST','https://example.com')),false);
+});

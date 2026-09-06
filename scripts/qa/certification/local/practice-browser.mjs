@@ -1,5 +1,24 @@
 // Case-scoped Practice browser evidence and responsive measurements.
 export function findPracticeAssignedEvent(page,title) {return page.getByRole('heading',{name:title,level:4,exact:true});}
+export async function reorderPracticeDrill(page,title) {
+  await page.getByRole('button',{name:`Move ${title} earlier`,exact:true}).click();
+  await page.getByText('Playbook Reordered',{exact:true}).waitFor({timeout:15000});
+  await page.reload();
+}
+
+export function waitForPracticeDeleteResponse(page,documentId) {
+  return page.waitForResponse(response=>{
+    if(!response.url().startsWith('http://127.0.0.1:8080/google.firestore.v1.Firestore/Write/channel?')||response.request().method()!=='POST')return false;
+    try{
+      return (response.request().postData()||'').split('&').some(field=>{
+        const separator=field.indexOf('=');
+        if(!field.slice(0,separator).endsWith('___data__'))return false;
+        const payload=JSON.parse(decodeURIComponent(field.slice(separator+1)));
+        return Array.isArray(payload.writes)&&payload.writes.some(write=>typeof write.delete==='string'&&write.delete.endsWith('/'+documentId));
+      });
+    }catch{return false;}
+  },{timeout:10000});
+}
 export async function deleteUnusedPracticeTemplate(page,title,dismissAlerts) {
   await dismissAlerts(page);
   const heading=page.getByRole('heading',{name:title,exact:true});
