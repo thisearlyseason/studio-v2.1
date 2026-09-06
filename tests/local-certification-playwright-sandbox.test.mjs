@@ -39,6 +39,13 @@ test('Event owner edit workflow captures a distinct reload response for the pers
   assert.match(source, /captureBrowserOperationRequests\('evt-persistence', 'qa-coach-owner-a', eventWorkflow\.ownerResult\.observedResponses, 'evt-persistence'\)/);
 });
 
+test('Attendance named cases require independent observed request evidence', () => {
+  const source = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  for (const caseId of ['att-staff-record', 'att-duplicate', 'att-member-readonly', 'att-removed', 'att-removed-read', 'att-tenant-b', 'att-race', 'att-console', 'att-network', 'att-responsive']) {
+    assert.match(source, new RegExp(`'${caseId}'[^\\n]+requests: operationRequestEvidence\\('${caseId}'\\)`));
+  }
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {
