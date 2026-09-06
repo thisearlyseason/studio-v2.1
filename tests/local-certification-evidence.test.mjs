@@ -21,7 +21,10 @@ const [scenario] = CERTIFICATION_SCENARIOS;
 test('persisted operations evidence requires unique assertion IDs, exact execution and cleanup provenance', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'schedule-evidence-'));
   const at = '2026-09-04T18:00:01.000Z';
-  const execution = { actor: 'qa-coach-owner-a', operation: 'create', requests: [{ method: 'POST', pathname: '/api/teams/events/action', status: 200 }],
+  const execution = { actor: 'qa-coach-owner-a', operation: 'create', requests: [{
+    evidenceId: 'request-one', method: 'POST', pathname: '/api/teams/events/action', status: 200,
+    actorAlias: 'qa-coach-owner-a', startedAt: at, completedAt: at,
+  }],
     reconciliation: 'server event exists', observer: 'emulator read', timeBound: '15s', cleanupReference: 'exact-cleanup' };
   const cases = ['one', 'two'].map(caseId => ({ caseId, dimension: 'happyPath', actorAliases: ['qa-coach-owner-a'], role: 'V',
     tenantAlias: 'not-applicable', expected: 'created', observed: 'created', state: 'OBSERVED', startedAt: at, completedAt: at,

@@ -282,10 +282,17 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
       for (const key of ['actor', 'operation', 'reconciliation', 'observer', 'timeBound', 'cleanupReference']) assertPlainString(execution?.[key], `operation execution ${key}`);
       if (!Array.isArray(execution.requests) || execution.requests.length === 0) throw new Error(`${caseRecord.caseId} requires operation requests.`);
       for (const request of execution.requests) {
-        assertClosedObject(request, ['method', 'pathname', 'status'], 'Operation request');
-        assertPlainString(request.method, 'operation request method');
-        assertPlainString(request.pathname, 'operation request pathname');
-        if (request.status !== 'observed' && (!Number.isInteger(request.status) || request.status < 100 || request.status > 599)) throw new Error('Invalid operation request status.');
+        assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'startedAt', 'completedAt'], 'Operation request');
+        assertPlainString(request.evidenceId, 'operation request evidenceId');
+        if (!/^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method) ||
+            typeof request.pathname !== 'string' || !request.pathname.startsWith('/') || request.pathname.includes('?') ||
+            !Number.isInteger(request.status) || request.status < 100 || request.status > 599 ||
+            typeof request.actorAlias !== 'string' || request.actorAlias !== execution.actor) {
+          throw new Error(`${caseRecord.caseId} has invalid exact operation request evidence.`);
+        }
+        const requestStartedAt = parseTimestamp(request.startedAt, 'operation request startedAt');
+        const requestCompletedAt = parseTimestamp(request.completedAt, 'operation request completedAt');
+        if (requestCompletedAt < requestStartedAt) throw new Error(`${caseRecord.caseId} operation request interval is invalid.`);
       }
       if (execution.cleanupReference !== result.cleanup?.reference) throw new Error(`${caseRecord.caseId} cleanup reference must bind the exact measured cleanup.`);
     }
