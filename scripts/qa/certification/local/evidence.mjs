@@ -287,7 +287,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         if (!/^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method) ||
             typeof request.pathname !== 'string' || !request.pathname.startsWith('/') || request.pathname.includes('?') ||
             !Number.isInteger(request.status) || request.status < 100 || request.status > 599 ||
-            typeof request.actorAlias !== 'string' || request.actorAlias !== execution.actor) {
+            typeof request.actorAlias !== 'string' || !execution.actor.split('+').map(actor => actor.trim()).includes(request.actorAlias)) {
           throw new Error(`${caseRecord.caseId} has invalid exact operation request evidence.`);
         }
         const requestStartedAt = parseTimestamp(request.startedAt, 'operation request startedAt');
