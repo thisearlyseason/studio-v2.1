@@ -584,11 +584,24 @@ service cloud.firestore {
         allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
       }
 
+      match /files/{fileId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        // Library service owns object-backed mutations; preserve Film/link and
+        // legacy document reads without migrating those unrelated records.
+        allow create: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) &&
+          !request.resource.data.keys().hasAny(['storagePath']) &&
+          (request.resource.data.get('category', '') in ['Game Tape', 'Practice Session', 'Highlights'] ||
+            (request.resource.data.get('category', '') == 'Link / URL' && request.resource.data.get('url', '').matches('https?://.*')));
+        allow update: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) &&
+          !resource.data.keys().hasAny(['storagePath']) && !request.resource.data.keys().hasAny(['storagePath']);
+        allow delete: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) && !resource.data.keys().hasAny(['storagePath']);
+      }
+
       match /{subCollection}/{docId} {
         // Do not let this compatibility fallback broaden any explicitly
         // authorized subcollection above. Firestore ORs overlapping matches.
         allow read: if !(subCollection in [
-          'feedPosts', 'feedOperations', 'feedAudit',
+          'files', 'feedPosts', 'feedOperations', 'feedAudit',
           'members', 'events', 'incidents', 'games', 'fundraising',
           'paymentItems', 'payments', 'alerts', 'groupChats',
           'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
@@ -597,7 +610,7 @@ service cloud.firestore {
           (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
         );
         allow write: if !(subCollection in [
-          'feedPosts', 'feedOperations', 'feedAudit',
+          'files', 'feedPosts', 'feedOperations', 'feedAudit',
           'members', 'events', 'incidents', 'games', 'fundraising',
           'paymentItems', 'payments', 'alerts', 'groupChats',
           'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
@@ -607,7 +620,7 @@ service cloud.firestore {
 
         match /{subSubCollection}/{subDocId} {
           allow read: if !(subCollection in [
-            'feedPosts', 'feedOperations', 'feedAudit',
+            'files', 'feedPosts', 'feedOperations', 'feedAudit',
             'members', 'events', 'incidents', 'games', 'fundraising',
             'paymentItems', 'payments', 'alerts', 'groupChats',
             'coachWaiverSignatures'
@@ -616,7 +629,7 @@ service cloud.firestore {
             (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
           );
           allow write: if !(subCollection in [
-            'feedPosts', 'feedOperations', 'feedAudit',
+            'files', 'feedPosts', 'feedOperations', 'feedAudit',
             'members', 'events', 'incidents', 'games', 'fundraising',
             'paymentItems', 'payments', 'alerts', 'groupChats',
             'coachWaiverSignatures'

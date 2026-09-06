@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, openSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { Agent as HttpAgent } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -34,6 +34,7 @@ import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSa
 import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent, reorderPracticeDrill, waitForPracticeDeleteResponse} from './certification/local/practice-browser.mjs';
 import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs';
 import {createPollBrowserObserver,findPollCard} from './certification/local/poll-browser.mjs';
+import {createLibraryBrowserObserver,validateLibraryDownload} from './certification/local/library-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -6982,6 +6983,13 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'files-library-crud-download' && runBrowser) {
         await runLibraryWorkflowAudit();
+        for(const [dimension,caseIds]of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]))for(const caseId of caseIds){
+          const requests=operationRequestEvidence(caseId);
+          recordObservedOperationNamedCase(scenarioId,dimension,caseId,`${caseId} completed with owned metadata and bytes`,[new RegExp(`^Library ${caseId}:`)],{
+            actor:[...new Set(requests.map(request=>request.actorAlias))].sort().join('+'),operation:'visible Library workflow or protected Library request',requests,
+            reconciliation:'exact metadata/object/attachment name-length-hash and cleanup reconciliation',timeBound:'15s UI and 20s HTTP deadlines',
+          });
+        }
         return;
       }
       if (scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser) {
@@ -8313,23 +8321,80 @@ async function runLibraryWorkflowAudit() {
   const team=FIXTURES.teams.find(item=>item.alias==='qa-team-a');
   const name=`Library ${certificationRunId}.pdf`;
   const directory=mkdtempSync(path.join(os.tmpdir(),'qa-library-'));
-  const filePath=path.join(directory,name);
-  writeFileSync(filePath,Buffer.from('%PDF-1.4\n% Synthetic Library certification\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n'));
+  const filePath=path.join(directory,name),payload=Buffer.from('%PDF-1.4\n% Synthetic Library certification\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n'),temporary=[filePath];
+  const expectedHash=createHash('sha256').update(payload).digest('hex');
+  const cleanupTemp=()=>{for(const item of temporary)if(existsSync(item))unlinkSync(item);if(existsSync(directory))rmdirSync(directory);};
+  activeOperationResourceRegistry.register({id:'library-temporary-payloads',kind:'obligation',async cleanup(){cleanupTemp();return false;},async verify(){return !existsSync(directory);}});
+  writeFileSync(filePath,payload);
   await registerScheduleDiscovery({registry:activeOperationResourceRegistry,scopeId:'library-documents',snapshot:()=>withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`teams/${team.id}/files`).listDocuments()).map(ref=>ref.path)),registerRoot:documentPath=>registerDynamicFirestoreRoot(documentPath,'library-owned-'+documentPath.split('/').at(-1))});
+  const registered=new Set(),registerObject=objectPath=>{if(!registered.has(objectPath)){registered.add(objectPath);registerDynamicStorageObject(objectPath,'library-object-'+objectPath.split('/').at(-2),activeOperationResourceRegistry);}};
+  const baseline=await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.getFiles({prefix:`teams/${team.id}/library/`}))[0].map(file=>file.name));
+  activeOperationResourceRegistry.register({id:'library-object-discovery',kind:'obligation',async cleanup(){const paths=await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.getFiles({prefix:`teams/${team.id}/library/`}))[0].map(file=>file.name));for(const objectPath of paths)if(!baseline.includes(objectPath))registerObject(objectPath);return false;},async verify(){return true;}});
+  await withEmulatorAuthAdmin(async(_auth,db)=>registerFirestoreDocumentRestoration(`teams/${team.id}`,(await db.doc(`teams/${team.id}`).get()).data(),'library-team-settings',activeOperationResourceRegistry));
+  const check=(caseId,actual,want,detail)=>expectEqual(actual,want,`Library ${caseId}: ${detail}`),tokens=new Map();
+  const request=async(caseId,actor,{method='GET',fileId,bytes,extra={}}={})=>{
+    if(actor!=='qa-public-submitter'&&!tokens.has(actor))tokens.set(actor,(await signIn(actor)).body.idToken);
+    const params=new URLSearchParams({teamId:team.id,...(fileId?{fileId}:{}),...(bytes?{name:'Boundary.pdf',category:'Documents'}:{}),...extra});
+    return captureOperationRequests(caseId,actor,()=>apiJsonResult('/api/teams/library?'+params,tokens.get(actor),{method,...(bytes?{body:bytes,headers:{'Content-Type':'application/pdf'}}:{})}));
+  };
+  const read=fileId=>withEmulatorAuthAdmin(async(_auth,db)=>(await db.doc(`teams/${team.id}/files/${fileId}`).get()).data());
+  const errors=[],failures=[];
+  const browserStep=async(session,actor,cases,body)=>{
+    const result=JSON.parse(cli(session,['run-code',`async page=>{
+      const observer=(${createLibraryBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)}}),dismiss=${dismissFilmTeamAlert.toString()},measure=${measurePracticeBounds.toString()};
+      const card=()=>page.getByRole('heading',{name:${JSON.stringify(name)},level:3,exact:true}).locator('xpath=../../..');
+      observer.start(${JSON.stringify(cases)});let value;try{value=await(async()=>{${body}})();}finally{var observation=observer.finish();}return{value,...observation};
+    }`]));
+    errors.push(...result.consoleErrors);failures.push(...result.failedResponses);
+    for(const caseId of[...cases,'lib-console','lib-network'])await captureBrowserOperationRequests(caseId,actor,result.observedResponses,caseId);
+    return result.value;
+  };
+  const goto=`await page.goto(${JSON.stringify(`${BASE_URL}/files`)});await page.getByRole('heading',{name:'Library & Docs',exact:true}).waitFor({state:'attached',timeout:15000});await dismiss(page);`;
   try {
-    const session=await browserLogin('qa-coach-owner-a','/dashboard',`library-owner-${process.pid}`);
-    browserSelectScheduleTeam(session,team.id);
-    cli(session,['run-code',`async page=>{const dismiss=${dismissFilmTeamAlert.toString()};await page.goto(${JSON.stringify(`${BASE_URL}/files`)});await page.getByRole('heading',{name:'Library & Docs',exact:true}).waitFor({state:'attached',timeout:15000});await dismiss(page);await page.getByRole('button',{name:'Upload File',exact:true}).click();await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor();await page.locator('input[type=file]').setInputFiles(${JSON.stringify(filePath)});await page.getByText('File Archived',{exact:true}).waitFor({timeout:15000});await page.getByRole('dialog',{name:'Archive Resource',exact:true}).getByRole('button',{name:'Close',exact:true}).click();await page.reload();await dismiss(page);await page.getByText(${JSON.stringify(name)},{exact:true}).waitFor({timeout:15000});return true;}`]);
-    const evidence=await withEmulatorAuthAdmin(async(_auth,db,bucket)=>{
-      const docs=(await db.collection(`teams/${team.id}/files`).where('name','==',name).get()).docs;
-      const record=docs[0]?.data();
-      const objectPath=record?.storagePath||record?.objectPath||null;
-      return {metadataCount:docs.length,dataUrlStored:typeof record?.url==='string'&&record.url.startsWith('data:'),objectPathPresent:!!objectPath,objectExists:objectPath?(await bucket.file(objectPath).exists())[0]:false};
-    });
-    console.log('Library lifecycle reproduction: '+JSON.stringify(evidence));
-    expectEqual(evidence.metadataCount,1,'Library lib-upload: visible upload creates one metadata document after reload');
-    expectEqual(evidence.objectExists,true,'Library lib-upload: visible upload creates one durable Storage object');
-  } finally {unlinkSync(filePath);rmdirSync(directory);}
+    const owner=await browserLogin('qa-coach-owner-a','/dashboard',`library-owner-${process.pid}`),member=await browserLogin('qa-team-member','/dashboard',`library-member-${process.pid}`);
+    browserSelectScheduleTeam(owner,team.id);browserSelectScheduleTeam(member,team.id);
+    const fileId=await browserStep(owner,'qa-coach-owner-a',['lib-upload'],`${goto}await page.getByRole('button',{name:'Upload File',exact:true}).click();await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor();const pending=page.waitForResponse(response=>response.url().includes('/api/teams/library?')&&response.request().method()==='POST',{timeout:15000});await page.locator('input[type=file]').setInputFiles(${JSON.stringify(filePath)});const response=await pending;if(response.status()!==201)throw Error('Library upload '+response.status());await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor({state:'hidden',timeout:15000});await page.reload();await dismiss(page);await card().waitFor({timeout:15000});return(await response.json()).fileId;`);
+    const metadata=await read(fileId);registerObject(metadata.storagePath);
+    check('lib-upload',metadata.storagePath,`teams/${team.id}/library/${fileId}/content`,'exact private object path');check('lib-upload',metadata.url,'','no public or data URL stored');
+    check('lib-upload',await withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`teams/${team.id}/files`).where('name','==',name).get()).size),1,'one metadata document');
+    check('lib-upload',await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.file(metadata.storagePath).exists())[0]),true,'durable object exists');
+    for(const [session,actor,caseId]of[[owner,'qa-coach-owner-a','lib-download'],[member,'qa-team-member','lib-member-read']]){
+      const target=path.join(directory,`${actor}.pdf`);temporary.push(target);
+      const result=await browserStep(session,actor,[caseId],`${goto}await card().waitFor({timeout:15000});const pending=page.waitForEvent('download',{timeout:15000});await card().getByRole('button',{name:'Download',exact:true}).click();const download=await pending;await download.saveAs(${JSON.stringify(target)});return{filename:download.suggestedFilename(),uploadControls:await page.getByRole('button',{name:'Upload File',exact:true}).count(),deleteControls:await card().getByRole('button',{name:${JSON.stringify(`Delete ${name}`)},exact:true}).count()};`);
+      const length=statSync(target).size;if(length>10*1024*1024)throw Error('Download exceeded bounded inspection limit.');
+      const hash=createHash('sha256').update(readFileSync(target)).digest('hex');
+      check(caseId,validateLibraryDownload({filename:result.filename,byteCount:length,sha256:hash},{name,length:payload.length,hash:expectedHash}),true,'actual Playwright attachment name length SHA-256 match');
+      check(caseId,result.filename,name,'sanitized attachment filename');check(caseId,length,payload.length,'exact downloaded byte length');check(caseId,`sha256_${hash}`,`sha256_${expectedHash}`,'exact downloaded SHA-256');unlinkSync(target);
+      if(actor==='qa-team-member'){check(caseId,result.uploadControls,0,'member has no upload control');check(caseId,result.deleteControls,0,'member has no delete control');}
+      const rows=await browserStep(session,actor,['lib-responsive'],`const rows=[];for(const viewport of[{width:1440,height:900},{width:390,height:844}]){await page.setViewportSize(viewport);await page.reload();await dismiss(page);await card().waitFor({timeout:15000});const controls={title:card().getByRole('heading'),download:card().getByRole('button',{name:'Download',exact:true})};${actor==='qa-coach-owner-a'?`controls.delete=card().getByRole('button',{name:${JSON.stringify(`Delete ${name}`)},exact:true});`:''}rows.push(await measure(page,controls));${actor==='qa-coach-owner-a'?`await page.getByRole('button',{name:'Upload File',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Archive Resource',exact:true});rows.push(await measure(page,{dialog,category:dialog.getByRole('combobox'),description:dialog.getByPlaceholder('Purpose of this file...'),select:dialog.getByRole('button',{name:/Select File/})}));await page.screenshot({path:${JSON.stringify(path.join(certificationArtifactDir,`library-${actor}`))}+'-'+viewport.width+'.png',fullPage:false});await dialog.getByRole('button',{name:'Close',exact:true}).click();`:`await page.screenshot({path:${JSON.stringify(path.join(certificationArtifactDir,`library-${actor}`))}+'-'+viewport.width+'.png',fullPage:false});`}}return rows;`);
+      check('lib-responsive',validatePracticeBounds(rows),true,`${actor} list download and applicable upload/delete controls fit both exact viewports`);
+    }
+    check('lib-member-read',(await request('lib-member-read','qa-team-member',{method:'POST',bytes:payload})).status,403,'member create denied');
+    check('lib-member-read',(await request('lib-member-read','qa-team-member',{method:'DELETE',fileId})).status,403,'member delete denied');
+    const countObjects=()=>withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.getFiles({prefix:`teams/${team.id}/library/`}))[0].length),beforeObjects=await countObjects();
+    const countDocs=()=>withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`teams/${team.id}/files`).get()).size),beforeDocs=await countDocs();
+    check('lib-mime-spoof',(await request('lib-mime-spoof','qa-coach-owner-a',{method:'POST',bytes:Buffer.from('<script>not a PDF</script>')})).status,400,'declared PDF with wrong bytes denied');
+    check('lib-mime-spoof',await countObjects(),beforeObjects,'no spoof object');check('lib-mime-spoof',await countDocs(),beforeDocs,'no spoof metadata');
+    for(const storagePath of[`players/foreign/avatar/x`,`teams/${team.id}/branding/x`,'teams/foreign/library/x'])check('lib-wrong-path',(await request('lib-wrong-path','qa-coach-owner-a',{method:'POST',bytes:payload,extra:{storagePath}})).status,400,'client substituted path rejected');
+    check('lib-wrong-path',await countObjects(),beforeObjects,'wrong paths create no object');check('lib-wrong-path',await countDocs(),beforeDocs,'wrong paths create no metadata');
+    const boundary=Buffer.alloc(10*1024*1024,32);boundary.write('%PDF-1.4\n');boundary.write('%%EOF\n',boundary.length-6);
+    const accepted=await request('lib-oversize','qa-coach-owner-a',{method:'POST',bytes:boundary});check('lib-oversize',accepted.status,201,'exact 10MiB permitted');registerObject((await read(accepted.body.fileId)).storagePath);
+    const afterBoundaryObjects=await countObjects(),afterBoundaryDocs=await countDocs();
+    check('lib-oversize',(await request('lib-oversize','qa-coach-owner-a',{method:'POST',bytes:Buffer.concat([boundary,Buffer.from('x')])})).status,413,'real 10MiB plus one rejected by bounded body');
+    check('lib-oversize',await countObjects(),afterBoundaryObjects,'no oversized object');check('lib-oversize',await countDocs(),afterBoundaryDocs,'no oversized metadata');
+    for(const actor of['qa-public-submitter','qa-coach-owner-b']){
+      const caseId=actor==='qa-public-submitter'?'lib-private-public':'lib-team-b';
+      check(caseId,(await request(caseId,actor,{fileId})).status,actor==='qa-public-submitter'?401:403,'private attachment read denied');
+      if(actor!=='qa-public-submitter'){check(caseId,(await request(caseId,actor,{method:'POST',bytes:payload})).status,403,'foreign upload denied');check(caseId,(await request(caseId,actor,{method:'DELETE',fileId})).status,403,'foreign delete denied');}
+    }
+    const permitted=await request('lib-private-public','qa-team-member',{fileId});check('lib-private-public',permitted.status,200,'allowlisted active member can read');check('lib-private-public',permitted.headers.cacheControl,'private, no-store','attachment never public cached');
+    await browserStep(owner,'qa-coach-owner-a',['lib-delete'],`const pending=page.waitForResponse(response=>response.url().includes('/api/teams/library?')&&response.request().method()==='DELETE',{timeout:15000});await card().getByRole('button',{name:${JSON.stringify(`Delete ${name}`)},exact:true}).click();await page.getByRole('button',{name:'Remove Permanently',exact:true}).click();const response=await pending;if(response.status()!==200)throw Error('Delete status '+response.status());await page.reload();await dismiss(page);return true;`);
+    check('lib-delete',await read(fileId),undefined,'metadata removed');check('lib-delete',await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.file(metadata.storagePath).exists())[0]),false,'exact object removed');
+    check('lib-delete',(await request('lib-delete','qa-coach-owner-a',{fileId})).status,404,'prior protected URL revoked');
+    const stale=await request('lib-stale','qa-team-member',{fileId});check('lib-stale',stale.status,404,'previous member request cannot recover deleted bytes');check('lib-stale',stale.headers.cacheControl,'private, no-store','revoked response forbids cache');
+    check('lib-stale',await browserStep(member,'qa-team-member',['lib-stale'],`await page.reload();await dismiss(page);await page.getByRole('heading',{name:'Library & Docs',exact:true}).waitFor({timeout:15000});return await card().count();`),0,'member reload no longer renders deleted attachment');
+    check('lib-console',errors.length,0,'both observed actor windows have no console errors');check('lib-network',failures.length,0,'both observed actor windows have no unexpected 5xx');
+  } finally {cleanupTemp();}
 }
 
 async function runPollWorkflowAudit() {

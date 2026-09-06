@@ -534,6 +534,8 @@ export type TeamFile = {
   size: string;
   sizeBytes: number;
   url: string;
+  storagePath?: string;
+  contentType?: string;
   category: string;
   description?: string;
   date: string;
@@ -2728,6 +2730,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam, db, isStaff]);
   const addFile = useCallback(async (n: string, t: string, sb: number, u: string, c: string, d?: string) => { 
     if (!activeTeam?.id || !db) return;
+    if (!['Game Tape','Practice Session','Highlights'].includes(c) && u.startsWith('data:')) {
+      if(!firebaseAuth)throw new Error('Authentication unavailable.');
+      const token=await getAuthToken(firebaseAuth);if(!token)throw new Error('Please sign in again.');
+      const payload=await (await fetch(u)).blob();
+      const params=new URLSearchParams({teamId:activeTeam.id,name:n,category:c,description:d||''});
+      const response=await fetch('/api/teams/library?'+params,{method:'POST',headers:{...authHeader(token),'Content-Type':payload.type},body:payload});
+      if(!response.ok)throw new Error((await response.json()).error||'File upload failed.');
+      return;
+    }
 
     // Starter Plan Storage Check
     const STARTER_LIMIT = 500 * 1024 * 1024; // 500MB
@@ -2741,11 +2752,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     await addDoc(collection(db, 'teams', activeTeam.id, 'files'), clean({ name: n, type: t, sizeBytes: sb, size: `${Math.round(sb/1024)}KB`, url: u, category: c, description: d, date: new Date().toISOString() })); 
-  }, [activeTeam, db, isStarter, totalStorageUsed]);
+  }, [activeTeam, db, isStarter, totalStorageUsed, firebaseAuth]);
   const deleteFile = useCallback(async (id: string) => { 
     if (!isStaff) return;
-    if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'files', id)); 
-  }, [db, activeTeam, isStaff]);
+    if (activeTeam?.id && db) {
+      const ref=doc(db,'teams',activeTeam.id,'files',id),snapshot=await getDoc(ref);
+      if(snapshot.data()?.storagePath){
+        if(!firebaseAuth)throw new Error('Authentication unavailable.');
+        const token=await getAuthToken(firebaseAuth);if(!token)throw new Error('Please sign in again.');
+        const response=await fetch('/api/teams/library?'+new URLSearchParams({teamId:activeTeam.id,fileId:id}),{method:'DELETE',headers:authHeader(token)});
+        if(!response.ok)throw new Error((await response.json()).error||'File deletion failed.');
+      }else await deleteDoc(ref);
+    }
+  }, [db, activeTeam, isStaff, firebaseAuth]);
 
   const addFacility = useCallback(async (d: any) => { if (firebaseUser && db) await addDoc(collection(db, 'facilities'), clean({ ...d, clubId: firebaseUser.uid })); }, [db, firebaseUser]);
   const updateFacility = useCallback(async (id: string, d: Partial<Facility>) => {

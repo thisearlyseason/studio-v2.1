@@ -14,7 +14,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useAuth } from '@/firebase';
+import {getAuthToken,authHeader} from '@/lib/client-auth';
+import {LIBRARY_FILE_LIMIT} from '@/lib/library-policy';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -123,6 +125,7 @@ function FileThumbnail({ file }: { file: any }) {
 export default function FilesPage() {
   const { activeTeam, isTeamsLoading, addFile, deleteFile, user, isPro, purchasePro, isStaff, members, signTeamDocument } = useTeam();
   const db = useFirestore();
+  const auth=useAuth();
   const [mounted, setMounted] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -134,6 +137,8 @@ export default function FilesPage() {
   const [linkTitle, setLinkTitle] = useState('');
   const [linkDesc, setLinkDesc] = useState('');
   const [isSavingLink, setIsSavingLink] = useState(false);
+  const [isUploading,setIsUploading]=useState(false);
+  const [isUploadOpen,setIsUploadOpen]=useState(false);
   const [viewingWaiver, setViewingWaiver] = useState<TeamDocument | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, visibleWaiverDocuments } = usePendingWaivers();
@@ -197,14 +202,30 @@ export default function FilesPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       const file = e.target.files[0];
+      if(file.size>LIBRARY_FILE_LIMIT){toast({title:'Upload failed',description:'Maximum file size is 10 MiB.',variant:'destructive'});return;}
+      setIsUploading(true);
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        addFile(file.name, file.name.split('.').pop()?.toLowerCase() || 'file', file.size, ev.target?.result as string, uploadCategory, uploadDescription);
-        toast({ title: 'File Archived' });
-        setUploadDescription('');
+      reader.onload = async (ev) => {
+        try{await addFile(file.name, file.name.split('.').pop()?.toLowerCase() || 'file', file.size, ev.target?.result as string, uploadCategory, uploadDescription);
+          toast({ title: 'File Archived' });setUploadDescription('');setIsUploadOpen(false);
+        }catch(error){toast({title:'Upload failed',description:error instanceof Error?error.message:'Unable to upload.',variant:'destructive'});}
+        finally{setIsUploading(false);if(fileInputRef.current)fileInputRef.current.value='';}
       };
+      reader.onerror=()=>{setIsUploading(false);toast({title:'Unable to read file',variant:'destructive'});};
       reader.readAsDataURL(file);
     }
+  };
+
+  const downloadLibrary=async(file:TeamFile)=>{
+    try{
+      if(!auth)throw new Error('Authentication unavailable.');
+      const token=await getAuthToken(auth);if(!token)throw new Error('Please sign in again.');
+      const response=await fetch('/api/teams/library?'+new URLSearchParams({teamId:activeTeam.id,fileId:file.id}),{headers:authHeader(token),cache:'no-store'});
+      if(!response.ok)throw new Error((await response.json()).error||'Download unavailable.');
+      const blob=await response.blob(),url=URL.createObjectURL(blob),anchor=document.createElement('a');
+      anchor.href=url;anchor.download=/filename="([^"]+)"/.exec(response.headers.get('Content-Disposition')||'')?.[1]||'download';
+      document.body.appendChild(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(error){toast({title:'Download failed',description:error instanceof Error?error.message:'File unavailable.',variant:'destructive'});}
   };
 
   const handleDownloadCertificate = (file: any) => {
@@ -232,8 +253,8 @@ export default function FilesPage() {
         </div>
         {isStaff && (
           <div className="flex flex-wrap gap-2">
-            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
-            <Dialog>
+            <input type="file" ref={fileInputRef} className="hidden" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" disabled={isUploading} onChange={handleFileChange} />
+            <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="rounded-full h-10 px-6 font-black uppercase text-xs border-2">
                   <Upload className="h-4 w-4 mr-2" />Upload File
@@ -253,7 +274,6 @@ export default function FilesPage() {
                       <SelectContent className="rounded-xl">
                         <SelectItem value="Documents" className="font-bold">Documents</SelectItem>
                         <SelectItem value="Photos" className="font-bold">Photos</SelectItem>
-                        <SelectItem value="Videos" className="font-bold">Videos</SelectItem>
                         <SelectItem value="Compliance" className="font-bold">Compliance & Waivers</SelectItem>
                         <SelectItem value="Other" className="font-bold">Other</SelectItem>
                       </SelectContent>
@@ -263,11 +283,11 @@ export default function FilesPage() {
                     <Label className="text-[10px] font-black uppercase tracking-widest">Description (Optional)</Label>
                     <Textarea placeholder="Purpose of this file..." value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} className="rounded-xl min-h-[80px] border-2 font-medium resize-none" />
                   </div>
-                  <div className="p-10 border-2 border-dashed rounded-[2rem] bg-muted/20 text-center space-y-3 cursor-pointer hover:border-primary/40 transition-all" onClick={() => fileInputRef.current?.click()}>
+                  <button type="button" disabled={isUploading} className="w-full p-10 border-2 border-dashed rounded-[2rem] bg-muted/20 text-center space-y-3 cursor-pointer hover:border-primary/40 transition-all" onClick={() => fileInputRef.current?.click()}>
                     <div className="bg-white w-14 h-14 rounded-2xl flex items-center justify-center mx-auto shadow-sm"><FileText className="h-7 w-7 text-primary" /></div>
-                    <p className="text-sm font-black uppercase tracking-widest">Select File</p>
-                    <p className="text-[10px] text-muted-foreground font-bold">Click to browse</p>
-                  </div>
+                    <p className="text-sm font-black uppercase tracking-widest">{isUploading?'Uploading...':'Select File'}</p>
+                    <p className="text-[10px] text-muted-foreground font-bold">PDF or raster image · Maximum 10 MiB</p>
+                  </button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -493,14 +513,14 @@ export default function FilesPage() {
                       <CardFooter className="p-4 pt-3 mt-auto flex gap-2">
                         <Button
                           className="flex-1 h-9 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-sm transition-all active:scale-95"
-                          onClick={() => isLink ? window.open(file.url, '_blank') : window.open(file.url, '_blank')}
+                          onClick={() => !isLink&&(file.storagePath||file.url?.startsWith('data:'))?downloadLibrary(file):window.open(file.url, '_blank','noopener,noreferrer')}
                         >
-                          {isLink ? <><ExternalLink className="h-3 w-3 mr-1" />Open Link</> : <><Eye className="h-3 w-3 mr-1" />View</>}
+                          {isLink ? <><ExternalLink className="h-3 w-3 mr-1" />Open Link</> : <><Download className="h-3 w-3 mr-1" />Download</>}
                         </Button>
                         {isStaff && (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-destructive hover:bg-destructive/5 transition-colors shrink-0" onClick={() => setFileToDelete(file.id)}>
+                              <Button aria-label={`Delete ${file.name}`} variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-destructive hover:bg-destructive/5 transition-colors shrink-0" onClick={() => setFileToDelete(file.id)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
@@ -549,7 +569,7 @@ export default function FilesPage() {
           </AlertDialogHeader>
           <AlertDialogFooter className="p-8 bg-muted/10 border-t flex flex-col sm:flex-row gap-2">
             <AlertDialogCancel className="rounded-xl font-bold border-2 h-12">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if(fileToDelete) { deleteFile(fileToDelete); setFileToDelete(null); } }} className="rounded-xl font-black bg-red-600 hover:bg-red-700 h-12">Remove Permanently</AlertDialogAction>
+            <AlertDialogAction onClick={async () => { if(fileToDelete) { try{await deleteFile(fileToDelete);setFileToDelete(null);}catch(error){toast({title:'Delete failed',description:error instanceof Error?error.message:'Unable to delete.',variant:'destructive'});} } }} className="rounded-xl font-black bg-red-600 hover:bg-red-700 h-12">Remove Permanently</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

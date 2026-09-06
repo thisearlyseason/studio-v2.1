@@ -4,6 +4,21 @@
 **Environment:** local development plus isolated Firebase preview  
 **Status:** Phase 2 findings followed up through 2026-09-05; forty-two defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
+## BUG-044 — Library upload stores a data URL without a Storage lifecycle (local repair pending browser verification)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Files — Library upload/download/delete |
+| Role | Staff and eligible squad members |
+| Page or route | `/files`, TeamProvider `addFile`/`deleteFile` |
+| Reproduction | `final-cert-t5-260906-144545-842f` at `de68261701005ec2b87bfaf7e78926f63c44bfbe`: a real visible PDF upload survived reload as one metadata document, but stored a data URL, had no object path, and had no durable Storage object. The strict run failed and cleanup reconciled 300 deletions with no residuals. |
+| Expected behavior | One private object and one metadata document; authorized attachment download with exact bytes; deletion revokes both layers. |
+| Root cause | The UI used FileReader data URLs and direct Firestore writes/deletes, with no private object/upload/download service. Direct staff metadata writes also bypassed object ownership and quota enforcement. |
+| Local repair | Authenticated Library API validates MIME/signature and 10 MiB file limit, transactionally enforces 500 MiB Starter aggregate, owns private objects/metadata and protected no-store attachment downloads, and performs dual-layer deletion. Legacy reads and existing Film/link paths are preserved. |
+| Verification | Focused lifecycle/permission/quota/spoof tests and all 46 Firestore/Storage rules tests pass. Exact repaired-candidate browser verification is pending. |
+| Status | LOCAL REPAIR — EXACT BROWSER AND STAGING GATES OPEN |
+
 ## BUG-043 — Legacy module flags diverge from canonical tenant controls (resolved)
 
 | Field | Evidence |

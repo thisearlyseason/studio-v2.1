@@ -42,6 +42,22 @@ before(async () => {
   });
 });
 
+test('Library service metadata cannot be forged or directly deleted, while legacy and Film reads remain compatible',async()=>{
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    await setDoc(doc(db,'teams/team-a/files/managed'),{name:'PDF',storagePath:'teams/team-a/library/managed/content',category:'Documents'});
+    await setDoc(doc(db,'teams/team-a/files/legacy'),{name:'Legacy PDF',url:'data:application/pdf;base64,cGRm',category:'Documents'});
+  });
+  const owner=authenticatedDb('owner'),member=authenticatedDb('member');
+  await assertSucceeds(getDoc(doc(member,'teams/team-a/files/managed')));
+  await assertSucceeds(getDoc(doc(member,'teams/team-a/files/legacy')));
+  await assertFails(setDoc(doc(owner,'teams/team-a/files/forged'),{storagePath:'players/foreign/avatar/a',category:'Documents'}));
+  await assertFails(setDoc(doc(owner,'teams/team-a/files/bypass'),{url:'data:application/pdf;base64,cGRm',category:'Documents'}));
+  await assertFails(deleteDoc(doc(owner,'teams/team-a/files/managed')));
+  await assertSucceeds(setDoc(doc(owner,'teams/team-a/files/film'),{url:'https://example.test/video',category:'Game Tape'}));
+  await assertSucceeds(setDoc(doc(owner,'teams/team-a/files/link'),{url:'https://example.test/resource',category:'Link / URL'}));
+});
+
 beforeEach(async () => {
   await testEnv.clearFirestore();
   await testEnv.withSecurityRulesDisabled(async (context) => {
