@@ -7,6 +7,7 @@ import {
   RequestBodyError,
 } from '@/lib/server-request-guards';
 import { hasStaffRole } from '@/lib/staff-position';
+import { canUpdateTeamRsvp } from '@/lib/team-rsvp-policy';
 
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no_response']);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/;
@@ -52,12 +53,13 @@ export async function POST(request: NextRequest) {
     const eventRef = teamRef.collection('events').doc(eventId);
     const participantRef = teamRef.collection('members').doc(participantId);
     const directCallerRef = teamRef.collection('members').doc(auth.uid);
-    const [teamSnapshot, eventSnapshot, participantSnapshot, directCallerSnapshot] =
+    const [teamSnapshot, eventSnapshot, participantSnapshot, directCallerSnapshot, callerProfileSnapshot] =
       await Promise.all([
         teamRef.get(),
         eventRef.get(),
         participantRef.get(),
         directCallerRef.get(),
+        adminDb.collection('users').doc(auth.uid).get(),
       ]);
 
     if (!teamSnapshot.exists || !eventSnapshot.exists) {
@@ -88,12 +90,22 @@ export async function POST(request: NextRequest) {
         isActiveMember(callerMembership) &&
         hasStaffRole(callerMembership)
       );
-    const callerOwnsParticipant =
-      participantId === auth.uid ||
-      participant.userId === auth.uid ||
-      participant.parentId === auth.uid;
-
-    if (!callerIsStaff && !callerOwnsParticipant) {
+    const event = eventSnapshot.data() || {};
+    if (event.isArchived === true || String(event.status || '').toLowerCase() === 'cancelled') {
+      return NextResponse.json({ error: 'RSVPs are closed for this activity.' }, { status: 409 });
+    }
+    if (!canUpdateTeamRsvp({
+      event,
+      callerUid: auth.uid,
+      // Most registered accounts carry their role in the protected profile,
+      // while only privileged accounts need a custom token claim. Do not let a
+      // missing optional claim bypass guardian-specific authorization.
+      callerRole: auth.role || callerProfileSnapshot.data()?.role,
+      callerIsStaff,
+      callerHasActiveMembership: isActiveMember(callerMembership),
+      participantId,
+      participant,
+    })) {
       return NextResponse.json(
         { error: 'You may only update your own household RSVP.' },
         { status: 403 }

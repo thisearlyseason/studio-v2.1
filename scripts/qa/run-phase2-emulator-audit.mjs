@@ -6671,6 +6671,16 @@ async function runCertificationOperationsScenarios() {
         }
         continue;
       }
+      if ((scenarioId === 'events-rsvp-attendance-details' || scenarioId === 'attendance-practice-event-member-attendance') && runBrowser) {
+        await runRsvpAndAttendanceWorkflowAudit();
+        const observed = scenarioId === 'events-rsvp-attendance-details'
+          ? 'parent, adult, youth, and staff RSVP workflow with forged, removed, cancelled, and concurrent API boundaries completed'
+          : 'staff attendance override and member view workflow completed';
+        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
+          recordObservedOperationsCase(scenarioId, dimension, observed);
+        }
+        continue;
+      }
       // The operations dispatcher is deliberately explicit. Until a domain
       // handler supplies case-owned browser/API evidence, every dimension is
       // reported as NOT_OBSERVED instead of allowing the old generic audit to
@@ -7550,6 +7560,261 @@ function browserMemberEventRsvp(session, marker) {
     };
   }`;
   return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserParentChildEventRsvp(session, title) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const rsvpResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
+      if (response.url().includes('/api/teams/rsvp')) rsvpResponses.push(response.status());
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
+      const eventTitle = page.getByText(${JSON.stringify(title)}, { exact: true }).last();
+      await eventTitle.waitFor({ timeout: 15000 });
+      await eventTitle.click();
+      const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+      await details.getByText("Youth A's RSVP", { exact: true }).waitFor({ timeout: 15000 });
+      const before = await details.getByText('GOING', { exact: true }).count();
+      // The guardian has two synthetic children. The first card is the active
+      // squad child; the persisted membership assertion below binds this click
+      // to that exact youth identity instead of trusting visual order alone.
+      const rsvpResponse = page.waitForResponse(response => response.url().includes('/api/teams/rsvp') && response.request().method() === 'POST');
+      await details.getByRole('button', { name: 'Going', exact: true }).first().click();
+      if ((await rsvpResponse).status() !== 200) throw new Error('parent RSVP request did not return 200: ' + JSON.stringify({ rsvpResponses, toasts: await page.locator('[data-sonner-toast]').allTextContents() }));
+      const close = details.getByRole('button', { name: 'Close event details' });
+      if (await close.count()) await close.click().catch(() => {});
+      await page.reload();
+      await page.getByText(${JSON.stringify(title)}, { exact: true }).last().click();
+      const reloaded = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+      await reloaded.getByText('GOING', { exact: true }).first().waitFor({ timeout: 15000 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      return {
+        before,
+        childGoing: await reloaded.getByText('GOING', { exact: true }).count(),
+        rsvpResponses,
+        mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors,
+        failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserMemberAttendanceRsvp(session, { teamId, title }) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const rsvpResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
+      if (response.url().includes('/api/teams/rsvp')) rsvpResponses.push(response.status());
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+      await page.evaluate(team => localStorage.setItem('sf_session_team_id', team), ${JSON.stringify(teamId)});
+      await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
+      const eventTitle = page.getByText(${JSON.stringify(title)}, { exact: true }).last();
+      await eventTitle.waitFor({ timeout: 15000 });
+      await eventTitle.click();
+      const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+      await details.getByRole('button', { name: 'Going', exact: true }).click();
+      await details.getByText('GOING', { exact: true }).first().waitFor({ timeout: 15000 });
+      await details.getByRole('button', { name: 'Close event details' }).click();
+      await page.reload();
+      await page.getByText(${JSON.stringify(title)}, { exact: true }).last().click();
+      const reloaded = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+      await reloaded.getByText('GOING', { exact: true }).first().waitFor({ timeout: 15000 });
+      return { rsvpResponses, consoleErrors, failedResponses };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+function browserStaffAttendanceOverride(session, { teamId, title, memberName }) {
+  const code = `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const rsvpResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
+      if (response.url().includes('/api/teams/rsvp')) rsvpResponses.push(response.status());
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+      await page.evaluate(team => localStorage.setItem('sf_session_team_id', team), ${JSON.stringify(teamId)});
+      await page.goto(${JSON.stringify(`${BASE_URL}/coaches-corner/attendance`)});
+      await page.getByRole('heading', { name: 'RSVP Matrix', exact: true }).waitFor({ timeout: 15000 });
+      await page.getByText(${JSON.stringify(title)}, { exact: true }).first().waitFor({ timeout: 15000 });
+      const row = page.locator('tr').filter({ hasText: ${JSON.stringify(memberName)} });
+      await row.getByText(${JSON.stringify(memberName)}, { exact: true }).waitFor({ timeout: 15000 });
+      const cell = row.getByRole('button').last();
+      await cell.click();
+      await page.getByRole('menuitem', { name: 'Declined', exact: true }).click();
+      await page.getByText('Override Successful', { exact: true }).waitFor({ timeout: 15000 });
+      await page.reload();
+      const afterReload = page.locator('tr').filter({ hasText: ${JSON.stringify(memberName)} });
+      await afterReload.getByText('Declined', { exact: true }).waitFor({ timeout: 15000 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      return {
+        rsvpResponses,
+        mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors,
+        failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function addAttendanceFixtureMembership(teamId, memberUid, memberName) {
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const team = await firestoreAdmin.collection('teams').doc(teamId).get();
+    const teamData = team.data() || {};
+    const membership = {
+      id: memberUid,
+      userId: memberUid,
+      name: memberName,
+      email: emailForAlias('qa-team-member'),
+      role: 'Member',
+      position: 'Player',
+      status: 'active',
+      isDeleted: false,
+      ownerUserId: teamData.ownerUserId,
+      joinedAt: new Date().toISOString(),
+    };
+    const batch = firestoreAdmin.batch();
+    batch.set(firestoreAdmin.collection('teams').doc(teamId).collection('members').doc(memberUid), membership);
+    batch.set(firestoreAdmin.collection('users').doc(memberUid).collection('teamMemberships').doc(teamId), {
+      teamId,
+      name: teamData.name || teamData.teamName || 'QA Attendance Team',
+      teamName: teamData.name || teamData.teamName || 'QA Attendance Team',
+      userId: memberUid,
+      status: 'active',
+      role: 'Member',
+      position: 'Player',
+      ownerUserId: teamData.ownerUserId,
+      planId: teamData.planId,
+      plan_type: teamData.plan_type,
+      isPro: teamData.isPro,
+      type: teamData.type,
+      joinedAt: new Date().toISOString(),
+    });
+    await batch.commit();
+  });
+}
+
+async function runRsvpAndAttendanceWorkflowAudit() {
+  const marker = `phase2-rsvp-${process.pid}`;
+  const teamAId = FIXTURES.teams.find(team => team.alias === 'qa-team-a')?.id;
+  const proTeamId = FIXTURES.teams.find(team => team.alias === 'qa-pro-team')?.id;
+  if (!teamAId || !proTeamId) throw new Error('Required RSVP/attendance fixture team is missing.');
+  const owner = await signIn('qa-coach-owner-a');
+  const proOwner = await signIn('qa-pro-owner');
+  const parent = await signIn('qa-parent-a');
+  const parentB = await signIn('qa-parent-b');
+  const adult = await signIn('qa-adult-player-a');
+  const youth = await signIn('qa-youth-active');
+  const removed = await signIn('qa-removed-member');
+  const teamMember = await signIn('qa-team-member');
+  const parentTitle = `QA Parent RSVP ${marker}`;
+  const attendanceTitle = `QA Attendance ${marker}`;
+  const eventPayload = (title, date = '2099-01-15') => ({
+    title,
+    date,
+    endDate: date,
+    startTime: '18:30',
+    endTime: '20:00',
+    eventType: 'practice',
+    location: `QA Location ${marker}`,
+    description: 'Disposable local certification schedule fixture.',
+  });
+  const created = await apiJsonResult('/api/teams/events/action', owner.body.idToken, {
+    method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamAId, event: eventPayload(parentTitle) }),
+  });
+  expectEqual(created.status, 200, 'RSVP fixture event creation');
+  const eventId = created.body?.eventId;
+  if (typeof eventId !== 'string') throw new Error('RSVP fixture event id was not returned.');
+  const parentBrowser = await browserLogin('qa-parent-a', '/family', `rsvp-parent-${process.pid}`);
+  const parentResult = browserParentChildEventRsvp(parentBrowser, parentTitle);
+  expectEqual(parentResult.childGoing > 0, true, 'parent child RSVP persists through the browser');
+  expectEqual(parentResult.rsvpResponses.join(','), '200', 'parent child RSVP API response');
+  expectEqual(parentResult.mobileFits, true, 'parent RSVP dialog fits mobile viewport');
+  expectEqual(parentResult.consoleErrors.length, 0, 'parent RSVP workflow console errors');
+  expectEqual(parentResult.failedResponses.length, 0, 'parent RSVP workflow failed responses');
+
+  const youthUid = identityByAlias.get('qa-youth-active').uid;
+  const adultUid = identityByAlias.get('qa-adult-player-a').uid;
+  const parentUid = identityByAlias.get('qa-parent-a').uid;
+  const parentPersisted = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+    firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).get());
+  expectEqual(parentPersisted.data()?.userRsvps?.[youthUid], 'going', 'parent browser RSVP writes the linked youth member identity');
+  const raceResponses = await Promise.all([
+    apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) }),
+    apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'maybe' }) }),
+  ]);
+  expectEqual(raceResponses.every(response => response.status === 200), true, 'concurrent own RSVP updates are accepted without duplicate records');
+  expectEqual((await apiJsonResult('/api/teams/rsvp', youth.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: youthUid, status: 'going' }) })).status, 200, 'youth own RSVP');
+  expectEqual((await apiJsonResult('/api/teams/rsvp', parent.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: parentUid, status: 'going' }) })).status, 403, 'parent own root RSVP is denied at API boundary');
+  expectEqual((await apiJsonResult('/api/teams/rsvp', parentB.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: youthUid, status: 'going' }) })).status, 403, 'other-household RSVP forge is denied');
+  expectEqual((await apiJsonResult('/api/teams/rsvp', removed.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: identityByAlias.get('qa-removed-member').uid, status: 'going' }) })).status, 404, 'removed member RSVP is denied without exposing an inactive participant');
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).update({ status: 'cancelled' }));
+  expectEqual((await apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) })).status, 409, 'cancelled activity RSVP is denied');
+
+  const memberUid = identityByAlias.get('qa-team-member').uid;
+  const memberName = `QA Attendance Member ${marker}`;
+  await addAttendanceFixtureMembership(proTeamId, memberUid, memberName);
+  const attendanceCreated = await apiJsonResult('/api/teams/events/action', proOwner.body.idToken, {
+    method: 'POST', body: JSON.stringify({ action: 'create', teamId: proTeamId, event: eventPayload(attendanceTitle, '2099-12-31') }),
+  });
+  expectEqual(attendanceCreated.status, 200, 'attendance fixture event creation');
+  const memberBrowser = await browserLogin('qa-team-member', '/dashboard', `attendance-member-${process.pid}`);
+  const memberResult = browserMemberAttendanceRsvp(memberBrowser, { teamId: proTeamId, title: attendanceTitle });
+  expectEqual(memberResult.rsvpResponses.join(','), '200', 'member attendance RSVP response');
+  expectEqual(memberResult.consoleErrors.length, 0, 'member attendance workflow console errors');
+  expectEqual(memberResult.failedResponses.length, 0, 'member attendance workflow failed responses');
+  const staffBrowser = await browserLogin('qa-pro-owner', '/dashboard', `attendance-staff-${process.pid}`);
+  const staffResult = browserStaffAttendanceOverride(staffBrowser, { teamId: proTeamId, title: attendanceTitle, memberName });
+  expectEqual(staffResult.rsvpResponses.join(','), '200', 'staff attendance override response');
+  expectEqual(staffResult.mobileFits, true, 'staff attendance page fits mobile viewport');
+  expectEqual(staffResult.consoleErrors.length, 0, 'staff attendance workflow console errors');
+  expectEqual(staffResult.failedResponses.length, 0, 'staff attendance workflow failed responses');
+  const afterOverride = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+    firestoreAdmin.collection('teams').doc(proTeamId).collection('events').doc(attendanceCreated.body.eventId).get());
+  expectEqual(afterOverride.data()?.userRsvps?.[memberUid], 'declined', 'staff attendance override persisted');
 }
 
 function browserOwnerEventEditDelete(session, marker) {

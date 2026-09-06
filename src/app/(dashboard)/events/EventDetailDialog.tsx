@@ -52,6 +52,7 @@ import { cn } from '@/lib/utils';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
+import { rsvpParticipantId } from '@/lib/team-rsvp-policy';
 
 type EventRegistration = {
   name: string;
@@ -140,8 +141,11 @@ export function EventDetailDialog({
   
   const team = teams.find(t => t.id === event.teamId);
   const relevantParticipants = [
-    ...(isParent && !isPlayer ? [] : [{ id: user?.id, name: 'You' }]),
-    ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId || '')).map(c => ({ id: c.id, name: c.firstName })) : [])
+    // Guardians coordinate RSVPs for their athletes only. A parent can also
+    // carry a player-shaped membership in legacy data, but that must not
+    // re-enable a root-account RSVP that the API rejects.
+    ...(isParent ? [] : [{ id: user?.id, name: 'You' }]),
+    ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId || '')).map(c => ({ id: rsvpParticipantId(c), name: c.firstName })) : [])
   ];
 
   const attendees = Object.entries(event.userRsvps || {}).map(([uid, status]) => {
