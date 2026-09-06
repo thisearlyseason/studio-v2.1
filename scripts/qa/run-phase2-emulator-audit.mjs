@@ -29,6 +29,7 @@ import { observeCalendarResponse } from './certification/local/calendar-response
 import { validateAttendanceLedger, validateAttendanceBounds } from './certification/local/attendance-observation.mjs';
 import { operationActorAliases } from './certification/local/operation-actors.mjs';
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
+import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -7048,7 +7049,7 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'reminders-same-day-fcm-scheduler') {
         await runReminderSchedulerRuntimeAudit();
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rem-eligible', 'scheduler core sends one same-day reminder through both registered local transports', [/Reminder scheduler core sends one same-day eligible FCM and Web Push delivery/], { actor: 'qa-parent-a+qa-adult-player-a+qa-youth-active', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-eligible'), reconciliation: 'one sent ledger and one FCM plus Web Push target for each PA/AP/YP fixture', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rem-eligible', 'scheduler core sends one same-day reminder through both registered local transports', REMINDER_ELIGIBLE_ASSERTION_PATTERNS, { actor: 'qa-parent-a+qa-adult-player-a+qa-youth-active', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-eligible'), reconciliation: 'one sent ledger and one FCM plus Web Push target for each PA/AP/YP fixture', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-invalid-time', 'scheduler ignores malformed event times', [/Reminder scheduler excludes malformed event time/], { actor: 'qa-adult-player-a', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-invalid-time'), reconciliation: 'no malformed-event ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-past-time', 'scheduler ignores no-longer-future event times', [/Reminder scheduler excludes no-longer-future event time/], { actor: 'qa-adult-player-a', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-past-time'), reconciliation: 'no past-event ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-no-token', 'scheduler ignores eligible members with no registered device', [/Reminder scheduler excludes eligible member with no device token/], { actor: 'qa-adult-player-b', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-no-token'), reconciliation: 'no no-token ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
@@ -8414,9 +8415,7 @@ async function runReminderSchedulerRuntimeAudit() {
   // This executes the same scheduler core delegated to by the deployed
   // Function, but gives it only run-scoped emulator records and a transport
   // that records counts rather than contacting FCM or a Web Push provider.
-  const { runUpcomingEventReminderCore } = await import(
-    `${pathToFileURL(path.resolve('functions/lib/event-reminder-runner.js')).href}?certification=${encodeURIComponent(certificationRunId)}`
-  );
+  const runUpcomingEventReminderCore = await loadReminderSchedulerCore();
   const suffix = certificationRunId.replace(/[^A-Za-z0-9_-]/g, '_').slice(-80);
   const teamId = `qa_reminder_${suffix}`;
   const teamPath = `teams/${teamId}`;
@@ -8556,6 +8555,9 @@ async function runReminderSchedulerRuntimeAudit() {
   const eligibleLedgers = await ledgerRows();
   for (const key of ['parent', 'adult', 'youth']) {
     expectEqual(JSON.stringify(exactLedger(ledgerFor(eligibleLedgers, 'eligible', key))), JSON.stringify({ teamId, eventId: 'eligible', userId: userIds[key], qaReminderRun: certificationRunId, status: 'sent', attempts: 1, leaseExpiresAt: 0, successCount: 2, failureCount: 0 }), `Reminder scheduler writes one same-day PA/AP/YP delivery ledger for ${aliases[key]}`);
+    const roleDeliveries = delivered.filter(item => item.eventId === 'eligible' && item.actorAlias === aliases[key]);
+    expectEqual(JSON.stringify(roleDeliveries.map(item => item.fcmCount)), '[1]', `Reminder scheduler eligible FCM target for ${aliases[key]}`);
+    expectEqual(JSON.stringify(roleDeliveries.map(item => item.webPushCount)), '[1]', `Reminder scheduler eligible Web Push target for ${aliases[key]}`);
   }
   expectEqual(JSON.stringify(delivered.filter(item => item.eventId === 'eligible').map(item => ({ actorAlias: item.actorAlias, fcmCount: item.fcmCount, webPushCount: item.webPushCount })).sort((a, b) => a.actorAlias.localeCompare(b.actorAlias))), JSON.stringify([
     { actorAlias: 'qa-adult-player-a', fcmCount: 1, webPushCount: 1 },
