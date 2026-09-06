@@ -9204,6 +9204,16 @@ function browserTeamAAttendanceMatrix(session, { teamId, title, memberName, staf
 }
 
 async function runTeamAAttendanceWorkflowAudit() {
+  const team=FIXTURES.teams.find(team=>team.alias==='qa-team-a');
+  const memberPath=`teams/${team.id}/members/${identityByAlias.get('qa-team-member').uid}`;
+  return tenantFixtureMutations.withFirestoreOverlay([memberPath], async () => {
+    const memberName=`Attendance ${team.visibleMarker}`;
+    await withEmulatorAuthAdmin(async (_auth,db)=>db.doc(memberPath).update({name:memberName}));
+    return runIsolatedTeamAAttendanceWorkflowAudit();
+  });
+}
+
+async function runIsolatedTeamAAttendanceWorkflowAudit() {
   const team = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
   const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
   const teamId = team.id;
