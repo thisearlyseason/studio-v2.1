@@ -1119,13 +1119,16 @@ export default function MasterCalendarPage() {
 
   useEffect(() => {
     if (discoveryTeamIds.length > 0 && selectedTeamIds.length === 0) {
-      if (activeTeam?.id && discoveryTeamIds.includes(activeTeam.id)) {
+      // A guardian's calendar is a household surface: child selection is
+      // intentionally intersected with this scope, so initializing it to the
+      // active squad would make an otherwise selected linked child invisible.
+      if (!isParent && activeTeam?.id && discoveryTeamIds.includes(activeTeam.id)) {
         setSelectedTeamIds([activeTeam.id]);
       } else {
         setSelectedTeamIds(discoveryTeamIds);
       }
     }
-  }, [discoveryTeamIds, selectedTeamIds.length, activeTeam?.id]);
+  }, [discoveryTeamIds, selectedTeamIds.length, activeTeam?.id, isParent]);
 
   const filteredEvents = useMemo(() => {
     return allEvents.filter(event => {

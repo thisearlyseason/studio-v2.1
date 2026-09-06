@@ -20,3 +20,8 @@ test('Calendar exposes semantic day, week, month, type, and household-athlete fi
 test('Calendar gives Agenda users a visible empty-filter result', () => {
   assert.match(source, /No scheduled events match these filters/);
 });
+
+test('Calendar defaults a parent to every authorized household team, not only the active squad', () => {
+  assert.match(source, /if \(!isParent && activeTeam\?\.id && discoveryTeamIds\.includes\(activeTeam\.id\)\)/);
+  assert.match(source, /setSelectedTeamIds\(discoveryTeamIds\)/);
+});
