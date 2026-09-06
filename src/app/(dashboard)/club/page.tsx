@@ -2034,9 +2034,9 @@ function AuthorizedClubManagementPage() {
 
       {/* Deploy Protocol Dialog */}
       <Dialog open={isDeployProtocolOpen} onOpenChange={setIsDeployProtocolOpen}>
-        <DialogContent className="rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden w-[calc(100vw-2rem)] sm:max-w-2xl bg-white text-foreground">
+        <DialogContent className="rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden w-[calc(100vw-2rem)] sm:max-w-2xl bg-white text-foreground flex max-h-[calc(100dvh-2rem)] flex-col">
           <div className="h-2 bg-primary w-full" />
-          <div className="p-5 sm:p-8 space-y-6 overflow-y-auto max-h-[90vh] custom-scrollbar">
+          <div className="p-5 sm:p-8 space-y-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase tracking-tight">Deploy Global Waiver</DialogTitle>
               <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Create or load a template — deploys to all squads</DialogDescription>

@@ -34,3 +34,12 @@ test('participant and coach signatures use one server boundary with immutable ve
     assert.match(route, /if \(existing\.exists\) return \{ state: 'existing'/);
   }
 });
+
+test('global waiver editor constrains the actual dialog shell to the mobile viewport', async () => {
+  const club = await source('../src/app/(dashboard)/club/page.tsx');
+  const start = club.indexOf('{/* Deploy Protocol Dialog */}');
+  const end = club.indexOf('{/* Organization seat release */}', start);
+  const dialog = club.slice(start, end);
+  assert.match(dialog, /max-h-\[calc\(100dvh-2rem\)\]/);
+  assert.match(dialog, /flex-1 min-h-0 overflow-y-auto/);
+});
