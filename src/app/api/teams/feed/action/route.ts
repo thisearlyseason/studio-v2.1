@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
     const authorAvatar = String(profile.data()?.avatar || profile.data()?.avatarUrl || '').slice(0, 2_000);
     const feed = authority.teamRef.collection('feedPosts');
     if (body.idempotencyKey !== undefined && !validId(body.idempotencyKey)) return NextResponse.json({error:'Invalid request identity.'},{status:400});
-    const requestId = validId(body.idempotencyKey) ? createHash('sha256').update(`${auth.uid}:${action}:${body.idempotencyKey}`).digest('hex') : null;
+    const requestId = validId(body.idempotencyKey) ? `feed_${createHash('sha256').update(`${auth.uid}:${action}:${body.idempotencyKey}`).digest('hex')}` : null;
     const receiptRef = requestId ? authority.teamRef.collection('feedOperations').doc(requestId) : null;
     const requestHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
     if (receiptRef) {

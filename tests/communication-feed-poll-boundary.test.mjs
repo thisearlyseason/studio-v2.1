@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {communicationDb,communicationRequest,loadCommunicationRoute} from './helpers/communication-route-harness.mjs';
+import {sanitizeCertificationArtifact} from '../scripts/qa/run-phase2-emulator-audit.mjs';
+
+test('feed public resource identifiers remain distinct after credential redaction',async()=>{
+  const {db}=communicationDb({'teams/team-a':{ownerUserId:'owner-a'}});
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/feed/action/route.ts',db,{uid:'owner-a'});
+  try {
+    const paths=[];
+    for(const key of ['one','two']) {
+      const response=await loaded.route.POST(communicationRequest({teamId:'team-a',action:'create-post',content:key,idempotencyKey:key}));
+      paths.push(`teams/team-a/feedPosts/${(await response.json()).postId}`);
+    }
+    assert.deepEqual(sanitizeCertificationArtifact(paths),paths);
+    assert.equal(new Set(sanitizeCertificationArtifact(paths)).size,2);
+  } finally {loaded.dispose();}
+});
 
 test('feed replay creates one post with exact request identity',async()=>{
   const {db,records}=communicationDb({'teams/team-a':{ownerUserId:'owner-a'},'users/owner-a':{name:'Owner A'}});
