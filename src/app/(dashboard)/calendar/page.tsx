@@ -1336,10 +1336,10 @@ export default function MasterCalendarPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="bg-muted/50 p-1 rounded-xl border-2 flex items-center shadow-inner">
-            <Button variant={viewMode === 'month' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('month')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Month</span></Button>
-            <Button variant={viewMode === 'week' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('week')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarDays className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Week</span></Button>
-            <Button variant={viewMode === 'day' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('day')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarIcon className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Day</span></Button>
-            <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Agenda</span></Button>
+            <Button aria-label="Month" variant={viewMode === 'month' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('month')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Month</span></Button>
+            <Button aria-label="Week" variant={viewMode === 'week' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('week')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarDays className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Week</span></Button>
+            <Button aria-label="Day" variant={viewMode === 'day' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('day')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarIcon className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Day</span></Button>
+            <Button aria-label="Agenda" variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Agenda</span></Button>
           </div>
           {/* League Schedule Button */}
           {allEvents.some(e => e.isLeagueGame || e.isTournament) && (

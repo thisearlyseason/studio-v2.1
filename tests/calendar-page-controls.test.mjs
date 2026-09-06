@@ -22,6 +22,12 @@ test('Calendar gives Agenda users a visible empty-filter result', () => {
   assert.match(source, /No scheduled events match these filters/);
 });
 
+test('Calendar view-mode buttons retain accessible names when their labels are visually hidden on mobile', () => {
+  for (const label of ['Month', 'Week', 'Day', 'Agenda']) {
+    assert.match(source, new RegExp(`aria-label=\\"${label}\\"`));
+  }
+});
+
 test('Calendar defaults a parent to every authorized household team, not only the active squad', () => {
   assert.match(source, /if \(!isParent && activeTeam\?\.id && discoveryTeamIds\.includes\(activeTeam\.id\)\)/);
   assert.match(source, /setSelectedTeamIds\(discoveryTeamIds\)/);
