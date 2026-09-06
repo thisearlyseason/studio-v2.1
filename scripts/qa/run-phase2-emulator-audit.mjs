@@ -6760,8 +6760,12 @@ async function runCertificationOperationsScenarios() {
           recordObservedOperationNamedCase(scenarioId, 'network', 'rsvp-network', 'parent RSVP browser flow has no 5xx responses', [/parent RSVP workflow failed responses/], { actor: 'qa-parent-a', operation: 'browser RSVP', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'responsive', 'rsvp-responsive', 'parent RSVP dialog fits mobile viewport', [/parent RSVP dialog fits mobile viewport/], { actor: 'qa-parent-a', operation: 'mobile browser RSVP', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         } else {
-          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'att-staff-record', 'staff records attendance override through visible RSVP matrix', [/staff attendance override response/, /staff attendance override persisted/], { actor: 'qa-pro-owner', operation: 'browser attendance override', reconciliation: 'event RSVP map', timeBound: 'reload + emulator read' });
-          recordObservedOperationNamedCase(scenarioId, 'persistence', 'att-race', 'staff override remains persisted after member RSVP path', [/staff attendance override persisted/], { actor: 'qa-pro-owner', operation: 'attendance persistence read', reconciliation: 'declined RSVP map value', timeBound: 'immediate emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'att-staff-record', 'owner and assistant record attendance through the visible matrix and authenticated staff endpoint', [/staff attendance override response/, /assistant staff attendance override accepted/], { actor: 'qa-pro-owner+qa-team-assistant', operation: 'browser and staff attendance override', reconciliation: 'event RSVP map plus durable audit records', timeBound: 'reload + emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'negativePath', 'att-duplicate', 'repeating an identical staff attendance transition leaves one authoritative RSVP value and two attributable audit transitions', [/duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request/], { actor: 'qa-pro-owner', operation: 'repeated POST attendance override', reconciliation: 'one map value and two audit records', timeBound: '5s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'att-member-readonly', 'member cannot override another attendance participant', [/member forged attendance override is denied/], { actor: 'qa-team-member', operation: 'POST attendance override another participant', reconciliation: '403 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'att-removed', 'removed member cannot write an active attendance participant', [/removed member attendance override is denied/], { actor: 'qa-removed-member', operation: 'POST attendance override', reconciliation: '403 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'att-tenant-b', 'Team B owner cannot write Team A attendance', [/Team B staff attendance override is denied/], { actor: 'qa-coach-owner-b', operation: 'POST attendance override foreign team', reconciliation: '403 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'persistence', 'att-race', 'barrier-released owner and assistant updates have one defined final value with durable actor-attributed audit records', [/two-staff attendance barrier resolves to one defined RSVP value with durable audit history/], { actor: 'qa-pro-owner+qa-team-assistant', operation: 'two-party POST attendance override', reconciliation: 'one RSVP map key plus one audit record per staff request', timeBound: '5s two-party barrier' });
           recordObservedOperationNamedCase(scenarioId, 'console', 'att-console', 'member and staff attendance flows have no console errors', [/member attendance workflow console errors/, /staff attendance workflow console errors/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'network', 'att-network', 'member and staff attendance flows have no 5xx responses', [/member attendance workflow failed responses/, /staff attendance workflow failed responses/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'responsive', 'att-responsive', 'staff attendance view fits mobile viewport', [/staff attendance page fits mobile viewport/], { actor: 'qa-pro-owner', operation: 'mobile browser attendance', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
@@ -7949,7 +7953,9 @@ function browserStaffAttendanceOverride(session, { teamId, title, memberName }) 
   return JSON.parse(cli(session, ['run-code', code]));
 }
 
-async function addAttendanceFixtureMembership(teamId, memberUid, memberName) {
+async function addAttendanceFixtureMembership(teamId, memberUid, memberName, {
+  alias = 'qa-team-member', role = 'Member', position = 'Player',
+} = {}) {
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     const team = await firestoreAdmin.collection('teams').doc(teamId).get();
     const teamData = team.data() || {};
@@ -7957,9 +7963,9 @@ async function addAttendanceFixtureMembership(teamId, memberUid, memberName) {
       id: memberUid,
       userId: memberUid,
       name: memberName,
-      email: emailForAlias('qa-team-member'),
-      role: 'Member',
-      position: 'Player',
+      email: emailForAlias(alias),
+      role,
+      position,
       status: 'active',
       isDeleted: false,
       ownerUserId: teamData.ownerUserId,
@@ -7973,8 +7979,8 @@ async function addAttendanceFixtureMembership(teamId, memberUid, memberName) {
       teamName: teamData.name || teamData.teamName || 'QA Attendance Team',
       userId: memberUid,
       status: 'active',
-      role: 'Member',
-      position: 'Player',
+      role,
+      position,
       ownerUserId: teamData.ownerUserId,
       planId: teamData.planId,
       plan_type: teamData.plan_type,
@@ -8000,6 +8006,7 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const parent = await signIn('qa-parent-a');
   const parentB = await signIn('qa-parent-b');
   const teamBOwner = await signIn('qa-coach-owner-b');
+  const assistant = await signIn('qa-team-assistant');
   const adult = await signIn('qa-adult-player-a');
   const youth = await signIn('qa-youth-active');
   const removed = await signIn('qa-removed-member');
@@ -8054,8 +8061,13 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   expectEqual((await apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) })).status, 409, 'cancelled activity RSVP is denied');
 
   const memberUid = identityByAlias.get('qa-team-member').uid;
+  const assistantUid = identityByAlias.get('qa-team-assistant').uid;
+  const proOwnerUid = identityByAlias.get('qa-pro-owner').uid;
   const memberName = `QA Attendance Member ${marker}`;
   await addAttendanceFixtureMembership(proTeamId, memberUid, memberName);
+  await addAttendanceFixtureMembership(proTeamId, assistantUid, 'QA Attendance Assistant', {
+    alias: 'qa-team-assistant', role: 'Coach', position: 'Assistant Coach',
+  });
   const attendanceCreated = await apiJsonResult('/api/teams/events/action', proOwner.body.idToken, {
     method: 'POST', body: JSON.stringify({ action: 'create', teamId: proTeamId, event: eventPayload(attendanceTitle, `2099-12-${String(20 + invocation).padStart(2, '0')}`) }),
   });
@@ -8074,6 +8086,46 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const afterOverride = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
     firestoreAdmin.collection('teams').doc(proTeamId).collection('events').doc(attendanceCreated.body.eventId).get());
   expectEqual(afterOverride.data()?.userRsvps?.[memberUid], 'declined', 'staff attendance override persisted');
+
+  const attendanceEventRef = `teams/${proTeamId}/events/${attendanceCreated.body.eventId}`;
+  const updateAttendance = (token, status, init = {}) => apiJsonResult('/api/teams/rsvp', token, {
+    ...init, method: 'POST', body: JSON.stringify({ teamId: proTeamId, eventId: attendanceCreated.body.eventId, participantId: memberUid, status }),
+  });
+  expectEqual((await updateAttendance(assistant.body.idToken, 'going')).status, 200, 'assistant staff attendance override accepted');
+  const duplicateResults = await Promise.all([
+    updateAttendance(proOwner.body.idToken, 'going'),
+    updateAttendance(proOwner.body.idToken, 'going'),
+  ]);
+  expectEqual(duplicateResults.map(result => result.status).join(','), '200,200', 'duplicate staff attendance requests are accepted');
+  const duplicateAudit = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const [eventSnapshot, auditSnapshot] = await Promise.all([
+      firestoreAdmin.doc(attendanceEventRef).get(),
+      firestoreAdmin.doc(attendanceEventRef).collection('rsvpAudit').where('participantId', '==', memberUid).get(),
+    ]);
+    return { status: eventSnapshot.data()?.userRsvps?.[memberUid], records: auditSnapshot.docs.map(doc => doc.data()) };
+  });
+  expectEqual(duplicateAudit.status, 'going', 'duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request');
+  expectEqual(duplicateAudit.records.filter(record => record.actorId === proOwnerUid && record.status === 'going').length >= 2, true, 'duplicate staff attendance audit retains both attributable requests');
+  expectEqual((await updateAttendance(teamMember.body.idToken, 'declined')).status, 403, 'member forged attendance override is denied');
+  expectEqual((await updateAttendance(removed.body.idToken, 'declined')).status, 403, 'removed member attendance override is denied');
+  expectEqual((await updateAttendance(teamBOwner.body.idToken, 'declined')).status, 403, 'Team B staff attendance override is denied');
+  const attendanceRace = await runTwoParty('attendance exact staff barrier', [
+    signal => updateAttendance(proOwner.body.idToken, 'maybe', { signal }),
+    signal => updateAttendance(assistant.body.idToken, 'declined', { signal }),
+  ], { terminate: async () => {} });
+  expectEqual(attendanceRace.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(','), '200,200', 'two-staff attendance barrier accepts both authorized updates');
+  const raceAudit = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const [eventSnapshot, auditSnapshot] = await Promise.all([
+      firestoreAdmin.doc(attendanceEventRef).get(),
+      firestoreAdmin.doc(attendanceEventRef).collection('rsvpAudit').where('participantId', '==', memberUid).get(),
+    ]);
+    return { status: eventSnapshot.data()?.userRsvps?.[memberUid], records: auditSnapshot.docs.map(doc => doc.data()) };
+  });
+  expectEqual(['maybe', 'declined'].includes(raceAudit.status), true, 'two-staff attendance barrier resolves to one defined RSVP value with durable audit history');
+  expectEqual(raceAudit.records.filter(record =>
+    (record.actorId === proOwnerUid && record.status === 'maybe') ||
+    (record.actorId === assistantUid && record.status === 'declined')).length, 2,
+  'two-staff attendance audit records preserve both staff transitions');
 }
 
 function browserOwnerEventEditDelete(session, marker) {

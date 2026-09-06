@@ -7,6 +7,7 @@ import {
   RequestBodyError,
 } from '@/lib/server-request-guards';
 import { hasStaffRole } from '@/lib/staff-position';
+import { buildTeamRsvpAuditRecord } from '@/lib/team-rsvp-audit';
 import { canUpdateTeamRsvp } from '@/lib/team-rsvp-policy';
 
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no_response']);
@@ -112,10 +113,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await eventRef.update({
-      [`userRsvps.${participantId}`]: status,
-      updatedAt: new Date().toISOString(),
+    const occurredAt = new Date().toISOString();
+    const result = await adminDb.runTransaction(async transaction => {
+      const currentEvent = await transaction.get(eventRef);
+      if (!currentEvent.exists) return 'missing' as const;
+      const currentData = currentEvent.data() || {};
+      if (currentData.isArchived === true || String(currentData.status || '').toLowerCase() === 'cancelled') {
+        return 'closed' as const;
+      }
+      transaction.update(eventRef, {
+        [`userRsvps.${participantId}`]: status,
+        updatedAt: occurredAt,
+      });
+      transaction.create(eventRef.collection('rsvpAudit').doc(), buildTeamRsvpAuditRecord({
+        actorId: auth.uid,
+        participantId,
+        status,
+        occurredAt,
+      }));
+      return 'updated' as const;
     });
+    if (result === 'missing') return NextResponse.json({ error: 'Team or event not found.' }, { status: 404 });
+    if (result === 'closed') return NextResponse.json({ error: 'RSVPs are closed for this activity.' }, { status: 409 });
     return NextResponse.json({ ok: true, participantId, status });
   } catch (error: any) {
     if (error instanceof RequestBodyError) {
