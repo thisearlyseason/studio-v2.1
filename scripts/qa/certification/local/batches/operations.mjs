@@ -3,13 +3,51 @@ import { OPERATIONS_SCENARIO_IDS } from '../selection.mjs';
 
 const caseId = (scenarioId, dimension) => `operations-${scenarioId}-${dimension}`;
 
+// The schedule slice is deliberately expanded from the former one-case-per-
+// dimension placeholder. Every frozen Task 5 case is represented exactly once;
+// console/network/persistence envelopes remain separate evidence observations.
+export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
+  'attendance-practice-event-member-attendance': Object.freeze({
+    happyPath: ['att-staff-record'], negativePath: ['att-duplicate'],
+    permission: ['att-member-readonly', 'att-removed', 'att-tenant-b'], persistence: ['att-race'],
+    console: ['att-console'], network: ['att-network'], responsive: ['att-responsive'],
+  }),
+  'events-event-crud-recurrence': Object.freeze({
+    happyPath: ['evt-crud', 'evt-series', 'evt-dst-spring', 'evt-dst-fall', 'evt-midnight'],
+    negativePath: ['evt-invalid', 'evt-conflict', 'evt-double'], permission: ['evt-member-deny', 'evt-assistant-own', 'evt-team-b-deny'],
+    persistence: ['evt-persistence'], console: ['evt-console'], network: ['evt-network'], responsive: ['evt-responsive'],
+  }),
+  'events-rsvp-attendance-details': Object.freeze({
+    happyPath: ['rsvp-self', 'rsvp-parent-child', 'rsvp-staff'], negativePath: ['rsvp-cancelled', 'rsvp-replay'],
+    permission: ['rsvp-forged-uid', 'rsvp-removed', 'rsvp-tenant-b'], persistence: ['rsvp-race'],
+    console: ['rsvp-console'], network: ['rsvp-network'], responsive: ['rsvp-responsive'],
+  }),
+  'calendar-team-family-views-and-filters': Object.freeze({
+    happyPath: ['cal-team-a-b', 'cal-family-a-c', 'cal-filters'], negativePath: ['cal-empty', 'cal-invalid'],
+    permission: ['cal-outsider'], persistence: ['cal-rapid-switch', 'cal-midnight', 'cal-dst-spring', 'cal-dst-fall'],
+    console: ['cal-console'], network: ['cal-network'], responsive: ['cal-responsive'],
+  }),
+  'calendar-ics-create-fetch-revoke': Object.freeze({
+    happyPath: ['ics-user', 'ics-team', 'ics-multi', 'ics-rfc'], negativePath: ['ics-invalid-type', 'ics-foreign-team', 'ics-too-many'],
+    permission: ['ics-invalid-token', 'ics-inactive-token', 'ics-membership-revoke'], persistence: ['ics-rotate'],
+    console: ['ics-console', 'ics-secret'], network: ['ics-network'], responsive: ['ics-responsive-na'],
+  }),
+  'reminders-same-day-fcm-scheduler': Object.freeze({
+    happyPath: ['rem-eligible'], negativePath: ['rem-invalid-time', 'rem-no-token'],
+    permission: ['rem-pref-off', 'rem-removed', 'rem-sender'], persistence: ['rem-duplicate-run', 'rem-time-boundary', 'rem-retry'],
+    console: ['rem-redaction'], network: ['rem-network'], responsive: ['rem-responsive-na'],
+  }),
+});
+
 // This registry is intentionally separate from cleanup ownership. Several
 // operations rows have provider/background/device cleanup owners, but they
 // still require a local operations contribution. Case IDs are explicit so a
 // legacy-child event cannot accidentally satisfy a neighboring scenario.
 export const LOCAL_OPERATIONS_CASE_REQUIREMENTS = Object.freeze(Object.fromEntries(
   OPERATIONS_SCENARIO_IDS.map(scenarioId => [scenarioId, Object.freeze(Object.fromEntries(
-    DIMENSION_NAMES.map(dimension => [dimension, Object.freeze([caseId(scenarioId, dimension)])]),
+    DIMENSION_NAMES.map(dimension => [dimension, Object.freeze(
+      SCHEDULE_CASE_REQUIREMENTS[scenarioId]?.[dimension] || [caseId(scenarioId, dimension)],
+    )]),
   ))]),
 ));
 

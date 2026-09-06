@@ -6599,17 +6599,20 @@ async function runCertificationTenantScenarios() {
 
 function recordBlockedOperationsCases(scenarioId, reason, dimensions = DIMENSION_NAMES) {
   for (const dimension of dimensions) {
-    const caseId = LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension][0];
-    const timestamp = new Date().toISOString();
-    emitCertificationEvent({
-      type: 'case', scenarioId, caseId, dimension,
-      runId: certificationRunId, commit: certificationCommit,
-      actorAliases: certificationActorAliases(scenarioId),
-      role: certificationScenarioById.get(scenarioId).roles.join('/'),
-      tenantAlias: certificationTenantAlias(scenarioId),
-      expected: 'exact locally safe Task 5 contract completed', observed: reason,
-      state: 'NOT_OBSERVED', startedAt: timestamp, completedAt: timestamp, artifacts: [],
-    });
+    for (const caseId of LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension]) {
+      if (activeCertificationCaseIds.has(caseId)) continue;
+      const timestamp = new Date().toISOString();
+      emitCertificationEvent({
+        type: 'case', scenarioId, caseId, dimension,
+        runId: certificationRunId, commit: certificationCommit,
+        actorAliases: certificationActorAliases(scenarioId),
+        role: certificationScenarioById.get(scenarioId).roles.join('/'),
+        tenantAlias: certificationTenantAlias(scenarioId),
+        expected: 'exact locally safe Task 5 contract completed', observed: reason,
+        state: 'NOT_OBSERVED', startedAt: timestamp, completedAt: timestamp, artifacts: [],
+      });
+      activeCertificationCaseIds.add(caseId);
+    }
   }
 }
 
@@ -6742,6 +6745,8 @@ async function runCertificationOperationsScenarios() {
           ? 'No exact case-owned operations handler has emitted evidence for this frozen scenario yet.'
           : 'This operation requires browser-enabled local handler evidence; the current run was API-only.');
     } finally {
+      recordBlockedOperationsCases(scenarioId,
+        'This exact frozen schedule case has no fresh case-owned local observation on the current candidate.');
       activeCertificationScenario = null;
       activeCertificationAssertions = [];
       activeCertificationCaseIds = new Set();

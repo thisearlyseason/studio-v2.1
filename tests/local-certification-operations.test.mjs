@@ -29,8 +29,23 @@ test('every operations scenario has an explicit case contract for every local di
   for (const scenarioId of OPERATIONS_SCENARIO_IDS) {
     assert.deepEqual(Object.keys(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]), dimensions);
     for (const dimension of dimensions) {
-      assert.equal(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension].length, 1);
+      assert.ok(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension].length >= 1);
     }
+  }
+});
+
+test('all frozen Task 5 schedule case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = {
+    'attendance-practice-event-member-attendance': ['att-staff-record', 'att-member-readonly', 'att-duplicate', 'att-race', 'att-removed', 'att-tenant-b', 'att-responsive'],
+    'events-event-crud-recurrence': ['evt-crud', 'evt-series', 'evt-dst-spring', 'evt-dst-fall', 'evt-midnight', 'evt-invalid', 'evt-conflict', 'evt-double', 'evt-member-deny', 'evt-assistant-own', 'evt-team-b-deny', 'evt-responsive'],
+    'events-rsvp-attendance-details': ['rsvp-self', 'rsvp-parent-child', 'rsvp-staff', 'rsvp-forged-uid', 'rsvp-replay', 'rsvp-race', 'rsvp-cancelled', 'rsvp-removed', 'rsvp-tenant-b', 'rsvp-responsive'],
+    'calendar-team-family-views-and-filters': ['cal-team-a-b', 'cal-family-a-c', 'cal-filters', 'cal-empty', 'cal-invalid', 'cal-midnight', 'cal-dst-spring', 'cal-dst-fall', 'cal-rapid-switch', 'cal-outsider', 'cal-responsive'],
+    'calendar-ics-create-fetch-revoke': ['ics-user', 'ics-team', 'ics-multi', 'ics-rfc', 'ics-invalid-type', 'ics-foreign-team', 'ics-too-many', 'ics-invalid-token', 'ics-inactive-token', 'ics-membership-revoke', 'ics-rotate', 'ics-secret'],
+    'reminders-same-day-fcm-scheduler': ['rem-eligible', 'rem-time-boundary', 'rem-duplicate-run', 'rem-invalid-time', 'rem-no-token', 'rem-pref-off', 'rem-removed', 'rem-sender', 'rem-retry', 'rem-redaction'],
+  };
+  for (const [scenarioId, caseIds] of Object.entries(expected)) {
+    const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]).flat();
+    for (const caseId of caseIds) assert.equal(actual.filter(value => value === caseId).length, 1, `${scenarioId}/${caseId}`);
   }
 });
 

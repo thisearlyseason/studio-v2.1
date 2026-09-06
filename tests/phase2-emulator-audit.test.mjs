@@ -192,6 +192,8 @@ test('managed operations dispatch keeps each emitted dimension tied to its exact
   const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
   const operationsBlock = source.slice(start, end);
   assert.match(operationsBlock, /function recordBlockedOperationsCases\(scenarioId, reason, dimensions = DIMENSION_NAMES\)/);
+  assert.match(operationsBlock, /for \(const caseId of LOCAL_OPERATIONS_CASE_REQUIREMENTS\[scenarioId\]\[dimension\]\)/);
+  assert.match(operationsBlock, /This exact frozen schedule case has no fresh case-owned local observation/);
   assert.match(operationsBlock, /selectCaseOwnedOperationAssertions\(activeCertificationAssertions, patterns\)/);
   assert.match(operationsBlock, /const firstCapturedAt = assertions\.map\(assertion => assertion\.capturedAt\)\.filter\(Boolean\)\.sort\(\)\[0\] \|\| null;/);
   assert.doesNotMatch(operationsBlock, /\{ assertions: \[\.\.\.activeCertificationAssertions\] \}/);
