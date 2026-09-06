@@ -89,11 +89,11 @@ test('disabled recruiting media is private while enabled profiles are public', a
   );
 });
 
-test('player uploads require family/team authority and safe content types', async () => {
+test('player final-object writes require the byte-validating server transport', async () => {
   const parentStorage = storageFor('parent');
   const outsiderStorage = storageFor('outsider');
 
-  await assertSucceeds(
+  await assertFails(
     parentStorage.ref('players/private-player/avatar/replacement.webp')
       .putString('safe image', 'raw', { contentType: 'image/webp' }),
   );
@@ -123,7 +123,7 @@ test('team branding is public but only the owner can modify it', async () => {
   await assertSucceeds(
     anonymousStorage.ref('teams/team-a/branding/logo.png').getMetadata(),
   );
-  await assertSucceeds(
+  await assertFails(
     ownerStorage.ref('teams/team-a/branding/banner.png')
       .putString('banner', 'raw', { contentType: 'image/png' }),
   );
@@ -152,4 +152,30 @@ test('unverified and suspended accounts cannot read private account media', asyn
   await assertFails(
     suspendedStorage.ref('players/private-player/avatar/private.png').getMetadata(),
   );
+});
+
+test('raw text cannot bypass image byte validation through an authenticated avatar write', async () => {
+  const object = storageFor('player').ref('users/player/avatar.jpg');
+  try {
+    await assertFails(object.putString('not an image', 'raw', { contentType: 'image/jpeg' }));
+  } finally {
+    await object.delete().catch(() => {});
+  }
+});
+
+test('direct image writes cannot bypass the supported client 5 MiB boundary', async () => {
+  const object = storageFor('player').ref('users/player/avatar.jpg');
+  const bytes = new Uint8Array(5 * 1024 * 1024 + 1);
+  bytes.set([0xff, 0xd8, 0xff]);
+  bytes.set([0xff, 0xd9], bytes.length - 2);
+  try {
+    await assertFails(object.put(bytes, { contentType: 'image/jpeg' }));
+  } finally {
+    await object.delete().catch(() => {});
+  }
+});
+
+test('direct recruiting opt-out cannot bypass server-side legacy token revocation', async () => {
+  const context=testEnv.authenticatedContext('player',{email_verified:true});
+  await assertFails(setDoc(doc(context.firestore(),'players','public-player'),{recruitingProfileEnabled:false},{merge:true}));
 });

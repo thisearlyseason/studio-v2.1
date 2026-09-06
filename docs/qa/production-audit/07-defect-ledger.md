@@ -4,6 +4,18 @@
 **Environment:** local development plus isolated Firebase preview  
 **Status:** Phase 2 findings followed up through 2026-09-05; forty-two defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
+## BUG-045 — Media MIME, byte limits and legacy token URLs bypass private delivery (local P1 repair)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Avatar, recruiting image/video, team branding |
+| Reproduction | Actual authenticated Storage emulator writes accepted text-as-JPEG and 5 MiB+1 avatar bytes; an already-issued player token URL stayed anonymous-readable after opt-out. RED logs: `/tmp/task5-media-boundaries-red.log`, `/tmp/task5-media-sdk-emulator2.log`. |
+| Root cause | Direct client writes trusted MIME metadata and a looser image cap; UI stored bearer download URLs; recruiting opt-out did not revoke them. The emulator additionally retains tokens separately from cleared metadata. |
+| Local repair | Server-authorized private media POST/GET/DELETE, real raster decode and 5 MiB limit, bounded 500 MiB streaming with owned pending objects/generation-checked promotion, protected range reads, affected UI integrations and exact legacy-token revocation with stale-URL verification. Direct final-object writes and client flag bypass are blocked. Emulator compatibility is strict loopback/demo-only. |
+| Verification | Policy/authority/route/client/harness tests and 49 Rules tests pass. Real SDK stale-URL regression passes with owned fixture cleanup. Exact isolated browser and affected Film evidence remain pending. |
+| Status | LOCAL P1 REPAIR — EXACT BROWSER, INDEPENDENT REVIEW AND STAGING GATES OPEN |
+
 ## BUG-044 — Library upload stores a data URL without a Storage lifecycle (local repair pending browser verification)
 
 | Field | Evidence |

@@ -6,7 +6,7 @@ import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, Athlet
 import { EmailExportDialog } from '@/components/team/EmailExportDialog';
 import { IncidentDetailDialog } from './incident-detail-dialog';
 import { useFirestore, useCollection, useMemoFirebase, useStorage } from '@/firebase';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import {uploadScopedMedia,deleteScopedMedia,mediaReadUrl,mediaPathFromUrl} from '@/lib/media-client';
 
 import { 
   Plus, 
@@ -1033,7 +1033,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     if (!member.playerId || !confirm("Are you sure you want to delete this clip?")) return;
     try {
       const video = videos.find(item => item.id === videoId);
-      if (video?.storagePath) await deleteObject(ref(storage, video.storagePath));
+      if (video?.storagePath) await deleteScopedMedia(video.storagePath,await getAuthToken(auth));
       await deletePlayerVideo(member.playerId, videoId);
       setVideos(prev => prev.filter(v => v.id !== videoId));
       toast({ title: "Clip Deleted", description: "The tactical asset has been removed from the library." });
@@ -1054,10 +1054,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     
     try {
       toast({ title: "Uploading Photo", description: "Adding archival asset to pack..." });
-      const fileName = `manual_${Date.now()}_${file.name}`;
-      const fileRef = ref(storage, `players/${member.playerId}/thumbnails/${fileName}`);
-      await uploadBytes(fileRef, file);
-      const url = await getDownloadURL(fileRef);
+      const fileName = `manual_${crypto.randomUUID()}`;
+      const uploaded=await uploadScopedMedia(`players/${member.playerId}/thumbnails/${fileName}`,file,await getAuthToken(auth));
+      const url=uploaded.url;
       
       const newPhotos = [...photos, url];
       setPhotos(newPhotos);
@@ -1070,15 +1069,11 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleDeletePhoto = async (photoUrl: string) => {
     if (!member.playerId || !confirm("Delete this photo from the gallery?")) return;
     try {
+      const objectPath=mediaPathFromUrl(photoUrl,storage.app.options.storageBucket);
+      if(objectPath)await deleteScopedMedia(objectPath,await getAuthToken(auth));
       const newPhotos = photos.filter(p => p !== photoUrl);
-      setPhotos(newPhotos);
       await updateRecruitingProfile(member.playerId, { photos: newPhotos });
-      
-      // Attempt storage cleanup (optional/best effort)
-      try {
-        const fileRef = ref(storage, photoUrl);
-        await deleteObject(fileRef);
-      } catch (e) {}
+      setPhotos(newPhotos);
       
       toast({ title: "Photo Removed", description: "Gallery asset updated successfully." });
     } catch (err: any) {
@@ -1100,12 +1095,10 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         const fileError = validatePracticeFilmFile(selectedFilmFile);
         if (fileError) throw new Error(fileError);
         toast({ title: "Syncing Video Resource", description: "Archiving high-fidelity tactical asset to cloud storage..." });
-        const fileName = `${Date.now()}_${selectedFilmFile.name}`;
+        const fileName = `${Date.now()}_${selectedFilmFile.name.replace(/[^A-Za-z0-9_.-]/g,'_').slice(0,100)}`;
         const storagePath = `players/${member.playerId}/videos/${fileName}`;
         uploadedStoragePath = storagePath;
-        const fileRef = ref(storage, storagePath);
-        await uploadBytes(fileRef, selectedFilmFile);
-        finalUrl = await getDownloadURL(fileRef);
+        finalUrl = (await uploadScopedMedia(storagePath,selectedFilmFile,await getAuthToken(auth))).url;
         await addPlayerVideo(member.playerId, {
           title: filmTitle.trim(), url: finalUrl, storagePath, type: filmType, comments: [],
         });
@@ -1127,7 +1120,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       await loadData();
       toast({ title: "Film Archived", description: `${filmTitle || 'Clip'} added to highlight reel.` });
     } catch (err: any) {
-      if (uploadedStoragePath) await deleteObject(ref(storage, uploadedStoragePath)).catch(() => {});
+      if (uploadedStoragePath) await deleteScopedMedia(uploadedStoragePath,await getAuthToken(auth)).catch(() => {});
       toast({ title: "Archival Failed", description: err.message, variant: "destructive" });
     } finally {
       setIsSyncing(false);
@@ -1202,66 +1195,21 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
     toast({ title: "Uploading Avatar", description: "Syncing to secure storage..." });
 
-    // --- Tier 1: Firebase Storage (preferred — gives a proper CDN URL) ---
-    if (member.playerId && storage) {
-      try {
-        const fileName = `avatar_${Date.now()}.${file.name.split('.').pop()}`;
-        const fileRef = ref(storage, `players/${member.playerId}/avatar/${fileName}`);
-        await uploadBytes(fileRef, file);
-        const url = await getDownloadURL(fileRef);
-        setProfile({ ...profile, photoURL: url });
-        toast({ title: "Avatar Updated ✓", description: "Profile photo synced to cloud storage." });
-        return;
-      } catch (storageErr: any) {
-        // Storage unauthorized (rules not yet deployed, or demo session) — fall through to base64
-        console.warn('Storage upload failed, falling back to local base64:', storageErr.code);
-      }
-    }
-
-    // --- Tier 2: Base64 fallback (works without Storage permissions) ---
     try {
-      const canvas = document.createElement('canvas');
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          const MAX = 256;
-          const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
-          canvas.width = img.width * ratio;
-          canvas.height = img.height * ratio;
-          canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          URL.revokeObjectURL(objectUrl);
-          resolve();
-        };
-        img.onerror = reject;
-        img.src = objectUrl;
-      });
-      const base64 = canvas.toDataURL('image/jpeg', 0.82);
-      setProfile({ ...profile, photoURL: base64 });
-      toast({ title: "Avatar Updated ✓", description: "Photo saved locally. Deploy Storage rules for cloud sync." });
+      if(!member.playerId)throw Error('Player identity is unavailable.');
+      const uploaded=await uploadScopedMedia(`players/${member.playerId}/avatar/avatar_${crypto.randomUUID()}`,file,await getAuthToken(auth));
+      await updateRecruitingProfile(member.playerId,{photoURL:uploaded.url});
+      setProfile({ ...profile, photoURL: uploaded.url });
+      toast({ title: "Avatar Updated ✓", description: "Profile photo synced to cloud storage." });
     } catch (err: any) {
-      toast({ title: "Upload Failed", description: "Could not process the image. Try a smaller file.", variant: "destructive" });
+      toast({ title: "Upload Failed", description: err.message || "Could not process the image.", variant: "destructive" });
+    } finally {
+      e.target.value='';
     }
   };
 
 
-  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const validationError = validateRasterImage(file);
-    if (validationError) {
-      toast({ title: "Invalid Image", description: validationError, variant: "destructive" });
-      e.target.value = '';
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      setPhotos(prev => [...prev, base64]);
-      toast({ title: "Photo Added to Gallery", description: "Update successfully staged." });
-    };
-    reader.readAsDataURL(file);
-  };
+  const handleGalleryUpload = handleUploadPhoto;
 
    const handleTacticalDownload = async (video: PlayerVideo) => {
      if (!video.url || video.url.includes('youtube.com') || video.url.includes('youtu.be')) {
@@ -1281,7 +1229,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
      try {
        const v = document.createElement('video');
        v.crossOrigin = "anonymous";
-       v.src = video.url.split('#')[0];
+       v.src = mediaReadUrl(video.url.split('#')[0],storage.app.options.storageBucket)!;
        v.muted = true;
        v.currentTime = start;
        
@@ -1328,7 +1276,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
        toast({ title: "Export Failed", description: "Browser security (CORS) or resource constraints blocked the tactical record. Downloading full source instead.", variant: "destructive" });
        // Fallback to full download
        const a = document.createElement('a');
-       a.href = video.url;
+       a.href = mediaReadUrl(video.url,storage.app.options.storageBucket)!;
        a.download = video.title + '.mp4';
        a.click();
      }
@@ -1711,7 +1659,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         <div className="xl:col-span-8 flex flex-col md:flex-row items-center gap-10 lg:gap-14 relative z-10">
           <div className="relative shrink-0">
             <Avatar className="h-44 w-44 lg:h-52 lg:w-52 rounded-[3.5rem] lg:rounded-[4rem] ring-[12px] ring-primary/5 shadow-2xl overflow-hidden border-4 border-white transition-transform duration-500 group-hover:scale-[1.02]">
-              <AvatarImage src={profile.photoURL || member.avatar} className="object-cover" />
+              <AvatarImage src={mediaReadUrl(profile.photoURL || member.avatar,storage.app.options.storageBucket)} className="object-cover" />
               <AvatarFallback className="font-black text-5xl bg-zinc-50 text-zinc-300">{member.name[0]}</AvatarFallback>
             </Avatar>
             <div className="absolute -bottom-2 -right-2 lg:-bottom-4 lg:-right-4 bg-black text-white h-14 w-14 lg:h-16 lg:w-16 rounded-2xl lg:rounded-3xl flex items-center justify-center shadow-2xl border-[6px] border-white font-black text-lg lg:text-xl transform rotate-3">
@@ -2001,16 +1949,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                 ) : (
                   photos.map((photoUrl, i) => (
                     <div key={i} className="group relative aspect-square rounded-[3rem] overflow-hidden bg-muted ring-1 ring-black/5 hover:shadow-2xl hover:shadow-primary/20 transition-all duration-500 cursor-pointer" onClick={() => window.open(photoUrl, '_blank')}>
-                      <img src={photoUrl} alt={`Tactical Capture ${i}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                      <img src={mediaReadUrl(photoUrl,storage.app.options.storageBucket)} alt={`Tactical Capture ${i}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                       
                       {/* RED X DELETE BUTTON - TOP RIGHT */}
                       <button 
                         onClick={(e) => { 
                           e.stopPropagation();
-                          const newPhotos = photos.filter(p => p !== photoUrl);
-                          setPhotos(newPhotos);
-                          if (member.playerId) updateRecruitingProfile(member.playerId, { photos: newPhotos });
-                          toast({ title: "Photo Purged" });
+                          void handleDeletePhoto(photoUrl);
                         }}
                         className="absolute top-4 right-4 h-10 w-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg border-2 border-white opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:scale-110 active:scale-95 translate-x-1 -translate-y-1"
                       >
@@ -2114,7 +2059,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                   <div className="space-y-5">
                     <div className="relative group mx-auto w-32 h-32">
                       <Avatar className="h-32 w-32 rounded-[2.5rem] ring-4 ring-primary/5 shadow-xl border-4 border-white overflow-hidden">
-                        <AvatarImage src={profile.photoURL || member.avatar} className="object-cover" />
+                        <AvatarImage src={mediaReadUrl(profile.photoURL || member.avatar,storage.app.options.storageBucket)} className="object-cover" />
                         <AvatarFallback className="font-black text-2xl text-muted-foreground uppercase">{member.name[0]}</AvatarFallback>
                       </Avatar>
                     </div>
@@ -2502,14 +2447,9 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
                       {photos.map((photoUrl, i) => (
                         <div key={i} className="relative group aspect-square rounded-[2.5rem] overflow-hidden border-4 border-white shadow-xl ring-1 ring-black/5">
-                          <img src={photoUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
+                          <img src={mediaReadUrl(photoUrl,storage.app.options.storageBucket)} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt={`Gallery ${i}`} />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                            <Button type="button" variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => {
-                              const newPhotos = photos.filter(p => p !== photoUrl);
-                              setPhotos(newPhotos);
-                              if (member.playerId) updateRecruitingProfile(member.playerId, { photos: newPhotos });
-                              toast({ title: "Archival Asset Purged" });
-                            }}>
+                            <Button type="button" variant="destructive" size="icon" aria-label={`Delete gallery photo ${i+1}`} className="h-12 w-12 rounded-2xl shadow-2xl" onClick={() => handleDeletePhoto(photoUrl)}>
                               <Trash2 className="h-6 w-6" />
                             </Button>
                           </div>
@@ -2697,7 +2637,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     return (
                        <video 
                          ref={videoRef}
-                         src={selectedVideo.url.split('#')[0] + fragment}
+                         src={mediaReadUrl(selectedVideo.url.split('#')[0],storage.app.options.storageBucket) + fragment}
                          className="absolute inset-0 w-full h-full object-contain" 
                          controls 
                          autoPlay 

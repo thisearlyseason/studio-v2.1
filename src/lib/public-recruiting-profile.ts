@@ -1,3 +1,4 @@
+import {parseMediaPath} from './media-policy';
 type UnknownRecord = Record<string, unknown>;
 
 const PUBLIC_PLAYER_FIELDS = [
@@ -42,6 +43,10 @@ function safeUrl(value: unknown): string | undefined {
   const url = safeString(value, 2_000);
   if (!url) return undefined;
   try {
+    if(/^\/api\/media\?path=[^&]+$/.test(url)){
+      const target=parseMediaPath(decodeURIComponent(url.slice('/api/media?path='.length)));
+      return target.kind==='player'||target.kind==='team'?url:undefined;
+    }
     return new URL(url).protocol === 'https:' ? url : undefined;
   } catch {
     return undefined;

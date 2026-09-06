@@ -67,7 +67,9 @@ import {
 import { useTeam } from '@/components/providers/team-provider';
 import { useAuth, useStorage } from '@/firebase';
 import { signOut, reauthenticateWithCredential, EmailAuthProvider, verifyBeforeUpdateEmail } from 'firebase/auth';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import {uploadScopedMedia,mediaReadUrl} from '@/lib/media-client';
+import {getAuthToken} from '@/lib/client-auth';
+import {RASTER_IMAGE_ACCEPT} from '@/lib/storage-upload-policy';
 import { doc, updateDoc } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -229,11 +231,8 @@ export default function SettingsPage() {
     if (!file || !user) return;
     setIsUpdatingAvatar(true);
     try {
-      // Upload directly to Firebase Storage (avoids Firestore 1MB document limit)
-      const avatarRef = ref(storage, `users/${user.id}/avatar.jpg`);
-      await uploadBytes(avatarRef, file, { contentType: file.type || 'image/jpeg' });
-      const downloadUrl = await getDownloadURL(avatarRef);
-      await updateUser({ avatar: downloadUrl });
+      const uploaded=await uploadScopedMedia(`users/${user.id}/avatar.jpg`,file,await getAuthToken(auth));
+      await updateUser({ avatar: uploaded.url });
       toast({ title: 'Avatar Updated', description: 'Profile photo saved.' });
     } catch (error: any) {
       console.error('[Avatar] Upload failed:', error);
@@ -477,12 +476,12 @@ export default function SettingsPage() {
         <CardContent className="-mt-16 space-y-10 p-10 pt-0 relative z-10">
           <div className="flex flex-col items-center text-center space-y-6">
             <div className="relative group">
-              <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
+              <input type="file" ref={avatarInputRef} className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={handleAvatarChange} />
               <Avatar className="h-32 w-32 border-[6px] border-background shadow-2xl rounded-[2.5rem] transition-transform duration-500 group-hover:scale-105">
-                <AvatarImage src={user.avatar} className="object-cover" />
+                <AvatarImage src={mediaReadUrl(user.avatar,storage.app.options.storageBucket)} className="object-cover" />
                 <AvatarFallback className="font-black text-2xl bg-muted">{user.name?.[0] || '?'}</AvatarFallback>
               </Avatar>
-              <Button size="icon" variant="secondary" disabled={isUpdatingAvatar} className="absolute bottom-1 right-1 h-10 w-10 rounded-2xl shadow-xl bg-white text-primary border-2 border-primary/10 hover:scale-110 active:scale-95 transition-all" onClick={() => avatarInputRef.current?.click()}>
+              <Button aria-label="Change profile photo" size="icon" variant="secondary" disabled={isUpdatingAvatar} className="absolute bottom-1 right-1 h-10 w-10 rounded-2xl shadow-xl bg-white text-primary border-2 border-primary/10 hover:scale-110 active:scale-95 transition-all" onClick={() => avatarInputRef.current?.click()}>
                 {isUpdatingAvatar ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
               </Button>
             </div>

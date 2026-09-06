@@ -1,0 +1,69 @@
+import {NextRequest,NextResponse} from 'next/server';
+import {Readable} from 'node:stream';
+import {finished} from 'node:stream/promises';
+import {randomUUID} from 'node:crypto';
+import sharp from 'sharp';
+import {mediaBucket} from '@/lib/server-media-storage';
+import {mediaActor,mediaAuthorityState,mediaFailure,mediaHeaders} from '@/lib/server-media';
+import {canManageMedia,canReadMedia} from '@/lib/media-authority';
+import {consumeMediaBytes,MediaInputError,mediaByteLimit,parseMediaPath,parseMediaRange,validateMediaSignature} from '@/lib/media-policy';
+import {enforceUserRateLimit} from '@/lib/server-request-guards';
+
+function targetFor(req:NextRequest){const params=new URL(req.url).searchParams;if([...params.keys()].some(key=>key!=='path')||params.getAll('path').length!==1)throw new MediaInputError('Invalid media request.');return parseMediaPath(params.get('path')||'');}
+export async function POST(req:NextRequest){
+  try{
+    const actor=await mediaActor(req,true);if(actor instanceof NextResponse)return actor;
+    const target=targetFor(req),state=await mediaAuthorityState(target);
+    if(!canManageMedia(target,actor,state))throw new MediaInputError('Media unavailable.',403);
+    const limited=await enforceUserRateLimit(actor!.uid,'media-upload',30,5*60*1000);if(limited)return limited;
+    const video=target.category==='videos',limit=mediaByteLimit(video),type=(req.headers.get('content-type')||'').split(';')[0];
+    if(Number(req.headers.get('content-length'))>limit)throw new MediaInputError('Media exceeds the upload byte limit.',413);
+    const bucket=mediaBucket(120_000),file=bucket.file(target.path),metadata={contentType:type,cacheControl:'private, no-store',metadata:{firebaseStorageDownloadTokens:null}};
+    if(!video){
+      const chunks:Buffer[]=[];await consumeMediaBytes(req.body,{limit,onChunk:chunk=>{chunks.push(Buffer.from(chunk));}});
+      const bytes=Buffer.concat(chunks);validateMediaSignature(bytes,type,false);
+      try{await sharp(bytes,{limitInputPixels:20_000_000,failOn:'warning'}).stats();}catch{throw new MediaInputError('Invalid raster image bytes.');}
+      await file.save(bytes,{resumable:false,metadata});
+    }else{
+      if((await file.exists())[0])throw new MediaInputError('Use a new video object identity.',409);
+      const pending=bucket.file(`players/${target.subjectId}/pending/${randomUUID()}`);
+      const writer=pending.createWriteStream({resumable:false,metadata,preconditionOpts:{ifGenerationMatch:0},timeout:120_000});
+      const settled=finished(writer);void settled.catch(()=>{});
+      const signal=AbortSignal.timeout(120_000);const abort=()=>writer.destroy(new Error('Media upload deadline exceeded.'));
+      signal.addEventListener('abort',abort,{once:true});let prefix=Buffer.alloc(0),validated=false;
+      const write=(chunk:Uint8Array)=>new Promise<void>((resolve,reject)=>writer.write(chunk,error=>error?reject(error):resolve()));
+      try{
+        await consumeMediaBytes(req.body,{limit,signal,onChunk:async chunk=>{
+          if(!validated){const take=Math.min(12-prefix.length,chunk.length);prefix=Buffer.concat([prefix,Buffer.from(chunk.subarray(0,take))]);if(prefix.length<12)return;validateMediaSignature(prefix,type,true);validated=true;await write(prefix);prefix=Buffer.alloc(0);if(take<chunk.length)await write(chunk.subarray(take));}else await write(chunk);
+        }});
+        if(!validated){validateMediaSignature(prefix,type,true);await write(prefix);}
+        writer.end();await settled;await pending.copy(file,{preconditionOpts:{ifGenerationMatch:0}});
+      }catch(error){writer.destroy();await settled.catch(()=>{});throw error;}
+      finally{signal.removeEventListener('abort',abort);await pending.delete({ignoreNotFound:true});}
+    }
+    return NextResponse.json({path:target.path,url:'/api/media?path='+encodeURIComponent(target.path)},{status:201,headers:mediaHeaders});
+  }catch(error){return mediaFailure(error);}
+}
+export async function GET(req:NextRequest){
+  try{
+    const actor=await mediaActor(req);if(actor instanceof NextResponse)return actor;
+    const target=targetFor(req),state=await mediaAuthorityState(target);
+    if(!canReadMedia(target,actor,state))throw new MediaInputError('Media unavailable.',403);
+    const file=mediaBucket(120_000).file(target.path);if(!(await file.exists())[0])throw new MediaInputError('Media unavailable.',404);
+    const [metadata]=await file.getMetadata(),size=Number(metadata.size);
+    if(!Number.isSafeInteger(size)||size<=0||size>mediaByteLimit(target.category==='videos'))throw new MediaInputError('Media unavailable.',404);
+    const range=req.headers.get('range'),bounds=range?parseMediaRange(range,size):{start:0,end:size-1};
+    const stream=file.createReadStream(bounds);
+    const headers={...mediaHeaders,'Content-Type':metadata.contentType||'application/octet-stream','Content-Length':String(bounds.end-bounds.start+1),'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${bounds.start}-${bounds.end}/${size}`}:{})};
+    return new NextResponse(Readable.toWeb(stream) as ReadableStream<Uint8Array>,{status:range?206:200,headers});
+  }catch(error){return mediaFailure(error);}
+}
+export async function DELETE(req:NextRequest){
+  try{
+    const actor=await mediaActor(req,true);if(actor instanceof NextResponse)return actor;
+    const target=targetFor(req),state=await mediaAuthorityState(target);
+    if(!canManageMedia(target,actor,state))throw new MediaInputError('Media unavailable.',403);
+    await mediaBucket().file(target.path).delete({ignoreNotFound:true});
+    return NextResponse.json({ok:true},{headers:mediaHeaders});
+  }catch(error){return mediaFailure(error);}
+}

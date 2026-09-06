@@ -57,7 +57,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from '@/hooks/use-toast';
 import { deleteField, doc, updateDoc } from 'firebase/firestore';
-import { cn, compressImage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import {uploadScopedMedia,deleteScopedMedia,mediaPathFromUrl} from '@/lib/media-client';
 import { useUser, useAuth } from '@/firebase';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import Link from 'next/link';
@@ -195,29 +196,18 @@ export default function TeamProfilePage() {
   const activePlan = plans.find(p => p.id === activeTeam.planId);
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!isStaff && !isSuperAdmin) {
-      toast({ title: 'Staff Access Required', description: 'Only squad staff can update branding.', variant: 'destructive' });
+    if (activeTeam.ownerUserId!==user?.id && !isSuperAdmin) {
+      toast({ title: 'Owner Access Required', description: 'Only the squad owner can update branding.', variant: 'destructive' });
       e.target.value = '';
       return;
     }
     if (e.target.files && e.target.files[0] && activeTeam?.id) {
       setIsUpdatingLogo(true);
       try {
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-          const rawData = ev.target?.result as string;
-          // Institutional compression pass
-          const compressedLogo = await compressImage(rawData, 400, 400, 0.8);
-          
-          if (db) {
-            await updateDoc(doc(db, 'teams', activeTeam.id), { teamLogoUrl: compressedLogo });
-            // Propagate the new logo to all leagues this team is enrolled in
-            propagateLogoToLeagues(activeTeam.id, compressedLogo);
-            toast({ title: "Squad Branding Updated", description: "Identity assets synchronized across the matrix." });
-          }
-          setIsUpdatingLogo(false);
-        };
-        reader.readAsDataURL(e.target.files[0]);
+        const uploaded=await uploadScopedMedia(`teams/${activeTeam.id}/branding/logo`,e.target.files[0],await getAuthToken(firebaseAuth));
+        if(db){await updateDoc(doc(db,'teams',activeTeam.id),{teamLogoUrl:uploaded.url});propagateLogoToLeagues(activeTeam.id,uploaded.url);}
+        toast({ title: 'Squad Branding Updated', description: 'Identity assets synchronized across the matrix.' });
+        setIsUpdatingLogo(false);
       } catch (err) {
         setIsUpdatingLogo(false);
         toast({ title: "Branding Failed", description: "Identity synchronization interrupted.", variant: "destructive" });
@@ -226,9 +216,11 @@ export default function TeamProfilePage() {
   };
 
   const handleLogoDelete = async () => {
-    if ((!isStaff && !isSuperAdmin) || !activeTeam?.id || !db) return;
+    if ((activeTeam.ownerUserId!==user?.id && !isSuperAdmin) || !activeTeam?.id || !db) return;
     setIsUpdatingLogo(true);
     try {
+      const objectPath=mediaPathFromUrl(activeTeam.teamLogoUrl||'');
+      if(objectPath)await deleteScopedMedia(objectPath,await getAuthToken(firebaseAuth));
       await updateDoc(doc(db, 'teams', activeTeam.id), { teamLogoUrl: deleteField() });
       setActiveTeam({ ...activeTeam, teamLogoUrl: '' });
       toast({ title: 'Squad Branding Removed', description: 'The default no-logo identity is restored.' });

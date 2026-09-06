@@ -671,9 +671,8 @@ service cloud.firestore {
         )
       );
 
-      // Coaches can update top-level player doc (e.g. toggleRecruitingProfile).
-      // They include updatedByTeamId in the written data so we can verify ownership.
-      allow update: if isSuperAdmin() || (isSignedIn() && (
+      // Recruiting visibility changes require server-side legacy token revocation.
+      allow update: if (isSuperAdmin() || (isSignedIn() && (
         resource.data.get('userId', '') == request.auth.uid ||
         resource.data.get('parentId', '') == request.auth.uid ||
         playerId == request.auth.uid ||
@@ -682,7 +681,7 @@ service cloud.firestore {
         request.resource.data.get('userId', '') == resource.data.get('userId', '') &&
         request.resource.data.get('parentId', '') == resource.data.get('parentId', '') &&
         request.resource.data.get('guardianIds', []) == resource.data.get('guardianIds', [])
-      );
+      )) && request.resource.data.get('recruitingProfileEnabled', false) == resource.data.get('recruitingProfileEnabled', false);
 
       allow delete: if isSuperAdmin() || (isSignedIn() && (
         resource.data.userId == request.auth.uid ||

@@ -44,6 +44,12 @@ test('public recruiting payload rejects non-HTTPS media URLs', () => {
   assert.deepEqual(payload.videos, []);
 });
 
+test('public recruiting preserves only exact managed tokenless media routes alongside HTTPS links',()=>{
+  const url='/api/media?path=players%2Fp%2Favatar%2Fowned.png';
+  const payload=buildPublicRecruitingProfile({player:{photoURL:url},profile:{photos:[url,'/api/private?path=secret']},metrics:{},stats:[],videos:[]});
+  assert.equal(payload.player.photoURL,url);assert.deepEqual(payload.profile.photos,[url]);
+});
+
 test('private player documents are no longer the public recruiting transport', () => {
   const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
   const publicPage = fs.readFileSync(new URL('../src/app/recruit/player/[playerId]/page.tsx', import.meta.url), 'utf8');

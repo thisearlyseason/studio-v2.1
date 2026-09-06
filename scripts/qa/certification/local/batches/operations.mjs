@@ -7,6 +7,12 @@ const caseId = (scenarioId, dimension) => `operations-${scenarioId}-${dimension}
 // dimension placeholder. Every frozen Task 5 case is represented exactly once;
 // console/network/persistence envelopes remain separate evidence observations.
 export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
+  'files-avatar-branding-player-media-paths':Object.freeze({
+    happyPath:['media-user-avatar','media-player-self','media-parent','media-team-owner','media-branding'],
+    negativePath:['media-type','media-image-boundary','media-video-boundary'],
+    permission:['media-private-public','media-wrong-player','media-wrong-team','media-outsider','media-unverified','media-suspended'],
+    persistence:['media-delete'],console:['media-console'],network:['media-network'],responsive:['media-responsive'],
+  }),
   'files-library-crud-download':Object.freeze({
     happyPath:['lib-upload','lib-download'],negativePath:['lib-mime-spoof','lib-oversize','lib-wrong-path'],
     permission:['lib-member-read','lib-private-public','lib-team-b'],persistence:['lib-delete','lib-stale'],

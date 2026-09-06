@@ -86,35 +86,28 @@ service firebase.storage {
     match /players/{playerId}/thumbnails/{fileName} {
       allow read: if playerDocument(playerId).data.recruitingProfileEnabled == true ||
         canManagePlayer(playerId);
-      allow create, update: if canManagePlayer(playerId) && hasSafeImageUpload();
+      allow create, update: if false; // Server validates bytes before publication.
       allow delete: if canManagePlayer(playerId);
     }
 
     match /players/{playerId}/avatar/{fileName} {
       allow read: if playerDocument(playerId).data.recruitingProfileEnabled == true ||
         canManagePlayer(playerId);
-      allow create, update: if canManagePlayer(playerId) && hasSafeImageUpload();
+      allow create, update: if false; // Server validates bytes before publication.
       allow delete: if canManagePlayer(playerId);
     }
 
     match /players/{playerId}/videos/{fileName} {
       allow read: if playerDocument(playerId).data.recruitingProfileEnabled == true ||
         canManagePlayer(playerId);
-      allow create, update: if canManagePlayer(playerId) && hasSafeVideoUpload();
+      allow create, update: if false; // Bounded, tokenless server upload only.
       allow delete: if canManagePlayer(playerId);
     }
 
     // Only explicitly branded team assets are public.
     match /teams/{teamId}/branding/{allPaths=**} {
       allow read: if true;
-      allow create, update: if (
-        isSuperAdmin() ||
-        (
-          isSignedIn() &&
-          firestore.get(/databases/(default)/documents/teams/$(teamId))
-            .data.ownerUserId == request.auth.uid
-        )
-      ) && hasSafeImageUpload();
+      allow create, update: if false; // Authenticated owner media endpoint only.
       allow delete: if isSuperAdmin() || (
         isSignedIn() &&
         firestore.get(/databases/(default)/documents/teams/$(teamId))
@@ -124,9 +117,7 @@ service firebase.storage {
 
     match /users/{userId}/avatar.jpg {
       allow read: if isSignedIn();
-      allow create, update: if (
-        isSuperAdmin() || (isSignedIn() && request.auth.uid == userId)
-      ) && hasSafeImageUpload();
+      allow create, update: if false; // Authenticated self media endpoint only.
       allow delete: if isSuperAdmin() || (isSignedIn() && request.auth.uid == userId);
     }
 

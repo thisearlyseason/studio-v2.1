@@ -1837,13 +1837,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updatePlayerVideo = useCallback(async (playerId: string, videoId: string, data: Partial<PlayerVideo>) => { if (!db) return; await setDoc(doc(db, 'players', playerId, 'videos', videoId), { ...clean(data), ...(activeTeam?.id ? { updatedByTeamId: activeTeam.id } : {}) }, { merge: true }); }, [db, activeTeam?.id]);
   const deletePlayerVideo = useCallback(async (playerId: string, videoId: string) => { if (!db) return; await deleteDoc(doc(db, 'players', playerId, 'videos', videoId)); }, [db]);
   const toggleRecruitingProfile = useCallback(async (playerId: string, enabled: boolean) => {
-    if (!db) return;
-    const authority = activeTeam?.id ? { updatedByTeamId: activeTeam.id } : {};
-    // Canonical status is written by updateRecruitingProfile. This callback owns
-    // only the legacy roster projection, so committed and future statuses cannot
-    // be clobbered by a racing second writer.
-    await setDoc(doc(db, 'players', playerId), { recruitingProfileEnabled: enabled, ...authority }, { merge: true });
-  }, [db, activeTeam?.id]);
+    const token=await getAuthToken(firebaseAuth);
+    const response=await fetch('/api/media/recruiting',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({playerId,enabled}),signal:AbortSignal.timeout(40_000)});
+    const result=await response.json();if(!response.ok)throw Error(result.error||'Recruiting visibility update failed.');
+  }, [firebaseAuth]);
   const updateStaffEvaluation = useCallback(async (memberId: string, notes: string) => { if (!activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current'), { notes, updatedAt: new Date().toISOString() }); }, [activeTeam, db]);
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeam?.id || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeam, db]);
 

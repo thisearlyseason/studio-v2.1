@@ -8,7 +8,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-import { buildFixtureCatalog, inspectFixtureMedia } from './certification/fixture-catalog.mjs';
+import { buildFixtureCatalog, inspectFixtureMedia, materializeFixtureMediaBytes } from './certification/fixture-catalog.mjs';
 import { runTwoParty, terminateOwnedProcess } from './certification/local/assertions.mjs';
 import { parseLoopbackHttpOrigin } from './certification/local/boundary.mjs';
 import {
@@ -35,6 +35,7 @@ import {createPracticeBrowserObserver, requirePracticeResponses, measurePractice
 import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs';
 import {createPollBrowserObserver,findPollCard} from './certification/local/poll-browser.mjs';
 import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUpload} from './certification/local/library-browser.mjs';
+import {createMediaBrowserObserver,generatedMp4Body} from './certification/local/media-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -6992,6 +6993,17 @@ async function runCertificationOperationsScenarios() {
         }
         return;
       }
+      if (scenarioId === 'files-avatar-branding-player-media-paths' && runBrowser) {
+        await runMediaWorkflowAudit();
+        for(const [dimension,caseIds]of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]))for(const caseId of caseIds){
+          const requests=operationRequestEvidence(caseId);
+          recordObservedOperationNamedCase(scenarioId,dimension,caseId,`${caseId} completed with owned private media`,[new RegExp(`^Media ${caseId}:`)],{
+            actor:[...new Set(requests.map(request=>request.actorAlias))].sort().join('+'),operation:'visible media interaction or authenticated protected media request',requests,
+            reconciliation:'exact object bytes, authority, legacy token revocation and owned before-image restoration',timeBound:'15s UI, 120s streamed upload, bounded per-object revocation',
+          });
+        }
+        return;
+      }
       if (scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser) {
         await runSportsHubBrowseWorkflowAudit();
         for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
@@ -7817,7 +7829,7 @@ async function runPracticeFilmWorkflowAudit() {
     const onUploadResponse = response => {
       const request = response.request();
       if (request.method() === 'GET' || !decodeURIComponent(response.url()).includes(${JSON.stringify(storagePath)})) return;
-      storageResponses.push({ tag: 'film-storage-upload', pathname: '/storage/object', method: request.method(), status: response.status(), startedAt: requestStartedAt.get(request) || new Date().toISOString(), completedAt: new Date().toISOString() });
+      storageResponses.push({ tag: 'film-storage-upload', pathname: '/api/media', method: request.method(), status: response.status(), startedAt: requestStartedAt.get(request) || new Date().toISOString(), completedAt: new Date().toISOString() });
     };
     page.on('request', onUploadRequest); page.on('response', onUploadResponse);
     try {
@@ -7893,8 +7905,8 @@ async function runPracticeFilmWorkflowAudit() {
   expectEqual(videoRecord.objectExists && videoRecord.data.storagePath === storagePath, true, 'Practice film valid upload creates one player video object and metadata');
 
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
-  const photoStatus = await capturePracticeStorageRequest('film-photo', 'qa-coach-owner-a', tokens.get('qa-coach-owner-a'), thumbnailPath, { method: 'POST', contentType: 'image/png', body: png });
-  expectEqual(photoStatus, 200, 'Practice film valid thumbnail uses the declared player thumbnail path');
+  const photoStatus = await captureOperationRequests('film-photo', 'qa-coach-owner-a', () => apiJsonResult('/api/media?path='+encodeURIComponent(thumbnailPath),tokens.get('qa-coach-owner-a'),{method:'POST',headers:{'Content-Type':'image/png'},body:png}));
+  expectEqual(photoStatus.status, 201, 'Practice film valid thumbnail uses the declared player thumbnail path');
 
   const markResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
     const consoleErrors = []; const failedResponses = [];
@@ -8315,6 +8327,110 @@ async function runSurfaceSmokeAudit({ remainderOnly = false, includeMember = tru
     { path: '/club', expected: '/club' },
     { path: '/competition', expected: '/competition' },
   ], { mobile: true }), 'trusted admin remaining surface sweep');
+}
+
+async function runMediaWorkflowAudit() {
+  const uid=alias=>FIXTURES.identities.find(item=>item.alias===alias).uid;
+  const player=alias=>FIXTURES.firestoreDocuments.find(item=>item.data.fixtureAlias===alias).data.id;
+  const team=FIXTURES.teams.find(item=>item.alias==='qa-team-a'),teamB=FIXTURES.teams.find(item=>item.alias==='qa-team-b');
+  const adult=player('qa-player-adult-a'),youth=player('qa-player-youth-a'),foreign=player('qa-player-adult-b');
+  const marker=certificationRunId.replaceAll('.','-'),tokens=new Map(),registered=new Set();
+  const png=materializeFixtureMediaBytes({payloadGenerator:'solid-png-v1'}),mp4=materializeFixtureMediaBytes({payloadGenerator:'tiny-mp4-v1'});
+  const directory=mkdtempSync(path.join(os.tmpdir(),'qa-media-')),imageFile=path.join(directory,'owned.png');writeFileSync(imageFile,png);
+  activeOperationResourceRegistry.register({id:'media-temporary-image',kind:'obligation',async cleanup(){if(existsSync(imageFile))unlinkSync(imageFile);if(existsSync(directory))rmdirSync(directory);return false;},async verify(){return !existsSync(directory);}});
+  const check=(id,actual,want,detail)=>expectEqual(actual,want,`Media ${id}: ${detail}`);
+  const token=async actor=>{if(actor==='qa-public-submitter')return null;if(!tokens.has(actor)){const signed=await signIn(actor);if(!signed.body.idToken)throw Error(`Media actor ${actor} cannot sign in (${signed.status}).`);tokens.set(actor,signed.body.idToken);}return tokens.get(actor);};
+  const register=objectPath=>{if(!registered.has(objectPath)){registered.add(objectPath);registerDynamicStorageObject(objectPath,'media-'+createHash('sha256').update(objectPath).digest('hex').slice(0,16),activeOperationResourceRegistry);}};
+  const prefixes=[`users/${uid('qa-coach-owner-a')}/`,`players/${adult}/`,`players/${youth}/`,`teams/${team.id}/branding/`];
+  const list=()=>withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await Promise.all(prefixes.map(prefix=>bucket.getFiles({prefix})))).flatMap(([files])=>files.map(file=>file.name)));
+  const baseline=await list();
+  for(const objectPath of baseline.filter(name=>name.startsWith(`players/${adult}/`))){
+    const before=await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.file(objectPath).getMetadata())[0].metadata?.firebaseStorageDownloadTokens??null);
+    activeOperationResourceRegistry.register({id:'media-token-before-'+createHash('sha256').update(objectPath).digest('hex').slice(0,16),kind:'restored',async cleanup(){return withEmulatorAuthAdmin(async(_auth,_db,bucket)=>{const file=bucket.file(objectPath),current=(await file.getMetadata())[0].metadata?.firebaseStorageDownloadTokens??null;if(current===before)return false;await file.setMetadata({metadata:{firebaseStorageDownloadTokens:before}});return true;});},async verify(){return withEmulatorAuthAdmin(async(_auth,_db,bucket)=>((await bucket.file(objectPath).getMetadata())[0].metadata?.firebaseStorageDownloadTokens??null)===before);}});
+  }
+  activeOperationResourceRegistry.register({id:'media-object-discovery',kind:'obligation',async cleanup(){for(const name of await list())if(!baseline.includes(name))register(name);return false;},async verify(){return true;}});
+  await withEmulatorAuthAdmin(async(_auth,db)=>{
+    const paths=[`users/${uid('qa-coach-owner-a')}`,`users/${uid('qa-adult-player-a')}`,`teams/${team.id}`,`players/${adult}`,`players/${youth}`,`players/${adult}/recruitingProfile/profile`,`players/${youth}/recruitingProfile/profile`];
+    for(const row of(await db.collection('leagues').where('memberTeamIds','array-contains',team.id).get()).docs)paths.push(row.ref.path);
+    for(const documentPath of paths){const before=await db.doc(documentPath).get();if(before.exists)registerFirestoreDocumentRestoration(documentPath,before.data(),'media-'+documentPath.replaceAll('/','-'),activeOperationResourceRegistry);else await registerDynamicFirestoreDocument(documentPath,'media-new-'+documentPath.replaceAll('/','-'));}
+  });
+  const exists=objectPath=>withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.file(objectPath).exists())[0]);
+  const metadata=objectPath=>withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.file(objectPath).getMetadata())[0]);
+  const request=async(id,actor,objectPath,{method='GET',body,type='image/png',range,route='/api/media'}={})=>{
+    const credential=await token(actor);return captureOperationRequests(id,actor,async()=>{
+      const startedAt=new Date().toISOString(),response=await fetch(BASE_URL+route+(route==='/api/media'?'?path='+encodeURIComponent(objectPath):''),{method,headers:{...(credential?{Authorization:'Bearer '+credential}:{}),...(body?{'Content-Type':type}:{}),...(range?{Range:range}:{}),Connection:'close'},...(body?{body,...(body[Symbol.asyncIterator]?{duplex:'half'}:{})}:{}),signal:AbortSignal.timeout(120_000)});
+      recordCapturedOperationRequest({pathname:route,method,status:response.status,token:credential,startedAt,completedAt:new Date().toISOString()});
+      const length=Number(response.headers.get('content-length')||0);if(length>5*1024*1024){await response.body?.cancel();throw Error('Unbounded media response refused.');}
+      const bytes=Buffer.from(await response.arrayBuffer());return{status:response.status,bytes,cache:response.headers.get('cache-control'),type:response.headers.get('content-type'),body:(()=>{try{return JSON.parse(bytes.toString());}catch{return null;}})()};
+    });
+  };
+  const upload=async(id,actor,objectPath,body=png,type='image/png')=>{if(baseline.includes(objectPath))throw Error('Media fixture refuses to overwrite a pre-existing object.');register(objectPath);const result=await request(id,actor,objectPath,{method:'POST',body,type});check(id,result.status,201,`${actor} supported upload accepted`);const stored=await metadata(objectPath);check(id,Number(stored.size),body.length,`${actor} exact durable byte length`);check(id,Boolean(stored.metadata?.firebaseStorageDownloadTokens),false,'new object has no public download token');return result;};
+  const toggle=(id,enabled)=>request(id,'qa-coach-owner-a','',{route:'/api/media/recruiting',method:'POST',type:'application/json',body:JSON.stringify({playerId:adult,enabled})});
+  const privatePath=`players/${adult}/avatar/${marker}-private.png`;
+  const errors=[],failures=[],bounds=[];
+  const browserStep=async(session,actor,cases,body)=>{
+    const result=JSON.parse(cli(session,['run-code',`async page=>{const observer=(${createMediaBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)}}),dismiss=${dismissFilmTeamAlert.toString()},measure=${measurePracticeBounds.toString()};observer.start(${JSON.stringify(cases)});let value;try{value=await(async()=>{${body}})();}finally{var observation=observer.finish();}return{value,...observation};}`]));
+    errors.push(...result.consoleErrors);failures.push(...result.failedResponses);for(const id of[...cases,'media-console','media-network'])await captureBrowserOperationRequests(id,actor,result.observedResponses,id);return result.value;
+  };
+  const owner=await browserLogin('qa-coach-owner-a','/dashboard',`media-owner-${process.pid}`),adultSession=await browserLogin('qa-adult-player-a','/dashboard',`media-adult-${process.pid}`);
+  browserSelectScheduleTeam(owner,team.id);browserSelectScheduleTeam(adultSession,team.id);
+  const avatarPath=`users/${uid('qa-coach-owner-a')}/avatar.jpg`;if(baseline.includes(avatarPath))throw Error('Owned avatar fixture path unexpectedly exists.');register(avatarPath);
+  await browserStep(owner,'qa-coach-owner-a',['media-user-avatar'],`await page.goto(${JSON.stringify(BASE_URL+'/settings')});await dismiss(page);const button=page.getByRole('button',{name:'Change profile photo',exact:true});await button.waitFor({timeout:15000});const chooser=page.waitForEvent('filechooser');await button.click();const file=await chooser;const pending=page.waitForResponse(response=>response.url().startsWith(${JSON.stringify(BASE_URL+'/api/media?')})&&response.request().method()==='POST',{timeout:15000});await file.setFiles(${JSON.stringify(imageFile)});const response=await pending;if(response.status()!==201)throw Error('Avatar upload '+response.status());await page.getByText('Avatar Updated',{exact:true}).waitFor({timeout:15000});await page.reload();await dismiss(page);await button.waitFor({timeout:15000});return true;`);
+  check('media-user-avatar',(await request('media-user-avatar','qa-coach-owner-a',avatarPath)).bytes.equals(png),true,'visible avatar exact bytes survive reload');
+  check('media-user-avatar',(await request('media-user-avatar','qa-adult-player-a',avatarPath,{method:'POST',body:png})).status,403,'other user cannot overwrite avatar');
+  for(const [id,actor,playerId]of[['media-player-self','qa-adult-player-a',adult],['media-parent','qa-parent-a',youth],['media-team-owner','qa-coach-owner-a',adult]])for(const category of['avatar','thumbnails','videos']){
+    const objectPath=`players/${playerId}/${category}/${marker}-${id}.${category==='videos'?'mp4':'png'}`,bytes=category==='videos'?mp4:png;
+    await upload(id,actor,objectPath,bytes,category==='videos'?'video/mp4':'image/png');check(id,(await request(id,actor,objectPath)).bytes.equals(bytes),true,`${actor} ${category} exact protected bytes`);
+  }
+  const brandingPath=`teams/${team.id}/branding/${marker}.png`;await upload('media-branding','qa-coach-owner-a',brandingPath);check('media-branding',(await request('media-branding','qa-public-submitter',brandingPath)).bytes.equals(png),true,'only branding is public without player opt-in');
+  const logoPath=`teams/${team.id}/branding/logo`;if(baseline.includes(logoPath))throw Error('Owned branding fixture path unexpectedly exists.');register(logoPath);
+  await browserStep(owner,'qa-coach-owner-a',['media-branding'],`await page.goto(${JSON.stringify(BASE_URL+'/team')});await dismiss(page);await page.locator('input[type=file]').first().waitFor({state:'attached',timeout:15000});const pending=page.waitForResponse(response=>response.url().startsWith(${JSON.stringify(BASE_URL+'/api/media?')})&&response.request().method()==='POST',{timeout:15000});await page.locator('input[type=file]').first().setInputFiles(${JSON.stringify(imageFile)});if((await pending).status()!==201)throw Error('Branding upload failed');await page.getByText('Squad Branding Updated',{exact:true}).waitFor({timeout:15000});await page.reload();await dismiss(page);return true;`);
+  check('media-branding',(await request('media-branding','qa-public-submitter',logoPath)).bytes.equals(png),true,'visible branding upload persists exact public object');
+  await upload('media-private-public','qa-coach-owner-a',privatePath);
+  check('media-private-public',(await toggle('media-private-public',false)).status,200,'initial private state established');
+  check('media-private-public',(await request('media-private-public','qa-public-submitter',privatePath)).status,403,'anonymous private media denied');
+  check('media-private-public',(await toggle('media-private-public',true)).status,200,'owner opt-in accepted');
+  check('media-private-public',(await request('media-private-public','qa-public-submitter',privatePath)).bytes.equals(png),true,'current opt-in allows exact player bytes');
+  const legacyPath=`players/${adult}/avatar/${marker}-legacy.png`,legacyToken=randomBytes(16).toString('hex');register(legacyPath);
+  await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>bucket.file(legacyPath).save(png,{resumable:false,metadata:{contentType:'image/png',metadata:{firebaseStorageDownloadTokens:legacyToken}}}));
+  const legacyRead=()=>captureOperationRequests('media-private-public','qa-public-submitter',async()=>{const startedAt=new Date().toISOString();const response=await fetch(`http://127.0.0.1:9199/v0/b/${PROJECT_ID}.appspot.com/o/${encodeURIComponent(legacyPath)}?alt=media&token=${legacyToken}`,{signal:AbortSignal.timeout(15_000)});recordCapturedOperationRequest({pathname:'/storage/object',method:'GET',status:response.status,startedAt,completedAt:new Date().toISOString()});await response.body?.cancel();return response.status;});
+  check('media-private-public',await legacyRead(),200,'owned legacy token reproduces previously public bytes');
+  const revoked=await toggle('media-private-public',false);check('media-private-public',revoked.status,200,'opt-out completes token revocation');check('media-private-public',revoked.body.complete,true,'revocation reports complete');
+  check('media-private-public',[403,404].includes(await legacyRead()),true,'previously issued legacy token cannot recover private bytes');check('media-private-public',(await request('media-private-public','qa-public-submitter',privatePath)).status,403,'protected URL observes current opt-out');check('media-private-public',(await request('media-private-public','qa-coach-owner-a',privatePath)).status,200,'owner retains private access');
+  await captureOperationRequests('media-suspended','qa-suspended',async()=>{const startedAt=new Date().toISOString(),result=await signIn('qa-suspended');recordCapturedOperationRequest({pathname:'/identitytoolkit/accounts/signInWithPassword',method:'POST',status:result.status,startedAt,completedAt:new Date().toISOString()});check('media-suspended',result.status,400,'disabled actor cannot acquire credentials');check('media-suspended',result.body.error?.message,'USER_DISABLED','Auth rejects exact suspended actor');tokens.set('qa-suspended',null);});
+  for(const [id,actor,target]of[['media-wrong-player','qa-adult-player-a',`players/${foreign}/avatar/${marker}.png`],['media-wrong-team','qa-coach-owner-a',`teams/${teamB.id}/branding/${marker}.png`],['media-outsider','qa-fresh-coach',privatePath],['media-unverified','qa-unverified',privatePath],['media-suspended','qa-suspended',privatePath]]){
+    if(!await exists(target))register(target);
+    for(const method of['POST','DELETE'])check(id,(await request(id,actor,target,{method,...(method==='POST'?{body:png}:{})})).status,actor==='qa-suspended'?401:403,`${actor} ${method} denied${actor==='qa-suspended'?' without credentials after disabled Auth rejection':''}`);
+    if(id!=='media-wrong-team')check(id,(await request(id,actor,target)).status,403,`${actor} private read denied`);
+    check(id,await exists(privatePath),true,'denied actions preserve private owned object');
+  }
+  for(const [index,type,bytes]of[[0,'image/svg+xml',Buffer.from('<svg/>')],[1,'application/x-msdownload',Buffer.from('MZ executable')],[2,'image/jpeg',Buffer.from('plain text')]]){
+    const objectPath=`players/${adult}/avatar/${marker}-invalid-${index}`;register(objectPath);check('media-type',(await request('media-type','qa-adult-player-a',objectPath,{method:'POST',type,body:bytes})).status,400,'unsafe MIME or forged signature rejected');check('media-type',await exists(objectPath),false,'invalid bytes leave no object');
+  }
+  const padded=Buffer.alloc(5*1024*1024);png.copy(padded);await upload('media-image-boundary','qa-parent-a',`players/${youth}/avatar/${marker}-5m.png`,padded);
+  for(const size of[5*1024*1024+1,10*1024*1024,10*1024*1024+1]){const body=Buffer.alloc(size);png.copy(body);const objectPath=`players/${youth}/avatar/${marker}-${size}.png`;register(objectPath);check('media-image-boundary',(await request('media-image-boundary','qa-parent-a',objectPath,{method:'POST',body})).status,413,`actual ${size} bytes rejected by harmonized 5MiB server cap`);check('media-image-boundary',await capturePracticeStorageRequest('media-image-boundary','qa-parent-a',await token('qa-parent-a'),objectPath,{method:'POST',contentType:'image/png',body}),403,`direct Storage bypass denied for actual ${size} bytes`);check('media-image-boundary',await exists(objectPath),false,'overflow leaves no object');}
+  for(const size of[500*1024*1024,500*1024*1024+1]){
+    const objectPath=`players/${adult}/videos/${marker}-${size}.mp4`;register(objectPath);let produced=0;async function* body(){for await(const chunk of generatedMp4Body(mp4,size)){produced+=chunk.length;yield chunk;}}
+    const response=await request('media-video-boundary','qa-adult-player-a',objectPath,{method:'POST',type:'video/mp4',body:body()});check('media-video-boundary',produced,size,'actual generated MP4 bytes sent without retained payload');check('media-video-boundary',response.status,size===500*1024*1024?201:413,`real ${size} video byte boundary`);
+    if(response.status===201){check('media-video-boundary',Number((await metadata(objectPath)).size),size,'exact durable video length');check('media-video-boundary',(await request('media-video-boundary','qa-adult-player-a',objectPath,{range:'bytes=0-23'})).bytes.equals(mp4.subarray(0,24)),true,'protected video range preserves container');check('media-video-boundary',(await request('media-video-boundary','qa-adult-player-a',objectPath,{method:'DELETE'})).status,200,'large fixture immediately deleted');}else check('media-video-boundary',await exists(objectPath),false,'overflow never promotes final object');
+  }
+  const memberFixture=FIXTURES.firestoreDocuments.find(item=>item.path.startsWith(`teams/${team.id}/members/`)&&item.data.userId===uid('qa-adult-player-a')),memberName=memberFixture.data.name;
+  const athleteUrl=`${BASE_URL}/coaches-corner?athlete=${encodeURIComponent(memberFixture.path.split('/').at(-1))}`;
+  const openPack=`await page.goto(${JSON.stringify(athleteUrl)});await page.getByRole('heading',{name:'Coaches Corner',exact:true}).waitFor({timeout:15000});await dismiss(page);await page.getByRole('button',{name:'Pack Architect',exact:true}).click();const dialog=page.getByRole('dialog',{name:/Pack Architect/});await dialog.waitFor({timeout:15000});`;
+  await browserStep(adultSession,'qa-adult-player-a',['media-player-self'],`${openPack}const chooser=page.waitForEvent('filechooser');await dialog.getByRole('button',{name:'Upload Photo',exact:true}).click();const file=await chooser;const pending=page.waitForResponse(response=>response.url().startsWith(${JSON.stringify(BASE_URL+'/api/media?')})&&response.request().method()==='POST',{timeout:15000});await file.setFiles(${JSON.stringify(imageFile)});if((await pending).status()!==201)throw Error('Player avatar upload failed');await page.getByText('Avatar Updated ✓',{exact:true}).waitFor({timeout:15000});await page.reload();await dismiss(page);return true;`);
+  const profile=await withEmulatorAuthAdmin(async(_auth,db)=>(await db.doc(`players/${adult}/recruitingProfile/profile`).get()).data()),playerAvatar=new URL(profile.photoURL,BASE_URL).searchParams.get('path');
+  check('media-player-self',playerAvatar.startsWith(`players/${adult}/avatar/`),true,'visible player avatar persists exact authorized namespace');register(playerAvatar);check('media-player-self',(await request('media-player-self','qa-adult-player-a',playerAvatar)).bytes.equals(png),true,'visible player avatar private bytes match after reload');
+  await browserStep(adultSession,'qa-adult-player-a',['media-player-self'],`${openPack}await dialog.getByRole('tab',{name:/Gallery/}).click();const chooser=page.waitForEvent('filechooser');await dialog.getByRole('button',{name:'Add Photo',exact:true}).click();const file=await chooser;const pending=page.waitForResponse(response=>response.url().startsWith(${JSON.stringify(BASE_URL+'/api/media?')})&&response.request().method()==='POST',{timeout:15000});await file.setFiles(${JSON.stringify(imageFile)});if((await pending).status()!==201)throw Error('Gallery upload failed');await dialog.getByAltText('Gallery 0',{exact:true}).waitFor({timeout:15000});await page.reload();await dismiss(page);return true;`);
+  const photos=await withEmulatorAuthAdmin(async(_auth,db)=>(await db.doc(`players/${adult}/recruitingProfile/profile`).get()).data().photos);check('media-player-self',photos.length,1,'visible gallery upload persists one exact photo');const galleryPath=new URL(photos[0],BASE_URL).searchParams.get('path');register(galleryPath);check('media-player-self',(await request('media-player-self','qa-adult-player-a',galleryPath)).bytes.equals(png),true,'gallery private bytes match');
+  await browserStep(adultSession,'qa-adult-player-a',['media-delete'],`${openPack}await dialog.getByRole('tab',{name:/Gallery/}).click();await dialog.getByAltText('Gallery 0',{exact:true}).hover();page.once('dialog',prompt=>prompt.accept());const pending=page.waitForResponse(response=>response.url().startsWith(${JSON.stringify(BASE_URL+'/api/media?')})&&response.request().method()==='DELETE',{timeout:15000});await dialog.getByRole('button',{name:'Delete gallery photo 1',exact:true}).click();if((await pending).status()!==200)throw Error('Gallery delete failed');await page.getByText('Photo Removed',{exact:true}).waitFor({timeout:15000});await page.reload();await dismiss(page);return true;`);
+  check('media-delete',await exists(galleryPath),false,'visible gallery deletion removes exact object');check('media-delete',await withEmulatorAuthAdmin(async(_auth,db)=>(await db.doc(`players/${adult}/recruitingProfile/profile`).get()).data().photos.length),0,'visible gallery deletion removes metadata after reload');check('media-delete',(await request('media-delete','qa-adult-player-a',galleryPath)).status,404,'prior gallery URL revoked');
+  for(const [session,actor,route]of[[owner,'qa-coach-owner-a','/settings'],[adultSession,'qa-adult-player-a',athleteUrl.slice(BASE_URL.length)]]){
+    const rows=await browserStep(session,actor,['media-responsive'],`const rows=[];for(const viewport of[{width:1440,height:900},{width:390,height:844}]){await page.setViewportSize(viewport);await page.goto(${JSON.stringify(BASE_URL)}+${JSON.stringify(route)});await dismiss(page);${actor==='qa-coach-owner-a'?`const control=page.getByRole('button',{name:'Change profile photo',exact:true});await control.waitFor({timeout:15000});rows.push(await measure(page,{upload:control}));`:`await page.getByRole('heading',{name:'Coaches Corner',exact:true}).waitFor({timeout:15000});await page.getByRole('button').filter({hasText:${JSON.stringify(memberName)}}).first().waitFor({timeout:15000});const manage=page.getByRole('button',{name:'Manage',exact:true});await manage.click();const dialog=page.getByRole('dialog',{name:/Pack Architect/});await dialog.waitFor();rows.push(await measure(page,{dialog,upload:dialog.getByRole('button',{name:'Upload Photo',exact:true})}));await dialog.getByRole('button',{name:'Close',exact:true}).click();`}await page.screenshot({path:${JSON.stringify(path.join(certificationArtifactDir,'media-'+actor))}+'-'+viewport.width+'.png',fullPage:false});}return rows;`);
+    bounds.push({actor,rows});check('media-responsive',validatePracticeBounds(rows),true,`${actor} critical upload/status surfaces fit exact desktop/mobile viewports`);
+  }
+  writeFileSync(path.join(certificationArtifactDir,'media-responsive-bounds.json'),JSON.stringify(bounds,null,2));
+  check('media-delete',(await request('media-delete','qa-coach-owner-a',privatePath,{method:'DELETE'})).status,200,'authorized delete accepted');check('media-delete',await exists(privatePath),false,'exact object removed');check('media-delete',(await request('media-delete','qa-coach-owner-a',privatePath)).status,404,'prior protected access no longer returns bytes');
+  check('media-console',errors.length,0,'actual owner/adult browser observers have no console errors');check('media-network',failures.length,0,'actual owner/adult browser observers have no unexpected 5xx');
 }
 
 async function runLibraryWorkflowAudit() {
