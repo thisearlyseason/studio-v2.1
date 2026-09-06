@@ -9729,7 +9729,7 @@ function browserChatParkOnList(session, { teamId, chatId }) {
   }`]));
 }
 
-function browserChatUnread(session, { teamId, chatId, marker, pageProperty = '' }) {
+function browserChatOpenAndClear(session, { teamId, chatId, marker, pageProperty = '' }) {
   return JSON.parse(cli(session, ['run-code', `async page => {
     ${pageProperty ? `page=page[${JSON.stringify(pageProperty)}];if(!page)throw Error(${JSON.stringify(`Missing peer page ${pageProperty}.`)});` : ''}
     const observedResponses=[],consoleErrors=[],failedResponses=[];const tag='chat-unread';
@@ -9737,10 +9737,17 @@ function browserChatUnread(session, { teamId, chatId, marker, pageProperty = '' 
     const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
     page.on('console',onConsole);page.on('pageerror',onError);page.on('response',onResponse);
     try{const card=()=>page.locator(${JSON.stringify(`a[href="/chats/${chatId}?teamId=${teamId}"]`)});await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await card().waitFor({timeout:15000});const before=await card().locator('div.bg-primary.text-white').count();
-      await card().click();await page.getByText(${JSON.stringify(marker)},{exact:true}).waitFor({timeout:15000});await page.reload();await page.getByText(${JSON.stringify(marker)},{exact:true}).waitFor({timeout:15000});const persistedMessageCount=await page.getByText(${JSON.stringify(marker)},{exact:true}).count();
-      await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await card().waitFor({timeout:15000});const after=await card().locator('div.bg-primary.text-white').count();await page.reload();await card().waitFor({timeout:15000});const reloaded=await card().locator('div.bg-primary.text-white').count();
-      return{before,after,reloaded,persistedMessageCount,observedResponses,consoleErrors,failedResponses};
+      const markReadPending=page.waitForResponse(response=>response.url()===${JSON.stringify(`${BASE_URL}/api/teams/chat`)}&&response.request().method()==='PATCH',{timeout:15000});
+      await card().click();await page.getByText(${JSON.stringify(marker)},{exact:true}).waitFor({timeout:15000});const markReadStatus=(await markReadPending).status();
+      return{before,markReadStatus,messageCount:await page.getByText(${JSON.stringify(marker)},{exact:true}).count(),observedResponses,consoleErrors,failedResponses};
     }finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('response',onResponse);}
+  }`]));
+}
+
+function browserChatUnreadPersistence(session, { teamId, chatId, marker }) {
+  return JSON.parse(cli(session, ['run-code', `async page => {
+    const observedResponses=[];const tag='chat-unread';const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;observedResponses.push({tag,pathname:url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',method:response.request().method(),status:response.status(),startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};page.on('response',onResponse);
+    try{await page.reload();await page.getByText(${JSON.stringify(marker)},{exact:true}).waitFor({timeout:15000});const persistedMessageCount=await page.getByText(${JSON.stringify(marker)},{exact:true}).count();const card=()=>page.locator(${JSON.stringify(`a[href="/chats/${chatId}?teamId=${teamId}"]`)});await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await card().waitFor({timeout:15000});const after=await card().locator('div.bg-primary.text-white').count();await page.reload();await card().waitFor({timeout:15000});const reloaded=await card().locator('div.bg-primary.text-white').count();return{after,reloaded,persistedMessageCount,observedResponses};}finally{page.off('response',onResponse);}
   }`]));
 }
 
@@ -9806,7 +9813,8 @@ async function runCommunicationWorkflowAudit() {
 
   const sent=browserChatSend(owner,{teamId:team.id,chatId,marker,pageProperty:'qaChatMember'});expectEqual(sent.status,200,'Chat chat-sync: member visible send returns 200');expectEqual(sent.count,1,'Chat chat-sync: live sender surface renders exactly one message');expectEqual(sent.emptyDisabled,true,'Chat chat-sync: empty send remains disabled');expectEqual(sent.consoleErrors.length,0,'Chat chat-sync: sender console clean');expectEqual(sent.failedResponses.length,0,'Chat chat-sync: sender network has no 5xx');await captureBrowserOperationRequests('chat-sync',memberAlias,sent.observedResponses,'chat-sync');
   expectEqual((await read()).unreadBy?.[ownerUid],1,'Chat chat-unread: recipient unread is exactly one before open');
-  const unread=browserChatUnread(owner,{teamId:team.id,chatId,marker});expectEqual(unread.before,1,'Chat chat-unread: owner list shows one unread badge');expectEqual(unread.after,0,'Chat chat-unread: open clears recipient badge only');expectEqual(unread.reloaded,0,'Chat chat-unread: clear persists after reload');expectEqual(unread.persistedMessageCount,1,'Chat chat-sync: recipient reload renders exactly one persisted message');expectEqual((await read()).unreadBy?.[memberUid]||0,0,'Chat chat-unread: sender unread remains zero');await captureBrowserOperationRequests('chat-unread',ownerAlias,unread.observedResponses,'chat-unread');
+  const unreadOpen=browserChatOpenAndClear(owner,{teamId:team.id,chatId,marker});expectEqual(unreadOpen.before,1,'Chat chat-unread: owner list shows one unread badge');expectEqual(unreadOpen.markReadStatus,200,'Chat chat-unread: exact open read acknowledgement succeeds');expectEqual(unreadOpen.messageCount,1,'Chat chat-sync: recipient open renders exactly one message');expectEqual((await read()).unreadBy?.[ownerUid]||0,0,'Chat chat-unread: backend recipient unread clears before reload');
+  const unread=browserChatUnreadPersistence(owner,{teamId:team.id,chatId,marker});expectEqual(unread.after,0,'Chat chat-unread: open clears recipient badge only');expectEqual(unread.reloaded,0,'Chat chat-unread: clear persists after reload');expectEqual(unread.persistedMessageCount,1,'Chat chat-sync: recipient reload renders exactly one persisted message');expectEqual((await read()).unreadBy?.[memberUid]||0,0,'Chat chat-unread: sender unread remains zero');await captureBrowserOperationRequests('chat-unread',ownerAlias,[...unreadOpen.observedResponses,...unread.observedResponses],'chat-unread');
 
   const duplicateBody={teamId:team.id,chatId,type:'text',content:`${marker} duplicate`,requestId:'chat-duplicate'};
   const dup1=await request('chat-duplicate',ownerAlias,'/api/teams/chat/message',duplicateBody),dup2=await request('chat-duplicate',ownerAlias,'/api/teams/chat/message',duplicateBody);
