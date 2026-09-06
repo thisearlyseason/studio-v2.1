@@ -306,8 +306,10 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.doesNotMatch(filmBlock, /faq\/how-to-create-a-game\.mp4/);
   assert.match(filmBlock, /const archiveFilm = dialog\.getByRole\('button', \{ name: 'Archive Film', exact: true \}\);[\s\S]{0,100}archiveFilm\.focus\(\)/);
   const generatedFilmIndex = filmBlock.indexOf('const generatedFilm = await page.evaluate');
+  const uploadBlockStart = filmBlock.indexOf('const uploadResult');
   assert.ok(generatedFilmIndex >= 0);
-  assert.ok(generatedFilmIndex < filmBlock.indexOf("const addFilm = page.getByRole('button', { name: 'Add Film'", filmBlock.indexOf('const uploadResult')));
+  assert.ok(generatedFilmIndex < filmBlock.indexOf('await page.goto', uploadBlockStart));
+  assert.ok(generatedFilmIndex < filmBlock.indexOf("const addFilm = page.getByRole('button', { name: 'Add Film'", uploadBlockStart));
 });
 
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {

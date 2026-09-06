@@ -7596,14 +7596,6 @@ async function runPracticeFilmWorkflowAudit() {
   expectEqual(invalidResult.unsafeUrls, 5, 'Practice film unsafe external URLs fail before durable metadata');
 
   const uploadResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
-    await page.goto(${JSON.stringify(athleteUrl)});
-    await page.waitForFunction(
-      ({ memberName }) => [...document.querySelectorAll('button')].some(button => button.textContent?.includes(memberName) && button.className.includes('bg-primary')),
-      { memberName: ${JSON.stringify(memberName)} },
-      { timeout: 15000 },
-    );
-    await page.getByRole('button', { name: 'Add Film', exact: true }).waitFor({ timeout: 15000 });
-    await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow});
     const generatedFilm = await page.evaluate(async name => {
       const canvas = document.createElement('canvas');
       canvas.width = 320; canvas.height = 180;
@@ -7625,20 +7617,35 @@ async function runPracticeFilmWorkflowAudit() {
       recorder.stop(); await stopped; stream.getTracks().forEach(track => track.stop());
       const file = new File(chunks, name, { type: 'video/webm' });
       if (file.size <= 0) throw new Error('Browser-native film fixture is empty.');
-      window.__qaPracticeFilmFile = file;
-      return { size: file.size, type: file.type };
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener('load', () => resolve(String(reader.result).split(',', 2)[1] || ''), { once: true });
+        reader.addEventListener('error', () => reject(reader.error || new Error('Browser-native film fixture encoding failed.')), { once: true });
+        reader.readAsDataURL(file);
+      });
+      return { base64, size: file.size, type: file.type };
     }, ${JSON.stringify(uploadName)});
-    if (generatedFilm.type !== 'video/webm' || generatedFilm.size <= 0) throw new Error('Browser-native film fixture failed validation.');
+    if (generatedFilm.type !== 'video/webm' || generatedFilm.size <= 0 || !generatedFilm.base64) throw new Error('Browser-native film fixture failed validation.');
+    await page.goto(${JSON.stringify(athleteUrl)});
+    await page.waitForFunction(
+      ({ memberName }) => [...document.querySelectorAll('button')].some(button => button.textContent?.includes(memberName) && button.className.includes('bg-primary')),
+      { memberName: ${JSON.stringify(memberName)} },
+      { timeout: 15000 },
+    );
+    await page.getByRole('button', { name: 'Add Film', exact: true }).waitFor({ timeout: 15000 });
+    await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow});
     const addFilm = page.getByRole('button', { name: 'Add Film', exact: true });
     await addFilm.focus(); await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Archive Film' });
     await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(${JSON.stringify(marker)});
-    await dialog.locator('#film-upload').evaluate(input => {
-      const file = window.__qaPracticeFilmFile;
-      if (!(file instanceof File)) throw new Error('Browser-native film fixture is unavailable.');
+    await dialog.locator('#film-upload').evaluate((input, payload) => {
+      const binary = atob(payload.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      const file = new File([bytes], payload.name, { type: 'video/webm' });
       const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
       input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    }, { base64: generatedFilm.base64, name: ${JSON.stringify(uploadName)} });
     await page.getByText('Video Optimized', { exact: true }).last().waitFor({ timeout: 10000 });
     const archiveFilm = dialog.getByRole('button', { name: 'Archive Film', exact: true });
     await archiveFilm.focus(); await page.keyboard.press('Enter');
