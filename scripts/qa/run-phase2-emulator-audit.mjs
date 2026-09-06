@@ -7598,6 +7598,11 @@ async function runPracticeFilmWorkflowAudit() {
 
   const uploadResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
     await page.goto(${JSON.stringify(athleteUrl)});
+    await page.waitForFunction(
+      ({ memberName }) => [...document.querySelectorAll('button')].some(button => button.textContent?.includes(memberName) && button.className.includes('bg-primary')),
+      { memberName: ${JSON.stringify(memberName)} },
+      { timeout: 15000 },
+    );
     await page.getByRole('button', { name: 'Add Film', exact: true }).waitFor({ timeout: 15000 });
     await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow});
     const addFilm = page.getByRole('button', { name: 'Add Film', exact: true });
@@ -7638,6 +7643,11 @@ async function runPracticeFilmWorkflowAudit() {
     try {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(${JSON.stringify(athleteUrl)});
+      await page.waitForFunction(
+        ({ memberName }) => [...document.querySelectorAll('button')].some(button => button.textContent?.includes(memberName) && button.className.includes('bg-primary')),
+        { memberName: ${JSON.stringify(memberName)} },
+        { timeout: 15000 },
+      );
       await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
       await page.getByText(${JSON.stringify(marker)}, { exact: true }).click();
       const viewer = page.getByRole('dialog', { name: 'Video Viewer' });
@@ -7736,6 +7746,11 @@ async function runPracticeFilmWorkflowAudit() {
   await cli(ownerSession, ['run-code', `async page => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(${JSON.stringify(athleteUrl)});
+    await page.waitForFunction(
+      ({ memberName }) => [...document.querySelectorAll('button')].some(button => button.textContent?.includes(memberName) && button.className.includes('bg-primary')),
+      { memberName: ${JSON.stringify(memberName)} },
+      { timeout: 15000 },
+    );
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
     page.on('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: ${JSON.stringify(`Delete ${marker}`)} }).click();

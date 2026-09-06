@@ -296,7 +296,9 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.match(source, /negative.*NaN.*beyond-duration/i);
   const filmStart = source.indexOf('async function runPracticeFilmWorkflowAudit()');
   const filmEnd = source.indexOf('function browserVisibleAdminNavigationAudit', filmStart);
-  assert.doesNotMatch(source.slice(filmStart, filmEnd), /setInputFiles\([^)]*Buffer\.from/);
+  const filmBlock = source.slice(filmStart, filmEnd);
+  assert.doesNotMatch(filmBlock, /setInputFiles\([^)]*Buffer\.from/);
+  assert.ok((filmBlock.match(/button\.className\.includes\('bg-primary'\)/g) || []).length >= 4);
 });
 
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
