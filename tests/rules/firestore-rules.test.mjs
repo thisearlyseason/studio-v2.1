@@ -66,6 +66,7 @@ beforeEach(async () => {
     await Promise.all([
       setDoc(doc(db, 'users', 'owner'), { role: 'coach', name: 'Owner' }),
       setDoc(doc(db, 'users', 'member'), { role: 'parent', name: 'Member' }),
+      setDoc(doc(db, 'users', 'parent-account'), { role: 'parent', name: 'Child Guardian' }),
       setDoc(doc(db, 'users', 'staff'), { role: 'coach', name: 'Assistant Coach' }),
       setDoc(doc(db, 'users', 'outsider'), { role: 'coach', name: 'Outsider' }),
       setDoc(doc(db, 'users', 'youth'), {
@@ -905,7 +906,7 @@ test('parents and players cannot read staff-only channels or their messages', as
   }
 });
 
-test('team waiver attestation is staff-only and exactly bound to the waiver document', async () => {
+test('team waiver attestation is server-only even for otherwise authorized staff', async () => {
   const signature = uid => ({
     waiverDocId: 'staff-waiver', waiverTitle: 'Staff waiver', signedBy: uid,
     signedByName: 'Signer', signedAt: new Date(), isGlobal: true,
@@ -914,7 +915,52 @@ test('team waiver attestation is staff-only and exactly bound to the waiver docu
   await assertFails(setDoc(doc(authenticatedDb('member'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), signature('member')));
   await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/wrong-waiver'), signature('staff')));
   await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), { ...signature('staff'), teamId: 'attacker-team' }));
-  await assertSucceeds(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), signature('staff')));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), signature('staff')));
+});
+
+test('server-created waiver receipts are staff-readable and client-immutable', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'teams/team-a/archived_waivers/receipt-v1'), {
+      id: 'receipt-v1', documentId: 'staff-waiver', version: 1,
+      textHash: 'a'.repeat(64), waiverText: 'Immutable terms', immutable: true,
+    });
+  });
+  const receipt = doc(authenticatedDb('staff'), 'teams/team-a/archived_waivers/receipt-v1');
+  await assertSucceeds(getDoc(receipt));
+  await assertFails(setDoc(receipt, { waiverText: 'Rewritten terms' }, { merge: true }));
+  await assertFails(deleteDoc(receipt));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/archived_waivers/forged'), {
+    documentId: 'staff-waiver', waiverText: 'Forged terms', immutable: true,
+  }));
+});
+
+test('participant waiver signatures are server-only for self and guardians', async () => {
+  await assertFails(setDoc(doc(authenticatedDb('member'), 'teams/team-a/members/member/signatures/staff-waiver_v1'), {
+    documentId: 'staff-waiver', version: 1, signedBy: 'member', immutable: true,
+  }));
+});
+
+test('waiver signatures and certificate projections are private to subject guardian or staff', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/team-a/members/member/signatures/member-v1'), { memberId: 'member', userId: 'member', signedBy: 'member' });
+    await setDoc(doc(db, 'teams/team-a/members/child-player/signatures/child-v1'), { memberId: 'child-player', userId: 'parent-account', signedBy: 'parent-account' });
+    await setDoc(doc(db, 'teams/team-a/coachWaiverSignatures/coach-v1'), { waiverDocId: 'waiver', signedBy: 'staff' });
+    await setDoc(doc(db, 'teams/team-a/files/cert-member'), { category: 'Signed Certificate', memberId: 'member', documentId: 'waiver', version: 1 });
+    await setDoc(doc(db, 'teams/team-a/files/cert-removed'), { category: 'Signed Certificate', memberId: 'removed', documentId: 'waiver', version: 1 });
+  });
+  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/members/member/signatures/member-v1')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/members/child-player/signatures/child-v1')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('parent-account'), 'teams/team-a/members/child-player/signatures/child-v1')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/members/child-player/signatures/child-v1')));
+  await assertFails(getDoc(doc(authenticatedDb('outsider'), 'teams/team-a/members/member/signatures/member-v1')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/coachWaiverSignatures/coach-v1')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/coach-v1')));
+  // Certificate cards are deliberately team-visible status projections; the
+  // signature text and immutable legal receipt stay in the restricted paths.
+  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-member')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-removed')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/files/cert-removed')));
 });
 
 test('team alert audiences and targets are enforced by rules, not only the UI', async () => {

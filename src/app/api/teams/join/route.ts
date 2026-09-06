@@ -8,6 +8,7 @@ import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@
 import { hasStaffRole } from '@/lib/staff-position';
 import { findActiveTeamMember } from '@/lib/server-team-access';
 import { permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
+import { buildWaiverVersionIdentity, canonicalWaiverRecordMatches, validateWaiverSignatureInput } from '@/lib/waiver-security';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
@@ -64,11 +65,19 @@ export async function GET(req: NextRequest) {
       }
 
       const waiverQuery = await teamRef.collection('documents').where('isActive', '==', true).limit(20).get();
-      const waiver = waiverQuery.docs.find(snapshot => snapshot.data().type === 'waiver');
+      const waiver = waiverQuery.docs.find(snapshot => {
+        const data = snapshot.data();
+        return data.type === 'waiver' && data.waiverAudience !== 'team' && (!Array.isArray(data.assignedTo) || data.assignedTo.includes('all'));
+      });
+      const waiverIdentity = waiver ? buildWaiverVersionIdentity({
+        title: waiver.data().title, content: waiver.data().content, version: waiver.data().version,
+        waiverAudience: waiver.data().waiverAudience, assignedTo: waiver.data().assignedTo,
+      }) : null;
       const sessionToken = randomBytes(32).toString('base64url');
       const expiresAt = Timestamp.fromMillis(Date.now() + 15 * 60 * 1000);
       await adminDb.collection('team_join_sessions').doc(tokenHash(sessionToken)).set({
         teamId,
+        ...(waiver && waiverIdentity ? { waiverId: waiver.id, waiverVersion: waiverIdentity.version, waiverTextHash: waiverIdentity.textHash } : {}),
         expiresAt,
         createdAt: FieldValue.serverTimestamp(),
       });
@@ -76,10 +85,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         data: {
           team: { id: team.id, name: String(teamData.teamName || teamData.name || 'Squad') },
-          waiver: waiver ? {
+          waiver: waiver && waiverIdentity ? {
             id: waiver.id,
-            title: String(waiver.data().title || 'Participation Waiver'),
-            content: String(waiver.data().content || '').slice(0, 50_000),
+            title: waiverIdentity.title,
+            content: waiverIdentity.content.slice(0, 50_000),
+            version: waiverIdentity.version,
+            textHash: waiverIdentity.textHash,
           } : null,
           sessionToken,
           expiresAt: expiresAt.toDate().toISOString(),
@@ -164,20 +175,42 @@ export async function POST(req: NextRequest) {
     const memberRef = existingSelfMembership?.ref
       || teamSnapshot.ref.collection('members').doc(joiningLinkedChild ? playerId : auth.uid);
     const membershipRef = userRef.collection('teamMemberships').doc(teamSnapshot.id);
+    const requiredWaiverId = String(sessionData.waiverId || '');
+    const acceptanceRecord = body.waiverAcceptance && typeof body.waiverAcceptance === 'object' && !Array.isArray(body.waiverAcceptance)
+      ? body.waiverAcceptance as Record<string, unknown>
+      : null;
+    if (requiredWaiverId && !acceptanceRecord) {
+      return NextResponse.json({ error: 'Review and sign the current waiver before joining.' }, { status: 409 });
+    }
+    const waiverInput = acceptanceRecord ? validateWaiverSignatureInput({
+      teamId: teamSnapshot.id, memberId: memberRef.id, ...acceptanceRecord,
+    }) : null;
+    if (requiredWaiverId && waiverInput?.documentId !== requiredWaiverId) {
+      return NextResponse.json({ error: 'The required waiver changed. Reopen the invitation and review it again.' }, { status: 409 });
+    }
+    const waiverRef = waiverInput ? teamSnapshot.ref.collection('documents').doc(waiverInput.documentId) : null;
+    const versionKey = waiverInput ? `${waiverInput.documentId}_v${waiverInput.expectedVersion}` : '';
+    const signatureRef = waiverInput ? memberRef.collection('signatures').doc(versionKey) : null;
+    const archiveRef = waiverInput ? teamSnapshot.ref.collection('archived_waivers').doc(`receipt_${versionKey}_${memberRef.id}`) : null;
+    const protocolRef = waiverInput ? teamSnapshot.ref.collection('protocol_signatures').doc(`${versionKey}_${auth.uid}_${memberRef.id}`) : null;
+    const certificateRef = waiverInput ? teamSnapshot.ref.collection('files').doc(`cert_${memberRef.id}_${versionKey}`) : null;
 
     const result = await adminDb.runTransaction(async transaction => {
-      const [userSnapshot, memberSnapshot, playerSnapshot, freshSession, freshTeamSnapshot] = await Promise.all([
+      const [userSnapshot, memberSnapshot, playerSnapshot, freshSession, freshTeamSnapshot, freshWaiver] = await Promise.all([
         transaction.get(userRef),
         transaction.get(memberRef),
         transaction.get(playerRef),
         sessionRef ? transaction.get(sessionRef) : Promise.resolve(null),
         transaction.get(teamSnapshot.ref),
+        waiverRef ? transaction.get(waiverRef) : Promise.resolve(null),
       ]);
       if (!freshTeamSnapshot.exists || !teamAcceptsRegistrations(freshTeamSnapshot.data() || {})) return 'inactive';
       if (sessionRef) {
         const freshSessionData = freshSession?.data() || {};
         const freshExpiry = typeof freshSessionData.expiresAt?.toMillis === 'function' ? freshSessionData.expiresAt.toMillis() : 0;
         if (!freshSession?.exists || freshSessionData.teamId !== teamSnapshot.id || freshExpiry < Date.now()) return 'expired';
+        if (String(freshSessionData.waiverId || '') !== requiredWaiverId ||
+            (requiredWaiverId && (freshSessionData.waiverVersion !== waiverInput?.expectedVersion || freshSessionData.waiverTextHash !== waiverInput?.expectedTextHash))) return 'waiver_changed';
       }
 
       const user = userSnapshot.data() || {};
@@ -195,6 +228,36 @@ export async function POST(req: NextRequest) {
           : user.name || user.fullName || auth.email?.split('@')[0] || 'Athlete'
       );
       const avatar = String(user.avatar || user.avatarUrl || '');
+      let waiverAlreadySigned = false;
+      let waiverReceipt: Record<string, unknown> | null = null;
+      let signatureSnapshot: FirebaseFirestore.DocumentSnapshot | null = null;
+      let archiveSnapshot: FirebaseFirestore.DocumentSnapshot | null = null;
+      let protocolSnapshot: FirebaseFirestore.DocumentSnapshot | null = null;
+      let certificateSnapshot: FirebaseFirestore.DocumentSnapshot | null = null;
+      if (waiverInput && waiverRef && signatureRef && archiveRef && protocolRef && certificateRef) {
+        const waiverData = freshWaiver?.data() || {};
+        if (!freshWaiver?.exists || waiverData.type !== 'waiver' || waiverData.isActive === false) return 'waiver_changed';
+        const identity = buildWaiverVersionIdentity({
+          title: waiverData.title, content: waiverData.content, version: waiverData.version,
+          waiverAudience: waiverData.waiverAudience, assignedTo: waiverData.assignedTo,
+        });
+        if (identity.waiverAudience !== 'participant' || !identity.assignedTo.includes('all') ||
+            waiverInput.expectedVersion !== identity.version || waiverInput.expectedTextHash !== identity.textHash) return 'waiver_changed';
+        [signatureSnapshot, archiveSnapshot, protocolSnapshot, certificateSnapshot] = await Promise.all([
+          transaction.get(signatureRef), transaction.get(archiveRef), transaction.get(protocolRef), transaction.get(certificateRef),
+        ]);
+        waiverReceipt = {
+          documentId: waiverInput.documentId, version: identity.version, textHash: identity.textHash,
+          waiverTitle: identity.title, waiverText: identity.content, waiverAudience: identity.waiverAudience,
+          assignedTo: identity.assignedTo, teamId: teamSnapshot.id, memberId: memberRef.id,
+          subjectPlayerId: playerId, signedBy: auth.uid, signedByParent: joiningLinkedChild,
+          signerName: waiverInput.signatureName, signedAt: now, immutable: true,
+        };
+        for (const snapshot of [signatureSnapshot, archiveSnapshot, protocolSnapshot]) {
+          if (snapshot?.exists && !canonicalWaiverRecordMatches(snapshot.data() || {}, waiverReceipt)) throw new Error('WAIVER_RECEIPT_CONFLICT');
+        }
+        waiverAlreadySigned = Boolean(signatureSnapshot?.exists);
+      }
       if (!playerSnapshot.exists) {
         const [firstName = 'Athlete', ...lastName] = displayName.split(/\s+/).filter(Boolean);
         transaction.create(playerRef, {
@@ -213,17 +276,34 @@ export async function POST(req: NextRequest) {
         name: displayName, avatar, parentId: existingPlayer.parentId || null, role: 'Member', position, jersey: '',
         status: 'active', joinedAt: memberSnapshot.data()?.joinedAt || now,
       }, { merge: true });
+      if (waiverInput && waiverReceipt && signatureRef && archiveRef && protocolRef && certificateRef) {
+        if (!signatureSnapshot?.exists) transaction.create(signatureRef, {
+          id: `sig_${versionKey}_${memberRef.id}`, docId: waiverInput.documentId, userId: auth.uid,
+          userName: displayName, signature: waiverInput.signatureName, signatureName: waiverInput.signatureName,
+          parentUserId: joiningLinkedChild ? auth.uid : null, timestamp: now, ...waiverReceipt,
+        });
+        if (!archiveSnapshot?.exists) transaction.create(archiveRef, { id: archiveRef.id, title: waiverReceipt.waiverTitle, type: 'Team Document', memberName: displayName, ...waiverReceipt });
+        if (!protocolSnapshot?.exists) transaction.create(protocolRef, { protocolId: waiverInput.documentId, docId: waiverInput.documentId, ...waiverReceipt });
+        if (!certificateSnapshot?.exists) transaction.create(certificateRef, {
+          id: certificateRef.id, name: `Signed Certificate: ${waiverReceipt.waiverTitle}`, category: 'Signed Certificate',
+          url: '#', type: 'cert', size: '1kb', date: now, teamName: String(team.name || team.teamName || 'Squad'),
+          waiverType: 'General', resolvedMemberName: displayName, resolvedDocTitle: waiverReceipt.waiverTitle,
+          documentId: waiverInput.documentId, memberId: memberRef.id, version: waiverReceipt.version,
+          signedAt: now, signedByParent: joiningLinkedChild,
+        });
+      }
       transaction.set(membershipRef, {
         teamId: teamSnapshot.id, name: String(team.name || team.teamName || 'Squad'), role: 'Member',
         code: code || team.code || team.teamCode || team.inviteCode || '', joinedAt: now,
         type: team.type || 'team', isPro: team.isPro === true, planId: team.planId || 'free',
       }, { merge: true });
       if (sessionRef) transaction.delete(sessionRef);
-      return memberSnapshot.exists ? 'existing' : 'joined';
+      return { state: memberSnapshot.exists ? 'existing' as const : 'joined' as const, waiverAlreadySigned };
     });
 
     if (result === 'expired') return NextResponse.json({ error: 'This squad invitation has expired.' }, { status: 410 });
     if (result === 'inactive') return NextResponse.json({ error: 'This squad is not accepting new members.' }, { status: 409 });
+    if (result === 'waiver_changed') return NextResponse.json({ error: 'The required waiver changed. Reopen the invitation and review it again.' }, { status: 409 });
     return NextResponse.json({
       ok: true,
       success: true,
@@ -231,12 +311,15 @@ export async function POST(req: NextRequest) {
       playerId,
       memberId: memberRef.id,
       teamName: String(team.name || team.teamName || 'Squad'),
-      alreadyJoined: result === 'existing',
+      alreadyJoined: result.state === 'existing',
+      waiverAlreadySigned: result.waiverAlreadySigned,
     });
   } catch (error) {
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof Error && error.message === 'CHILD_FORBIDDEN') return NextResponse.json({ error: 'You can only enroll a linked child profile.' }, { status: 403 });
     if (error instanceof Error && error.message === 'STAFF_MEMBERSHIP_EXISTS') return NextResponse.json({ error: 'You already have staff access to this squad.' }, { status: 409 });
+    if (error instanceof Error && error.message === 'WAIVER_RECEIPT_CONFLICT') return NextResponse.json({ error: 'The existing waiver receipt does not match this enrollment.' }, { status: 409 });
+    if (error instanceof Error && /valid waiver|displayed waiver|unsupported waiver/i.test(error.message)) return NextResponse.json({ error: error.message }, { status: 400 });
     console.error('[teams/join] Error:', error);
     return NextResponse.json({ error: 'Unable to join the squad.' }, { status: 500 });
   }

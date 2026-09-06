@@ -3422,16 +3422,16 @@ function CoachesCornerContent() {
       : null,
     [db, activeTeam?.id, user?.id, canAccessCoachesCorner]
   );
-  const { data: coachSigDocs } = useCollection<{ waiverDocId: string; signedBy: string; signedAt: string }>(coachSigsRef);
+  const { data: coachSigDocs } = useCollection<{ waiverDocId: string; version?: number; signedBy: string; signedAt: string }>(coachSigsRef);
 
   // Which global waivers has THIS coach already signed?
   const signedGlobalWaiverIds = useMemo(
-    () => new Set((coachSigDocs ?? []).filter(s => s.signedBy === user?.id).map(s => s.waiverDocId)),
+    () => new Set((coachSigDocs ?? []).filter(s => s.signedBy === user?.id).map(s => `${s.waiverDocId}@${s.version || 1}`)),
     [coachSigDocs, user?.id]
   );
 
   const unsignedGlobalWaivers = useMemo(
-    () => globalWaivers.filter(w => !signedGlobalWaiverIds.has(w.id)),
+    () => globalWaivers.filter(w => !signedGlobalWaiverIds.has(`${w.id}@${w.version || 1}`)),
     [globalWaivers, signedGlobalWaiverIds]
   );
 
@@ -3441,7 +3441,7 @@ function CoachesCornerContent() {
 
   const handleSignGlobalWaiver = async (waiver: TeamDocument) => {
     setIsSigning(true);
-    const signed = await signGlobalWaiverAsCoach(waiver.id, waiver.title);
+    const signed = await signGlobalWaiverAsCoach(waiver);
     setIsSigning(false);
     if (signed) setSigningWaiver(null);
   };
@@ -3510,7 +3510,9 @@ function CoachesCornerContent() {
       await updateTeamDocument(editingWaiver.id, { 
         title: editingWaiver.title ?? '',
         content: editingWaiver.content ?? '',
-        type: editingWaiver.type ?? 'waiver'
+        type: editingWaiver.type ?? 'waiver',
+        expectedVersion: editingWaiver.version,
+        expectedTextHash: editingWaiver.textHash,
       });
       toast({ title: "Protocol Synchronized", description: "Legal terms updated globally for the squad." });
     }
@@ -3938,13 +3940,11 @@ function CoachesCornerContent() {
                             const existing = teamProtocols.find(d => d.id === proto.id);
                             const defaultContent = "I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.";
                             
-                            // Use createTeamDocument (setDoc) for both create and update to avoid "No document to update" errors
-                            await createTeamDocument({ 
-                              ...proto, 
-                              isActive: v, 
-                              assignedTo: ['all'], 
-                              content: existing?.content || (proto.id === 'default_universal_hub' ? defaultContent : '') 
-                            });
+                            if (existing) {
+                              await updateTeamDocument(existing.id, { isActive: v, expectedVersion: existing.version, expectedTextHash: existing.textHash });
+                            } else {
+                              await createTeamDocument({ ...proto, isActive: v, assignedTo: ['all'], content: defaultContent });
+                            }
                             
                             if (v) {
                               await createAlert(
@@ -3972,7 +3972,7 @@ function CoachesCornerContent() {
                         <div className="flex items-center gap-2">
                           <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10" onClick={async () => {
                             if(confirm('Delete this protocol?')) {
-                              await deleteTeamDocument(proto.id);
+                              await deleteTeamDocument(proto.id, proto.version, proto.textHash);
                               toast({ title: 'Protocol Deleted' });
                             }
                           }}>
@@ -3982,7 +3982,7 @@ function CoachesCornerContent() {
                             <Edit3 className="h-4 w-4" />
                           </Button>
                           <Switch checked={isActive} onCheckedChange={async (v) => {
-                            await updateTeamDocument(proto.id, { isActive: v });
+                            await updateTeamDocument(proto.id, { isActive: v, expectedVersion: proto.version, expectedTextHash: proto.textHash });
                             if (v) {
                               await createAlert(
                                 `Action Required: Sign ${proto.title}`, 

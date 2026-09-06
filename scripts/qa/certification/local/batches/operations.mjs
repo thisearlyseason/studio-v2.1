@@ -74,6 +74,20 @@ export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
     permission: ['film-progress-forge', 'film-mark-player', 'film-team-b'], persistence: ['film-progress-own', 'film-delete'],
     console: ['film-console'], network: ['film-network'], responsive: ['film-responsive'],
   }),
+  'waivers-team-global-waiver-lifecycle': Object.freeze({
+    happyPath: ['waiver-team-crud', 'waiver-global-deploy', 'waiver-version'],
+    negativePath: ['waiver-partial', 'waiver-duplicate', 'waiver-empty'],
+    permission: ['waiver-staff', 'waiver-delegate', 'waiver-team-b'],
+    persistence: ['waiver-archive'], console: ['waiver-console'], network: ['waiver-network'],
+    responsive: ['waiver-responsive'],
+  }),
+  'waivers-parent-player-coach-signature': Object.freeze({
+    happyPath: ['sign-parent-child', 'sign-adult', 'sign-youth', 'sign-coach'],
+    negativePath: ['sign-replay', 'sign-new-version', 'sign-wrong-date', 'sign-wrong-child', 'sign-wrong-event'],
+    permission: ['sign-parent-b', 'sign-team-b', 'sign-removed'],
+    persistence: ['sign-text-immutable'], console: ['sign-console'], network: ['sign-network'],
+    responsive: ['sign-responsive'],
+  }),
 });
 
 // This registry is intentionally separate from cleanup ownership. Several

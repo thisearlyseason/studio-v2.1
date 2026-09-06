@@ -105,6 +105,18 @@ service cloud.firestore {
         );
     }
 
+    function canReadMemberWaiver(teamId, memberId) {
+      let memberPath = /databases/$(database)/documents/teams/$(teamId)/members/$(memberId);
+      return isTeamStaff(teamId) || (
+        isSignedIn() && exists(memberPath) && isActiveMember(get(memberPath).data) && (
+          memberId == request.auth.uid ||
+          get(memberPath).data.get('userId', '') == request.auth.uid ||
+          get(memberPath).data.get('parentId', '') == request.auth.uid ||
+          get(memberPath).data.get('guardianIds', []).hasAny([request.auth.uid])
+        )
+      );
+    }
+
     function hasStaffAuthority(member) {
       return member.get('role', '') == 'Admin' ||
         member.get('position', '') in [
@@ -329,19 +341,18 @@ service cloud.firestore {
         ));
 
         match /signatures/{sigId} {
-          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-          allow write: if isSuperAdmin() || (isSignedIn() && (
-            isTeamOwner(teamId) ||
-            (isTeamMember(teamId) && request.auth.uid == memberId)
-          ));
+          allow read: if isSuperAdmin() || canReadMemberWaiver(teamId, memberId);
+          // Signature receipts are created by the validated server ceremony.
+          // Clients may never forge, edit, or delete them, including for self.
+          allow write: if false;
         }
 
         // Catch-all for member subcollections (staffEvaluation, notes, etc.)
         // The explicit match /members/{memberId} block takes priority over the outer team
         // catch-all, so any member sub-subcollections need their own catch-all here.
         match /{subCollection}/{docId} {
-          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-          allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow read: if subCollection != 'signatures' && (isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId))));
+          allow write: if subCollection != 'signatures' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId)));
         }
       }
 
@@ -559,19 +570,8 @@ service cloud.firestore {
       // Only active staff may attest for a team. Guardian/participant signatures
       // are created by the validated waiver signing API under the member path.
       match /coachWaiverSignatures/{waiverDocId} {
-        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-        allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
-          request.resource.data.signedBy == request.auth.uid &&
-          request.resource.data.teamId == teamId &&
-          request.resource.data.waiverDocId == waiverDocId &&
-          request.resource.data.keys().hasOnly([
-            'waiverDocId', 'waiverTitle', 'signedBy', 'signedByName',
-            'signedAt', 'isGlobal', 'isClubMaster', 'teamId'
-          ]) &&
-          exists(/databases/$(database)/documents/teams/$(teamId)/documents/$(waiverDocId)) &&
-          get(/databases/$(database)/documents/teams/$(teamId)/documents/$(waiverDocId)).data.get('type', '') == 'waiver' &&
-          get(/databases/$(database)/documents/teams/$(teamId)/documents/$(waiverDocId)).data.get('waiverAudience', 'participant') == 'team'
-        );
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamStaff(teamId) || resource.data.get('signedBy', '') == request.auth.uid));
+        allow write: if false;
       }
 
       // Compatibility path for tournament responses created before entries
@@ -581,7 +581,8 @@ service cloud.firestore {
       }
 
       match /archived_waivers/{waiverId} {
-        allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow write: if false;
       }
 
       match /files/{fileId} {

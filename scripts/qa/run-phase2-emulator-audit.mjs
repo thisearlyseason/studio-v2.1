@@ -7011,6 +7011,30 @@ async function runCertificationOperationsScenarios() {
         }
         return;
       }
+      if (scenarioId === 'waivers-team-global-waiver-lifecycle' && runBrowser) {
+        await runWaiverLifecycleWorkflowAudit();
+        for (const [dimension, caseIds] of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId])) for (const caseId of caseIds) {
+          const requests = operationRequestEvidence(caseId);
+          recordObservedOperationNamedCase(scenarioId, dimension, caseId, `${caseId} completed through the authenticated waiver lifecycle boundary`, [new RegExp(`^Waiver ${caseId}:`)], {
+            actor: [...new Set(requests.map(request => request.actorAlias))].sort().join('+'),
+            operation: 'authenticated waiver lifecycle request or visible responsive waiver dialog', requests,
+            reconciliation: 'exact version/hash/copy/archive state and run-owned cleanup', timeBound: '20s request and 15s UI deadlines',
+          });
+        }
+        return;
+      }
+      if (scenarioId === 'waivers-parent-player-coach-signature' && runBrowser) {
+        await runWaiverSignatureWorkflowAudit();
+        for (const [dimension, caseIds] of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId])) for (const caseId of caseIds) {
+          const requests = operationRequestEvidence(caseId);
+          recordObservedOperationNamedCase(scenarioId, dimension, caseId, `${caseId} completed through the authenticated waiver signature boundary`, [new RegExp(`^Waiver ${caseId}:`)], {
+            actor: [...new Set(requests.map(request => request.actorAlias))].sort().join('+'),
+            operation: 'authenticated version-bound signature request or visible responsive signing dialog', requests,
+            reconciliation: 'exact immutable receipt, signer relation, version, privacy, and run-owned cleanup', timeBound: '20s request and 15s UI deadlines',
+          });
+        }
+        return;
+      }
       if (scenarioId === 'calendar-team-family-views-and-filters' && runBrowser) {
         await runCalendarViewsWorkflowAudit();
         await captureCalendarCaseNavigations('cal-team-a-b', ['qa-coach-owner-a', 'qa-coach-owner-b']);
@@ -7239,6 +7263,358 @@ async function runCertificationOperationsScenarios() {
       if (errors.length) throw new AggregateError(errors, 'Scenario-owned cleanup failed.');
     },
   });
+}
+
+function waiverTeam(alias) {
+  const team = FIXTURES.teams.find(item => item.alias === alias);
+  if (!team) throw new Error(`Missing waiver fixture team ${alias}.`);
+  return team;
+}
+
+async function waiverActors(aliases) {
+  const result = new Map();
+  for (const alias of aliases) {
+    const signedIn = await signIn(alias);
+    if (signedIn.status !== 200) throw new Error(`Waiver identity ${alias} sign-in returned ${signedIn.status}.`);
+    result.set(alias, { alias, token: signedIn.body.idToken, uid: identityByAlias.get(alias).uid });
+  }
+  return result;
+}
+
+function waiverBody(value) {
+  return { method: value.method || 'POST', body: JSON.stringify(value.body || {}) };
+}
+
+async function waiverCaseRequest(caseId, actorAliases, operation) {
+  return captureOperationRequests(caseId, actorAliases.join('+'), operation);
+}
+
+function registerWaiverDocument(pathname, label) {
+  registerDynamicFirestoreRoot(pathname, `waiver-${label}`);
+}
+
+async function observeWaiverLifecycleDialog() {
+  const session = await browserLogin('qa-school-owner', '/club', `waiver-lifecycle-${process.pid}`);
+  return JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors=[];const failedResponses=[];
+    const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text())};
+    const onResponse=response=>{if(response.status()>=500)failedResponses.push({status:response.status(),url:response.url()})};
+    page.on('console',onConsole);page.on('response',onResponse);
+    const measurements=[];
+    try{
+      await page.setViewportSize({width:1440,height:900});
+      await page.goto(${JSON.stringify(BASE_URL)}+'/club');
+      await page.getByRole('tab',{name:'Waivers',exact:true}).click();
+      await page.getByRole('button',{name:/New Waiver/}).click();
+      const dialog=page.getByRole('dialog');await dialog.waitFor({state:'visible',timeout:15000});
+      measurements.push({viewport:{width:1440,height:900},box:await dialog.boundingBox()});
+      await page.setViewportSize({width:390,height:844});
+      measurements.push({viewport:{width:390,height:844},box:await dialog.boundingBox()});
+      await page.keyboard.press('Escape');
+      return{measurements,consoleErrors,failedResponses,mobileFits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)};
+    }finally{page.off('console',onConsole);page.off('response',onResponse)}
+  }`]));
+}
+
+async function runWaiverLifecycleWorkflowAudit() {
+  const actors = await waiverActors(['qa-coach-owner-a', 'qa-team-assistant', 'qa-coach-owner-b', 'qa-school-owner', 'qa-school-delegate']);
+  const owner = actors.get('qa-coach-owner-a');
+  const assistant = actors.get('qa-team-assistant');
+  const ownerB = actors.get('qa-coach-owner-b');
+  const schoolOwner = actors.get('qa-school-owner');
+  const delegate = actors.get('qa-school-delegate');
+  const teamA = waiverTeam('qa-team-a');
+  const schoolTeams = ['qa-school-squad-1', 'qa-school-squad-2', 'qa-school-squad-3'].map(waiverTeam);
+  const scope = `${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80);
+  const teamRequestId = `team_${scope}`;
+  let teamDocument;
+  await waiverCaseRequest('waiver-team-crud', [owner.alias], async () => {
+    const created = await apiJsonResult('/api/teams/waivers/lifecycle', owner.token, waiverBody({ body: { teamId: teamA.id, requestId: teamRequestId, title: `Team Terms ${scope}`, content: 'Exact team lifecycle terms version one', waiverAudience: 'participant', assignedTo: ['all'] } }));
+    expectEqual(created.status, 201, 'Waiver waiver-team-crud: owner creates one versioned team waiver');
+    teamDocument = created.body;
+    registerWaiverDocument(`teams/${teamA.id}/documents/${teamDocument.documentId}`, 'team-document');
+    registerWaiverDocument(`teams/${teamA.id}/archived_waivers/version_${teamDocument.documentId}_v1`, 'team-version-one');
+    const updated = await apiJsonResult('/api/teams/waivers/lifecycle', owner.token, waiverBody({ method: 'PATCH', body: { teamId: teamA.id, documentId: teamDocument.documentId, title: `Team Terms ${scope}`, content: 'Exact team lifecycle terms version two', expectedVersion: teamDocument.version, expectedTextHash: teamDocument.textHash } }));
+    expectEqual(updated.status, 200, 'Waiver waiver-team-crud: owner edits the exact team waiver');
+    teamDocument = { ...teamDocument, ...updated.body };
+  });
+
+  await waiverCaseRequest('waiver-staff', [assistant.alias], async () => {
+    const created = await apiJsonResult('/api/teams/waivers/lifecycle', assistant.token, waiverBody({ body: { teamId: teamA.id, requestId: `staff_${scope}`, title: `Staff Terms ${scope}`, content: 'Delegated squad staff lifecycle terms', waiverAudience: 'participant', assignedTo: ['all'] } }));
+    expectEqual(created.status, 201, 'Waiver waiver-staff: active Team A staff creates a squad waiver');
+    registerWaiverDocument(`teams/${teamA.id}/documents/${created.body.documentId}`, 'staff-document');
+  });
+  await waiverCaseRequest('waiver-team-b', [ownerB.alias], async () => {
+    const denied = await apiJsonResult('/api/teams/waivers/lifecycle', ownerB.token, waiverBody({ body: { teamId: teamA.id, requestId: `foreign_${scope}`, title: 'Foreign terms', content: 'Must never persist', waiverAudience: 'participant', assignedTo: ['all'] } }));
+    expectEqual(denied.status, 403, 'Waiver waiver-team-b: Team B owner cannot create a Team A waiver');
+  });
+
+  const globalRequestId = `global_${scope}`;
+  let globalDocument;
+  const globalPayload = { requestId: globalRequestId, teamIds: schoolTeams.map(team => team.id), title: `Global Terms ${scope}`, content: 'Exact global lifecycle terms version one', waiverAudience: 'team' };
+  await waiverCaseRequest('waiver-global-deploy', [schoolOwner.alias], async () => {
+    const created = await apiJsonResult('/api/organizations/waivers', schoolOwner.token, waiverBody({ body: globalPayload }));
+    expectEqual(created.status, 201, 'Waiver waiver-global-deploy: owner deploys one master and three deterministic copies');
+    expectEqual(created.body.copies, 3, 'Waiver waiver-global-deploy: response reconciles exactly three copies');
+    globalDocument = created.body;
+    registerWaiverDocument(`users/${schoolOwner.uid}/clubDocuments/${created.body.documentId}`, 'global-master');
+    registerWaiverDocument(`users/${schoolOwner.uid}/waiverVersions/${created.body.deploymentId}_v1`, 'global-version-one');
+    schoolTeams.forEach((team, index) => {
+      registerWaiverDocument(`teams/${team.id}/documents/${created.body.deploymentId}_${index + 1}`, `global-copy-${index + 1}`);
+      registerWaiverDocument(`teams/${team.id}/archived_waivers/version_${created.body.deploymentId}_v1`, `global-copy-version-${index + 1}`);
+    });
+  });
+  await withEmulatorAuthAdmin(async (_auth, db) => db.doc(`teams/${schoolTeams[1].id}/documents/${globalDocument.deploymentId}_2`).delete());
+  await waiverCaseRequest('waiver-partial', [schoolOwner.alias], async () => {
+    const repaired = await apiJsonResult('/api/organizations/waivers', schoolOwner.token, waiverBody({ body: globalPayload }));
+    expectEqual(repaired.status, 200, 'Waiver waiver-partial: retry repairs a missing deterministic deployment copy');
+    expectEqual(repaired.body.repairedCopies, 1, 'Waiver waiver-partial: exactly one missing copy is repaired');
+  });
+  await waiverCaseRequest('waiver-duplicate', [schoolOwner.alias], async () => {
+    const replay = await apiJsonResult('/api/organizations/waivers', schoolOwner.token, waiverBody({ body: globalPayload }));
+    expectEqual(replay.status, 200, 'Waiver waiver-duplicate: identical deployment replay is idempotent');
+    expectEqual(replay.body.repairedCopies, 0, 'Waiver waiver-duplicate: replay creates no duplicate copies');
+  });
+  await waiverCaseRequest('waiver-version', [schoolOwner.alias], async () => {
+    const updated = await apiJsonResult('/api/organizations/waivers', schoolOwner.token, waiverBody({ method: 'PATCH', body: { documentId: globalDocument.documentId, title: globalPayload.title, content: 'Exact global lifecycle terms version two', waiverAudience: 'team', expectedVersion: globalDocument.version, expectedTextHash: globalDocument.textHash } }));
+    expectEqual(updated.status, 200, 'Waiver waiver-version: global edit creates a new hash-bound version');
+    expectEqual(updated.body.version, 2, 'Waiver waiver-version: global version increments exactly once');
+    globalDocument = { ...globalDocument, ...updated.body };
+  });
+  await waiverCaseRequest('waiver-empty', [schoolOwner.alias], async () => {
+    const invalid = await apiJsonResult('/api/organizations/waivers', schoolOwner.token, waiverBody({ body: { requestId: `empty_${scope}`, teamIds: schoolTeams.map(team => team.id), title: '', content: '', waiverAudience: 'participant' } }));
+    expectEqual(invalid.status, 400, 'Waiver waiver-empty: empty global waiver is rejected');
+  });
+  await waiverCaseRequest('waiver-delegate', [delegate.alias], async () => {
+    const denied = await apiJsonResult('/api/organizations/waivers', delegate.token, waiverBody({ body: { ...globalPayload, requestId: `delegate_${scope}` } }));
+    expectEqual(denied.status, 403, 'Waiver waiver-delegate: delegated school administrator cannot deploy owner waiver');
+  });
+  await waiverCaseRequest('waiver-archive', [owner.alias, schoolOwner.alias], async () => {
+    const teamArchived = await apiJsonResult('/api/teams/waivers/lifecycle', owner.token, waiverBody({ method: 'DELETE', body: { teamId: teamA.id, documentId: teamDocument.documentId, expectedVersion: teamDocument.version, expectedTextHash: teamDocument.textHash } }));
+    expectEqual(teamArchived.status, 200, 'Waiver waiver-archive: team waiver archives without destructive deletion');
+    const globalArchived = await apiJsonResult('/api/organizations/waivers', schoolOwner.token, waiverBody({ method: 'DELETE', body: { documentId: globalDocument.documentId, expectedVersion: globalDocument.version, expectedTextHash: globalDocument.textHash } }));
+    expectEqual(globalArchived.status, 200, 'Waiver waiver-archive: global waiver archives master and copies');
+  });
+
+  const browser = await observeWaiverLifecycleDialog();
+  const fits = browser.measurements.every(item => item.box && item.box.x >= 0 && item.box.y >= 0 && item.box.x + item.box.width <= item.viewport.width && item.box.y + item.box.height <= item.viewport.height);
+  for (const caseId of ['waiver-console', 'waiver-network', 'waiver-responsive']) {
+    await waiverCaseRequest(caseId, [schoolOwner.alias], async () => {
+      const status = await directFirestoreReadStatus(`users/${schoolOwner.uid}/clubDocuments/${globalDocument.documentId}`, schoolOwner.token);
+      expectEqual(status, 200, `Waiver ${caseId}: owner reads the exact archived deployment master`);
+    });
+  }
+  expectEqual(browser.consoleErrors.length, 0, 'Waiver waiver-console: lifecycle browser has zero console errors');
+  expectEqual(browser.failedResponses.length, 0, 'Waiver waiver-network: lifecycle browser has zero 5xx responses');
+  expectEqual(fits && browser.mobileFits, true, 'Waiver waiver-responsive: global waiver dialog fits exact desktop and mobile viewports');
+}
+
+async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coachTeamId }) {
+  const specs = [
+    { alias: 'qa-parent-a', route: '/family', title: participantTitle, button: 'Review & Sign', kind: 'participant' },
+    { alias: 'qa-adult-player-a', route: '/files', title: participantTitle, button: 'Execute Document', kind: 'participant' },
+    { alias: 'qa-youth-active', route: '/files', title: participantTitle, button: 'Execute Document', kind: 'participant' },
+    { alias: 'qa-school-delegate', route: '/coaches-corner', title: coachTitle, button: 'Review & Sign', kind: 'coach', teamId: coachTeamId },
+  ];
+  const observations = [];
+  for (const spec of specs) {
+    const session = await browserLogin(spec.alias, spec.route, `waiver-sign-${spec.alias}-${process.pid}`);
+    observations.push({ alias: spec.alias, ...JSON.parse(cli(session, ['run-code', `async page => {
+      const consoleErrors=[];const failedResponses=[];
+      const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text())};
+      const onResponse=response=>{if(response.status()>=500)failedResponses.push({status:response.status(),url:response.url()})};
+      page.on('console',onConsole);page.on('response',onResponse);
+      const measurements=[];
+      try{
+        await page.setViewportSize({width:1440,height:900});
+        ${spec.teamId ? `await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(spec.teamId)});` : ''}
+        await page.goto(${JSON.stringify(BASE_URL + spec.route)});
+        const title=page.getByText(${JSON.stringify(spec.title)},{exact:true}).first();
+        await title.waitFor({state:'visible',timeout:15000});
+        ${spec.kind === 'coach'
+          ? `const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Review & Sign")]][1]');await card.getByRole('button',{name:/Review & Sign/}).click();`
+          : spec.route === '/family'
+            ? `const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Review & Sign")]][1]');await card.getByRole('button',{name:/Review & Sign/}).click();`
+            : `const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Execute Document")]][1]');await card.getByRole('button',{name:/Execute Document/}).click();`}
+        const dialog=page.getByRole('dialog');await dialog.waitFor({state:'visible',timeout:15000});
+        measurements.push({viewport:{width:1440,height:900},box:await dialog.boundingBox()});
+        await page.setViewportSize({width:390,height:844});
+        measurements.push({viewport:{width:390,height:844},box:await dialog.boundingBox()});
+        const mobileFits=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);
+        await page.keyboard.press('Escape');
+        return{measurements,mobileFits,consoleErrors,failedResponses};
+      }finally{page.off('console',onConsole);page.off('response',onResponse)}
+    }`])) });
+  }
+  return observations;
+}
+
+async function runWaiverSignatureWorkflowAudit() {
+  const actors = await waiverActors([
+    'qa-coach-owner-a', 'qa-parent-a', 'qa-parent-b', 'qa-adult-player-a',
+    'qa-youth-active', 'qa-coach-owner-b', 'qa-removed-member',
+    'qa-school-owner', 'qa-school-delegate',
+  ]);
+  const actor = alias => actors.get(alias);
+  const owner = actor('qa-coach-owner-a');
+  const parentA = actor('qa-parent-a');
+  const parentB = actor('qa-parent-b');
+  const adult = actor('qa-adult-player-a');
+  const youth = actor('qa-youth-active');
+  const ownerB = actor('qa-coach-owner-b');
+  const removed = actor('qa-removed-member');
+  const schoolOwner = actor('qa-school-owner');
+  const schoolCoach = actor('qa-school-delegate');
+  const teamA = waiverTeam('qa-team-a');
+  const schoolTeam = waiverTeam('qa-school-squad-1');
+  const youthMemberId = youth.uid;
+  const adultMemberId = adult.uid;
+  const scope = `${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80);
+  const participantTitle = `Participant Waiver ${scope}`;
+  const participantCreated = await apiJsonResult('/api/teams/waivers/lifecycle', owner.token, waiverBody({ body: {
+    teamId: teamA.id, requestId: `sign_participant_${scope}`, title: participantTitle,
+    content: 'Exact participant signature terms version one', waiverAudience: 'participant', assignedTo: ['all'],
+  } }));
+  if (participantCreated.status !== 201) throw new Error(`Participant waiver setup returned ${participantCreated.status}.`);
+  const participant = { documentId: participantCreated.body.documentId, version: participantCreated.body.version, textHash: participantCreated.body.textHash };
+  registerWaiverDocument(`teams/${teamA.id}/documents/${participant.documentId}`, 'signature-participant-document');
+  registerWaiverDocument(`teams/${teamA.id}/archived_waivers/version_${participant.documentId}_v1`, 'signature-participant-version-one');
+
+  const globalCreated = await apiJsonResult('/api/organizations/waivers', schoolOwner.token, waiverBody({ body: {
+    requestId: `sign_coach_${scope}`, teamIds: [schoolTeam.id], title: `Coach Waiver ${scope}`,
+    content: 'Exact staff acknowledgement terms', waiverAudience: 'team',
+  } }));
+  if (globalCreated.status !== 201) throw new Error(`Coach waiver setup returned ${globalCreated.status}.`);
+  const coachDocumentId = `${globalCreated.body.deploymentId}_1`;
+  registerWaiverDocument(`users/${schoolOwner.uid}/clubDocuments/${globalCreated.body.documentId}`, 'signature-coach-master');
+  registerWaiverDocument(`teams/${schoolTeam.id}/documents/${coachDocumentId}`, 'signature-coach-copy');
+
+  const mutableMembers = [
+    `teams/${teamA.id}/members/${youthMemberId}`,
+    `teams/${teamA.id}/members/${adultMemberId}`,
+  ];
+  const beforeMembers = await withEmulatorAuthAdmin(async (_auth, db) => Promise.all(mutableMembers.map(async pathname => {
+    const snapshot = await db.doc(pathname).get();
+    if (!snapshot.exists) throw new Error(`Missing waiver member fixture ${pathname}.`);
+    return snapshot.data();
+  })));
+  mutableMembers.forEach((pathname, index) => registerFirestoreDocumentRestoration(pathname, beforeMembers[index], `waiver-sign-member-${index + 1}`, activeOperationResourceRegistry));
+
+  const registerParticipantReceipt = (memberId, version, signerId) => {
+    const key = `${participant.documentId}_v${version}`;
+    const paths = [
+      `teams/${teamA.id}/members/${memberId}/signatures/${key}`,
+      `teams/${teamA.id}/archived_waivers/receipt_${key}_${memberId}`,
+      `teams/${teamA.id}/protocol_signatures/${key}_${signerId}_${memberId}`,
+      `teams/${teamA.id}/files/cert_${memberId}_${key}`,
+    ];
+    paths.forEach((pathname, index) => registerDynamicFirestoreDocument(pathname, `waiver-participant-${memberId}-${version}-${index + 1}`));
+  };
+  registerParticipantReceipt(youthMemberId, 1, parentA.uid);
+  registerParticipantReceipt(adultMemberId, 1, adult.uid);
+  // Parent and youth intentionally target the same subject/version; only the first
+  // signature is durable, so the youth attempt below uses version two instead.
+
+  const browser = await observeWaiverSignatureDialogs({ participantTitle, coachTitle: `Coach Waiver ${scope}`, coachTeamId: schoolTeam.id });
+
+  const participantBody = (signer, memberId, signatureName, extra = {}) => ({
+    teamId: teamA.id, memberId, documentId: participant.documentId, signatureName,
+    expectedVersion: participant.version, expectedTextHash: participant.textHash, ...extra,
+  });
+  await waiverCaseRequest('sign-parent-child', [parentA.alias], async () => {
+    const signed = await apiJsonResult('/api/teams/waivers/sign', parentA.token, waiverBody({ body: participantBody(parentA, youthMemberId, 'Parent A') }));
+    expectEqual(signed.status, 200, 'Waiver sign-parent-child: linked guardian signs the exact youth and version');
+    expectEqual(signed.body.alreadySigned, false, 'Waiver sign-parent-child: first guardian signature creates one immutable receipt');
+  });
+  await waiverCaseRequest('sign-adult', [adult.alias], async () => {
+    const signed = await apiJsonResult('/api/teams/waivers/sign', adult.token, waiverBody({ body: participantBody(adult, adultMemberId, 'Adult Player A') }));
+    expectEqual(signed.status, 200, 'Waiver sign-adult: adult player signs their own exact participant record');
+  });
+  await waiverCaseRequest('sign-replay', [parentA.alias], async () => {
+    const replay = await apiJsonResult('/api/teams/waivers/sign', parentA.token, waiverBody({ body: participantBody(parentA, youthMemberId, 'Parent A') }));
+    expectEqual(replay.status, 200, 'Waiver sign-replay: exact signature replay is idempotent');
+    expectEqual(replay.body.alreadySigned, true, 'Waiver sign-replay: replay reports the existing receipt');
+    const tampered = await apiJsonResult('/api/teams/waivers/sign', parentA.token, waiverBody({ body: participantBody(parentA, youthMemberId, 'Different Guardian') }));
+    expectEqual(tampered.status, 409, 'Waiver sign-replay: altered replay signer name is rejected');
+  });
+  await waiverCaseRequest('sign-wrong-date', [adult.alias], async () => {
+    const denied = await apiJsonResult('/api/teams/waivers/sign', adult.token, waiverBody({ body: participantBody(adult, adultMemberId, 'Adult Player A', { signedAt: '2000-01-01T00:00:00.000Z' }) }));
+    expectEqual(denied.status, 400, 'Waiver sign-wrong-date: client supplied signature time is rejected');
+  });
+  await waiverCaseRequest('sign-wrong-event', [adult.alias], async () => {
+    const denied = await apiJsonResult('/api/teams/waivers/sign', adult.token, waiverBody({ body: participantBody(adult, adultMemberId, 'Adult Player A', { eventId: 'foreign_event' }) }));
+    expectEqual(denied.status, 400, 'Waiver sign-wrong-event: unsupported event binding is rejected');
+  });
+  await waiverCaseRequest('sign-wrong-child', [parentA.alias], async () => {
+    const denied = await apiJsonResult('/api/teams/waivers/sign', parentA.token, waiverBody({ body: participantBody(parentA, adultMemberId, 'Parent A') }));
+    expectEqual(denied.status, 403, 'Waiver sign-wrong-child: guardian cannot sign for an unrelated adult');
+  });
+  await waiverCaseRequest('sign-parent-b', [parentB.alias], async () => {
+    const denied = await apiJsonResult('/api/teams/waivers/sign', parentB.token, waiverBody({ body: participantBody(parentB, youthMemberId, 'Parent B') }));
+    expectEqual(denied.status, 403, 'Waiver sign-parent-b: another household cannot sign the Team A youth waiver');
+  });
+  await waiverCaseRequest('sign-team-b', [ownerB.alias], async () => {
+    const denied = await apiJsonResult('/api/teams/waivers/sign', ownerB.token, waiverBody({ body: participantBody(ownerB, youthMemberId, 'Team B Owner') }));
+    expectEqual(denied.status, 403, 'Waiver sign-team-b: Team B staff cannot sign a Team A participant waiver');
+  });
+  await waiverCaseRequest('sign-removed', [removed.alias], async () => {
+    const denied = await apiJsonResult('/api/teams/waivers/sign', removed.token, waiverBody({ body: participantBody(removed, removed.uid, 'Removed Player') }));
+    expectEqual(denied.status, 404, 'Waiver sign-removed: removed participant cannot sign');
+  });
+
+  const versionOneArchivePath = `teams/${teamA.id}/archived_waivers/receipt_${participant.documentId}_v1_${adultMemberId}`;
+  let versionOneText;
+  await withEmulatorAuthAdmin(async (_auth, db) => { versionOneText = (await db.doc(versionOneArchivePath).get()).data()?.waiverText; });
+  const updated = await apiJsonResult('/api/teams/waivers/lifecycle', owner.token, waiverBody({ method: 'PATCH', body: {
+    teamId: teamA.id, documentId: participant.documentId, title: participantTitle,
+    content: 'Exact participant signature terms version two', expectedVersion: participant.version, expectedTextHash: participant.textHash,
+  } }));
+  if (updated.status !== 200) throw new Error(`Participant waiver version setup returned ${updated.status}.`);
+  participant.version = updated.body.version;
+  participant.textHash = updated.body.textHash;
+  registerParticipantReceipt(youthMemberId, 2, youth.uid);
+  registerParticipantReceipt(adultMemberId, 2, adult.uid);
+  await waiverCaseRequest('sign-new-version', [adult.alias], async () => {
+    const signed = await apiJsonResult('/api/teams/waivers/sign', adult.token, waiverBody({ body: participantBody(adult, adultMemberId, 'Adult Player A') }));
+    expectEqual(signed.status, 200, 'Waiver sign-new-version: changed waiver requires a distinct version-bound signature');
+    expectEqual(signed.body.version, 2, 'Waiver sign-new-version: new receipt binds exactly version two');
+  });
+  await waiverCaseRequest('sign-youth', [youth.alias], async () => {
+    const signed = await apiJsonResult('/api/teams/waivers/sign', youth.token, waiverBody({ body: participantBody(youth, youthMemberId, 'Youth A') }));
+    expectEqual(signed.status, 200, 'Waiver sign-youth: linked youth signs their own exact participant record');
+  });
+
+  const coachBody = { teamId: schoolTeam.id, documentId: coachDocumentId, signatureName: 'School Delegate', expectedVersion: globalCreated.body.version, expectedTextHash: globalCreated.body.textHash };
+  const coachKey = `${coachDocumentId}_v${globalCreated.body.version}_${schoolCoach.uid}`;
+  registerDynamicFirestoreDocument(`teams/${schoolTeam.id}/coachWaiverSignatures/${coachKey}`, 'waiver-coach-signature');
+  registerDynamicFirestoreDocument(`teams/${schoolTeam.id}/archived_waivers/receipt_coach_${coachKey}`, 'waiver-coach-receipt');
+  await waiverCaseRequest('sign-coach', [schoolCoach.alias], async () => {
+    const signed = await apiJsonResult('/api/teams/waivers/sign-coach', schoolCoach.token, waiverBody({ body: coachBody }));
+    expectEqual(signed.status, 200, 'Waiver sign-coach: active school squad coach signs the exact team waiver');
+  });
+
+  await waiverCaseRequest('sign-text-immutable', [adult.alias], async () => {
+    const patch = await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: versionOneArchivePath, idToken: adult.token, fields: { waiverText: 'tampered' } });
+    expectEqual(patch.status, 403, 'Waiver sign-text-immutable: signed receipt update is denied');
+    const deletion = await deleteFirestoreDocumentStatus(versionOneArchivePath, adult.token);
+    expectEqual(deletion, 403, 'Waiver sign-text-immutable: signed receipt delete is denied');
+    let retained;
+    await withEmulatorAuthAdmin(async (_auth, db) => { retained = (await db.doc(versionOneArchivePath).get()).data()?.waiverText; });
+    expectEqual(retained, versionOneText, 'Waiver sign-text-immutable: archived version one text remains unchanged after version two');
+  });
+
+  const fits = browser.every(observation => observation.mobileFits && observation.measurements.every(item => item.box && item.box.x >= 0 && item.box.y >= 0 && item.box.x + item.box.width <= item.viewport.width && item.box.y + item.box.height <= item.viewport.height));
+  const consoleErrors = browser.flatMap(observation => observation.consoleErrors.map(message => ({ alias: observation.alias, message })));
+  const failedResponses = browser.flatMap(observation => observation.failedResponses.map(response => ({ alias: observation.alias, ...response })));
+  for (const caseId of ['sign-console', 'sign-network', 'sign-responsive']) {
+    await waiverCaseRequest(caseId, [parentA.alias], async () => {
+      const status = await directFirestoreReadStatus(`teams/${teamA.id}/documents/${participant.documentId}`, parentA.token);
+      expectEqual(status, 200, `Waiver ${caseId}: authorized guardian reads the exact participant waiver`);
+    });
+  }
+  expectEqual(consoleErrors.length, 0, 'Waiver sign-console: parent player youth and coach signing surfaces have zero console errors');
+  expectEqual(failedResponses.length, 0, 'Waiver sign-network: parent player youth and coach signing surfaces have zero 5xx responses');
+  expectEqual(fits, true, 'Waiver sign-responsive: parent player youth and coach dialogs fit desktop and mobile viewports');
 }
 
 async function capturePracticeDocumentReads(caseId, actorTokens, documentPath) {

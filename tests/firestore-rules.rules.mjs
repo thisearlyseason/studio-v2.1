@@ -6,7 +6,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 const projectId = 'demo-squad-rules';
 let testEnv;
@@ -370,7 +370,7 @@ test('guardians cannot forge child waiver signatures directly and must use the v
   ));
 });
 
-test('coach waiver signatures require active staff authority and exact document binding', async () => {
+test('coach waiver signatures are server-only even for otherwise authorized staff', async () => {
   await seed('teams/team-1', { id: 'team-1', ownerUserId: 'coach-1', teamName: 'Team One' });
   await seedTeamWithMember('parent-1', { position: 'Parent', role: 'Member', status: 'active' });
   await seedTeamWithMember('staff-1', { position: 'Assistant Coach', role: 'Coach', status: 'active' });
@@ -385,5 +385,21 @@ test('coach waiver signatures require active staff authority and exact document 
   await assertFails(setDoc(doc(userDb('removed-staff'), 'teams/team-1/coachWaiverSignatures/waiver-1'), signature('removed-staff')));
   await assertFails(setDoc(doc(userDb('staff-1'), 'teams/team-1/coachWaiverSignatures/wrong-id'), signature('staff-1')));
   await assertFails(setDoc(doc(userDb('staff-1'), 'teams/team-1/coachWaiverSignatures/waiver-1'), { ...signature('staff-1'), teamId: 'team-2' }));
-  await assertSucceeds(setDoc(doc(userDb('staff-1'), 'teams/team-1/coachWaiverSignatures/waiver-1'), signature('staff-1')));
+  await assertFails(setDoc(doc(userDb('staff-1'), 'teams/team-1/coachWaiverSignatures/waiver-1'), signature('staff-1')));
+});
+
+test('server-created waiver receipts are readable by staff but immutable from clients', async () => {
+  await seed('teams/team-1', { id: 'team-1', ownerUserId: 'coach-1', teamName: 'Team One' });
+  await seedTeamWithMember('staff-1', { position: 'Assistant Coach', role: 'Coach', status: 'active' });
+  await seed('teams/team-1/archived_waivers/receipt-1', {
+    id: 'receipt-1', documentId: 'waiver-1', version: 1, textHash: 'a'.repeat(64),
+    waiverText: 'Immutable terms', signedBy: 'member-1', immutable: true,
+  });
+  const receipt = doc(userDb('staff-1'), 'teams/team-1/archived_waivers/receipt-1');
+  await assertSucceeds(getDoc(receipt));
+  await assertFails(updateDoc(receipt, { waiverText: 'Rewritten terms' }));
+  await assertFails(deleteDoc(receipt));
+  await assertFails(setDoc(doc(userDb('staff-1'), 'teams/team-1/archived_waivers/forged'), {
+    documentId: 'waiver-1', waiverText: 'Forged receipt', immutable: true,
+  }));
 });

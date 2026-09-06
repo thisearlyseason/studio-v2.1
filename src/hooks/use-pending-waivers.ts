@@ -70,7 +70,7 @@ export function usePendingWaivers() {
     signingMembers.forEach(m => map[m.id] = []);
     visibleSignedFiles.forEach(f => {
       if (f.memberId && f.documentId && map[f.memberId]) {
-        map[f.memberId].push(f.documentId);
+        map[f.memberId].push(`${f.documentId}@${(f as TeamFile & { version?: number }).version || 1}`);
       }
     });
     return map;
@@ -85,7 +85,7 @@ export function usePendingWaivers() {
         const isAdult = m.birthdate && differenceInYears(new Date(), new Date(m.birthdate)) >= 18;
         if (isParentalWaiver && isAdult) return false;
         const isAssigned = d.assignedTo?.includes('all') || d.assignedTo?.includes(m.id);
-        const alreadySigned = realTimeSignedDocIds[m.id]?.includes(d.id);
+        const alreadySigned = realTimeSignedDocIds[m.id]?.includes(`${d.id}@${d.version || 1}`);
         return isAssigned && !alreadySigned;
       });
     });

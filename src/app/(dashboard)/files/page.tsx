@@ -29,7 +29,7 @@ import { AccessRestricted } from '@/components/layout/AccessRestricted';
 import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
 
-function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: any, onSign: (id: string, sig: string, mid: string) => Promise<boolean>, members: Member[], onComplete: () => void }) {
+function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: TeamDocument, onSign: (document: Pick<TeamDocument, 'id' | 'version' | 'textHash'>, sig: string, mid: string) => Promise<boolean>, members: Member[], onComplete: () => void }) {
   const [signature, setSignature] = useState('');
   const [targetMemberId, setTargetMemberId] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -39,7 +39,7 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: a
   const handleSign = async () => {
     if (!signature.trim() || !agreed || !targetMemberId) return;
     setIsProcessing(true);
-    const success = await onSign(d.id, signature, targetMemberId);
+    const success = await onSign(d, signature, targetMemberId);
     if (success) { setIsOpen(false); onComplete(); }
     setIsProcessing(false);
   };
@@ -359,7 +359,7 @@ export default function FilesPage() {
                       const isAdult = m.birthdate && differenceInYears(new Date(), new Date(m.birthdate)) >= 18;
                       if (d.id === 'default_parental' && isAdult) return false;
                       const isAssigned = d.assignedTo?.includes('all') || d.assignedTo?.includes(m.id);
-                      const signed = realTimeSignedDocIds[m.id]?.includes(d.id);
+                      const signed = realTimeSignedDocIds[m.id]?.includes(`${d.id}@${d.version || 1}`);
                       return isAssigned && !signed;
                     })}
                     onComplete={() => {}}
@@ -467,7 +467,7 @@ export default function FilesPage() {
                   const assignedMemberIds = signingMembers
                     .filter(member => waiver.assignedTo?.includes('all') || waiver.assignedTo?.includes(member.id))
                     .map(member => member.id);
-                  const isSigned = assignedMemberIds.length > 0 && assignedMemberIds.every(memberId => realTimeSignedDocIds[memberId]?.includes(waiver.id));
+                  const isSigned = assignedMemberIds.length > 0 && assignedMemberIds.every(memberId => realTimeSignedDocIds[memberId]?.includes(`${waiver.id}@${waiver.version || 1}`));
                   return (
                     <Card key={`waiver-${waiver.id}`} className="group border-none shadow-sm hover:shadow-xl transition-all duration-300 rounded-[1.75rem] overflow-hidden ring-1 ring-black/5 flex flex-col bg-white">
                       <div className={cn("h-28 flex items-center justify-center", isSigned ? "bg-emerald-50" : "bg-red-50")}>

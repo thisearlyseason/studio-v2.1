@@ -888,8 +888,8 @@ export default function FamilyPage() {
   }, [db, user?.id]);
   const { data: signatures } = useCollection<any>(sigsQuery);
 
-  const [pendingWaivers, setPendingWaivers] = useState<Array<{docId: string; title: string; content: string; required: boolean; teamId: string; teamName: string; childId: string; childName: string}>>([]);
-  const [signingWaiver, setSigningWaiver] = useState<{docId: string; title: string; content: string; teamId: string; childId: string; childName: string; teamName: string} | null>(null);
+  const [pendingWaivers, setPendingWaivers] = useState<Array<{docId: string; title: string; content: string; version: number; textHash?: string; required: boolean; teamId: string; teamName: string; childId: string; childName: string}>>([]);
+  const [signingWaiver, setSigningWaiver] = useState<{docId: string; title: string; content: string; version: number; textHash?: string; teamId: string; childId: string; childName: string; teamName: string} | null>(null);
   const [isSigning, setIsSigning] = useState(false);
   const [signatureText, setSignatureText] = useState('');
   const waiversFetchedRef = useRef(false);
@@ -917,7 +917,8 @@ export default function FamilyPage() {
                   collection(db, 'teams', teamId, 'members', childUserId, 'signatures'),
                   where('documentId', '==', d.id)
                 ));
-                if (!sigSnap.empty) continue; // Already signed
+                const version = Number.isInteger(data.version) && data.version > 0 ? data.version : 1;
+                if (sigSnap.docs.some(signature => (signature.data().version || 1) === version)) continue; // Current version already signed
               } catch (e) {
                 // If no member doc, treat as unsigned
               }
@@ -925,6 +926,8 @@ export default function FamilyPage() {
                 docId: d.id,
                 title: data.title || 'Waiver',
                 content: data.content || '',
+                version: Number.isInteger(data.version) && data.version > 0 ? data.version : 1,
+                textHash: typeof data.textHash === 'string' ? data.textHash : undefined,
                 required: data.required || false,
                 teamId,
                 teamName,
@@ -944,6 +947,10 @@ export default function FamilyPage() {
 
   const handleSignWaiver = async () => {
     if (!signingWaiver || !signatureText.trim() || !user?.id || !auth) return;
+    if (!signingWaiver.textHash) {
+      toast({ title: 'Refresh Required', description: 'This waiver does not have a verified version. Refresh before signing.', variant: 'destructive' });
+      return;
+    }
     setIsSigning(true);
     try {
       const childMemberId = myChildren.find(c => c.id === signingWaiver.childId)?.userId || signingWaiver.childId;
@@ -956,6 +963,8 @@ export default function FamilyPage() {
           memberId: childMemberId,
           documentId: signingWaiver.docId,
           signatureName: signatureText.trim(),
+          expectedVersion: signingWaiver.version,
+          expectedTextHash: signingWaiver.textHash,
         }),
       });
       const result = await response.json().catch(() => ({}));

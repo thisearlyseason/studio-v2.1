@@ -77,6 +77,28 @@ test('all frozen Task 5 practice case IDs are present exactly once across their 
   }
 });
 
+test('all frozen Task 5 waiver case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = {
+    'waivers-team-global-waiver-lifecycle': [
+      'waiver-team-crud', 'waiver-global-deploy', 'waiver-version',
+      'waiver-partial', 'waiver-duplicate', 'waiver-empty',
+      'waiver-staff', 'waiver-delegate', 'waiver-team-b',
+      'waiver-archive', 'waiver-console', 'waiver-network', 'waiver-responsive',
+    ],
+    'waivers-parent-player-coach-signature': [
+      'sign-parent-child', 'sign-adult', 'sign-youth', 'sign-coach',
+      'sign-replay', 'sign-new-version', 'sign-wrong-date', 'sign-wrong-child',
+      'sign-wrong-event', 'sign-parent-b', 'sign-team-b', 'sign-removed',
+      'sign-text-immutable', 'sign-console', 'sign-network', 'sign-responsive',
+    ],
+  };
+  for (const [scenarioId, caseIds] of Object.entries(expected)) {
+    const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]).flat();
+    assert.deepEqual(actual.sort(), caseIds.sort(), scenarioId);
+    for (const caseId of caseIds) assert.equal(actual.filter(value => value === caseId).length, 1, `${scenarioId}/${caseId}`);
+  }
+});
+
 test('operations evidence assigns an assertion to only its declared exact case', () => {
   const assertions = [
     { label: 'owner event create persists after reload' },

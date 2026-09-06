@@ -790,6 +790,8 @@ export type TeamDocument = {
   waiverAudience?: 'participant' | 'team';
   teamId?: string;
   signatureCount?: number;
+  version?: number;
+  textHash?: string;
 };
 
 export type Message = {
@@ -885,10 +887,10 @@ interface TeamContextType {
   updateTeamDetails: (updates: Partial<Team>) => Promise<void>;
   updateTeamHero: (url: string) => Promise<void>;
   updateTeamPlan: (teamId: string, planId: string) => Promise<void>;
-  signTeamDocument: (docId: string, signatureText: string, targetMemberId: string) => Promise<boolean>;
+  signTeamDocument: (document: Pick<TeamDocument, 'id' | 'version' | 'textHash'>, signatureText: string, targetMemberId: string) => Promise<boolean>;
   createTeamDocument: (data: any) => Promise<void>;
   updateTeamDocument: (docId: string, data: any) => Promise<void>;
-  deleteTeamDocument: (docId: string) => Promise<void>;
+  deleteTeamDocument: (docId: string, expectedVersion?: number, expectedTextHash?: string) => Promise<void>;
   addEvent: (data: any) => Promise<boolean>;
   createEventSeries: (data: any, recurrence: { frequency: 'weekly'; count: number }) => Promise<boolean>;
   updateEvent: (id: string, data: any) => Promise<boolean>;
@@ -981,7 +983,7 @@ interface TeamContextType {
   markMediaAsViewed: (fileId: string) => Promise<void>;
   /** Signs a global (hub-deployed) waiver AS THE COACH/STAFF. Stores signature
    * in teams/{teamId}/coachWaiverSignatures/{waiverDocId} and archives it. */
-  signGlobalWaiverAsCoach: (waiverDocId: string, waiverTitle: string) => Promise<boolean>;
+  signGlobalWaiverAsCoach: (waiver: Pick<TeamDocument, 'id' | 'title' | 'version' | 'textHash'>) => Promise<boolean>;
   removeMember: (memberId: string, reason?: string) => Promise<void>;
   reinstateMember: (memberId: string) => Promise<void>;
   upgradeChildToLogin: (childId: string) => Promise<void>;
@@ -1743,15 +1745,26 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, activeTeam?.id]);
 
   const createTeamDocument = useCallback(async (docData: Partial<TeamDocument>) => {
-    if (!db || !activeTeam?.id) return;
-    const docRef = docData.id ? doc(db, 'teams', activeTeam.id, 'documents', docData.id) : doc(collection(db, 'teams', activeTeam.id, 'documents'));
-    await setDoc(docRef, {
-      ...docData,
-      id: docRef.id,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }, { merge: true });
-  }, [db, activeTeam?.id]);
+    if (!firebaseAuth || !activeTeam?.id) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired.');
+    const response = await fetch('/api/teams/waivers/lifecycle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({
+        teamId: activeTeam.id,
+        requestId: docData.id || crypto.randomUUID(),
+        ...(docData.id ? { documentId: docData.id } : {}),
+        title: docData.title,
+        content: docData.content,
+        waiverAudience: docData.waiverAudience,
+        assignedTo: docData.assignedTo,
+        isActive: docData.isActive,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to create this waiver.');
+  }, [firebaseAuth, activeTeam?.id]);
 
   const hasFeature = useCallback((featureId: string) => {
     if (isSuperAdmin) return true;
@@ -2091,9 +2104,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!response.ok) throw new Error(result.error || 'Unable to reset this squad season.');
   }, [activeTeam?.id, firebaseAuth]);
 
-  const signTeamDocument = useCallback(async (docId: string, sig: string, mid: string) => { 
+  const signTeamDocument = useCallback(async (document: Pick<TeamDocument, 'id' | 'version' | 'textHash'>, sig: string, mid: string) => {
     if (!activeTeam?.id || !firebaseAuth) return false;
     try {
+      if (!document.version || !document.textHash) throw new Error('Refresh this waiver before signing. Its verified version is unavailable.');
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired. Please sign in again.');
       const response = await fetch('/api/teams/waivers/sign', {
@@ -2102,8 +2116,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({
           teamId: activeTeam.id,
           memberId: mid,
-          documentId: docId,
+          documentId: document.id,
           signatureName: sig,
+          expectedVersion: document.version,
+          expectedTextHash: document.textHash,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -2163,14 +2179,26 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db, activeTeam, isStaff, members]);
 
   const updateTeamDocument = useCallback(async (docId: string, data: any) => { 
-    if (!isStaff) return;
-    if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'documents', docId), clean(data)); 
-  }, [db, activeTeam, isStaff]);
+    if (!isStaff || !activeTeam?.id || !firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/teams/waivers/lifecycle', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ teamId: activeTeam.id, documentId: docId, ...data }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update this waiver.');
+  }, [activeTeam?.id, firebaseAuth, isStaff]);
 
-  const deleteTeamDocument = useCallback(async (docId: string) => {
-    if (!isStaff) return;
-    if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'documents', docId));
-  }, [db, activeTeam, isStaff]);
+  const deleteTeamDocument = useCallback(async (docId: string, expectedVersion?: number, expectedTextHash?: string) => {
+    if (!isStaff || !activeTeam?.id || !firebaseAuth) return;
+    const token = await getAuthToken(firebaseAuth);
+    const response = await fetch('/api/teams/waivers/lifecycle', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ teamId: activeTeam.id, documentId: docId, expectedVersion, expectedTextHash }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to archive this waiver.');
+  }, [activeTeam?.id, firebaseAuth, isStaff]);
 
   const addEvent = useCallback(async (data: any) => { 
     if (!isStaff) {
@@ -3312,38 +3340,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const markMediaAsViewed = useCallback(async (fileId: string) => { if (!firebaseUser || !activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', firebaseUser.uid, 'mediaViews', fileId), { fileId, viewedAt: new Date().toISOString() }); }, [activeTeam, firebaseUser, db]);
 
   const deployClubProtocol = useCallback(async (data: any, teamIds: string[]) => {
-    if (!db || !firebaseUser) return;
-    const batch = writeBatch(db);
-    const baseId = `protocol_${Date.now()}`;
-    // Always write a global copy to the user's own club-documents store so it shows up even with no squads
-    const globalDocId = `${baseId}_global`;
-    batch.set(doc(db, 'users', firebaseUser.uid, 'clubDocuments', globalDocId), clean({
-      ...data,
-      id: globalDocId,
-      ownerUserId: firebaseUser.uid,
-      isClubMaster: true,
-      isGlobal: true,
-      deploymentId: baseId,
-      waiverAudience: data.waiverAudience === 'team' ? 'team' : 'participant',
-      createdAt: new Date().toISOString()
-    }));
-    // Also push to each squad so compliance checks can reference it
-    teamIds.forEach((tid, i) => {
-      const docId = `${baseId}_${i}`;
-      batch.set(doc(db, 'teams', tid, 'documents', docId), clean({
-        ...data,
-        id: docId,
-        teamId: tid,
-        ownerUserId: firebaseUser.uid,
-        isClubMaster: true,
-        deploymentId: baseId,
-        sourceGlobalDocumentId: globalDocId,
-        waiverAudience: data.waiverAudience === 'team' ? 'team' : 'participant',
-        createdAt: new Date().toISOString()
-      }));
+    if (!firebaseAuth || !firebaseUser) return;
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired.');
+    const response = await fetch('/api/organizations/waivers', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({
+        requestId: data.requestId || crypto.randomUUID(),
+        teamIds,
+        title: data.title,
+        content: data.content,
+        waiverAudience: data.waiverAudience,
+      }),
     });
-    await batch.commit();
-  }, [db, firebaseUser]);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to deploy this waiver.');
+  }, [firebaseAuth, firebaseUser]);
 
   const deleteTeam = useCallback(async (tid: string) => { 
     if (!isPrimaryClubAuthority && !isSuperAdmin) {
@@ -3359,53 +3371,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
    *   - teams/{teamId}/coachWaiverSignatures/{waiverDocId}  (primary record)
    *   - teams/{teamId}/archived_waivers/{archId}            (audit trail)
    */
-  const signGlobalWaiverAsCoach = useCallback(async (waiverDocId: string, waiverTitle: string): Promise<boolean> => {
-    if (!db || !firebaseUser || !activeTeam?.id) return false;
-    const now = new Date().toISOString();
+  const signGlobalWaiverAsCoach = useCallback(async (waiver: Pick<TeamDocument, 'id' | 'title' | 'version' | 'textHash'>): Promise<boolean> => {
+    if (!firebaseAuth || !firebaseUser || !activeTeam?.id) return false;
     const coachName = firebaseUser.displayName || firebaseUser.email || 'Coach';
     try {
-      const batch = writeBatch(db);
-      // Primary: coachWaiverSignatures/{waiverDocId} — one doc per waiver per team
-      batch.set(
-        doc(db, 'teams', activeTeam.id, 'coachWaiverSignatures', waiverDocId),
-        {
-          waiverDocId,
-          waiverTitle,
-          signedBy: firebaseUser.uid,
-          signedByName: coachName,
-          signedAt: now,
-          isGlobal: true,
-          isClubMaster: true,
-          teamId: activeTeam.id,
-        }
-      );
-      // Archive: for the audit trail in Waiver Library
-      const archId = `global_coach_${waiverDocId}_${firebaseUser.uid}`;
-      batch.set(
-        doc(db, 'teams', activeTeam.id, 'archived_waivers', archId),
-        {
-          id: archId,
-          documentId: waiverDocId,
-          title: waiverTitle,
-          type: 'waiver',
-          signerName: coachName,
-          signerUserId: firebaseUser.uid,
-          signerRole: 'coach',
-          signedAt: now,
-          isGlobal: true,
-          isClubMaster: true,
-          teamId: activeTeam.id,
-        }
-      );
-      await batch.commit();
-      toast({ title: '✅ Waiver Signed', description: `You have acknowledged: ${waiverTitle}` });
+      if (!waiver.version || !waiver.textHash) throw new Error('Refresh this waiver before signing. Its verified version is unavailable.');
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired.');
+      const response = await fetch('/api/teams/waivers/sign-coach', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, documentId: waiver.id, signatureName: coachName, expectedVersion: waiver.version, expectedTextHash: waiver.textHash }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to sign this waiver.');
+      toast({ title: '✅ Waiver Signed', description: `You have acknowledged: ${waiver.title}` });
       return true;
     } catch (e: any) {
       console.error('[signGlobalWaiverAsCoach] Error:', e.message);
       toast({ title: 'Signing Failed', description: e.message, variant: 'destructive' });
       return false;
     }
-  }, [db, firebaseUser, activeTeam?.id]);
+  }, [firebaseAuth, firebaseUser, activeTeam?.id]);
 
   const deleteAccount = useCallback(async () => {
     if (!firebaseUser || !firebaseAuth) return;

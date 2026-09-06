@@ -7,6 +7,7 @@ import {
   normalizeCreationText,
 } from '@/lib/account-creation-policy';
 import { readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
+import { buildWaiverVersionIdentity } from '@/lib/waiver-security';
 
 const ALLOWED_TYPES = new Set([
   'adult',
@@ -153,13 +154,12 @@ export async function POST(request: NextRequest) {
         ...(auth.email ? { email: auth.email } : {}),
       });
       if (waiverTitle && waiverContent) {
+        const waiverIdentity = buildWaiverVersionIdentity({ title: waiverTitle, content: waiverContent, version: 1, waiverAudience: 'participant', assignedTo: ['all'] });
         transaction.set(teamRef.collection('documents').doc('custom_1'), {
           id: 'custom_1',
-          title: waiverTitle,
-          content: waiverContent,
           type: 'waiver',
           isActive: true,
-          assignedTo: ['all'],
+          ...waiverIdentity,
           createdAt: now,
         });
       }

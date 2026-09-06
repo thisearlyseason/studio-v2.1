@@ -29,7 +29,7 @@ import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 type RapidJoinData = {
   team: { id: string; name: string };
-  waiver: { id: string; title: string; content: string } | null;
+  waiver: { id: string; title: string; content: string; version: number; textHash: string } | null;
   sessionToken: string;
   expiresAt: string;
 };
@@ -152,26 +152,16 @@ function RapidJoinForm() {
       const joinResponse = await fetch('/api/teams/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
-        body: JSON.stringify({ sessionToken: joinData.sessionToken, playerId, enrollmentIntent: 'player' }),
+        body: JSON.stringify({
+          sessionToken: joinData.sessionToken, playerId, enrollmentIntent: 'player',
+          ...(activeWaiver ? { waiverAcceptance: {
+            documentId: activeWaiver.id, signatureName: signature.trim(),
+            expectedVersion: activeWaiver.version, expectedTextHash: activeWaiver.textHash,
+          } } : {}),
+        }),
       });
       const joinResult = await joinResponse.json().catch(() => ({}));
       if (!joinResponse.ok) throw new Error(joinResult.error || 'Join failed.');
-
-      if (activeWaiver && signature) {
-        const waiverResponse = await fetch('/api/teams/waivers/sign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
-          body: JSON.stringify({
-            teamId,
-            memberId: joinResult.memberId,
-            documentId: activeWaiver.id,
-            signatureName: signature,
-          }),
-        });
-        const waiverResult = await waiverResponse.json().catch(() => ({}));
-        if (!waiverResponse.ok) throw new Error(waiverResult.error || 'Joined, but the waiver could not be recorded.');
-      }
-
 
       setIsSuccess(true);
     } catch (error) {

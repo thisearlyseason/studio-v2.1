@@ -116,6 +116,8 @@ function AuthorizedClubManagementPage() {
   const [isDeployProtocolOpen, setIsDeployProtocolOpen] = useState(false);
   const [isSubSquadModalOpen, setIsSubSquadModalOpen] = useState(false);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editingWaiverGuard, setEditingWaiverGuard] = useState<{ version: number; textHash: string } | null>(null);
+  const [protocolRequestId, setProtocolRequestId] = useState(() => crypto.randomUUID());
   const [clubForm, setClubForm] = useState({ name: user?.schoolName || user?.clubName || '', description: user?.clubDescription || '', schoolName: user?.schoolName || user?.clubName || '', institutionTitle: user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : '') });
   const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any, waiverAudience: 'participant' as 'participant' | 'team' });
   const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
@@ -728,6 +730,7 @@ function AuthorizedClubManagementPage() {
     setIsCreating(true);
     try {
       if (editingDocId) {
+        if (!editingWaiverGuard) throw new Error('Refresh this waiver before editing. Its verified version is unavailable.');
         if (!firebaseAuth) throw new Error('Your session is unavailable.');
         const token = await getAuthToken(firebaseAuth);
         if (!token) throw new Error('Your session has expired.');
@@ -736,6 +739,8 @@ function AuthorizedClubManagementPage() {
           headers: { 'Content-Type': 'application/json', ...authHeader(token) },
           body: JSON.stringify({
             documentId: editingDocId,
+            expectedVersion: editingWaiverGuard.version,
+            expectedTextHash: editingWaiverGuard.textHash,
             title: protocolForm.title,
             content: protocolForm.content,
             waiverAudience: protocolForm.waiverAudience,
@@ -744,9 +749,9 @@ function AuthorizedClubManagementPage() {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || 'Unable to update this waiver.');
       } else {
-        await deployClubProtocol({ ...protocolForm, assignedTo: ['all'], isActive: true }, clubTeamIds);
+        await deployClubProtocol({ ...protocolForm, requestId: protocolRequestId, assignedTo: ['all'], isActive: true }, clubTeamIds);
       }
-      setIsDeployProtocolOpen(false); setEditingDocId(null); setProtocolForm({ title: '', content: '', type: 'waiver', waiverAudience: 'participant' });
+      setIsDeployProtocolOpen(false); setEditingDocId(null); setEditingWaiverGuard(null); setProtocolRequestId(crypto.randomUUID()); setProtocolForm({ title: '', content: '', type: 'waiver', waiverAudience: 'participant' });
       toast({ title: editingDocId ? "Protocol Updated" : "Mandate Deployed", description: `Protocol synchronized across ${clubTeamIds.length} squads.` });
     } catch (error) {
       toast({ title: 'Waiver Update Failed', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
@@ -758,12 +763,13 @@ function AuthorizedClubManagementPage() {
   const handleToggleWaiver = async (waiverDoc: TeamDocument) => {
     if (!waiverDoc.id || !firebaseAuth) return;
     try {
+      if (!waiverDoc.version || !waiverDoc.textHash) throw new Error('Refresh this waiver before updating it. Its verified version is unavailable.');
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired.');
       const response = await fetch('/api/organizations/waivers', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ documentId: waiverDoc.id, isActive: waiverDoc.isActive === false }),
+        body: JSON.stringify({ documentId: waiverDoc.id, isActive: waiverDoc.isActive === false, expectedVersion: waiverDoc.version, expectedTextHash: waiverDoc.textHash }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to update this waiver.');
@@ -775,12 +781,13 @@ function AuthorizedClubManagementPage() {
   const handleDeleteWaiver = async (waiverDoc: TeamDocument) => {
     if (!waiverDoc.id || !firebaseAuth || !confirm(`Delete "${waiverDoc.title}" from the hub and every sub-squad? This cannot be undone.`)) return;
     try {
+      if (!waiverDoc.version || !waiverDoc.textHash) throw new Error('Refresh this waiver before archiving it. Its verified version is unavailable.');
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired.');
       const response = await fetch('/api/organizations/waivers', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ documentId: waiverDoc.id }),
+        body: JSON.stringify({ documentId: waiverDoc.id, expectedVersion: waiverDoc.version, expectedTextHash: waiverDoc.textHash }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to delete this waiver.');
@@ -1568,7 +1575,7 @@ function AuthorizedClubManagementPage() {
                   <h3 className="text-base md:text-lg font-black uppercase text-foreground">Global Waivers</h3>
                   <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Deployed to all squads</p>
                 </div>
-                <Button onClick={() => { setEditingDocId(null); setProtocolForm({ title: '', content: '', type: 'waiver', waiverAudience: 'participant' }); setIsDeployProtocolOpen(true); }} className="h-9 md:h-10 px-4 md:px-6 font-black uppercase text-[9px] md:text-[10px] shadow-lg shadow-primary/20 border-none">
+                <Button onClick={() => { setEditingDocId(null); setEditingWaiverGuard(null); setProtocolRequestId(crypto.randomUUID()); setProtocolForm({ title: '', content: '', type: 'waiver', waiverAudience: 'participant' }); setIsDeployProtocolOpen(true); }} className="h-9 md:h-10 px-4 md:px-6 font-black uppercase text-[9px] md:text-[10px] shadow-lg shadow-primary/20 border-none">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> New Waiver
                 </Button>
               </div>
@@ -1596,7 +1603,7 @@ function AuthorizedClubManagementPage() {
                         <p className="text-[7px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">{completion?.audience === 'team' ? 'One staff per squad' : 'All participants'}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button variant="outline" size="sm" className="h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2" onClick={(event) => { event.stopPropagation(); setEditingDocId(waiverDoc.id); setProtocolForm({ title: waiverDoc.title, content: waiverDoc.content || '', type: waiverDoc.type || 'waiver', waiverAudience: waiverDoc.waiverAudience === 'team' ? 'team' : 'participant' }); setIsDeployProtocolOpen(true); }}>Edit</Button>
+                        <Button variant="outline" size="sm" className="h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2" onClick={(event) => { event.stopPropagation(); if (!waiverDoc.version || !waiverDoc.textHash) { toast({ title: 'Refresh Required', description: 'This waiver does not have a verified version.', variant: 'destructive' }); return; } setEditingDocId(waiverDoc.id); setEditingWaiverGuard({ version: waiverDoc.version, textHash: waiverDoc.textHash }); setProtocolForm({ title: waiverDoc.title, content: waiverDoc.content || '', type: waiverDoc.type || 'waiver', waiverAudience: waiverDoc.waiverAudience === 'team' ? 'team' : 'participant' }); setIsDeployProtocolOpen(true); }}>Edit</Button>
                         <Button variant="outline" size="sm" className={cn("h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2", waiverDoc.isActive === false ? "border-emerald-200 text-emerald-600 hover:bg-emerald-50" : "border-amber-200 text-amber-600 hover:bg-amber-50")} onClick={(event) => { event.stopPropagation(); void handleToggleWaiver(waiverDoc); }}>{waiverDoc.isActive === false ? 'Enable' : 'Disable'}</Button>
                         <Button aria-label={`Delete ${waiverDoc.title}`} variant="ghost" size="sm" className="h-7 w-7 rounded-xl text-red-500 hover:bg-red-50" onClick={(event) => { event.stopPropagation(); void handleDeleteWaiver(waiverDoc); }}>×</Button>
                       </div>

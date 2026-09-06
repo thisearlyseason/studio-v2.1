@@ -326,6 +326,24 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.match(filmBlock, /registerDynamicFirestoreRoot\(progressPath, 'practice-film-watch-progress-cleanup-deleted'/);
 });
 
+test('Waiver rows use dedicated browser and request backed workflows', () => {
+  const start = source.indexOf('async function runCertificationOperationsScenarios()');
+  const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
+  const operationsBlock = source.slice(start, end);
+  for (const [scenarioId, functionName] of [
+    ['waivers-team-global-waiver-lifecycle', 'runWaiverLifecycleWorkflowAudit'],
+    ['waivers-parent-player-coach-signature', 'runWaiverSignatureWorkflowAudit'],
+  ]) {
+    assert.match(operationsBlock, new RegExp(`scenarioId === '${scenarioId}' && runBrowser`));
+    assert.match(operationsBlock, new RegExp(`await ${functionName}\\(\\)`));
+    assert.match(source, new RegExp(`async function ${functionName}\\(\\)`));
+  }
+  assert.match(source, /waiver-partial/);
+  assert.match(source, /sign-replay/);
+  assert.match(source, /sign-text-immutable/);
+  assert.match(source, /width: 390, height: 844/);
+});
+
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
   const patternsStart = source.indexOf("'calendar-team-family-views-and-filters': Object.freeze({", source.indexOf('const OPERATION_CASE_ASSERTION_PATTERNS'));
   const patternsEnd = source.indexOf("'calendar-ics-create-fetch-revoke'", patternsStart);
