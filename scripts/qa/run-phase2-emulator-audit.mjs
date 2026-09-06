@@ -30,7 +30,7 @@ import { validateAttendanceLedger, validateAttendanceBounds } from './certificat
 import { operationActorAliases } from './certification/local/operation-actors.mjs';
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
-import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark } from './certification/local/film-playback.mjs';
+import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark, observeFilmDeletionReconciliation } from './certification/local/film-playback.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -7849,11 +7849,16 @@ async function runPracticeFilmWorkflowAudit() {
     return true;
   }`]);
   await captureOperationRequests('film-delete', 'qa-coach-owner-a', async () => {
-    const metadataStatus = await directFirestoreReadStatus(videoRecord.path, tokens.get('qa-coach-owner-a'));
-    const startedAt = new Date().toISOString();
-    const objectStatus = await storageObjectStatus(storagePath, tokens.get('qa-coach-owner-a'), { method: 'GET' });
-    recordCapturedOperationRequest({ pathname: '/storage/object', method: 'GET', status: objectStatus, token: tokens.get('qa-coach-owner-a'), startedAt, completedAt: new Date().toISOString() });
-    expectEqual(metadataStatus === 404 && objectStatus === 404, true, 'Practice film delete removes metadata and exact object');
+    const observation = await observeFilmDeletionReconciliation({
+      readMetadataStatus: () => directFirestoreReadStatus(videoRecord.path, tokens.get('qa-coach-owner-a')),
+      readObjectStatus: async () => {
+        const startedAt = new Date().toISOString();
+        const status = await storageObjectStatus(storagePath, tokens.get('qa-coach-owner-a'), { method: 'GET' });
+        recordCapturedOperationRequest({ pathname: '/storage/object', method: 'GET', status, token: tokens.get('qa-coach-owner-a'), startedAt, completedAt: new Date().toISOString() });
+        return status;
+      },
+    });
+    expectEqual(observation.metadataStatus === 404 && observation.objectStatus === 404, true, 'Practice film delete removes metadata and exact object');
   });
 }
 

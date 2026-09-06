@@ -20,6 +20,31 @@ export async function dismissFilmTeamAlert(page) {
   }
 }
 
+export async function observeFilmDeletionReconciliation({
+  readMetadataStatus,
+  readObjectStatus,
+  timeoutMs = 3000,
+  intervalMs = 100,
+}) {
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
+  const samples = [];
+  do {
+    const [metadataStatus, objectStatus] = await Promise.all([
+      readMetadataStatus(),
+      readObjectStatus(),
+    ]);
+    samples.push({ metadataStatus, objectStatus, elapsedMs: Date.now() - startedAt });
+    if (metadataStatus === 404 && objectStatus === 404) {
+      return { metadataStatus, objectStatus, samples };
+    }
+    if (Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  } while (Date.now() <= deadline);
+  const last = samples.at(-1);
+  throw new Error(`Film deletion did not reconcile within ${timeoutMs}ms: metadata=${last?.metadataStatus ?? 'unread'} object=${last?.objectStatus ?? 'unread'}.`);
+}
+
 // Serialized into the real browser; no synthetic timeupdate/watch event.
 export async function observeFilmPlayback(media, startFraction = 0) {
   media.muted = true;

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import {
   assertFails,
@@ -105,6 +106,22 @@ test('player uploads require family/team authority and safe content types', asyn
     parentStorage.ref('players/private-player/avatar/script.svg')
       .putString('<svg onload="alert(1)"/>', 'raw', { contentType: 'image/svg+xml' }),
   );
+});
+
+test('an authorized film delete makes the exact Storage object immediately unavailable', async () => {
+  const ownerStorage = storageFor('owner');
+  const path = 'players/private-player/videos/delete-diagnostic.webm';
+  await ownerStorage.ref(path).putString('film', 'raw', { contentType: 'video/webm' });
+  const startedAt = Date.now();
+  await ownerStorage.ref(path).delete();
+  let code = null;
+  try {
+    await ownerStorage.ref(path).getMetadata();
+  } catch (error) {
+    code = error?.code;
+  }
+  assert.equal(code, 'storage/object-not-found');
+  assert.ok(Date.now() - startedAt < 2_000);
 });
 
 test('an unrelated team owner cannot manage another player media after a forged linkage', async () => {

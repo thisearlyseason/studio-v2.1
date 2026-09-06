@@ -55,3 +55,24 @@ test('Film alert dismissal closes only the exact visible alert and preserves une
   await assert.rejects(module.dismissFilmTeamAlert(overflowing),/four-alert fixture bound/);
   assert.equal(closed,4);
 });
+
+test('Film deletion evidence waits for exact metadata and object 404s and reports bounded samples', async () => {
+  assert.equal(typeof module.observeFilmDeletionReconciliation, 'function');
+  let objectReads = 0;
+  const observed = await module.observeFilmDeletionReconciliation({
+    readMetadataStatus: async () => 404,
+    readObjectStatus: async () => (++objectReads === 1 ? 200 : 404),
+    timeoutMs: 50,
+    intervalMs: 0,
+  });
+  assert.equal(observed.metadataStatus, 404);
+  assert.equal(observed.objectStatus, 404);
+  assert.deepEqual(observed.samples.map(sample => [sample.metadataStatus, sample.objectStatus]), [[404, 200], [404, 404]]);
+
+  await assert.rejects(() => module.observeFilmDeletionReconciliation({
+    readMetadataStatus: async () => 404,
+    readObjectStatus: async () => 200,
+    timeoutMs: 5,
+    intervalMs: 0,
+  }), /metadata=404 object=200/);
+});
