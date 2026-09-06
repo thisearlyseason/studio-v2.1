@@ -7841,7 +7841,10 @@ function browserStaffAttendanceOverride(session, { teamId, title, memberName }) 
       await page.getByText('Override Successful', { exact: true }).waitFor({ timeout: 15000 });
       await page.reload();
       const afterReload = page.locator('tr').filter({ hasText: ${JSON.stringify(memberName)} });
-      await afterReload.getByText('Declined', { exact: true }).waitFor({ timeout: 15000 });
+      const eventHeader = page.locator('th').filter({ hasText: ${JSON.stringify(title)} }).first();
+      await eventHeader.waitFor({ timeout: 15000 });
+      const eventColumn = await eventHeader.evaluate(header => Array.from(header.parentElement?.children || []).indexOf(header));
+      await afterReload.locator('td').nth(eventColumn).getByText('Declined', { exact: true }).waitFor({ timeout: 15000 });
       await page.setViewportSize({ width: 390, height: 844 });
       return {
         rsvpResponses,
