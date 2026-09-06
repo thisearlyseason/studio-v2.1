@@ -25,7 +25,7 @@ import {
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
-import { withAttendanceMemberships, selectScheduleTeam } from './certification/local/schedule-isolation.mjs';
+import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
 import { inspectTenantCapabilities, TENANT_SCENARIO_CAPABILITIES } from './certification/local/tenant-capabilities.mjs';
@@ -139,6 +139,7 @@ let certificationAssertionSequence = 0;
 let activeTenantExecution = null;
 let activeTenantExecutionGroup = null;
 let rsvpAttendanceWorkflowInvocation = 0;
+let activeOperationResourceRegistry = null;
 let emulatorAdminAppSequence = 0;
 const tenantTokenActors = new Map();
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
@@ -147,7 +148,7 @@ const tenantRuntimeConsumerPaths = new Map();
 const tenantRuntimeTargets = new Map();
 const tenantFixtureMutations = createFixtureMutations({
   projectId: PROJECT_ID,
-  runId: certificationTenants ? certificationRunId : 'final-cert-inactive-import',
+  runId: certificationTenants || certificationOperations ? certificationRunId : 'final-cert-inactive-import',
   baselineRoots: FIXTURES.cleanupSelectors.firestore.recursiveRoots,
   firestore: {
     read: documentPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
@@ -1241,7 +1242,8 @@ async function runServerRequestBarrier(label, participants, { timeoutMs = 8_000 
   if (!Array.isArray(participants) || participants.length !== 2 || participants.some(item => !item || typeof item.alias !== 'string' || typeof item.execute !== 'function')) {
     throw new Error(`${label} requires exactly two named request participants.`);
   }
-  const barrierId = `qa_${label}_${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120);
+  const barrierScope = activeOperationResourceRegistry ? `_${OPERATIONS_SCENARIO_IDS.indexOf(activeCertificationScenario)}` : '';
+  const barrierId = `qa_${label}${barrierScope}_${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120);
   const barrierPath = `qaCertificationRequestBarriers/${barrierId}`;
   registerDynamicFirestoreRoot(barrierPath, `request-barrier-${label}`);
   const startedAt = new Date().toISOString();
@@ -1513,9 +1515,9 @@ function registerDynamicAuthIdentity(uid, label, registry = dynamicResourceRegis
   });
 }
 
-function registerDynamicFirestoreRoot(documentPath, label, registry = dynamicResourceRegistry) {
+function registerDynamicFirestoreRoot(documentPath, label, registry = activeOperationResourceRegistry || dynamicResourceRegistry) {
   registry.register({
-    id: `firestore:${label}`,
+    id: `firestore:${activeOperationResourceRegistry ? `${activeCertificationScenario}:` : ''}${label}`,
     kind: 'deleted',
     async cleanup() {
       return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
@@ -2649,7 +2651,9 @@ function cli(session, args, { sensitive = false } = {}) {
 }
 
 function browserSessionName(label) {
-  const session = `${BROWSER_SESSION_PREFIX}-${label}`;
+  const session = activeOperationResourceRegistry
+    ? operationSessionName(BROWSER_SESSION_PREFIX, activeCertificationScenario, label)
+    : `${BROWSER_SESSION_PREFIX}-${label}`;
   ownedBrowserSessions.add(session);
   syncBrowserSessionRegistry();
   return session;
@@ -6774,7 +6778,7 @@ function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observe
       ? { method: 'POST', pathname: request, status: 'observed' }
       : request),
     observer: execution?.observer || 'request response and authoritative emulator reconciliation',
-    cleanupReference: execution?.cleanupReference || `dynamic-local-cleanup:${certificationRunId}:${caseId}`,
+    cleanupReference: execution?.cleanupReference || `fixture-cleanup-${FIXTURES.runId}`,
   };
   recordCertificationCase(
     scenarioId,
@@ -6789,25 +6793,35 @@ function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observe
 
 async function runCertificationOperationsScenarios() {
   const scenarioIds = OPERATIONS_SCENARIO_IDS.filter(id => selectedOperationsScenarios.has(id));
-  for (const scenarioId of scenarioIds) {
+  let sessionBaseline;
+  return runOperationScenarioSequence(scenarioIds, {
+    failFast: certificationFailFast,
+    onError: (scenarioId, error) => recordCertificationRunFailure(scenarioId, error, 'operations-runtime'),
+    execute: async scenarioId => {
+    sessionBaseline = new Set(ownedBrowserSessions);
     activeCertificationScenario = scenarioId;
     activeCertificationAssertions = [];
     activeCertificationCaseIds = new Set();
     activeOperationAssertionOwners = new Map();
-    try {
+    activeOperationResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
+    await registerScheduleDiscovery({
+      registry: activeOperationResourceRegistry, scopeId: scenarioId,
+      snapshot: () => withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => snapshotScheduleRoots(firestoreAdmin, FIXTURES.teams.map(team => team.id))),
+      registerRoot: documentPath => registerDynamicFirestoreRoot(documentPath, `schedule-owned-${documentPath.replaceAll('/', '-')}`),
+    });
       if (scenarioId === 'chat-channel-message-unread' && runBrowser) {
         await runCommunicationWorkflowAudit();
         for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
           recordObservedOperationsCase(scenarioId, dimension, 'two-session communication workflow completed');
         }
-        continue;
+        return;
       }
       if (scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser) {
         await runSportsHubBrowseWorkflowAudit();
         for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
           recordObservedOperationsCase(scenarioId, dimension, 'two-session Sports Hub browse workflow completed');
         }
-        continue;
+        return;
       }
       if (scenarioId === 'calendar-team-family-views-and-filters' && runBrowser) {
         await runCalendarViewsWorkflowAudit();
@@ -6824,7 +6838,7 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'console', 'cal-console', 'Calendar flows have no browser console errors', [/Calendar views workflow console errors/, /Calendar household workflow console errors/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'cal-network', 'Calendar flows have no local server failures', [/Calendar views workflow failed responses/, /Calendar household workflow failed responses/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'responsive', 'cal-responsive', 'Calendar controls fit the mobile viewport', [/Calendar fits the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile calendar controls', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
-        continue;
+        return;
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
         await runCalendarFeedLifecycleAudit();
@@ -6844,7 +6858,7 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'console', 'ics-secret', 'public ICS response excludes a seeded opaque credential and action URL', [/Calendar Function body redacts subscription token and action URL/], { actor: 'qa-coach-owner-a', operation: 'local public Function fetch', reconciliation: 'response contains neither credential nor action URL', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'ics-network', 'visible calendar subscription controls have no local server failures', [/Calendar feed lifecycle failed responses/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'responsive', 'ics-responsive-na', 'calendar subscription controls fit the supported mobile viewport', [/Calendar feed controls fit the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile subscription dialog', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
-        continue;
+        return;
       }
       if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
         await runEventWorkflowAudit();
@@ -6868,7 +6882,7 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'console', 'evt-console', 'event browser paths complete without console errors', [/owner event create console errors/, /member event workflow console errors/, /weekly recurrence workflow console errors/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'browser event flows', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'evt-network', 'event browser paths complete without server failures', [/owner event create failed responses/, /member event workflow failed responses/, /weekly recurrence workflow failed responses/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'browser event flows', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'responsive', 'evt-responsive', 'recurrence controls remain within the mobile viewport', [/weekly recurrence controls fit the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'browser mobile viewport', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
-        continue;
+        return;
       }
       if ((scenarioId === 'events-rsvp-attendance-details' || scenarioId === 'attendance-practice-event-member-attendance') && runBrowser) {
         await runRsvpAndAttendanceWorkflowAudit();
@@ -6898,7 +6912,7 @@ async function runCertificationOperationsScenarios() {
           recordObservedOperationNamedCase(scenarioId, 'network', 'att-network', 'member and staff attendance flows have no 5xx responses', [/member attendance workflow failed responses/, /staff attendance workflow failed responses/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'responsive', 'att-responsive', 'staff attendance view fits mobile viewport', [/staff attendance page fits mobile viewport/], { actor: 'qa-pro-owner', operation: 'mobile browser attendance', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         }
-        continue;
+        return;
       }
       if (scenarioId === 'reminders-same-day-fcm-scheduler') {
         await runReminderSchedulerRuntimeAudit();
@@ -6917,7 +6931,7 @@ async function runCertificationOperationsScenarios() {
         recordBlockedOperationsCases(scenarioId,
           'Deployed scheduler logs, provider acceptance, and physical-device receipt/cleanup remain external evidence obligations.',
           ['responsive']);
-        continue;
+        return;
       }
       // The operations dispatcher is deliberately explicit. Until a domain
       // handler supplies case-owned browser/API evidence, every dimension is
@@ -6927,17 +6941,29 @@ async function runCertificationOperationsScenarios() {
         runBrowser
           ? 'No exact case-owned operations handler has emitted evidence for this frozen scenario yet.'
           : 'This operation requires browser-enabled local handler evidence; the current run was API-only.');
-    } catch (error) {
-      recordCertificationRunFailure(scenarioId, error, 'operations-runtime');
-      throw error;
-    } finally {
+    },
+    finalize: async scenarioId => {
+      const errors = [];
+      try {
+        await closeBrowserSessionsCreatedAfter(ownedBrowserSessions, sessionBaseline, async session => {
+          run(playwrightCli, [`-s=${session}`, '--raw', 'close'], { stdio: 'pipe' });
+        });
+      } catch (error) { errors.push(error); }
+      syncBrowserSessionRegistry();
+      try {
+        const cleanup = await activeOperationResourceRegistry.cleanup();
+        completedDynamicCleanupRuns.push(cleanup);
+        if (cleanup.state !== 'OBSERVED') throw new Error(`Scenario cleanup retained ${cleanup.residuals.length} owned resource(s).`);
+      } catch (error) { errors.push(error); }
       recordBlockedOperationsCases(scenarioId,
         'This exact frozen schedule case has no fresh case-owned local observation on the current candidate.');
+      activeOperationResourceRegistry = null;
       activeCertificationScenario = null;
       activeCertificationAssertions = [];
       activeCertificationCaseIds = new Set();
-    }
-  }
+      if (errors.length) throw new AggregateError(errors, 'Scenario-owned cleanup failed.');
+    },
+  });
 }
 
 function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonicalPath) {

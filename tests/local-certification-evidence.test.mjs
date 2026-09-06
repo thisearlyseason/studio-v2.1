@@ -18,6 +18,45 @@ import { tenantCaseAssociationFor } from '../scripts/qa/certification/local/batc
 
 const [scenario] = CERTIFICATION_SCENARIOS;
 
+test('persisted operations evidence requires unique assertion IDs, exact execution and cleanup provenance', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'schedule-evidence-'));
+  const at = '2026-09-04T18:00:01.000Z';
+  const execution = { actor: 'qa-coach-owner-a', operation: 'create', requests: [{ method: 'POST', pathname: '/api/teams/events/action', status: 200 }],
+    reconciliation: 'server event exists', observer: 'emulator read', timeBound: '15s', cleanupReference: 'exact-cleanup' };
+  const cases = ['one', 'two'].map(caseId => ({ caseId, dimension: 'happyPath', actorAliases: ['qa-coach-owner-a'], role: 'V',
+    tenantAlias: 'not-applicable', expected: 'created', observed: 'created', state: 'OBSERVED', startedAt: at, completedAt: at,
+    execution: structuredClone(execution), artifacts: [`${caseId}.json`] }));
+  const artifacts = cases.map(item => ({ ...item, scenarioId: scenario.id, capturedAt: at,
+    assertions: [{ id: `assertion-${item.caseId}`, label: 'created', expected: true, observed: true, capturedAt: at }] }));
+  for (const artifact of artifacts) { delete artifact.state; delete artifact.startedAt; delete artifact.completedAt; delete artifact.artifacts; }
+  const result = validResult({ cases, artifacts: cases.flatMap(item => item.artifacts),
+    dimensions: { ...validResult().dimensions, happyPath: makeDimension('OBSERVED', ['one', 'two'], 'observed') },
+    missingDimensions: DIMENSION_NAMES.filter(name => name !== 'happyPath'),
+    cleanup: { ...validResult().cleanup, reference: 'exact-cleanup', proof: ['cleanup.json'] },
+  });
+  const write = async () => {
+    for (const item of artifacts) await writeFile(path.join(directory, `${item.caseId}.json`), JSON.stringify(item));
+  };
+  try {
+    await writeFile(path.join(directory, 'cleanup.json'), JSON.stringify({ state: 'OBSERVED', counts: result.cleanup.counts, capturedAt: '2026-09-04T18:02:00.000Z' }));
+    await write();
+    const validate = () => validateScenarioResults([scenario], [result], { artifactRoot: directory, caseShape: 'operations' });
+    assert.doesNotThrow(validate);
+    delete artifacts[0].assertions[0].id; await write();
+    assert.throws(validate, /assertion.*id/i);
+    artifacts[0].assertions[0].id = 'assertion-two'; await write();
+    assert.throws(validate, /shared assertion|reuses.*assertion/i);
+    artifacts[0].assertions[0].id = 'assertion-one';
+    artifacts[0].execution = { ...execution, operation: 'delete' }; await write();
+    assert.throws(validate, /execution.*match/i);
+    artifacts[0].execution = { ...execution, cleanupReference: 'invented-cleanup' };
+    cases[0].execution = structuredClone(artifacts[0].execution); await write();
+    assert.throws(validate, /cleanup reference/i);
+    artifacts[0].execution = { ...execution, requests: [] }; cases[0].execution = structuredClone(artifacts[0].execution); await write();
+    assert.throws(validate, /requests/i);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 function validResult(overrides = {}) {
   return {
     scenarioId: scenario.id,

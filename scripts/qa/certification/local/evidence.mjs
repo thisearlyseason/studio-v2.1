@@ -208,7 +208,7 @@ function validateFamilyBrowserRuntimeLifecycle(caseRecord, execution) {
   }
 }
 
-function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape, caseAssociationResolver, operationContracts } = {}) {
+function validateResult(scenario, result, { artifactRoot, caseRequirements, expectedRunId, expectedCommit, caseShape, caseAssociationResolver, operationContracts, operationAssertionOwners } = {}) {
   assertNoProtectedEvidence(result);
   assertClosedObject(result, [
     'scenarioId', 'environment', 'environmentGaps', 'commit', 'revision', 'startedAt', 'completedAt',
@@ -276,6 +276,19 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (!['OBSERVED', 'NOT_OBSERVED', 'FAIL'].includes(caseRecord.state)) throw new Error(`${caseRecord.caseId} has invalid case state.`);
     if (!DIMENSION_NAMES.includes(caseRecord.dimension)) throw new Error(`${caseRecord.caseId} has invalid case dimension.`);
     if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
+    if (caseShape === 'operations' && caseRecord.state === 'OBSERVED') {
+      const execution = caseRecord.execution;
+      assertClosedObject(execution, ['actor', 'operation', 'requests', 'reconciliation', 'observer', 'timeBound', 'cleanupReference'], 'Operation execution');
+      for (const key of ['actor', 'operation', 'reconciliation', 'observer', 'timeBound', 'cleanupReference']) assertPlainString(execution?.[key], `operation execution ${key}`);
+      if (!Array.isArray(execution.requests) || execution.requests.length === 0) throw new Error(`${caseRecord.caseId} requires operation requests.`);
+      for (const request of execution.requests) {
+        assertClosedObject(request, ['method', 'pathname', 'status'], 'Operation request');
+        assertPlainString(request.method, 'operation request method');
+        assertPlainString(request.pathname, 'operation request pathname');
+        if (request.status !== 'observed' && (!Number.isInteger(request.status) || request.status < 100 || request.status > 599)) throw new Error('Invalid operation request status.');
+      }
+      if (execution.cleanupReference !== result.cleanup?.reference) throw new Error(`${caseRecord.caseId} cleanup reference must bind the exact measured cleanup.`);
+    }
     if (caseShape === 'tenant') {
       assertPlainString(caseRecord.actorAlias, 'case actorAlias');
       assertPlainString(caseRecord.targetAlias, 'case targetAlias');
@@ -462,6 +475,9 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
             }
           }
         }
+        if (caseShape === 'operations' && JSON.stringify(parsed.execution) !== JSON.stringify(caseRecord.execution)) {
+          throw new Error(`${caseRecord.caseId} artifact execution does not match its case.`);
+        }
         if (parsed.expected !== artifactEvent.expected || parsed.observed !== artifactEvent.observed) {
           throw new Error(`${caseRecord.caseId} artifact expected/observed provenance does not match its case.`);
         }
@@ -474,7 +490,13 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         }
         for (const assertion of parsed.assertions || []) {
           assertClosedObject(assertion, ['id', 'label', 'expected', 'observed', 'capturedAt'], 'Assertion');
-          if (assertion.id !== undefined) assertPlainString(assertion.id, 'artifact assertion id');
+          if (caseShape === 'operations' || assertion.id !== undefined) assertPlainString(assertion.id, 'artifact assertion id');
+          if (caseShape === 'operations') {
+            const owner = `${result.scenarioId}:${caseRecord.caseId}`;
+            const previous = operationAssertionOwners.get(assertion.id);
+            if (previous && previous !== owner) throw new Error(`${owner} reuses shared assertion ID ${assertion.id} from ${previous}.`);
+            operationAssertionOwners.set(assertion.id, owner);
+          }
           assertPlainString(assertion.label, 'artifact assertion label');
           if (String(assertion.expected) !== String(assertion.observed)) {
             throw new Error(`${caseRecord.caseId} artifact assertion mismatch for ${assertion.label}.`);
@@ -565,7 +587,8 @@ export function validateScenarioResults(scenarios, results, options = {}) {
   for (const scenario of scenarios) {
     if (!resultsById.has(scenario.id)) throw new Error(`Missing scenario result ${scenario.id}.`);
   }
-  return Object.freeze(scenarios.map(scenario => validateResult(scenario, resultsById.get(scenario.id), options)));
+  const operationAssertionOwners = new Map();
+  return Object.freeze(scenarios.map(scenario => validateResult(scenario, resultsById.get(scenario.id), { ...options, operationAssertionOwners })));
 }
 
 export function markdownForSummary({ runId, commit, results, runErrors, title = 'Local certification' }) {
@@ -656,7 +679,7 @@ export function createEvidenceRecorder({ scenarios, runId, commit, outputDir, ca
         caseRequirements,
         expectedRunId: runId,
         expectedCommit: commit,
-        caseShape: batch === 'tenants' ? 'tenant' : 'identity',
+        caseShape: batch === 'tenants' ? 'tenant' : batch === 'operations' ? 'operations' : 'identity',
         caseAssociationResolver,
         operationContracts,
       });
