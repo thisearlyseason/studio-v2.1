@@ -72,10 +72,34 @@ service cloud.firestore {
     }
 
     function hasActiveChatAudience(chatData, hostTeamId) {
-      let authority = chatData.get('memberAuthorities', {}).get(request.auth.uid, {});
+      let authorities = chatData.get('memberAuthorities', {});
+      let hasAuthority = authorities.keys().hasAny([request.auth.uid]);
+      let authority = authorities.get(request.auth.uid, {});
       let sourceTeamId = authority.get('teamId', hostTeamId);
+      let sourceMemberId = authority.get('memberId', '');
+      let sourceMemberPath =
+        /databases/$(database)/documents/teams/$(sourceTeamId)/members/$(sourceMemberId);
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       return chatData.get('memberIds', []).hasAny([request.auth.uid]) &&
-        isTeamMember(sourceTeamId);
+        (
+          (
+            sourceMemberId != '' && exists(sourceMemberPath) &&
+            isActiveMember(get(sourceMemberPath).data) &&
+            (
+              get(sourceMemberPath).data.get('userId', '') == request.auth.uid ||
+              (
+                sourceMemberId == request.auth.uid &&
+                get(sourceMemberPath).data.get('userId', '') == ''
+              ) ||
+              (
+                exists(userPath) &&
+                get(userPath).data.get('linkedPlayerId', '') == sourceMemberId &&
+                hasAuthorizedLinkedPlayerMembership(sourceTeamId, get(userPath).data)
+              )
+            )
+          ) ||
+          (!hasAuthority && isTeamMember(hostTeamId))
+        );
     }
 
     function hasAuthorizedLinkedPlayerMembership(teamId, userData) {

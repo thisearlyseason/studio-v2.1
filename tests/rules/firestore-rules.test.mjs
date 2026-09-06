@@ -70,6 +70,7 @@ beforeEach(async () => {
       setDoc(doc(db, 'users', 'staff'), { role: 'coach', name: 'Assistant Coach' }),
       setDoc(doc(db, 'users', 'outsider'), { role: 'coach', name: 'Outsider' }),
       setDoc(doc(db, 'users', 'remote-staff'), { role: 'coach', name: 'Remote Staff' }),
+      setDoc(doc(db, 'users', 'legacy-remote-staff'), { role: 'coach', name: 'Legacy Remote Staff' }),
       setDoc(doc(db, 'users', 'youth'), {
         role: 'youth_player',
         name: 'Youth',
@@ -108,6 +109,12 @@ beforeEach(async () => {
       setDoc(doc(db, 'teams', 'team-b'), { ownerUserId: 'outsider' }),
       setDoc(doc(db, 'teams', 'team-b', 'members', 'remote-staff'), {
         userId: 'remote-staff', teamId: 'team-b', role: 'Admin', position: 'Assistant Coach', status: 'active',
+      }),
+      setDoc(doc(db, 'teams', 'team-b', 'members', 'legacy-member-record'), {
+        userId: 'legacy-remote-staff', teamId: 'team-b', role: 'Admin', position: 'Assistant Coach', status: 'active',
+      }),
+      setDoc(doc(db, 'teams', 'team-b', 'members', 'removed-legacy-record'), {
+        userId: 'legacy-remote-staff', teamId: 'team-b', role: 'Admin', position: 'Assistant Coach', status: 'removed',
       }),
       setDoc(doc(db, 'teams', 'demo-team'), {
         ownerUserId: 'fictional-coach',
@@ -212,6 +219,40 @@ beforeEach(async () => {
       }),
       setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'remote-chat', 'messages', 'remote-message'), {
         authorId: 'owner', content: 'league staff coordination',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          owner: { teamId: 'team-a', memberId: 'owner' },
+          'legacy-remote-staff': { teamId: 'team-b', memberId: 'legacy-member-record' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat', 'messages', 'legacy-remote-message'), {
+        authorId: 'owner', content: 'legacy league staff coordination',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'forged-member-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-b', memberId: 'remote-staff' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'forged-team-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-a', memberId: 'legacy-member-record' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'incomplete-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-b' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'removed-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-b', memberId: 'removed-legacy-record' },
+        },
       }),
       setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'member-message'), {
         authorId: 'member', content: 'immutable text', createdAt: '2026-09-06T00:00:00.000Z',
@@ -989,6 +1030,21 @@ test('server-derived remote staff membership grants only its enrolled chat scope
   await assertSucceeds(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat')));
   await assertSucceeds(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat', 'messages', 'remote-message')));
   await assertFails(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'chat-a')));
+});
+
+test('server-derived chat authority supports active membership documents whose id differs from the user id', async () => {
+  const legacyRemoteDb = authenticatedDb('legacy-remote-staff');
+  await assertSucceeds(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat')));
+  await assertSucceeds(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat', 'messages', 'legacy-remote-message')));
+  await assertFails(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat')));
+  for (const chatId of [
+    'forged-member-authority-chat',
+    'forged-team-authority-chat',
+    'incomplete-authority-chat',
+    'removed-authority-chat',
+  ]) {
+    await assertFails(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', chatId)));
+  }
 });
 
 test('message authors cannot rewrite immutable message content through direct clients', async () => {
