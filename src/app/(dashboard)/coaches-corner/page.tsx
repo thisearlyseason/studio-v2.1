@@ -6,7 +6,7 @@ import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, Athlet
 import { EmailExportDialog } from '@/components/team/EmailExportDialog';
 import { IncidentDetailDialog } from './incident-detail-dialog';
 import { useFirestore, useCollection, useMemoFirebase, useStorage } from '@/firebase';
-import { ref, uploadBytes, getDownloadURL, getMetadata, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 import { 
   Plus, 
@@ -104,7 +104,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { RASTER_IMAGE_ACCEPT, validateRasterImage } from '@/lib/storage-upload-policy';
 import { parsePracticeTimestamp, validatePracticeFilmFile, validatePracticeUrl } from '@/lib/practice-content-policy';
-import { reconcilePlayerFilmDeletion } from '@/lib/player-film-deletion';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -1034,12 +1033,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     if (!member.playerId || !confirm("Are you sure you want to delete this clip?")) return;
     try {
       const video = videos.find(item => item.id === videoId);
-      await reconcilePlayerFilmDeletion({
-        storagePath: video?.storagePath,
-        deleteStorageObject: path => deleteObject(ref(storage, path)),
-        readStorageObject: path => getMetadata(ref(storage, path)),
-        deleteMetadata: () => deletePlayerVideo(member.playerId as string, videoId),
-      });
+      if (video?.storagePath) await deleteObject(ref(storage, video.storagePath));
+      await deletePlayerVideo(member.playerId, videoId);
       setVideos(prev => prev.filter(v => v.id !== videoId));
       toast({ title: "Clip Deleted", description: "The tactical asset has been removed from the library." });
     } catch (err: any) {
