@@ -9,6 +9,14 @@ function parseCalendarDate(value: string): Date {
   return date;
 }
 
+/** Shift a calendar-only date in UTC so recurrence does not inherit a DST offset. */
+export function shiftCalendarDate(value: string, days: number): string {
+  if (!Number.isInteger(days)) throw new Error('A whole calendar-day offset is required.');
+  const date = parseCalendarDate(value);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 export function buildRecurringEventDates(
   startDate: string,
   frequency: TeamEventRecurrenceFrequency,
@@ -18,10 +26,8 @@ export function buildRecurringEventDates(
   if (!Number.isInteger(count) || count < 2 || count > 52) {
     throw new Error('Recurrence count must be between 2 and 52.');
   }
-  const start = parseCalendarDate(startDate);
+  parseCalendarDate(startDate);
   return Array.from({ length: count }, (_value, index) => {
-    const occurrence = new Date(start);
-    occurrence.setUTCDate(start.getUTCDate() + (index * 7));
-    return occurrence.toISOString().slice(0, 10);
+    return shiftCalendarDate(startDate, index * 7);
   });
 }

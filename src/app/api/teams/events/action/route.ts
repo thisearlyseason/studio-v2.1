@@ -12,7 +12,7 @@ import { hasStaffRole } from '@/lib/staff-position';
 import { withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 import { buildTournamentReplicationEvent } from '@/lib/server-tournament-replication';
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
-import { buildRecurringEventDates } from '@/lib/team-event-recurrence';
+import { buildRecurringEventDates, shiftCalendarDate } from '@/lib/team-event-recurrence';
 import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
 import { validateTeamEventInput } from '@/lib/team-event-input';
 import { eventActionNeedsGeneratedId } from '@/lib/team-event-action';
@@ -158,9 +158,13 @@ export async function POST(req: NextRequest) {
       const result = await withScheduleMutationLock(async () => {
         const submitted = safeEventData(body.event);
         const recurrence = recurrenceInput(body.recurrence);
+        const recurrenceStartDate = cleanDate(submitted.date);
+        // Validate the submitted interval before deriving later occurrences.  Each
+        // occurrence then carries the same calendar-day span as the source event.
+        assertValidEventInput({ ...submitted, date: recurrenceStartDate });
         let dates: string[];
         try {
-          dates = buildRecurringEventDates(cleanDate(submitted.date), recurrence.frequency, recurrence.count);
+          dates = buildRecurringEventDates(recurrenceStartDate, recurrence.frequency, recurrence.count);
         } catch (error) {
           throw new EventMutationError(error instanceof Error ? error.message : 'Invalid recurrence configuration.');
         }
@@ -175,6 +179,9 @@ export async function POST(req: NextRequest) {
             teamId,
             ownerUserId: access.teamData.ownerUserId || auth.uid,
             date: occurrence.date,
+            ...(typeof submitted.endDate === 'string'
+              ? { endDate: shiftCalendarDate(submitted.endDate, prepared.length * 7) }
+              : {}),
             recurrenceSeriesId: seriesId,
             recurrenceFrequency: recurrence.frequency,
             recurrenceIndex: prepared.length,
