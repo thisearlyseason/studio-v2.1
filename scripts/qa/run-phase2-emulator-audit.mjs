@@ -91,6 +91,10 @@ const selectedOperationsScenarios = new Set(
     ? runtimeConfiguration.selectedScenarios
     : OPERATIONS_SCENARIO_IDS,
 );
+const needsFunctionsEmulator = certificationOperations && (
+  selectedOperationsScenarios.has('calendar-ics-create-fetch-revoke') ||
+  selectedOperationsScenarios.has('reminders-same-day-fcm-scheduler')
+);
 const scheduleAppOnly = process.argv.includes('--schedule-app-only');
 const teamSwitchOnly = process.argv.includes('--team-switch-only');
 const alertsOnly = process.argv.includes('--alerts-only');
@@ -9547,8 +9551,10 @@ async function main() {
   process.once('SIGINT', () => shutdownState.request(130));
   process.once('SIGTERM', () => shutdownState.request(143));
 
-  startProcess('npx', ['firebase', '--project', PROJECT_ID, 'emulators:start', '--only', 'auth,firestore,storage'], 'firebase.log');
-  await Promise.all([waitForPort(9099), waitForPort(8080), waitForPort(9199)]);
+  if (needsFunctionsEmulator) run('npm', ['--prefix', 'functions', 'run', 'build']);
+  const emulatorServices = needsFunctionsEmulator ? 'auth,firestore,storage,functions' : 'auth,firestore,storage';
+  startProcess('npx', ['firebase', '--project', PROJECT_ID, 'emulators:start', '--only', emulatorServices], 'firebase.log');
+  await Promise.all([waitForPort(9099), waitForPort(8080), waitForPort(9199), ...(needsFunctionsEmulator ? [waitForPort(5001)] : [])]);
   run(process.execPath, ['scripts/qa/seed-phase2-emulator-fixtures.mjs']);
   fixturesSeeded = true;
 
