@@ -8668,19 +8668,19 @@ function browserMemberAttendanceReadOnly(session, { teamId, title }) {
   const code = `async page => {
     await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
     await page.evaluate(team => localStorage.setItem('sf_session_team_id', team), ${JSON.stringify(teamId)});
-    await page.goto(${JSON.stringify(`${BASE_URL}/coaches-corner/attendance`)});
-    await page.getByText('Pro Squad Required', { exact: true }).waitFor({ timeout: 15000 });
-    const matrixVisible = await page.getByRole('heading', { name: 'RSVP Matrix', exact: true }).count();
-    const exportVisible = await page.getByRole('button', { name: 'Export Audit Log', exact: true }).count();
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
     await page.getByText(${JSON.stringify(title)}, { exact: true }).last().waitFor({ timeout: 15000 });
     await page.reload();
     await page.getByText(${JSON.stringify(title)}, { exact: true }).last().click();
     const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+    await details.getByRole('tab', { name: 'Squad Pulse', exact: true }).click();
+    await details.getByText('Attendance Matrix', { exact: true }).waitFor({ timeout: 15000 });
     await details.getByText('DECLINED', { exact: true }).first().waitFor({ timeout: 15000 });
     return {
-      matrixVisible,
-      exportVisible,
+      matrixVisible: await details.getByText('Attendance Matrix', { exact: true }).count(),
+      exportVisible: await details.getByRole('button', { name: 'Export Attendance Ledger', exact: true }).count(),
+      editVisible: await details.getByRole('button', { name: 'Edit Activity', exact: true }).count(),
+      deleteVisible: await details.getByRole('button', { name: ${JSON.stringify(`Delete ${title}`)} }).count(),
       declinedAfterReload: await details.getByText('DECLINED', { exact: true }).count(),
     };
   }`;
@@ -8846,8 +8846,10 @@ async function runIsolatedRsvpAndAttendanceWorkflowAudit() {
   expectEqual(staffResult.consoleErrors.length, 0, 'staff attendance workflow console errors');
   expectEqual(staffResult.failedResponses.length, 0, 'staff attendance workflow failed responses');
   const memberReadOnlyResult = browserMemberAttendanceReadOnly(memberBrowser, { teamId: proTeamId, title: attendanceTitle });
-  expectEqual(memberReadOnlyResult.matrixVisible, 0, 'member has no visible attendance matrix override control');
+  expectEqual(memberReadOnlyResult.matrixVisible > 0, true, 'member sees the attendance matrix without staff override controls');
   expectEqual(memberReadOnlyResult.exportVisible, 0, 'member has no visible attendance export control');
+  expectEqual(memberReadOnlyResult.editVisible, 0, 'member has no visible event edit control');
+  expectEqual(memberReadOnlyResult.deleteVisible, 0, 'member has no visible event delete control');
   expectEqual(memberReadOnlyResult.declinedAfterReload > 0, true, 'member sees staff attendance result after reload');
   const afterOverride = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
     firestoreAdmin.collection('teams').doc(proTeamId).collection('events').doc(attendanceCreated.body.eventId).get());
