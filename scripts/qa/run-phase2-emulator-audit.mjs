@@ -9151,7 +9151,7 @@ function browserTeamAAttendanceMatrix(session, { teamId, title, memberName, staf
         await dialog.getByRole('tab', { name:'Squad Pulse' }).click();
         const member = dialog.getByText(${JSON.stringify(memberName)}, {exact:true});
         await member.waitFor({state:'visible',timeout:15000});
-        await member.locator('../..').getByText('DECLINED',{exact:true}).waitFor({state:'visible',timeout:15000});
+        await member.locator('../../..').getByText('DECLINED',{exact:true}).waitFor({state:'visible',timeout:15000});
         return dialog;
       };
       await open();

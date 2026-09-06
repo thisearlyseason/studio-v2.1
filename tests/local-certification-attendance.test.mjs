@@ -28,4 +28,5 @@ test('Attendance dispatch uses a dedicated Team A workflow without Pro membershi
   assert.match(workflow,/qa-team-a/);
   assert.match(workflow,/qa-coach-owner-a/);
   assert.doesNotMatch(workflow,/qa-pro|addAttendanceFixtureMembership|withAttendanceMemberships|coaches-corner/);
+  assert.match(source,/member\.locator\('\.\.\/\.\.\/\.\.'\)\.getByText\('DECLINED'/);
 });
