@@ -55,12 +55,15 @@ function safeEventData(value: unknown): Record<string, unknown> {
   for (const key of ['id', 'teamId', 'ownerUserId', 'sourceId', 'sourceType', 'sourceGameId', 'leagueId']) {
     delete data[key];
   }
+  return data;
+}
+
+function assertValidEventInput(data: Record<string, unknown>) {
   try {
     validateTeamEventInput(data);
   } catch (error) {
     throw new EventMutationError(error instanceof Error ? error.message : 'A valid event payload is required.');
   }
-  return data;
 }
 
 async function assertEventAvailability(
@@ -179,6 +182,7 @@ export async function POST(req: NextRequest) {
             createdAt: now,
             updatedAt: now,
           };
+          assertValidEventInput(event);
           const interval = await assertEventAvailability(teamId, occurrence.ref.id, event);
           prepared.push({ ref: occurrence.ref, event, interval });
         }
@@ -217,7 +221,10 @@ export async function POST(req: NextRequest) {
         }
         const submitted = safeEventData(body.event);
         const updates = siblings.docs.map(sibling => ({ ref: sibling.ref, id: sibling.id, event: { ...sibling.data(), ...submitted, updatedAt: now } }));
-        for (const update of updates) await assertEventAvailability(teamId, update.id, update.event);
+        for (const update of updates) {
+          assertValidEventInput(update.event);
+          await assertEventAvailability(teamId, update.id, update.event);
+        }
         for (const update of updates) {
           batch.set(update.ref, update.event, { merge: true });
           const interval = normalizeTeamEventInterval(update.event);
@@ -324,6 +331,7 @@ export async function POST(req: NextRequest) {
 
         const submitted = safeEventData(body.event);
         const eventData = action === 'update' ? { ...existingData, ...submitted } : submitted;
+        assertValidEventInput(eventData);
         const interval = await assertEventAvailability(teamId, eventId, eventData);
         const now = new Date().toISOString();
         const registrationCode = action === 'create' && submitted.isTournament === true
