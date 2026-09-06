@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import { Agent as HttpAgent } from 'node:http';
@@ -8481,16 +8481,23 @@ async function runFeedWorkflowAudit() {
   check('feed-media',await read(imageId),undefined,'image metadata deleted');
   check('feed-media',await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.file(imageRecord.imagePath).exists())[0]),false,'exact image object deleted');
   check('feed-media',(await request('feed-media','qa-team-member',null,`?teamId=${team.id}&postId=${imageId}&media=1`)).status,404,'deleted image route revoked');
-  for(const [name,extra] of [['mime',{imageUrl:'data:image/svg+xml;base64,PHN2Zz4='}],['oversize',{imageUrl:`data:image/png;base64,${Buffer.alloc(5*1024*1024+1).toString('base64')}`}],['missing',{imagePath:`${teamPath}/feed/missing/image`}],['foreign',{imagePath:'teams/foreign/feed/foreign/image'}]]) {
+  for(const [name,extra,suppliedObjectPaths] of [['mime',{imageUrl:'data:image/svg+xml;base64,PHN2Zz4='},[]],['oversize',{imageUrl:`data:image/png;base64,${Buffer.alloc(5*1024*1024+1).toString('base64')}`},[]],['missing',{imagePath:`${teamPath}/feed/missing/image`},[`${teamPath}/feed/missing/image`]],['foreign',{imagePath:'teams/foreign/feed/foreign/image'},['teams/foreign/feed/foreign/image']]]) {
     const title=`${marker} invalid ${name}`;
-    check('feed-media-invalid',(await request('feed-media-invalid','qa-coach-owner-a',{action:'create-post',content:title,...extra})).status,400,`${name} application upload rejected`);
+    const idempotencyKey=`feed-invalid-${name}-${certificationRunId}`;
+    const wouldBePostId=`feed_${createHash('sha256').update(`${uid('qa-coach-owner-a')}:create-post:${idempotencyKey}`).digest('hex')}`;
+    const invalidObjectPaths=[`${teamPath}/feed/${wouldBePostId}/image`,...suppliedObjectPaths];
+    for(const objectPath of invalidObjectPaths) check('feed-media-invalid',await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.file(objectPath).exists())[0]),false,`${name} exact Storage path absent before attempt: ${objectPath}`);
+    check('feed-media-invalid',(await request('feed-media-invalid','qa-coach-owner-a',{action:'create-post',content:title,idempotencyKey,...extra})).status,400,`${name} application upload rejected`);
     const listing=await request('feed-media-invalid','qa-coach-owner-a',null,`?teamId=${team.id}`);
     check('feed-media-invalid',listing.body.posts.some(post=>post.content===title),false,`${name} metadata absent`);
+    for(const objectPath of invalidObjectPaths) check('feed-media-invalid',await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.file(objectPath).exists())[0]),false,`${name} exact Storage path absent after rejection: ${objectPath}`);
   }
   const replayBody={action:'create-post',content:`${marker} replay`,idempotencyKey:`feed-replay-${certificationRunId}`};
   const first=await request('feed-replay','qa-coach-owner-a',replayBody), second=await request('feed-replay','qa-coach-owner-a',replayBody);
   registerPost(first.body.postId);
   check('feed-replay',first.status,201,'first exact post request created');check('feed-replay',second.status,200,'post replay acknowledged');check('feed-replay',second.body.postId,first.body.postId,'same post ID on replay');
+  const replayRows=await request('feed-replay','qa-coach-owner-a',null,`?teamId=${team.id}`);
+  check('feed-replay',replayRows.body.posts.filter(post=>post.content===replayBody.content).length,1,'exactly one post after retry');
   const replayComment={action:'create-comment',postId:first.body.postId,content:`${marker} replay comment`,idempotencyKey:`feed-comment-${certificationRunId}`};
   const firstComment=await request('feed-replay','qa-team-member',replayComment), secondComment=await request('feed-replay','qa-team-member',replayComment);
   check('feed-replay',firstComment.status,201,'first exact comment created');check('feed-replay',secondComment.body.commentId,firstComment.body.commentId,'same comment ID on replay');
