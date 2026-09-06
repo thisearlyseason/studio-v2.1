@@ -75,7 +75,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
-import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, doc, getDoc, updateDoc, collectionGroup, where, getDocs, setDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,6 +103,7 @@ import { format, parseISO } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { RASTER_IMAGE_ACCEPT, validateRasterImage } from '@/lib/storage-upload-policy';
+import { parsePracticeTimestamp, validatePracticeFilmFile, validatePracticeUrl } from '@/lib/practice-content-policy';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -823,8 +824,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
     updateAthleticMetrics, getPlayerStats, addPlayerStat, deletePlayerStat,
     getEvaluations, addEvaluation, getRecruitingContact, updateRecruitingContact,
     getPlayerVideos, addPlayerVideo, updatePlayerVideo, deletePlayerVideo, toggleRecruitingProfile,
-    updatePlayerStat, getStaffEvaluation, storage, updateMember,
-    activeTeam: currentSquad, user
+    updatePlayerStat, getStaffEvaluation, storage, db, updateMember,
+    activeTeam: currentSquad, user, isStaff
   } = useTeam();
   const auth = useAuth();
   const [skillInput, setSkillInput] = useState('');
@@ -852,6 +853,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [manualSeekTime, setManualSeekTime] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const watchProgressSavedRef = useRef<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRepairingIdentity, setIsRepairingIdentity] = useState(false);
   const [deletedStatIds, setDeletedStatIds] = useState<string[]>([]);
@@ -1030,6 +1032,8 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   const handleDeleteVideo = async (videoId: string) => {
     if (!member.playerId || !confirm("Are you sure you want to delete this clip?")) return;
     try {
+      const video = videos.find(item => item.id === videoId);
+      if (video?.storagePath) await deleteObject(ref(storage, video.storagePath));
       await deletePlayerVideo(member.playerId, videoId);
       setVideos(prev => prev.filter(v => v.id !== videoId));
       toast({ title: "Clip Deleted", description: "The tactical asset has been removed from the library." });
@@ -1083,41 +1087,47 @@ function RecruitingProfileManager({ member }: { member: Member }) {
   };
 
   const handleAddFilm = async () => {
-    if (!member.playerId || !filmUrl) return;
+    if (!member.playerId || !filmUrl || !filmTitle.trim()) return;
     
     setIsSyncing(true);
     let finalUrl = filmUrl;
     let thumbnailUrl = null;
+    let uploadedStoragePath: string | null = null;
 
     try {
       // 1. If it's a local file, upload it first
       if (selectedFilmFile) {
+        const fileError = validatePracticeFilmFile(selectedFilmFile);
+        if (fileError) throw new Error(fileError);
         toast({ title: "Syncing Video Resource", description: "Archiving high-fidelity tactical asset to cloud storage..." });
         const fileName = `${Date.now()}_${selectedFilmFile.name}`;
-        const fileRef = ref(storage, `players/${member.playerId}/videos/${fileName}`);
+        const storagePath = `players/${member.playerId}/videos/${fileName}`;
+        uploadedStoragePath = storagePath;
+        const fileRef = ref(storage, storagePath);
         await uploadBytes(fileRef, selectedFilmFile);
         finalUrl = await getDownloadURL(fileRef);
+        await addPlayerVideo(member.playerId, {
+          title: filmTitle.trim(), url: finalUrl, storagePath, type: filmType, comments: [],
+        });
       } else {
+        const urlError = validatePracticeUrl(filmUrl);
+        if (urlError) throw new Error(urlError);
         // 2. Auto-detect YouTube thumbnail for links
         const ytMatch = filmUrl.match(/^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]{11}).*/);
         if (ytMatch && ytMatch[1]) {
           thumbnailUrl = `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
         }
+        await addPlayerVideo(member.playerId, {
+          title: filmTitle.trim(), url: finalUrl, thumbnailUrl: thumbnailUrl ?? undefined, type: filmType, comments: [],
+        });
       }
-
-      await addPlayerVideo(member.playerId, { 
-        title: filmTitle || 'Untitled', 
-        url: finalUrl, 
-        thumbnailUrl: thumbnailUrl ?? undefined, 
-        type: filmType, 
-        comments: [] 
-      });
 
       setFilmTitle(''); setFilmUrl(''); setFilmType('Highlight'); setSelectedFilmFile(null);
       setIsAddFilmOpen(false);
       await loadData();
       toast({ title: "Film Archived", description: `${filmTitle || 'Clip'} added to highlight reel.` });
     } catch (err: any) {
+      if (uploadedStoragePath) await deleteObject(ref(storage, uploadedStoragePath)).catch(() => {});
       toast({ title: "Archival Failed", description: err.message, variant: "destructive" });
     } finally {
       setIsSyncing(false);
@@ -2547,9 +2557,15 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     if(el) el.click();
                  }}><Upload className="h-4 w-4 mr-2" /> Upload File</Button>
               </div>
-              <input type="file" id="film-upload" accept="video/mp4,video/mov,video/webm" className="hidden" onChange={(e) => {
+              <input type="file" id="film-upload" accept="video/mp4,video/quicktime,video/webm,video/x-m4v" className="hidden" onChange={(e) => {
                   const file = e.target.files?.[0];
                   if(file) {
+                    const validationError = validatePracticeFilmFile(file);
+                    if (validationError) {
+                      toast({ title: 'Invalid Video', description: validationError, variant: 'destructive' });
+                      e.target.value = '';
+                      return;
+                    }
                     setSelectedFilmFile(file);
                     setFilmUrl(URL.createObjectURL(file));
                     toast({ title: 'Video Optimized', description: 'Resource prioritized for cloud storage. Ready for archive.' });
@@ -2577,7 +2593,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
           </div>
           <DialogFooter className="p-8 pt-0 gap-3 sm:gap-0">
             <Button variant="ghost" onClick={() => { setIsAddFilmOpen(false); setFilmUrl(''); }} className="rounded-2xl font-black uppercase text-[10px] h-12 px-6">Cancel</Button>
-            <Button onClick={handleAddFilm} disabled={!filmUrl} className="rounded-2xl font-black uppercase text-[10px] px-8 h-12 shadow-xl shadow-primary/20 hover:scale-[1.02] transition-transform">Archive Film</Button>
+            <Button onClick={handleAddFilm} disabled={!filmUrl || !filmTitle.trim()} className="rounded-2xl font-black uppercase text-[10px] px-8 h-12 shadow-xl shadow-primary/20 hover:scale-[1.02] transition-transform">Archive Film</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2671,8 +2687,21 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                          className="absolute inset-0 w-full h-full object-contain" 
                          controls 
                          autoPlay 
+                         onLoadedMetadata={(event) => {
+                           if (selectedVideo && Number.isFinite(event.currentTarget.duration)) {
+                             setSelectedVideo({ ...selectedVideo, durationSeconds: event.currentTarget.duration });
+                           }
+                         }}
                          onTimeUpdate={(e) => {
                             const v = e.currentTarget;
+                            if (member.playerId && selectedVideo?.id && auth.currentUser && v.duration > 0 && v.currentTime / v.duration >= 0.75 && watchProgressSavedRef.current !== selectedVideo.id) {
+                              watchProgressSavedRef.current = selectedVideo.id;
+                              void setDoc(doc(db, 'players', member.playerId, 'videos', selectedVideo.id, 'watchProgress', auth.currentUser.uid), {
+                                userId: auth.currentUser.uid,
+                                percentage: 75,
+                                watchedAt: new Date().toISOString(),
+                              }).catch(() => { watchProgressSavedRef.current = null; });
+                            }
                             if (selectedVideo.segments && selectedVideo.segments.length > 0) {
                                 const seg = selectedVideo.segments[currentSegmentIndex];
                                 if (v.currentTime >= seg.end) {
@@ -2746,7 +2775,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                     ))}
                   </div>
                 </div>
-                <div className="md:col-span-2 p-8 space-y-4 bg-muted/10">
+                {isStaff && <div className="md:col-span-2 p-8 space-y-4 bg-muted/10">
                   <p className="text-[10px] font-black uppercase tracking-widest text-primary">Add Coach Mark</p>
                   <div className="space-y-3">
                     <Input
@@ -2765,8 +2794,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       className="w-full rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20"
                       onClick={async () => {
                         if (!newComment || !selectedVideo?.id || !member.playerId) return;
-                        const parts = commentTimestamp.split(':');
-                        const secs = parts.length === 2 ? parseInt(parts[0]) * 60 + parseInt(parts[1]) : undefined;
+                        let secs: number;
+                        try {
+                          secs = parsePracticeTimestamp(commentTimestamp, selectedVideo.durationSeconds || videoRef.current?.duration);
+                        } catch (error: any) {
+                          toast({ title: 'Invalid Timestamp', description: error?.message || 'Enter a valid timestamp.', variant: 'destructive' });
+                          return;
+                        }
                         const newC: VideoComment = {
                           id: `c_${Date.now()}`,
                           text: newComment,
@@ -2787,7 +2821,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       <Bookmark className="h-3 w-3 mr-2" /> Save Mark
                     </Button>
                   </div>
-                </div>
+                </div>}
                 </div>
               </div>
             </div>

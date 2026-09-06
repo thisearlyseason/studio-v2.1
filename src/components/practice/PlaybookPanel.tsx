@@ -22,6 +22,8 @@ import {
   Edit2,
   Clock,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   CheckCircle2,
   Bell,
   BellOff,
@@ -56,6 +58,7 @@ import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format } from 'date-fns';
 import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
+import { validatePracticeDrill, validatePracticeUrl } from '@/lib/practice-content-policy';
 
 const getYoutubeThumbnail = (url: string) => {
   if (!url) return null;
@@ -78,7 +81,9 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
     return query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('createdAt', 'desc'), limit(20));
   }, [activeTeam?.id, db]);
   const { data: rawDrills, isLoading: isDrillsLoading } = useCollection(drillsQuery);
-  const drills = useMemo(() => rawDrills || [], [rawDrills]);
+  const drills = useMemo(() => (rawDrills || [])
+    .map((drill, originalIndex) => ({ ...drill, originalIndex }))
+    .sort((a, b) => (a.order ?? a.originalIndex) - (b.order ?? b.originalIndex)), [rawDrills]);
 
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
@@ -131,6 +136,13 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
 
   const handleAddDrill = async () => {
     if (!newTitle || !newDesc || !activeTeam || !db) return;
+    const validationError = validatePracticeDrill({ id: editingItemId || undefined, title: newTitle, description: newDesc, estimatedTime: newTime }, drills);
+    const urls = [newUrl, newCoverUrl, ...newMedia.map(media => media.url)].filter(url => url && !url.startsWith('data:image'));
+    const urlError = urls.map(validatePracticeUrl).find(Boolean);
+    if (validationError || urlError) {
+      toast({ title: 'Invalid Drill', description: validationError || urlError || 'Review the drill fields.', variant: 'destructive' });
+      return;
+    }
     try {
       let finalCoverUrl = newCoverUrl;
       if (newCoverUrl?.startsWith('data:image')) {
@@ -163,7 +175,8 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
           comments: [],
           mandatoryWatch: false,
           mandatoryWatchThreshold: 75,
-          watchedBy: {}
+          watchedBy: {},
+          order: drills.length
         });
         toast({ title: "Drill Published", description: "Strategic execution protocol active." });
       }
@@ -178,8 +191,28 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  const moveDrill = async (event: React.MouseEvent, drillId: string, direction: -1 | 1) => {
+    event.stopPropagation();
+    if (!activeTeam || !db || !isStaff) return;
+    const index = drills.findIndex(drill => drill.id === drillId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= drills.length) return;
+    const current = drills[index];
+    const target = drills[targetIndex];
+    await Promise.all([
+      updateDoc(doc(db, 'teams', activeTeam.id, 'drills', current.id), { order: targetIndex, updatedAt: new Date().toISOString() }),
+      updateDoc(doc(db, 'teams', activeTeam.id, 'drills', target.id), { order: index, updatedAt: new Date().toISOString() }),
+    ]);
+    toast({ title: 'Playbook Reordered', description: 'The drill order was saved.' });
+  };
+
   const handleAddFilm = async () => {
     if (!newTitle || !newUrl || !activeTeam || !db) return;
+    const urlError = validatePracticeUrl(newUrl);
+    if (urlError) {
+      toast({ title: 'Invalid Film URL', description: urlError, variant: 'destructive' });
+      return;
+    }
     try {
       if (editingItemId) {
         await updateDoc(doc(db, 'teams', activeTeam.id, 'files', editingItemId), {
@@ -493,7 +526,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-            {viewMode === 'drills' ? filteredDrills.map(drill => (
+            {viewMode === 'drills' ? filteredDrills.map((drill, drillIndex) => (
               <Card key={drill.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
                 <div className="aspect-video bg-black relative overflow-hidden">
                   {drill.coverImageUrl ? (
@@ -534,6 +567,12 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                       <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(drill.comments?.length || 0)} MARKS</Badge>
                       {isStaff && (
                         <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
+                          <Button aria-label={`Move ${drill.title} earlier`} disabled={drillIndex === 0} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground rounded-none" onClick={(event) => moveDrill(event, drill.id, -1)}>
+                            <ChevronUp className="h-3 w-3" />
+                          </Button>
+                          <Button aria-label={`Move ${drill.title} later`} disabled={drillIndex === filteredDrills.length - 1} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground rounded-none border-l" onClick={(event) => moveDrill(event, drill.id, 1)}>
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button aria-label={`Edit ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>

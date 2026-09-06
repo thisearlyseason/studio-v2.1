@@ -116,6 +116,7 @@ beforeEach(async () => {
         id: 'child-player',
         userId: 'youth',
         parentId: 'parent-account',
+        primaryTeamId: 'team-a',
       }),
       setDoc(doc(db, 'teams', 'team-a', 'members', 'removed'), {
         userId: 'removed',
@@ -629,6 +630,24 @@ test('legitimate linked youth membership never inherits roster staff authority',
   await assertSucceeds(getDoc(doc(youthDb, 'teams', 'team-a')));
   await assertFails(setDoc(doc(youthDb, 'teams', 'team-a', 'drills', 'linked-staff'), {
     title: 'must remain denied',
+  }));
+});
+
+test('film metadata and coach marks are staff-only while watch progress is self-keyed', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const youthDb = authenticatedDb('youth');
+  const outsiderDb = authenticatedDb('outsider');
+  const film = doc(ownerDb, 'players', 'child-player', 'videos', 'film-a');
+
+  await assertSucceeds(setDoc(film, { title: 'Team A Film', url: 'https://example.test/film.mp4', comments: [] }));
+  await assertSucceeds(getDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'players', 'child-player', 'videos', 'film-a')));
+  await assertFails(setDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a'), { comments: [{ text: 'forged mark' }] }, { merge: true }));
+  await assertSucceeds(setDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a', 'watchProgress', 'youth'), {
+    userId: 'youth', percentage: 75, watchedAt: '2026-09-06T00:00:00.000Z',
+  }));
+  await assertFails(setDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a', 'watchProgress', 'other-user'), {
+    userId: 'other-user', percentage: 75, watchedAt: '2026-09-06T00:00:00.000Z',
   }));
 });
 

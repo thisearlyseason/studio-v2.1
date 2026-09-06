@@ -276,6 +276,26 @@ test('Calendar views and filters have a dedicated two-viewport operations workfl
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
 });
 
+test('Practice rows use dedicated browser-backed workflows and never fall through to placeholder evidence', async () => {
+  const start = source.indexOf('async function runCertificationOperationsScenarios()');
+  const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
+  const operationsBlock = source.slice(start, end);
+  for (const [scenarioId, functionName] of [
+    ['practice-practice-plans-templates', 'runPracticePlanWorkflowAudit'],
+    ['practice-drill-playbook-crud-search', 'runPracticeDrillWorkflowAudit'],
+    ['practice-film-upload-coach-marks-watch', 'runPracticeFilmWorkflowAudit'],
+  ]) {
+    assert.match(operationsBlock, new RegExp(`scenarioId === '${scenarioId}' && runBrowser`));
+    assert.match(operationsBlock, new RegExp(`await ${functionName}\\(\\)`));
+    assert.match(source, new RegExp(`async function ${functionName}\\(\\)`));
+  }
+  const coachCorner = await readFile(new URL('../src/app/(dashboard)/coaches-corner/page.tsx', import.meta.url), 'utf8');
+  assert.match(coachCorner, /players\/\$\{member\.playerId\}\/videos\/\$\{fileName\}/);
+  assert.match(coachCorner, /players\/\$\{member\.playerId\}\/thumbnails\/\$\{fileName\}/);
+  assert.match(source, /javascript.*credentialed.*private-host.*malformed.*overlong/i);
+  assert.match(source, /negative.*NaN.*beyond-duration/i);
+});
+
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
   const patternsStart = source.indexOf("'calendar-team-family-views-and-filters': Object.freeze({", source.indexOf('const OPERATION_CASE_ASSERTION_PATTERNS'));
   const patternsEnd = source.indexOf("'calendar-ics-create-fetch-revoke'", patternsStart);

@@ -194,6 +194,8 @@ export type PlayerVideo = {
   startAt?: number;
   endAt?: number;
   segments?: { start: number; end: number; title: string }[];
+  storagePath?: string;
+  durationSeconds?: number;
 };
 
 export type Drill = {
@@ -387,6 +389,7 @@ export type TeamEvent = {
   opponent?: string;
   assignments?: EventAssignment[];
   drillIds?: string[]; // References to drills in the playbook/library
+  practiceTemplateId?: string;
   isArchived?: boolean;
   division?: string;
   divisionTitle?: string;
@@ -2713,7 +2716,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const deletePracticeTemplate = useCallback(async (templateId: string) => { 
     if (!isStaff) return;
-    if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'practice_templates', templateId)); 
+    if (activeTeam?.id && db) {
+      const assigned = await getDocs(query(
+        collection(db, 'teams', activeTeam.id, 'events'),
+        where('practiceTemplateId', '==', templateId),
+        limit(1),
+      ));
+      if (!assigned.empty) throw new Error('This protocol is assigned to a practice event and cannot be deleted.');
+      await deleteDoc(doc(db, 'teams', activeTeam.id, 'practice_templates', templateId));
+    }
   }, [activeTeam, db, isStaff]);
   const addFile = useCallback(async (n: string, t: string, sb: number, u: string, c: string, d?: string) => { 
     if (!activeTeam?.id || !db) return;

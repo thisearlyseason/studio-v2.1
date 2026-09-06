@@ -43,6 +43,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { format, parseISO } from 'date-fns';
 import { EventDetailDialog } from '../events/EventDetailDialog';
 import { PlaybookPanel } from '@/components/practice/PlaybookPanel';
+import { validatePracticeTemplate } from '@/lib/practice-content-policy';
 
 export default function PracticeManagementPage() {
   const { 
@@ -96,10 +97,11 @@ export default function PracticeManagementPage() {
 
   const handleSaveTemplate = async () => {
     if (!activeTeam) return;
-    if (!newTitle.trim()) {
+    const validationError = validatePracticeTemplate({ title: newTitle, description: newDesc, drillIds: selectedDrills }, teamDrills || []);
+    if (validationError) {
       toast({
-        title: 'Protocol Title Required',
-        description: 'Enter a title before securing this practice protocol.',
+        title: 'Invalid Protocol',
+        description: validationError,
         variant: 'destructive',
       });
       return;
@@ -122,6 +124,24 @@ export default function PracticeManagementPage() {
       resetForm();
     } catch (e) {
       toast({ title: "Operation Failed", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteTemplate = async (template: PracticeTemplate) => {
+    const assignedEvents = (activeTeamEvents || []).filter(event => event.practiceTemplateId === template.id);
+    if (assignedEvents.length > 0) {
+      toast({
+        title: 'Protocol Is In Use',
+        description: `Remove this protocol from ${assignedEvents.length} assigned practice ${assignedEvents.length === 1 ? 'event' : 'events'} before deleting it.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      await deletePracticeTemplate(template.id);
+      toast({ title: 'Protocol Deleted', description: 'The unused practice protocol was removed.' });
+    } catch (error: any) {
+      toast({ title: 'Delete Failed', description: error?.message || 'The protocol could not be deleted.', variant: 'destructive' });
     }
   };
 
@@ -240,10 +260,10 @@ export default function PracticeManagementPage() {
                     </div>
                     {isStaff && (
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => openEdit(template)}>
+                        <Button aria-label={`Edit ${template.title}`} variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => openEdit(template)}>
                           <Edit2 className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => deletePracticeTemplate(template.id)}>
+                        <Button aria-label={`Delete ${template.title}`} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleDeleteTemplate(template)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

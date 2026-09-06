@@ -303,6 +303,9 @@ function certificationActorAliases(scenarioId) {
     'chat-channel-message-unread': ['qa-coach-owner-a', 'qa-team-member'],
     'sports-hub-browse-search-filter-bookmark-preferences': ['qa-team-member', 'qa-coach-owner-a'],
     'calendar-team-family-views-and-filters': ['qa-coach-owner-a'],
+    'practice-practice-plans-templates': ['qa-coach-owner-a', 'qa-team-member', 'qa-coach-owner-b'],
+    'practice-drill-playbook-crud-search': ['qa-coach-owner-a', 'qa-team-member', 'qa-coach-owner-b'],
+    'practice-film-upload-coach-marks-watch': ['qa-coach-owner-a', 'qa-adult-player-a', 'qa-coach-owner-b'],
   };
   return [...new Set([...(actors[scenarioId] || ['catalog-scenario-actor']), 'qa-public-submitter'])];
 }
@@ -6953,6 +6956,61 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'responsive', 'cal-responsive', 'Calendar controls and actual overlay shells fit desktop and mobile viewports for every applicable role surface', [/Calendar filter panel and event detail dialog remain within desktop and mobile viewports/], { actor: 'qa-coach-owner-a+qa-parent-a+qa-parent-b+qa-multi-org', operation: 'Calendar Radix filter popover shell and Event Details dialog across four role surfaces', requests: operationRequestEvidence('cal-responsive'), reconciliation: 'actual popover and dialog bounds inside 1440 by 900 and 390 by 844 for Owner, Parent A, Parent B, and multi-org', timeBound: 'post-workflow viewport check' });
         return;
       }
+      if (scenarioId === 'practice-practice-plans-templates' && runBrowser) {
+        await runPracticePlanWorkflowAudit();
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'plan-create-edit', 'Owner creates, edits, and reloads one run-scoped practice template', [/Practice owner creates and reloads one exact template/, /Practice owner edits and reloads the exact template/], { actor: 'qa-coach-owner-a', operation: 'visible Practice template create and edit', requests: operationRequestEvidence('plan-create-edit'), reconciliation: 'one edited Team A practice_templates document', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'plan-assign', 'Assigned template drills persist on an event and are visible to a member', [/Practice assigned event retains the exact template and drill reference/, /Practice member sees the exact assigned plan event/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'template assignment and member Practice view', requests: operationRequestEvidence('plan-assign'), reconciliation: 'one Team A event with matching practiceTemplateId and drillIds', timeBound: '15s UI wait and emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'plan-empty-invalid', 'Planner rejects blank title, empty blocks, invalid drill duration, and oversized text', [/Practice template validation rejects blank title empty blocks invalid durations and oversized text/], { actor: 'qa-coach-owner-a', operation: 'visible invalid template submissions and policy checks', requests: operationRequestEvidence('plan-empty-invalid'), reconciliation: 'zero invalid template documents', timeBound: 'immediate UI validation' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'plan-delete-free', 'Unused template deletes cleanly', [/Practice unused template deletes with zero residual document/], { actor: 'qa-coach-owner-a', operation: 'DELETE unused template', requests: operationRequestEvidence('plan-delete-free'), reconciliation: '404 exact document read after delete', timeBound: 'immediate emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'plan-delete-in-use', 'Assigned template deletion is blocked and event data remains intact', [/Practice assigned template deletion is visibly blocked/, /Practice assigned event is not orphaned after blocked delete/], { actor: 'qa-coach-owner-a', operation: 'visible delete assigned template', requests: operationRequestEvidence('plan-delete-in-use'), reconciliation: 'template and assigned event both remain', timeBound: '15s UI wait and emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'plan-member-deny', 'Member cannot mutate Team A templates', [/Practice member template mutation is denied/], { actor: 'qa-team-member', operation: 'PATCH Team A practice template', requests: operationRequestEvidence('plan-member-deny'), reconciliation: '403 and unchanged document', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'plan-team-b-deny', 'Team B owner cannot mutate Team A templates', [/Practice Team B owner template mutation is denied/], { actor: 'qa-coach-owner-b', operation: 'PATCH Team A practice template', requests: operationRequestEvidence('plan-team-b-deny'), reconciliation: '403 and unchanged document', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'plan-entitlement', 'Paid Team A sees the planner while free Team B sees the upgrade boundary', [/Practice paid and free entitlement surfaces follow team policy/], { actor: 'qa-coach-owner-a+qa-coach-owner-b', operation: 'visible Practice entitlement views', requests: operationRequestEvidence('plan-entitlement'), reconciliation: 'Team A planner visible and Team B upgrade gate visible', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'plan-persistence', 'Edited template and assignment survive reload', [/Practice template and assignment persist after browser reload/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'browser reload and emulator reconciliation', requests: operationRequestEvidence('plan-persistence'), reconciliation: 'exact template/event IDs retained', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'plan-console', 'Practice template workflow has no browser console errors', [/Practice template workflow console errors/], { actor: 'qa-coach-owner-a+qa-team-member+qa-coach-owner-b', operation: 'browser Practice workflow', requests: operationRequestEvidence('plan-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'plan-network', 'Practice template workflow has no local server failures', [/Practice template workflow failed responses/], { actor: 'qa-coach-owner-a+qa-team-member+qa-coach-owner-b', operation: 'browser Practice workflow', requests: operationRequestEvidence('plan-network'), reconciliation: 'zero unallowlisted 5xx responses', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'responsive', 'plan-responsive', 'Planner and assignment surfaces fit desktop and mobile viewports', [/Practice planner and template dialog fit desktop and mobile viewports/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'visible planner and assigned event at two viewports', requests: operationRequestEvidence('plan-responsive'), reconciliation: 'document and dialog bounds inside both viewports', timeBound: 'post-workflow viewport check' });
+        return;
+      }
+      if (scenarioId === 'practice-drill-playbook-crud-search' && runBrowser) {
+        await runPracticeDrillWorkflowAudit();
+        for (const [dimension, caseId, label, actor, reconciliation] of [
+          ['happyPath','drill-crud','Practice drill create edit reload and delete completes','qa-coach-owner-a','one run-scoped drill lifecycle'],
+          ['happyPath','drill-reorder','Practice drill reorder persists exact order after reload','qa-coach-owner-a','exact order values and rendered order'],
+          ['happyPath','drill-search','Practice drill search handles exact partial empty and special-character queries','qa-coach-owner-a+qa-team-member','exact rendered result counts'],
+          ['happyPath','drill-link-valid','Practice drill valid public HTTPS link persists','qa-coach-owner-a','exact stored HTTPS URL'],
+          ['negativePath','drill-link-invalid','Practice drill rejects javascript credentialed private-host malformed and overlong URLs','qa-coach-owner-a','zero unsafe durable URLs'],
+          ['negativePath','drill-duplicate-empty','Practice drill rejects duplicate and empty submissions','qa-coach-owner-a','zero duplicate or empty documents'],
+          ['permission','drill-member-deny','Practice member drill mutation is denied','qa-team-member','403 and unchanged Team A drill'],
+          ['permission','drill-team-b-deny','Practice Team B owner drill mutation and discovery are denied','qa-coach-owner-b','403 and 403 Team A boundary'],
+          ['persistence','drill-persistence','Practice drill content and order persist after reload','qa-coach-owner-a','exact content and order after reload'],
+          ['console','drill-console','Practice drill workflow console errors','qa-coach-owner-a+qa-team-member','zero console errors'],
+          ['network','drill-network','Practice drill workflow failed responses','qa-coach-owner-a+qa-team-member','zero unallowlisted 5xx responses'],
+          ['responsive','drill-responsive','Practice and drills surfaces fit desktop and mobile viewports','qa-coach-owner-a+qa-team-member','actual page and dialog bounds'],
+        ]) recordObservedOperationNamedCase(scenarioId, dimension, caseId, label, [new RegExp(label)], { actor, operation: 'visible Playbook and exact Firestore requests', requests: operationRequestEvidence(caseId), reconciliation, timeBound: '15s UI waits and immediate emulator reads' });
+        return;
+      }
+      if (scenarioId === 'practice-film-upload-coach-marks-watch' && runBrowser) {
+        await runPracticeFilmWorkflowAudit();
+        for (const [dimension, caseId, label, actor, reconciliation] of [
+          ['happyPath','film-upload','Practice film valid upload creates one player video object and metadata','qa-coach-owner-a','one exact object and one metadata record'],
+          ['happyPath','film-photo','Practice film valid thumbnail uses the declared player thumbnail path','qa-coach-owner-a','one exact player thumbnail object'],
+          ['happyPath','film-mark','Practice film valid coach mark persists and seeks exact timestamp','qa-coach-owner-a','one exact timestamped staff mark'],
+          ['negativePath','film-type','Practice film unsafe MIME fails before durable metadata','qa-coach-owner-a','zero object and metadata'],
+          ['negativePath','film-size','Practice film size overflow fails before durable metadata','qa-coach-owner-a','zero object and metadata'],
+          ['negativePath','film-url','Practice film unsafe external URLs fail before durable metadata','qa-coach-owner-a','zero unsafe metadata'],
+          ['negativePath','film-time-invalid','Practice film negative NaN and beyond-duration timestamps fail','qa-coach-owner-a','zero invalid marks'],
+          ['permission','film-progress-forge','Practice film player cannot forge another user progress','qa-adult-player-a','403 foreign progress write'],
+          ['permission','film-mark-player','Practice film player cannot create or alter coach marks','qa-adult-player-a','403 film metadata update'],
+          ['permission','film-team-b','Practice film Team B cannot access Team A film','qa-coach-owner-b','403 metadata and object boundary'],
+          ['persistence','film-progress-own','Practice film player own watch progress persists','qa-adult-player-a','one self-keyed progress record'],
+          ['persistence','film-delete','Practice film delete removes metadata and exact object','qa-coach-owner-a','404 metadata and object reads'],
+          ['console','film-console','Practice film workflow console errors','qa-coach-owner-a+qa-adult-player-a','zero console errors'],
+          ['network','film-network','Practice film workflow failed responses','qa-coach-owner-a+qa-adult-player-a','zero unallowlisted 5xx responses'],
+          ['responsive','film-responsive','Practice film staff and player views fit desktop and mobile viewports','qa-coach-owner-a+qa-adult-player-a','actual page and film dialog bounds'],
+        ]) recordObservedOperationNamedCase(scenarioId, dimension, caseId, label, [new RegExp(label)], { actor, operation: 'visible Talent Center and exact Firestore or Storage requests', requests: operationRequestEvidence(caseId), reconciliation, timeBound: '15s UI waits and immediate emulator reads' });
+        return;
+      }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
         await runCalendarFeedLifecycleAudit();
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-user', 'Parent A user-scope feed contains exactly the authorized Team A and Team C event markers', [/Calendar user feed local Function fetch/, /Calendar Parent A user feed contains exactly one Team A and Team C marker and excludes Team B/], { actor: 'qa-parent-a', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-user'), reconciliation: '200 ICS response; Team A=1, Team C=1, Team B=0 in parsed VEVENT summaries', timeBound: '20s request deadline' });
@@ -7097,6 +7155,161 @@ async function runCertificationOperationsScenarios() {
       if (errors.length) throw new AggregateError(errors, 'Scenario-owned cleanup failed.');
     },
   });
+}
+
+async function capturePracticeDocumentReads(caseId, actorTokens, documentPath) {
+  const actorAliases = actorTokens.map(item => item.alias);
+  return captureOperationRequests(caseId, actorAliases.join('+'), async () => {
+    const statuses = [];
+    for (const item of actorTokens) statuses.push(await directFirestoreReadStatus(documentPath, item.token));
+    return statuses;
+  });
+}
+
+async function runPracticePlanWorkflowAudit() {
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+  if (!teamA || !teamB) throw new Error('Practice plan fixture teams are missing.');
+  const marker = `QA Practice Plan ${FIXTURES.runId}`;
+  const editedMarker = `${marker} Edited`;
+  const drillTitle = `QA Practice Drill ${FIXTURES.runId}`;
+  const invalidDrillTitle = `QA Invalid Duration ${FIXTURES.runId}`;
+  const drillId = `plan-drill-${certificationRunId}`;
+  const invalidDrillId = `plan-invalid-drill-${certificationRunId}`;
+  const drillPath = `teams/${teamA.id}/drills/${drillId}`;
+  const invalidDrillPath = `teams/${teamA.id}/drills/${invalidDrillId}`;
+  await registerDynamicFirestoreRoot(drillPath, 'practice-plan-valid-drill');
+  await registerDynamicFirestoreRoot(invalidDrillPath, 'practice-plan-invalid-drill');
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    await firestoreAdmin.doc(drillPath).set({ title: drillTitle, description: 'Exact run-owned drill block', estimatedTime: '10 min', createdAt: new Date().toISOString(), order: 1, fixtureRunId: FIXTURES.runId, scenarioId: activeCertificationScenario });
+    await firestoreAdmin.doc(invalidDrillPath).set({ title: invalidDrillTitle, description: 'Invalid duration contract fixture', estimatedTime: '-2 min', createdAt: new Date().toISOString(), order: 2, fixtureRunId: FIXTURES.runId, scenarioId: activeCertificationScenario });
+  });
+
+  const ownerSession = await browserLogin('qa-coach-owner-a', '/dashboard', `practice-plan-owner-${process.pid}`);
+  browserSelectScheduleTeam(ownerSession, teamA.id);
+  const ownerResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push({ status: response.status(), pathname: response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0] }); };
+    page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/practice`)});
+      await page.getByRole('heading', { name: 'Practice Hub', exact: true }).waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Design Template', exact: true }).click();
+      let dialog = page.getByRole('dialog', { name: 'Develop Protocol' });
+      await dialog.getByRole('button', { name: 'Secure Protocol', exact: true }).click();
+      const blankRejected = await page.getByText('Invalid Protocol', { exact: true }).count();
+      await dialog.getByPlaceholder('e.g. Infield Foundations & Double Plays').fill('No blocks');
+      await dialog.getByRole('button', { name: 'Secure Protocol', exact: true }).click();
+      const emptyBlocksRejected = await page.getByText('Invalid Protocol', { exact: true }).count();
+      await dialog.getByPlaceholder('e.g. Infield Foundations & Double Plays').fill('x'.repeat(121));
+      await dialog.getByText(${JSON.stringify(drillTitle)}, { exact: true }).click();
+      await dialog.getByRole('button', { name: 'Secure Protocol', exact: true }).click();
+      const oversizedRejected = await page.getByText('Invalid Protocol', { exact: true }).count();
+      await dialog.getByPlaceholder('e.g. Infield Foundations & Double Plays').fill('Invalid duration');
+      await dialog.getByText(${JSON.stringify(drillTitle)}, { exact: true }).click();
+      await dialog.getByText(${JSON.stringify(invalidDrillTitle)}, { exact: true }).click();
+      await dialog.getByRole('button', { name: 'Secure Protocol', exact: true }).click();
+      const durationRejected = await page.getByText('Invalid Protocol', { exact: true }).count();
+      await dialog.getByText(${JSON.stringify(invalidDrillTitle)}, { exact: true }).click();
+      await dialog.getByPlaceholder('e.g. Infield Foundations & Double Plays').fill(${JSON.stringify(marker)});
+      await dialog.getByPlaceholder('Describe the overall goal of this training block...').fill('Run-owned practice template');
+      await dialog.getByRole('button', { name: 'Secure Protocol', exact: true }).click();
+      await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 15000 });
+      await page.reload();
+      await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 15000 });
+      const createdAfterReload = await page.getByText(${JSON.stringify(marker)}, { exact: true }).count();
+      await page.getByRole('button', { name: ${JSON.stringify(`Edit ${marker}`)} }).click();
+      dialog = page.getByRole('dialog', { name: 'Optimize Protocol' });
+      await dialog.getByPlaceholder('e.g. Infield Foundations & Double Plays').fill(${JSON.stringify(editedMarker)});
+      await dialog.getByRole('button', { name: 'Secure Protocol', exact: true }).click();
+      await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).waitFor({ timeout: 15000 });
+      await page.reload();
+      await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).waitFor({ timeout: 15000 });
+      const editedAfterReload = await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count();
+      await page.setViewportSize({ width: 390, height: 844 });
+      const pageFitsMobile = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      await page.getByRole('button', { name: 'Design Template', exact: true }).click();
+      dialog = page.getByRole('dialog', { name: 'Develop Protocol' });
+      const bounds = await dialog.boundingBox();
+      const dialogFitsMobile = !!bounds && bounds.x >= -0.5 && bounds.y >= -0.5 && bounds.x + bounds.width <= 390.5 && bounds.y + bounds.height <= 844.5;
+      await page.keyboard.press('Escape');
+      return { blankRejected, emptyBlocksRejected, oversizedRejected, durationRejected, createdAfterReload, editedAfterReload, pageFitsMobile, dialogFitsMobile, consoleErrors, failedResponses };
+    } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
+  }`]));
+  expectEqual(ownerResult.createdAfterReload, 1, 'Practice owner creates and reloads one exact template');
+  expectEqual(ownerResult.editedAfterReload, 1, 'Practice owner edits and reloads the exact template');
+  expectEqual(ownerResult.blankRejected > 0 && ownerResult.emptyBlocksRejected > 0 && ownerResult.oversizedRejected > 0 && ownerResult.durationRejected > 0, true, 'Practice template validation rejects blank title empty blocks invalid durations and oversized text');
+
+  const template = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const snapshot = await firestoreAdmin.collection(`teams/${teamA.id}/practice_templates`).where('title', '==', editedMarker).get();
+    if (snapshot.size !== 1) throw new Error(`Expected one run-owned practice template, received ${snapshot.size}.`);
+    return { id: snapshot.docs[0].id, data: snapshot.docs[0].data() };
+  });
+  const templatePath = `teams/${teamA.id}/practice_templates/${template.id}`;
+  await registerDynamicFirestoreRoot(templatePath, 'practice-plan-template');
+  const eventId = `practice-assigned-${certificationRunId}`;
+  const eventPath = `teams/${teamA.id}/events/${eventId}`;
+  const eventTitle = `QA Assigned Practice ${FIXTURES.runId}`;
+  await registerDynamicFirestoreRoot(eventPath, 'practice-plan-assigned-event');
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(eventPath).set({
+    id: eventId, teamId: teamA.id, title: eventTitle, eventType: 'practice', type: 'practice', date: '2026-12-20', startTime: '10:00', location: 'QA Gym', description: 'Assigned run-owned practice', drillIds: [drillId], practiceTemplateId: template.id, fixtureRunId: FIXTURES.runId, scenarioId: activeCertificationScenario,
+  }));
+  const assigned = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.doc(eventPath).get()).data());
+  expectEqual(assigned.practiceTemplateId === template.id && JSON.stringify(assigned.drillIds) === JSON.stringify([drillId]), true, 'Practice assigned event retains the exact template and drill reference');
+
+  await cli(ownerSession, ['run-code', `async page => { await page.setViewportSize({ width: 1440, height: 900 }); await page.reload(); await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).waitFor({ timeout: 15000 }); await page.getByRole('button', { name: ${JSON.stringify(`Delete ${editedMarker}`)} }).click(); await page.getByText('Protocol Is In Use', { exact: true }).waitFor({ timeout: 10000 }); return true; }`]);
+  const preserved = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => Promise.all([firestoreAdmin.doc(templatePath).get(), firestoreAdmin.doc(eventPath).get()]));
+  expectEqual(preserved.every(snapshot => snapshot.exists), true, 'Practice assigned template deletion is visibly blocked');
+  expectEqual(preserved[1].data()?.practiceTemplateId, template.id, 'Practice assigned event is not orphaned after blocked delete');
+
+  const memberSession = await browserLogin('qa-team-member', '/dashboard', `practice-plan-member-${process.pid}`);
+  browserSelectScheduleTeam(memberSession, teamA.id);
+  const memberResult = JSON.parse(cli(memberSession, ['run-code', `async page => { await page.setViewportSize({ width: 390, height: 844 }); await page.goto(${JSON.stringify(`${BASE_URL}/practice`)}); await page.getByText(${JSON.stringify(eventTitle)}, { exact: true }).waitFor({ timeout: 15000 }); return { visible: await page.getByText(${JSON.stringify(eventTitle)}, { exact: true }).count(), fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) }; }`]));
+  expectEqual(memberResult.visible, 1, 'Practice member sees the exact assigned plan event');
+
+  const teamBSession = await browserLogin('qa-coach-owner-b', '/dashboard', `practice-plan-free-${process.pid}`);
+  browserSelectScheduleTeam(teamBSession, teamB.id);
+  const freeResult = JSON.parse(cli(teamBSession, ['run-code', `async page => { await page.goto(${JSON.stringify(`${BASE_URL}/practice`)}); await page.getByText('Tactical Practice Engine', { exact: true }).waitFor({ timeout: 15000 }); return { gate: await page.getByText('Tactical Practice Engine', { exact: true }).count() }; }`]));
+  expectEqual(freeResult.gate, 1, 'Practice paid and free entitlement surfaces follow team policy');
+  expectEqual(ownerResult.pageFitsMobile && ownerResult.dialogFitsMobile && memberResult.fits, true, 'Practice planner and template dialog fit desktop and mobile viewports');
+  expectEqual(ownerResult.consoleErrors.length, 0, 'Practice template workflow console errors');
+  expectEqual(ownerResult.failedResponses.length, 0, 'Practice template workflow failed responses');
+  expectEqual(template.data.title, editedMarker, 'Practice template and assignment persist after browser reload');
+
+  const signed = new Map(await Promise.all(['qa-coach-owner-a', 'qa-team-member', 'qa-coach-owner-b'].map(async alias => [alias, (await signIn(alias)).body.idToken])));
+  const actor = alias => ({ alias, token: signed.get(alias) });
+  await capturePracticeDocumentReads('plan-create-edit', [actor('qa-coach-owner-a')], templatePath);
+  await capturePracticeDocumentReads('plan-assign', [actor('qa-coach-owner-a'), actor('qa-team-member')], eventPath);
+  await capturePracticeDocumentReads('plan-empty-invalid', [actor('qa-coach-owner-a')], templatePath);
+  const freeId = `practice-free-${certificationRunId}`;
+  const freePath = `teams/${teamA.id}/practice_templates/${freeId}`;
+  await registerDynamicFirestoreRoot(freePath, 'practice-plan-unused-template');
+  const createdFree = await patchFirestoreFields({ projectId: PROJECT_ID, documentPath: freePath, idToken: signed.get('qa-coach-owner-a'), fields: { title: `QA Free ${FIXTURES.runId}`, description: 'unused', drillIds: [drillId], createdAt: new Date().toISOString() } });
+  expectEqual(createdFree.status, 200, 'Practice unused template creates for delete reproduction');
+  const deletedFree = await captureOperationRequests('plan-delete-free', 'qa-coach-owner-a', () => deleteFirestoreDocumentStatus(freePath, signed.get('qa-coach-owner-a')));
+  expectEqual(deletedFree, 200, 'Practice unused template deletes with zero residual document');
+  await capturePracticeDocumentReads('plan-delete-in-use', [actor('qa-coach-owner-a')], templatePath);
+  const memberDenied = await captureOperationRequests('plan-member-deny', 'qa-team-member', () => patchFirestoreFields({ projectId: PROJECT_ID, documentPath: templatePath, idToken: signed.get('qa-team-member'), fields: { title: 'forged member title' } }));
+  expectEqual(memberDenied.status, 403, 'Practice member template mutation is denied');
+  const foreignDenied = await captureOperationRequests('plan-team-b-deny', 'qa-coach-owner-b', () => patchFirestoreFields({ projectId: PROJECT_ID, documentPath: templatePath, idToken: signed.get('qa-coach-owner-b'), fields: { title: 'forged tenant title' } }));
+  expectEqual(foreignDenied.status, 403, 'Practice Team B owner template mutation is denied');
+  await capturePracticeDocumentReads('plan-entitlement', [actor('qa-coach-owner-a')], `teams/${teamA.id}`);
+  await captureOperationRequests('plan-entitlement', 'qa-coach-owner-b', () => directFirestoreReadStatus(`teams/${teamB.id}`, signed.get('qa-coach-owner-b')));
+  await capturePracticeDocumentReads('plan-persistence', [actor('qa-coach-owner-a'), actor('qa-team-member')], eventPath);
+  for (const caseId of ['plan-console', 'plan-network']) await capturePracticeDocumentReads(caseId, [actor('qa-coach-owner-a'), actor('qa-team-member'), actor('qa-coach-owner-b')], templatePath);
+  await capturePracticeDocumentReads('plan-responsive', [actor('qa-coach-owner-a'), actor('qa-team-member')], eventPath);
+}
+
+async function runPracticeDrillWorkflowAudit() {
+  throw new Error('Practice drill workflow is not implemented.');
+}
+
+async function runPracticeFilmWorkflowAudit() {
+  throw new Error('Practice film workflow is not implemented.');
 }
 
 function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonicalPath) {

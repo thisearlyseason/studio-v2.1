@@ -37,6 +37,21 @@ export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
     permission: ['rem-pref-off', 'rem-removed', 'rem-sender'], persistence: ['rem-duplicate-run', 'rem-time-boundary', 'rem-retry'],
     console: ['rem-redaction'], network: ['rem-network'], responsive: ['rem-responsive-na'],
   }),
+  'practice-practice-plans-templates': Object.freeze({
+    happyPath: ['plan-create-edit', 'plan-assign'], negativePath: ['plan-empty-invalid', 'plan-delete-free', 'plan-delete-in-use'],
+    permission: ['plan-member-deny', 'plan-team-b-deny', 'plan-entitlement'], persistence: ['plan-persistence'],
+    console: ['plan-console'], network: ['plan-network'], responsive: ['plan-responsive'],
+  }),
+  'practice-drill-playbook-crud-search': Object.freeze({
+    happyPath: ['drill-crud', 'drill-reorder', 'drill-search', 'drill-link-valid'], negativePath: ['drill-link-invalid', 'drill-duplicate-empty'],
+    permission: ['drill-member-deny', 'drill-team-b-deny'], persistence: ['drill-persistence'],
+    console: ['drill-console'], network: ['drill-network'], responsive: ['drill-responsive'],
+  }),
+  'practice-film-upload-coach-marks-watch': Object.freeze({
+    happyPath: ['film-upload', 'film-photo', 'film-mark'], negativePath: ['film-type', 'film-size', 'film-url', 'film-time-invalid'],
+    permission: ['film-progress-forge', 'film-mark-player', 'film-team-b'], persistence: ['film-progress-own', 'film-delete'],
+    console: ['film-console'], network: ['film-network'], responsive: ['film-responsive'],
+  }),
 });
 
 // This registry is intentionally separate from cleanup ownership. Several

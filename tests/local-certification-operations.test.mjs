@@ -65,6 +65,18 @@ test('all frozen Task 5 schedule case IDs are present exactly once across their 
   }
 });
 
+test('all frozen Task 5 practice case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = {
+    'practice-practice-plans-templates': ['plan-create-edit', 'plan-assign', 'plan-empty-invalid', 'plan-delete-free', 'plan-delete-in-use', 'plan-member-deny', 'plan-team-b-deny', 'plan-entitlement', 'plan-responsive'],
+    'practice-drill-playbook-crud-search': ['drill-crud', 'drill-reorder', 'drill-search', 'drill-link-valid', 'drill-link-invalid', 'drill-duplicate-empty', 'drill-member-deny', 'drill-team-b-deny', 'drill-responsive'],
+    'practice-film-upload-coach-marks-watch': ['film-upload', 'film-photo', 'film-type', 'film-size', 'film-url', 'film-mark', 'film-time-invalid', 'film-progress-own', 'film-progress-forge', 'film-mark-player', 'film-team-b', 'film-delete', 'film-responsive'],
+  };
+  for (const [scenarioId, caseIds] of Object.entries(expected)) {
+    const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]).flat();
+    for (const caseId of caseIds) assert.equal(actual.filter(value => value === caseId).length, 1, `${scenarioId}/${caseId}`);
+  }
+});
+
 test('operations evidence assigns an assertion to only its declared exact case', () => {
   const assertions = [
     { label: 'owner event create persists after reload' },

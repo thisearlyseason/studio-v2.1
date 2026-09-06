@@ -673,30 +673,53 @@ service cloud.firestore {
         playerId == request.auth.uid
       ));
 
+      match /videos/{videoId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
+          isTeamCoachOfPlayer(playerId)
+        ));
+        // Film metadata and coach marks are staff-authored. Players record only
+        // their own progress in the nested, user-keyed ledger below.
+        allow create, update, delete: if isSuperAdmin() || (isSignedIn() && isTeamCoachOfPlayer(playerId));
+
+        match /watchProgress/{userId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && (
+            userId == request.auth.uid || isTeamCoachOfPlayer(playerId)
+          ));
+          allow create, update: if isSignedIn() && userId == request.auth.uid &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.keys().hasOnly(['userId', 'percentage', 'watchedAt']) &&
+            request.resource.data.percentage is number &&
+            request.resource.data.percentage >= 0 && request.resource.data.percentage <= 100;
+          allow delete: if isSuperAdmin() || (isSignedIn() && (userId == request.auth.uid || isTeamCoachOfPlayer(playerId)));
+        }
+      }
+
       match /{subCollection}/{docId} {
         // Do not expose arbitrary future player subcollections when a public
         // recruiting profile is enabled. The public API whitelists its payload.
-        allow read: if isSuperAdmin() || (isSignedIn() && (
+        allow read: if subCollection != 'videos' && (isSuperAdmin() || (isSignedIn() && (
             get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
             get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
             isTeamCoachOfPlayer(playerId)
-          ));
+          )));
 
         // ── CREATE / UPDATE ──────────────────────────────────────────────────
         // request.resource.data is available for create and update.
         // Coaches include updatedByTeamId in written data; rule verifies ownership.
-        allow create, update: if isSuperAdmin() || (isSignedIn() && (
+        allow create, update: if subCollection != 'videos' && (isSuperAdmin() || (isSignedIn() && (
           get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
           get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
           isTeamCoachOfPlayer(playerId) ||
           playerId == request.auth.uid
-        ));
+        )));
 
         // ── DELETE ───────────────────────────────────────────────────────────
         // request.resource is NULL for deletes — use resource.data (the existing doc).
         // If updatedByTeamId was set when the doc was last written, use it.
         // Otherwise fall back to player-self or coach checks.
-        allow delete: if isSuperAdmin() || (isSignedIn() && (
+        allow delete: if subCollection != 'videos' && (isSuperAdmin() || (isSignedIn() && (
           get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
           get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
           isTeamCoachOfPlayer(playerId) ||
@@ -704,7 +727,7 @@ service cloud.firestore {
           (resource.data.get('updatedByTeamId', '') != '' &&
            exists(/databases/$(database)/documents/teams/$(resource.data.updatedByTeamId)) &&
            isTeamOwner(resource.data.updatedByTeamId))
-        ));
+        )));
       }
     }
 

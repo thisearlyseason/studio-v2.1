@@ -273,6 +273,7 @@ export default function EventsPage() {
   const [opponent, setOpponent] = useState('');
   const [assignments, setAssignments] = useState<{ id: string; title: string, assigneeId: string | null, assigneeName?: string | null }[]>([]);
   const [selectedDrillIds, setSelectedDrillIds] = useState<string[]>([]);
+  const [selectedPracticeTemplateId, setSelectedPracticeTemplateId] = useState<string>('');
   const [recurrenceCount, setRecurrenceCount] = useState('1');
 
   const db = useFirestore();
@@ -383,7 +384,8 @@ export default function EventsPage() {
           ...a,
           status: a.assigneeId ? 'claimed' : 'open'
         })),
-        drillIds: eventType === 'practice' ? selectedDrillIds : []
+        drillIds: eventType === 'practice' ? selectedDrillIds : [],
+        practiceTemplateId: eventType === 'practice' && selectedPracticeTemplateId ? selectedPracticeTemplateId : ''
       }; 
       const seriesCount = Number(recurrenceCount);
       const seriesPayload = editingSeries ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'date' && key !== 'endDate')) : payload;
@@ -416,7 +418,7 @@ export default function EventsPage() {
   };
 
   const resetForm = () => {
-    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setEditingSeries(false); setAssignments([]); setSelectedDrillIds([]); setRecurrenceCount('1');
+    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setEditingSeries(false); setAssignments([]); setSelectedDrillIds([]); setSelectedPracticeTemplateId(''); setRecurrenceCount('1');
   };
 
   const handleEdit = (event: TeamEvent) => { 
@@ -432,6 +434,7 @@ export default function EventsPage() {
     setAssignments(event.assignments || []);
     setOpponent(event.opponent || '');
     setSelectedDrillIds(event.drillIds || []);
+    setSelectedPracticeTemplateId(event.practiceTemplateId || '');
     setIsCreateOpen(true); 
   };
 
@@ -448,6 +451,7 @@ export default function EventsPage() {
     setAssignments(event.assignments || []);
     setOpponent(event.opponent || '');
     setSelectedDrillIds(event.drillIds || []);
+    setSelectedPracticeTemplateId(event.practiceTemplateId || '');
     setIsCreateOpen(true);
   };
 
@@ -684,9 +688,10 @@ export default function EventsPage() {
                 <div className="pt-6 border-t space-y-6 animate-in slide-in-from-bottom-2 duration-500">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-primary">Load Protocol Template</Label>
-                    <Select onValueChange={(val) => {
+                    <Select value={selectedPracticeTemplateId || undefined} onValueChange={(val) => {
                       const template = practiceTemplates?.find(t => t.id === val);
                       if (template) {
+                        setSelectedPracticeTemplateId(template.id);
                         setSelectedDrillIds(template.drillIds || []);
                         if (!newTitle) setNewTitle(template.title);
                         if (!newDescription) setNewDescription(template.description);
