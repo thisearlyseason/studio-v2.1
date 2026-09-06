@@ -588,6 +588,7 @@ service cloud.firestore {
         // Do not let this compatibility fallback broaden any explicitly
         // authorized subcollection above. Firestore ORs overlapping matches.
         allow read: if !(subCollection in [
+          'feedPosts', 'feedOperations', 'feedAudit',
           'members', 'events', 'incidents', 'games', 'fundraising',
           'paymentItems', 'payments', 'alerts', 'groupChats',
           'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
@@ -596,6 +597,7 @@ service cloud.firestore {
           (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
         );
         allow write: if !(subCollection in [
+          'feedPosts', 'feedOperations', 'feedAudit',
           'members', 'events', 'incidents', 'games', 'fundraising',
           'paymentItems', 'payments', 'alerts', 'groupChats',
           'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
@@ -605,6 +607,7 @@ service cloud.firestore {
 
         match /{subSubCollection}/{subDocId} {
           allow read: if !(subCollection in [
+            'feedPosts', 'feedOperations', 'feedAudit',
             'members', 'events', 'incidents', 'games', 'fundraising',
             'paymentItems', 'payments', 'alerts', 'groupChats',
             'coachWaiverSignatures'
@@ -613,6 +616,7 @@ service cloud.firestore {
             (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
           );
           allow write: if !(subCollection in [
+            'feedPosts', 'feedOperations', 'feedAudit',
             'members', 'events', 'incidents', 'games', 'fundraising',
             'paymentItems', 'payments', 'alerts', 'groupChats',
             'coachWaiverSignatures'

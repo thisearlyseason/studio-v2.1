@@ -21,6 +21,18 @@ import {
 const projectId = 'demo-the-squad-rules-test';
 let testEnv;
 
+test('feed posts comments receipts and audit cannot bypass authenticated audience service',async()=>{
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    for(const path of ['feedPosts/private','feedPosts/private/comments/private','feedOperations/receipt','feedAudit/audit']) await setDoc(doc(db,`teams/team-a/${path}`),{audience:'coaches',content:'private'});
+  });
+  for(const uid of ['member','owner']) {const db=authenticatedDb(uid);for(const path of ['feedPosts/private','feedPosts/private/comments/private','feedOperations/receipt','feedAudit/audit']) {
+    const ref=doc(db,`teams/team-a/${path}`);
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref,{content:'forged'}));
+  }}
+});
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId,

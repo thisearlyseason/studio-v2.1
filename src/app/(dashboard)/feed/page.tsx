@@ -60,15 +60,12 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { useFeedRead } from '@/hooks/use-feed-read';
+import { FeedMedia } from '@/components/feed-media';
+import { validateRasterImage, RASTER_IMAGE_ACCEPT } from '@/lib/storage-upload-policy';
 
 function CommentList({ postId, teamId, isAdmin, currentUserId, onDeleteComment }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string, onDeleteComment: (postId: string, commentId: string) => Promise<void> }) {
-  const db = useFirestore();
-  const q = useMemoFirebase(() => {
-    if (!db || !teamId || !postId) return null;
-    return query(collection(db, 'teams', teamId, 'feedPosts', postId, 'comments'), orderBy('createdAt', 'asc'), limit(50));
-  }, [db, teamId, postId]);
-  
-  const { data: comments, isLoading } = useCollection(q);
+  const { data: comments, isLoading } = useFeedRead(teamId,postId);
 
   if (isLoading) return <div className="p-2 text-[10px] text-muted-foreground animate-pulse">Loading comments...</div>;
   if (!comments || comments.length === 0) return null;
@@ -123,11 +120,6 @@ export default function FeedPage() {
     }
   }, [isParent, activeTeam?.parentFeedEnabled, router]);
   
-  const postsQ = useMemoFirebase(() => {
-    if (!db || !activeTeam?.id || !user?.id) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'feedPosts'), orderBy('createdAt', 'desc'), limit(20));
-  }, [db, activeTeam?.id, user?.id]);
-
   const eventsQ = useMemoFirebase(() => {
     if (!db || !activeTeam?.id || !user?.id) return null;
     return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc'), limit(3));
@@ -138,12 +130,15 @@ export default function FeedPage() {
     return query(collection(db, 'teams', activeTeam.id, 'games'), orderBy('date', 'desc'), limit(10));
   }, [db, activeTeam?.id, user?.id]);
 
-  const { data: posts } = useCollection(postsQ);
+  const { data: posts, error: feedReadError } = useFeedRead(activeTeam?.id);
   const { data: events } = useCollection(eventsQ);
   const { data: games } = useCollection(gamesQ);
 
   const [newPostContent, setNewPostContent] = useState('');
   const [imageUrl, setImageUrl] = useState<string | undefined>();
+  const [audience,setAudience] = useState('everyone');
+  const pendingRequestKeys = useRef(new Map<string,string>());
+  const [isSending,setIsSending] = useState(false);
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
   const [isUpdatingHero, setIsUpdatingHero] = useState(false);
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
@@ -157,7 +152,7 @@ export default function FeedPage() {
   const activeOptionIdxRef = useRef<number | null>(null);
 
   if (!activeTeam) return null;
-  const isAdmin = activeTeam.role === 'Admin' || isSuperAdmin;
+  const isAdmin = isStaff || isSuperAdmin;
   const canReadFeed = hasFeature('live_feed_read');
   const canPost = isStaff || isPlayer || (isParent && activeTeam.parentPostingEnabled); 
   const canComment = isStaff || isPlayer || (isParent && activeTeam.parentCommentsEnabled);
@@ -211,13 +206,18 @@ export default function FeedPage() {
   const runFeedAction = async (payload: Record<string, unknown>) => {
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Please sign in again.');
+    const requestIdentity = JSON.stringify({teamId:activeTeam.id,...payload});
+    const creates = payload.action === 'create-post' || payload.action === 'create-comment';
+    let idempotencyKey = pendingRequestKeys.current.get(requestIdentity);
+    if (creates && !idempotencyKey) {idempotencyKey=crypto.randomUUID();pendingRequestKeys.current.set(requestIdentity,idempotencyKey);}
     const response = await fetch('/api/teams/feed/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ teamId: activeTeam.id, ...payload }),
+      body: JSON.stringify({ teamId: activeTeam.id, ...payload, ...(creates ? {idempotencyKey} : {}) }),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || 'Unable to update the squad feed.');
+    pendingRequestKeys.current.delete(requestIdentity);
     return result;
   };
 
@@ -230,14 +230,15 @@ export default function FeedPage() {
   };
 
   const handlePost = async () => {
-    if (!newPostContent.trim() && !imageUrl) return;
+    if (isSending || (!newPostContent.trim() && !imageUrl)) return;
+    setIsSending(true);
     try {
-      await runFeedAction({ action: 'create-post', content: newPostContent, imageUrl: imageUrl || null });
+      await runFeedAction({ action: 'create-post', content: newPostContent, imageUrl: imageUrl || null, audience });
       setNewPostContent('');
       setImageUrl(undefined);
     } catch (error) {
       reportFeedError(error);
-    }
+    } finally {setIsSending(false);}
   };
 
   const handleCreatePoll = async () => {
@@ -309,6 +310,7 @@ export default function FeedPage() {
 
   return (
     <div className="space-y-10 pb-20">
+      {feedReadError && <p role="alert">{feedReadError}</p>}
       <div className="space-y-6 lg:space-y-8 max-w-4xl mx-auto w-full">
         {/* Team Hero Section */}
         <section className="relative h-48 sm:h-64 lg:h-80 rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl group ring-1 ring-black/5">
@@ -368,8 +370,10 @@ export default function FeedPage() {
                   )}
 
                   <div className="flex items-center gap-2 lg:gap-4 pt-4 mt-2 lg:mt-4 border-t">
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => {
+                    <input type="file" ref={fileInputRef} className="hidden" accept={RASTER_IMAGE_ACCEPT} onChange={(e) => {
                       if (e.target.files?.[0]) {
+                        const invalid = validateRasterImage(e.target.files[0]);
+                        if (invalid) { reportFeedError(new Error(invalid)); e.target.value=''; return; }
                         const reader = new FileReader();
                         reader.onload = (ev) => setImageUrl(ev.target?.result as string);
                         reader.readAsDataURL(e.target.files[0]);
@@ -391,8 +395,9 @@ export default function FeedPage() {
                       </TooltipTrigger>
                       <TooltipContent>Initialize Tactical Poll</TooltipContent>
                     </Tooltip>
-                    <Button disabled={!newPostContent.trim() && !imageUrl} onClick={handlePost} className="ml-auto rounded-full px-6 lg:px-8 h-10 lg:h-12 font-black uppercase text-[9px] lg:text-[11px] tracking-widest shadow-lg lg:shadow-xl shadow-primary/20">Post to Squad</Button>
+                    <Button disabled={isSending || (!newPostContent.trim() && !imageUrl)} onClick={handlePost} className="ml-auto rounded-full px-6 lg:px-8 h-10 lg:h-12 font-black uppercase text-[9px] lg:text-[11px] tracking-widest shadow-lg lg:shadow-xl shadow-primary/20">Post to Squad</Button>
                   </div>
+                  {isStaff && <label className="flex items-center gap-2 text-sm">Post audience<select aria-label="Post audience" value={audience} onChange={event=>setAudience(event.target.value)} className="max-w-full rounded border p-2"><option value="everyone">Everyone</option><option value="coaches">Coaches</option><option value="parents">Parents</option><option value="players">Players</option></select></label>}
                 </div>
               </div>
             </CardContent>
@@ -454,7 +459,7 @@ export default function FeedPage() {
                 ) : (
                   <p className="text-base lg:text-lg leading-relaxed font-medium text-foreground/80 break-words">{post.content}</p>
                 )}
-                {post.imageUrl && <img src={post.imageUrl} className="rounded-2xl lg:rounded-2xl w-full h-auto object-cover max-h-[400px] lg:max-h-[600px] border shadow-inner" alt="Feed media" />}
+                {post.imagePath ? <FeedMedia teamId={activeTeam.id} postId={post.id}/> : post.imageUrl && <img src={post.imageUrl} className="rounded-2xl lg:rounded-2xl w-full h-auto object-cover max-h-[400px] lg:max-h-[600px] border shadow-inner" alt="Feed media" />}
               </CardContent>
               <CardFooter className="flex flex-col border-t border-muted/30 pt-4 lg:pt-6 pb-6 lg:pb-8 gap-4 lg:gap-6 px-6 lg:px-8">
                 <div className="flex items-center gap-4 lg:gap-8 w-full">

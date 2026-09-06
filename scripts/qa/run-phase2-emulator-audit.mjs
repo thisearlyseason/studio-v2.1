@@ -32,6 +32,7 @@ import { validateRsvpRoleObservations } from './certification/local/rsvp-observa
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
 import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark, observeFilmDeletionReconciliation } from './certification/local/film-playback.mjs';
 import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent, reorderPracticeDrill, waitForPracticeDeleteResponse} from './certification/local/practice-browser.mjs';
+import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -6954,6 +6955,18 @@ async function runCertificationOperationsScenarios() {
         }
         return;
       }
+      if (scenarioId === 'feed-post-media-comment-moderation' && runBrowser) {
+        await runFeedWorkflowAudit();
+        for (const [dimension,caseIds] of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId])) for (const caseId of caseIds) {
+          const requests = operationRequestEvidence(caseId);
+          recordObservedOperationNamedCase(scenarioId,dimension,caseId,`${caseId} completed with exact actors and owned state`,[new RegExp(`^Feed ${caseId}:`)],{
+            actor:[...new Set(requests.map(request=>request.actorAlias))].sort().join('+'),
+            operation:'visible Feed interaction or authenticated Feed application request',requests,
+            reconciliation:'case-owned exact post/comment/object/audit and response assertions',timeBound:'15s UI and 20s HTTP deadlines',
+          });
+        }
+        return;
+      }
       if (scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser) {
         await runSportsHubBrowseWorkflowAudit();
         for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
@@ -8277,6 +8290,149 @@ async function runSurfaceSmokeAudit({ remainderOnly = false, includeMember = tru
     { path: '/club', expected: '/club' },
     { path: '/competition', expected: '/competition' },
   ], { mobile: true }), 'trusted admin remaining surface sweep');
+}
+
+async function runFeedWorkflowAudit() {
+  const team = FIXTURES.teams.find(item=>item.alias === 'qa-team-a');
+  const marker = `QA Feed ${certificationRunId}`;
+  const postTitle = `${marker} post`, commentTitle = `${marker} comment`, mediaTitle = `${marker} image`;
+  const teamPath = `teams/${team.id}`;
+  const tokenByActor = new Map();
+  const registeredFeedRoots = new Set(), registeredFeedObjects = new Set();
+  const registerFeedRoot = documentPath=>{if(!registeredFeedRoots.has(documentPath)){registeredFeedRoots.add(documentPath);registerDynamicFirestoreRoot(documentPath,`feed-owned-${documentPath.replaceAll('/','-')}`);}};
+  const registerFeedObject = objectPath=>{if(!registeredFeedObjects.has(objectPath)){registeredFeedObjects.add(objectPath);registerDynamicStorageObject(objectPath,`feed-owned-${objectPath.replaceAll('/','-')}`,activeOperationResourceRegistry);}};
+  const request = async (caseId,actor,body,query='') => {
+    if (!tokenByActor.has(actor)) tokenByActor.set(actor,(await signIn(actor)).body.idToken);
+    return captureOperationRequests(caseId,actor,()=>apiJsonResult(`/api/teams/feed/action${query}`,tokenByActor.get(actor),body ? {method:'POST',body:JSON.stringify({teamId:team.id,...body})} : {}));
+  };
+  const check = (caseId,actual,want,detail)=>expectEqual(actual,want,`Feed ${caseId}: ${detail}`);
+  const read = async postId=>withEmulatorAuthAdmin(async (_auth,db)=>(await db.doc(`${teamPath}/feedPosts/${postId}`).get()).data());
+  const registerPost = postId=>{
+    if(typeof postId!=='string'||!postId)throw Error('Feed mutation did not return an exact post ID.');
+    registerFeedRoot(`${teamPath}/feedPosts/${postId}`);
+    registerFeedObject(`${teamPath}/feed/${postId}/image`);
+  };
+  // Register discovery before any client action, including crash-before-response
+  // paths. Cleanup enumerates differences and removes exact newly owned roots.
+  await registerScheduleDiscovery({registry:activeOperationResourceRegistry,scopeId:'feed-documents',
+    snapshot:()=>withEmulatorAuthAdmin(async (_auth,db)=>{
+      const roots=[];
+      for (const collection of ['feedPosts','feedOperations','feedAudit']) roots.push(...(await db.collection(`${teamPath}/${collection}`).listDocuments()).map(ref=>ref.path));
+      return roots;
+    }),
+    registerRoot:registerFeedRoot,
+  });
+  const baselineObjects = await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.getFiles({prefix:`${teamPath}/feed/` }))[0].map(file=>file.name));
+  activeOperationResourceRegistry.register({id:'feed-object-discovery',kind:'obligation',async cleanup(){
+    const names=await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.getFiles({prefix:`${teamPath}/feed/`}))[0].map(file=>file.name));
+    for(const name of names) if(!baselineObjects.includes(name)) registerFeedObject(name);
+    return false;
+  },async verify(){return true;}});
+  let originalTeam;
+  await withEmulatorAuthAdmin(async (_auth,db)=>{
+    originalTeam=(await db.doc(teamPath).get()).data();
+    registerFirestoreDocumentRestoration(teamPath,originalTeam,'feed-team-settings',activeOperationResourceRegistry);
+  });
+  const owner = await browserLogin('qa-coach-owner-a','/dashboard',`feed-owner-${process.pid}`);
+  const member = await browserLogin('qa-team-member','/dashboard',`feed-member-${process.pid}`);
+  browserSelectScheduleTeam(owner,team.id); browserSelectScheduleTeam(member,team.id);
+  const consoleErrors=[], failedResponses=[];
+  const browserStep = async (session,actor,caseIds,body)=>{
+    const result=JSON.parse(cli(session,['run-code',`async page=>{
+      const observer=(${createFeedBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)}});
+      const dismissAlerts=${dismissFilmTeamAlert.toString()};
+      const measure=${measurePracticeBounds.toString()};
+      const card=title=>page.getByText(title,{exact:true}).locator('xpath=../..');
+      const mutation=action=>page.waitForResponse(response=>response.url()===${JSON.stringify(`${BASE_URL}/api/teams/feed/action`)}&&response.request().method()==='POST'&&JSON.parse(response.request().postData()||'{}').action===action,{timeout:15000});
+      observer.start(${JSON.stringify(caseIds)});
+      let value;try{value=await (async()=>{${body}})();}finally{var observation=observer.finish();}
+      return {value,...observation};
+    }`]));
+    consoleErrors.push(...result.consoleErrors); failedResponses.push(...result.failedResponses);
+    for(const caseId of [...caseIds,'feed-console','feed-network']) await captureBrowserOperationRequests(caseId,actor,result.observedResponses,caseId);
+    return result.value;
+  };
+  const gotoFeed=`await page.goto(${JSON.stringify(`${BASE_URL}/feed`)});await page.locator('textarea').first().waitFor({state:'attached',timeout:15000});await dismissAlerts(page);await page.getByPlaceholder(/What's the play/).waitFor({timeout:15000});`;
+  const createVisible=(title)=>`await page.getByPlaceholder(/What's the play/).fill(${JSON.stringify(title)});const pending=mutation('create-post');await page.getByRole('button',{name:'Post to Squad',exact:true}).click();const response=await pending;if(response.status()!==201)throw Error('Feed create status '+response.status());const result=await response.json();await page.getByText(${JSON.stringify(title)},{exact:true}).waitFor({timeout:15000});return result.postId;`;
+  const postId=await browserStep(owner,'qa-coach-owner-a',['feed-post-comment'],`${gotoFeed}${createVisible(postTitle)}`);
+  registerPost(postId);
+  const commentId=await browserStep(member,'qa-team-member',['feed-post-comment'],`${gotoFeed}await page.getByText(${JSON.stringify(postTitle)},{exact:true}).waitFor({timeout:15000});await card(${JSON.stringify(postTitle)}).getByPlaceholder('Write to squad...').fill(${JSON.stringify(commentTitle)});const pending=mutation('create-comment');await card(${JSON.stringify(postTitle)}).getByRole('button',{name:'Post comment',exact:true}).click();const response=await pending;if(response.status()!==201)throw Error('Feed comment status '+response.status());await page.getByText(${JSON.stringify(commentTitle)},{exact:true}).waitFor({timeout:15000});return (await response.json()).commentId;`);
+  check('feed-post-comment',Boolean(commentId),true,'member visible comment committed');
+  check('feed-post-comment',await browserStep(owner,'qa-coach-owner-a',['feed-post-comment'],`await page.getByText(${JSON.stringify(commentTitle)},{exact:true}).waitFor({timeout:15000});await page.waitForResponse(response=>response.url().includes('/api/teams/feed/action?')&&response.status()===200,{timeout:15000});return await page.getByText(${JSON.stringify(commentTitle)},{exact:true}).count();`),1,'owner open session synchronized without navigation');
+  for(const [session,actor] of [[owner,'qa-coach-owner-a'],[member,'qa-team-member']]) {
+    const persisted=await browserStep(session,actor,['feed-persistence'],`await page.reload();await dismissAlerts(page);await page.getByText(${JSON.stringify(commentTitle)},{exact:true}).waitFor({timeout:15000});return {post:await page.getByText(${JSON.stringify(postTitle)},{exact:true}).count(),comment:await page.getByText(${JSON.stringify(commentTitle)},{exact:true}).count()};`);
+    check('feed-persistence',JSON.stringify(persisted),JSON.stringify({post:1,comment:1}),`${actor} post and comment survive reload`);
+    const bounds=await browserStep(session,actor,['feed-responsive'],`const rows=[];for(const viewport of [{width:1440,height:900},{width:390,height:844}]){await page.setViewportSize(viewport);await dismissAlerts(page);await page.waitForResponse(response=>response.url().includes('/api/teams/feed/action?')&&response.status()===200,{timeout:15000});const controls={composer:page.getByPlaceholder(/What's the play/),post:page.getByText(${JSON.stringify(postTitle)},{exact:true}),comment:card(${JSON.stringify(postTitle)}).getByPlaceholder('Write to squad...'),submit:page.getByRole('button',{name:'Post to Squad',exact:true}),moderation:card(${JSON.stringify(postTitle)}).getByRole('button',{name:/Delete comment by/}).first()};rows.push(await measure(page,controls));await page.screenshot({path:${JSON.stringify(path.join(certificationArtifactDir,`feed-${actor}`))}+'-'+viewport.width+'.png',fullPage:false});}return rows;`);
+    check('feed-responsive',validatePracticeBounds(bounds),true,`${actor} composer post comment and delete controls fit both exact viewports`);
+  }
+  const pixelPath=path.join(certificationArtifactDir,'feed-image.png');
+  writeFileSync(pixelPath,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=','base64'));
+  const imageId=await browserStep(owner,'qa-coach-owner-a',['feed-media'],`await page.locator('input[type=file][accept="image/jpeg,image/png,image/webp,image/gif"]').setInputFiles(${JSON.stringify(pixelPath)});${createVisible(mediaTitle)}`);
+  registerPost(imageId);
+  const imageRecord=await read(imageId);
+  check('feed-media',imageRecord.imagePath,`${teamPath}/feed/${imageId}/image`,'exact private object path persisted');
+  check('feed-media',imageRecord.imageUrl,null,'no public token URL persisted');
+  check('feed-media',await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.file(imageRecord.imagePath).exists())[0]),true,'real image object exists');
+  check('feed-media',await browserStep(member,'qa-team-member',['feed-media'],`await page.reload();await dismissAlerts(page);await page.getByText(${JSON.stringify(mediaTitle)},{exact:true}).waitFor({timeout:15000});await card(${JSON.stringify(mediaTitle)}).getByRole('img',{name:'Feed media',exact:true}).waitFor({timeout:15000});return await card(${JSON.stringify(mediaTitle)}).getByRole('img',{name:'Feed media',exact:true}).evaluate(image=>image.complete&&image.naturalWidth===1);`),true,'member authenticated image bytes render');
+  await browserStep(owner,'qa-coach-owner-a',['feed-media'],`const pending=mutation('delete-post');await card(${JSON.stringify(mediaTitle)}).getByRole('button',{name:/Delete post by/}).click();const response=await pending;if(response.status()!==200)throw Error('Delete image status '+response.status());await page.getByText(${JSON.stringify(mediaTitle)},{exact:true}).waitFor({state:'detached',timeout:15000});return true;`);
+  check('feed-media',await read(imageId),undefined,'image metadata deleted');
+  check('feed-media',await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.file(imageRecord.imagePath).exists())[0]),false,'exact image object deleted');
+  check('feed-media',(await request('feed-media','qa-team-member',null,`?teamId=${team.id}&postId=${imageId}&media=1`)).status,404,'deleted image route revoked');
+  for(const [name,extra] of [['mime',{imageUrl:'data:image/svg+xml;base64,PHN2Zz4='}],['oversize',{imageUrl:`data:image/png;base64,${Buffer.alloc(5*1024*1024+1).toString('base64')}`}],['missing',{imagePath:`${teamPath}/feed/missing/image`}],['foreign',{imagePath:'teams/foreign/feed/foreign/image'}]]) {
+    const title=`${marker} invalid ${name}`;
+    check('feed-media-invalid',(await request('feed-media-invalid','qa-coach-owner-a',{action:'create-post',content:title,...extra})).status,400,`${name} application upload rejected`);
+    const listing=await request('feed-media-invalid','qa-coach-owner-a',null,`?teamId=${team.id}`);
+    check('feed-media-invalid',listing.body.posts.some(post=>post.content===title),false,`${name} metadata absent`);
+  }
+  const replayBody={action:'create-post',content:`${marker} replay`,idempotencyKey:`feed-replay-${certificationRunId}`};
+  const first=await request('feed-replay','qa-coach-owner-a',replayBody), second=await request('feed-replay','qa-coach-owner-a',replayBody);
+  registerPost(first.body.postId);
+  check('feed-replay',first.status,201,'first exact post request created');check('feed-replay',second.status,200,'post replay acknowledged');check('feed-replay',second.body.postId,first.body.postId,'same post ID on replay');
+  const replayComment={action:'create-comment',postId:first.body.postId,content:`${marker} replay comment`,idempotencyKey:`feed-comment-${certificationRunId}`};
+  const firstComment=await request('feed-replay','qa-team-member',replayComment), secondComment=await request('feed-replay','qa-team-member',replayComment);
+  check('feed-replay',firstComment.status,201,'first exact comment created');check('feed-replay',secondComment.body.commentId,firstComment.body.commentId,'same comment ID on replay');
+  const commentRows=await request('feed-replay','qa-team-member',null,`?teamId=${team.id}&postId=${first.body.postId}`);
+  check('feed-replay',commentRows.body.comments.length,1,'exactly one comment after retry');
+  await browserStep(member,'qa-team-member',['feed-author-delete'],`const pending=mutation('delete-comment');await card(${JSON.stringify(postTitle)}).getByRole('button',{name:/Delete comment by/}).click();const response=await pending;if(response.status()!==200)throw Error('Author comment delete '+response.status());await page.getByText(${JSON.stringify(commentTitle)},{exact:true}).waitFor({state:'detached',timeout:15000});return true;`);
+  check('feed-author-delete',await withEmulatorAuthAdmin(async (_auth,db)=>(await db.doc(`${teamPath}/feedPosts/${postId}/comments/${commentId}`).get()).exists),false,'author own comment deleted');
+  const ownTitle=`${marker} member own`;
+  const ownId=await browserStep(member,'qa-team-member',['feed-author-delete'],createVisible(ownTitle));registerPost(ownId);
+  await browserStep(member,'qa-team-member',['feed-author-delete'],`const pending=mutation('delete-post');await card(${JSON.stringify(ownTitle)}).getByRole('button',{name:/Delete post by/}).click();const response=await pending;if(response.status()!==200)throw Error('Author post delete '+response.status());await page.reload();await page.getByText(${JSON.stringify(postTitle)},{exact:true}).waitFor({timeout:15000});return true;`);
+  check('feed-author-delete',await read(ownId),undefined,'own post deletion durable after reload');
+  const moderatedTitle=`${marker} moderation`;
+  const moderated=await request('feed-moderator-delete','qa-team-member',{action:'create-post',content:moderatedTitle});registerPost(moderated.body.postId);
+  check('feed-moderator-delete',(await request('feed-moderator-delete','qa-team-member',{action:'delete-post',postId})).status,403,'member cannot delete owner post');
+  await browserStep(owner,'qa-coach-owner-a',['feed-moderator-delete'],`await page.getByText(${JSON.stringify(moderatedTitle)},{exact:true}).waitFor({timeout:15000});const pending=mutation('delete-post');await card(${JSON.stringify(moderatedTitle)}).getByRole('button',{name:/Delete post by/}).click();const response=await pending;if(response.status()!==200)throw Error('Moderation status '+response.status());await page.reload();await page.getByText(${JSON.stringify(postTitle)},{exact:true}).waitFor({timeout:15000});return true;`);
+  check('feed-moderator-delete',await read(moderated.body.postId),undefined,'staff deletion durable');
+  const audit=await withEmulatorAuthAdmin(async (_auth,db)=>(await db.collection(`${teamPath}/feedAudit`).where('postId','==',moderated.body.postId).get()).docs.map(doc=>doc.data()));
+  check('feed-moderator-delete',audit.length,1,'one durable moderation audit');check('feed-moderator-delete',audit[0].moderation,true,'audit distinguishes staff moderation');
+  const audiences={};
+  for(const audience of ['everyone','coaches','parents','players']) {const response=await request('feed-audience','qa-coach-owner-a',{action:'create-post',content:`${marker} audience ${audience}`,audience});check('feed-audience',response.status,201,`${audience} audience created`);audiences[audience]=response.body.postId;registerPost(response.body.postId);}
+  for(const [actor,want] of [['qa-coach-owner-a',['everyone','coaches','parents','players']],['qa-team-member',['everyone','players']],['qa-parent-a',['everyone','parents']]]) {
+    const response=await request('feed-audience',actor,null,`?teamId=${team.id}`);
+    check('feed-audience',response.status,200,`${actor} audience read`);
+    check('feed-audience',JSON.stringify(Object.entries(audiences).filter(([,id])=>response.body.posts.some(post=>post.id===id)).map(([name])=>name)),JSON.stringify(want),`${actor} exact visible audience set`);
+  }
+  await withEmulatorAuthAdmin(async (_auth,db)=>db.doc(teamPath).update({parentPostingEnabled:false,parentCommentsEnabled:false}));
+  for(const body of [{action:'create-post',content:`${marker} parent blocked`},{action:'create-comment',postId,content:'parent blocked'}]) check('feed-parent',(await request('feed-parent','qa-parent-a',body)).status,403,'parent posting/comment disabled');
+  await withEmulatorAuthAdmin(async (_auth,db)=>db.doc(teamPath).update({parentPostingEnabled:true,parentCommentsEnabled:true}));
+  const parentPost=await request('feed-parent','qa-parent-a',{action:'create-post',content:`${marker} parent allowed`});registerPost(parentPost.body.postId);check('feed-parent',parentPost.status,201,'parent posting enabled');
+  check('feed-parent',(await request('feed-parent','qa-parent-a',{action:'create-comment',postId,content:`${marker} parent comment`})).status,201,'parent comment enabled');
+  await withEmulatorAuthAdmin(async (_auth,db)=>db.doc(teamPath).update({parentFeedEnabled:false}));
+  check('feed-parent',(await request('feed-parent','qa-parent-a',null,`?teamId=${team.id}`)).status,403,'parent feed disabled read denied');
+  await withEmulatorAuthAdmin(async (_auth,db)=>db.doc(teamPath).set(originalTeam));
+  for(const [caseId,actor] of [['feed-removed','qa-removed-member'],['feed-team-b','qa-coach-owner-b']]) {
+    check(caseId,(await request(caseId,actor,null,`?teamId=${team.id}`)).status,403,'foreign or removed read denied');
+    check(caseId,(await request(caseId,actor,{action:'create-comment',postId,content:`${marker} forbidden`})).status,403,'foreign or removed write denied');
+  }
+  await withEmulatorAuthAdmin(async (_auth,db)=>db.doc(teamPath).update({features:{...originalTeam.features,feed:false}}));
+  for(const actor of ['qa-coach-owner-a','qa-team-member']) {
+    check('feed-module-off',(await request('feed-module-off',actor,null,`?teamId=${team.id}`)).status,403,`${actor} disabled module read denied`);
+    check('feed-module-off',(await request('feed-module-off',actor,{action:'create-post',content:`${marker} module denied`})).status,403,`${actor} disabled module write denied`);
+  }
+  await withEmulatorAuthAdmin(async (_auth,db)=>db.doc(teamPath).set(originalTeam));
+  check('feed-console',consoleErrors.length,0,'both owned browser observation windows have zero console errors');
+  check('feed-network',failedResponses.length,0,'both owned browser observation windows have zero unexpected 5xx responses');
 }
 
 function browserOwnerCommunicationSetup(session, marker) {
