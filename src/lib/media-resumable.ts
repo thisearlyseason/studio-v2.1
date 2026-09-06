@@ -13,10 +13,10 @@ export function mediaUploadAbortAdapter(owned:AbortSignal):NonNullable<GaxiosOpt
   };
 }
 
-const emulatorProject='demo-the-squad-rules-test';
+const emulatorProjects=new Set(['demo-the-squad-rules-test','demo-the-squad-audit']);
 export function mediaResumableOptions(bucket:string,environment:NodeJS.ProcessEnv=process.env){
-  const host=environment.FIREBASE_STORAGE_EMULATOR_HOST;
-  if(host&&(host!=='127.0.0.1:9199'||(environment.GCLOUD_PROJECT||environment.GOOGLE_CLOUD_PROJECT)!==emulatorProject||bucket!==`${emulatorProject}.appspot.com`))throw Error('Unsafe emulator media transport.');
+  const host=environment.FIREBASE_STORAGE_EMULATOR_HOST,project=environment.GCLOUD_PROJECT||environment.GOOGLE_CLOUD_PROJECT||'';
+  if(host&&(host!=='127.0.0.1:9199'||!emulatorProjects.has(project)||bucket!==`${project}.appspot.com`))throw Error('Unsafe emulator media transport.');
   // This emulator finalizes every GCS PUT and ignores Content-Range. A raw
   // resumable request avoids its 130 MB multipart parser; SDK backpressure
   // still bounds client buffers. Real GCS always receives 8 MiB chunks.

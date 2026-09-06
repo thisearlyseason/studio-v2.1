@@ -10,6 +10,12 @@ test('production uses bounded resumable chunks; raw streaming exception is exact
   for(const env of[{...environment,FIREBASE_STORAGE_EMULATOR_HOST:'localhost:9199'},{...environment,FIREBASE_STORAGE_EMULATOR_HOST:'remote:9199'},{...environment,GCLOUD_PROJECT:'production'},{...environment,GCLOUD_PROJECT:'demo-other'}])assert.throws(()=>mediaResumableOptions(bucket,env),/Unsafe/);
   assert.throws(()=>mediaResumableOptions('other.appspot.com',environment),/Unsafe/);
 });
+test('managed audit and rules profiles each require their own exact matching demo bucket',()=>{
+  for(const project of['demo-the-squad-rules-test','demo-the-squad-audit']){
+    assert.deepEqual(mediaResumableOptions(project+'.appspot.com',{...environment,GCLOUD_PROJECT:project}),{resumable:true,highWaterMark:65536});
+    assert.throws(()=>mediaResumableOptions((project==='demo-the-squad-audit'?'demo-the-squad-rules-test':'demo-the-squad-audit')+'.appspot.com',{...environment,GCLOUD_PROJECT:project}),/Unsafe/);
+  }
+});
 test('owned emulator session cancellation is queried and verified without exposing a session URL',async()=>{
   const commands=[];await cancelMediaUpload({bucket,name,uri},{environment,fetcher:async(url,init)=>{assert.equal(new URL(url).origin,'http://127.0.0.1:9199');commands.push(init.headers['X-Goog-Upload-Command']);return new Response(null,{status:200,headers:{'X-Goog-Upload-Status':commands.length===1?'active':'cancelled'}});}});
   assert.deepEqual(commands,['query','cancel','query']);

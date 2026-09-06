@@ -7,6 +7,15 @@ import {mediaDb,loadMediaRoute} from './helpers/media-route-harness.mjs';
 import {generatedMp4Body} from '../scripts/qa/certification/local/media-browser.mjs';
 import {materializeFixtureMediaBytes} from '../scripts/qa/certification/fixture-catalog.mjs';
 
+test('managed audit profile supports the same tiny tokenless video route and cleanup',{skip:process.env.MEDIA_AUDIT_TRANSPORT_PROBE!=='1',timeout:30000},async()=>{
+  assert.equal(process.env.FIREBASE_STORAGE_EMULATOR_HOST,'127.0.0.1:9199');assert.equal(process.env.GCLOUD_PROJECT,'demo-the-squad-audit');
+  const {mediaBucket}=createRequire(import.meta.url)('../src/lib/server-media-storage.ts'),bucket=mediaBucket(120000),player='audit-transport-'+randomUUID(),prefix=`players/${player}/`,path=prefix+'videos/tiny.mp4';assert.equal(bucket.name,'demo-the-squad-audit.appspot.com');
+  const {db}=mediaDb({[`players/${player}`]:{userId:'adult',primaryTeamId:'a',recruitingProfileEnabled:false},'teams/a':{ownerUserId:'owner'}});db.bucket=bucket;
+  const owner=await loadMediaRoute('../../src/app/api/media/route.ts',db,{uid:'owner'}),bytes=materializeFixtureMediaBytes({payloadGenerator:'tiny-mp4-v1'});
+  try{const response=await owner.route.POST(new Request('http://127.0.0.1/api/media?path='+encodeURIComponent(path),{method:'POST',headers:{Authorization:'Bearer synthetic','Content-Type':'video/mp4'},body:bytes}));assert.equal(response.status,201);assert.deepEqual((await bucket.file(path).download())[0],bytes);assert.equal(Boolean((await bucket.file(path).getMetadata())[0].metadata?.firebaseStorageDownloadTokens),false);}
+  finally{owner.dispose();for(const file of(await bucket.getFiles({prefix}))[0])await file.delete({ignoreNotFound:true});assert.equal((await bucket.getFiles({prefix}))[0].length,0);}
+});
+
 test('actual route and SDK stream 500MiB, promote by reference, and reconcile overflow/interruption sessions',{skip:process.env.MEDIA_RESUMABLE_EMULATOR_PROBE!=='1',timeout:180000},async()=>{
   assert.equal(process.env.FIREBASE_STORAGE_EMULATOR_HOST,'127.0.0.1:9199');assert.equal(process.env.GCLOUD_PROJECT,'demo-the-squad-rules-test');
   const {mediaBucket}=createRequire(import.meta.url)('../src/lib/server-media-storage.ts');
