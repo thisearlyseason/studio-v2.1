@@ -17,6 +17,8 @@ const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
 type Recipient = {
   userId: string;
+  teamId: string;
+  memberId: string;
   name: string;
   position: string;
   avatar: string;
@@ -32,11 +34,26 @@ type ChatContext = {
   recipients: Recipient[];
 };
 
-function recipientFrom(data: FirebaseFirestore.DocumentData, squadName: string): Recipient | null {
+function tacticalChatEnabled(teamData: FirebaseFirestore.DocumentData) {
+  return teamData.features?.tacticalChat !== false;
+}
+
+async function repairLegacyTeamChats(teamId: string) {
+  const snapshot = await adminDb.collection('teams').doc(teamId).collection('groupChats').limit(500).get();
+  const legacy = snapshot.docs.filter(document => document.data().isDeleted === undefined);
+  if (!legacy.length) return;
+  const batch = adminDb.batch();
+  for (const document of legacy) batch.update(document.ref, { isDeleted: false, teamId });
+  await batch.commit();
+}
+
+function recipientFrom(data: FirebaseFirestore.DocumentData, squadName: string, teamId: string, memberId: string): Recipient | null {
   const userId = typeof data.userId === 'string' ? data.userId : '';
   if (!userId || data.status === 'removed' || data.isDeleted === true) return null;
   return {
     userId,
+    teamId,
+    memberId,
     name: String(data.name || 'Squad Member'),
     position: String(data.position || data.role || 'Member'),
     avatar: String(data.avatar || ''),
@@ -55,7 +72,7 @@ async function teamRecipients(teamId: string, onlyStaff = false): Promise<Recipi
   const name = String(team.data()?.name || team.data()?.teamName || 'Squad');
   return members.docs
     .filter(doc => !onlyStaff || isStaffMember(doc.data()))
-    .map(doc => recipientFrom({ ...doc.data(), userId: doc.data().userId || doc.id }, name))
+    .map(doc => recipientFrom({ ...doc.data(), userId: doc.data().userId || doc.id }, name, teamId, doc.id))
     .filter((value): value is Recipient => Boolean(value));
 }
 
@@ -150,6 +167,10 @@ export async function GET(req: NextRequest) {
   try {
     const result = await buildContexts(teamId, auth.uid, auth.role);
     if (!result) return NextResponse.json({ error: 'You do not belong to this squad.' }, { status: 403 });
+    if (!tacticalChatEnabled(result.authority.teamData)) {
+      return NextResponse.json({ error: 'Tactical chat is unavailable for this squad.' }, { status: 403 });
+    }
+    await repairLegacyTeamChats(teamId);
     return NextResponse.json({ contexts: result.contexts });
   } catch (error) {
     console.error('[teams/chat GET] Error:', error);
@@ -166,18 +187,78 @@ export async function PATCH(req: NextRequest) {
     const teamId = typeof body.teamId === 'string' && ID_PATTERN.test(body.teamId) ? body.teamId : '';
     const chatId = typeof body.chatId === 'string' && ID_PATTERN.test(body.chatId) ? body.chatId : '';
     if (!teamId || !chatId) return NextResponse.json({ error: 'Invalid tactical channel.' }, { status: 400 });
-    const rateLimit = await enforceUserRateLimit(auth.uid, 'team-chat-read', 120, 5 * 60 * 1000);
+    const action = typeof body.action === 'string' ? body.action : 'mark-read';
+    const rateLimit = await enforceUserRateLimit(auth.uid, `team-chat-${action}`, 120, 5 * 60 * 1000);
     if (rateLimit) return rateLimit;
-    const chatRef = adminDb.collection('teams').doc(teamId).collection('groupChats').doc(chatId);
-    const [chat, member] = await Promise.all([chatRef.get(), findActiveTeamMember(teamId, auth.uid)]);
-    const isOwner = (await adminDb.collection('teams').doc(teamId).get()).data()?.ownerUserId === auth.uid;
-    if (!chat.exists || (!isOwner && auth.role !== 'superadmin' && (!member || !chat.data()?.memberIds?.includes(auth.uid)))) {
-      return NextResponse.json({ error: 'You are no longer authorized for this chat.' }, { status: 403 });
+    if (!['mark-read', 'rename', 'set-members', 'configure-hub', 'delete'].includes(action)) {
+      return NextResponse.json({ error: 'Unsupported chat action.' }, { status: 400 });
     }
-    await chatRef.update({ [`unreadBy.${auth.uid}`]: 0, [`lastReadAtBy.${auth.uid}`]: new Date().toISOString() });
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 100) : '';
+    const requested = Array.isArray(body.memberIds)
+      ? Array.from(new Set(body.memberIds.filter((id): id is string => typeof id === 'string' && ID_PATTERN.test(id))))
+      : [];
+    if (action === 'rename' && !name) return NextResponse.json({ error: 'Enter a channel name.' }, { status: 400 });
+    if (action === 'set-members' && requested.length > 100) return NextResponse.json({ error: 'Too many channel members.' }, { status: 400 });
+    const scoped = action === 'set-members' ? await buildContexts(teamId, auth.uid, auth.role) : null;
+    const teamRef = adminDb.collection('teams').doc(teamId);
+    const chatRef = teamRef.collection('groupChats').doc(chatId);
+    await adminDb.runTransaction(async transaction => {
+      const [team, chat] = await Promise.all([transaction.get(teamRef), transaction.get(chatRef)]);
+      const teamData = team.data() || {};
+      const chatData = chat.data() || {};
+      const memberIds = Array.isArray(chatData.memberIds) ? chatData.memberIds : [];
+      const isPrivileged = auth.role === 'superadmin' || teamData.ownerUserId === auth.uid;
+      const memberAuthority = chatData.memberAuthorities?.[auth.uid];
+      const sourceTeamId = typeof memberAuthority?.teamId === 'string' ? memberAuthority.teamId : teamId;
+      const sourceMemberId = typeof memberAuthority?.memberId === 'string' ? memberAuthority.memberId : auth.uid;
+      const member = isPrivileged ? null : await transaction.get(
+        adminDb.collection('teams').doc(sourceTeamId).collection('members').doc(sourceMemberId),
+      );
+      const memberData = member?.data() || {};
+      const activeMember = Boolean(member?.exists && memberData.status !== 'removed' && memberData.isDeleted !== true &&
+        (memberData.userId === auth.uid || sourceMemberId === auth.uid));
+      if (!team.exists || !chat.exists || chatData.isDeleted === true || !tacticalChatEnabled(teamData) ||
+          (!isPrivileged && (!activeMember || !memberIds.includes(auth.uid)))) throw new Error('FORBIDDEN');
+      if (action !== 'mark-read' && !isPrivileged && !isStaffMember(memberData)) throw new Error('FORBIDDEN');
+      const updatedAt = new Date().toISOString();
+      if (action === 'mark-read') {
+        transaction.update(chatRef, { [`unreadBy.${auth.uid}`]: 0, [`lastReadAtBy.${auth.uid}`]: updatedAt });
+      } else if (action === 'rename') {
+        transaction.update(chatRef, { name, updatedAt, updatedBy: auth.uid });
+      } else if (action === 'delete') {
+        transaction.update(chatRef, { isDeleted: true, deletedAt: updatedAt, deletedBy: auth.uid });
+      } else if (action === 'configure-hub') {
+        const staffMetadata = body.staffMetadata && typeof body.staffMetadata === 'object'
+          ? body.staffMetadata as Record<string, unknown>
+          : {};
+        if (body.hubTeamId !== teamId || Object.keys(staffMetadata).some(uid => !memberIds.includes(uid))) throw new Error('FORBIDDEN');
+        transaction.update(chatRef, { isHubChannel: true, hubTeamId: teamId, staffMetadata, updatedAt, updatedBy: auth.uid });
+      } else {
+        const context = scoped?.contexts.find(candidate => candidate.id === chatData.contextId) || scoped?.contexts[0];
+        const recipientById = new Map((context?.recipients || []).map(recipient => [recipient.userId, recipient]));
+        if (!scoped || requested.some(id => id !== auth.uid && !recipientById.has(id))) throw new Error('FORBIDDEN');
+        const selected = requested.filter(id => id !== auth.uid).map(id => recipientById.get(id)!);
+        const snapshots = await Promise.all(selected.map(recipient => transaction.get(
+          adminDb.collection('teams').doc(recipient.teamId).collection('members').doc(recipient.memberId),
+        )));
+        if (snapshots.some((snapshot, index) => !snapshot.exists || snapshot.data()?.status === 'removed' ||
+            snapshot.data()?.isDeleted === true || snapshot.data()?.userId !== selected[index].userId)) throw new Error('FORBIDDEN');
+        transaction.update(chatRef, {
+          memberIds: Array.from(new Set([...requested, auth.uid])),
+          memberAuthorities: Object.fromEntries([
+            ...selected.map(recipient => [recipient.userId, { teamId: recipient.teamId, memberId: recipient.memberId }]),
+            [auth.uid, { teamId: sourceTeamId, memberId: sourceMemberId }],
+          ]),
+          updatedAt, updatedBy: auth.uid,
+        });
+      }
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof Error && error.message === 'FORBIDDEN') {
+      return NextResponse.json({ error: 'You are no longer authorized for this chat.' }, { status: 403 });
+    }
     console.error('[teams/chat PATCH] Error:', error);
     return NextResponse.json({ error: 'Unable to mark this chat as read.' }, { status: 500 });
   }
@@ -201,29 +282,74 @@ export async function POST(req: NextRequest) {
     if (rateLimit) return rateLimit;
     const result = await buildContexts(teamId, auth.uid, auth.role);
     if (!result) return NextResponse.json({ error: 'You do not belong to this squad.' }, { status: 403 });
+    if (!tacticalChatEnabled(result.authority.teamData)) {
+      return NextResponse.json({ error: 'Tactical chat is unavailable for this squad.' }, { status: 403 });
+    }
     const context = result.contexts.find(candidate => candidate.id === contextId);
     const allowed = new Set(context?.recipients.map(recipient => recipient.userId) || []);
     if (!context || memberIds.some(id => !allowed.has(id))) {
       return NextResponse.json({ error: 'One or more recipients are outside your approved chat scope.' }, { status: 403 });
     }
 
+    const selected = memberIds.map(id => context.recipients.find(recipient => recipient.userId === id)!);
     const chatRef = result.authority.teamRef.collection('groupChats').doc();
-    await chatRef.create({
-      id: chatRef.id,
-      name,
-      createdBy: auth.uid,
-      memberIds: [...memberIds, auth.uid],
-      contextId,
-      contextType: context.type,
-      contextName: context.name,
-      createdAt: new Date().toISOString(),
-      isDeleted: false,
-      teamId,
+    await adminDb.runTransaction(async transaction => {
+      const freshTeam = await transaction.get(result.authority.teamRef);
+      const isPrivileged = auth.role === 'superadmin' || freshTeam.data()?.ownerUserId === auth.uid;
+      const senderRef = result.authority.teamRef.collection('members').doc(auth.uid);
+      const sender = isPrivileged ? null : await transaction.get(senderRef);
+      const senderData = sender?.data() || {};
+      const senderActive = Boolean(sender?.exists && senderData.status !== 'removed' && senderData.isDeleted !== true);
+      const recipientSnapshots = await Promise.all(selected.map(recipient => transaction.get(
+        adminDb.collection('teams').doc(recipient.teamId).collection('members').doc(recipient.memberId),
+      )));
+      if (!freshTeam.exists || !tacticalChatEnabled(freshTeam.data() || {}) || (!isPrivileged && !senderActive) ||
+          recipientSnapshots.some((snapshot, index) => !snapshot.exists || snapshot.data()?.status === 'removed' ||
+            snapshot.data()?.isDeleted === true || snapshot.data()?.userId !== selected[index].userId)) throw new Error('FORBIDDEN');
+      if (context.type === 'team' && selected.some(recipient => recipient.teamId !== teamId)) throw new Error('FORBIDDEN');
+      if (!isPrivileged && !isStaffMember(senderData)) {
+        const senderIsParent = isParentMember(senderData);
+        if (context.type !== 'team' || selected.some(recipient => senderIsParent
+          ? !recipient.isStaff && !(freshTeam.data()?.parentChatEnabled === true && recipient.isParent)
+          : recipient.isParent)) throw new Error('FORBIDDEN');
+      }
+      if (context.type === 'league') {
+        const leagueId = contextId.slice('league:'.length);
+        const league = await transaction.get(adminDb.collection('leagues').doc(leagueId));
+        const data = league.data() || {};
+        const enrolled = new Set([...(Array.isArray(data.memberTeamIds) ? data.memberTeamIds : []), ...Object.keys(data.teams || {})]);
+        if (!league.exists || (data.creatorId !== auth.uid && !enrolled.has(teamId)) || selected.some(recipient => !enrolled.has(recipient.teamId))) throw new Error('FORBIDDEN');
+      } else if (context.type === 'tournament') {
+        const eventId = contextId.slice('tournament:'.length);
+        const event = await transaction.get(result.authority.teamRef.collection('events').doc(eventId));
+        const enrolled = new Set((Array.isArray(event.data()?.tournamentTeamsData) ? event.data()?.tournamentTeamsData : [])
+          .map((entry: any) => entry?.teamId || entry?.id).filter((id: unknown) => typeof id === 'string'));
+        if (!event.exists || event.data()?.eventType !== 'tournament' || selected.some(recipient => !enrolled.has(recipient.teamId))) throw new Error('FORBIDDEN');
+      }
+      transaction.create(chatRef, {
+        id: chatRef.id,
+        name,
+        createdBy: auth.uid,
+        memberIds: Array.from(new Set([...memberIds, auth.uid])),
+        memberAuthorities: Object.fromEntries([
+          ...selected.map(recipient => [recipient.userId, { teamId: recipient.teamId, memberId: recipient.memberId }]),
+          [auth.uid, { teamId, memberId: auth.uid }],
+        ]),
+        contextId,
+        contextType: context.type,
+        contextName: context.name,
+        createdAt: new Date().toISOString(),
+        isDeleted: false,
+        teamId,
+      });
     });
     return NextResponse.json({ ok: true, chatId: chatRef.id });
   } catch (error) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof Error && error.message === 'FORBIDDEN') {
+      return NextResponse.json({ error: 'Your chat scope changed. Refresh and try again.' }, { status: 403 });
     }
     console.error('[teams/chat POST] Error:', error);
     return NextResponse.json({ error: 'Unable to create this tactical chat.' }, { status: 500 });

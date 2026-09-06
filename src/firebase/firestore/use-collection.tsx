@@ -93,7 +93,14 @@ export function useCollection<T = any>(
         if (!isMounted) return;
         const results: ResultItemType[] = [];
         for (const doc of snapshot.docs) {
-          results.push({ ...(doc.data() as T), id: doc.id });
+          const sourceTeamId = doc.ref.parent.id === 'groupChats'
+            ? doc.ref.parent.parent?.id
+            : undefined;
+          results.push({
+            ...(doc.data() as T),
+            id: doc.id,
+            ...(sourceTeamId ? { teamId: sourceTeamId } : {}),
+          });
         }
         setData(results);
         setError(null);

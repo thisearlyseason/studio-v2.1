@@ -33,6 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
 import { isStaffPosition } from '@/lib/staff-position';
+import { chatChannelKey, mergeChatChannels } from '@/lib/chat-channel-identity';
 
 type ChatContext = {
   id: string;
@@ -65,6 +66,7 @@ export default function ChatsPage() {
     return query(
       collection(db, 'teams', activeTeam.id, 'groupChats'), 
       where('memberIds', 'array-contains', user.id),
+      where('isDeleted', '==', false),
       orderBy('createdAt', 'desc')
     );
   }, [activeTeam?.id, db, user?.id]);
@@ -72,16 +74,17 @@ export default function ChatsPage() {
   const { data: chatsData, isLoading: isChatsLoading } = useCollection(chatsQuery);
   const sharedChatsQuery = useMemoFirebase(() => {
     if (!db || !user?.id || activeTeam?.id.startsWith('demo_')) return null;
-    return query(collectionGroup(db, 'groupChats'), where('memberIds', 'array-contains', user.id));
+    return query(
+      collectionGroup(db, 'groupChats'),
+      where('memberIds', 'array-contains', user.id),
+      where('isDeleted', '==', false),
+    );
   }, [db, user?.id, activeTeam?.id]);
   const { data: sharedChatsData, isLoading: isSharedChatsLoading } = useCollection(sharedChatsQuery);
   const teamChats = useMemo(() => {
-    const raw = Array.from(
-      new Map(
-        [...(chatsData || []), ...(sharedChatsData || [])]
-          .filter(chat => chat.isDeleted !== true)
-          .map(chat => [chat.id, chat])
-      ).values()
+    const raw = mergeChatChannels(
+      [...(chatsData || []), ...(sharedChatsData || [])].filter(chat => chat.isDeleted !== true),
+      activeTeam?.id || '',
     ).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     const withUnread = raw.map(chat => ({
       ...chat,
@@ -89,7 +92,7 @@ export default function ChatsPage() {
     }));
     if (!searchTerm.trim()) return withUnread;
     return withUnread.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [chatsData, sharedChatsData, searchTerm, user?.id]);
+  }, [activeTeam?.id, chatsData, sharedChatsData, searchTerm, user?.id]);
 
   // Governance: Filter member list based on position
   const filteredMembers = useMemo(() => {
@@ -465,7 +468,7 @@ export default function ChatsPage() {
 
         <div className="lg:col-span-3 space-y-4">
           {teamChats.length > 0 ? teamChats.map((chat) => (
-            <Link key={chat.id} href={`/chats/${chat.id}?teamId=${encodeURIComponent(chat.teamId || activeTeam.id)}`}>
+            <Link key={chatChannelKey(chat, activeTeam.id)} href={`/chats/${chat.id}?teamId=${encodeURIComponent(chat.teamId || activeTeam.id)}`}>
               <Card className="hover:border-primary transition-all duration-300 cursor-pointer group rounded-3xl border-none shadow-sm hover:shadow-xl ring-1 ring-black/5 hover:ring-primary/20 overflow-hidden bg-white">
                 <CardContent className="p-5 flex items-center gap-5">
                   <div className="h-16 w-16 rounded-2xl bg-primary/5 flex items-center justify-center text-primary shrink-0 border border-primary/10 group-hover:bg-primary group-hover:text-white transition-all shadow-inner">

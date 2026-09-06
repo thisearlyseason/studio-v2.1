@@ -100,15 +100,159 @@ test('unknown, deleted, closed, ambiguous selections and ineligible channel vote
   }
 });
 
-test('ordinary text Chat retains authorization, unread, and preexisting module-off behavior',async()=>{
+test('ordinary text Chat cannot bypass the tacticalChat module boundary',async()=>{
   const seed={...base,'teams/team-a':{ownerUserId:'owner-a',features:{tacticalChat:false}}};
   const {db,records}=communicationDb(seed);
   const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/message/route.ts',db,{uid:'owner-a'});
   try {
-    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'channel',type:'text',content:' Tactical update '}));
-    assert.equal(response.status,200);
-    const message=records.get(`teams/team-a/groupChats/channel/messages/${(await response.json()).messageId}`);
-    assert.equal(message.content,'Tactical update');assert.equal(message.poll,null);
+    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'channel',type:'text',content:' Tactical update ',requestId:'module-off-request'}));
+    assert.equal(response.status,403);
+    assert.equal([...records.keys()].filter(path=>path.startsWith('teams/team-a/groupChats/channel/messages/')&&path!=='teams/team-a/groupChats/channel/messages/poll').length,0);
+    assert.equal(records.get('teams/team-a/groupChats/channel').unreadBy,undefined);
+  } finally {loaded.dispose();}
+});
+
+test('ordinary text Chat rejects deleted channels without creating a message or unread state',async()=>{
+  const seed={...base,'teams/team-a/groupChats/channel':{...base['teams/team-a/groupChats/channel'],isDeleted:true}};
+  const {db,records}=communicationDb(seed);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/message/route.ts',db,{uid:'owner-a'});
+  try {
+    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'channel',type:'text',content:' Tactical update ',requestId:'deleted-channel-request'}));
+    assert.equal(response.status,403);
+    assert.equal([...records.keys()].filter(path=>path.startsWith('teams/team-a/groupChats/channel/messages/')&&path!=='teams/team-a/groupChats/channel/messages/poll').length,0);
+    assert.equal(records.get('teams/team-a/groupChats/channel').unreadBy,undefined);
+  } finally {loaded.dispose();}
+});
+
+test('ordinary text Chat request identity creates one message and increments recipient unread once',async()=>{
+  const {db,records}=communicationDb(base);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/message/route.ts',db,{uid:'owner-a'});
+  const input={teamId:'team-a',chatId:'channel',type:'text',content:'One tactical update',requestId:'one-message-request'};
+  try {
+    const first=await loaded.route.POST(communicationRequest(input));
+    const second=await loaded.route.POST(communicationRequest(input));
+    assert.equal(first.status,200);assert.equal(second.status,200);
+    const firstBody=await first.json(),secondBody=await second.json();
+    assert.equal(secondBody.messageId,firstBody.messageId);
+    assert.equal(secondBody.replayed,true);
+    const messages=[...records].filter(([path])=>path.startsWith('teams/team-a/groupChats/channel/messages/')&&path!=='teams/team-a/groupChats/channel/messages/poll');
+    assert.equal(messages.length,1);
+    assert.equal(messages[0][1].content,'One tactical update');
     assert.deepEqual(records.get('teams/team-a/groupChats/channel').unreadBy,{'owner-a':0,voter:1});
+  } finally {loaded.dispose();}
+});
+
+test('ordinary text Chat rejects reuse of one request identity for different content',async()=>{
+  const {db,records}=communicationDb(base);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/message/route.ts',db,{uid:'owner-a'});
+  try {
+    const first=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'channel',type:'text',content:'First',requestId:'collision-request'}));
+    const second=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'channel',type:'text',content:'Different',requestId:'collision-request'}));
+    assert.equal(first.status,200);assert.equal(second.status,409);
+    const messages=[...records].filter(([path])=>path.startsWith('teams/team-a/groupChats/channel/messages/')&&path!=='teams/team-a/groupChats/channel/messages/poll');
+    assert.equal(messages.length,1);assert.equal(messages[0][1].content,'First');
+    assert.deepEqual(records.get('teams/team-a/groupChats/channel').unreadBy,{'owner-a':0,voter:1});
+  } finally {loaded.dispose();}
+});
+
+test('Chat channel creation is rejected while tactical chat is disabled',async()=>{
+  const {db,records}=communicationDb({...base,'teams/team-a':{ownerUserId:'owner-a',features:{tacticalChat:false}}});
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'owner-a'});
+  try {
+    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',contextId:'team:team-a',name:'Blocked channel',memberIds:['voter']}));
+    assert.equal(response.status,403);
+    assert.equal([...records.keys()].some(path=>path.includes('Blocked channel')),false);
+  } finally {loaded.dispose();}
+});
+
+test('Chat read receipt clears only the caller and rejects deleted or disabled channels',async()=>{
+  for(const state of ['active','deleted','disabled']) {
+    const seed=structuredClone(base);
+    seed['teams/team-a/groupChats/channel'].unreadBy={'owner-a':2,voter:3};
+    if(state==='deleted')seed['teams/team-a/groupChats/channel'].isDeleted=true;
+    if(state==='disabled')seed['teams/team-a'].features={tacticalChat:false};
+    const {db,records}=communicationDb(seed);
+    const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'voter'});
+    try {
+      const response=await loaded.route.PATCH(communicationRequest({action:'mark-read',teamId:'team-a',chatId:'channel'}));
+      assert.equal(response.status,state==='active'?200:403,state);
+      const unread=records.get('teams/team-a/groupChats/channel').unreadBy;
+      assert.deepEqual(unread,state==='active'?{'owner-a':2,voter:0}:{'owner-a':2,voter:3});
+    } finally {loaded.dispose();}
+  }
+});
+
+test('Chat lifecycle changes require staff authority and are server validated',async()=>{
+  const ownerRun=communicationDb(base);
+  const owner=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',ownerRun.db,{uid:'owner-a'});
+  try {
+    assert.equal((await owner.route.PATCH(communicationRequest({action:'rename',teamId:'team-a',chatId:'channel',name:'Renamed'}))).status,200);
+    assert.equal(ownerRun.records.get('teams/team-a/groupChats/channel').name,'Renamed');
+    assert.equal((await owner.route.PATCH(communicationRequest({action:'set-members',teamId:'team-a',chatId:'channel',memberIds:['voter']}))).status,200);
+    assert.deepEqual(ownerRun.records.get('teams/team-a/groupChats/channel').memberIds,['voter','owner-a']);
+    assert.equal((await owner.route.PATCH(communicationRequest({action:'delete',teamId:'team-a',chatId:'channel'}))).status,200);
+    assert.equal(ownerRun.records.get('teams/team-a/groupChats/channel').isDeleted,true);
+  } finally {owner.dispose();}
+
+  const memberRun=communicationDb(base);
+  const member=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',memberRun.db,{uid:'voter'});
+  try {
+    assert.equal((await member.route.PATCH(communicationRequest({action:'delete',teamId:'team-a',chatId:'channel'}))).status,403);
+    assert.notEqual(memberRun.records.get('teams/team-a/groupChats/channel').isDeleted,true);
+  } finally {member.dispose();}
+});
+
+test('server-derived remote team authority permits only its enrolled channel',async()=>{
+  const seed={
+    ...base,
+    'teams/team-b':{ownerUserId:'owner-b'},
+    'teams/team-b/members/remote':{userId:'remote',position:'Assistant Coach',role:'Admin',status:'active'},
+    'teams/team-a/groupChats/remote-channel':{
+      name:'League channel',memberIds:['owner-a','remote'],isDeleted:false,
+      memberAuthorities:{'owner-a':{teamId:'team-a',memberId:'owner-a'},remote:{teamId:'team-b',memberId:'remote'}},
+    },
+  };
+  const {db,records}=communicationDb(seed);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/message/route.ts',db,{uid:'remote'});
+  try {
+    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'remote-channel',type:'text',content:'Remote staff message',requestId:'remote-authority'}));
+    assert.equal(response.status,200);
+    const messageId=(await response.json()).messageId;
+    assert.equal(records.get(`teams/team-a/groupChats/remote-channel/messages/${messageId}`).content,'Remote staff message');
+  } finally {loaded.dispose();}
+});
+
+test('Chat push deep link is qualified by both team and channel identity',async()=>{
+  const {db,notifications}=communicationDb(base);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/message/route.ts',db,{uid:'owner-a'});
+  try {
+    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'channel',type:'text',content:'Qualified link',requestId:'qualified-link'}));
+    assert.equal(response.status,200);
+    assert.equal(notifications.length,1);
+    assert.equal(notifications[0].url,'/chats/channel?teamId=team-a');
+  } finally {loaded.dispose();}
+});
+
+test('Chat create revalidates recipient and module state inside its write transaction',async()=>{
+  const {db,records}=communicationDb(base,{beforeTransaction:({records})=>{
+    records.set('teams/team-a/members/voter',{...records.get('teams/team-a/members/voter'),status:'removed'});
+  }});
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'owner-a'});
+  try {
+    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',contextId:'team:team-a',name:'Raced channel',memberIds:['voter']}));
+    assert.equal(response.status,403);
+    assert.equal([...records.values()].some(value=>value?.name==='Raced channel'),false);
+  } finally {loaded.dispose();}
+});
+
+test('Chat lifecycle revalidates deletion and authority in the same transaction as mutation',async()=>{
+  const {db,records}=communicationDb(base,{beforeTransaction:({records})=>{
+    records.set('teams/team-a/groupChats/channel',{...records.get('teams/team-a/groupChats/channel'),isDeleted:true});
+  }});
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'owner-a'});
+  try {
+    const response=await loaded.route.PATCH(communicationRequest({action:'rename',teamId:'team-a',chatId:'channel',name:'Raced rename'}));
+    assert.equal(response.status,403);
+    assert.notEqual(records.get('teams/team-a/groupChats/channel').name,'Raced rename');
   } finally {loaded.dispose();}
 });

@@ -77,6 +77,17 @@ test('all frozen Task 5 practice case IDs are present exactly once across their 
   }
 });
 
+test('all frozen Task 5 Chat case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = [
+    'chat-create', 'chat-sync', 'chat-unread', 'chat-duplicate', 'chat-offline',
+    'chat-deleted', 'chat-audience', 'chat-sender', 'chat-removed', 'chat-team-b',
+    'chat-module-off', 'chat-console', 'chat-network', 'chat-responsive',
+  ];
+  const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS['chat-channel-message-unread']).flat();
+  assert.deepEqual(actual.sort(), expected.sort());
+  for (const caseId of expected) assert.equal(actual.filter(value => value === caseId).length, 1, caseId);
+});
+
 test('all frozen Task 5 waiver case IDs are present exactly once across their scenario dimensions', () => {
   const expected = {
     'waivers-team-global-waiver-lifecycle': [

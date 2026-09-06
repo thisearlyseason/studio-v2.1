@@ -52,7 +52,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { useFirestore, useDoc, useMemoFirebase, useCollection, useAuth } from '@/firebase';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
-import { collection, query, orderBy, limit, doc, updateDoc, arrayUnion, limitToLast } from 'firebase/firestore';
+import { collection, query, orderBy, doc, limitToLast } from 'firebase/firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Tooltip,
@@ -60,9 +60,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { normalizeChatMessage } from '@/lib/chat-message-normalization';
 import { validatePollInput } from '@/lib/poll-policy';
+import { beginChatSend, failChatSend, finishChatSend, type ChatSendDraft } from '@/lib/chat-send-state';
 
 function ChatRoomInner() {
   const { chatId } = useParams();
@@ -92,6 +92,7 @@ function ChatRoomInner() {
   const [pollPrompt, setPollPrompt] = useState('');
   const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
   const [chatImage, setChatImage] = useState<string | undefined>();
+  const [sendAttempt, setSendAttempt] = useState<ChatSendDraft | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -103,7 +104,7 @@ function ChatRoomInner() {
     return doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string);
   }, [effectiveTeamId, db, chatId]);
 
-  const { data: currentChat, isLoading: isChatLoading } = useDoc(chatDocRef);
+  const { data: currentChat, isLoading: isChatLoading, error: chatError } = useDoc(chatDocRef);
 
   const messagesQuery = useMemoFirebase(() => {
     if (!effectiveTeamId || !db || !chatId) return null;
@@ -114,7 +115,7 @@ function ChatRoomInner() {
     );
   }, [effectiveTeamId, db, chatId]);
 
-  const { data: rawMessages, isLoading: isMessagesLoading } = useCollection<Message>(messagesQuery);
+  const { data: rawMessages, isLoading: isMessagesLoading, error: messagesError } = useCollection<Message>(messagesQuery);
   const messages = useMemo(
     () => (rawMessages ? rawMessages.map(normalizeChatMessage) as Message[] : []),
     [rawMessages],
@@ -146,41 +147,68 @@ function ChatRoomInner() {
     }
   }, [currentChat]);
 
+  const transmitDraft = async (draft: ChatSendDraft) => {
+    if (!chatId || !user || !effectiveTeamId || draft.status === 'sent') return;
+    const sending = beginChatSend(draft, draft.requestId);
+    setSendAttempt(sending);
+    try {
+      await addMessage(chatId as string, user.name, sending.content, sending.type, sending.imageUrl, undefined, effectiveTeamId, sending.requestId);
+      setSendAttempt(finishChatSend(sending));
+      setInput('');
+      setChatImage(undefined);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to send this message.';
+      setSendAttempt(failChatSend(sending, message));
+      toast({ title: 'Message Not Sent', description: 'Your draft is preserved. Retry when your connection returns.', variant: 'destructive' });
+    }
+  };
+
   const handleSendMessage = () => {
-    if ((!input.trim() && !chatImage) || !chatId || !user) return;
-    addMessage(chatId as string, user.name, input, chatImage ? 'image' : 'text', chatImage, undefined, effectiveTeamId || undefined);
-    setInput('');
-    setChatImage(undefined);
+    if ((!input.trim() && !chatImage) || !chatId || !user || sendAttempt?.status === 'sending') return;
+    const draft = beginChatSend({ content: input, imageUrl: chatImage, type: chatImage ? 'image' : 'text' }, crypto.randomUUID());
+    void transmitDraft(draft);
   };
 
-  const handleRename = () => {
+  const handleRename = async () => {
     if (!isStaff || !newName.trim() || !chatId || !effectiveTeamId) return;
-    setIsRenameDialogOpen(false);
-    updateDocumentNonBlocking(doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string), { name: newName.trim() });
-    toast({ title: "Channel Identity Updated" });
+    try {
+      await updateChat(chatId as string, { name: newName.trim() }, effectiveTeamId);
+      setIsRenameDialogOpen(false);
+      toast({ title: "Channel Identity Updated" });
+    } catch (error) {
+      toast({ title: 'Channel Update Failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    }
   };
 
-  const handleAddMember = (memberId: string) => {
-    if (!isStaff || !chatId || !effectiveTeamId) return;
-    updateDocumentNonBlocking(doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string), { memberIds: arrayUnion(memberId) });
-    toast({ title: "Squad Member Added" });
+  const handleAddMember = async (memberId: string) => {
+    if (!isStaff || !chatId || !effectiveTeamId || !currentChat) return;
+    try {
+      await updateChat(chatId as string, { memberIds: [...(currentChat.memberIds || []), memberId] }, effectiveTeamId);
+      toast({ title: "Squad Member Added" });
+    } catch (error) {
+      toast({ title: 'Member Update Failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    }
   };
 
-  const handleRemoveMember = (memberId: string) => {
+  const handleRemoveMember = async (memberId: string) => {
     if (!isStaff || !chatId || !effectiveTeamId || !currentChat) return;
     const newIds = (currentChat.memberIds || []).filter((id: string) => id !== memberId);
-    updateDocumentNonBlocking(doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string), { memberIds: newIds });
-    toast({ title: 'Member Removed' });
+    try {
+      await updateChat(chatId as string, { memberIds: newIds }, effectiveTeamId);
+      toast({ title: 'Member Removed' });
+    } catch (error) {
+      toast({ title: 'Member Update Failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    }
   };
 
   const handleDeleteChat = async () => {
     if (!chatId) return;
     if (isStaff) {
-      await deleteChat(chatId as string);
+      await deleteChat(chatId as string, effectiveTeamId || undefined);
       router.push('/chats');
       toast({ title: "Channel Purged", description: "The group chat has been globally deleted." });
     } else {
-      await hideChatForUser(chatId as string);
+      await hideChatForUser(chatId as string, effectiveTeamId || undefined);
       router.push('/chats');
       toast({ title: "Channel Hidden", description: "Removed from your personal tactical view." });
     }
@@ -204,6 +232,19 @@ function ChatRoomInner() {
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
         <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.2em]">Synchronizing Secure Feed...</p>
       </div>
+    );
+  }
+
+  if (chatError || messagesError || !currentChat || currentChat.isDeleted === true) {
+    return (
+      <section role="alert" aria-labelledby="channel-unavailable-title" className="flex min-h-[50vh] flex-col items-center justify-center gap-5 text-center">
+        <ShieldAlert className="h-12 w-12 text-destructive" />
+        <div className="space-y-2">
+          <h1 id="channel-unavailable-title" className="text-2xl font-black uppercase">Channel unavailable</h1>
+          <p className="max-w-md text-sm font-medium text-muted-foreground">This channel was deleted, disabled, or your access was removed. No stale messages can be sent.</p>
+        </div>
+        <Button onClick={() => router.push('/chats')}>Return to chats</Button>
+      </section>
     );
   }
 
@@ -399,6 +440,12 @@ function ChatRoomInner() {
 
       <div className="p-4 md:p-6 bg-white border-t mt-auto relative z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
         <div className="max-w-4xl mx-auto space-y-4">
+          {sendAttempt?.status === 'failed' && (
+            <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+              <p className="text-sm font-bold text-destructive">Message not sent. Your draft is preserved.</p>
+              <Button variant="outline" size="sm" onClick={() => void transmitDraft(sendAttempt)}>Retry send</Button>
+            </div>
+          )}
           {chatImage && (
             <div className="relative inline-block animate-in zoom-in duration-300">
               <img src={chatImage} className="h-24 w-auto rounded-[1.5rem] border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
@@ -458,6 +505,7 @@ function ChatRoomInner() {
                 value={input} 
                 onChange={e => setInput(e.target.value)} 
                 onKeyDown={e => e.key === 'Enter' && handleSendMessage()} 
+                disabled={sendAttempt?.status === 'sending'}
               />
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -466,7 +514,7 @@ function ChatRoomInner() {
                     size="icon" 
                     className="absolute right-1.5 top-1.5 rounded-2xl h-9 w-9 shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all" 
                     onClick={handleSendMessage}
-                    disabled={!input.trim() && !chatImage}
+                    disabled={sendAttempt?.status === 'sending' || (!input.trim() && !chatImage)}
                   >
                     <Send className="h-4 w-4" />
                   </Button>

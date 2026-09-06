@@ -69,6 +69,7 @@ beforeEach(async () => {
       setDoc(doc(db, 'users', 'parent-account'), { role: 'parent', name: 'Child Guardian' }),
       setDoc(doc(db, 'users', 'staff'), { role: 'coach', name: 'Assistant Coach' }),
       setDoc(doc(db, 'users', 'outsider'), { role: 'coach', name: 'Outsider' }),
+      setDoc(doc(db, 'users', 'remote-staff'), { role: 'coach', name: 'Remote Staff' }),
       setDoc(doc(db, 'users', 'youth'), {
         role: 'youth_player',
         name: 'Youth',
@@ -103,6 +104,10 @@ beforeEach(async () => {
       }),
       setDoc(doc(db, 'teams', 'attacker-team'), {
         ownerUserId: 'outsider',
+      }),
+      setDoc(doc(db, 'teams', 'team-b'), { ownerUserId: 'outsider' }),
+      setDoc(doc(db, 'teams', 'team-b', 'members', 'remote-staff'), {
+        userId: 'remote-staff', teamId: 'team-b', role: 'Admin', position: 'Assistant Coach', status: 'active',
       }),
       setDoc(doc(db, 'teams', 'demo-team'), {
         ownerUserId: 'fictional-coach',
@@ -168,6 +173,12 @@ beforeEach(async () => {
       setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a'), {
         createdBy: 'owner',
         memberIds: ['owner', 'member', 'removed'],
+        memberAuthorities: {
+          owner: { teamId: 'team-a', memberId: 'owner' },
+          member: { teamId: 'team-a', memberId: 'member' },
+          removed: { teamId: 'team-a', memberId: 'removed' },
+        },
+        isDeleted: false,
       }),
       setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'existing'), {
         authorId: 'owner',
@@ -177,10 +188,33 @@ beforeEach(async () => {
         createdBy: 'owner',
         memberIds: ['owner', 'staff'],
         staffOnly: true,
+        isDeleted: false,
       }),
       setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat', 'messages', 'staff-message'), {
         authorId: 'owner',
         text: 'staff only',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat'), {
+        createdBy: 'owner',
+        memberIds: ['owner', 'member'],
+        isDeleted: true,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat', 'messages', 'deleted-message'), {
+        authorId: 'owner',
+        text: 'deleted private content',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'remote-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          owner: { teamId: 'team-a', memberId: 'owner' },
+          'remote-staff': { teamId: 'team-b', memberId: 'remote-staff' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'remote-chat', 'messages', 'remote-message'), {
+        authorId: 'owner', content: 'league staff coordination',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'member-message'), {
+        authorId: 'member', content: 'immutable text', createdAt: '2026-09-06T00:00:00.000Z',
       }),
       setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a'), {
         title: 'Open Tryout',
@@ -904,6 +938,62 @@ test('parents and players cannot read staff-only channels or their messages', as
     await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat')));
     await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat', 'messages', 'staff-message')));
   }
+});
+
+test('deleted and module-disabled chats revoke channel and message reads', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const memberDb = authenticatedDb('member');
+  for (const db of [ownerDb, memberDb]) {
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat')));
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat', 'messages', 'deleted-message')));
+  }
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'teams', 'team-a'), { features: { tacticalChat: false } }, { merge: true });
+  });
+  try {
+    for (const db of [ownerDb, memberDb]) {
+      await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a')));
+      await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'existing')));
+    }
+  } finally {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'teams', 'team-a'), { features: { tacticalChat: true } }, { merge: true });
+    });
+  }
+});
+
+test('chat channel lifecycle cannot bypass the authenticated server policy with direct client writes', async () => {
+  const ownerDb = authenticatedDb('owner');
+  await assertFails(setDoc(doc(ownerDb, 'teams', 'team-a', 'groupChats', 'forged-chat'), {
+    createdBy: 'owner', memberIds: ['owner', 'member'],
+  }));
+  await assertFails(setDoc(doc(ownerDb, 'teams', 'team-a', 'groupChats', 'chat-a'), {
+    memberIds: ['owner', 'member', 'youth'],
+  }, { merge: true }));
+});
+
+test('active chat list query excludes deleted channels while preserving live member discovery', async () => {
+  const memberDb = authenticatedDb('member');
+  const scoped = query(
+    collection(memberDb, 'teams', 'team-a', 'groupChats'),
+    where('memberIds', 'array-contains', 'member'),
+    where('isDeleted', '==', false),
+  );
+  const result = await assertSucceeds(getDocs(scoped));
+  assert.deepEqual(result.docs.map(snapshot => snapshot.id), ['chat-a']);
+});
+
+test('server-derived remote staff membership grants only its enrolled chat scope', async () => {
+  const remoteDb = authenticatedDb('remote-staff');
+  await assertSucceeds(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat')));
+  await assertSucceeds(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat', 'messages', 'remote-message')));
+  await assertFails(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'chat-a')));
+});
+
+test('message authors cannot rewrite immutable message content through direct clients', async () => {
+  const message = doc(authenticatedDb('member'), 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'member-message');
+  await assertFails(setDoc(message, { content: 'tampered', authorId: 'member' }, { merge: true }));
 });
 
 test('team waiver attestation is server-only even for otherwise authorized staff', async () => {

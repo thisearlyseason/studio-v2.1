@@ -38,7 +38,6 @@ export async function POST(req: NextRequest) {
 
     const teamRef = adminDb.collection('teams').doc(teamId);
     const chatRef = teamRef.collection('groupChats').doc(chatId);
-    const activeMembershipsQuery = teamRef.collection('members').where('userId', '==', auth.uid).limit(50);
     const messageRef = teamRef.collection('groupChats').doc(chatId).collection('messages').doc(messageId);
     await adminDb.runTransaction(async (transaction) => {
       const [team, chat, message] = await Promise.all([
@@ -48,12 +47,16 @@ export async function POST(req: NextRequest) {
       ]);
       const chatMembers = Array.isArray(chat.data()?.memberIds) ? chat.data()?.memberIds : [];
       const isPrivileged = auth.role === 'superadmin' || team.data()?.ownerUserId === auth.uid;
+      const memberAuthority = chat.data()?.memberAuthorities?.[auth.uid];
+      const sourceTeamId = typeof memberAuthority?.teamId === 'string' ? memberAuthority.teamId : teamId;
+      const sourceMemberId = typeof memberAuthority?.memberId === 'string' ? memberAuthority.memberId : auth.uid;
       const hasActiveMembership = isPrivileged
         ? true
-        : (await transaction.get(activeMembershipsQuery)).docs.some(member => {
-            const data = member.data();
-            return data.status !== 'removed' && data.isDeleted !== true;
-          });
+        : await transaction.get(adminDb.collection('teams').doc(sourceTeamId).collection('members').doc(sourceMemberId)).then(member => {
+          const data = member.data();
+          return member.exists && data?.status !== 'removed' && data?.isDeleted !== true &&
+            (data?.userId === auth.uid || sourceMemberId === auth.uid);
+        });
       if (
         !team.exists ||
         !chat.exists ||

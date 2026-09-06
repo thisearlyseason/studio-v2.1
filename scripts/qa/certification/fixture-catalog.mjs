@@ -949,7 +949,12 @@ export function buildFixtureCatalog(runSuffix) {
         name: `${marker} Team Chat`,
         createdBy: uidFor(ownerAlias),
         memberIds: chatMembersByTeam[teamAlias],
+        memberAuthorities: Object.fromEntries(chatMembersByTeam[teamAlias].map(userId => [userId, {
+          teamId: teamIdFor(teamAlias),
+          memberId: userId,
+        }])),
         createdAt: timestamp(FIXED_NOW),
+        isDeleted: false,
       },
     });
     addDocument('chat', {

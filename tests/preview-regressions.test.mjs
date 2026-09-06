@@ -328,10 +328,13 @@ test('chat controls have a functional menu trigger and accessible names', async 
   }
 });
 
-test('member-filtered chat lists declare their sorting index', async () => {
+test('member-filtered chat lists declare active-channel indexes for local and shared queries', async () => {
   const indexes = JSON.parse(await readSource('../firestore.indexes.json'));
   const chatIndex = indexes.indexes.find(index =>
     index.collectionGroup === 'groupChats' && index.queryScope === 'COLLECTION'
+  );
+  const sharedChatIndex = indexes.indexes.find(index =>
+    index.collectionGroup === 'groupChats' && index.queryScope === 'COLLECTION_GROUP'
   );
 
   assert.ok(chatIndex);
@@ -340,6 +343,16 @@ test('member-filtered chat lists declare their sorting index', async () => {
   ));
   assert.ok(chatIndex.fields.some(field =>
     field.fieldPath === 'createdAt' && field.order === 'DESCENDING'
+  ));
+  assert.ok(chatIndex.fields.some(field =>
+    field.fieldPath === 'isDeleted' && field.order === 'ASCENDING'
+  ));
+  assert.ok(sharedChatIndex);
+  assert.ok(sharedChatIndex.fields.some(field =>
+    field.fieldPath === 'memberIds' && field.arrayConfig === 'CONTAINS'
+  ));
+  assert.ok(sharedChatIndex.fields.some(field =>
+    field.fieldPath === 'isDeleted' && field.order === 'ASCENDING'
   ));
 });
 

@@ -29,6 +29,12 @@ export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
     permission: ['feed-audience','feed-parent','feed-removed','feed-team-b','feed-module-off'],
     persistence: ['feed-persistence'], console: ['feed-console'], network: ['feed-network'], responsive: ['feed-responsive'],
   }),
+  'chat-channel-message-unread': Object.freeze({
+    happyPath: ['chat-create', 'chat-sync'],
+    negativePath: ['chat-duplicate', 'chat-offline', 'chat-deleted'],
+    permission: ['chat-audience', 'chat-sender', 'chat-removed', 'chat-team-b', 'chat-module-off'],
+    persistence: ['chat-unread'], console: ['chat-console'], network: ['chat-network'], responsive: ['chat-responsive'],
+  }),
   'attendance-practice-event-member-attendance': Object.freeze({
     happyPath: ['att-staff-record'], negativePath: ['att-duplicate'],
     permission: ['att-member-readonly', 'att-removed', 'att-removed-read', 'att-tenant-b'], persistence: ['att-race'],

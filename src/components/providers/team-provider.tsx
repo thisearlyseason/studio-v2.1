@@ -899,13 +899,13 @@ interface TeamContextType {
   deleteEventSeries: (id: string) => Promise<void>;
   updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>;
   claimAssignment: (eventId: string, assignmentId: string) => Promise<boolean>;
-  addMessage: (chatId: string, author: string, content: string, type: string, img?: string, poll?: any, teamId?: string) => Promise<void>;
+  addMessage: (chatId: string, author: string, content: string, type: string, img?: string, poll?: any, teamId?: string, requestId?: string) => Promise<void>;
   deleteMessage: (chatId: string, messageId: string) => Promise<void>;
-  createChat: (name: string, members: string[], contextId?: string) => Promise<string>;
-  deleteChat: (chatId: string) => Promise<void>;
-  hideChatForUser: (chatId: string) => Promise<void>;
+  createChat: (name: string, members: string[], contextId?: string, teamId?: string) => Promise<string>;
+  deleteChat: (chatId: string, teamId?: string) => Promise<void>;
+  hideChatForUser: (chatId: string, teamId?: string) => Promise<void>;
   votePoll: (chatId: string, messageId: string, optionIdx: number | string, teamId?: string) => Promise<void>;
-  updateChat: (chatId: string, data: any) => Promise<void>;
+  updateChat: (chatId: string, data: any, teamId?: string) => Promise<void>;
   resetSquadData: (categories: string[]) => Promise<void>;
   addVolunteerOpportunity: (data: any) => Promise<void>;
   updateVolunteerOpportunity: (oppId: string, updates: any) => Promise<void>;
@@ -2411,7 +2411,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [activeTeam?.id, firebaseAuth]);
 
-  const addMessage = useCallback(async (chatId: string, author: string, content: string, type: string, img?: string, poll?: any, teamId?: string) => {
+  const addMessage = useCallback(async (chatId: string, author: string, content: string, type: string, img?: string, poll?: any, teamId?: string, requestId?: string) => {
     const targetTeamId = teamId || activeTeam?.id;
     if (!targetTeamId || !firebaseAuth) return;
     const token = await getAuthToken(firebaseAuth);
@@ -2419,7 +2419,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const response = await fetch('/api/teams/chat/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ teamId: targetTeamId, chatId, author, content, type, imageUrl: img || null, poll: poll || null }),
+      body: JSON.stringify({ teamId: targetTeamId, chatId, author, content, type, imageUrl: img || null, poll: poll || null, requestId: requestId || crypto.randomUUID() }),
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Unable to send this tactical message.');
@@ -2430,16 +2430,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await deleteDoc(doc(db, 'teams', activeTeam.id, 'groupChats', chatId, 'messages', messageId));
     }
   }, [activeTeam, db]);
-  const createChat = useCallback(async (name: string, members: string[], contextId?: string) => {
-    if (!activeTeam?.id || !firebaseAuth) return '';
+  const createChat = useCallback(async (name: string, members: string[], contextId?: string, teamId?: string) => {
+    const targetTeamId = teamId || activeTeam?.id;
+    if (!targetTeamId || !firebaseAuth) return '';
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
     const response = await fetch('/api/teams/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify({
-        teamId: activeTeam.id,
-        contextId: contextId || `team:${activeTeam.id}`,
+        teamId: targetTeamId,
+        contextId: contextId || `team:${targetTeamId}`,
         name,
         memberIds: members,
       }),
@@ -2447,9 +2448,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Unable to create this tactical chat.');
     return payload.chatId as string;
-  }, [activeTeam, firebaseAuth]);
-  const deleteChat = useCallback(async (chatId: string) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'groupChats', chatId), { isDeleted: true }); }, [activeTeam, db]);
-  const hideChatForUser = useCallback(async (chatId: string) => { if (!firebaseUser || !db) return; await setDoc(doc(db, 'users', firebaseUser.uid, 'hiddenChats', chatId), { id: `${firebaseUser.uid}_${chatId}`, userId: firebaseUser.uid, chatId, hiddenAt: new Date().toISOString() }); }, [firebaseUser, db]);
+  }, [activeTeam?.id, firebaseAuth]);
+  const mutateChat = useCallback(async (chatId: string, action: string, data: Record<string, unknown> = {}, teamId?: string) => {
+    const targetTeamId = teamId || activeTeam?.id;
+    if (!targetTeamId || !firebaseAuth) throw new Error('No active tactical squad.');
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/teams/chat', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ action, teamId: targetTeamId, chatId, ...data }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update this tactical channel.');
+  }, [activeTeam?.id, firebaseAuth]);
+  const deleteChat = useCallback(async (chatId: string, teamId?: string) => {
+    await mutateChat(chatId, 'delete', {}, teamId);
+  }, [mutateChat]);
+  const hideChatForUser = useCallback(async (chatId: string, teamId?: string) => {
+    const targetTeamId = teamId || activeTeam?.id;
+    if (!firebaseUser || !db || !targetTeamId) return;
+    const key = `${targetTeamId}:${chatId}`;
+    await setDoc(doc(db, 'users', firebaseUser.uid, 'hiddenChats', key), {
+      id: `${firebaseUser.uid}_${key}`, userId: firebaseUser.uid, teamId: targetTeamId, chatId, hiddenAt: new Date().toISOString(),
+    });
+  }, [firebaseUser, db, activeTeam?.id]);
   
   const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number | string, teamId?: string) => {
     const targetTeamId = teamId || activeTeam?.id;
@@ -2468,7 +2491,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [activeTeam, firebaseAuth]);
 
-  const updateChat = useCallback(async (chatId: string, data: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'groupChats', chatId), clean(data)); }, [activeTeam, db]);
+  const updateChat = useCallback(async (chatId: string, data: any, teamId?: string) => {
+    if (typeof data?.name === 'string') await mutateChat(chatId, 'rename', { name: data.name }, teamId);
+    if (Array.isArray(data?.memberIds)) await mutateChat(chatId, 'set-members', { memberIds: data.memberIds }, teamId);
+    if (data?.isHubChannel === true) await mutateChat(chatId, 'configure-hub', {
+      hubTeamId: data.hubTeamId,
+      staffMetadata: data.staffMetadata || {},
+    }, teamId);
+  }, [mutateChat]);
 
   const addVolunteerOpportunity = useCallback(async (data: any) => { if (activeTeam?.id && db) await addDoc(collection(db, 'teams', activeTeam.id, 'volunteers'), clean({ ...data, signups: {} })); }, [activeTeam, db]);
   const updateVolunteerOpportunity = useCallback(async (oppId: string, updates: any) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'volunteers', oppId), clean(updates)); }, [activeTeam, db]);

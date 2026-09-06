@@ -59,6 +59,25 @@ service cloud.firestore {
       );
     }
 
+    function isTeamChatEnabled(teamId) {
+      let teamPath = /databases/$(database)/documents/teams/$(teamId);
+      return exists(teamPath) &&
+        get(teamPath).data.get('features', {}).get('tacticalChat', true) != false;
+    }
+
+    function isOpenTeamChat(teamId, chatId) {
+      let chatPath = /databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId);
+      return isTeamChatEnabled(teamId) && exists(chatPath) &&
+        get(chatPath).data.get('isDeleted', false) != true;
+    }
+
+    function hasActiveChatAudience(chatData, hostTeamId) {
+      let authority = chatData.get('memberAuthorities', {}).get(request.auth.uid, {});
+      let sourceTeamId = authority.get('teamId', hostTeamId);
+      return chatData.get('memberIds', []).hasAny([request.auth.uid]) &&
+        isTeamMember(sourceTeamId);
+    }
+
     function hasAuthorizedLinkedPlayerMembership(teamId, userData) {
       let linkedPlayerId = userData.get('linkedPlayerId', '');
       let parentId = userData.get('parentId', '');
@@ -527,34 +546,27 @@ service cloud.firestore {
       // Members may send messages only under their own identity. Channel
       // membership and moderation remain owner-controlled.
       match /groupChats/{chatId} {
-        allow read: if isSuperAdmin() || (isSignedIn() && (
+        allow read: if isSuperAdmin() || (isTeamChatEnabled(teamId) &&
+          resource.data.get('isDeleted', false) != true && isSignedIn() && (
           isTeamOwner(teamId) ||
-          (
-            isTeamMember(teamId) &&
-            resource.data.get('memberIds', []).hasAny([request.auth.uid])
-          )
+          hasActiveChatAudience(resource.data, teamId)
         ));
-        allow create, update, delete: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        // Channel lifecycle is validated by the authenticated server route.
+        allow create, update, delete: if false;
 
         match /messages/{messageId} {
-          allow read: if isSuperAdmin() || (isSignedIn() && (
+          allow read: if isSuperAdmin() || (isOpenTeamChat(teamId, chatId) && isSignedIn() && (
             isTeamOwner(teamId) ||
-            (
-              isTeamMember(teamId) &&
-              get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId))
-                .data.get('memberIds', []).hasAny([request.auth.uid])
+            hasActiveChatAudience(
+              get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId)).data,
+              teamId
             )
           ));
           // New messages are validated by the authenticated server route so
           // removed members and cross-team recipients are checked authoritatively.
           allow create: if false;
-          allow update: if isSuperAdmin() || (isSignedIn() &&
-            isTeamMember(teamId) &&
-            get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId))
-              .data.get('memberIds', []).hasAny([request.auth.uid]) &&
-            resource.data.authorId == request.auth.uid &&
-            request.resource.data.authorId == resource.data.authorId);
-          allow delete: if isSuperAdmin() || (isSignedIn() && (
+          allow update: if false;
+          allow delete: if isSuperAdmin() || (isOpenTeamChat(teamId, chatId) && isSignedIn() && (
             isTeamOwner(teamId) ||
             (
               isTeamMember(teamId) &&

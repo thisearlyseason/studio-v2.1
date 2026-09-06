@@ -104,7 +104,7 @@ export default function ClubManagementPage() {
 }
 
 function AuthorizedClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount, isSuperAdmin, proQuotaStatus } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, updateChat, reinstateMember, isEliteAccount, isSuperAdmin, proQuotaStatus } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
 
   const router = useRouter();
@@ -390,13 +390,13 @@ function AuthorizedClubManagementPage() {
 
       const memberIdsArray = Array.from(memberUserIds);
       const channelName = `${user?.schoolName || user?.clubName || (isSchoolMode ? 'School Hub' : (isEliteAccount ? 'Apex Academy' : 'Club Hub'))} — Broadcast Channel`;
-      const chatId = await createChat(channelName, memberIdsArray);
-      if (chatId && db) {
-        await updateDoc(doc(db, 'teams', targetHub.id, 'groupChats', chatId), {
+      const chatId = await createChat(channelName, memberIdsArray, undefined, targetHub.id);
+      if (chatId) {
+        await updateChat(chatId, {
           isHubChannel: true,
           hubTeamId: targetHub.id,
           staffMetadata,
-        });
+        }, targetHub.id);
         setHubChannelTeamId(targetHub.id);
       }
       setHubChannel({ id: chatId, name: channelName, memberIds: memberIdsArray });
