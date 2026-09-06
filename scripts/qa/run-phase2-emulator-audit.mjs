@@ -7026,7 +7026,6 @@ async function runCertificationOperationsScenarios() {
           recordObservedOperationNamedCase(scenarioId, 'network', 'rsvp-network', 'parent RSVP browser flow has no 5xx responses', [/parent RSVP workflow failed responses/], { actor: 'qa-parent-a', operation: 'browser RSVP', requests: operationRequestEvidence('rsvp-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'responsive', 'rsvp-responsive', 'parent RSVP dialog fits mobile viewport', [/parent RSVP dialog fits mobile viewport/], { actor: 'qa-parent-a', operation: 'mobile browser RSVP', requests: operationRequestEvidence('rsvp-responsive'), reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         } else {
-          await captureBrowserOperationRequests('att-staff-record', 'qa-coach-owner-a', scheduleWorkflow.staffResult.observedResponses, 'att-staff-record');
           await captureBrowserOperationRequests('att-console', 'qa-team-member', scheduleWorkflow.memberResult.observedResponses, 'att-console');
           await captureBrowserOperationRequests('att-console', 'qa-coach-owner-a', scheduleWorkflow.staffResult.observedResponses, 'att-console');
           await captureBrowserOperationRequests('att-network', 'qa-team-member', scheduleWorkflow.memberResult.observedResponses, 'att-network');

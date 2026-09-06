@@ -47,4 +47,5 @@ test('Attendance dispatch uses a dedicated Team A workflow without Pro membershi
   assert.doesNotMatch(browser,/name:'Got It'|force:true/);
   assert.match(browser,/\['Going','Maybe','Decline'\]/);
   assert.match(source,/captureBrowserOperationRequests\('att-responsive', 'qa-team-member'/);
+  assert.doesNotMatch(source,/captureBrowserOperationRequests\('att-staff-record', 'qa-coach-owner-a'/);
 });
