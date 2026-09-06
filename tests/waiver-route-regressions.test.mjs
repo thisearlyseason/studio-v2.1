@@ -57,4 +57,7 @@ test('waiver lifecycle responsive evidence separates dialog bounds from page ove
   const signatureEnd = audit.indexOf('async function runWaiverSignatureWorkflowAudit()', signatureStart);
   const signatureWorkflow = audit.slice(signatureStart, signatureEnd);
   assert.match(signatureWorkflow, /dialog\.waitFor\([\s\S]*page\.waitForTimeout\(250\);[\s\S]*measurements\.push\(\{viewport:\{width:1440,height:900\}/);
+  assert.match(signatureWorkflow, /\.\.\/\.\.\/following-sibling::button\[contains\(normalize-space\(\.\),"Review & Sign"\)\]/);
+  assert.match(signatureWorkflow, /\.\.\/following-sibling::\*\/\/button\[contains\(normalize-space\(\.\),"Execute Document"\)\]/);
+  assert.match(signatureWorkflow, /following-sibling::button\[contains\(normalize-space\(\.\),"Review & Sign"\)\]/);
 });

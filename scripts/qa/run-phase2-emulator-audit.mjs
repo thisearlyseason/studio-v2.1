@@ -7445,10 +7445,10 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
         const title=page.getByText(${JSON.stringify(spec.title)},{exact:true}).first();
         await title.waitFor({state:'visible',timeout:15000});
         ${spec.kind === 'coach'
-          ? `const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Review & Sign")]][1]');await card.getByRole('button',{name:/Review & Sign/}).click();`
+          ? `const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');await trigger.click();`
           : spec.route === '/family'
-            ? `const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Review & Sign")]][1]');await card.getByRole('button',{name:/Review & Sign/}).click();`
-            : `const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Execute Document")]][1]');await card.getByRole('button',{name:/Execute Document/}).click();`}
+            ? `const trigger=title.locator('xpath=../../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');await trigger.click();`
+            : `const trigger=title.locator('xpath=../following-sibling::*//button[contains(normalize-space(.),"Execute Document")]');await trigger.click();`}
         const dialog=page.getByRole('dialog');await dialog.waitFor({state:'visible',timeout:15000});
         await page.waitForTimeout(250);
         measurements.push({viewport:{width:1440,height:900},box:await dialog.boundingBox()});
