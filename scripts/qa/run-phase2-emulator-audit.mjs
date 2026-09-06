@@ -6749,9 +6749,13 @@ async function runCertificationOperationsScenarios() {
         if (scenarioId === 'events-rsvp-attendance-details') {
           recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-self', 'youth records own RSVP through the authenticated API', [/youth own RSVP/], { actor: 'qa-youth-active', operation: 'POST RSVP', reconciliation: '200 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-child', 'parent records linked youth RSVP through the browser', [/parent child RSVP persists through the browser/, /parent browser RSVP writes the linked youth member identity/], { actor: 'qa-parent-a', operation: 'browser child RSVP', reconciliation: 'event userRsvps youth UID', timeBound: 'reload + emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-staff', 'staff updates an active squad member RSVP', [/staff RSVP override is accepted for an active squad member/], { actor: 'qa-coach-owner-a', operation: 'POST staff RSVP', reconciliation: '200 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rsvp-cancelled', 'cancelled event rejects RSVP', [/cancelled activity RSVP is denied/], { actor: 'qa-adult-player-a', operation: 'POST RSVP cancelled', reconciliation: '409 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rsvp-replay', 'barrier-released own RSVP requests both return success without duplicate participant records', [/barrier-released own RSVP replay updates are accepted without duplicate records/], { actor: 'qa-adult-player-a', operation: 'two-party POST RSVP', reconciliation: 'two 200 responses', timeBound: '5s two-party barrier' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-forged-uid', 'other household cannot RSVP for foreign youth', [/other-household RSVP forge is denied/], { actor: 'qa-parent-b', operation: 'POST forged RSVP', reconciliation: '403 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-removed', 'removed member RSVP is denied without participant disclosure', [/removed member RSVP is denied without exposing an inactive participant/], { actor: 'qa-removed-member', operation: 'POST RSVP', reconciliation: '404 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-tenant-b', 'Team B staff cannot RSVP into Team A', [/Team B staff RSVP into Team A is denied/], { actor: 'qa-coach-owner-b', operation: 'POST cross-tenant RSVP', reconciliation: '403 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'persistence', 'rsvp-race', 'barrier RSVP race persists one participant map value', [/barrier RSVP race persists exactly one participant map value/], { actor: 'qa-adult-player-a', operation: 'two-party POST RSVP', reconciliation: 'one userRsvps map key', timeBound: 'immediate emulator read' });
           recordObservedOperationNamedCase(scenarioId, 'console', 'rsvp-console', 'parent RSVP browser flow has no console errors', [/parent RSVP workflow console errors/], { actor: 'qa-parent-a', operation: 'browser RSVP', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'network', 'rsvp-network', 'parent RSVP browser flow has no 5xx responses', [/parent RSVP workflow failed responses/], { actor: 'qa-parent-a', operation: 'browser RSVP', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'responsive', 'rsvp-responsive', 'parent RSVP dialog fits mobile viewport', [/parent RSVP dialog fits mobile viewport/], { actor: 'qa-parent-a', operation: 'mobile browser RSVP', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
@@ -7995,6 +7999,7 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const proOwner = await signIn('qa-pro-owner');
   const parent = await signIn('qa-parent-a');
   const parentB = await signIn('qa-parent-b');
+  const teamBOwner = await signIn('qa-coach-owner-b');
   const adult = await signIn('qa-adult-player-a');
   const youth = await signIn('qa-youth-active');
   const removed = await signIn('qa-removed-member');
@@ -8031,14 +8036,19 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const parentPersisted = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
     firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).get());
   expectEqual(parentPersisted.data()?.userRsvps?.[youthUid], 'going', 'parent browser RSVP writes the linked youth member identity');
-  const raceResponses = await Promise.all([
-    apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) }),
-    apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'maybe' }) }),
-  ]);
-  expectEqual(raceResponses.every(response => response.status === 200), true, 'concurrent own RSVP updates are accepted without duplicate records');
+  const raceResponses = await runTwoParty('RSVP exact replay barrier', [
+    signal => apiJsonResult('/api/teams/rsvp', adult.body.idToken, { signal, method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) }),
+    signal => apiJsonResult('/api/teams/rsvp', adult.body.idToken, { signal, method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'maybe' }) }),
+  ], { terminate: async () => {} });
+  const raceStatusValues = raceResponses.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(',');
+  expectEqual(raceStatusValues, '200,200', 'barrier-released own RSVP replay updates are accepted without duplicate records');
+  const racePersisted = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).get());
+  expectEqual(['going', 'maybe'].includes(racePersisted.data()?.userRsvps?.[adultUid]), true, 'barrier RSVP race persists exactly one participant map value');
   expectEqual((await apiJsonResult('/api/teams/rsvp', youth.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: youthUid, status: 'going' }) })).status, 200, 'youth own RSVP');
   expectEqual((await apiJsonResult('/api/teams/rsvp', parent.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: parentUid, status: 'going' }) })).status, 403, 'parent own root RSVP is denied at API boundary');
+  expectEqual((await apiJsonResult('/api/teams/rsvp', owner.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'declined' }) })).status, 200, 'staff RSVP override is accepted for an active squad member');
   expectEqual((await apiJsonResult('/api/teams/rsvp', parentB.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: youthUid, status: 'going' }) })).status, 403, 'other-household RSVP forge is denied');
+  expectEqual((await apiJsonResult('/api/teams/rsvp', teamBOwner.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) })).status, 403, 'Team B staff RSVP into Team A is denied');
   expectEqual((await apiJsonResult('/api/teams/rsvp', removed.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: identityByAlias.get('qa-removed-member').uid, status: 'going' }) })).status, 404, 'removed member RSVP is denied without exposing an inactive participant');
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).update({ status: 'cancelled' }));
   expectEqual((await apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) })).status, 409, 'cancelled activity RSVP is denied');
