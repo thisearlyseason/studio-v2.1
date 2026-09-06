@@ -1328,6 +1328,11 @@ test('Task 3 Firebase Admin emulator calls disable stale HTTP keep-alive reuse',
   assert.match(helper, /httpAgent: new HttpAgent\(\{ keepAlive: false \}\)/);
 });
 
+test('overlapping local scheduler adapters allocate distinct Firebase Admin app names', () => {
+  assert.match(source, /let emulatorAdminAppSequence = 0;/);
+  assert.match(source, /task3-auth-admin-\$\{process\.pid\}-\$\{Date\.now\(\)\}-\$\{\+\+emulatorAdminAppSequence\}/);
+});
+
 test('Task 3 transport diagnostics retain only local method, path, and error code', () => {
   const nested = new TypeError('fetch failed', { cause: Object.assign(new Error('socket closed'), { code: 'UND_ERR_SOCKET' }) });
   assert.equal(

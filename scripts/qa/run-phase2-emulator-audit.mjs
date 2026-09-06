@@ -132,6 +132,7 @@ let activeCertificationCaseIds = new Set();
 let activeTenantExecution = null;
 let activeTenantExecutionGroup = null;
 let rsvpAttendanceWorkflowInvocation = 0;
+let emulatorAdminAppSequence = 0;
 const tenantTokenActors = new Map();
 const dynamicResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
 const completedDynamicCleanupRuns = [];
@@ -1383,7 +1384,7 @@ export async function waitForIdTokenRevocationBoundary(idToken, {
 async function withEmulatorAuthAdmin(callback) {
   const adminModule = await import('firebase-admin');
   const admin = adminModule.default || adminModule;
-  const appName = `task3-auth-admin-${process.pid}-${Date.now()}`;
+  const appName = `task3-auth-admin-${process.pid}-${Date.now()}-${++emulatorAdminAppSequence}`;
   const app = admin.initializeApp({
     projectId: PROJECT_ID,
     storageBucket: `${PROJECT_ID}.appspot.com`,
