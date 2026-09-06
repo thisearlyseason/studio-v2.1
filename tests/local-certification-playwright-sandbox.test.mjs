@@ -32,6 +32,13 @@ for (const name of ['browserOwnerEventCreate', 'browserMemberEventRsvp', 'browse
   });
 }
 
+test('Event owner edit workflow captures a distinct reload response for the persistence case', () => {
+  const source = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(source, /observationTag = 'evt-persistence'/);
+  assert.match(source, /owner event edit second reload persistence/);
+  assert.match(source, /captureBrowserOperationRequests\('evt-persistence', 'qa-coach-owner-a', eventWorkflow\.ownerResult\.observedResponses, 'evt-persistence'\)/);
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {

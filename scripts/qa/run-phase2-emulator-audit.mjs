@@ -6922,6 +6922,7 @@ async function runCertificationOperationsScenarios() {
         await captureBrowserOperationRequests('evt-crud', 'qa-coach-owner-a', eventWorkflow.created.observedResponses, 'owner-create');
         await captureBrowserOperationRequests('evt-crud', 'qa-team-member', eventWorkflow.memberResult.observedResponses, 'member-read-rsvp');
         await captureBrowserOperationRequests('evt-crud', 'qa-coach-owner-a', eventWorkflow.ownerResult.observedResponses, 'owner-edit-delete');
+        await captureBrowserOperationRequests('evt-persistence', 'qa-coach-owner-a', eventWorkflow.ownerResult.observedResponses, 'evt-persistence');
         const recurringWorkflow = await runRecurringEventWorkflowAudit();
         await captureBrowserOperationRequests('evt-series', 'qa-coach-owner-a', recurringWorkflow.observedResponses, 'evt-series');
         await captureBrowserOperationRequests('evt-occurrence-edit-delete', 'qa-coach-owner-a', recurringWorkflow.observedResponses, 'evt-occurrence-edit-delete');
@@ -6943,7 +6944,7 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-member-deny', 'active player cannot create a team event', [/event exact member create denied/], { actor: 'qa-team-member', operation: 'POST create', requests: operationRequestEvidence('evt-member-deny'), reconciliation: '403 response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-assistant-own', 'active assistant coach can create a team event', [/event exact assistant create allowed/], { actor: 'qa-team-assistant', operation: 'POST create', requests: operationRequestEvidence('evt-assistant-own'), reconciliation: '200 response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-team-b-deny', 'Team B owner cannot create an event in Team A', [/event exact foreign team create denied/], { actor: 'qa-coach-owner-b', operation: 'POST create Team A', requests: operationRequestEvidence('evt-team-b-deny'), reconciliation: '403 response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'evt-persistence', 'owner event edit survives browser reload', [/owner event edit persists after reload/], { actor: 'qa-coach-owner-a', operation: 'browser event update', reconciliation: 'reload shows updated title', timeBound: '15s UI wait' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'evt-persistence', 'owner event edit survives a separate browser reload', [/owner event edit second reload persistence/], { actor: 'qa-coach-owner-a', operation: 'browser event update', requests: operationRequestEvidence('evt-persistence'), reconciliation: 'second reload shows updated title before delete', timeBound: '15s UI wait' });
         recordObservedOperationNamedCase(scenarioId, 'console', 'evt-console', 'event browser paths complete without console errors', [/owner event create console errors/, /member event workflow console errors/, /weekly recurrence workflow console errors/], { actor: 'qa-coach-owner-a', operation: 'browser event flows', requests: operationRequestEvidence('evt-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'evt-network', 'event browser paths complete without server failures', [/owner event create failed responses/, /member event workflow failed responses/, /weekly recurrence workflow failed responses/], { actor: 'qa-coach-owner-a', operation: 'browser event flows', requests: operationRequestEvidence('evt-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'responsive', 'evt-responsive', 'recurrence controls remain within the mobile viewport', [/weekly recurrence controls fit the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'browser mobile viewport', requests: operationRequestEvidence('evt-responsive'), reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
@@ -8840,12 +8841,13 @@ function browserOwnerEventEditDelete(session, marker) {
     const consoleErrors = [];
     const failedResponses = [];
     const observedResponses = [];
+    let observationTag = 'owner-edit-delete';
     const observeResponse = ${observeCalendarResponse.toString()};
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.message));
     page.on('response', response => {
       if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
-      const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, 'owner-edit-delete', '/api/teams/events/action');
+      const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, observationTag, '/api/teams/events/action');
       if (observation) observedResponses.push(observation);
     });
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
@@ -8861,6 +8863,11 @@ function browserOwnerEventEditDelete(session, marker) {
     await page.reload();
     await page.getByText(${JSON.stringify(updated)}, { exact: true }).first().waitFor({ timeout: 10000 });
     const editedAfterReload = await page.getByText(${JSON.stringify(updated)}, { exact: true }).count();
+    observationTag = 'evt-persistence';
+    await page.reload();
+    await page.getByText(${JSON.stringify(updated)}, { exact: true }).first().waitFor({ timeout: 10000 });
+    const editedAfterSecondReload = await page.getByText(${JSON.stringify(updated)}, { exact: true }).count();
+    observationTag = 'owner-edit-delete';
     await page.getByText(${JSON.stringify(updated)}, { exact: true }).last().click();
     const updatedDetails = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${updated}`)} });
     await updatedDetails.getByRole('button', { name: ${JSON.stringify(`Delete ${updated}`)} }).click();
@@ -8870,6 +8877,7 @@ function browserOwnerEventEditDelete(session, marker) {
     await page.reload();
     return {
       editedAfterReload,
+      editedAfterSecondReload,
       deletedAfterReload: await page.getByText(${JSON.stringify(updated)}, { exact: true }).count(),
       observedResponses,
       consoleErrors,
@@ -8904,6 +8912,7 @@ async function runEventWorkflowAudit() {
   expectEqual(memberResult.failedResponses.length, 0, 'member event workflow failed responses');
   const ownerResult = browserOwnerEventEditDelete(owner, marker);
   expectEqual(ownerResult.editedAfterReload > 0, true, 'owner event edit persists after reload');
+  expectEqual(ownerResult.editedAfterSecondReload > 0, true, 'owner event edit second reload persistence');
   expectEqual(ownerResult.deletedAfterReload, 0, 'owner event delete persists after reload');
   expectEqual(ownerResult.consoleErrors.length, 0, 'owner event edit/delete console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'owner event edit/delete failed responses');
