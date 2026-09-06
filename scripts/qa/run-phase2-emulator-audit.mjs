@@ -130,6 +130,7 @@ const workflowChatProbeOnly = process.argv.includes('--workflow-chat-probe-only'
 const workflowEventsOnly = process.argv.includes('--workflow-events-only');
 const workflowFacilitiesOnly = process.argv.includes('--workflow-facilities-only');
 const workflowEquipmentOnly = process.argv.includes('--workflow-equipment-only');
+const waiverSignatureNavigationOnly = process.argv.includes('--waiver-sign-navigation-only');
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const sensitiveValues = new Set([password]);
@@ -7422,16 +7423,46 @@ async function runWaiverLifecycleWorkflowAudit() {
   expectEqual(browser.layout.scrollWidth <= browser.layout.innerWidth, true, `Waiver waiver-responsive: global waiver surface has no horizontal viewport overflow (${JSON.stringify(browser.layout)})`);
 }
 
+const WAIVER_SIGNATURE_SURFACES = Object.freeze([
+  { alias: 'qa-parent-a', landingPath: '/family', route: '/family', kind: 'participant' },
+  { alias: 'qa-adult-player-a', landingPath: '/dashboard', route: '/files', kind: 'participant' },
+  { alias: 'qa-youth-active', landingPath: '/dashboard', route: '/files', kind: 'participant' },
+  { alias: 'qa-school-delegate', landingPath: '/club', route: '/coaches-corner', kind: 'coach' },
+]);
+
+async function runWaiverSignatureNavigationProbe() {
+  for (const spec of WAIVER_SIGNATURE_SURFACES) {
+    const session = await browserLogin(spec.alias, spec.landingPath, `waiver-sign-navigation-${spec.alias}-${process.pid}`);
+    const observation = JSON.parse(cli(session, ['run-code', `async page => {
+      const consoleErrors=[];const failedResponses=[];
+      const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text())};
+      const onResponse=response=>{if(response.status()>=500)failedResponses.push({status:response.status(),url:response.url()})};
+      page.on('console',onConsole);page.on('response',onResponse);
+      try{
+        const response=await page.goto(${JSON.stringify(BASE_URL + spec.route)});
+        await page.waitForFunction(expected=>window.location.pathname===expected,${JSON.stringify(spec.route)},{timeout:15000});
+        return{pathname:await page.evaluate(()=>location.pathname),status:response?.status()??null,bodyVisible:await page.locator('body').isVisible(),consoleErrors,failedResponses};
+      }finally{page.off('console',onConsole);page.off('response',onResponse)}
+    }`]));
+    expectEqual(observation.pathname, spec.route, `${spec.alias} waiver target route after ${spec.landingPath} login`);
+    expectEqual(observation.status, 200, `${spec.alias} waiver target route response`);
+    expectEqual(observation.bodyVisible, true, `${spec.alias} waiver target route body`);
+    expectEqual(observation.consoleErrors.length, 0, `${spec.alias} waiver navigation console errors`);
+    expectEqual(observation.failedResponses.length, 0, `${spec.alias} waiver navigation 5xx responses`);
+  }
+  console.log('Waiver signature landing/target navigation probe completed.');
+}
+
 async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coachTeamId }) {
-  const specs = [
-    { alias: 'qa-parent-a', route: '/family', title: participantTitle, button: 'Review & Sign', kind: 'participant' },
-    { alias: 'qa-adult-player-a', route: '/files', title: participantTitle, button: 'Execute Document', kind: 'participant' },
-    { alias: 'qa-youth-active', route: '/files', title: participantTitle, button: 'Execute Document', kind: 'participant' },
-    { alias: 'qa-school-delegate', route: '/coaches-corner', title: coachTitle, button: 'Review & Sign', kind: 'coach', teamId: coachTeamId },
-  ];
+  const specs = WAIVER_SIGNATURE_SURFACES.map(spec => ({
+    ...spec,
+    title: spec.kind === 'coach' ? coachTitle : participantTitle,
+    button: spec.kind === 'coach' ? 'Review & Sign' : spec.route === '/family' ? 'Review & Sign' : 'Execute Document',
+    teamId: spec.kind === 'coach' ? coachTeamId : undefined,
+  }));
   const observations = [];
   for (const spec of specs) {
-    const session = await browserLogin(spec.alias, spec.route, `waiver-sign-${spec.alias}-${process.pid}`);
+    const session = await browserLogin(spec.alias, spec.landingPath, `waiver-sign-${spec.alias}-${process.pid}`);
     const observation = JSON.parse(cli(session, ['run-code', `async page => {
       const consoleErrors=[];const failedResponses=[];
       const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text())};
@@ -12915,7 +12946,8 @@ async function main() {
   ownedNextServerProcess = startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (certificationIdentity || certificationTenants || certificationOperations) {
+  if (waiverSignatureNavigationOnly) await runWaiverSignatureNavigationProbe();
+  else if (certificationIdentity || certificationTenants || certificationOperations) {
     await runSelectedCertificationBatches({
       certificationIdentity,
       certificationTenants,

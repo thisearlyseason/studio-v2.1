@@ -63,4 +63,13 @@ test('waiver lifecycle responsive evidence separates dialog bounds from page ove
   assert.match(signatureWorkflow, /interactionFailure/);
   assert.match(signatureWorkflow, /elementFromPoint/);
   assert.match(signatureWorkflow, /dismissTransientDialogs/);
+  assert.match(audit, /alias: 'qa-adult-player-a', landingPath: '\/dashboard', route: '\/files'/);
+  assert.match(audit, /alias: 'qa-youth-active', landingPath: '\/dashboard', route: '\/files'/);
+  assert.match(audit, /alias: 'qa-school-delegate', landingPath: '\/club', route: '\/coaches-corner'/);
+  assert.match(signatureWorkflow, /browserLogin\(spec\.alias, spec\.landingPath/);
+  assert.match(audit, /const waiverSignatureNavigationOnly = process\.argv\.includes\('--waiver-sign-navigation-only'\)/);
+  assert.match(audit, /if \(waiverSignatureNavigationOnly\) await runWaiverSignatureNavigationProbe\(\)/);
+  assert.match(audit, /pathname:await page\.evaluate\(\(\)=>location\.pathname\)/);
+  assert.doesNotMatch(audit.slice(audit.indexOf('async function runWaiverSignatureNavigationProbe()'), audit.indexOf('async function observeWaiverSignatureDialogs(')), /new URL\(page\.url\(\)\)/);
+  assert.match(signatureWorkflow, /WAIVER_SIGNATURE_SURFACES/);
 });
