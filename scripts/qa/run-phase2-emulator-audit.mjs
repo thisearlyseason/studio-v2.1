@@ -8500,12 +8500,17 @@ async function runReminderSchedulerRuntimeAudit() {
   const ledgerRows = async () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
     (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
   const ledgerFor = (rows, eventId, key) => rows.find(document => document.data().eventId === eventId && document.data().userId === userIds[key])?.data() || null;
+  const exactLedger = record => record ? ({
+    teamId: record.teamId, eventId: record.eventId, userId: record.userId, qaReminderRun: record.qaReminderRun,
+    status: record.status, attempts: record.attempts, leaseExpiresAt: record.leaseExpiresAt,
+    successCount: record.successCount, failureCount: record.failureCount,
+  }) : null;
 
   const eligibleResult = await runCase('rem-eligible', 'qa-parent-a+qa-adult-player-a+qa-youth-active', 'rem-eligible-core-1', springNow, ['eligible'], ['parent', 'adult', 'youth']);
   expectEqual(JSON.stringify(eligibleResult), JSON.stringify({ sentCount: 3, failedCount: 0, claimedCount: 3 }), 'Reminder scheduler core sends one same-day eligible FCM and Web Push delivery');
   const eligibleLedgers = await ledgerRows();
   for (const key of ['parent', 'adult', 'youth']) {
-    expectEqual(JSON.stringify(ledgerFor(eligibleLedgers, 'eligible', key)), JSON.stringify({ teamId, eventId: 'eligible', userId: userIds[key], qaReminderRun: certificationRunId, status: 'sent', attempts: 1, leaseExpiresAt: 0, successCount: 2, failureCount: 0 }), `Reminder scheduler writes one same-day PA/AP/YP delivery ledger for ${aliases[key]}`);
+    expectEqual(JSON.stringify(exactLedger(ledgerFor(eligibleLedgers, 'eligible', key))), JSON.stringify({ teamId, eventId: 'eligible', userId: userIds[key], qaReminderRun: certificationRunId, status: 'sent', attempts: 1, leaseExpiresAt: 0, successCount: 2, failureCount: 0 }), `Reminder scheduler writes one same-day PA/AP/YP delivery ledger for ${aliases[key]}`);
   }
   expectEqual(JSON.stringify(delivered.filter(item => item.eventId === 'eligible').map(item => ({ actorAlias: item.actorAlias, fcmCount: item.fcmCount, webPushCount: item.webPushCount })).sort((a, b) => a.actorAlias.localeCompare(b.actorAlias))), JSON.stringify([
     { actorAlias: 'qa-adult-player-a', fcmCount: 1, webPushCount: 1 },
