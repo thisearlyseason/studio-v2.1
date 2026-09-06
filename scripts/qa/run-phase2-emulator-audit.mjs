@@ -8179,7 +8179,11 @@ async function runCalendarFeedLifecycleAudit() {
   expectEqual(teamFeed.status, 200, 'Calendar team feed local Function fetch');
   expectEqual(multiFeed.status, 200, 'Calendar multi feed local Function fetch');
   expectEqual(/BEGIN:VCALENDAR[\s\S]*VERSION:2\.0[\s\S]*END:VCALENDAR/.test(teamFeed.body), true, 'Calendar Function returns RFC 5545 body');
-  expectEqual(new RegExp(`UID:${teamA.id}-${secretEventId}@thesquad\\.pro`).test(teamFeed.body), true, 'Calendar Function emits stable team-scoped UID for the exact event');
+  // RFC 5545 permits the intentionally long, stable UID to be folded. Unfold
+  // before comparing the logical property value so the proof verifies both
+  // identity and the required physical-line folding independently.
+  const unfoldedTeamFeed = teamFeed.body.replace(/\r\n /g, '');
+  expectEqual(new RegExp(`UID:${teamA.id}-${secretEventId}@thesquad\\.pro`).test(unfoldedTeamFeed), true, 'Calendar Function emits stable team-scoped UID for the exact event');
   expectEqual(/DTSTART;TZID=America\/Edmonton:20261002T233000/.test(teamFeed.body) && /DTEND;TZID=America\/Edmonton:20261003T003000/.test(teamFeed.body), true, 'Calendar Function emits timezone-aware overnight DTSTART and DTEND');
   expectEqual(/SUMMARY:.*\\, escaped\\;/.test(teamFeed.body) && /DESCRIPTION:.*escaped\\; description\\, value/.test(teamFeed.body), true, 'Calendar Function RFC-escapes summary and description text');
   expectEqual(/\r\n /.test(teamFeed.body), true, 'Calendar Function RFC-folds long content lines');

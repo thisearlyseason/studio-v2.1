@@ -1419,6 +1419,14 @@ test('Team C linked-child RSVP resolves the player fixture by its durable fixtur
   assert.doesNotMatch(rsvpBlock, /document\.alias === 'qa-player-youth-c'/);
 });
 
+test('ICS UID evidence unfolds a permitted RFC continuation before asserting the stable logical UID', () => {
+  const start = source.indexOf('async function runCalendarFeedLifecycleAudit()');
+  const end = source.indexOf('function browserOwnerRsvpWorkflow(', start);
+  const calendarBlock = source.slice(start, end);
+  assert.match(calendarBlock, /const unfoldedTeamFeed = teamFeed\.body\.replace\(\/\\r\\n \/g, ''\);/);
+  assert.match(calendarBlock, /test\(unfoldedTeamFeed\)/);
+});
+
 test('emulator audit exercises facility and resource CRUD with destructive confirmation', () => {
   assert.match(source, /workflow-facilities-only/);
   assert.match(source, /facility requires name and address/);
