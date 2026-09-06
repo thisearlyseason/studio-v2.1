@@ -8143,7 +8143,7 @@ async function runExactEventApiCasesAudit() {
   const fall = await create(owner.body.idToken, ids.fall,
     payload(`QA DST Fall ${marker}`, '2026-11-01', '01:30', '02:30', `QA DST Fall ${marker}`));
   const midnight = await create(owner.body.idToken, ids.midnight,
-    payload(`QA Midnight ${marker}`, '2026-09-22', '23:30', '00:30', `QA Midnight ${marker}`));
+    { ...payload(`QA Midnight ${marker}`, '2026-09-22', '23:30', '00:30', `QA Midnight ${marker}`), endDate: '2026-09-23' });
   expectEqual([spring.status, fall.status, midnight.status].join(','), '200,200,200', 'event exact DST and midnight creates accepted');
 
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
@@ -8155,7 +8155,7 @@ async function runExactEventApiCasesAudit() {
     );
     expectEqual(springDoc.data()?.date, '2026-03-08', 'event exact DST spring create and persisted date');
     expectEqual(fallDoc.data()?.date, '2026-11-01', 'event exact DST fall create and persisted date');
-    expectEqual(JSON.stringify({ date: midnightDoc.data()?.date, endDate: midnightDoc.data()?.endDate, start: midnightBooking.data()?.startMinute, end: midnightBooking.data()?.endMinute }), JSON.stringify({ date: '2026-09-22', endDate: '2026-09-22', start: 1410, end: 1470 }), 'event exact midnight interval and booking persist');
+    expectEqual(JSON.stringify({ date: midnightDoc.data()?.date, endDate: midnightDoc.data()?.endDate, start: midnightBooking.data()?.startMinute, end: midnightBooking.data()?.endMinute }), JSON.stringify({ date: '2026-09-22', endDate: '2026-09-23', start: 1410, end: 1470 }), 'event exact midnight interval and booking persist');
   });
 
   const [missingTitle, reversed] = await Promise.all([
