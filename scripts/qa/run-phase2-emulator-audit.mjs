@@ -8028,6 +8028,23 @@ async function runReminderSchedulerRuntimeAudit() {
   expectEqual(JSON.stringify(first), JSON.stringify({ sentCount: 1, failedCount: 1, claimedCount: 2 }), 'Reminder scheduler core sends one same-day eligible FCM and Web Push delivery');
   expectEqual(JSON.stringify(second), JSON.stringify({ sentCount: 1, failedCount: 0, claimedCount: 1 }), 'Reminder scheduler failed ledger retry transitions to sent');
 
+  // Reconcile exclusion cases before intentionally rewinding the injected
+  // clock to the 06:00/DST boundary. Leaving an excluded 08:00 fixture in the
+  // shared overlay while rewinding to 06:00 would make it legitimately future
+  // in that later invocation and would no longer test the original 09:00 case.
+  const initialLedgers = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
+  const initialLedgerFor = (eventId, userId) => initialLedgers.some(document => document.data().eventId === eventId && document.data().userId === userId);
+  expectEqual(initialLedgerFor('invalid', userIds.eligible), false, 'Reminder scheduler excludes malformed event time');
+  expectEqual(initialLedgerFor('past', userIds.eligible), false, 'Reminder scheduler excludes no-longer-future event time');
+  expectEqual(initialLedgers.some(document => document.data().userId === userIds.noToken), false, 'Reminder scheduler excludes eligible member with no device token');
+  expectEqual(initialLedgers.some(document => document.data().userId === userIds.prefOff), false, 'Reminder scheduler excludes preferences-disabled recipient');
+  expectEqual(initialLedgers.some(document => document.data().userId === userIds.removed), false, 'Reminder scheduler excludes removed membership');
+  expectEqual(initialLedgers.some(document => document.data().userId === userIds.sender), false, 'Reminder scheduler excludes staff sender role');
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => Promise.all([
+    firestoreAdmin.doc(`${teamPath}/events/invalid`).delete(),
+    firestoreAdmin.doc(`${teamPath}/events/past`).delete(),
+  ]));
+
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     await firestoreAdmin.doc(`${teamPath}/events/overlap`).set({ date: '2026-03-08', startTime: '12:00', eventType: 'game', qaReminderRun: certificationRunId });
   });
@@ -8071,13 +8088,6 @@ async function runReminderSchedulerRuntimeAudit() {
 
   const ledgers = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
   for (const document of ledgers) registerDynamicFirestoreRoot(document.ref.path, `reminder-ledger-${document.id}`);
-  const ledgerFor = (eventId, userId) => ledgers.some(document => document.data().eventId === eventId && document.data().userId === userId);
-  expectEqual(ledgerFor('invalid', userIds.eligible), false, 'Reminder scheduler excludes malformed event time');
-  expectEqual(ledgerFor('past', userIds.eligible), false, 'Reminder scheduler excludes no-longer-future event time');
-  expectEqual(ledgers.some(document => document.data().userId === userIds.noToken), false, 'Reminder scheduler excludes eligible member with no device token');
-  expectEqual(ledgers.some(document => document.data().userId === userIds.prefOff), false, 'Reminder scheduler excludes preferences-disabled recipient');
-  expectEqual(ledgers.some(document => document.data().userId === userIds.removed), false, 'Reminder scheduler excludes removed membership');
-  expectEqual(ledgers.some(document => document.data().userId === userIds.sender), false, 'Reminder scheduler excludes staff sender role');
   const midnightLedgerState = Object.fromEntries(['midnight_before', 'midnight_prior_day_probe', 'midnight_at', 'midnight_after', 'midnight_six'].map(eventId => {
     const record = ledgers.find(document => document.data().eventId === eventId && document.data().userId === userIds.eligible)?.data();
     return [eventId, record ? { status: record.status, attempts: record.attempts } : null];
