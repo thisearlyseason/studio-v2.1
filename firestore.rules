@@ -586,7 +586,11 @@ service cloud.firestore {
       }
 
       match /files/{fileId} {
-        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow read: if isSuperAdmin() || (
+          resource.data.get('category', '') == 'Signed Certificate'
+            ? canReadMemberWaiver(teamId, resource.data.get('memberId', ''))
+            : (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
+        );
         // Library service owns object-backed mutations; preserve Film/link and
         // legacy document reads without migrating those unrelated records.
         allow create: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) &&

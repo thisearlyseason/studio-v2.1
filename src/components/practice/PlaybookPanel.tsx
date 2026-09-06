@@ -45,7 +45,7 @@ import { DialogClose } from '@/components/ui/dialog';
 import { X } from 'lucide-react';
 import { useTeam, TeamFile } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, doc, limit, updateDoc, addDoc, setDoc } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, limit, updateDoc, addDoc, setDoc } from 'firebase/firestore';
 import { cn, compressImage } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -87,10 +87,15 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
 
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'), limit(20));
+    return query(
+      collection(db, 'teams', activeTeam.id, 'files'),
+      where('category', 'in', ['Game Tape', 'Practice Session', 'Highlights']),
+      limit(20),
+    );
   }, [activeTeam?.id, db]);
   const { data: rawFiles, isLoading: isFilesLoading } = useCollection<TeamFile>(filesQuery);
-  const teamFiles = useMemo(() => rawFiles || [], [rawFiles]);
+  const teamFiles = useMemo(() => [...(rawFiles || [])]
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))), [rawFiles]);
 
   const [isAddDrillOpen, setIsAddDrillOpen] = useState(false);
   const [selectedDrill, setSelectedDrill] = useState<any>(null);

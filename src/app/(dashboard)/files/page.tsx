@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useFirestore, useCollection, useMemoFirebase, useAuth } from '@/firebase';
 import {getAuthToken,authHeader} from '@/lib/client-auth';
 import {LIBRARY_FILE_LIMIT} from '@/lib/library-policy';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, where } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -28,6 +28,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
+const MEMBER_VISIBLE_FILE_CATEGORIES = [
+  'Documents', 'Photos', 'Compliance', 'Other',
+  'Playbook', 'Medical', 'Scouting', 'Link / URL',
+];
 
 function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: TeamDocument, onSign: (document: Pick<TeamDocument, 'id' | 'version' | 'textHash'>, sig: string, mid: string) => Promise<boolean>, members: Member[], onComplete: () => void }) {
   const [signature, setSignature] = useState('');
@@ -145,13 +149,16 @@ export default function FilesPage() {
 
   const filesQuery = useMemoFirebase(() => {
     if (!activeTeam || !db) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'));
-  }, [activeTeam?.id, db]);
+    if (isStaff) return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'));
+    return query(collection(db, 'teams', activeTeam.id, 'files'), where('category', 'in', MEMBER_VISIBLE_FILE_CATEGORIES));
+  }, [activeTeam?.id, db, isStaff]);
   const { data: rawFiles } = useCollection<TeamFile>(filesQuery);
 
   const resourceFiles = useMemo(() => {
     const all = rawFiles || [];
-    return all.filter(f => !['Game Tape', 'Practice Session', 'Highlights'].includes(f.category));
+    return all
+      .filter(f => !['Game Tape', 'Practice Session', 'Highlights'].includes(f.category))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   }, [rawFiles]);
 
   const tabFiles = useMemo(() => {

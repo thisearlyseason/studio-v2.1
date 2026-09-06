@@ -3858,8 +3858,9 @@ function CoachesCornerContent() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {globalWaivers.map(waiver => {
-                      const isSigned = signedGlobalWaiverIds.has(waiver.id);
-                      const sigRecord = (coachSigDocs ?? []).find(s => s.waiverDocId === waiver.id && s.signedBy === user?.id);
+                      const waiverVersionKey = `${waiver.id}@${waiver.version || 1}`;
+                      const isSigned = signedGlobalWaiverIds.has(waiverVersionKey);
+                      const sigRecord = (coachSigDocs ?? []).find(s => s.waiverDocId === waiver.id && (s.version || 1) === (waiver.version || 1) && s.signedBy === user?.id);
                       return (
                         <Card key={waiver.id} className={cn(
                           "rounded-3xl border-none shadow-sm p-6 flex flex-col justify-between transition-all",

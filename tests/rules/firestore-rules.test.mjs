@@ -947,7 +947,9 @@ test('waiver signatures and certificate projections are private to subject guard
     await setDoc(doc(db, 'teams/team-a/members/child-player/signatures/child-v1'), { memberId: 'child-player', userId: 'parent-account', signedBy: 'parent-account' });
     await setDoc(doc(db, 'teams/team-a/coachWaiverSignatures/coach-v1'), { waiverDocId: 'waiver', signedBy: 'staff' });
     await setDoc(doc(db, 'teams/team-a/files/cert-member'), { category: 'Signed Certificate', memberId: 'member', documentId: 'waiver', version: 1 });
+    await setDoc(doc(db, 'teams/team-a/files/cert-child'), { category: 'Signed Certificate', memberId: 'child-player', documentId: 'waiver', version: 1 });
     await setDoc(doc(db, 'teams/team-a/files/cert-removed'), { category: 'Signed Certificate', memberId: 'removed', documentId: 'waiver', version: 1 });
+    await setDoc(doc(db, 'teams/team-a/files/ordinary-file'), { category: 'Documents', name: 'Ordinary team file' });
   });
   await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/members/member/signatures/member-v1')));
   await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/members/child-player/signatures/child-v1')));
@@ -956,11 +958,36 @@ test('waiver signatures and certificate projections are private to subject guard
   await assertFails(getDoc(doc(authenticatedDb('outsider'), 'teams/team-a/members/member/signatures/member-v1')));
   await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/coachWaiverSignatures/coach-v1')));
   await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/coach-v1')));
-  // Certificate cards are deliberately team-visible status projections; the
-  // signature text and immutable legal receipt stay in the restricted paths.
   await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-member')));
-  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-removed')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-child')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('parent-account'), 'teams/team-a/files/cert-child')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-removed')));
+  await assertFails(getDoc(doc(authenticatedDb('removed'), 'teams/team-a/files/cert-removed')));
   await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/files/cert-removed')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/ordinary-file')));
+
+  const memberDb = authenticatedDb('member');
+  await assertFails(getDocs(query(
+    collection(memberDb, 'teams/team-a/files'),
+    where('category', '==', 'Signed Certificate'),
+  )));
+  const ownCertificates = await assertSucceeds(getDocs(query(
+    collection(memberDb, 'teams/team-a/files'),
+    where('category', '==', 'Signed Certificate'),
+    where('memberId', '==', 'member'),
+  )));
+  assert.deepEqual(ownCertificates.docs.map(snapshot => snapshot.id), ['cert-member']);
+  const guardianCertificates = await assertSucceeds(getDocs(query(
+    collection(authenticatedDb('parent-account'), 'teams/team-a/files'),
+    where('category', '==', 'Signed Certificate'),
+    where('memberId', '==', 'child-player'),
+  )));
+  assert.deepEqual(guardianCertificates.docs.map(snapshot => snapshot.id), ['cert-child']);
+  const ordinaryFiles = await assertSucceeds(getDocs(query(
+    collection(memberDb, 'teams/team-a/files'),
+    where('category', 'in', ['Documents', 'Photos', 'Compliance', 'Other']),
+  )));
+  assert.deepEqual(ordinaryFiles.docs.map(snapshot => snapshot.id), ['ordinary-file']);
 });
 
 test('team alert audiences and targets are enforced by rules, not only the UI', async () => {

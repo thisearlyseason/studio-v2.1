@@ -1728,7 +1728,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   // Storage calculation for the active team
   useEffect(() => {
-    if (!db || !activeTeam?.id) {
+    if (!db || !activeTeam?.id || !isStaff) {
       setTotalStorageUsed(0);
       return;
     }
@@ -1742,7 +1742,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
       setTotalStorageUsed(total);
     });
-  }, [db, activeTeam?.id]);
+  }, [db, activeTeam?.id, isStaff]);
 
   const createTeamDocument = useCallback(async (docData: Partial<TeamDocument>) => {
     if (!firebaseAuth || !activeTeam?.id) return;

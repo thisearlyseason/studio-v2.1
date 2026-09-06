@@ -23,8 +23,17 @@ export function usePendingWaivers() {
   // Global queries cause duplication and leak signatures across unrelated squads.
   const localFilesQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'files'), where('category', '==', 'Signed Certificate'));
-  }, [db, activeTeam?.id]);
+    if (isStaff || isClubManager || isSuperAdmin) {
+      return query(collection(db, 'teams', activeTeam.id, 'files'), where('category', '==', 'Signed Certificate'));
+    }
+    const authorizedMemberIds = signingMembers.map(member => member.id).slice(0, 30);
+    if (authorizedMemberIds.length === 0) return null;
+    return query(
+      collection(db, 'teams', activeTeam.id, 'files'),
+      where('category', '==', 'Signed Certificate'),
+      where('memberId', 'in', authorizedMemberIds),
+    );
+  }, [db, activeTeam?.id, isStaff, isClubManager, isSuperAdmin, signingMembers]);
 
   const { data: localSignedFiles } = useCollection<TeamFile>(localFilesQuery);
 

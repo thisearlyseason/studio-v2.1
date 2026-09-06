@@ -7587,6 +7587,46 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
   return observations;
 }
 
+async function observeCoachWaiverSignedState({ coachTitle, coachTeamId, coachTeamName }) {
+  const session = await browserLogin('qa-school-delegate', '/club', `waiver-signed-qa-school-delegate-${process.pid}`);
+  return JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors=[];const failedResponses=[];const dismissedDialogs=[];
+    const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text())};
+    const onResponse=response=>{if(response.status()>=500)failedResponses.push({status:response.status(),url:response.url()})};
+    page.on('console',onConsole);page.on('response',onResponse);
+    const dismissTransientDialogs=async()=>{
+      for(let attempt=0;attempt<3;attempt+=1){
+        const dialog=page.getByRole('dialog').last();
+        if(!await dialog.waitFor({state:'visible',timeout:800}).then(()=>true).catch(()=>false))break;
+        const text=String(await dialog.textContent()||'').trim().slice(0,160);
+        const acknowledge=dialog.getByRole('button',{name:'Got It',exact:true});
+        if(await acknowledge.count())await acknowledge.click();else await page.keyboard.press('Escape');
+        await dialog.waitFor({state:'hidden',timeout:3000}).catch(()=>{});
+        dismissedDialogs.push(text);
+      }
+    };
+    try{
+      await page.setViewportSize({width:1440,height:900});
+      await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(coachTeamId)});
+      await page.goto(${JSON.stringify(`${BASE_URL}/coaches-corner`)});
+      await page.waitForFunction(expected=>window.location.pathname===expected,'/coaches-corner',{timeout:15000});
+      const selectedTeam=page.locator('[data-testid="squad-switcher-trigger"]:visible').filter({hasText:${JSON.stringify(coachTeamName)}});
+      await selectedTeam.first().waitFor({state:'visible',timeout:15000});
+      if(await selectedTeam.count()!==1)throw new Error('Expected exact selected signed-waiver squad');
+      await dismissTransientDialogs();
+      await page.getByRole('tab',{name:'Legal Docs',exact:true}).click();
+      const title=page.getByText(${JSON.stringify(coachTitle)},{exact:true}).first();
+      await title.waitFor({state:'visible',timeout:15000});
+      const card=title.locator('xpath=ancestor::div[contains(@class,"rounded-3xl")][1]');
+      const signedCount=await card.getByText('Signed',{exact:true}).count();
+      const pendingCount=await card.getByText('Pending',{exact:true}).count();
+      const viewCount=await card.getByRole('button',{name:'View Waiver',exact:true}).count();
+      const reviewCount=await page.getByRole('button',{name:/Review & Sign/}).count();
+      return{signedCount,pendingCount,viewCount,reviewCount,consoleErrors,failedResponses:failedResponses.filter(item=>item.url.startsWith(${JSON.stringify(BASE_URL)})),dismissedDialogs};
+    }finally{page.off('console',onConsole);page.off('response',onResponse)}
+  }`], { sensitive: false }));
+}
+
 async function runWaiverSignatureWorkflowAudit() {
   const actors = await waiverActors([
     'qa-coach-owner-a', 'qa-parent-a', 'qa-parent-b', 'qa-adult-player-a',
@@ -7729,6 +7769,40 @@ async function runWaiverSignatureWorkflowAudit() {
   await waiverCaseRequest('sign-coach', [schoolCoach.alias], async () => {
     const signed = await apiJsonResult('/api/teams/waivers/sign-coach', schoolCoach.token, waiverBody({ body: coachBody }));
     expectEqual(signed.status, 200, 'Waiver sign-coach: active school squad coach signs the exact team waiver');
+    const authoritative = await withEmulatorAuthAdmin(async (_auth, db) => {
+      const [signatureSnapshot, receiptSnapshot] = await Promise.all([
+        db.doc(`teams/${schoolTeam.id}/coachWaiverSignatures/${coachKey}`).get(),
+        db.doc(`teams/${schoolTeam.id}/archived_waivers/receipt_coach_${coachKey}`).get(),
+      ]);
+      return { signature: signatureSnapshot.data() || null, receipt: receiptSnapshot.data() || null };
+    });
+    const expectedReceipt = {
+      waiverDocId: coachDocumentId, documentId: coachDocumentId,
+      version: globalCreated.body.version, textHash: globalCreated.body.textHash,
+      waiverTitle: `Coach Waiver ${scope}`, waiverText: 'Exact staff acknowledgement terms',
+      waiverAudience: 'team', signedBy: schoolCoach.uid, signedByName: 'School Delegate',
+      signerName: 'School Delegate', signerUserId: schoolCoach.uid, signerRole: 'coach',
+      teamId: schoolTeam.id, immutable: true,
+    };
+    const receiptFields = value => value && Object.fromEntries(Object.keys(expectedReceipt).map(key => [key, value[key]]));
+    expectEqual(
+      JSON.stringify({ signature: receiptFields(authoritative.signature), receipt: receiptFields(authoritative.receipt) }),
+      JSON.stringify({ signature: expectedReceipt, receipt: expectedReceipt }),
+      'Waiver sign-coach: immutable signature and archive bind authoritative receipt fields',
+    );
+    expectEqual(
+      Boolean(authoritative.signature?.signedAt && authoritative.signature?.signedAt === authoritative.receipt?.signedAt),
+      true,
+      'Waiver sign-coach: signature and archive share one server-authored signed timestamp',
+    );
+    const signedState = await observeCoachWaiverSignedState({
+      coachTitle: `Coach Waiver ${scope}`,
+      coachTeamId: schoolTeam.id,
+      coachTeamName: schoolTeam.name,
+    });
+    browser.push({ alias: schoolCoach.alias, ...signedState });
+    expectEqual(signedState.signedCount === 1 && signedState.viewCount === 1, true, 'Waiver sign-coach: exact signed card is visible for the current waiver version');
+    expectEqual(signedState.pendingCount === 0 && signedState.reviewCount === 0, true, 'Waiver sign-coach: no pending banner remains after signing the current waiver version');
   });
 
   await waiverCaseRequest('sign-text-immutable', [adult.alias], async () => {

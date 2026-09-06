@@ -35,6 +35,18 @@ test('participant and coach signatures use one server boundary with immutable ve
   }
 });
 
+test('coach waiver cards reconcile signed state against the exact waiver version', async () => {
+  const coachesCorner = await source('../src/app/(dashboard)/coaches-corner/page.tsx');
+  const audit = await source('../scripts/qa/run-phase2-emulator-audit.mjs');
+  assert.match(coachesCorner, /const waiverVersionKey = `\$\{waiver\.id\}@\$\{waiver\.version \|\| 1\}`/);
+  assert.match(coachesCorner, /signedGlobalWaiverIds\.has\(waiverVersionKey\)/);
+  assert.match(coachesCorner, /\(s\.version \|\| 1\) === \(waiver\.version \|\| 1\)/);
+  assert.match(audit, /async function observeCoachWaiverSignedState/);
+  assert.match(audit, /Waiver sign-coach: exact signed card is visible for the current waiver version/);
+  assert.match(audit, /Waiver sign-coach: no pending banner remains after signing the current waiver version/);
+  assert.match(audit, /Waiver sign-coach: immutable signature and archive bind authoritative receipt fields/);
+});
+
 test('global waiver editor constrains the actual dialog shell to the mobile viewport', async () => {
   const club = await source('../src/app/(dashboard)/club/page.tsx');
   const start = club.indexOf('{/* Deploy Protocol Dialog */}');
