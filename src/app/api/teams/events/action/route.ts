@@ -14,6 +14,7 @@ import { buildTournamentReplicationEvent } from '@/lib/server-tournament-replica
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
 import { buildRecurringEventDates } from '@/lib/team-event-recurrence';
 import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
+import { validateTeamEventInput } from '@/lib/team-event-input';
 import { eventActionNeedsGeneratedId } from '@/lib/team-event-action';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
@@ -53,6 +54,11 @@ function safeEventData(value: unknown): Record<string, unknown> {
   const data = { ...(value as Record<string, unknown>) };
   for (const key of ['id', 'teamId', 'ownerUserId', 'sourceId', 'sourceType', 'sourceGameId', 'leagueId']) {
     delete data[key];
+  }
+  try {
+    validateTeamEventInput(data);
+  } catch (error) {
+    throw new EventMutationError(error instanceof Error ? error.message : 'A valid event payload is required.');
   }
   return data;
 }
