@@ -7554,12 +7554,17 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
         ${spec.teamId ? `await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(spec.teamId)});` : ''}
         await page.goto(${JSON.stringify(BASE_URL + spec.route)});
         const title=page.getByText(${JSON.stringify(spec.title)},{exact:true}).first();
+        ${spec.kind === 'coach'
+          ? `const selectedTeam=page.locator('[data-testid="squad-switcher-trigger"]:visible').filter({hasText:${JSON.stringify(spec.teamName)}});if(await selectedTeam.count()!==1)throw new Error('Expected exact selected coach waiver squad');const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();await title.waitFor({state:'visible',timeout:15000});`
+          : spec.route === '/family'
+            ? `await title.waitFor({state:'visible',timeout:15000});`
+            : `await title.waitFor({state:'visible',timeout:15000});`}
         await dismissTransientDialogs();
         ${spec.kind === 'coach'
-          ? `const selectedTeam=page.locator('[data-testid="squad-switcher-trigger"]:visible').filter({hasText:${JSON.stringify(spec.teamName)}});if(await selectedTeam.count()!==1)throw new Error('Expected exact selected coach waiver squad');const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();await title.waitFor({state:'visible',timeout:15000});const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
+          ? `const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
           : spec.route === '/family'
-            ? `await title.waitFor({state:'visible',timeout:15000});const trigger=title.locator('xpath=../../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
-            : `await title.waitFor({state:'visible',timeout:15000});const trigger=title.locator('xpath=../following-sibling::*//button[contains(normalize-space(.),"Execute Document")]');`}
+            ? `const trigger=title.locator('xpath=../../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
+            : `const trigger=title.locator('xpath=../following-sibling::*//button[contains(normalize-space(.),"Execute Document")]');`}
         await trigger.scrollIntoViewIfNeeded();
         const triggerBox=await trigger.boundingBox();
         const hit=triggerBox?await page.evaluate(({x,y})=>{const element=document.elementFromPoint(x,y);return element?{tag:element.tagName.toLowerCase(),className:String(element.className||'').slice(0,160),text:String(element.textContent||'').trim().slice(0,100)}:null},{x:triggerBox.x+triggerBox.width/2,y:triggerBox.y+triggerBox.height/2}):null;

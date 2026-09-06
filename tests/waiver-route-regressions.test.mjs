@@ -77,5 +77,9 @@ test('waiver lifecycle responsive evidence separates dialog bounds from page ove
   assert.match(audit, /observation\.titleCount, 1/);
   assert.match(audit, /evaluateAll\(\(elements,name\)=>elements\.filter\(element=>element\.getClientRects\(\)\.length>0&&element\.textContent\?\.includes\(name\)\)\.length/);
   assert.match(signatureWorkflow, /await banner\.click\(\);await title\.waitFor\(\{state:'visible',timeout:15000\}\)/);
+  const titleReady = signatureWorkflow.indexOf("await title.waitFor({state:'visible',timeout:15000});");
+  const transientDismissal = signatureWorkflow.indexOf('await dismissTransientDialogs();');
+  const exactTrigger = signatureWorkflow.indexOf('await trigger.scrollIntoViewIfNeeded();');
+  assert.ok(titleReady >= 0 && transientDismissal > titleReady && exactTrigger > transientDismissal);
   assert.match(signatureWorkflow, /WAIVER_SIGNATURE_SURFACES/);
 });
