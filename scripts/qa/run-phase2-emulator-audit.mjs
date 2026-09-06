@@ -28,6 +28,7 @@ import { createFixtureMutations } from './certification/local/fixture-mutations.
 import { observeCalendarResponse } from './certification/local/calendar-response-observation.mjs';
 import { validateAttendanceLedger, validateAttendanceBounds } from './certification/local/attendance-observation.mjs';
 import { operationActorAliases } from './certification/local/operation-actors.mjs';
+import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -7013,19 +7014,19 @@ async function runCertificationOperationsScenarios() {
           await captureBrowserOperationRequests('rsvp-console', 'qa-parent-a', scheduleWorkflow.parentResult.observedResponses, 'rsvp-console');
           await captureBrowserOperationRequests('rsvp-network', 'qa-parent-a', scheduleWorkflow.parentResult.observedResponses, 'rsvp-network');
           await captureBrowserOperationRequests('rsvp-responsive', 'qa-parent-a', scheduleWorkflow.parentResult.observedResponses, 'rsvp-responsive');
-          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-self', 'adult and youth record their own RSVP through authenticated API requests', [/adult own RSVP/, /youth own RSVP/], { actor: 'qa-adult-player-a+qa-youth-active', operation: 'POST RSVP', requests: operationRequestEvidence('rsvp-self'), reconciliation: '200 responses and one participant map entry each', timeBound: '20s request deadline' });
-          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-child', 'parent records linked youth RSVP through the browser', [/parent child RSVP persists through the browser/, /parent browser RSVP writes the linked youth member identity/], { actor: 'qa-parent-a', operation: 'browser child RSVP', requests: operationRequestEvidence('rsvp-parent-child'), reconciliation: 'event userRsvps youth UID', timeBound: 'reload + emulator read' });
-          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-team-c', 'parent records RSVP for the separately linked Team C child', [/parent linked Team C child RSVP is accepted/, /parent Team C child RSVP persists under the exact child identity/], { actor: 'qa-parent-a', operation: 'POST Team C child RSVP', requests: operationRequestEvidence('rsvp-parent-team-c'), reconciliation: 'Team C event userRsvps exact child ID', timeBound: '20s request deadline' });
-          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-staff', 'staff updates an active squad member RSVP', [/staff RSVP override is accepted for an active squad member/], { actor: 'qa-coach-owner-a', operation: 'POST staff RSVP', requests: operationRequestEvidence('rsvp-staff'), reconciliation: '200 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-self', 'adult and youth record RSVP and reload exact states in Event and Calendar details', [/adult own RSVP/, /youth own RSVP/, /RSVP role qa-(adult-player-a|youth-active) rsvp-self Events reload and Calendar persisted participant states/], { actor: 'qa-adult-player-a+qa-youth-active', operation: 'POST RSVP', requests: operationRequestEvidence('rsvp-self'), reconciliation: '200 responses and one participant map entry each', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-child', 'parent records linked youth RSVP through the browser', [/parent child RSVP persists through the browser/, /parent browser RSVP writes the linked youth member identity/, /RSVP role qa-parent-a rsvp-parent-child Events reload and Calendar persisted participant states/], { actor: 'qa-parent-a', operation: 'browser child RSVP', requests: operationRequestEvidence('rsvp-parent-child'), reconciliation: 'event userRsvps youth UID', timeBound: 'reload + emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-team-c', 'parent records RSVP for the separately linked Team C child', [/parent linked Team C child RSVP is accepted/, /parent Team C child RSVP persists under the exact child identity/, /RSVP role qa-parent-a rsvp-parent-team-c Events reload and Calendar persisted participant states/], { actor: 'qa-parent-a', operation: 'POST Team C child RSVP', requests: operationRequestEvidence('rsvp-parent-team-c'), reconciliation: 'Team C event userRsvps exact child ID', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-staff', 'owner and assistant override and reload persisted participant states in Event Intelligence', [/staff RSVP override is accepted for an active squad member/, /RSVP role qa-(coach-owner-a|team-assistant) rsvp-staff Events reload persisted participant states/], { actor: 'qa-coach-owner-a+qa-team-assistant', operation: 'POST staff RSVP', requests: operationRequestEvidence('rsvp-staff'), reconciliation: '200 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rsvp-cancelled', 'cancelled and deleted events reject RSVP', [/cancelled activity RSVP is denied/, /deleted activity RSVP is denied/], { actor: 'qa-adult-player-a', operation: 'POST RSVP cancelled and deleted', requests: operationRequestEvidence('rsvp-cancelled'), reconciliation: '409 cancelled and 404 deleted responses', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rsvp-replay', 'identical replayed own RSVP requests both return success without duplicate participant records', [/identical own RSVP replay updates are accepted without duplicate records/], { actor: 'qa-adult-player-a', operation: 'two-party POST RSVP', requests: operationRequestEvidence('rsvp-replay'), reconciliation: 'two 200 responses and one participant map key', timeBound: '5s two-party barrier' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-forged-uid', 'parents cannot RSVP for an unlinked root or foreign youth', [/parent own root RSVP is denied at API boundary/, /other-household RSVP forge is denied/], { actor: 'qa-parent-a+qa-parent-b', operation: 'POST forged RSVP', requests: operationRequestEvidence('rsvp-forged-uid'), reconciliation: '403 responses', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-removed', 'removed member RSVP is denied without participant disclosure', [/removed member RSVP is denied without exposing an inactive participant/], { actor: 'qa-removed-member', operation: 'POST RSVP', requests: operationRequestEvidence('rsvp-removed'), reconciliation: '404 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-tenant-b', 'Team B staff cannot RSVP into Team A', [/Team B staff RSVP into Team A is denied/], { actor: 'qa-coach-owner-b', operation: 'POST cross-tenant RSVP', requests: operationRequestEvidence('rsvp-tenant-b'), reconciliation: '403 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'persistence', 'rsvp-race', 'barrier RSVP race persists one valid participant map value without corruption', [/barrier RSVP race persists exactly one valid participant map value/], { actor: 'qa-adult-player-a', operation: 'two-party POST RSVP', requests: operationRequestEvidence('rsvp-race'), reconciliation: 'one valid userRsvps value', timeBound: 'immediate emulator read' });
-          recordObservedOperationNamedCase(scenarioId, 'console', 'rsvp-console', 'parent RSVP browser flow has no console errors', [/parent RSVP workflow console errors/], { actor: 'qa-parent-a', operation: 'browser RSVP', requests: operationRequestEvidence('rsvp-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
-          recordObservedOperationNamedCase(scenarioId, 'network', 'rsvp-network', 'parent RSVP browser flow has no 5xx responses', [/parent RSVP workflow failed responses/], { actor: 'qa-parent-a', operation: 'browser RSVP', requests: operationRequestEvidence('rsvp-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
-          recordObservedOperationNamedCase(scenarioId, 'responsive', 'rsvp-responsive', 'parent RSVP dialog fits mobile viewport', [/parent RSVP dialog fits mobile viewport/], { actor: 'qa-parent-a', operation: 'mobile browser RSVP', requests: operationRequestEvidence('rsvp-responsive'), reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
+          recordObservedOperationNamedCase(scenarioId, 'console', 'rsvp-console', 'PA AP YP and staff RSVP browser flows has no console errors', [/parent RSVP workflow console errors/, /RSVP role .* console errors/], { actor: RSVP_ROLE_SURFACE_ACTORS.join('+'), operation: 'browser RSVP', requests: operationRequestEvidence('rsvp-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'network', 'rsvp-network', 'PA AP YP and staff RSVP browser flows has no 5xx responses', [/parent RSVP workflow failed responses/, /RSVP role .* failed responses/], { actor: RSVP_ROLE_SURFACE_ACTORS.join('+'), operation: 'browser RSVP', requests: operationRequestEvidence('rsvp-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'responsive', 'rsvp-responsive', 'PA AP YP and staff RSVP controls and dialogs fit both exact viewports', [/parent RSVP dialog fits mobile viewport/, /RSVP role exact responsive bounds/], { actor: RSVP_ROLE_SURFACE_ACTORS.join('+'), operation: 'mobile browser RSVP', requests: operationRequestEvidence('rsvp-responsive'), reconciliation: 'actual per-role participant controls and dialog rectangles', timeBound: 'post-workflow viewport check' });
         } else {
           await captureBrowserOperationRequests('att-console', 'qa-team-member', scheduleWorkflow.memberResult.observedResponses, 'att-console');
           await captureBrowserOperationRequests('att-console', 'qa-coach-owner-a', scheduleWorkflow.staffResult.observedResponses, 'att-console');
@@ -8940,6 +8941,121 @@ function browserMemberEventRsvp(session, marker) {
   return JSON.parse(cli(session, ['run-code', code]));
 }
 
+const RSVP_ROLE_SURFACE_ACTORS = ['qa-parent-a','qa-adult-player-a','qa-youth-active','qa-coach-owner-a','qa-team-assistant'];
+
+function browserRsvpRoleSurfaces(session, {actor,teamId,title,caseId,calendar=false,staff=false,participants,writeOwn=false,eventDate}) {
+  return JSON.parse(cli(session,['run-code',`async page => {
+    const observedResponses=[],consoleErrors=[],failedResponses=[],observations=[];
+    let observationTag=${JSON.stringify(caseId)};
+    const observeResponse=${observeCalendarResponse.toString()};
+    const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};
+    const onError=error=>consoleErrors.push(error.message);
+    const onResponse=response=>{
+      const observation=observeResponse(response,${JSON.stringify(BASE_URL)},observationTag,'/api/teams/rsvp');
+      if(observation)observedResponses.push(observation);
+      if(response.status()>=500 && response.url().startsWith(${JSON.stringify(BASE_URL)}+'/'))failedResponses.push(response.status());
+    };
+    page.on('console',onConsole);page.on('pageerror',onError);page.on('response',onResponse);
+    const participants=${JSON.stringify(participants)};
+    try {
+      await page.setViewportSize({width:1440,height:900});
+      await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+      await page.evaluate(team=>localStorage.setItem('sf_session_team_id',team),${JSON.stringify(teamId)});
+      const dismissAlerts=async()=>{
+        for(let attempt=0;attempt<3;attempt+=1){
+          const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});
+          const visible=await alert.waitFor({state:'visible',timeout:1500}).then(()=>true).catch(error=>{if(error.name==='TimeoutError')return false;throw error;});
+          if(!visible)break;
+          await alert.getByRole('button',{name:'Close',exact:true}).click();
+          await alert.waitFor({state:'hidden',timeout:5000});
+        }
+      };
+      const open=async route=>{
+        await page.goto(${JSON.stringify(BASE_URL)}+'/'+route);
+        if(route==='calendar'){
+          await page.getByRole('heading',{name:'Master Calendar',exact:true}).waitFor({timeout:15000});
+          await dismissAlerts();
+          await page.getByRole('button',{name:'Agenda',exact:true}).click();
+          await page.getByRole('button',{name:'Today',exact:true}).click();
+          const target=${JSON.stringify(eventDate)};
+          const localMonth=await page.evaluate(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');});
+          if(target.slice(0,7)!==localMonth) await page.locator('h2').filter({hasText:/20\\d{2}/}).first().locator('../..').getByRole('button').last().click();
+          await page.getByRole('heading',{name:${JSON.stringify(title)},exact:true}).first().waitFor({timeout:15000});
+          await page.getByRole('heading',{name:${JSON.stringify(title)},exact:true}).first().click();
+        } else {
+          const heading=page.getByText(${JSON.stringify(title)},{exact:true}).last();
+          await heading.waitFor({timeout:15000});await dismissAlerts();await heading.click();
+        }
+        const dialog=page.getByRole('dialog',{name:(route==='calendar'?'Event Details: ':'Event Intelligence: ')+${JSON.stringify(title)},exact:true});
+        await dialog.waitFor({state:'visible',timeout:15000});
+        if(${JSON.stringify(staff)})await dialog.getByRole('tab',{name:'Squad Pulse'}).click();
+        return dialog;
+      };
+      const participantScope=(dialog,participant)=>{
+        const name=dialog.getByText(participant.name,{exact:true});
+        return ${JSON.stringify(staff)}?name.locator('../../..'):name.locator('../..');
+      };
+      const readParticipants=async dialog=>{
+        const values=[];
+        for(const participant of participants){
+          const scope=participantScope(dialog,participant);
+          const status=scope.getByText(participant.status.toUpperCase(),{exact:true});
+          await status.waitFor({state:'visible',timeout:15000});
+          values.push({name:participant.name,status:(await status.innerText()).trim().toLowerCase()});
+        }
+        return values;
+      };
+      let dialog=await open('events');
+      if(${JSON.stringify(writeOwn)}){
+        const response=page.waitForResponse(value=>value.url()===${JSON.stringify(`${BASE_URL}/api/teams/rsvp`)} && value.request().method()==='POST',{timeout:15000});
+        await participantScope(dialog,participants[0]).getByRole('button',{name:'Going',exact:true}).click();
+        if((await response).status()!==200)throw new Error('Own RSVP did not return 200.');
+      }
+      dialog=await open('events');
+      const persisted=await readParticipants(dialog);
+      for(const route of ${JSON.stringify(calendar?['events','calendar']:['events'])}){
+        for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+          observationTag='rsvp-responsive';await page.setViewportSize(viewport);dialog=await open(route);
+          const values=await readParticipants(dialog);
+          await dialog.evaluate(async node=>{const rect=()=>{const r=node.getBoundingClientRect();return [r.x,r.y,r.width,r.height];};let last=rect(),stable=0;const deadline=performance.now()+2000;while(performance.now()<deadline){await new Promise(resolve=>requestAnimationFrame(resolve));const next=rect();stable=next.every((v,i)=>Math.abs(v-last[i])<=0.5)?stable+1:0;if(stable>=2)return;last=next;}throw new Error('RSVP dialog geometry did not settle.');});
+          const controls={};
+          const targets=[['dialog',dialog],['close',dialog.getByRole('button',{name:route==='events'?'Close event details':'Close',exact:true}).last()],...participants.map((p,i)=>['participant-'+i,dialog.getByText(p.name,{exact:true})])];
+          if(${JSON.stringify(staff)})targets.push(['matrix',dialog.getByText('Attendance Matrix',{exact:true})]);
+          else for(const name of ['Going','Maybe','Decline'])targets.push([name.toLowerCase(),participantScope(dialog,participants[0]).getByRole('button',{name,exact:true})]);
+          for(const [name,control]of targets){await control.scrollIntoViewIfNeeded({timeout:10000});controls[name]=await control.boundingBox({timeout:10000});}
+          observations.push({actor:${JSON.stringify(actor)},route,viewport,participants:values,controls});
+        }
+      }
+      observationTag='rsvp-console';await open('events');
+      observationTag='rsvp-network';await open('events');
+      return {persisted,observations,observedResponses,consoleErrors,failedResponses};
+    }finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('response',onResponse);}
+  }`]));
+}
+
+async function runRsvpRoleSurfacesAudit({teamId,title,eventId,eventDate,teamC,teamCTitle,teamCDate,owner,assistant,adultUid,youthUid}) {
+  const names=await withEmulatorAuthAdmin(async(_auth,db)=>Promise.all([adultUid,youthUid].map(async uid=>(await db.doc(`teams/${teamId}/members/${uid}`).get()).data().name)));
+  const results=[];
+  const observe=async config=>{
+    const session=await browserLogin(config.actor,config.actor==='qa-parent-a'?'/family':'/dashboard',`rsvp-surface-${config.actor}-${config.teamId}-${process.pid}`);
+    const result=browserRsvpRoleSurfaces(session,config);
+    expectEqual(validateRsvpRoleObservations(result.observations,config),true,'RSVP role exact responsive bounds '+JSON.stringify(result.observations));
+    expectEqual(JSON.stringify(result.persisted),JSON.stringify(config.participants),`RSVP role ${config.actor} ${config.caseId} Events reload${config.calendar?' and Calendar':''} persisted participant states`);
+    expectEqual(result.consoleErrors.length,0,`RSVP role ${config.actor} console errors`);
+    expectEqual(result.failedResponses.length,0,`RSVP role ${config.actor} failed responses`);
+    for(const caseId of [config.caseId,'rsvp-responsive','rsvp-console','rsvp-network'])await captureBrowserOperationRequests(caseId,config.actor,result.observedResponses,caseId);
+    results.push(result);
+  };
+  for(const actor of ['qa-adult-player-a','qa-youth-active'])await observe({actor,teamId,title,eventDate,caseId:'rsvp-self',calendar:true,participants:[{name:'Your RSVP',status:'going'}],writeOwn:true});
+  await observe({actor:'qa-parent-a',teamId,title,eventDate,caseId:'rsvp-parent-child',calendar:true,participants:[{name:"Youth A's RSVP",status:'going'}]});
+  await observe({actor:'qa-parent-a',teamId:teamC.id,title:teamCTitle,eventDate:teamCDate,caseId:'rsvp-parent-team-c',calendar:true,participants:[{name:"Youth C's RSVP",status:'going'}]});
+  for(const [actor,identity]of [['qa-coach-owner-a',owner],['qa-team-assistant',assistant]]){
+    expectEqual((await captureOperationRequests('rsvp-staff',actor,()=>apiJsonResult('/api/teams/rsvp',identity.body.idToken,{method:'POST',body:JSON.stringify({teamId,eventId,participantId:adultUid,status:'declined'})}))).status,200,`RSVP role ${actor} staff override accepted`);
+    await observe({actor,teamId,title,eventDate,caseId:'rsvp-staff',staff:true,participants:[{name:names[0],status:'declined'},{name:names[1],status:'going'}]});
+  }
+  return results;
+}
+
 function browserParentChildEventRsvp(session, title) {
   const code = `async page => {
     const consoleErrors = [];
@@ -9191,6 +9307,7 @@ async function addAttendanceFixtureMembership(teamId, memberUid, memberName, {
 }
 
 async function runRsvpAndAttendanceWorkflowAudit() {
+  if(activeCertificationScenario==='events-rsvp-attendance-details')return runIsolatedRsvpAndAttendanceWorkflowAudit();
   const proTeamId = FIXTURES.teams.find(team => team.alias === 'qa-pro-team')?.id;
   const memberUids = ['qa-team-member', 'qa-team-assistant'].map(alias => identityByAlias.get(alias)?.uid);
   if (!proTeamId || memberUids.some(uid => !uid)) throw new Error('Attendance membership overlay identities are missing.');
@@ -9374,7 +9491,9 @@ async function runIsolatedRsvpAndAttendanceWorkflowAudit() {
   const teamMember = await signIn('qa-team-member');
   const parentTitle = `QA Parent RSVP ${marker}`;
   const attendanceTitle = `QA Attendance ${marker}`;
-  const eventPayload = (title, date = `2099-01-${String(10 + invocation).padStart(2, '0')}`) => ({
+  const roleSurfaceDate=new Date(Date.now()+2*86400000).toISOString().slice(0,10);
+  const teamCDate=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
+  const eventPayload = (title, date = activeCertificationScenario==='events-rsvp-attendance-details'?roleSurfaceDate:`2099-01-${String(10 + invocation).padStart(2, '0')}`) => ({
     title,
     date,
     endDate: date,
@@ -9412,7 +9531,7 @@ async function runIsolatedRsvpAndAttendanceWorkflowAudit() {
   const teamCOwner = await signIn('qa-league-owner-a');
   if (!teamC || !teamCYouth?.data?.id || !teamCOwner.body?.idToken) throw new Error('Team C linked-child RSVP fixture is missing.');
   const teamCEvent = await apiJsonResult('/api/teams/events/action', teamCOwner.body.idToken, {
-    method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamC.id, event: eventPayload(`QA Parent Team C RSVP ${marker}`, `2099-02-${String(10 + invocation).padStart(2, '0')}`) }),
+    method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamC.id, event: eventPayload(`QA Parent Team C RSVP ${marker}`, activeCertificationScenario==='events-rsvp-attendance-details'?teamCDate:`2099-02-${String(10 + invocation).padStart(2, '0')}`) }),
   });
   expectEqual(teamCEvent.status, 200, 'Team C parent RSVP fixture event creation');
   const teamCParticipantId = String(teamCYouth.data.id);
@@ -9448,6 +9567,7 @@ async function runIsolatedRsvpAndAttendanceWorkflowAudit() {
   expectEqual(parentRootDenied.status, 403, 'parent own root RSVP is denied at API boundary');
   const staffOverride = await captureOperationRequests('rsvp-staff', 'qa-coach-owner-a', () => apiJsonResult('/api/teams/rsvp', owner.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'declined' }) }));
   expectEqual(staffOverride.status, 200, 'staff RSVP override is accepted for an active squad member');
+  if(activeCertificationScenario==='events-rsvp-attendance-details')await runRsvpRoleSurfacesAudit({teamId:teamAId,title:parentTitle,eventId,eventDate:roleSurfaceDate,teamC,teamCTitle:`QA Parent Team C RSVP ${marker}`,teamCDate,owner,assistant,adultUid,youthUid});
   const foreignParentDenied = await captureOperationRequests('rsvp-forged-uid', 'qa-parent-b', () => apiJsonResult('/api/teams/rsvp', parentB.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: youthUid, status: 'going' }) }));
   expectEqual(foreignParentDenied.status, 403, 'other-household RSVP forge is denied');
   const teamBDenied = await captureOperationRequests('rsvp-tenant-b', 'qa-coach-owner-b', () => apiJsonResult('/api/teams/rsvp', teamBOwner.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) }));
@@ -9462,6 +9582,8 @@ async function runIsolatedRsvpAndAttendanceWorkflowAudit() {
   })).status, 200, 'RSVP fixture event deletion');
   const deletedDenied = await captureOperationRequests('rsvp-cancelled', 'qa-adult-player-a', () => apiJsonResult('/api/teams/rsvp', adult.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) }));
   expectEqual(deletedDenied.status, 404, 'deleted activity RSVP is denied');
+
+  if(activeCertificationScenario==='events-rsvp-attendance-details')return {parentResult};
 
   const memberUid = identityByAlias.get('qa-team-member').uid;
   const assistantUid = identityByAlias.get('qa-team-assistant').uid;
