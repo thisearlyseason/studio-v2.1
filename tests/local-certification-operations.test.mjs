@@ -116,6 +116,13 @@ test('Chat simultaneous actors use isolated contexts in one owned browser sessio
   assert.doesNotMatch(chatHarness, /await Promise\.all\(\[a\.waitFor\(\{state:'visible',timeout:15000\}\),b\.waitFor\(\{state:'visible',timeout:15000\}\)\]\)/);
   assert.match(chatHarness, /aMarker:[\s\S]*?aForeignMarker:[\s\S]*?bMarker:[\s\S]*?bForeignMarker:/);
   assert.match(chatHarness, /permissionWarnings/);
+  const qualityHarness = audit.slice(
+    audit.indexOf('function browserChatQualityEvidence'),
+    audit.indexOf('function browserChatRevoked'),
+  );
+  assert.match(qualityHarness, /await page\.getByRole\('heading',\{name:'Coordination Hub',exact:true\}\)\.waitFor[\s\S]*?const priorityAlert=page\.getByRole\('dialog',\{name:'High Priority Team Alert'\}\);[\s\S]*?priorityAlert\.getByRole\('button',\{name:'Got It',exact:true\}\)\.click\(\);[\s\S]*?const link=page\.locator/);
+  assert.match(qualityHarness, /dismissedPriorityAlerts\.push\(\{actor:[\s\S]*?caseId,viewport\}\)/);
+  assert.doesNotMatch(qualityHarness, /getByRole\('dialog'\)\.first\(\)/);
 });
 
 test('all frozen Task 5 waiver case IDs are present exactly once across their scenario dimensions', () => {
