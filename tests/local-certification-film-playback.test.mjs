@@ -2,6 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as module from '../scripts/qa/certification/local/film-playback.mjs';
 
+test('Film fails closed within five seconds when real playback never resolves finite duration',async()=>{
+  const previous=globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame=callback=>setTimeout(callback,5);
+  let seeks=0;let plays=0;
+  const media={duration:Infinity,paused:true,muted:false,
+    get currentTime(){return 0;},set currentTime(value){seeks++;if(!Number.isFinite(value))throw new TypeError('non-finite seek');},
+    async play(){plays++;this.paused=false;},pause(){this.paused=true;},
+  };
+  const started=performance.now();
+  try {
+    await assert.rejects(module.observeFilmPlayback(media,0.76),/within 5s/);
+    assert.ok(performance.now()-started>=4900 && performance.now()-started<6000);
+    assert.equal(seeks,0);assert.equal(plays,1);assert.equal(media.paused,true);
+    await new Promise(resolve=>setTimeout(resolve,20));
+    assert.equal(seeks,0);assert.equal(plays,1);assert.equal(media.paused,true);
+  }finally{globalThis.requestAnimationFrame=previous;}
+});
+
 test('Film playback evidence rejects unready, paused, and non-advancing media', async()=>{
   assert.equal(typeof module.validateFilmPlayback,'function');
   const observed={duration:1.812,before:0,after:0.302,paused:false};

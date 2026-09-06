@@ -24,13 +24,22 @@ export async function dismissFilmTeamAlert(page) {
 export async function observeFilmPlayback(media, startFraction = 0) {
   media.muted = true;
   media.pause();
-  media.currentTime = media.duration * startFraction;
-  const before = media.currentTime;
+  let before;
   let timer;
   let finished = false;
   try {
     await Promise.race([
       (async () => {
+        // Stream WebM metadata can initially expose Infinity. Native playback
+        // demuxes its end and emits durationchange; never seek using that sentinel.
+        if (!Number.isFinite(media.duration)) {
+          await media.play();
+          while (!finished && !Number.isFinite(media.duration)) await new Promise(resolve => requestAnimationFrame(resolve));
+          if (finished) return;
+          media.pause();
+        }
+        media.currentTime = media.duration * startFraction;
+        before = media.currentTime;
         await media.play();
         while (!finished && media.currentTime <= before + 0.15) await new Promise(resolve => requestAnimationFrame(resolve));
       })(),
