@@ -7681,8 +7681,16 @@ function browserMemberEventRsvp(session, marker) {
       await alert.getByRole('button', { name: 'Got It' }).click();
       await alert.waitFor({ state: 'hidden' });
     }
-    const eventTitle = page.getByText(${JSON.stringify(title)}, { exact: true }).last();
-    await eventTitle.waitFor({ timeout: 10000 });
+    let eventTitle = page.getByText(${JSON.stringify(title)}, { exact: true }).last();
+    // This is a separate authenticated browser session. A bounded reload makes
+    // the persisted-event assertion deterministic when its initial Firestore
+    // listener was established immediately before the owner's create request.
+    const visibleInitially = await eventTitle.waitFor({ timeout: 5000 }).then(() => true).catch(() => false);
+    if (!visibleInitially) {
+      await page.reload();
+      eventTitle = page.getByText(${JSON.stringify(title)}, { exact: true }).last();
+      await eventTitle.waitFor({ timeout: 15000 });
+    }
     await eventTitle.click();
     const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
     const editControls = await details.getByRole('button', { name: 'Edit Activity' }).count();
