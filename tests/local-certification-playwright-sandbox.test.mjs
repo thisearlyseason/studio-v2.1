@@ -46,6 +46,13 @@ test('Attendance named cases require independent observed request evidence', () 
   }
 });
 
+test('RSVP named cases require independent observed request evidence', () => {
+  const source = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  for (const caseId of ['rsvp-self', 'rsvp-parent-child', 'rsvp-parent-team-c', 'rsvp-staff', 'rsvp-cancelled', 'rsvp-replay', 'rsvp-forged-uid', 'rsvp-removed', 'rsvp-tenant-b', 'rsvp-race', 'rsvp-console', 'rsvp-network', 'rsvp-responsive']) {
+    assert.match(source, new RegExp(`'${caseId}'[^\\n]+requests: operationRequestEvidence\\('${caseId}'\\)`));
+  }
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {
