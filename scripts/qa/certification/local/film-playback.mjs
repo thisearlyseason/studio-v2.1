@@ -5,6 +5,10 @@ export function validateFilmPlayback({duration, before, after, paused}) {
   return true;
 }
 
+export function findSavedFilmMark(viewer, text) {
+  return viewer.locator('p').filter({hasText: text});
+}
+
 export async function dismissFilmTeamAlert(page) {
   const alert = page.getByRole('dialog', {name: 'High Priority Team Alert', exact: true});
   for (let dismissed = 0; dismissed <= 4; dismissed += 1) {

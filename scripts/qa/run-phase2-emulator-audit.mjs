@@ -30,7 +30,7 @@ import { validateAttendanceLedger, validateAttendanceBounds } from './certificat
 import { operationActorAliases } from './certification/local/operation-actors.mjs';
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
-import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert } from './certification/local/film-playback.mjs';
+import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark } from './certification/local/film-playback.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -7723,8 +7723,9 @@ async function runPracticeFilmWorkflowAudit() {
       await viewer.getByPlaceholder('Timestamp (e.g. 1:24)').fill('0:01');
       await viewer.getByPlaceholder('e.g. Great hip rotation on this swing...').fill(${JSON.stringify(markText)});
       await viewer.getByRole('button', { name: 'Save Mark', exact: true }).click();
-      await viewer.getByText(${JSON.stringify(markText)}, { exact: true }).waitFor({ timeout: 15000 });
-      await viewer.getByText(${JSON.stringify(markText)}, { exact: true }).click();
+      const savedMark = (${findSavedFilmMark.toString()})(viewer, ${JSON.stringify(markText)});
+      await savedMark.waitFor({ timeout: 15000 });
+      await savedMark.click();
       await page.waitForTimeout(250);
       const seekTime = await video.evaluate(media => media.currentTime);
       const desktopBounds = await viewer.boundingBox();
