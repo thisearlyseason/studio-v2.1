@@ -7770,7 +7770,8 @@ async function assertCalendarFilterAndDetailBounds(activeEventTitle) {
     const session = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-bounds-${viewport.width}-${process.pid}`);
     const result = JSON.parse(cli(session, ['run-code', `async page => {
       const viewport = ${JSON.stringify(viewport)};
-      const inside = box => !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height;
+      const boundsTolerance = 0.5;
+      const inside = box => !!box && box.x >= -boundsTolerance && box.y >= -boundsTolerance && box.x + box.width <= viewport.width + boundsTolerance && box.y + box.height <= viewport.height + boundsTolerance;
       await page.setViewportSize(viewport);
       await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
       await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });

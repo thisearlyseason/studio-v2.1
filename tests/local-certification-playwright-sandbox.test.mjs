@@ -87,6 +87,15 @@ test('Calendar bounds helper measures the event dialog only after its geometry s
   assert.match(helper, /Math\.abs\(current\[index\] - previous\[index\]\) <= 0\.5/);
 });
 
+test('Calendar bounds helper permits only subpixel viewport rounding at the overlay edge', () => {
+  const helperStart = source.indexOf('async function assertCalendarFilterAndDetailBounds');
+  const helperEnd = source.indexOf('async function assertCalendarRenderedFilterReconciliation');
+  const helper = source.slice(helperStart, helperEnd);
+  assert.match(helper, /const boundsTolerance = 0\.5/);
+  assert.match(helper, /box\.x >= -boundsTolerance/);
+  assert.match(helper, /box\.x \+ box\.width <= viewport\.width \+ boundsTolerance/);
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {
