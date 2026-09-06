@@ -7899,7 +7899,8 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   // Attendance and RSVP rows both use this real workflow when selected in one
   // local batch. Scope each disposable event to the invocation so the second
   // row tests the product instead of colliding with the first fixture.
-  const marker = `phase2-rsvp-${process.pid}-${++rsvpAttendanceWorkflowInvocation}`;
+  const invocation = ++rsvpAttendanceWorkflowInvocation;
+  const marker = `phase2-rsvp-${process.pid}-${invocation}`;
   const teamAId = FIXTURES.teams.find(team => team.alias === 'qa-team-a')?.id;
   const proTeamId = FIXTURES.teams.find(team => team.alias === 'qa-pro-team')?.id;
   if (!teamAId || !proTeamId) throw new Error('Required RSVP/attendance fixture team is missing.');
@@ -7913,7 +7914,7 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const teamMember = await signIn('qa-team-member');
   const parentTitle = `QA Parent RSVP ${marker}`;
   const attendanceTitle = `QA Attendance ${marker}`;
-  const eventPayload = (title, date = '2099-01-15') => ({
+  const eventPayload = (title, date = `2099-01-${String(10 + invocation).padStart(2, '0')}`) => ({
     title,
     date,
     endDate: date,
@@ -7959,7 +7960,7 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const memberName = `QA Attendance Member ${marker}`;
   await addAttendanceFixtureMembership(proTeamId, memberUid, memberName);
   const attendanceCreated = await apiJsonResult('/api/teams/events/action', proOwner.body.idToken, {
-    method: 'POST', body: JSON.stringify({ action: 'create', teamId: proTeamId, event: eventPayload(attendanceTitle, '2099-12-31') }),
+    method: 'POST', body: JSON.stringify({ action: 'create', teamId: proTeamId, event: eventPayload(attendanceTitle, `2099-12-${String(20 + invocation).padStart(2, '0')}`) }),
   });
   expectEqual(attendanceCreated.status, 200, 'attendance fixture event creation');
   const memberBrowser = await browserLogin('qa-team-member', '/dashboard', `attendance-member-${process.pid}`);
