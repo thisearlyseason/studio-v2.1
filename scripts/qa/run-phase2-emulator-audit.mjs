@@ -8861,9 +8861,9 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
       const occurrenceUpdate = page.waitForResponse(response => response.url().includes('/api/teams/events/action') && response.request().method() === 'POST');
       await occurrenceForm.getByRole('button', { name: 'Deploy Activity' }).click();
       if ((await occurrenceUpdate).status() !== 200) throw new Error('single recurrence occurrence update did not return 200');
-      await page.getByText(${JSON.stringify(occurrenceUpdated)}, { exact: true }).waitFor({ timeout: 15000 });
-      await page.reload();
       const updatedOccurrence = itinerary.getByText(${JSON.stringify(occurrenceUpdated)}, { exact: true });
+      await updatedOccurrence.first().waitFor({ timeout: 15000 });
+      await page.reload();
       const occurrenceEditCount = await updatedOccurrence.count();
       await updatedOccurrence.first().click();
       const occurrenceDetails = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${occurrenceUpdated}`)} });

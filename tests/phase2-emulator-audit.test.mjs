@@ -1392,6 +1392,14 @@ test('recurring-event browser evidence waits for post-reload event hydration bef
   assert.match(recurrenceBlock, /weekly recurrence dialog diagnostic/);
 });
 
+test('single-occurrence recurrence evidence scopes the updated title to the itinerary, not the open dialog', () => {
+  const start = source.indexOf('function browserOwnerRecurringEventWorkflow(');
+  const end = source.indexOf('async function runRecurringEventWorkflowAudit()', start);
+  const recurrenceBlock = source.slice(start, end);
+  assert.match(recurrenceBlock, /const updatedOccurrence = itinerary\.getByText/);
+  assert.doesNotMatch(recurrenceBlock, /await page\.getByText\(\$\{JSON\.stringify\(occurrenceUpdated\), \{ exact: true \}\)\.waitFor/);
+});
+
 test('emulator audit exercises facility and resource CRUD with destructive confirmation', () => {
   assert.match(source, /workflow-facilities-only/);
   assert.match(source, /facility requires name and address/);
