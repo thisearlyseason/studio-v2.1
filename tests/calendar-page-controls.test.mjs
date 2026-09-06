@@ -12,6 +12,9 @@ test('Calendar exposes semantic day, week, month, type, and household-athlete fi
   assert.match(source, /Household Athletes/);
   assert.match(source, /selectedChildIds/);
   assert.match(source, /childTeamIds/);
+  assert.match(source, /data-calendar-team-id/);
+  assert.match(source, /data-calendar-child-id/);
+  assert.match(source, /data-calendar-event-team-id/);
 });
 
 test('Calendar gives Agenda users a visible empty-filter result', () => {

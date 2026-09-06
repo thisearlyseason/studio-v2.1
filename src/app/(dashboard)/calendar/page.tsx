@@ -285,6 +285,8 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
   return (
     <Card 
       className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all cursor-pointer overflow-hidden group bg-white"
+      data-calendar-event-id={event.id}
+      data-calendar-event-team-id={event.teamId}
       onClick={onClick}
     >
       <div className={cn("h-1.5 w-full", EVENT_TYPE_COLORS[event.eventType || 'other'])} />
@@ -1355,7 +1357,7 @@ export default function MasterCalendarPage() {
                 <ScrollArea className="h-48">
                   <div className="space-y-2">
                     {discoveryTeamIds.map(tid => (
-                      <div key={tid} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedTeamIds(prev => prev.includes(tid) ? prev.filter(id => id !== tid) : [...prev, tid])}>
+                      <div key={tid} data-calendar-team-id={tid} data-state={selectedTeamIds.includes(tid) ? 'checked' : 'unchecked'} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedTeamIds(prev => prev.includes(tid) ? prev.filter(id => id !== tid) : [...prev, tid])}>
                         <Checkbox checked={selectedTeamIds.includes(tid)} onCheckedChange={() => {}} />
                         <Label className="text-xs font-bold truncate uppercase text-foreground">{teams.find(t => t.id === tid)?.name || `Team ${tid.slice(-4)}`}</Label>
                       </div>
@@ -1375,7 +1377,7 @@ export default function MasterCalendarPage() {
                   <div className="border-t pt-4 space-y-2">
                     <p className="text-[10px] font-black uppercase tracking-widest text-primary">Household Athletes</p>
                     {householdChildren.map(child => (
-                      <div key={child.id} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedChildIds(prev => prev.includes(child.id) ? prev.filter(value => value !== child.id) : [...prev, child.id])}>
+                      <div key={child.id} data-calendar-child-id={child.id} data-calendar-team-ids={child.teamIds.join(',')} data-state={selectedChildIds.includes(child.id) ? 'checked' : 'unchecked'} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedChildIds(prev => prev.includes(child.id) ? prev.filter(value => value !== child.id) : [...prev, child.id])}>
                         <Checkbox checked={selectedChildIds.includes(child.id)} onCheckedChange={() => {}} />
                         <Label className="text-xs font-bold truncate uppercase text-foreground">{child.name}</Label>
                       </div>

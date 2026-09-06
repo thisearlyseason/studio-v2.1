@@ -7897,14 +7897,35 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
       if (node.getAttribute('data-state') !== 'checked') throw new Error('Youth C filter did not settle to checked before calendar reconciliation.');
     });
     await page.keyboard.press('Escape');
+    const inspectChildFilter = async () => ({
+      active: await titleCount(activeTitle),
+      household: await titleCount(householdTitle),
+      selectedTeams: await page.locator('[data-calendar-team-id][data-state="checked"]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-calendar-team-id'))),
+      selectedChildren: await page.locator('[data-calendar-child-id][data-state="checked"]').evaluateAll(nodes => nodes.map(node => ({ id: node.getAttribute('data-calendar-child-id'), teamIds: node.getAttribute('data-calendar-team-ids') }))),
+      visibleEventTeams: await page.locator('[data-calendar-event-team-id]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-calendar-event-team-id'))),
+    });
+    const youthCOnly = await inspectChildFilter();
+    await page.reload();
+    await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+    const directMonthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
+    await directMonthHeader.getByRole('button', { name: 'Today', exact: true }).click();
+    await directMonthHeader.getByRole('button').last().click();
     await page.getByRole('heading', { name: householdTitle, exact: true }).first().waitFor({ timeout: 15000 });
-    const youthCOnly = { active: await titleCount(activeTitle), household: await titleCount(householdTitle) };
-    return { householdProjection, bothVisible, teamAOnly, teamCOnly, youthAOnly, youthCOnly };
+    currentPanel = await openFilters();
+    await currentPanel.getByText('Youth C', { exact: true }).locator('..').click();
+    await currentPanel.getByText('Youth C', { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
+      if (node.getAttribute('data-state') !== 'checked') throw new Error('Direct Youth C filter did not settle to checked.');
+    });
+    await page.keyboard.press('Escape');
+    const directYouthCOnly = await inspectChildFilter();
+    return { householdProjection, bothVisible, teamAOnly, teamCOnly, youthAOnly, youthCOnly, directYouthCOnly };
   }` ]));
   expectEqual(parentResult.householdProjection.teamRows === 2 && parentResult.householdProjection.teamBRows === 0 && parentResult.householdProjection.youthARows === 1 && parentResult.householdProjection.youthCRows === 1 && parentResult.bothVisible.active > 0 && parentResult.bothVisible.household > 0 && parentResult.bothVisible.foreign === 0, true,
     'Calendar Parent A renders exactly the linked Team A and Team C fixtures and no Team B fixture');
-  expectEqual(parentResult.teamAOnly.active > 0 && parentResult.teamAOnly.household === 0 && parentResult.teamCOnly.active === 0 && parentResult.teamCOnly.household > 0 && parentResult.youthAOnly.active > 0 && parentResult.youthAOnly.household === 0 && parentResult.youthCOnly.active === 0 && parentResult.youthCOnly.household > 0, true,
-    'Calendar team and child filters reconcile exact included and excluded fixtures');
+  const childFiltersReconciled = parentResult.teamAOnly.active > 0 && parentResult.teamAOnly.household === 0 && parentResult.teamCOnly.active === 0 && parentResult.teamCOnly.household > 0 && parentResult.youthAOnly.active > 0 && parentResult.youthAOnly.household === 0 && parentResult.youthCOnly.active === 0 && parentResult.youthCOnly.household > 0 && parentResult.directYouthCOnly.active === 0 && parentResult.directYouthCOnly.household > 0;
+  if (!childFiltersReconciled) throw new Error(`Calendar child filter reconciliation failed: ${JSON.stringify(parentResult)}`);
+  expectEqual(childFiltersReconciled, true, 'Calendar team and child filters reconcile exact included and excluded fixtures');
 }
 
 async function runCalendarViewsWorkflowAudit() {
