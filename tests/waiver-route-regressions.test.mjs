@@ -45,6 +45,8 @@ test('coach waiver cards reconcile signed state against the exact waiver version
   assert.match(audit, /Waiver sign-coach: exact signed card is visible for the current waiver version/);
   assert.match(audit, /Waiver sign-coach: no pending banner remains after signing the current waiver version/);
   assert.match(audit, /Waiver sign-coach: immutable signature and archive bind authoritative receipt fields/);
+  assert.match(audit, /const browserDiagnostics = signedStateObservation/);
+  assert.doesNotMatch(audit, /browser\.push\(\{ alias: schoolCoach\.alias, \.\.\.signedState \}\)/);
 });
 
 test('global waiver editor constrains the actual dialog shell to the mobile viewport', async () => {

@@ -7694,6 +7694,7 @@ async function runWaiverSignatureWorkflowAudit() {
   // signature is durable, so the youth attempt below uses version two instead.
 
   const browser = await observeWaiverSignatureDialogs({ participantTitle, coachTitle: `Coach Waiver ${scope}`, coachTeamId: schoolTeam.id, coachTeamName: schoolTeam.name });
+  let signedStateObservation = null;
 
   const participantBody = (signer, memberId, signatureName, extra = {}) => ({
     teamId: teamA.id, memberId, documentId: participant.documentId, signatureName,
@@ -7800,7 +7801,7 @@ async function runWaiverSignatureWorkflowAudit() {
       coachTeamId: schoolTeam.id,
       coachTeamName: schoolTeam.name,
     });
-    browser.push({ alias: schoolCoach.alias, ...signedState });
+    signedStateObservation = { alias: schoolCoach.alias, ...signedState };
     expectEqual(signedState.signedCount === 1 && signedState.viewCount === 1, true, 'Waiver sign-coach: exact signed card is visible for the current waiver version');
     expectEqual(signedState.pendingCount === 0 && signedState.reviewCount === 0, true, 'Waiver sign-coach: no pending banner remains after signing the current waiver version');
   });
@@ -7816,8 +7817,9 @@ async function runWaiverSignatureWorkflowAudit() {
   });
 
   const fits = browser.every(observation => observation.mobileFits && observation.measurements.every(item => item.box && item.box.x >= 0 && item.box.y >= 0 && item.box.x + item.box.width <= item.viewport.width && item.box.y + item.box.height <= item.viewport.height));
-  const consoleErrors = browser.flatMap(observation => observation.consoleErrors.map(message => ({ alias: observation.alias, message })));
-  const failedResponses = browser.flatMap(observation => observation.failedResponses.map(response => ({ alias: observation.alias, ...response })));
+  const browserDiagnostics = signedStateObservation ? [...browser, signedStateObservation] : browser;
+  const consoleErrors = browserDiagnostics.flatMap(observation => observation.consoleErrors.map(message => ({ alias: observation.alias, message })));
+  const failedResponses = browserDiagnostics.flatMap(observation => observation.failedResponses.map(response => ({ alias: observation.alias, ...response })));
   for (const caseId of ['sign-console', 'sign-network', 'sign-responsive']) {
     await waiverCaseRequest(caseId, [parentA.alias], async () => {
       const status = await directFirestoreReadStatus(`teams/${teamA.id}/documents/${participant.documentId}`, parentA.token);
