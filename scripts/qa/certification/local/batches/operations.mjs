@@ -205,7 +205,24 @@ export async function runOperationsBatch(context, scenarios) {
     completedAt: context.certificationObservation?.completedAt || context.now(),
   };
   const results = [];
-  const runErrors = [];
+  const selectedIds = new Set(scenarios.map(scenario => scenario.id));
+  const sanitize = value => String(context.redact ? context.redact(String(value || '')) : value || '').trim().slice(0, 500);
+  const runErrors = events.filter(event => event.type === 'scenario-error' && selectedIds.has(event.scenarioId)).map(event => ({
+    scenarioId: event.scenarioId,
+    stage: event.stage || 'operations-runtime',
+    diagnostic: sanitize(event.diagnostic) || 'Selected operations scenario failed outside a case boundary.',
+    ...(event.originalDiagnostic ? { originalDiagnostic: sanitize(event.originalDiagnostic) } : {}),
+    ...(Array.isArray(event.restorationDiagnostics) ? { restorationDiagnostics: event.restorationDiagnostics.map(sanitize) } : {}),
+  }));
+  const observation = context.certificationObservation;
+  if (!observation || observation.code !== 0 || observation.signal) {
+    runErrors.push({
+      stage: 'operations-child',
+      diagnostic: sanitize(observation?.stderr) || (!observation
+        ? 'Shared certification child observation was unavailable.'
+        : `Operations child exited with code ${observation.code}${observation.signal ? ` and signal ${observation.signal}` : ''}.`),
+    });
+  }
   for (const scenario of scenarios) {
     try {
       results.push(await context.operations.execute({ scenario, handler: handlers[scenario.id], context, events, cleanup, execution }));

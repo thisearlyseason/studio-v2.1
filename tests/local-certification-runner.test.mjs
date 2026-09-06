@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
 import { installCleanupSignalHandlers, main } from '../scripts/qa/certification/run-local-batches.mjs';
+import { runOperationsBatch } from '../scripts/qa/certification/local/batches/operations.mjs';
 
 test('runner signal handlers await exact harness cleanup and remove every listener', async () => {
   const signalSource = new EventEmitter();
@@ -133,6 +134,21 @@ test('browser selection refuses a missing wrapper before starting any process', 
   const deps = dependencies();
   await assert.rejects(() => main(['--batch', 'identity', '--browser'], deps), /PLAYWRIGHT_CLI is required/);
   assert.equal(deps.events.some(([name]) => name === 'start'), false);
+});
+
+test('managed operations runner exits nonzero and persists a selected-row child failure', async () => {
+  const deps = dependencies({ runOperationsBatch });
+  const start = deps.startHarness;
+  deps.startHarness = async options => ({
+    ...await start(options),
+    runLegacyCertificationAudit: async () => ({ code: 1, stderr: 'Event visibility timeout', stdout: 'CERTIFICATION_EVENT ' + JSON.stringify({
+      type: 'scenario-error', scenarioId: 'events-event-crud-recurrence', stage: 'operations-runtime', diagnostic: 'Event visibility timeout',
+    }) }),
+  });
+  const result = await main(['--scenario', 'events-event-crud-recurrence'], deps);
+  assert.equal(result.exitCode, 1);
+  assert.ok(result.summary.runErrors.some(error => error.scenarioId === 'events-event-crud-recurrence' && error.diagnostic === 'Event visibility timeout'));
+  assert.equal(deps.events.at(-1)[0], 'close');
 });
 
 test('runner closes the harness when the batch throws', async () => {

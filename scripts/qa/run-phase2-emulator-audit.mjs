@@ -25,6 +25,7 @@ import {
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
+import { withAttendanceMemberships, selectScheduleTeam } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
 import { inspectTenantCapabilities, TENANT_SCENARIO_CAPABILITIES } from './certification/local/tenant-capabilities.mjs';
@@ -755,11 +756,11 @@ function recordCertificationFailure(scenarioId, dimension, caseId, error) {
   activeCertificationCaseIds.add(caseId);
 }
 
-function recordCertificationRunFailure(scenarioId, error) {
+function recordCertificationRunFailure(scenarioId, error, stage = 'scenario-cleanup-or-runner') {
   const failure = serializeEvidenceFailure(error, redact);
   emitCertificationEvent({
     type: 'scenario-error', scenarioId, runId: certificationRunId, commit: certificationCommit,
-    stage: 'scenario-cleanup-or-runner',
+    stage,
     ...failure,
   });
 }
@@ -6926,6 +6927,9 @@ async function runCertificationOperationsScenarios() {
         runBrowser
           ? 'No exact case-owned operations handler has emitted evidence for this frozen scenario yet.'
           : 'This operation requires browser-enabled local handler evidence; the current run was API-only.');
+    } catch (error) {
+      recordCertificationRunFailure(scenarioId, error, 'operations-runtime');
+      throw error;
     } finally {
       recordBlockedOperationsCases(scenarioId,
         'This exact frozen schedule case has no fresh case-owned local observation on the current candidate.');
@@ -8525,6 +8529,13 @@ async function addAttendanceFixtureMembership(teamId, memberUid, memberName, {
 }
 
 async function runRsvpAndAttendanceWorkflowAudit() {
+  const proTeamId = FIXTURES.teams.find(team => team.alias === 'qa-pro-team')?.id;
+  const memberUids = ['qa-team-member', 'qa-team-assistant'].map(alias => identityByAlias.get(alias)?.uid);
+  if (!proTeamId || memberUids.some(uid => !uid)) throw new Error('Attendance membership overlay identities are missing.');
+  return withAttendanceMemberships(tenantFixtureMutations, proTeamId, memberUids, runIsolatedRsvpAndAttendanceWorkflowAudit);
+}
+
+async function runIsolatedRsvpAndAttendanceWorkflowAudit() {
   // Attendance and RSVP rows both use this real workflow when selected in one
   // local batch. Scope each disposable event to the invocation so the second
   // row tests the product instead of colliding with the first fixture.
@@ -8722,10 +8733,18 @@ function browserOwnerEventEditDelete(session, marker) {
   return JSON.parse(cli(session, ['run-code', code]));
 }
 
+function browserSelectScheduleTeam(session, teamId) {
+  cli(session, ['run-code', `async page => {
+    await (${selectScheduleTeam.toString()})(page, ${JSON.stringify({ teamId, url: `${BASE_URL}/events` })});
+  }`]);
+}
+
 async function runEventWorkflowAudit() {
   const marker = `phase2-${process.pid}`;
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `events-owner-${process.pid}`);
   const member = await browserLogin('qa-team-member', '/dashboard', `events-member-${process.pid}`);
+  browserSelectScheduleTeam(owner, TEAM_A_ID);
+  browserSelectScheduleTeam(member, TEAM_A_ID);
   const created = browserOwnerEventCreate(owner, marker);
   expectEqual(created.incomplete, 1, 'event rejects incomplete activity');
   expectEqual(created.createdAfterReload > 0, true, 'owner event create persists after reload');
@@ -8973,6 +8992,7 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
 async function runRecurringEventWorkflowAudit() {
   const marker = `phase2-recurring-${process.pid}`;
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `events-series-owner-${process.pid}`);
+  browserSelectScheduleTeam(owner, TEAM_A_ID);
   const result = browserOwnerRecurringEventWorkflow(owner, marker);
   expectEqual(result.createdCount, 4, 'weekly recurrence creates the exact requested occurrence count');
   if (!result.createdCalendarDate) {

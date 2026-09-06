@@ -111,6 +111,7 @@ test('fully observed operation dimensions describe completion instead of missing
     browserEnabled: true,
     now: () => '2026-09-06T04:00:02.000Z',
     certificationObservation: {
+      code: 0,
       startedAt: '2026-09-06T04:00:00.000Z', completedAt: '2026-09-06T04:00:02.000Z',
       stdout: events.map(event => `CERTIFICATION_EVENT ${JSON.stringify(event)}`).join('\n'),
     },
@@ -122,3 +123,28 @@ test('fully observed operation dimensions describe completion instead of missing
     assert.equal(dimension.note, 'All exact operational cases observed locally.');
   }
 });
+
+test('operations preserves selected-row runtime errors and a failed child exit despite NOT_OBSERVED cases', async () => {
+  const scenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'events-event-crud-recurrence');
+  const output = await runOperationsBatch({
+    now: () => '2026-09-06T04:00:00.000Z',
+    certificationObservation: { code: 1, stderr: 'private diagnostic', stdout: 'CERTIFICATION_EVENT ' + JSON.stringify({
+      type: 'scenario-error', scenarioId: scenario.id, stage: 'operations-runtime', diagnostic: 'Event member visibility timeout',
+    }) },
+    redact: value => value.replace('private diagnostic', 'sanitized child diagnostic'),
+    operations: { execute: async () => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' }) },
+  }, [scenario]);
+  assert.ok(output.runErrors.some(error => error.scenarioId === scenario.id && error.diagnostic === 'Event member visibility timeout'));
+  assert.ok(output.runErrors.some(error => error.stage === 'operations-child' && error.diagnostic === 'sanitized child diagnostic'));
+});
+
+for (const observation of [undefined, { code: 1 }, { code: null, signal: 'SIGTERM' }, { code: 0, signal: 'SIGTERM' }]) {
+  test(`operations rejects missing/unsuccessful child evidence (${JSON.stringify(observation)})`, async () => {
+    const result = await runOperationsBatch({
+      now: () => '2026-09-06T04:00:00.000Z', certificationObservation: observation,
+      operations: { execute: async () => ({ outcome: 'BLOCKED_PRECONDITION' }) },
+    }, [CERTIFICATION_SCENARIOS.find(item => item.id === 'events-event-crud-recurrence')]);
+    assert.equal(result.runErrors[0]?.stage, 'operations-child');
+    assert.ok(result.runErrors[0]?.diagnostic);
+  });
+}
