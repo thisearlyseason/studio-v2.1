@@ -30,6 +30,7 @@ import { validateAttendanceLedger, validateAttendanceBounds } from './certificat
 import { operationActorAliases } from './certification/local/operation-actors.mjs';
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
+import { observeFilmPlayback, validateFilmPlayback } from './certification/local/film-playback.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -7008,7 +7009,7 @@ async function runCertificationOperationsScenarios() {
           ['console','film-console','Practice film workflow console errors','qa-coach-owner-a+qa-adult-player-a','zero console errors'],
           ['network','film-network','Practice film workflow failed responses','qa-coach-owner-a+qa-adult-player-a','zero unallowlisted 5xx responses'],
           ['responsive','film-responsive','Practice film staff and player views fit desktop and mobile viewports','qa-coach-owner-a+qa-adult-player-a','actual page and film dialog bounds'],
-        ]) recordObservedOperationNamedCase(scenarioId, dimension, caseId, label, [new RegExp(label)], { actor, operation: 'visible Talent Center and exact Firestore or Storage requests', requests: operationRequestEvidence(caseId), reconciliation, timeBound: '15s UI waits and immediate emulator reads' });
+        ]) recordObservedOperationNamedCase(scenarioId, dimension, caseId, label, [new RegExp(label), ...(caseId === 'film-upload' ? [/Practice film coach playback advances/] : caseId === 'film-progress-own' ? [/Practice film player playback advances/] : [])], { actor, operation: 'visible Talent Center and exact Firestore or Storage requests', requests: operationRequestEvidence(caseId), reconciliation, timeBound: '15s UI waits and immediate emulator reads' });
         return;
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
@@ -7707,6 +7708,7 @@ async function runPracticeFilmWorkflowAudit() {
         });
       });
       if (mediaReadiness.state !== 'loaded') throw new Error('Coach film media readiness failed: ' + JSON.stringify(mediaReadiness));
+      const playback = await video.evaluate(${observeFilmPlayback.toString()});
       const duration = mediaReadiness.duration;
       let invalidTimestamps = 0;
       for (const value of ['-1', 'NaN', String(Math.ceil(duration / 60) + 10) + ':00']) {
@@ -7728,10 +7730,11 @@ async function runPracticeFilmWorkflowAudit() {
       await page.setViewportSize({ width: 390, height: 844 });
       const mobileBounds = await viewer.boundingBox();
       const boundsFit = !!desktopBounds && !!mobileBounds && desktopBounds.x >= -0.5 && desktopBounds.y >= -0.5 && desktopBounds.x + desktopBounds.width <= 1440.5 && desktopBounds.y + desktopBounds.height <= 900.5 && mobileBounds.x >= -0.5 && mobileBounds.y >= -0.5 && mobileBounds.x + mobileBounds.width <= 390.5 && mobileBounds.y + mobileBounds.height <= 844.5;
-      return { duration, invalidTimestamps, seekTime, boundsFit, pageFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
+      return { duration, playback, invalidTimestamps, seekTime, boundsFit, pageFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
     } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
   }`]));
   expectEqual(Number.isFinite(markResult.duration) && markResult.duration > 1 && Math.abs(markResult.seekTime - 1) < 0.75, true, 'Practice film valid coach mark persists and seeks exact timestamp');
+  expectEqual(validateFilmPlayback(markResult.playback), true, 'Practice film coach playback advances ' + JSON.stringify(markResult.playback));
   expectEqual(markResult.invalidTimestamps, 3, 'Practice film negative NaN and beyond-duration timestamps fail');
 
   const marked = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.doc(videoRecord.path).get()).data());
@@ -7775,16 +7778,17 @@ async function runPracticeFilmWorkflowAudit() {
         });
       });
       if (mediaReadiness.state !== 'loaded') throw new Error('Player film media readiness failed: ' + JSON.stringify(mediaReadiness));
-      await video.evaluate(media => { media.currentTime = media.duration * 0.8; media.dispatchEvent(new Event('timeupdate', { bubbles: true })); });
+      const playback = await video.evaluate(${observeFilmPlayback.toString()}, 0.76);
       await page.waitForTimeout(1000);
       const desktopBounds = await viewer.boundingBox();
       await page.setViewportSize({ width: 390, height: 844 });
       const mobileBounds = await viewer.boundingBox();
       const boundsFit = !!desktopBounds && !!mobileBounds && desktopBounds.x >= -0.5 && desktopBounds.y >= -0.5 && desktopBounds.x + desktopBounds.width <= 1440.5 && desktopBounds.y + desktopBounds.height <= 900.5 && mobileBounds.x >= -0.5 && mobileBounds.y >= -0.5 && mobileBounds.x + mobileBounds.width <= 390.5 && mobileBounds.y + mobileBounds.height <= 844.5;
-      return { boundsFit, pageFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
+      return { playback, boundsFit, pageFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
     } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
   }`]));
   const progressPath = `${videoRecord.path}/watchProgress/${adultUid}`;
+  expectEqual(validateFilmPlayback(playerResult.playback), true, 'Practice film player playback advances ' + JSON.stringify(playerResult.playback));
   const progress = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     const snapshot = await firestoreAdmin.doc(progressPath).get(); return snapshot.exists ? snapshot.data() : null;
   });

@@ -5,6 +5,9 @@ const localEmulatorConnectSources =
   process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true'
     ? ' http://127.0.0.1:8080 http://127.0.0.1:9099 http://127.0.0.1:9199 http://localhost:8080 http://localhost:9099 http://localhost:9199'
     : '';
+const localEmulatorMediaSources = localEmulatorConnectSources
+  ? ' http://127.0.0.1:9199 http://localhost:9199'
+  : '';
 
 /** Security headers applied to every response. */
 const securityHeaders = [
@@ -38,7 +41,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
       "font-src 'self' fonts.gstatic.com",
       "img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host",
-      "media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app",
+      `media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app${localEmulatorMediaSources}`,
       // Stripe Connect needs several stripe.com subdomains for its onboarding iframe/XHR
       `connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org${localEmulatorConnectSources}`,
       // Stripe Connect onboarding is iframe-based
