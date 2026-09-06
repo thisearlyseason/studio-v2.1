@@ -8185,7 +8185,7 @@ async function runCalendarFeedLifecycleAudit() {
   const unfoldedTeamFeed = teamFeed.body.replace(/\r\n /g, '');
   expectEqual(new RegExp(`UID:${teamA.id}-${secretEventId}@thesquad\\.pro`).test(unfoldedTeamFeed), true, 'Calendar Function emits stable team-scoped UID for the exact event');
   expectEqual(/DTSTART;TZID=America\/Edmonton:20261002T233000/.test(teamFeed.body) && /DTEND;TZID=America\/Edmonton:20261003T003000/.test(teamFeed.body), true, 'Calendar Function emits timezone-aware overnight DTSTART and DTEND');
-  expectEqual(/SUMMARY:.*\\, escaped\\;/.test(teamFeed.body) && /DESCRIPTION:.*escaped\\; description\\, value/.test(teamFeed.body), true, 'Calendar Function RFC-escapes summary and description text');
+  expectEqual(/SUMMARY:.*\\, escaped\\;/.test(unfoldedTeamFeed) && /DESCRIPTION:.*escaped\\; description\\, value/.test(unfoldedTeamFeed), true, 'Calendar Function RFC-escapes summary and description text');
   expectEqual(/\r\n /.test(teamFeed.body), true, 'Calendar Function RFC-folds long content lines');
   expectEqual(teamFeed.body.includes(secretToken) || /https:\/\/the-squad\.test\/action\?/.test(teamFeed.body), false, 'Calendar Function body redacts subscription token and action URL');
   const invalidType = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'invalid' }) });

@@ -1425,6 +1425,7 @@ test('ICS UID evidence unfolds a permitted RFC continuation before asserting the
   const calendarBlock = source.slice(start, end);
   assert.match(calendarBlock, /const unfoldedTeamFeed = teamFeed\.body\.replace\(\/\\r\\n \/g, ''\);/);
   assert.match(calendarBlock, /test\(unfoldedTeamFeed\)/);
+  assert.match(calendarBlock, /SUMMARY:[\s\S]*unfoldedTeamFeed\) && \/DESCRIPTION:/);
 });
 
 test('emulator audit exercises facility and resource CRUD with destructive confirmation', () => {
