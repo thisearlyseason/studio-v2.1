@@ -6770,13 +6770,10 @@ function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observe
   const firstCapturedAt = assertions.map(assertion => assertion.capturedAt).filter(Boolean).sort()[0] || null;
   const operationExecution = {
     ...execution,
-    requests: (execution?.requests?.length ? execution.requests : [{
-      method: execution?.operation?.startsWith('browser') ? 'BROWSER' : 'POST',
-      pathname: execution?.operation || 'local-runtime-operation',
-      status: 'observed',
-    }]).map(request => typeof request === 'string'
-      ? { method: 'POST', pathname: request, status: 'observed' }
-      : request),
+    // A named case must bring its own captured HTTP evidence.  Do not turn a
+    // human-readable operation label into a fake transport record: it has no
+    // route, status, or fixture actor provenance and cannot certify behavior.
+    requests: execution?.requests,
     observer: execution?.observer || 'request response and authoritative emulator reconciliation',
     cleanupReference: execution?.cleanupReference || `fixture-cleanup-${FIXTURES.runId}`,
   };

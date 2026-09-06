@@ -89,6 +89,20 @@ export function assertCaseOwnedOperationArtifacts(cases) {
     if (!Array.isArray(execution.requests) || execution.requests.length === 0) {
       throw new Error(`Operation case ${item.caseId} is missing requests.`);
     }
+    for (const request of execution.requests) {
+      const method = request?.method;
+      const pathname = request?.pathname;
+      const status = request?.status;
+      const actorAlias = request?.actorAlias;
+      if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+        || typeof pathname !== 'string' || !pathname.startsWith('/') || pathname.includes('?')
+        || !Number.isInteger(status)) {
+        throw new Error(`Operation case ${item.caseId} requires actual same-origin HTTP request evidence.`);
+      }
+      if (typeof actorAlias !== 'string' || !actorAlias.startsWith('qa-') || actorAlias === 'catalog-scenario-actor') {
+        throw new Error(`Operation case ${item.caseId} requires an exact actor alias on every request.`);
+      }
+    }
     for (const assertion of item.assertions) {
       if (!assertion || typeof assertion.id !== 'string' || assertion.id.length === 0) {
         throw new Error(`Operation case ${item.caseId} has an assertion without a stable ID.`);

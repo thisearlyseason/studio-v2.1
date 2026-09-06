@@ -78,7 +78,7 @@ test('operations evidence rejects reused assertion IDs and incomplete named-case
     execution: {
       actor: 'qa-coach-owner-a',
       operation: 'POST /api/test',
-      requests: [{ method: 'POST', pathname: '/api/test', status: 200 }],
+      requests: [{ method: 'POST', pathname: '/api/test', status: 200, actorAlias: 'qa-coach-owner-a' }],
       reconciliation: 'exact emulator record',
       observer: 'authenticated API response and emulator read',
       timeBound: '20s request deadline',
@@ -96,6 +96,34 @@ test('operations evidence rejects reused assertion IDs and incomplete named-case
   const missingRequest = complete('three', 'assertion-three');
   delete missingRequest.execution.requests;
   assert.throws(() => assertCaseOwnedOperationArtifacts([missingRequest]), /requests/i);
+});
+
+test('operations evidence rejects synthesized request records and requires the exact fixture actor', () => {
+  const complete = request => ({
+    caseId: 'synthetic-request',
+    assertions: [{ id: 'synthetic-request-assertion', label: 'exact assertion' }],
+    execution: {
+      actor: 'qa-coach-owner-a',
+      operation: 'observed browser action',
+      requests: [request],
+      reconciliation: 'exact emulator record',
+      observer: 'authenticated API response and emulator read',
+      timeBound: '20s request deadline',
+      cleanupReference: 'cleanup-synthetic-request',
+    },
+  });
+
+  for (const synthetic of [
+    { method: 'BROWSER', pathname: '/calendar', status: 200, actorAlias: 'qa-coach-owner-a' },
+    { method: 'POST', pathname: 'POST RSVP', status: 200, actorAlias: 'qa-coach-owner-a' },
+    { method: 'POST', pathname: '/api/rsvp', status: 'observed', actorAlias: 'qa-coach-owner-a' },
+    { method: 'POST', pathname: '/api/rsvp', status: 200, actorAlias: 'catalog-scenario-actor' },
+  ]) {
+    assert.throws(
+      () => assertCaseOwnedOperationArtifacts([complete(synthetic)]),
+      /actual same-origin HTTP request evidence|exact actor alias/i,
+    );
+  }
 });
 
 test('fully observed operation dimensions describe completion instead of missing cases', async () => {
