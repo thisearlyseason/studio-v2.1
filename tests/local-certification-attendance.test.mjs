@@ -21,6 +21,10 @@ test('Attendance bounds require two exact viewports and positive in-viewport dia
   measurements[1].controls.export.x=380;
   assert.throws(() => validateAttendanceBounds(measurements));
 });
+test('Event Intelligence scrollable tab strip keeps the leading Attendance tab reachable on mobile', () => {
+  const source=readFileSync(new URL('../src/app/(dashboard)/events/EventDetailDialog.tsx',import.meta.url),'utf8');
+  assert.match(source,/<TabsList className="[^"]*justify-start[^"]*overflow-x-auto/);
+});
 test('Attendance dispatch uses a dedicated Team A workflow without Pro membership overlays', () => {
   const source=readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs',import.meta.url),'utf8');
   assert.match(source,/scenarioId === 'attendance-practice-event-member-attendance'\s*\? await runTeamAAttendanceWorkflowAudit\(\)/);

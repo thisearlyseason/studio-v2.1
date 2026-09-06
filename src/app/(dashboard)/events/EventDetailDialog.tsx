@@ -357,7 +357,7 @@ export function EventDetailDialog({
               return (
             <Tabs defaultValue={effectiveDefault} className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
-                <TabsList className="flex w-full overflow-x-auto bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
+                <TabsList className="flex w-full justify-start overflow-x-auto bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
                   <TabsTrigger value="attendance" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Squad Pulse</TabsTrigger>
                   {isParentTournament && (
                     <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Matches</TabsTrigger>

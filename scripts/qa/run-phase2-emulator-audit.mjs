@@ -9168,17 +9168,20 @@ function browserTeamAAttendanceMatrix(session, { teamId, title, memberName, staf
       observationTag = 'att-network';
       let dialog = await open();
       const readOnly = { export:await dialog.getByRole('button',{name:'Export Attendance Ledger'}).count(), edit:await dialog.getByRole('button',{name:'Edit Activity',exact:true}).count(), delete:await dialog.getByRole('button',{name:${JSON.stringify(`Delete ${title}`)},exact:true}).count() };
-      if (${JSON.stringify(staff)}) {
+      {
         observationTag = 'att-responsive';
         for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
           await page.setViewportSize(viewport); dialog = await open();
           const controls = {};
-          for (const [name,control] of [['dialog',dialog],['matrix',dialog.getByText('Attendance Matrix',{exact:true})],['tab',dialog.getByRole('tab',{name:'Squad Pulse'})],['close',dialog.getByRole('button',{name:'Close event details'})],['export',dialog.getByRole('button',{name:'Export Attendance Ledger'})]]) {
+          const targets=[['dialog',dialog],['matrix',dialog.getByText('Attendance Matrix',{exact:true})],['tab',dialog.getByRole('tab',{name:'Squad Pulse'})],['close',dialog.getByRole('button',{name:'Close event details'})],...['Going','Maybe','Declined'].map(name=>[name.toLowerCase(),dialog.getByRole('button',{name,exact:true})])];
+          if (${JSON.stringify(staff)}) targets.push(['export',dialog.getByRole('button',{name:'Export Attendance Ledger'})]);
+          for (const [name,control] of targets) {
             try {
               await control.scrollIntoViewIfNeeded({timeout:10000}); controls[name] = await control.boundingBox({timeout:10000});
             } catch (error) { throw new Error('Attendance layout '+JSON.stringify({viewport,dialogs:await page.locator('[role="dialog"]').evaluateAll(nodes=>nodes.map(node=>({title:node.querySelector('h2')?.textContent,hidden:node.getAttribute('aria-hidden')}))),error:error.name})); }
           }
           measurements.push({viewport,controls});
+          if (!${JSON.stringify(staff)}) continue;
           let download;
           try {
             [download]=await Promise.all([page.waitForEvent('download',{timeout:15000}),dialog.getByRole('button',{name:'Export Attendance Ledger'}).click({timeout:10000})]);
@@ -9228,11 +9231,11 @@ async function runTeamAAttendanceWorkflowAudit() {
   const memberResult=browserTeamAAttendanceMatrix(memberSession,{teamId,title,memberName,staff:false});
   expectEqual(JSON.stringify(memberResult.readOnly),JSON.stringify({export:0,edit:0,delete:0}),'Team A attendance member reload is read-only with no staff controls');
   expectEqual(memberResult.memberStatus,'declined','Team A attendance member reload is read-only and shows exact member status');
-  expectEqual(validateAttendanceBounds(staffResult.measurements),true,'Attendance exact desktop and mobile control bounds');
-  expectEqual(JSON.stringify(staffResult.measurements),JSON.stringify(staffResult.measurements),'Attendance exact desktop and mobile control bounds measured rectangles');
+  expectEqual(validateAttendanceBounds(staffResult.measurements,{rsvp:true}),true,'Attendance exact desktop and mobile control bounds '+JSON.stringify(staffResult.measurements));
+  expectEqual(validateAttendanceBounds(memberResult.measurements,{staff:false,rsvp:true}),true,'Attendance exact desktop and mobile control bounds member Event RSVP smoke '+JSON.stringify(memberResult.measurements));
   for (const download of staffResult.downloads) {
     const ledger=validateAttendanceLedger(download,{eventId,memberName,status:'declined',teamMarker:team.visibleMarker,forbiddenMarkers:[teamB.visibleMarker,'synthetic-private','@phase2.test','medical','emergencyContact'],maxRows:100});
-    expectEqual(JSON.stringify(ledger),JSON.stringify(ledger),'Attendance exact bounded ledger export filename bytes rows and contents');
+    expectEqual(ledger.rows>=1 && ledger.rows<=100,true,'Attendance exact bounded ledger export '+JSON.stringify(ledger));
   }
   expectEqual(staffResult.downloads.length,2,'Attendance exact bounded ledger export at both viewports');
   for (const [label,result] of [['member',memberResult],['staff',staffResult]]) {
