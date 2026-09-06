@@ -76,7 +76,12 @@ test('waiver lifecycle responsive evidence separates dialog bounds from page ove
   assert.match(audit, /observation\.selectedTeamCount, 1/);
   assert.match(audit, /observation\.titleCount, 1/);
   assert.match(audit, /evaluateAll\(\(elements,name\)=>elements\.filter\(element=>element\.getClientRects\(\)\.length>0&&element\.textContent\?\.includes\(name\)\)\.length/);
+  const coachProbe = audit.slice(audit.indexOf('async function runWaiverCoachVisibilityProbe()'), audit.indexOf('async function observeWaiverSignatureDialogs('));
+  assert.match(coachProbe, /selectedTeam\.waitFor\(\{state:'visible',timeout:15000\}\)/);
+  assert.match(coachProbe, /banner\.waitFor\(\{state:'visible',timeout:15000\}\)/);
+  assert.doesNotMatch(coachProbe, /waitForTimeout/);
   assert.match(signatureWorkflow, /await banner\.click\(\);await title\.waitFor\(\{state:'visible',timeout:15000\}\)/);
+  assert.match(signatureWorkflow, /selectedTeam\.first\(\)\.waitFor\(\{state:'visible',timeout:15000\}\);if\(await selectedTeam\.count\(\)!==1\)/);
   const titleReady = signatureWorkflow.indexOf("await title.waitFor({state:'visible',timeout:15000});");
   const transientDismissal = signatureWorkflow.indexOf('await dismissTransientDialogs();');
   const exactTrigger = signatureWorkflow.indexOf('await trigger.scrollIntoViewIfNeeded();');

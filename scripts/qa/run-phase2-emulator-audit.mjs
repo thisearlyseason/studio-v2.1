@@ -7492,13 +7492,14 @@ async function runWaiverCoachVisibilityProbe() {
       await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(team.id)});
       await page.goto(${JSON.stringify(`${BASE_URL}/coaches-corner`)});
       await page.waitForFunction(expected=>window.location.pathname===expected,'/coaches-corner',{timeout:15000});
-      await page.locator('[data-testid="squad-switcher-trigger"]:visible').first().waitFor({state:'visible',timeout:15000});
-      await page.waitForTimeout(2000);
+      const selectedTeam=page.locator('[data-testid="squad-switcher-trigger"]:visible').filter({hasText:${JSON.stringify(team.name)}}).first();
+      await selectedTeam.waitFor({state:'visible',timeout:15000});
       const banner=page.getByRole('button',{name:/Review & Sign/}).first();
+      await banner.waitFor({state:'visible',timeout:15000});
       const bannerCount=await banner.count();
-      if(bannerCount===1)await banner.click();
+      await banner.click();
       const exactTitle=page.getByText(${JSON.stringify(title)},{exact:true});
-      if(bannerCount===1)await exactTitle.first().waitFor({state:'visible',timeout:5000}).catch(()=>{});
+      await exactTitle.first().waitFor({state:'visible',timeout:15000});
       const switchers=page.getByTestId('squad-switcher-trigger');
       return{
         storedTeamId:await page.evaluate(()=>localStorage.getItem('sf_session_team_id')),
@@ -7555,7 +7556,7 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
         await page.goto(${JSON.stringify(BASE_URL + spec.route)});
         const title=page.getByText(${JSON.stringify(spec.title)},{exact:true}).first();
         ${spec.kind === 'coach'
-          ? `const selectedTeam=page.locator('[data-testid="squad-switcher-trigger"]:visible').filter({hasText:${JSON.stringify(spec.teamName)}});if(await selectedTeam.count()!==1)throw new Error('Expected exact selected coach waiver squad');const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();await title.waitFor({state:'visible',timeout:15000});`
+          ? `const selectedTeam=page.locator('[data-testid="squad-switcher-trigger"]:visible').filter({hasText:${JSON.stringify(spec.teamName)}});await selectedTeam.first().waitFor({state:'visible',timeout:15000});if(await selectedTeam.count()!==1)throw new Error('Expected exact selected coach waiver squad');const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();await title.waitFor({state:'visible',timeout:15000});`
           : spec.route === '/family'
             ? `await title.waitFor({state:'visible',timeout:15000});`
             : `await title.waitFor({state:'visible',timeout:15000});`}
