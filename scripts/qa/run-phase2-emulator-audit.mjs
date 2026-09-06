@@ -7842,6 +7842,7 @@ async function runPracticeFilmWorkflowAudit() {
       { timeout: 15000 },
     );
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
+    await (${dismissFilmTeamAlert.toString()})(page);
     page.on('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: ${JSON.stringify(`Delete ${marker}`)} }).click();
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ state: 'detached', timeout: 15000 });
