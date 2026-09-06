@@ -2,11 +2,12 @@ import {NextRequest,NextResponse} from 'next/server';
 import {Readable} from 'node:stream';
 import {finished} from 'node:stream/promises';
 import {randomUUID} from 'node:crypto';
+import type {FileMetadata} from '@google-cloud/storage';
 import sharp from 'sharp';
 import {mediaBucket} from '@/lib/server-media-storage';
 import {mediaActor,mediaAuthorityState,mediaFailure,mediaHeaders} from '@/lib/server-media';
 import {canManageMedia,canReadMedia} from '@/lib/media-authority';
-import {consumeMediaBytes,MediaInputError,mediaByteLimit,parseMediaPath,parseMediaRange,validateMediaSignature} from '@/lib/media-policy';
+import {consumeMediaBytes,MediaInputError,mediaByteLimit,mediaStorageMetadata,parseMediaPath,parseMediaRange,validateMediaSignature} from '@/lib/media-policy';
 import {enforceUserRateLimit} from '@/lib/server-request-guards';
 
 function targetFor(req:NextRequest){const params=new URL(req.url).searchParams;if([...params.keys()].some(key=>key!=='path')||params.getAll('path').length!==1)throw new MediaInputError('Invalid media request.');return parseMediaPath(params.get('path')||'');}
@@ -18,7 +19,7 @@ export async function POST(req:NextRequest){
     const limited=await enforceUserRateLimit(actor!.uid,'media-upload',30,5*60*1000);if(limited)return limited;
     const video=target.category==='videos',limit=mediaByteLimit(video),type=(req.headers.get('content-type')||'').split(';')[0];
     if(Number(req.headers.get('content-length'))>limit)throw new MediaInputError('Media exceeds the upload byte limit.',413);
-    const bucket=mediaBucket(120_000),file=bucket.file(target.path),metadata={contentType:type,cacheControl:'private, no-store',metadata:{firebaseStorageDownloadTokens:null}};
+    const bucket=mediaBucket(120_000),file=bucket.file(target.path),uploadId=randomUUID(),metadata=mediaStorageMetadata(type,uploadId);
     if(!video){
       const chunks:Buffer[]=[];await consumeMediaBytes(req.body,{limit,onChunk:chunk=>{chunks.push(Buffer.from(chunk));}});
       const bytes=Buffer.concat(chunks);validateMediaSignature(bytes,type,false);
@@ -40,6 +41,19 @@ export async function POST(req:NextRequest){
         writer.end();await settled;await pending.copy(file,{preconditionOpts:{ifGenerationMatch:0}});
       }catch(error){writer.destroy();await settled.catch(()=>{});throw error;}
       finally{signal.removeEventListener('abort',abort);await pending.delete({ignoreNotFound:true});}
+    }
+    let stored:FileMetadata|undefined;
+    try{
+      [stored]=await file.getMetadata();
+      if(stored.metadata?.firebaseStorageDownloadTokens||stored.metadata?.squadMediaUploadId!==uploadId||!/^\d+$/.test(String(stored.generation||'')))throw new MediaInputError('Media privacy verification failed.',503);
+    }catch{
+      // A concurrent replacement is not ours. Generation-match makes this
+      // rollback safe even if another writer arrives after the metadata read.
+      const owned=stored||(await file.getMetadata().catch(()=>[]))[0];
+      if(owned?.metadata?.squadMediaUploadId===uploadId&&/^\d+$/.test(String(owned.generation||''))){
+        try{await bucket.file(target.path,{preconditionOpts:{ifGenerationMatch:owned.generation}}).delete({ignoreNotFound:true});}catch{throw new MediaInputError('Media verification failed; owned cleanup could not settle.',503);}
+      }
+      throw new MediaInputError('Media privacy verification failed.',503);
     }
     return NextResponse.json({path:target.path,url:'/api/media?path='+encodeURIComponent(target.path)},{status:201,headers:mediaHeaders});
   }catch(error){return mediaFailure(error);}

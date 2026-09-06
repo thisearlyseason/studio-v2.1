@@ -15,7 +15,7 @@ test('authorized media upload creates tokenless image; anonymous private read fa
   const bytes=await sharp({create:{width:2,height:2,channels:4,background:'#f00'}}).png().toBuffer(),path='players/p/avatar/owned.png';
   try{
     const upload=await owner.route.POST(request(path,{method:'POST',bytes}));assert.equal(upload.status,201);assert.deepEqual(await upload.json(),{path,url:'/api/media?path=players%2Fp%2Favatar%2Fowned.png'});
-    assert.equal(objects.get(path).metadata.metadata?.firebaseStorageDownloadTokens??null,null);
+    assert.equal(Object.hasOwn(objects.get(path).metadata.metadata||{},'firebaseStorageDownloadTokens'),false);
     assert.equal((await anonymous.route.GET(request(path,{auth:false}))).status,403);
     const read=await owner.route.GET(request(path,{range:'bytes=2-5'}));assert.equal(read.status,206);assert.equal(read.headers.get('Content-Range'),`bytes 2-5/${bytes.length}`);assert.deepEqual(Buffer.from(await read.arrayBuffer()),bytes.subarray(2,6));
     assert.equal((await owner.route.DELETE(request(path,{method:'DELETE'}))).status,200);assert.equal(objects.size,0);
@@ -54,4 +54,20 @@ test('a stale video existence check cannot let failed upload rollback delete ano
     const response=await owner.route.POST(request(path,{method:'POST',type:'video/webm',bytes:Buffer.concat([Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.alloc(16)])}));
     assert.equal(response.status>=400,true);assert.deepEqual(objects.get(path)?.bytes,existing);assert.equal(objects.size,1);
   }finally{owner.dispose();}
+});
+test('image and promoted video fail closed and roll back only their token-bearing generation',async()=>{
+  for(const video of[false,true]){
+    const {db,objects}=mediaDb(initial),path=`players/p/${video?'videos':'avatar'}/injected`,base=db.bucket.file.bind(db.bucket);
+    db.bucket.file=(name,options)=>{const file=base(name,options);return{...file,async save(bytes,opts){await file.save(bytes,opts);objects.get(name).metadata.metadata={...objects.get(name).metadata.metadata,firebaseStorageDownloadTokens:'injected'};},async copy(destination,opts){await file.copy(destination,opts);objects.get(destination.name).metadata.metadata={...objects.get(destination.name).metadata.metadata,firebaseStorageDownloadTokens:'injected'};}};};
+    const owner=await loadMediaRoute('../../src/app/api/media/route.ts',db,{uid:'owner'}),bytes=materializeFixtureMediaBytes({payloadGenerator:video?'tiny-mp4-v1':'solid-png-v1'});
+    try{const response=await owner.route.POST(request(path,{method:'POST',bytes,type:video?'video/mp4':'image/png'}));assert.equal(response.status,503);assert.equal(objects.size,0);}finally{owner.dispose();}
+  }
+});
+test('healthy promoted video has tokenless final metadata; verification cannot delete a replacement writer',async()=>{
+  const {db,objects}=mediaDb(initial),path='players/p/videos/healthy.mp4',owner=await loadMediaRoute('../../src/app/api/media/route.ts',db,{uid:'owner'});
+  try{assert.equal((await owner.route.POST(request(path,{method:'POST',bytes:materializeFixtureMediaBytes({payloadGenerator:'tiny-mp4-v1'}),type:'video/mp4'}))).status,201);assert.equal(Boolean(objects.get(path).metadata.metadata?.firebaseStorageDownloadTokens),false);}finally{owner.dispose();}
+  const base=db.bucket.file.bind(db.bucket),image='players/p/avatar/replaced.png';
+  db.bucket.file=(name,options)=>{const file=base(name,options);return{...file,async save(bytes,opts){await file.save(bytes,opts);objects.set(name,{bytes:Buffer.from('other writer'),metadata:{generation:'999',metadata:{squadMediaUploadId:'other',firebaseStorageDownloadTokens:'other-token'}}});}};};
+  const replacement=await loadMediaRoute('../../src/app/api/media/route.ts',db,{uid:'owner'});
+  try{assert.equal((await replacement.route.POST(request(image,{method:'POST',bytes:materializeFixtureMediaBytes({payloadGenerator:'solid-png-v1'})}))).status,503);assert.equal(objects.get(image).bytes.toString(),'other writer');}finally{replacement.dispose();}
 });

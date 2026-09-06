@@ -15,6 +15,10 @@ export function parseMediaPath(path:string):MediaTarget{
   throw new MediaInputError('Unsupported media path.');
 }
 export const mediaByteLimit=(video:boolean)=>video?500*1024*1024:5*1024*1024;
+// Omit the token field on object creation. Some Storage implementations coerce
+// a custom-metadata null into the literal, publicly guessable token "null".
+// Null is a removal instruction only in the separate metadata PATCH operation.
+export const mediaStorageMetadata=(contentType:string,uploadId?:string)=>({contentType,cacheControl:'private, no-store',...(uploadId?{metadata:{squadMediaUploadId:uploadId}}:{})});
 export function validateMediaSignature(bytes:Uint8Array,contentType:string,video:boolean){
   const b=Buffer.from(bytes),text=(start:number,end:number)=>b.subarray(start,end).toString('ascii');
   const valid=video

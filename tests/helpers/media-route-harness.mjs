@@ -6,16 +6,18 @@ import {communicationDb} from './communication-route-harness.mjs';
 
 export function mediaDb(initial){
   const state=communicationDb(initial),{objects}=state;
+  let generation=0;
+  const metadata=(value,size)=>({...value,size,generation:String(++generation),metadata:Object.fromEntries(Object.entries(value?.metadata||{}).map(([key,v])=>[key,typeof v==='string'?v:JSON.stringify(v)]))});
   state.db.bucket={
     async getFiles({prefix,maxResults=200}){const names=[...objects.keys()].filter(x=>x.startsWith(prefix));return[names.slice(0,maxResults).map(name=>state.db.bucket.file(name)),names.length>maxResults?{}:null];},
-    file(name){return{name,
+    file(name,options={}){return{name,
       async exists(){return[objects.has(name)];},async getMetadata(){return[objects.get(name)?.metadata];},
-      async save(bytes,options){objects.set(name,{bytes:Buffer.from(bytes),metadata:{...options.metadata,size:bytes.length}});},
+      async save(bytes,options){objects.set(name,{bytes:Buffer.from(bytes),metadata:metadata(options.metadata,bytes.length)});},
       async setMetadata(value){const current=objects.get(name);current.metadata={...current.metadata,metadata:{...current.metadata.metadata,...value.metadata}};for(const [key,v]of Object.entries(current.metadata.metadata))if(v===null)delete current.metadata.metadata[key];},
-      async delete(){objects.delete(name);},
-      async copy(destination){if(objects.has(destination.name))throw Object.assign(Error('precondition'),{code:412});objects.set(destination.name,structuredClone(objects.get(name)));},
+      async delete(){if(options.preconditionOpts?.ifGenerationMatch&&objects.get(name)?.metadata.generation!==String(options.preconditionOpts.ifGenerationMatch))throw Object.assign(Error('precondition'),{code:412});objects.delete(name);},
+      async copy(destination){if(objects.has(destination.name))throw Object.assign(Error('precondition'),{code:412});const source=objects.get(name);objects.set(destination.name,{bytes:Buffer.from(source.bytes),metadata:metadata(source.metadata,source.bytes.length)});},
       createReadStream({start=0,end}={}){return Readable.from([objects.get(name).bytes.subarray(start,end===undefined?undefined:end+1)]);},
-      createWriteStream(options){const chunks=[];return new Writable({write(chunk,encoding,callback){chunks.push(Buffer.from(chunk));callback();},final(callback){if(objects.has(name)&&options.preconditionOpts?.ifGenerationMatch===0){callback(Object.assign(Error('precondition'),{code:412}));return;}const bytes=Buffer.concat(chunks);objects.set(name,{bytes,metadata:{...options.metadata,size:bytes.length}});callback();}});},
+      createWriteStream(options){const chunks=[];return new Writable({write(chunk,encoding,callback){chunks.push(Buffer.from(chunk));callback();},final(callback){if(objects.has(name)&&options.preconditionOpts?.ifGenerationMatch===0){callback(Object.assign(Error('precondition'),{code:412}));return;}const bytes=Buffer.concat(chunks);objects.set(name,{bytes,metadata:metadata(options.metadata,bytes.length)});callback();}});},
     };},
   };return state;
 }
