@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validateAttendanceLedger, validateAttendanceBounds } from '../scripts/qa/certification/local/attendance-observation.mjs';
 
-const options = { eventId: 'event-a', memberName: 'qa team member', status: 'declined', teamMarker: 'FALCON-A', forbiddenMarkers: ['BLUEBIRD-B', 'private-note'], maxRows: 30 };
+const options = { eventId: 'event-a', memberName: 'qa team member', status: 'declined', teamMarker: 'FALCON-A', forbiddenMarkers: ['BLUEBIRD-B', 'private-note'], maxRows: 30, expectedRows:['qa team member,declined','Alex FALCON-A,no_response'] };
 const download = { filename: 'attendance_event-a.csv', content: 'Name,Status\nqa team member,declined\nAlex FALCON-A,no_response', byteLength: 73 };
 test('Attendance ledger reconciles real filename, exact member status, Team A marker and bounded rows', () => {
   assert.equal(validateAttendanceLedger(download, options).rows, 2);
@@ -13,6 +13,12 @@ test('Attendance ledger reconciles real filename, exact member status, Team A ma
   assert.throws(() => validateAttendanceLedger({ ...download, filename: 'audit.csv' }, options));
   assert.throws(() => validateAttendanceLedger({ ...download, byteLength: 65537 }, options));
   assert.throws(() => validateAttendanceLedger(download, { ...options, maxRows: 1 }));
+});
+test('Attendance CSV reconciles exact roster multiplicity rather than rejecting legitimate duplicate names', () => {
+  const rows=[...options.expectedRows,'Jordan Falcon,no_response','Jordan Falcon,no_response'];
+  const duplicateNames={...download,content:['Name,Status',...rows].join('\n')};
+  assert.equal(validateAttendanceLedger(duplicateNames,{...options,expectedRows:rows}).rows,4);
+  assert.throws(()=>validateAttendanceLedger(duplicateNames,options));
 });
 test('Attendance bounds require two exact viewports and positive in-viewport dialog, matrix, tab, close and export controls', () => {
   const measurements = [ { width:1440,height:900 }, { width:390,height:844 } ].map(viewport => ({ viewport, controls:Object.fromEntries(['dialog','matrix','tab','close','export'].map(name => [name,{x:5,y:5,width:100,height:30}])) }));

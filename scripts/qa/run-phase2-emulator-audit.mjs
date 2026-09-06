@@ -9193,7 +9193,8 @@ function browserTeamAAttendanceMatrix(session, { teamId, title, memberName, staf
             if (bytes.length+chunk.length>65536) throw new Error('Attendance CSV exceeds bounded download size.');
             bytes.push(...chunk);
           }
-          downloads.push({filename:download.suggestedFilename(),byteLength:bytes.length,content:bytes.map(byte=>String.fromCharCode(byte)).join('')});
+          const content=await page.evaluate(values=>new TextDecoder('utf-8',{fatal:true}).decode(new Uint8Array(values)),bytes);
+          downloads.push({filename:download.suggestedFilename(),byteLength:bytes.length,content});
         }
       }
       return { observedResponses, consoleErrors, failedResponses, readOnly, measurements, downloads, memberStatus:'declined' };
@@ -9224,6 +9225,7 @@ async function runTeamAAttendanceWorkflowAudit() {
   expectEqual((await captureOperationRequests('att-staff-record','qa-team-assistant',()=>update(assistant.body.idToken,'going'))).status,200,'assistant staff attendance override accepted');
   expectEqual((await captureOperationRequests('att-staff-record','qa-coach-owner-a',()=>update(owner.body.idToken,'declined'))).status,200,'staff attendance override response');
   const staffAudit = await audit();
+  const expectedLedgerRows=await withEmulatorAuthAdmin(async (_auth,db)=>(await db.doc(`teams/${teamId}`).collection('members').get()).docs.map(doc=>{const member=doc.data();return `${member.name},${staffAudit.rsvps[member.userId] || 'no_response'}`;}));
   expectEqual(staffAudit.rsvps[memberUid],'declined','Team A attendance staff matrix authoritative member value');
   expectEqual(staffAudit.records.filter(row=>row.participantId===memberUid && ((row.actorId===ownerUid && row.status==='declined') || (row.actorId===assistantUid && row.status==='going'))).length,2,'Team A attendance staff matrix exact owner and assistant audit transitions');
   const staffSession=await browserLogin('qa-coach-owner-a','/dashboard',`attendance-owner-a-${process.pid}`);
@@ -9235,7 +9237,7 @@ async function runTeamAAttendanceWorkflowAudit() {
   expectEqual(validateAttendanceBounds(staffResult.measurements,{rsvp:true}),true,'Attendance exact desktop and mobile control bounds '+JSON.stringify(staffResult.measurements));
   expectEqual(validateAttendanceBounds(memberResult.measurements,{staff:false,rsvp:true}),true,'Attendance exact desktop and mobile control bounds member Event RSVP smoke '+JSON.stringify(memberResult.measurements));
   for (const download of staffResult.downloads) {
-    const ledger=validateAttendanceLedger(download,{eventId,memberName,status:'declined',teamMarker:team.visibleMarker,forbiddenMarkers:[teamB.visibleMarker,'synthetic-private','@phase2.test','medical','emergencyContact'],maxRows:100});
+    const ledger=validateAttendanceLedger(download,{eventId,memberName,status:'declined',teamMarker:team.visibleMarker,forbiddenMarkers:[teamB.visibleMarker,'synthetic-private','@phase2.test','medical','emergencyContact'],maxRows:100,expectedRows:expectedLedgerRows});
     expectEqual(ledger.rows>=1 && ledger.rows<=100,true,'Attendance exact bounded ledger export '+JSON.stringify(ledger));
   }
   expectEqual(staffResult.downloads.length,2,'Attendance exact bounded ledger export at both viewports');

@@ -1,8 +1,9 @@
-export function validateAttendanceLedger(download, { eventId, memberName, status, teamMarker, forbiddenMarkers, maxRows }) {
+export function validateAttendanceLedger(download, { eventId, memberName, status, teamMarker, forbiddenMarkers, maxRows, expectedRows }) {
   const { filename, content, byteLength } = download;
   if (filename !== `attendance_${eventId}.csv` || !Number.isInteger(byteLength) || byteLength <= 0 || byteLength > 65536 || content.length > 65536) throw new Error('Attendance download filename/size mismatch.');
   const [header, ...rows] = content.trimEnd().split(/\r?\n/);
-  if (header !== 'Name,Status' || rows.length < 1 || rows.length > maxRows || new Set(rows).size !== rows.length) throw new Error('Attendance CSV header/row bound/uniqueness mismatch.');
+  if (header !== 'Name,Status' || rows.length < 1 || rows.length > maxRows) throw new Error(`Attendance CSV header/row bound mismatch: ${JSON.stringify({ header:header.slice(0,80), rows:rows.length, byteLength })}`);
+  if (!Array.isArray(expectedRows) || JSON.stringify([...rows].sort()) !== JSON.stringify([...expectedRows].sort())) throw new Error('Attendance CSV differs from the exact authoritative Team A roster/status row multiset.');
   if (!rows.every(row => /^[^,\r\n]+,(going|maybe|declined|no_response)$/.test(row))) throw new Error('Attendance CSV contains unexpected columns or status.');
   if (rows.filter(row => row === `${memberName},${status}`).length !== 1 || !content.includes(teamMarker) || forbiddenMarkers.some(marker => marker && content.includes(marker))) throw new Error('Attendance CSV member/tenant/private-data reconciliation failed.');
   return { filename, byteLength, rows: rows.length, content };
