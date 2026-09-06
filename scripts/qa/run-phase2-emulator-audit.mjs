@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, openSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { Agent as HttpAgent } from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -6980,6 +6980,10 @@ async function runCertificationOperationsScenarios() {
         }
         return;
       }
+      if (scenarioId === 'files-library-crud-download' && runBrowser) {
+        await runLibraryWorkflowAudit();
+        return;
+      }
       if (scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser) {
         await runSportsHubBrowseWorkflowAudit();
         for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
@@ -8303,6 +8307,29 @@ async function runSurfaceSmokeAudit({ remainderOnly = false, includeMember = tru
     { path: '/club', expected: '/club' },
     { path: '/competition', expected: '/competition' },
   ], { mobile: true }), 'trusted admin remaining surface sweep');
+}
+
+async function runLibraryWorkflowAudit() {
+  const team=FIXTURES.teams.find(item=>item.alias==='qa-team-a');
+  const name=`Library ${certificationRunId}.pdf`;
+  const directory=mkdtempSync(path.join(os.tmpdir(),'qa-library-'));
+  const filePath=path.join(directory,name);
+  writeFileSync(filePath,Buffer.from('%PDF-1.4\n% Synthetic Library certification\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n'));
+  await registerScheduleDiscovery({registry:activeOperationResourceRegistry,scopeId:'library-documents',snapshot:()=>withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`teams/${team.id}/files`).listDocuments()).map(ref=>ref.path)),registerRoot:documentPath=>registerDynamicFirestoreRoot(documentPath,'library-owned-'+documentPath.split('/').at(-1))});
+  try {
+    const session=await browserLogin('qa-coach-owner-a','/dashboard',`library-owner-${process.pid}`);
+    browserSelectScheduleTeam(session,team.id);
+    cli(session,['run-code',`async page=>{const dismiss=${dismissFilmTeamAlert.toString()};await page.goto(${JSON.stringify(`${BASE_URL}/files`)});await page.getByRole('heading',{name:'Library & Docs',exact:true}).waitFor({state:'attached',timeout:15000});await dismiss(page);await page.getByRole('button',{name:'Upload File',exact:true}).click();await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor();await page.locator('input[type=file]').setInputFiles(${JSON.stringify(filePath)});await page.getByText('File Archived',{exact:true}).waitFor({timeout:15000});await page.getByRole('dialog',{name:'Archive Resource',exact:true}).getByRole('button',{name:'Close',exact:true}).click();await page.reload();await dismiss(page);await page.getByText(${JSON.stringify(name)},{exact:true}).waitFor({timeout:15000});return true;}`]);
+    const evidence=await withEmulatorAuthAdmin(async(_auth,db,bucket)=>{
+      const docs=(await db.collection(`teams/${team.id}/files`).where('name','==',name).get()).docs;
+      const record=docs[0]?.data();
+      const objectPath=record?.storagePath||record?.objectPath||null;
+      return {metadataCount:docs.length,dataUrlStored:typeof record?.url==='string'&&record.url.startsWith('data:'),objectPathPresent:!!objectPath,objectExists:objectPath?(await bucket.file(objectPath).exists())[0]:false};
+    });
+    console.log('Library lifecycle reproduction: '+JSON.stringify(evidence));
+    expectEqual(evidence.metadataCount,1,'Library lib-upload: visible upload creates one metadata document after reload');
+    expectEqual(evidence.objectExists,true,'Library lib-upload: visible upload creates one durable Storage object');
+  } finally {unlinkSync(filePath);rmdirSync(directory);}
 }
 
 async function runPollWorkflowAudit() {
