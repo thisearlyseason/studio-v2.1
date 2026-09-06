@@ -41,3 +41,12 @@ test('Practice layout rejects omitted desktop measurements and out-of-bounds rel
   const rows=[row(1440,900),row(390,844)];assert.equal(practice.validatePracticeBounds(rows),true);
   rows[0].boxes.control.x=1440;assert.throws(()=>practice.validatePracticeBounds(rows),/bounds/);
 });
+
+test('Practice unused delete waits for persisted heading and drains the exact overlay before clicking',async()=>{
+  let covered=true,deleted=false;
+  const page={getByRole(role,{name}){
+    if(role==='heading'){assert.equal(name,'Unused');return{async waitFor({state}){if(state==='detached')assert.equal(deleted,true);}};}
+    assert.equal(name,'Delete Unused');return{async click(){assert.equal(covered,false,'active alert blocks visible delete');deleted=true;}};
+  },getByText(){return{async waitFor(){assert.equal(deleted,true);}};}};
+  assert.equal(await practice.deleteUnusedPracticeTemplate(page,'Unused',async()=>{covered=false;}),true);
+});

@@ -31,7 +31,7 @@ import { operationActorAliases } from './certification/local/operation-actors.mj
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
 import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark, observeFilmDeletionReconciliation } from './certification/local/film-playback.mjs';
-import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds} from './certification/local/practice-browser.mjs';
+import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate} from './certification/local/practice-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -7286,11 +7286,8 @@ async function runPracticePlanWorkflowAudit() {
       await dialog.getByText(${JSON.stringify(drillTitle)},{exact:true}).click();
       await dialog.getByPlaceholder('e.g. Infield Foundations & Double Plays').fill(${JSON.stringify(freeTitle)});
       await dialog.getByRole('button',{name:'Secure Protocol',exact:true}).click();
-      await page.getByText(${JSON.stringify(freeTitle)},{exact:true}).waitFor({timeout:15000});
-      await page.getByRole('button',{name:${JSON.stringify(`Delete ${freeTitle}`)},exact:true}).click();
-      await page.getByText('Protocol Deleted',{exact:true}).waitFor({timeout:15000});
-      await page.getByText(${JSON.stringify(freeTitle)},{exact:true}).waitFor({state:'detached',timeout:15000});
-      const freeDeleted=true;
+      await dialog.waitFor({state:'hidden',timeout:15000});
+      const freeDeleted=await (${deleteUnusedPracticeTemplate.toString()})(page,${JSON.stringify(freeTitle)},${dismissFilmTeamAlert.toString()});
       observer.start(['plan-responsive']);
       const measurements=[];
       for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
