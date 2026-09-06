@@ -6992,7 +6992,7 @@ async function runCertificationOperationsScenarios() {
         for (const [dimension, caseId, label, actor, reconciliation] of [
           ['happyPath','drill-crud','Practice drill create edit reload and delete completes','qa-coach-owner-a','one run-scoped drill lifecycle'],
           ['happyPath','drill-reorder','Practice drill reorder persists exact order after reload','qa-coach-owner-a','exact order values and rendered order'],
-          ['happyPath','drill-search','Practice drill search handles exact partial empty and special-character queries','qa-coach-owner-a+qa-team-member','exact rendered result counts'],
+          ['happyPath','drill-search','Practice drill search handles exact partial empty and special-character queries','qa-coach-owner-a','exact owner-performed client-side filter result counts'],
           ['happyPath','drill-link-valid','Practice drill valid public HTTPS link persists','qa-coach-owner-a','exact stored HTTPS URL'],
           ['negativePath','drill-link-invalid','Practice drill rejects javascript credentialed private-host malformed and overlong URLs','qa-coach-owner-a','zero unsafe durable URLs'],
           ['negativePath','drill-duplicate-empty','Practice drill rejects duplicate and empty submissions','qa-coach-owner-a','zero duplicate or empty documents'],
@@ -7435,12 +7435,9 @@ async function runPracticeDrillWorkflowAudit() {
   const ownerSession = await browserLogin('qa-coach-owner-a', '/dashboard', `practice-drill-owner-${process.pid}`);
   browserSelectScheduleTeam(ownerSession, teamA.id);
   const ownerResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
-    const consoleErrors = []; const failedResponses = [];
+    const observer=(${createPracticeBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)},prefix:'drill'});
+    observer.start(['drill-link-invalid','drill-duplicate-empty']);
     let stage = 'open practice playbook';
-    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
-    const onPageError = error => consoleErrors.push(error.message);
-    const onResponse = response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0]); };
-    page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
     try {
       await page.setViewportSize({ width: 1440, height: 900 });
       const invalidUrls = ['javascript:alert(1)', 'https://user:pass@example.com/drill.mp4', 'https://127.0.0.1/drill.mp4', 'not a url', 'https://example.com/' + 'a'.repeat(2050)];
@@ -7469,6 +7466,7 @@ async function runPracticeDrillWorkflowAudit() {
         invalidUrlRejected += 1;
       }
       stage = 'create valid drill';
+      observer.start(['drill-crud','drill-link-valid']);
       await page.goto(${JSON.stringify(`${BASE_URL}/drills`)});
       await page.getByRole('heading', { name: 'Playbook Hub', exact: true }).waitFor({ timeout: 15000 });
       await page.getByRole('button', { name: 'Publish Drill', exact: true }).click();
@@ -7483,6 +7481,7 @@ async function runPracticeDrillWorkflowAudit() {
       await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 15000 });
       const createdAfterReload = await page.getByText(${JSON.stringify(marker)}, { exact: true }).count();
       stage = 'edit valid drill';
+      observer.start(['drill-crud','drill-persistence']);
       await page.getByRole('button', { name: ${JSON.stringify(`Edit ${marker}`)} }).click();
       dialog = page.getByRole('dialog', { name: 'Update Drill' });
       await dialog.getByPlaceholder('e.g. 5-4-3 Double Play Rotation').fill(${JSON.stringify(editedMarker)});
@@ -7492,18 +7491,23 @@ async function runPracticeDrillWorkflowAudit() {
       await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).waitFor({ timeout: 15000 });
       const editedAfterReload = await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count();
       stage = 'search drills';
+      observer.start(['drill-search']);
+      await page.reload();await page.getByText(${JSON.stringify(editedMarker)},{exact:true}).waitFor({timeout:15000});
+      await (${dismissFilmTeamAlert.toString()})(page);
       const search = page.getByPlaceholder('Search drills...');
       await search.fill(${JSON.stringify(editedMarker)}); const exactCount = await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count();
       await search.fill('QA Drill'); const partialCount = await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count();
       await search.fill('[]{}?'); const specialCount = await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count();
       await search.fill(''); const emptyCount = await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count();
       stage = 'reorder drills';
+      observer.start(['drill-reorder','drill-persistence']);
       await page.getByRole('button', { name: ${JSON.stringify(`Move ${orderedTitles[1]} earlier`)} }).click();
       await page.reload();
       await page.getByText(${JSON.stringify(orderedTitles[0])}, { exact: true }).waitFor({ timeout: 15000 });
       await page.getByText(${JSON.stringify(orderedTitles[1])}, { exact: true }).waitFor({ timeout: 15000 });
       const renderedOrder = await page.locator('h3').filter({ hasText: /^QA (?:Alpha|Bravo) Drill/ }).allTextContents();
       stage = 'reject duplicate drill';
+      observer.start(['drill-duplicate-empty']);
       await page.getByRole('button', { name: 'Publish Drill', exact: true }).click();
       dialog = page.getByRole('dialog', { name: 'Publish Drill' });
       await dialog.getByPlaceholder('e.g. 5-4-3 Double Play Rotation').fill(${JSON.stringify(editedMarker.toLocaleLowerCase())});
@@ -7514,22 +7518,24 @@ async function runPracticeDrillWorkflowAudit() {
       await page.getByText('Invalid Drill', { exact: true }).last().waitFor({ state: 'hidden', timeout: 10000 });
       await page.keyboard.press('Escape');
       stage = 'responsive drill surfaces';
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto(${JSON.stringify(`${BASE_URL}/practice`)});
-      await page.getByRole('heading', { name: 'Practice Hub', exact: true }).waitFor({ timeout: 15000 });
-      await page.getByRole('tab', { name: 'Playbook', exact: true }).click();
-      const practiceFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-      await page.goto(${JSON.stringify(`${BASE_URL}/drills`)});
-      await page.getByRole('heading', { name: 'Playbook Hub', exact: true }).waitFor({ timeout: 15000 });
-      const drillsFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-      await page.getByRole('button', { name: 'Publish Drill', exact: true }).click();
-      dialog = page.getByRole('dialog', { name: 'Publish Drill' });
-      const bounds = await dialog.boundingBox();
-      const dialogFits = !!bounds && bounds.x >= -0.5 && bounds.y >= -0.5 && bounds.x + bounds.width <= 390.5 && bounds.y + bounds.height <= 844.5;
-      await page.keyboard.press('Escape');
-      return { emptyDisabled, invalidUrlRejected, duplicateRejected, createdAfterReload, editedAfterReload, exactCount, partialCount, specialCount, emptyCount, renderedOrder, practiceFits, drillsFits, dialogFits, consoleErrors, failedResponses };
+      observer.start(['drill-responsive']);
+      const practiceMeasurements=[],drillMeasurements=[];
+      for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+        await page.setViewportSize(viewport);await page.goto(${JSON.stringify(`${BASE_URL}/practice`)});
+        await (${dismissFilmTeamAlert.toString()})(page);
+        const heading=page.getByRole('heading',{name:'Practice Hub',exact:true});await heading.waitFor({timeout:15000});
+        const playbook=page.getByRole('tab',{name:'Playbook',exact:true});await playbook.click();
+        practiceMeasurements.push(await (${measurePracticeBounds.toString()})(page,{heading,playbook}));
+        await page.goto(${JSON.stringify(`${BASE_URL}/drills`)});await (${dismissFilmTeamAlert.toString()})(page);
+        await page.getByRole('heading',{name:'Playbook Hub',exact:true}).waitFor({timeout:15000});
+        await page.getByRole('button',{name:'Publish Drill',exact:true}).click();
+        dialog=page.getByRole('dialog',{name:'Publish Drill'});
+        drillMeasurements.push(await (${measurePracticeBounds.toString()})(page,{dialog,title:dialog.getByPlaceholder('e.g. 5-4-3 Double Play Rotation'),url:dialog.getByPlaceholder('Strategy Video URL'),submit:dialog.getByRole('button',{name:'Commit to Playbook',exact:true})}));
+        await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden',timeout:5000});
+      }
+      return { emptyDisabled, invalidUrlRejected, duplicateRejected, createdAfterReload, editedAfterReload, exactCount, partialCount, specialCount, emptyCount, renderedOrder, practiceMeasurements, drillMeasurements, ...observer.finish() };
     } catch (error) { throw new Error('Practice drill stage ' + stage + ': ' + error.message); }
-    finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
+    finally { observer.finish(); }
   }`]));
   expectEqual(ownerResult.createdAfterReload, 1, 'Practice drill create edit reload and delete completes');
   expectEqual(ownerResult.editedAfterReload, 1, 'Practice drill content and order persist after reload');
@@ -7551,20 +7557,30 @@ async function runPracticeDrillWorkflowAudit() {
 
   const memberSession = await browserLogin('qa-team-member', '/dashboard', `practice-drill-member-${process.pid}`);
   browserSelectScheduleTeam(memberSession, teamA.id);
-  const memberResult = JSON.parse(cli(memberSession, ['run-code', `async page => { await page.setViewportSize({ width: 390, height: 844 }); await page.goto(${JSON.stringify(`${BASE_URL}/drills`)}); await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).waitFor({ timeout: 15000 }); return { visible: await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).count(), edit: await page.getByRole('button', { name: ${JSON.stringify(`Edit ${editedMarker}`)} }).count(), fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) }; }`]));
+  const memberResult = JSON.parse(cli(memberSession, ['run-code', `async page => {
+    const observer=(${createPracticeBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)},prefix:'drill'});
+    observer.start(['drill-responsive']);
+    try{
+      const practiceMeasurements=[],drillMeasurements=[];
+      for(const viewport of [{width:1440,height:900},{width:390,height:844}]){
+        await page.setViewportSize(viewport);await page.goto(${JSON.stringify(`${BASE_URL}/practice`)});
+        await (${dismissFilmTeamAlert.toString()})(page);
+        const heading=page.getByRole('heading',{name:'Practice Hub',exact:true});await heading.waitFor({timeout:15000});
+        const playbook=page.getByRole('tab',{name:'Playbook',exact:true});await playbook.click();
+        practiceMeasurements.push(await (${measurePracticeBounds.toString()})(page,{heading,playbook}));
+        await page.goto(${JSON.stringify(`${BASE_URL}/drills`)});await (${dismissFilmTeamAlert.toString()})(page);
+        const drill=page.getByRole('heading',{name:${JSON.stringify(editedMarker)},exact:true,level:3});
+        await drill.waitFor({timeout:15000});
+        drillMeasurements.push(await (${measurePracticeBounds.toString()})(page,{drill,search:page.getByPlaceholder('Search drills...')}));
+      }
+      return{visible:await page.getByRole('heading',{name:${JSON.stringify(editedMarker)},exact:true,level:3}).count(),edit:await page.getByRole('button',{name:${JSON.stringify(`Edit ${editedMarker}`)},exact:true}).count(),practiceMeasurements,drillMeasurements,...observer.finish()};
+    }finally{observer.finish();}
+  }`]));
   expectEqual(memberResult.visible === 1 && memberResult.edit === 0, true, 'Practice member sees drill without mutation controls');
-  expectEqual(ownerResult.practiceFits && ownerResult.drillsFits && ownerResult.dialogFits && memberResult.fits, true, 'Practice and drills surfaces fit desktop and mobile viewports');
-  expectEqual(ownerResult.consoleErrors.length, 0, 'Practice drill workflow console errors');
-  expectEqual(ownerResult.failedResponses.length, 0, 'Practice drill workflow failed responses');
+  const measurements={ownerPractice:ownerResult.practiceMeasurements,ownerDrills:ownerResult.drillMeasurements,memberPractice:memberResult.practiceMeasurements,memberDrills:memberResult.drillMeasurements};
+  expectEqual(Object.values(measurements).every(validatePracticeBounds),true,'Practice and drills surfaces fit desktop and mobile viewports '+JSON.stringify(measurements));
 
   const signed = new Map(await Promise.all(['qa-coach-owner-a', 'qa-team-member', 'qa-coach-owner-b'].map(async alias => [alias, (await signIn(alias)).body.idToken])));
-  const actor = alias => ({ alias, token: signed.get(alias) });
-  await capturePracticeDocumentReads('drill-crud', [actor('qa-coach-owner-a')], crudPath);
-  await capturePracticeDocumentReads('drill-reorder', [actor('qa-coach-owner-a')], orderedPaths[0]);
-  await capturePracticeDocumentReads('drill-search', [actor('qa-coach-owner-a'), actor('qa-team-member')], crudPath);
-  await capturePracticeDocumentReads('drill-link-valid', [actor('qa-coach-owner-a')], crudPath);
-  await capturePracticeDocumentReads('drill-link-invalid', [actor('qa-coach-owner-a')], crudPath);
-  await capturePracticeDocumentReads('drill-duplicate-empty', [actor('qa-coach-owner-a')], crudPath);
   const memberDenied = await captureOperationRequests('drill-member-deny', 'qa-team-member', () => patchFirestoreFields({ projectId: PROJECT_ID, documentPath: crudPath, idToken: signed.get('qa-team-member'), fields: { title: 'forged member drill' } }));
   expectEqual(memberDenied.status, 403, 'Practice member drill mutation is denied');
   const foreignDenied = await captureOperationRequests('drill-team-b-deny', 'qa-coach-owner-b', async () => {
@@ -7573,11 +7589,27 @@ async function runPracticeDrillWorkflowAudit() {
     return { write, read };
   });
   expectEqual(foreignDenied.write.status === 403 && foreignDenied.read === 403, true, 'Practice Team B owner drill mutation and discovery are denied');
-  await capturePracticeDocumentReads('drill-persistence', [actor('qa-coach-owner-a')], orderedPaths[1]);
-  for (const caseId of ['drill-console', 'drill-network', 'drill-responsive']) await capturePracticeDocumentReads(caseId, [actor('qa-coach-owner-a'), actor('qa-team-member')], crudPath);
-  await cli(ownerSession, ['run-code', `async page => { await page.setViewportSize({ width: 1440, height: 900 }); await page.goto(${JSON.stringify(`${BASE_URL}/drills`)}); await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).waitFor({ timeout: 15000 }); await page.getByRole('button', { name: ${JSON.stringify(`Delete ${editedMarker}`)} }).click(); await page.getByText(${JSON.stringify(editedMarker)}, { exact: true }).waitFor({ state: 'detached', timeout: 15000 }); return true; }`]);
+  const deleteResult=JSON.parse(cli(ownerSession, ['run-code', `async page => {
+    const observer=(${createPracticeBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)},prefix:'drill'});
+    observer.start(['drill-crud']);
+    try{
+      await page.setViewportSize({width:1440,height:900});await page.goto(${JSON.stringify(`${BASE_URL}/drills`)});
+      await (${dismissFilmTeamAlert.toString()})(page);
+      const drill=page.getByRole('heading',{name:${JSON.stringify(editedMarker)},exact:true,level:3});await drill.waitFor({timeout:15000});
+      await page.getByRole('button',{name:${JSON.stringify(`Delete ${editedMarker}`)},exact:true}).click();
+      await drill.waitFor({state:'detached',timeout:15000});return observer.finish();
+    }finally{observer.finish();}
+  }`]));
   const deleted = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => !(await firestoreAdmin.doc(crudPath).get()).exists);
   expectEqual(deleted, true, 'Practice drill create edit reload and delete completes');
+  expectEqual([ownerResult,memberResult,deleteResult].flatMap(result=>result.consoleErrors).length,0,'Practice drill workflow console errors');
+  expectEqual([ownerResult,memberResult,deleteResult].flatMap(result=>result.failedResponses).length,0,'Practice drill workflow failed responses');
+  for(const [alias,result] of [['qa-coach-owner-a',ownerResult],['qa-team-member',memberResult],['qa-coach-owner-a',deleteResult]]){
+    for(const caseId of [...new Set(result.observedResponses.map(response=>response.tag))]){
+      requirePracticeResponses(result.observedResponses,caseId,{mutation:['drill-crud','drill-reorder','drill-link-valid'].includes(caseId)});
+      await captureBrowserOperationRequests(caseId,alias,result.observedResponses,caseId);
+    }
+  }
 }
 
 async function runPracticeFilmWorkflowAudit() {
