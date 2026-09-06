@@ -79,7 +79,7 @@ test('operations evidence rejects reused assertion IDs and incomplete named-case
     execution: {
       actor: 'qa-coach-owner-a',
       operation: 'POST /api/test',
-      requests: [{ method: 'POST', pathname: '/api/test', status: 200, actorAlias: 'qa-coach-owner-a' }],
+      requests: [{ evidenceId: `request-${caseId}`, method: 'POST', pathname: '/api/test', status: 200, actorAlias: 'qa-coach-owner-a' }],
       reconciliation: 'exact emulator record',
       observer: 'authenticated API response and emulator read',
       timeBound: '20s request deadline',
@@ -106,7 +106,7 @@ test('operations evidence rejects synthesized request records and requires the e
     execution: {
       actor: 'qa-coach-owner-a',
       operation: 'observed browser action',
-      requests: [request],
+      requests: [{ evidenceId: 'request-synthetic', ...request }],
       reconciliation: 'exact emulator record',
       observer: 'authenticated API response and emulator read',
       timeBound: '20s request deadline',
@@ -131,6 +131,50 @@ test('operations evidence rejects synthesized request records and requires the e
       method: 'POST', pathname: '/api/rsvp', status: 200, actorAlias: 'qa-team-member',
     })]),
     /does not match the case actor/i,
+  );
+});
+
+test('operations evidence accepts only an observed injected reminder-core invocation with exact actor provenance', () => {
+  const complete = (caseId, request) => ({
+    caseId,
+    assertions: [{ id: `${caseId}-assertion`, label: `${caseId} exact assertion` }],
+    execution: {
+      actor: 'qa-parent-a',
+      operation: 'injected reminder scheduler core',
+      requests: [request],
+      reconciliation: 'durable reminder ledger',
+      observer: 'injected local scheduler core and emulator read',
+      timeBound: 'fixed injected clock',
+      cleanupReference: `cleanup-${caseId}`,
+    },
+  });
+  const observed = {
+    evidenceId: 'invocation-rem-eligible-parent-a',
+    method: 'INVOKE',
+    pathname: '/__local/reminder-core',
+    status: 200,
+    actorAlias: 'qa-parent-a',
+    invocationType: 'injected-reminder-core',
+    invocationId: 'rem-eligible-core-1',
+  };
+
+  assert.doesNotThrow(() => assertCaseOwnedOperationArtifacts([complete('rem-eligible', observed)]));
+  for (const synthetic of [
+    { ...observed, pathname: '/api/reminders' },
+    { ...observed, invocationType: 'loopback-http' },
+    { ...observed, invocationId: '' },
+  ]) {
+    assert.throws(
+      () => assertCaseOwnedOperationArtifacts([complete('rem-eligible', synthetic)]),
+      /actual injected reminder-core invocation evidence/i,
+    );
+  }
+  assert.throws(
+    () => assertCaseOwnedOperationArtifacts([
+      complete('rem-one', observed),
+      complete('rem-two', { ...observed, actorAlias: 'qa-parent-a' }),
+    ]),
+    /reuses request evidence/i,
   );
 });
 

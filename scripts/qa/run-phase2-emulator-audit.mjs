@@ -1116,10 +1116,49 @@ function recordCapturedOperationRequest({ pathname, method, status, token = null
   capturedOperationRequests.set(capture.caseId, records);
 }
 
+function recordCapturedInjectedReminderCoreInvocation({ actorAlias, invocationId, status, startedAt, completedAt }) {
+  const capture = activeOperationRequestCapture;
+  if (!capture) throw new Error('Injected reminder-core observation requires an active named operation capture.');
+  if (!capture.actorAliases.has(actorAlias)) {
+    throw new Error(`Injected reminder-core capture ${capture.caseId} observed actor ${actorAlias || 'unknown'}, expected one of ${capture.actorAlias}.`);
+  }
+  if (typeof invocationId !== 'string' || invocationId.length === 0) {
+    throw new Error(`Injected reminder-core capture ${capture.caseId} requires a stable invocation ID.`);
+  }
+  const records = capturedOperationRequests.get(capture.caseId) || [];
+  records.push(Object.freeze({
+    evidenceId: `invocation-${capture.caseId}-${records.length + 1}`,
+    method: 'INVOKE',
+    pathname: '/__local/reminder-core',
+    status: Number(status),
+    actorAlias,
+    invocationType: 'injected-reminder-core',
+    invocationId,
+    startedAt: startedAt || new Date().toISOString(),
+    completedAt: completedAt || new Date().toISOString(),
+  }));
+  capturedOperationRequests.set(capture.caseId, records);
+}
+
+async function observeInjectedReminderCoreInvocation({ actorAlias, invocationId, operation }) {
+  const startedAt = new Date().toISOString();
+  const result = await operation();
+  const completedAt = new Date().toISOString();
+  for (const alias of actorAlias.split('+').filter(Boolean)) {
+    recordCapturedInjectedReminderCoreInvocation({ actorAlias: alias, invocationId, status: 200, startedAt, completedAt });
+  }
+  return result;
+}
+
+async function captureInjectedReminderCoreInvocation(caseId, actorAlias, invocationId, operation) {
+  return captureOperationRequests(caseId, actorAlias, () =>
+    observeInjectedReminderCoreInvocation({ actorAlias, invocationId, operation }));
+}
+
 function operationRequestEvidence(caseId) {
   if (consumedOperationRequestCaptures.has(caseId)) throw new Error(`Operation request capture ${caseId} was reused by another named case.`);
   const requests = capturedOperationRequests.get(caseId);
-  if (!requests?.length) throw new Error(`Operation case ${caseId} has no captured HTTP request evidence.`);
+  if (!requests?.length) throw new Error(`Operation case ${caseId} has no captured request or injected-core invocation evidence.`);
   consumedOperationRequestCaptures.add(caseId);
   return requests;
 }
@@ -7006,18 +7045,18 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'reminders-same-day-fcm-scheduler') {
         await runReminderSchedulerRuntimeAudit();
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rem-eligible', 'scheduler core sends one same-day reminder through both registered local transports', [/Reminder scheduler core sends one same-day eligible FCM and Web Push delivery/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'sent ledger with FCM and Web Push target counts', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-invalid-time', 'scheduler ignores malformed event times', [/Reminder scheduler excludes malformed event time/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no malformed-event ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-past-time', 'scheduler ignores no-longer-future event times', [/Reminder scheduler excludes no-longer-future event time/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no past-event ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-no-token', 'scheduler ignores eligible members with no registered device', [/Reminder scheduler excludes eligible member with no device token/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no no-token ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-pref-off', 'scheduler excludes preferences-disabled recipients', [/Reminder scheduler excludes preferences-disabled recipient/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no preferences-disabled ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-removed', 'scheduler excludes removed memberships', [/Reminder scheduler excludes removed membership/], { actor: 'run-owned removed member', operation: 'injected scheduler core', reconciliation: 'no removed-member ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-sender', 'scheduler excludes staff sender roles from player/parent reminders', [/Reminder scheduler excludes staff sender role/], { actor: 'run-owned coach', operation: 'injected scheduler core', reconciliation: 'no staff sender ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-duplicate-run', 'overlapping scheduler cores acquire one durable reminder lease and send once', [/Reminder scheduler overlapping invocations acquire one lease and send once/], { actor: 'run-owned adult player', operation: 'two concurrent injected scheduler cores', reconciliation: 'one claimed/sent delivery ledger', timeBound: 'fixed clock + transaction' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-time-boundary', 'same-day DST, local-midnight rollover, and the 06:00 quiet-hours boundary use the team timezone', [/Reminder scheduler respects exact 06:00 boundary and DST offsets/, /Reminder scheduler before local midnight selects only the remaining current-day event/, /Reminder scheduler at and after local midnight preserves the 06:00 quiet-hours boundary/, /Reminder scheduler exact 06:00 start selects the future new-local-day event/, /Reminder scheduler exact 06:00 repeat is idempotent/, /Reminder scheduler local-midnight ledgers reconcile the prior-day and quiet-hours exclusions/], { actor: 'run-owned adult player', operation: 'injected scheduler core at fixed clocks', reconciliation: 'before-midnight and exact-06:00 ledgers sent once; prior-day and pre-06:00 events remain unclaimed', timeBound: 'fixed clocks' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-retry', 'a failed delivery ledger is retried and transitions to sent', [/Reminder scheduler failed ledger retry transitions to sent/], { actor: 'run-owned adult player', operation: 'injected safe transport failure then retry', reconciliation: 'failed then sent ledger state', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'console', 'rem-redaction', 'scheduler runtime diagnostics redact opaque device values', [/Reminder scheduler captures redacted runtime diagnostics from the actual core/], { actor: 'local scheduler audit', operation: 'actual core diagnostic callback', reconciliation: 'captured runtime diagnostics omit raw token and endpoint', timeBound: 'scenario duration' });
-        recordObservedOperationNamedCase(scenarioId, 'network', 'rem-network', 'scheduler uses the injected loopback-safe transport and makes no provider request', [/Reminder scheduler uses injected local transport without provider network/], { actor: 'local scheduler audit', operation: 'safe transport invocation', reconciliation: 'zero provider requests', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rem-eligible', 'scheduler core sends one same-day reminder through both registered local transports', [/Reminder scheduler core sends one same-day eligible FCM and Web Push delivery/], { actor: 'qa-parent-a+qa-adult-player-a+qa-youth-active', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-eligible'), reconciliation: 'one sent ledger and one FCM plus Web Push target for each PA/AP/YP fixture', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-invalid-time', 'scheduler ignores malformed event times', [/Reminder scheduler excludes malformed event time/], { actor: 'qa-adult-player-a', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-invalid-time'), reconciliation: 'no malformed-event ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-past-time', 'scheduler ignores no-longer-future event times', [/Reminder scheduler excludes no-longer-future event time/], { actor: 'qa-adult-player-a', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-past-time'), reconciliation: 'no past-event ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-no-token', 'scheduler ignores eligible members with no registered device', [/Reminder scheduler excludes eligible member with no device token/], { actor: 'qa-adult-player-b', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-no-token'), reconciliation: 'no no-token ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-pref-off', 'scheduler excludes preferences-disabled recipients', [/Reminder scheduler excludes preferences-disabled recipient/], { actor: 'qa-parent-b', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-pref-off'), reconciliation: 'no preferences-disabled ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-removed', 'scheduler excludes removed memberships', [/Reminder scheduler excludes removed membership/], { actor: 'qa-removed-member', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-removed'), reconciliation: 'no removed-member ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-sender', 'scheduler excludes staff sender roles from player/parent reminders', [/Reminder scheduler excludes staff sender role/], { actor: 'qa-coach-owner-a', operation: 'injected scheduler core', requests: operationRequestEvidence('rem-sender'), reconciliation: 'no staff sender ledger claim', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-duplicate-run', 'overlapping scheduler cores acquire one durable reminder lease and send once', [/Reminder scheduler overlapping invocations acquire one lease and send once/], { actor: 'qa-adult-player-a', operation: 'two concurrent injected scheduler cores', requests: operationRequestEvidence('rem-duplicate-run'), reconciliation: 'one claimed/sent delivery ledger', observer: 'two injected local scheduler cores and authoritative emulator ledger read', timeBound: 'fixed local clock + transaction' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-time-boundary', 'same-day DST, local-midnight rollover, and the 06:00 quiet-hours boundary use the team timezone', [/Reminder scheduler respects exact 06:00 boundary and DST offsets/, /Reminder scheduler before local midnight selects only the remaining current-day event/, /Reminder scheduler at and after local midnight preserves the 06:00 quiet-hours boundary/, /Reminder scheduler exact 06:00 start selects the future new-local-day event/, /Reminder scheduler exact 06:00 repeat is idempotent/, /Reminder scheduler local-midnight ledgers reconcile the prior-day and quiet-hours exclusions/], { actor: 'qa-adult-player-a', operation: 'injected scheduler core at fixed clocks', requests: operationRequestEvidence('rem-time-boundary'), reconciliation: 'before-midnight and exact-06:00 ledgers sent once; prior-day and pre-06:00 events remain unclaimed', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clocks' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-retry', 'a failed delivery ledger is retried and transitions to sent', [/Reminder scheduler failed ledger retry transitions to sent/], { actor: 'qa-adult-player-a', operation: 'injected safe transport failure then retry', requests: operationRequestEvidence('rem-retry'), reconciliation: 'failed then sent ledger state', observer: 'injected local scheduler core and authoritative emulator ledger read', timeBound: 'fixed local clock' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'rem-redaction', 'scheduler runtime diagnostics redact opaque device values', [/Reminder scheduler captures redacted runtime diagnostics from the actual core/], { actor: 'qa-adult-player-a', operation: 'actual core diagnostic callback', requests: operationRequestEvidence('rem-redaction'), reconciliation: 'captured runtime diagnostics omit raw token and endpoint', observer: 'injected local scheduler core diagnostic callback', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'rem-network', 'scheduler uses the injected loopback-safe transport and makes no provider request', [/Reminder scheduler uses injected local transport without provider network/], { actor: 'qa-adult-player-a', operation: 'safe transport invocation', requests: operationRequestEvidence('rem-network'), reconciliation: 'zero provider requests', observer: 'injected local scheduler core transport seam', timeBound: 'scenario duration' });
         recordBlockedOperationsCases(scenarioId,
           'Deployed scheduler logs, provider acceptance, and physical-device receipt/cleanup remain external evidence obligations.',
           ['responsive']);
@@ -8336,59 +8375,104 @@ async function runReminderSchedulerRuntimeAudit() {
   const suffix = certificationRunId.replace(/[^A-Za-z0-9_-]/g, '_').slice(-80);
   const teamId = `qa_reminder_${suffix}`;
   const teamPath = `teams/${teamId}`;
-  const userIds = Object.freeze({ eligible: `qa_reminder_eligible_${suffix}`, noToken: `qa_reminder_no_token_${suffix}`, prefOff: `qa_reminder_pref_off_${suffix}`, removed: `qa_reminder_removed_${suffix}`, sender: `qa_reminder_sender_${suffix}` });
-  const safeFcmToken = `local-fcm-${suffix}`;
-  const safeEndpoint = `https://push.example.test/${suffix}`;
-  registerSensitiveValue(safeFcmToken);
-  registerSensitiveValue(safeEndpoint);
+  const aliases = Object.freeze({
+    parent: 'qa-parent-a', adult: 'qa-adult-player-a', youth: 'qa-youth-active',
+    noToken: 'qa-adult-player-b', prefOff: 'qa-parent-b', removed: 'qa-removed-member', sender: 'qa-coach-owner-a',
+  });
+  const userIds = Object.freeze(Object.fromEntries(Object.entries(aliases).map(([key, alias]) => {
+    const fixture = identityByAlias.get(alias);
+    if (!fixture?.uid) throw new Error(`Reminder runtime audit is missing exact fixture identity ${alias}.`);
+    return [key, fixture.uid];
+  })));
+  const roleByKey = Object.freeze({ parent: 'parent', adult: 'adult_player', youth: 'youth_player', noToken: 'adult_player', prefOff: 'parent', removed: 'adult_player', sender: 'coach' });
+  const deviceByKey = Object.freeze(Object.fromEntries(Object.keys(userIds).map(key => [key, Object.freeze({
+    fcmToken: `local-fcm-${key}-${suffix}`,
+    endpoint: `https://push.example.test/${key}-${suffix}`,
+  })])));
+  for (const device of Object.values(deviceByKey)) {
+    registerSensitiveValue(device.fcmToken);
+    registerSensitiveValue(device.endpoint);
+  }
   registerDynamicFirestoreRoot(teamPath, `reminder-team-${suffix}`);
-  for (const [alias, uid] of Object.entries(userIds)) registerDynamicFirestoreRoot(`users/${uid}`, `reminder-user-${alias}-${suffix}`);
+  if (!activeOperationResourceRegistry) throw new Error('Reminder runtime audit requires a scenario-owned cleanup registry.');
+  const originalProfiles = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+    firestoreAdmin.getAll(...Object.values(userIds).map(uid => firestoreAdmin.doc(`users/${uid}`))));
+  for (const [key, uid] of Object.entries(userIds)) {
+    const original = originalProfiles.find(snapshot => snapshot.id === uid);
+    if (!original?.exists) throw new Error(`Reminder runtime audit fixture profile ${aliases[key]} is missing.`);
+    registerFirestoreDocumentRestoration(`users/${uid}`, original.data() || {}, `reminder-profile-${key}-${suffix}`, activeOperationResourceRegistry);
+  }
 
   const initialEvents = [
     ['eligible', { date: '2026-03-08', startTime: '11:00', eventType: 'game' }],
-    ['retry', { date: '2026-03-08', startTime: '11:30', eventType: 'practice' }],
     ['invalid', { date: '2026-03-08', startTime: '25:00', eventType: 'game' }],
     ['past', { date: '2026-03-08', startTime: '08:00', eventType: 'game' }],
-    ['tomorrow', { date: '2026-03-09', startTime: '11:00', eventType: 'game' }],
+    ['no_token', { date: '2026-03-08', startTime: '11:10', eventType: 'game' }],
+    ['pref_off', { date: '2026-03-08', startTime: '11:20', eventType: 'game' }],
+    ['removed', { date: '2026-03-08', startTime: '11:30', eventType: 'game' }],
+    ['sender', { date: '2026-03-08', startTime: '11:40', eventType: 'game' }],
+    ['retry', { date: '2026-03-08', startTime: '11:50', eventType: 'practice' }],
+    ['overlap', { date: '2026-03-08', startTime: '12:00', eventType: 'game' }],
+    ['boundary', { date: '2026-03-08', startTime: '06:30', eventType: 'meeting' }],
+    ['fall', { date: '2026-11-01', startTime: '11:00', eventType: 'game' }],
+    ['midnight_before', { date: '2026-07-24', startTime: '23:59', eventType: 'game' }],
+    ['midnight_prior_day_probe', { date: '2026-07-24', startTime: '23:59', eventType: 'game' }],
+    ['midnight_at', { date: '2026-07-25', startTime: '00:30', eventType: 'game' }],
+    ['midnight_after', { date: '2026-07-25', startTime: '00:31', eventType: 'game' }],
+    ['midnight_six', { date: '2026-07-25', startTime: '06:30', eventType: 'game' }],
+    ['redaction', { date: '2026-03-08', startTime: '13:00', eventType: 'game' }],
+    ['network', { date: '2026-03-08', startTime: '13:10', eventType: 'game' }],
   ];
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     const batch = firestoreAdmin.batch();
     batch.set(firestoreAdmin.doc(teamPath), { name: 'QA Reminder Team', timeZone: 'America/Edmonton', qaReminderRun: certificationRunId });
     for (const [eventId, event] of initialEvents) batch.set(firestoreAdmin.doc(`${teamPath}/events/${eventId}`), { ...event, qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.eligible}`), { userId: userIds.eligible, status: 'active', qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.noToken}`), { userId: userIds.noToken, status: 'active', qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.prefOff}`), { userId: userIds.prefOff, status: 'active', qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.removed}`), { userId: userIds.removed, status: 'removed', qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.sender}`), { userId: userIds.sender, status: 'active', qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`users/${userIds.eligible}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, fcmTokens: [safeFcmToken], webPushSubscriptions: [{ endpoint: safeEndpoint, keys: { p256dh: 'safe-public-key', auth: 'safe-auth-key' } }], qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`users/${userIds.noToken}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`users/${userIds.prefOff}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: false, fcmTokens: [safeFcmToken], qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`users/${userIds.removed}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, fcmTokens: [safeFcmToken], qaReminderRun: certificationRunId });
-    batch.set(firestoreAdmin.doc(`users/${userIds.sender}`), { role: 'coach', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, fcmTokens: [safeFcmToken], qaReminderRun: certificationRunId });
+    for (const [key, uid] of Object.entries(userIds)) {
+      batch.set(firestoreAdmin.doc(`${teamPath}/members/${uid}`), { userId: uid, status: key === 'removed' ? 'removed' : 'active', qaReminderRun: certificationRunId });
+      const original = originalProfiles.find(snapshot => snapshot.id === uid)?.data() || {};
+      const device = deviceByKey[key];
+      batch.set(firestoreAdmin.doc(`users/${uid}`), {
+        ...original,
+        role: roleByKey[key], notificationsEnabled: true,
+        upcomingEventNotificationsEnabled: key === 'prefOff' ? false : true,
+        fcmTokens: key === 'noToken' ? [] : [device.fcmToken],
+        webPushSubscriptions: key === 'noToken' ? [] : [{ endpoint: device.endpoint, keys: { p256dh: 'safe-public-key', auth: 'safe-auth-key' } }],
+        qaReminderRun: certificationRunId,
+      });
+    }
     await batch.commit();
   });
 
   const delivered = [];
   const schedulerDiagnostics = [];
   let retryFailsOnce = true;
-  const createRunner = (now, deliver = async input => {
-    delivered.push({ eventId: input.entry.eventId, userId: input.entry.userId, fcmCount: input.targets.fcmTokens.length, webPushCount: input.targets.webPushSubscriptions.length });
+  let providerRequestCount = 0;
+  const keyForUserId = userId => Object.keys(userIds).find(key => userIds[key] === userId) || 'unknown';
+  const safeDeliver = async input => {
+    const key = keyForUserId(input.entry.userId);
+    delivered.push({ eventId: input.entry.eventId, actorAlias: aliases[key] || 'unknown', fcmCount: input.targets.fcmTokens.length, webPushCount: input.targets.webPushSubscriptions.length });
     if (input.entry.eventId === 'retry' && retryFailsOnce) {
       retryFailsOnce = false;
       throw new Error('injected-safe-reminder-failure');
     }
     return { successCount: input.targets.fcmTokens.length + input.targets.webPushSubscriptions.length, failureCount: 0 };
-  }) => ({
+  };
+  const createRunner = (now, { eventIds, memberKeys, deliver = safeDeliver } = {}) => ({
     now,
     listEvents: async () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
       const snapshot = await firestoreAdmin.collection(`${teamPath}/events`).where('qaReminderRun', '==', certificationRunId).get();
-      return snapshot.docs.map(document => ({ teamId, eventId: document.id, event: document.data() }));
+      const expected = eventIds ? new Set(eventIds) : null;
+      return snapshot.docs.filter(document => !expected || expected.has(document.id)).map(document => ({ teamId, eventId: document.id, event: document.data() }));
     }),
     getTeam: async requestedTeamId => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
       const snapshot = await firestoreAdmin.doc(`teams/${requestedTeamId}`).get();
       return snapshot.exists ? snapshot.data() : null;
     }),
-    listMembers: async requestedTeamId => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection(`teams/${requestedTeamId}/members`).where('qaReminderRun', '==', certificationRunId).get()).docs.map(document => document.data())),
+    listMembers: async requestedTeamId => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const selected = memberKeys ? new Set(memberKeys.map(key => userIds[key])) : null;
+      return (await firestoreAdmin.collection(`teams/${requestedTeamId}/members`).where('qaReminderRun', '==', certificationRunId).get()).docs
+        .map(document => document.data()).filter(member => !selected || selected.has(member.userId));
+    }),
     getUser: async userId => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
       const snapshot = await firestoreAdmin.doc(`users/${userId}`).get();
       return snapshot.exists ? snapshot.data() : null;
@@ -8409,87 +8493,86 @@ async function runReminderSchedulerRuntimeAudit() {
     diagnostic: event => schedulerDiagnostics.push({ ...event }),
     deliver,
   });
-
   const springNow = new Date('2026-03-08T15:00:00.000Z');
-  const first = await runUpcomingEventReminderCore(createRunner(springNow));
-  const second = await runUpcomingEventReminderCore(createRunner(springNow));
-  expectEqual(JSON.stringify(first), JSON.stringify({ sentCount: 1, failedCount: 1, claimedCount: 2 }), 'Reminder scheduler core sends one same-day eligible FCM and Web Push delivery');
-  expectEqual(JSON.stringify(second), JSON.stringify({ sentCount: 1, failedCount: 0, claimedCount: 1 }), 'Reminder scheduler failed ledger retry transitions to sent');
+  const runCase = (caseId, actorAlias, invocationId, now, eventIds, memberKeys, deliver) =>
+    captureInjectedReminderCoreInvocation(caseId, actorAlias, invocationId, () =>
+      runUpcomingEventReminderCore(createRunner(now, { eventIds, memberKeys, deliver })));
+  const ledgerRows = async () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+    (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
+  const ledgerFor = (rows, eventId, key) => rows.find(document => document.data().eventId === eventId && document.data().userId === userIds[key])?.data() || null;
 
-  // Reconcile exclusion cases before intentionally rewinding the injected
-  // clock to the 06:00/DST boundary. Leaving an excluded 08:00 fixture in the
-  // shared overlay while rewinding to 06:00 would make it legitimately future
-  // in that later invocation and would no longer test the original 09:00 case.
-  const initialLedgers = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
-  const initialLedgerFor = (eventId, userId) => initialLedgers.some(document => document.data().eventId === eventId && document.data().userId === userId);
-  expectEqual(initialLedgerFor('invalid', userIds.eligible), false, 'Reminder scheduler excludes malformed event time');
-  expectEqual(initialLedgerFor('past', userIds.eligible), false, 'Reminder scheduler excludes no-longer-future event time');
-  expectEqual(initialLedgers.some(document => document.data().userId === userIds.noToken), false, 'Reminder scheduler excludes eligible member with no device token');
-  expectEqual(initialLedgers.some(document => document.data().userId === userIds.prefOff), false, 'Reminder scheduler excludes preferences-disabled recipient');
-  expectEqual(initialLedgers.some(document => document.data().userId === userIds.removed), false, 'Reminder scheduler excludes removed membership');
-  expectEqual(initialLedgers.some(document => document.data().userId === userIds.sender), false, 'Reminder scheduler excludes staff sender role');
-  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => Promise.all([
-    firestoreAdmin.doc(`${teamPath}/events/invalid`).delete(),
-    firestoreAdmin.doc(`${teamPath}/events/past`).delete(),
-  ]));
+  const eligibleResult = await runCase('rem-eligible', 'qa-parent-a+qa-adult-player-a+qa-youth-active', 'rem-eligible-core-1', springNow, ['eligible'], ['parent', 'adult', 'youth']);
+  expectEqual(JSON.stringify(eligibleResult), JSON.stringify({ sentCount: 3, failedCount: 0, claimedCount: 3 }), 'Reminder scheduler core sends one same-day eligible FCM and Web Push delivery');
+  const eligibleLedgers = await ledgerRows();
+  for (const key of ['parent', 'adult', 'youth']) {
+    expectEqual(JSON.stringify(ledgerFor(eligibleLedgers, 'eligible', key)), JSON.stringify({ teamId, eventId: 'eligible', userId: userIds[key], qaReminderRun: certificationRunId, status: 'sent', attempts: 1, leaseExpiresAt: 0, successCount: 2, failureCount: 0 }), `Reminder scheduler writes one same-day PA/AP/YP delivery ledger for ${aliases[key]}`);
+  }
+  expectEqual(JSON.stringify(delivered.filter(item => item.eventId === 'eligible').map(item => ({ actorAlias: item.actorAlias, fcmCount: item.fcmCount, webPushCount: item.webPushCount })).sort((a, b) => a.actorAlias.localeCompare(b.actorAlias))), JSON.stringify([
+    { actorAlias: 'qa-adult-player-a', fcmCount: 1, webPushCount: 1 },
+    { actorAlias: 'qa-parent-a', fcmCount: 1, webPushCount: 1 },
+    { actorAlias: 'qa-youth-active', fcmCount: 1, webPushCount: 1 },
+  ]), 'Reminder scheduler invokes one safe FCM and Web Push target for each PA/AP/YP fixture');
 
-  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-    await firestoreAdmin.doc(`${teamPath}/events/overlap`).set({ date: '2026-03-08', startTime: '12:00', eventType: 'game', qaReminderRun: certificationRunId });
-  });
+  expectEqual(JSON.stringify(await runCase('rem-invalid-time', 'qa-adult-player-a', 'rem-invalid-time-core-1', springNow, ['invalid'], ['adult'])), JSON.stringify({ sentCount: 0, failedCount: 0, claimedCount: 0 }), 'Reminder scheduler excludes malformed event time');
+  expectEqual(JSON.stringify(await runCase('rem-past-time', 'qa-adult-player-a', 'rem-past-time-core-1', springNow, ['past'], ['adult'])), JSON.stringify({ sentCount: 0, failedCount: 0, claimedCount: 0 }), 'Reminder scheduler excludes no-longer-future event time');
+  expectEqual(JSON.stringify(await runCase('rem-no-token', 'qa-adult-player-b', 'rem-no-token-core-1', springNow, ['no_token'], ['noToken'])), JSON.stringify({ sentCount: 0, failedCount: 0, claimedCount: 0 }), 'Reminder scheduler excludes eligible member with no device token');
+  expectEqual(JSON.stringify(await runCase('rem-pref-off', 'qa-parent-b', 'rem-pref-off-core-1', springNow, ['pref_off'], ['prefOff'])), JSON.stringify({ sentCount: 0, failedCount: 0, claimedCount: 0 }), 'Reminder scheduler excludes preferences-disabled recipient');
+  expectEqual(JSON.stringify(await runCase('rem-removed', 'qa-removed-member', 'rem-removed-core-1', springNow, ['removed'], ['removed'])), JSON.stringify({ sentCount: 0, failedCount: 0, claimedCount: 0 }), 'Reminder scheduler excludes removed membership');
+  expectEqual(JSON.stringify(await runCase('rem-sender', 'qa-coach-owner-a', 'rem-sender-core-1', springNow, ['sender'], ['sender'])), JSON.stringify({ sentCount: 0, failedCount: 0, claimedCount: 0 }), 'Reminder scheduler excludes staff sender role');
+  const exclusionLedgers = await ledgerRows();
+  expectEqual(['invalid', 'past', 'no_token', 'pref_off', 'removed', 'sender'].every((eventId, index) => ledgerFor(exclusionLedgers, eventId, ['adult', 'adult', 'noToken', 'prefOff', 'removed', 'sender'][index]) === null), true, 'Reminder scheduler local eligibility and exclusion cases create no denied ledger');
+
+  const retryFirst = await runCase('rem-retry', 'qa-adult-player-a', 'rem-retry-core-1', springNow, ['retry'], ['adult']);
+  const retrySecond = await captureOperationRequests('rem-retry', 'qa-adult-player-a', () => observeInjectedReminderCoreInvocation({ actorAlias: 'qa-adult-player-a', invocationId: 'rem-retry-core-2', operation: () => runUpcomingEventReminderCore(createRunner(springNow, { eventIds: ['retry'], memberKeys: ['adult'] })) }));
+  expectEqual(JSON.stringify({ first: retryFirst, second: retrySecond }), JSON.stringify({ first: { sentCount: 0, failedCount: 1, claimedCount: 1 }, second: { sentCount: 1, failedCount: 0, claimedCount: 1 } }), 'Reminder scheduler failed ledger retry transitions to sent');
+
   let overlapDeliveries = 0;
-  const overlapDelivery = async input => {
+  const overlapDeliver = async input => {
     if (input.entry.eventId === 'overlap') {
       overlapDeliveries += 1;
       await new Promise(resolve => setTimeout(resolve, 40));
     }
-    return { successCount: input.targets.fcmTokens.length + input.targets.webPushSubscriptions.length, failureCount: 0 };
+    return safeDeliver(input);
   };
-  const overlapResults = await Promise.all([runUpcomingEventReminderCore(createRunner(springNow, overlapDelivery)), runUpcomingEventReminderCore(createRunner(springNow, overlapDelivery))]);
+  const overlapResults = await captureOperationRequests('rem-duplicate-run', 'qa-adult-player-a', async () => Promise.all([
+    observeInjectedReminderCoreInvocation({ actorAlias: 'qa-adult-player-a', invocationId: 'rem-duplicate-run-core-1', operation: () => runUpcomingEventReminderCore(createRunner(springNow, { eventIds: ['overlap'], memberKeys: ['adult'], deliver: overlapDeliver })) }),
+    observeInjectedReminderCoreInvocation({ actorAlias: 'qa-adult-player-a', invocationId: 'rem-duplicate-run-core-2', operation: () => runUpcomingEventReminderCore(createRunner(springNow, { eventIds: ['overlap'], memberKeys: ['adult'], deliver: overlapDeliver })) }),
+  ]));
   expectEqual(overlapDeliveries, 1, 'Reminder scheduler overlapping invocations acquire one lease and send once');
+  expectEqual(overlapResults.reduce((total, result) => total + result.sentCount, 0), 1, 'Reminder scheduler overlap has one successful local delivery');
 
-  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-    await firestoreAdmin.doc(`${teamPath}/events/boundary`).set({ date: '2026-03-08', startTime: '06:30', eventType: 'meeting', qaReminderRun: certificationRunId });
-    await firestoreAdmin.doc(`${teamPath}/events/fall`).set({ date: '2026-11-01', startTime: '11:00', eventType: 'game', qaReminderRun: certificationRunId });
-    await firestoreAdmin.doc(`${teamPath}/events/midnight_before`).set({ date: '2026-07-24', startTime: '23:59', eventType: 'game', qaReminderRun: certificationRunId });
-    await firestoreAdmin.doc(`${teamPath}/events/midnight_at`).set({ date: '2026-07-25', startTime: '00:30', eventType: 'game', qaReminderRun: certificationRunId });
-    await firestoreAdmin.doc(`${teamPath}/events/midnight_after`).set({ date: '2026-07-25', startTime: '00:31', eventType: 'game', qaReminderRun: certificationRunId });
-    await firestoreAdmin.doc(`${teamPath}/events/midnight_six`).set({ date: '2026-07-25', startTime: '06:30', eventType: 'game', qaReminderRun: certificationRunId });
+  await captureOperationRequests('rem-time-boundary', 'qa-adult-player-a', async () => {
+    const invoke = (invocationId, now, eventIds) => observeInjectedReminderCoreInvocation({ actorAlias: 'qa-adult-player-a', invocationId, operation: () => runUpcomingEventReminderCore(createRunner(now, { eventIds, memberKeys: ['adult'] })) });
+    const boundaryResult = await invoke('rem-time-boundary-dst-spring', new Date('2026-03-08T12:00:00.000Z'), ['boundary']);
+    const fallResult = await invoke('rem-time-boundary-dst-fall', new Date('2026-11-01T16:00:00.000Z'), ['fall']);
+    const midnightBefore = await invoke('rem-time-boundary-before-midnight', new Date('2026-07-25T05:58:00.000Z'), ['midnight_before']);
+    const midnightAt = await invoke('rem-time-boundary-at-midnight', new Date('2026-07-25T06:00:00.000Z'), ['midnight_at', 'midnight_prior_day_probe']);
+    const midnightAfter = await invoke('rem-time-boundary-after-midnight', new Date('2026-07-25T06:01:00.000Z'), ['midnight_after']);
+    const reminderStart = await invoke('rem-time-boundary-six-am', new Date('2026-07-25T12:00:00.000Z'), ['midnight_six']);
+    const reminderStartRepeat = await invoke('rem-time-boundary-six-am-repeat', new Date('2026-07-25T12:00:00.000Z'), ['midnight_six']);
+    expectEqual(boundaryResult.sentCount === 1 && fallResult.sentCount === 1, true, 'Reminder scheduler respects exact 06:00 boundary and DST offsets');
+    expectEqual(midnightBefore.sentCount, 1, 'Reminder scheduler before local midnight selects only the remaining current-day event');
+    expectEqual(JSON.stringify({ at: midnightAt.sentCount, after: midnightAfter.sentCount }), JSON.stringify({ at: 0, after: 0 }), 'Reminder scheduler at and after local midnight preserves the 06:00 quiet-hours boundary');
+    expectEqual(reminderStart.sentCount, 1, 'Reminder scheduler exact 06:00 start selects the future new-local-day event');
+    expectEqual(reminderStartRepeat.sentCount, 0, 'Reminder scheduler exact 06:00 repeat is idempotent');
   });
-  const boundaryResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-03-08T12:00:00.000Z')));
-  const fallResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-11-01T16:00:00.000Z')));
-  expectEqual(boundaryResult.sentCount >= 1 && fallResult.sentCount >= 1, true, 'Reminder scheduler respects exact 06:00 boundary and DST offsets');
-  const midnightBefore = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T05:58:00.000Z')));
-  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-    // Added after the before-midnight run so its missing ledger proves the
-    // midnight invocation rejected the previous local calendar day rather
-    // than merely encountering an already-sent idempotency record.
-    await firestoreAdmin.doc(`${teamPath}/events/midnight_prior_day_probe`).set({ date: '2026-07-24', startTime: '23:59', eventType: 'game', qaReminderRun: certificationRunId });
-  });
-  const midnightAt = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T06:00:00.000Z')));
-  const midnightAfter = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T06:01:00.000Z')));
-  const reminderStart = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T12:00:00.000Z')));
-  const reminderStartRepeat = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T12:00:00.000Z')));
-  expectEqual(midnightBefore.sentCount, 1, 'Reminder scheduler before local midnight selects only the remaining current-day event');
-  expectEqual(JSON.stringify({ at: midnightAt.sentCount, after: midnightAfter.sentCount }), JSON.stringify({ at: 0, after: 0 }), 'Reminder scheduler at and after local midnight preserves the 06:00 quiet-hours boundary');
-  expectEqual(reminderStart.sentCount, 1, 'Reminder scheduler exact 06:00 start selects the future new-local-day event');
-  expectEqual(reminderStartRepeat.sentCount, 0, 'Reminder scheduler exact 06:00 repeat is idempotent');
 
-  const ledgers = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
+  await runCase('rem-redaction', 'qa-adult-player-a', 'rem-redaction-core-1', springNow, ['redaction'], ['adult']);
+  await runCase('rem-network', 'qa-adult-player-a', 'rem-network-core-1', springNow, ['network'], ['adult']);
+  const ledgers = await ledgerRows();
   for (const document of ledgers) registerDynamicFirestoreRoot(document.ref.path, `reminder-ledger-${document.id}`);
   const midnightLedgerState = Object.fromEntries(['midnight_before', 'midnight_prior_day_probe', 'midnight_at', 'midnight_after', 'midnight_six'].map(eventId => {
-    const record = ledgers.find(document => document.data().eventId === eventId && document.data().userId === userIds.eligible)?.data();
+    const record = ledgerFor(ledgers, eventId, 'adult');
     return [eventId, record ? { status: record.status, attempts: record.attempts } : null];
   }));
   expectEqual(JSON.stringify(midnightLedgerState), JSON.stringify({
-    midnight_before: { status: 'sent', attempts: 1 },
-    midnight_prior_day_probe: null,
-    midnight_at: null,
-    midnight_after: null,
-    midnight_six: { status: 'sent', attempts: 1 },
+    midnight_before: { status: 'sent', attempts: 1 }, midnight_prior_day_probe: null,
+    midnight_at: null, midnight_after: null, midnight_six: { status: 'sent', attempts: 1 },
   }), 'Reminder scheduler local-midnight ledgers reconcile the prior-day and quiet-hours exclusions');
   const diagnosticEvidence = JSON.stringify({ schedulerDiagnostics, ledgerStates: ledgers.map(document => ({ eventId: document.data().eventId, status: document.data().status, attempts: document.data().attempts })) });
-  expectEqual(schedulerDiagnostics.length > 0 && !diagnosticEvidence.includes(safeFcmToken) && !diagnosticEvidence.includes(safeEndpoint), true, 'Reminder scheduler captures redacted runtime diagnostics from the actual core');
-  expectEqual(delivered.every(item => item.fcmCount + item.webPushCount > 0), true, 'Reminder scheduler uses injected local transport without provider network');
+  expectEqual(schedulerDiagnostics.length > 0 && Object.values(deviceByKey).every(device => !diagnosticEvidence.includes(device.fcmToken) && !diagnosticEvidence.includes(device.endpoint)), true, 'Reminder scheduler captures redacted runtime diagnostics from the actual core');
+  expectEqual(providerRequestCount, 0, 'Reminder scheduler uses injected local transport without provider network');
+  expectEqual(delivered.every(item => item.fcmCount + item.webPushCount > 0), true, 'Reminder scheduler safe transport receives only registered local delivery targets');
 }
 
 async function runCalendarFeedLifecycleAudit() {

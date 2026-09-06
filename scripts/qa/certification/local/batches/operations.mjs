@@ -76,6 +76,7 @@ export function selectCaseOwnedOperationAssertions(assertions, requiredPatterns)
 export function assertCaseOwnedOperationArtifacts(cases) {
   if (!Array.isArray(cases)) throw new TypeError('Operation case artifacts must be an array.');
   const assertionOwners = new Map();
+  const requestEvidenceOwners = new Map();
   for (const item of cases) {
     if (!item || typeof item.caseId !== 'string' || !Array.isArray(item.assertions) || item.assertions.length === 0) {
       throw new Error('Each operation case requires a case ID and at least one exact assertion.');
@@ -94,11 +95,23 @@ export function assertCaseOwnedOperationArtifacts(cases) {
       const pathname = request?.pathname;
       const status = request?.status;
       const actorAlias = request?.actorAlias;
-      if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
-        || typeof pathname !== 'string' || !pathname.startsWith('/') || pathname.includes('?')
-        || !Number.isInteger(status)) {
-        throw new Error(`Operation case ${item.caseId} requires actual same-origin HTTP request evidence.`);
+      const isHttp = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+        && typeof pathname === 'string' && pathname.startsWith('/') && !pathname.includes('?')
+        && Number.isInteger(status);
+      const isInjectedReminderCore = method === 'INVOKE' && pathname === '/__local/reminder-core'
+        && Number.isInteger(status) && request?.invocationType === 'injected-reminder-core'
+        && typeof request?.invocationId === 'string' && request.invocationId.length > 0;
+      if (!isHttp && !isInjectedReminderCore) {
+        throw new Error(`Operation case ${item.caseId} requires actual same-origin HTTP request evidence or actual injected reminder-core invocation evidence.`);
       }
+      if (typeof request?.evidenceId !== 'string' || request.evidenceId.length === 0) {
+        throw new Error(`Operation case ${item.caseId} requires a stable request evidence ID.`);
+      }
+      const requestOwner = requestEvidenceOwners.get(request.evidenceId);
+      if (requestOwner && requestOwner !== item.caseId) {
+        throw new Error(`Operation case ${item.caseId} reuses request evidence ID ${request.evidenceId} from ${requestOwner}.`);
+      }
+      requestEvidenceOwners.set(request.evidenceId, item.caseId);
       if (typeof actorAlias !== 'string' || !actorAlias.startsWith('qa-') || actorAlias === 'catalog-scenario-actor') {
         throw new Error(`Operation case ${item.caseId} requires an exact actor alias on every request.`);
       }
