@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
 import { OPERATIONS_SCENARIO_IDS } from '../scripts/qa/certification/local/selection.mjs';
+import { operationActorAliases, assertOperationActorAliases } from '../scripts/qa/certification/local/operation-actors.mjs';
 import {
   assertOperationsHandlerExactness,
   handlers,
@@ -12,6 +13,17 @@ import {
   runOperationsBatch,
   selectCaseOwnedOperationAssertions,
 } from '../scripts/qa/certification/local/batches/operations.mjs';
+
+test('named operation actors derive from the exact execution and every request actor', () => {
+  const execution={actor:'qa-coach-owner-a+qa-team-assistant',requests:[{actorAlias:'qa-coach-owner-a'},{actorAlias:'qa-team-assistant'}]};
+  assert.deepEqual(operationActorAliases(execution),['qa-coach-owner-a','qa-team-assistant']);
+  assert.doesNotThrow(()=>assertOperationActorAliases(['qa-coach-owner-a','qa-team-assistant'],execution));
+  for(const aliases of [['catalog-scenario-actor','qa-public-submitter'],['qa-coach-owner-a'],['qa-coach-owner-b','qa-team-assistant']]) assert.throws(()=>assertOperationActorAliases(aliases,execution),/actor/);
+  assert.throws(()=>operationActorAliases({...execution,requests:[{actorAlias:'qa-coach-owner-a'}]}),/actor/);
+  assert.throws(()=>operationActorAliases({...execution,actor:'catalog-scenario-actor'}),/actor/);
+  const source=readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs',import.meta.url),'utf8');
+  assert.match(source,/actorAliases: operationActorAliases\(operationExecution\)/);
+});
 
 test('operations handler registry is an exact immutable match for the frozen Task 5 assignment', () => {
   assert.doesNotThrow(() => assertOperationsHandlerExactness(handlers));

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { assertOperationActorAliases } from './operation-actors.mjs';
 
 export const OBSERVATION_STATES = Object.freeze([
   'OBSERVED',
@@ -281,6 +282,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
       assertClosedObject(execution, ['actor', 'operation', 'requests', 'reconciliation', 'observer', 'timeBound', 'cleanupReference'], 'Operation execution');
       for (const key of ['actor', 'operation', 'reconciliation', 'observer', 'timeBound', 'cleanupReference']) assertPlainString(execution?.[key], `operation execution ${key}`);
       if (!Array.isArray(execution.requests) || execution.requests.length === 0) throw new Error(`${caseRecord.caseId} requires operation requests.`);
+      assertOperationActorAliases(caseRecord.actorAliases, execution);
       for (const request of execution.requests) {
         assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'invocationType', 'invocationId', 'startedAt', 'completedAt'], 'Operation request');
         assertPlainString(request.evidenceId, 'operation request evidenceId');

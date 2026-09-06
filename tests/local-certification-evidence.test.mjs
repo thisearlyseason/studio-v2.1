@@ -45,6 +45,17 @@ test('persisted operations evidence requires unique assertion IDs, exact executi
     await write();
     const validate = () => validateScenarioResults([scenario], [result], { artifactRoot: directory, caseShape: 'operations' });
     assert.doesNotThrow(validate);
+    cases[0].actorAliases=['catalog-scenario-actor','qa-public-submitter'];
+    artifacts[0].actorAliases=[...cases[0].actorAliases]; await write();
+    assert.throws(validate,/actor/i);
+    cases[0].actorAliases=['qa-team-member']; artifacts[0].actorAliases=['qa-team-member']; await write();
+    assert.throws(validate,/actor/i);
+    cases[0].actorAliases=['qa-coach-owner-a']; artifacts[0].actorAliases=['qa-coach-owner-a'];
+    cases[0].execution.actor='qa-coach-owner-a+qa-team-member';
+    artifacts[0].execution=structuredClone(cases[0].execution); await write();
+    assert.throws(validate,/actor/i);
+    cases[0].execution=structuredClone(execution); artifacts[0].execution=structuredClone(execution); await write();
+    assert.doesNotThrow(validate);
     delete artifacts[0].assertions[0].id; await write();
     assert.throws(validate, /assertion.*id/i);
     artifacts[0].assertions[0].id = 'assertion-two'; await write();

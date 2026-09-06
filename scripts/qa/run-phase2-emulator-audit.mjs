@@ -27,6 +27,7 @@ import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
 import { observeCalendarResponse } from './certification/local/calendar-response-observation.mjs';
 import { validateAttendanceLedger, validateAttendanceBounds } from './certification/local/attendance-observation.mjs';
+import { operationActorAliases } from './certification/local/operation-actors.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -682,7 +683,7 @@ function recordCertificationCase(
   observed,
   expected = 'locally safe contract completed',
   caseStartedAt = null,
-  { assertions = activeCertificationAssertions, role, tenantAlias, execution } = {},
+  { assertions = activeCertificationAssertions, role, tenantAlias, execution, actorAliases = certificationActorAliases(scenarioId) } = {},
 ) {
   if (activeCertificationCaseIds.has(caseId)) throw new Error(`Certification case ${caseId} was already emitted.`);
   const scenario = certificationScenarioById.get(scenarioId);
@@ -693,7 +694,7 @@ function recordCertificationCase(
   const artifact = {
     runId: certificationRunId, commit: certificationCommit,
     scenarioId, caseId, dimension, expected: String(expected), observed: String(observed),
-    actorAliases: certificationActorAliases(scenarioId),
+    actorAliases,
     ...tenantCaseAssociations(scenarioId, dimension, caseId, execution),
     ...(execution ? { execution } : {}),
     assertions,
@@ -713,7 +714,7 @@ function recordCertificationCase(
   emitCertificationEvent({
     type: 'case', scenarioId, caseId, dimension,
     runId: certificationRunId, commit: certificationCommit,
-    actorAliases: certificationActorAliases(scenarioId),
+    actorAliases,
     role: role || scenario.roles.join('/'),
     tenantAlias: tenantAlias || certificationTenantAlias(scenarioId),
     ...tenantCaseAssociations(scenarioId, dimension, caseId, execution),
@@ -6882,7 +6883,7 @@ function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observe
     observed,
     'named local browser/API operation completed with request and reconciliation evidence',
     firstCapturedAt,
-    { assertions, execution: operationExecution },
+    { assertions, execution: operationExecution, actorAliases: operationActorAliases(operationExecution) },
   );
 }
 
