@@ -33,7 +33,10 @@ import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from 
 import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark } from './certification/local/film-playback.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
-import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
+import {
+  patchFirestoreFields as patchFirestoreFieldsRequest,
+  probeForgedWatchProgressDenial as probeForgedWatchProgressDenialRequest,
+} from './certification/local/tenant-mutation-probes.mjs';
 import { inspectTenantCapabilities, TENANT_SCENARIO_CAPABILITIES } from './certification/local/tenant-capabilities.mjs';
 
 export function resolveAuditRuntimeConfiguration({ environment = process.env, argv = process.argv.slice(2) } = {}) {
@@ -1247,6 +1250,16 @@ async function reconcileFamilyRuntimeChildGraph({ runtimeTarget, teamA, teamC, p
 async function patchFirestoreFields(options) {
   const startedAt = new Date().toISOString();
   const result = await patchFirestoreFieldsRequest(options);
+  recordTenantRequest({
+    pathname: '/firestore/document', method: 'PATCH', status: result.status,
+    token: options.idToken, documentPath: options.documentPath, startedAt,
+  });
+  return result;
+}
+
+async function probeForgedWatchProgressDenial(options) {
+  const startedAt = new Date().toISOString();
+  const result = await probeForgedWatchProgressDenialRequest(options);
   recordTenantRequest({
     pathname: '/firestore/document', method: 'PATCH', status: result.status,
     token: options.idToken, documentPath: options.documentPath, startedAt,
@@ -7802,7 +7815,8 @@ async function runPracticeFilmWorkflowAudit() {
   await capturePracticeDocumentReads('film-mark', [actor('qa-coach-owner-a')], videoRecord.path);
   for (const caseId of ['film-type', 'film-size', 'film-url', 'film-time-invalid']) await capturePracticeDocumentReads(caseId, [actor('qa-coach-owner-a')], videoRecord.path);
   await capturePracticeDocumentReads('film-progress-own', [actor('qa-adult-player-a')], progressPath);
-  const forge = await captureOperationRequests('film-progress-forge', 'qa-adult-player-a', () => patchFirestoreFields({ projectId: PROJECT_ID, documentPath: `${videoRecord.path}/watchProgress/${identityByAlias.get('qa-coach-owner-a').uid}`, idToken: tokens.get('qa-adult-player-a'), fields: { userId: identityByAlias.get('qa-coach-owner-a').uid, percentage: 100, watchedAt: new Date().toISOString() } }));
+  const forgeTargetUid = identityByAlias.get('qa-coach-owner-a').uid;
+  const forge = await captureOperationRequests('film-progress-forge', 'qa-adult-player-a', () => probeForgedWatchProgressDenial({ projectId: PROJECT_ID, documentPath: `${videoRecord.path}/watchProgress/${forgeTargetUid}`, idToken: tokens.get('qa-adult-player-a'), actorUid: adultUid, targetUserId: forgeTargetUid, percentage: 100, watchedAt: new Date().toISOString() }));
   expectEqual(forge.status, 403, 'Practice film player cannot forge another user progress');
   const playerMark = await captureOperationRequests('film-mark-player', 'qa-adult-player-a', () => patchFirestoreFields({ projectId: PROJECT_ID, documentPath: videoRecord.path, idToken: tokens.get('qa-adult-player-a'), fields: { comments: [{ text: 'forged player mark', timestamp: 1 }] } }));
   expectEqual(playerMark.status, 403, 'Practice film player cannot create or alter coach marks');
