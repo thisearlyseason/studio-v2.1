@@ -16,11 +16,17 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
+import {prepareIncidentSubmission, settleIncidentSubmission} from '@/lib/incident-submission';
+import {downloadIncidentAttachment} from '@/lib/incident-client';
 
 type Props = { kind: 'league' | 'tournament'; eventId: string; eventName: string; divisions?: string[] };
 
 export function EventSafetyPanel({ kind, eventId, eventName, divisions = [] }: Props) {
-  const { activeTeam, db, isStaff, user, addIncident, updateIncident } = useTeam();
+  const { activeTeam, db, isStaff, user, firebaseUser, addIncident, updateIncident } = useTeam();
+  const [attachment,setAttachment] = useState<File | undefined>();
+  const [requestId,setRequestId] = useState(() => crypto.randomUUID());
+  const [busy,setBusy] = useState(false);
+  const [saveError,setSaveError] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [teamFilter, setTeamFilter] = useState('');
@@ -32,7 +38,7 @@ export function EventSafetyPanel({ kind, eventId, eventName, divisions = [] }: P
     location: '', incidentType: 'injury', injuryType: '', description: '', actionsTaken: '', treatmentProvided: '',
     emergencyServicesCalled: false, parentGuardianContacted: false, followUpRequired: false, followUpNotes: '', status: 'open', supportingDocumentUrl: '',
   });
-  const incidentsQuery = useMemoFirebase(() => activeTeam?.id && db ? query(collection(db, 'teams', activeTeam.id, 'incidents'), orderBy('date', 'desc')) : null, [activeTeam?.id, db]);
+  const incidentsQuery = useMemoFirebase(() => activeTeam?.id && db && (isStaff || user?.role === 'superadmin') ? query(collection(db, 'teams', activeTeam.id, 'incidents'), orderBy('date', 'desc')) : null, [activeTeam?.id, db, isStaff, user?.role]);
   const { data } = useCollection<TeamIncident>(incidentsQuery);
   const incidents = useMemo(() => (data || []).filter(incident =>
     (kind === 'league' ? incident.leagueId : incident.tournamentId) === eventId &&
@@ -46,14 +52,14 @@ export function EventSafetyPanel({ kind, eventId, eventName, divisions = [] }: P
   if (!isStaff && user?.role !== 'superadmin' && user?.role !== 'league_creator') return null;
 
   const save = async () => {
-    if (!form.participantName || !form.date || !form.description) return;
-    await addIncident({
-      ...form, title: `${form.incidentType}: ${form.participantName}`, involvedPeople: form.participantName,
-      ...(kind === 'league' ? { leagueId: eventId } : { tournamentId: eventId }),
-      eventName, reportedByName: user?.name || user?.email || 'Organizer',
+    if (busy) return;
+    setSaveError('');
+    await settleIncidentSubmission(() => addIncident(prepareIncidentSubmission({...form,title:`${form.incidentType}: ${form.participantName}`},{requestId,eventId,eventKind:kind}),attachment), {
+      busy:setBusy,error:setSaveError,success:()=>{
+        setIsOpen(false);setRequestId(crypto.randomUUID());setAttachment(undefined);
+        toast({ title: 'Safety Report Logged', description: 'The private incident report is saved.' });
+      },
     });
-    setIsOpen(false);
-    toast({ title: 'Safety Report Logged', description: 'The private organizer incident record is now available for follow-up.' });
   };
 
   return <div className="space-y-6">
@@ -69,7 +75,7 @@ export function EventSafetyPanel({ kind, eventId, eventName, divisions = [] }: P
       <Input aria-label="Filter incidents by date" type="date" value={dateFilter} onChange={event => setDateFilter(event.target.value)} />
     </div>
     <div className="grid gap-3">
-      {incidents.map(incident => <Card key={incident.id}><CardHeader className="pb-3"><div className="flex items-start justify-between gap-4"><div><CardTitle className="text-base">{incident.participantName || incident.involvedPeople || incident.title}</CardTitle><p className="text-xs text-muted-foreground">{incident.participantTeamName || incident.teamName} • {incident.division || 'No division'} • {incident.date} {incident.time || ''}</p></div><Badge>{(incident.status || 'open').replaceAll('_',' ')}</Badge></div></CardHeader><CardContent className="space-y-3"><p className="text-sm">{incident.description}</p><div className="flex flex-wrap gap-2">{incident.followUpRequired && <Badge variant="outline"><AlertTriangle className="h-3 w-3 mr-1" />Follow-up required</Badge>}{incident.emergencyServicesCalled && <Badge variant="destructive">Emergency services</Badge>}</div>{incident.supportingDocumentUrl && <a href={incident.supportingDocumentUrl} target="_blank" rel="noreferrer" className="text-sm font-bold text-primary underline">Supporting document</a>}{incident.status !== 'resolved' && <Button size="sm" variant="outline" onClick={() => activeTeam?.id && updateIncident(activeTeam.id, incident.id, { status: 'resolved' })}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Mark Resolved</Button>}</CardContent></Card>)}
+      {incidents.map(incident => <Card key={incident.id}><CardHeader className="pb-3"><div className="flex items-start justify-between gap-4"><div><CardTitle className="text-base">{incident.participantName || incident.involvedPeople || incident.title}</CardTitle><p className="text-xs text-muted-foreground">{incident.participantTeamName || incident.teamName} • {incident.division || 'No division'} • {incident.date} {incident.time || ''}</p></div><Badge>{(incident.status || 'open').replaceAll('_',' ')}</Badge></div></CardHeader><CardContent className="space-y-3"><p className="text-sm">{incident.description}</p><div className="flex flex-wrap gap-2">{incident.followUpRequired && <Badge variant="outline"><AlertTriangle className="h-3 w-3 mr-1" />Follow-up required</Badge>}{incident.emergencyServicesCalled && <Badge variant="destructive">Emergency services</Badge>}</div>{incident.attachment && !incident.attachmentDeletedAt && <Button variant="outline" onClick={async()=>{try{await downloadIncidentAttachment(incident.teamId,incident.id,await firebaseUser.getIdToken(),incident.attachment!.name);}catch(error){toast({title:'Attachment unavailable',description:error instanceof Error?error.message:'Download failed.',variant:'destructive'});}}}>Supporting document</Button>}{incident.status !== 'resolved' && <Button size="sm" variant="outline" onClick={() => activeTeam?.id && updateIncident(activeTeam.id, incident.id, { status: 'resolved' }).catch(error=>toast({title:'Status not saved',description:error.message,variant:'destructive'}))}><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Mark Resolved</Button>}</CardContent></Card>)}
       {incidents.length === 0 && <div className="rounded-3xl border-2 border-dashed p-16 text-center text-sm text-muted-foreground">No incidents match these filters.</div>}
     </div>
     <Dialog open={isOpen} onOpenChange={setIsOpen}><DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>Log Safety Incident</DialogTitle></DialogHeader><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -82,7 +88,8 @@ export function EventSafetyPanel({ kind, eventId, eventName, divisions = [] }: P
       <label className="flex items-center justify-between gap-3">Emergency services contacted<Switch checked={form.emergencyServicesCalled} onCheckedChange={value => setForm({...form,emergencyServicesCalled:value})} /></label><label className="flex items-center justify-between gap-3">Parent/guardian contacted<Switch checked={form.parentGuardianContacted} onCheckedChange={value => setForm({...form,parentGuardianContacted:value})} /></label>
       <label className="flex items-center justify-between gap-3">Follow-up required<Switch checked={form.followUpRequired} onCheckedChange={value => setForm({...form,followUpRequired:value,status:value?'follow_up_required':'open'})} /></label><div><Label>Status</Label><Select value={form.status} onValueChange={status => setForm({...form,status})}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['open','monitoring','follow_up_required','resolved'].map(s => <SelectItem key={s} value={s}>{s.replaceAll('_',' ')}</SelectItem>)}</SelectContent></Select></div>
       <div className="sm:col-span-2"><Label>Follow-up Notes</Label><Textarea value={form.followUpNotes} onChange={e => setForm({...form,followUpNotes:e.target.value})} /></div>
-      <div className="sm:col-span-2"><Label>Supporting Document URL</Label><Input type="url" placeholder="https://…" value={form.supportingDocumentUrl} onChange={e => setForm({...form,supportingDocumentUrl:e.target.value})} /></div>
-    </div><DialogFooter><Button onClick={save}>Save Private Report</Button></DialogFooter></DialogContent></Dialog>
+      <div className="sm:col-span-2"><Label>Supporting file (PDF or raster image, maximum 10 MiB)</Label><Input aria-label="Supporting incident file" type="file" accept="application/pdf,image/png,image/jpeg,image/gif,image/webp" onChange={event=>setAttachment(event.target.files?.[0])} /></div>
+      {saveError && <p role="alert" className="text-destructive sm:col-span-2">{saveError}</p>}
+    </div><DialogFooter><Button disabled={busy} onClick={save}>Save Private Report</Button></DialogFooter></DialogContent></Dialog>
   </div>;
 }

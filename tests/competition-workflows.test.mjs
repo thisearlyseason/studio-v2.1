@@ -32,7 +32,7 @@ test('event safety is staff-only and provides audit, division, and date controls
   assert.match(panel, /divisionFilter/);
   assert.match(panel, /dateFilter/);
   assert.match(panel, /supportingDocumentUrl/);
-  assert.match(provider, /auditHistory: arrayUnion/);
+  assert.match(provider, /fetch\('\/api\/teams\/incidents\?teamId='/);
   assert.match(rules, /match \/incidents\/\{incidentId\}[\s\S]{0,300}isTeamStaff\(teamId\)/);
 });
 

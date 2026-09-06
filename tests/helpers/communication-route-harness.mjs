@@ -1,11 +1,13 @@
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
+import {jsPDF} from 'jspdf';
 
 // Only network/SDK boundaries are replaced; the route and authority policy run unchanged.
 export async function loadCommunicationRoute(relativePath, db, auth) {
   const key = `communication_${Date.now()}_${Math.random()}`;
-  globalThis[key] = { db, auth };
+  globalThis[key] = { db, auth, jsPDF };
   const stubs = {
+    'jspdf': `export const jsPDF = globalThis[${JSON.stringify(key)}].jsPDF;`,
     'next/server': `export class NextResponse extends Response { static json(body, init={}) { return new NextResponse(JSON.stringify(body), init); } }`,
     '@/lib/firebase-admin': `export const adminDb = globalThis[${JSON.stringify(key)}].db; export function getAdminStorageBucketName() {return 'demo-test.appspot.com';}`,
     'firebase-admin/storage': `export function getStorage() {return {bucket:()=>globalThis[${JSON.stringify(key)}].db.bucket};}`,

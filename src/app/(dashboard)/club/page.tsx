@@ -523,13 +523,18 @@ function AuthorizedClubManagementPage() {
   useEffect(() => {
     let cancelled = false;
     const fetchClubIncidents = async () => {
-      if (!db || organizationTeamIds.length === 0) {
+      if (!firebaseAuth?.currentUser || organizationTeamIds.length === 0) {
         if (!cancelled) setClubIncidents([]);
         return;
       }
       try {
+        const token = await getAuthToken(firebaseAuth);
         const snapshots = await Promise.allSettled(
-          organizationTeamIds.map(teamId => getDocs(collection(db, 'teams', teamId, 'incidents')))
+          organizationTeamIds.map(async teamId => {
+            const response = await fetch('/api/teams/incidents?teamId='+encodeURIComponent(teamId),{headers:authHeader(token),signal:AbortSignal.timeout(20000)});
+            if (!response.ok) throw new Error('Incident ledger unavailable.');
+            return (await response.json()).incidents as TeamIncident[];
+          })
         );
         const incidents = snapshots.flatMap((result, index) => {
           if (result.status !== 'fulfilled') {
@@ -540,10 +545,9 @@ function AuthorizedClubManagementPage() {
           const teamId = organizationTeamIds[index];
           const teamName = organizationSquadCandidates.find(team => team.id === teamId)?.name || 'Unknown Squad';
 
-          return snapshot.docs.map(incident => {
-            const data = incident.data();
+          return snapshot.filter(incident => incident.teamId === teamId).map(incident => {
+            const data = incident;
             return {
-              id: incident.id,
               ...data,
               teamId: data.teamId || teamId,
               teamName: data.teamName || teamName,
@@ -560,7 +564,7 @@ function AuthorizedClubManagementPage() {
     };
     fetchClubIncidents();
     return () => { cancelled = true; };
-  }, [db, organizationTeamIds, organizationSquadCandidates]);
+  }, [firebaseAuth, firebaseAuth?.currentUser?.uid, organizationTeamIds, organizationSquadCandidates]);
 
   const stats = useMemo(() => {
     let owed = 0, total = 0, cleared = 0;

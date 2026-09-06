@@ -448,6 +448,12 @@ export type IncidentPerson = {
 };
 
 export type TeamIncident = {
+  eventId?: string;
+  eventKind?: string;
+  eventName?: string;
+  reportedByName?: string;
+  attachment?: {storagePath:string;name:string;contentType:string;sizeBytes:number;sha256:string};
+  attachmentDeletedAt?: string;
   id: string;
   teamId: string;
   teamName: string;
@@ -967,7 +973,7 @@ interface TeamContextType {
   deleteAlert: (alertId: string) => Promise<void>;
   exportAttendanceCSV: (eventId: string) => Promise<void>;
   exportTournamentStandingsCSV: (tournamentId: string) => Promise<void>;
-  addIncident: (data: any) => Promise<void>;
+  addIncident: (data: any, attachment?: File) => Promise<void>;
   updateIncident: (teamId: string, id: string, data: any) => Promise<void>;
   addLeaguePayment: (leagueId: string, teamId: string, data: any) => Promise<void>;
   updateLeagueGlobalFees: (leagueId: string, fees: any) => Promise<void>;
@@ -3342,30 +3348,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!response.ok) throw new Error(payload.error || 'Unable to assign this plan.');
   }, [firebaseUser]);
 
-  const addIncident = useCallback(async (data: any) => { if (activeTeam?.id && db && firebaseUser) await addDoc(collection(db, 'teams', activeTeam.id, 'incidents'), clean({ ...data, teamId: activeTeam.id, ownerUserId: activeTeam.ownerUserId, teamName: activeTeam.name, reportedBy: firebaseUser.uid, createdAt: new Date().toISOString() })); }, [db, firebaseUser, activeTeam]);
-  const updateIncident = useCallback(async (teamId: string, id: string, data: Pick<TeamIncident, 'status'>) => {
-    if (!db || !firebaseUser) return;
-    const status = data.status;
-    if (!status || !['open', 'monitoring', 'follow_up_required', 'resolved'].includes(status)) {
-      throw new Error('An incident update must be a valid status transition.');
-    }
-    const updatedAt = new Date().toISOString();
-    const transition: Record<string, unknown> = {
-      status,
-      updatedAt,
-      updatedBy: firebaseUser.uid,
-      auditHistory: arrayUnion({ action: `status:${status}`, userId: firebaseUser.uid, at: updatedAt }),
-    };
-    if (status === 'resolved') {
-      transition.resolvedAt = updatedAt;
-      transition.resolvedBy = firebaseUser.uid;
-    }
-    await updateDoc(doc(db, 'teams', teamId, 'incidents', id), {
-      ...transition,
+  const addIncident = useCallback(async (data: any, attachment?: File) => {
+    if (!activeTeam?.id || !firebaseUser) throw new Error('An authenticated team session is required.');
+    const token = await firebaseUser.getIdToken();
+    const body = attachment ? new FormData() : JSON.stringify(data);
+    if (body instanceof FormData) { body.set('report', JSON.stringify(data)); body.set('attachment', attachment!); }
+    const response = await fetch('/api/teams/incidents?teamId=' + encodeURIComponent(activeTeam.id), {
+      method: 'POST', headers: {Authorization: 'Bearer ' + token, ...(attachment ? {} : {'Content-Type':'application/json'})}, body,
     });
-  }, [db, firebaseUser]);
-  
-
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Incident was not saved.');
+  }, [firebaseUser, activeTeam?.id]);
+  const updateIncident = useCallback(async (teamId: string, id: string, data: Pick<TeamIncident, 'status'>) => {
+    if (!firebaseUser) throw new Error('An authenticated session is required.');
+    const response = await fetch('/api/teams/incidents?teamId=' + encodeURIComponent(teamId) + '&incidentId=' + encodeURIComponent(id), {
+      method: 'PATCH', headers: {'Content-Type':'application/json', Authorization:'Bearer ' + await firebaseUser.getIdToken()}, body:JSON.stringify(data),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Incident status was not saved.');
+  }, [firebaseUser]);
 
   const markMediaAsViewed = useCallback(async (fileId: string) => { if (!firebaseUser || !activeTeam?.id || !db) return; await setDoc(doc(db, 'teams', activeTeam.id, 'members', firebaseUser.uid, 'mediaViews', fileId), { fileId, viewedAt: new Date().toISOString() }); }, [activeTeam, firebaseUser, db]);
 

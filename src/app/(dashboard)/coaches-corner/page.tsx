@@ -1,5 +1,7 @@
 "use client";
 
+import {prepareIncidentSubmission, settleIncidentSubmission} from '@/lib/incident-submission';
+import {exportCurrentIncidents} from '@/lib/incident-client';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTeam, TeamDocument, Member, PlayerProfile, RecruitingProfile, AthleticMetrics, PlayerStat, PlayerEvaluation, RecruitingContact, PlayerVideo, VideoComment, TeamIncident, TeamEvent } from '@/components/providers/team-provider';
@@ -2790,7 +2792,14 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
 
 function SafetyHub() {
-  const { activeTeam, isStaff, addIncident, db } = useTeam();
+  const { activeTeam, isStaff, addIncident, db, firebaseUser } = useTeam();
+  const [incidentEventId, setIncidentEventId] = useState('');
+  const [incidentRequestId, setIncidentRequestId] = useState(() => crypto.randomUUID());
+  const [attachment, setAttachment] = useState<File | undefined>();
+  const [saveError, setSaveError] = useState('');
+  const [incidentFilter, setIncidentFilter] = useState('');
+  const incidentEventsQuery = useMemoFirebase(() => activeTeam?.id && db && isStaff ? collection(db,'teams',activeTeam.id,'events') : null,[activeTeam?.id,db,isStaff]);
+  const {data: incidentEvents} = useCollection<TeamEvent>(incidentEventsQuery);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewingIncident, setViewingIncident] = useState<TeamIncident | null>(null);
@@ -2824,15 +2833,16 @@ function SafetyHub() {
   });
 
 
-  const incidentsQuery = useMemoFirebase(() => (activeTeam && db) ? query(collection(db, 'teams', activeTeam.id, 'incidents'), orderBy('date', 'desc')) : null, [activeTeam?.id, db]);
+  const incidentsQuery = useMemoFirebase(() => (activeTeam && db && isStaff) ? query(collection(db, 'teams', activeTeam.id, 'incidents'), orderBy('date', 'desc')) : null, [activeTeam?.id, db, isStaff]);
   const { data: incidents, isLoading } = useCollection<TeamIncident>(incidentsQuery);
+  const filteredIncidents = (incidents || []).filter(incident => `${incident.title} ${incident.date} ${incident.location}`.toLowerCase().includes(incidentFilter.toLowerCase()));
 
   const handleLogIncident = async () => {
-    if (!form.title || !form.date) return;
-    setIsProcessing(true);
-    await addIncident(form);
+    if (isProcessing) return;
+    setSaveError('');
+    await settleIncidentSubmission(() => addIncident(prepareIncidentSubmission(form,{requestId:incidentRequestId,eventId:incidentEventId,eventKind:'team'}),attachment), {
+      busy:setIsProcessing,error:setSaveError,success:() => {
     setIsLogOpen(false);
-    setIsProcessing(false);
     setForm({
       title: '',
       date: format(new Date(), 'yyyy-MM-dd'),
@@ -2861,77 +2871,18 @@ function SafetyHub() {
       weatherConditions: 'Clear/Indoor'
     });
     toast({ title: "Incident Logged", description: "Strategic safety report archived." });
+
+        setIncidentRequestId(crypto.randomUUID());setAttachment(undefined);
+      },
+    });
   };
 
 
-  const exportLedger = useCallback(() => {
-    if (!incidents || incidents.length === 0) return;
-    
-    generateBrandedPDF({
-      title: "SQUAD SAFETY LEDGER",
-      subtitle: "OFFICIAL INSTITUTIONAL RISK LOG",
-      filename: `SAFETY_LEDGER_${activeTeam?.name.replace(/\s+/g, '_')}`
-    }, (doc, startY) => {
-      const pageWidth = doc.internal.pageSize.getWidth();
-      
-      // --- Document Metadata ---
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text(`Operational Summary: ${activeTeam?.name || 'Authorized Squad'}`, 20, startY);
-      
-      doc.setFontSize(9);
-      doc.setTextColor(150, 150, 150);
-      doc.text(`GENERATE DATE: ${new Date().toLocaleDateString()}`, 20, startY + 7);
-      doc.text(`LOG ENTRIES: ${incidents.length}`, pageWidth - 20, startY + 7, { align: 'right' });
-      
-      doc.setDrawColor(230, 230, 230);
-      doc.line(20, startY + 12, pageWidth - 20, startY + 12);
-
-      // --- Table Header ---
-      doc.setFillColor(245, 245, 245);
-      doc.rect(20, startY + 20, pageWidth - 40, 10, 'F');
-      doc.setTextColor(100, 100, 100);
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "bold");
-      doc.text("DATE", 25, startY + 26.5);
-      doc.text("INCIDENT TITLE", 50, startY + 26.5);
-      doc.text("LOCATION", 120, startY + 26.5);
-      doc.text("SEVERITY", pageWidth - 25, startY + 26.5, { align: 'right' });
-
-      // --- Table Content ---
-      let y = startY + 38;
-      doc.setTextColor(0, 0, 0);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-
-      incidents.forEach((inc) => {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
-        }
-        
-        doc.setFont("helvetica", "bold");
-        doc.text(inc.date, 25, y);
-        doc.text(inc.title.toUpperCase(), 50, y);
-        doc.setFont("helvetica", "normal");
-        doc.text(inc.location || 'TBD', 120, y);
-        
-        const sev = (inc.severity || 'minor').toUpperCase();
-        doc.text(sev, pageWidth - 25, y, { align: 'right' });
-        
-        // Divider
-        doc.setDrawColor(245, 245, 245);
-        doc.line(25, y + 4, pageWidth - 25, y + 4);
-        
-        y += 12;
-      });
-
-      return y;
-    });
-    
-    toast({ title: "Strategic Ledger Exported", description: "Professional PDF generated." });
-  }, [incidents, activeTeam]);
+  const exportLedger = async (format: 'pdf' | 'csv' = 'pdf') => {
+    if (!activeTeam || !firebaseUser || !filteredIncidents.length) return;
+    try { await exportCurrentIncidents(activeTeam.id, await firebaseUser.getIdToken(), format, filteredIncidents.map(incident=>incident.id)); }
+    catch (error) { setSaveError(error instanceof Error ? error.message : 'Export failed.'); }
+  };
 
   if (isLoading) return <div className="py-20 text-center animate-pulse"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>;
 
@@ -2964,9 +2915,10 @@ function SafetyHub() {
           <h3 className="text-xl font-black uppercase tracking-tight text-foreground">Incident Ledger</h3>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          <Button variant="outline" className="flex-1 sm:flex-none rounded-xl h-11 border-2 font-black uppercase text-[10px] text-foreground" onClick={exportLedger} disabled={!incidents?.length}>
+          <Button variant="outline" className="flex-1 sm:flex-none rounded-xl h-11 border-2 font-black uppercase text-[10px] text-foreground" onClick={() => void exportLedger()} disabled={!filteredIncidents.length}>
             <Download className="h-4 w-4 mr-2" /> Export Ledger
           </Button>
+          <Button variant="outline" onClick={() => void exportLedger('csv')} disabled={!filteredIncidents.length}>Export CSV</Button>
           <Button className="flex-1 sm:flex-none rounded-xl h-11 px-6 font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={() => { setIsLogOpen(true); setForm({
             title: '', date: format(new Date(), 'yyyy-MM-dd'), time: format(new Date(), 'HH:mm'), location: '', description: '', emergencyServicesCalled: false, severity: 'minor', witnesses: '', witnessesList: [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }], involvedPeople: '', involvedPersonnel: [{ name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }, { name: '', phone: '', email: '' }], treatmentProvided: '', followUpRequired: false, actionsTaken: '', reportedTo: '', equipmentInvolved: '', weatherConditions: 'Clear/Indoor'
           }); }}>
@@ -2975,6 +2927,8 @@ function SafetyHub() {
         </div>
       </div>
 
+      <Input aria-label="Filter incidents" placeholder="Filter incidents by title, date or location" value={incidentFilter} onChange={event=>setIncidentFilter(event.target.value)} />
+      {saveError && <p role="alert" className="text-destructive">{saveError}</p>}
       <Card className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -2987,7 +2941,7 @@ function SafetyHub() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {incidents?.map((inc) => (
+              {filteredIncidents.map((inc) => (
                 <tr 
                   key={inc.id} 
                   className="hover:bg-primary/5 transition-colors group cursor-pointer"
@@ -3024,6 +2978,7 @@ function SafetyHub() {
       <Dialog open={isLogOpen} onOpenChange={setIsLogOpen}>
         <DialogContent className="rounded-[3.5rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Incident Reporting Protocol</DialogTitle>
+          {saveError && <p role="alert" className="text-destructive">{saveError}</p>}
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
@@ -3038,6 +2993,8 @@ function SafetyHub() {
 
             <div className="space-y-6">
               <div className="space-y-2">
+                <Label htmlFor="incident-event">Incident event</Label><select id="incident-event" aria-label="Incident event" className="w-full min-w-0 rounded-xl border p-3" value={incidentEventId} onChange={event=>setIncidentEventId(event.target.value)}><option value="">Select team event</option>{(incidentEvents || []).map(event=><option key={event.id} value={event.id}>{event.title}</option>)}</select>
+                <Label htmlFor="incident-attachment">Supporting file (optional, PDF or raster image, 10 MiB)</Label><Input id="incident-attachment" aria-label="Supporting incident file" type="file" accept="application/pdf,image/png,image/jpeg,image/gif,image/webp" onChange={event=>setAttachment(event.target.files?.[0])} />
                 <Label className="text-[10px] font-black uppercase ml-1">Incident Headline</Label>
                 <Input placeholder="e.g. Field Collision, Heat Exhaustion..." value={form.title ?? ''} onChange={e => setForm({...form, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold" />
               </div>

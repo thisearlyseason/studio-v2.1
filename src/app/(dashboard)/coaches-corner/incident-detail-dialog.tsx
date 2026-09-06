@@ -1,6 +1,8 @@
 "use client";
 
 import React from 'react';
+import {exportCurrentIncidents, downloadIncidentAttachment, incidentRequest} from '@/lib/incident-client';
+import {toast} from '@/hooks/use-toast';
 import { useTeam, TeamIncident } from '@/components/providers/team-provider';
 import { Dialog, DialogContent, DialogTitle, DialogHeader, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -12,123 +14,13 @@ import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 
 export function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incident: TeamIncident | null, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
-  const { activeTeam } = useTeam();
+  const { firebaseUser } = useTeam();
+  const [deletedAttachmentId, setDeletedAttachmentId] = React.useState('');
   if (!incident) return null;
 
-  const handleDownloadPDF = () => {
-    generateBrandedPDF({
-      title: "SQUAD SAFETY REPORT",
-      subtitle: "INSTITUTIONAL ARCHIVE RECORD",
-      filename: `INCIDENT_REPORT_${incident.date}_${incident.title.replace(/\s+/g, '_')}`
-    }, (doc, startY) => {
-      const pageWidth = doc.internal.pageSize.getWidth();
-      
-      // Severity Label
-      const severity = incident.severity || 'routine';
-      const sevColors: Record<string, [number, number, number]> = {
-        'critical': [220, 38, 38],
-        'severe': [234, 88, 12],
-        'moderate': [202, 138, 4],
-        'minor': [22, 163, 74],
-        'routine': [100, 100, 100]
-      };
-      const [r, g, b] = sevColors[severity.toLowerCase()] || [100, 100, 100];
-      
-      doc.setFillColor(r, g, b);
-      doc.roundedRect(pageWidth - 60, startY - 25, 40, 8, 1, 1, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8);
-      doc.text(severity.toUpperCase(), pageWidth - 40, startY - 20, { align: 'center' });
-
-      // --- Content Section: Case Summary ---
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
-      doc.text("CASE SUMMARY: " + incident.title.toUpperCase(), 20, startY);
-      
-      doc.setDrawColor(230, 230, 230);
-      doc.line(20, startY + 3, pageWidth - 20, startY + 3);
-      
-      // --- Metadata Grid ---
-      doc.setFontSize(9);
-      doc.setTextColor(100, 100, 100);
-      doc.text("REPORT DATE", 20, startY + 13);
-      doc.text("INCIDENT DATE", 75, startY + 13);
-      doc.text("LOCATION", 130, startY + 13);
-      
-      doc.setTextColor(0, 0, 0);
-      doc.setFont('helvetica', 'bold');
-      doc.text(new Date().toLocaleDateString(), 20, startY + 18);
-      doc.text(`${incident.date} ${incident.time || ''}`, 75, startY + 18);
-      doc.text(incident.location || 'TBD', 130, startY + 18);
-
-      // --- Technical Specs ---
-      doc.setFontSize(8);
-      doc.setTextColor(150, 150, 150);
-      doc.text("ENVIRONMENT", 20, startY + 25);
-      doc.text("APPARATUS / EQUIPMENT", 75, startY + 25);
-      doc.text("REPORTED TO", 130, startY + 25);
-      
-      doc.setTextColor(0, 0, 0);
-      doc.setFont('helvetica', 'normal');
-      doc.text(incident.weatherConditions || 'Recorded Environment', 20, startY + 29);
-      doc.text(incident.equipmentInvolved || 'N/A', 75, startY + 29);
-      doc.text(incident.reportedTo || 'Staff Registry', 130, startY + 29);
-
-      // --- Primary Narrative ---
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.text("FACTUAL NARRATIVE", 20, startY + 40);
-      
-      doc.setFont('helvetica', 'normal');
-      const descLines = doc.splitTextToSize(incident.description, pageWidth - 40);
-      doc.text(descLines, 20, startY + 48);
-      
-      let currentY = startY + 48 + (descLines.length * 6);
-      
-      // Involved Personnel
-      if (incident.involvedPeople) {
-        currentY += 10;
-        doc.setFont('helvetica', 'bold');
-        doc.text("INVOLVED PERSONNEL", 20, currentY);
-        currentY += 8;
-        doc.setFont('helvetica', 'normal');
-        doc.text(incident.involvedPeople, 20, currentY);
-      }
-      
-      // Immediate Treatment
-      if (incident.treatmentProvided) {
-        currentY += 15;
-        doc.setFont('helvetica', 'bold');
-        doc.text("TREATMENT & IMMEDIATE PROTOCOL", 20, currentY);
-        currentY += 8;
-        doc.setFont('helvetica', 'normal');
-        const treatmentLines = doc.splitTextToSize(incident.treatmentProvided, pageWidth - 40);
-        doc.text(treatmentLines, 20, currentY);
-        currentY += (treatmentLines.length * 6);
-      }
-      
-      // Witnesses
-      currentY += 15;
-      doc.setFont('helvetica', 'bold');
-      doc.text("WITNESSES", 20, currentY);
-      currentY += 8;
-      doc.setFont('helvetica', 'normal');
-      doc.text(incident.witnesses || 'None recorded', 20, currentY);
-      
-      // Tactical Actions
-      currentY += 15;
-      doc.setFont('helvetica', 'bold');
-      doc.text("FOLLOW-UP ACTIONS TAKEN", 20, currentY);
-      currentY += 8;
-      doc.setFont('helvetica', 'normal');
-      const actionLines = doc.splitTextToSize(incident.actionsTaken || 'Standard safety protocols applied.', pageWidth - 40);
-      doc.text(actionLines, 20, currentY);
-      currentY += (actionLines.length * 6);
-
-      return currentY + 20;
-    });
+  const handleDownloadPDF = async () => {
+    try { await exportCurrentIncidents(incident.teamId, await firebaseUser.getIdToken(), 'pdf', [incident.id]); }
+    catch (error) { toast({title:'Incident export failed',description:error instanceof Error ? error.message : 'Unable to export.',variant:'destructive'}); }
   };
 
   return (
@@ -187,7 +79,7 @@ export function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incid
               <div className="space-y-3">
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Treatment Records</h4>
                 <div className="bg-primary/5 p-6 rounded-2xl border-2 border-primary/10 shadow-inner">
-                  <p className="text-sm font-bold leading-relaxed text-foreground/80">{incident.treatmentProvided || 'Standard site protocols followed.'}</p>
+                  <p className="text-sm font-bold leading-relaxed text-foreground/80">{incident.treatmentProvided || 'Not recorded'}</p>
                 </div>
               </div>
             </div>
@@ -215,6 +107,10 @@ export function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incid
             </div>
           </Card>
 
+          {incident.attachment && !incident.attachmentDeletedAt && deletedAttachmentId !== incident.id && <div className="flex flex-col gap-2">
+            <Button variant="outline" onClick={async()=>{try{await downloadIncidentAttachment(incident.teamId,incident.id,await firebaseUser.getIdToken(),incident.attachment!.name);}catch(error){toast({title:'Attachment download failed',description:error instanceof Error?error.message:'Unavailable',variant:'destructive'});}}}>Download supporting file</Button>
+            <Button variant="outline" onClick={async()=>{try{await incidentRequest(incident.teamId,await firebaseUser.getIdToken(),'&incidentId='+encodeURIComponent(incident.id)+'&download=attachment',{method:'DELETE'});setDeletedAttachmentId(incident.id);}catch(error){toast({title:'Attachment deletion failed',description:error instanceof Error?error.message:'Unavailable',variant:'destructive'});}}}>Delete supporting file</Button>
+          </div>}
           <DialogFooter className="pt-4 flex flex-col sm:flex-row gap-2">
             <Button variant="outline" className="flex-1 h-14 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all hover:bg-muted" onClick={() => onOpenChange(false)}>
               Close

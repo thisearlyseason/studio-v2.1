@@ -35,6 +35,7 @@ import {createPracticeBrowserObserver, requirePracticeResponses, measurePractice
 import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs';
 import {createPollBrowserObserver,findPollCard} from './certification/local/poll-browser.mjs';
 import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUpload} from './certification/local/library-browser.mjs';
+import {createIncidentBrowserObserver,validateIncidentDownload} from './certification/local/incident-browser.mjs';
 import {createMediaBrowserObserver,generatedMp4Body,parseMediaBrowserEnvelope} from './certification/local/media-browser.mjs';
 import {beforeImageMatches} from './certification/local/document-restoration.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
@@ -7064,6 +7065,17 @@ async function runCertificationOperationsScenarios() {
         }
         return;
       }
+      if (scenarioId === 'safety-incident-create-read-export' && runBrowser) {
+        await runIncidentWorkflowAudit();
+        for(const [dimension,caseIds] of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId])) for(const caseId of caseIds) {
+          const requests=operationRequestEvidence(caseId);
+          recordObservedOperationNamedCase(scenarioId,dimension,caseId,`${caseId} completed with owned immutable incident evidence`,[new RegExp(`^Incident ${caseId}:`)],{
+            actor:[...new Set(requests.map(request=>request.actorAlias))].sort().join('+'),operation:'visible incident workflow or protected incident application request',requests,
+            reconciliation:'current staff/organization authority, exact immutable record, private attachment and parsed export content',timeBound:'15s browser, 20s HTTP and bounded local PDF parse',
+          });
+        }
+        return;
+      }
       if (scenarioId === 'files-library-crud-download' && runBrowser) {
         await runLibraryWorkflowAudit();
         for(const [dimension,caseIds]of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]))for(const caseId of caseIds){
@@ -9107,6 +9119,101 @@ async function runMediaWorkflowAudit() {
   check('media-wrong-player',await browserStep(adultSession,'qa-adult-player-a',['media-wrong-player'],`await page.goto(${JSON.stringify(athleteUrl)});await page.getByText(${JSON.stringify(teammate.data.name)},{exact:true}).first().waitFor({timeout:15000});await dismiss(page);await page.getByText(${JSON.stringify(teammate.data.name)},{exact:true}).first().click();const dialog=page.getByRole('dialog',{name:${JSON.stringify('Player Profile: '+teammate.data.name)},exact:true});await dialog.waitFor({timeout:15000});return await dialog.getByRole('region',{name:'My player media',exact:true}).count();`),0,'adult cannot see self-media controls for teammate');
   check('media-delete',(await request('media-delete','qa-coach-owner-a',privatePath,{method:'DELETE'})).status,200,'authorized delete accepted');check('media-delete',await exists(privatePath),false,'exact object removed');check('media-delete',(await request('media-delete','qa-coach-owner-a',privatePath)).status,404,'prior protected access no longer returns bytes');
   check('media-console',errors.length,0,'actual owner/adult browser observers have no console errors');check('media-network',failures.length,0,'actual owner/adult browser observers have no unexpected 5xx');
+}
+
+async function runIncidentWorkflowAudit() {
+  const team=FIXTURES.teams.find(item=>item.alias==='qa-team-a'),school=FIXTURES.teams.find(item=>item.alias==='qa-school-squad-1'),teamB=FIXTURES.teams.find(item=>item.alias==='qa-team-b');
+  const uid=alias=>FIXTURES.identities.find(item=>item.alias===alias).uid;
+  const title=`Safety ${certificationRunId}`,eventId=`incident_event_${certificationRunId}`,schoolTitle=`School Safety ${certificationRunId}`;
+  const directory=mkdtempSync(path.join(os.tmpdir(),'qa-incident-')),payloadPath=path.join(directory,'support.pdf'),temporary=[payloadPath];
+  const payload=Buffer.from('%PDF-1.4\nSynthetic private supporting file\n%%EOF\n');writeFileSync(payloadPath,payload);
+  const cleanFiles=()=>{for(const target of temporary)if(existsSync(target))unlinkSync(target);if(existsSync(directory))rmdirSync(directory);};
+  activeOperationResourceRegistry.register({id:'incident-temporary-files',kind:'obligation',async cleanup(){cleanFiles();return false;},async verify(){return !existsSync(directory);}});
+  const pdfPython=process.env.QA_PDF_PYTHON||'python3';
+  const parserProbe=spawnSync(pdfPython,['-c','import pypdf'],{encoding:'utf8',timeout:5000});
+  if(parserProbe.status!==0)throw Error('Incident PDF verification requires a local Python with pypdf (QA_PDF_PYTHON).');
+  const objects=new Set(),registerObject=target=>{if(!objects.has(target)){objects.add(target);registerDynamicStorageObject(target,'incident-object-'+objects.size,activeOperationResourceRegistry);}};
+  for(const target of [team,school]) {
+    const eventPath=`teams/${target.id}/events/${eventId}`;registerDynamicFirestoreRoot(eventPath,'incident-event-'+target.alias);
+    await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(eventPath).set({title:`Safety Event ${target.alias}`,date:'2026-09-06',startTime:'12:00',endTime:'13:00',location:'Synthetic Field',teamId:target.id,eventType:'practice',fixtureRunId:certificationRunId,scenarioId:activeCertificationScenario}));
+    await registerScheduleDiscovery({registry:activeOperationResourceRegistry,scopeId:'incident-docs-'+target.alias,snapshot:()=>withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`teams/${target.id}/incidents`).listDocuments()).map(ref=>ref.path)),registerRoot:documentPath=>registerDynamicFirestoreRoot(documentPath,'incident-owned-'+documentPath.split('/').at(-1))});
+    const baseline=await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.getFiles({prefix:`teams/${target.id}/incidents/`}))[0].map(file=>file.name));
+    activeOperationResourceRegistry.register({id:'incident-object-discovery-'+target.alias,kind:'obligation',async cleanup(){const paths=await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.getFiles({prefix:`teams/${target.id}/incidents/`}))[0].map(file=>file.name));for(const objectPath of paths)if(!baseline.includes(objectPath))registerObject(objectPath);return false;},async verify(){return true;}});
+  }
+  const check=(caseId,actual,want,detail)=>expectEqual(actual,want,`Incident ${caseId}: ${detail}`),tokens=new Map();
+  const request=async(caseId,actor,{method='GET',id,body,extra='',target=team}={})=>{
+    if(actor!=='qa-public-submitter'&&!tokens.has(actor))tokens.set(actor,(await signIn(actor)).body.idToken);
+    return captureOperationRequests(caseId,actor,()=>apiJsonResult('/api/teams/incidents?teamId='+target.id+(id?'&incidentId='+id:'')+extra,tokens.get(actor),{method,...(body?{body:JSON.stringify(body)}:{})}));
+  };
+  const base={requestId:`incident_${certificationRunId}`,title,date:'2026-09-06',time:'12:30',location:'Synthetic Field',description:'Synthetic facts',eventId,eventKind:'team',involvedPeople:'Synthetic Player',actionsTaken:'Synthetic observation',emergencyServicesCalled:false};
+  const errors=[],failures=[],bounds=[];
+  const step=async(session,actor,cases,body)=>{
+    const result=JSON.parse(cli(session,['run-code',`async page=>{
+      const observer=(${createIncidentBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)}}),dismiss=${dismissFilmTeamAlert.toString()},measure=${measurePracticeBounds.toString()};
+      observer.start(${JSON.stringify(cases)});let value;try{value=await(async()=>{${body}})();}finally{var observation=observer.finish();}return{value,...observation};
+    }`]));
+    errors.push(...result.consoleErrors);failures.push(...result.failedResponses);
+    for(const caseId of [...cases,'incident-console','incident-network'])await captureBrowserOperationRequests(caseId,actor,result.observedResponses,caseId);
+    return result.value;
+  };
+  const go=`await page.goto(${JSON.stringify(BASE_URL+'/coaches-corner')});await page.getByRole('tab',{name:'Safety Hub',exact:true}).waitFor({timeout:15000});await dismiss(page);await page.getByRole('tab',{name:'Safety Hub',exact:true}).click();await page.getByRole('heading',{name:'Incident Ledger',exact:true}).waitFor({timeout:15000});`;
+  const row=`page.getByRole('row').filter({has:page.getByText(${JSON.stringify(title)},{exact:true})})`;
+  try {
+    const owner=await browserLogin('qa-coach-owner-a','/dashboard','incident-owner'),assistant=await browserLogin('qa-team-assistant','/dashboard','incident-assistant');
+    browserSelectScheduleTeam(owner,team.id);browserSelectScheduleTeam(assistant,team.id);
+    const narrative='Synthetic factual narrative '.repeat(300)+'FINAL-SAFETY-FACT';
+    const status=await step(owner,'qa-coach-owner-a',['incident-create','incident-attachment'],`${go}
+      await page.getByRole('button',{name:'Log Incident',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.waitFor();
+      await dialog.getByLabel('Incident event',{exact:true}).selectOption(${JSON.stringify(eventId)});
+      await dialog.getByPlaceholder('e.g. Field Collision, Heat Exhaustion...').fill(${JSON.stringify(title)});
+      await dialog.locator('input[type=time]').fill('12:30');await dialog.getByPlaceholder('Search venue or enter address…').fill('Synthetic Field');
+      await dialog.getByPlaceholder('What occurred? Be descriptive and objective...').fill(${JSON.stringify(narrative)});
+      await dialog.getByPlaceholder('Name...',{exact:true}).nth(0).fill('Synthetic Player');await dialog.getByPlaceholder('Phone...',{exact:true}).nth(0).fill('555-0100');await dialog.getByPlaceholder('Email...',{exact:true}).nth(0).fill('player@example.test');
+      await dialog.getByPlaceholder('Name...',{exact:true}).nth(3).fill('Synthetic Witness');await dialog.getByPlaceholder('Coach notifications, return-to-play status...').fill('Synthetic observation');
+      await dialog.getByLabel('Supporting incident file',{exact:true}).setInputFiles(${JSON.stringify(payloadPath)});
+      const pending=page.waitForResponse(response=>response.url().includes('/api/teams/incidents?')&&response.request().method()==='POST',{timeout:15000});await dialog.getByRole('button',{name:'Commit Report to Ledger',exact:true}).click();const response=await pending;if(response.status()!==201)throw Error('Incident create status '+response.status());await dialog.waitFor({state:'hidden',timeout:15000});await ${row}.waitFor({timeout:15000});return response.status();`);
+    check('incident-create',status,201,'visible staff create succeeds');
+    const listed=await request('incident-create','qa-coach-owner-a');check('incident-create',listed.status,200,'supported postcondition query');
+    const created=listed.body.incidents.filter(item=>item.title===title);check('incident-create',created.length,1,'one exact newly created report');const incident=created[0],id=incident.id;
+    registerObject(incident.attachment.storagePath);
+    check('incident-create',incident.reportedBy,uid('qa-coach-owner-a'),'server reporter actor');check('incident-create',incident.teamId,team.id,'server team identity');check('incident-create',incident.eventId,eventId,'stable selected event identity');check('incident-create',incident.description===narrative,true,'complete original narrative persisted');
+    check('incident-attachment',incident.attachment.storagePath,`teams/${team.id}/incidents/${id}/attachment`,'server-selected private exact path');
+    check('incident-read',await step(assistant,'qa-team-assistant',['incident-read'],`${go}await ${row}.waitFor({timeout:15000});await page.reload();await dismiss(page);await page.getByRole('tab',{name:'Safety Hub',exact:true}).click();await ${row}.waitFor({timeout:15000});return true;`),true,'second authorized staff sees same record after reload');
+    const staffRead=await request('incident-read','qa-team-assistant',{id});check('incident-read',staffRead.status,200,'staff exact read');check('incident-read',staffRead.body.incident.description===narrative,true,'reloaded exact original facts');
+    for(const status of ['monitoring','follow_up_required'])check('incident-edit-delete',(await request('incident-edit-delete','qa-team-assistant',{id,method:'PATCH',body:{status}})).status,200,'supported audited transition');
+    for(const body of [{description:'rewritten'},{status:'resolved',auditHistory:[]},{createdAt:'rewritten'}])check('incident-edit-delete',(await request('incident-edit-delete','qa-coach-owner-a',{id,method:'PATCH',body})).status,400,'client cannot replace original or audit fields');
+    check('incident-edit-delete',(await request('incident-edit-delete','qa-coach-owner-a',{id,method:'DELETE'})).status,403,'original report deletion denied');
+    const audited=(await request('incident-edit-delete','qa-team-assistant',{id})).body.incident;
+    check('incident-edit-delete',JSON.stringify(audited.auditHistory[0])===JSON.stringify(incident.auditHistory[0])&&audited.auditHistory.length===3&&audited.description===narrative,true,'original facts and prior audit prefix retained');
+    for(const field of ['requestId','title','date','time','location','description','eventId','eventKind','involvedPeople','actionsTaken','emergencyServicesCalled']){const body={...base};delete body[field];check('incident-required',(await request('incident-required','qa-coach-owner-a',{method:'POST',body})).status,400,`${field} omission creates nothing`);}
+    check('incident-required',(await request('incident-required','qa-coach-owner-a')).body.incidents.filter(item=>item.title===title).length,1,'required omissions create no additional report');
+    for(const [caseId,actor] of [['incident-participant','qa-team-member'],['incident-participant','qa-removed-member'],['incident-outsider','qa-fresh-coach'],['incident-team-b','qa-coach-owner-b']])for(const extra of ['',`&incidentId=${id}`,`&incidentId=${id}&export=pdf`,`&incidentId=${id}&download=attachment`])check(caseId,(await request(caseId,actor,{extra})).status,403,'non-staff cannot enumerate read export or download');
+    for(const [caseId,actor] of [['incident-participant','qa-team-member'],['incident-outsider','qa-fresh-coach'],['incident-team-b','qa-coach-owner-b']])check(caseId,(await request(caseId,actor,{method:'POST',body:base})).status,403,'forbidden caller cannot create');
+    check('incident-outsider',(await request('incident-outsider','qa-public-submitter',{id})).status,401,'anonymous private read denied');
+    for(const body of [{...base,supportingDocumentUrl:'https://example.test/private'},{...base,attachment:{storagePath:`teams/${teamB.id}/incidents/foreign/attachment`}}])check('incident-attachment',(await request('incident-attachment','qa-coach-owner-a',{method:'POST',body})).status,400,'unsafe URL and wrong-team object substitution denied');
+    const ownedSchool=await request('incident-read','qa-school-owner',{method:'POST',target:school,body:{...base,title:schoolTitle}});check('incident-read',ownedSchool.status,201,'organization owner creates in own existing squad scope');
+    const schoolSession=await browserLogin('qa-school-owner','/club','incident-organization');
+    check('incident-read',await step(schoolSession,'qa-school-owner',['incident-read'],`await page.goto(${JSON.stringify(BASE_URL+'/club')});await page.getByRole('tab',{name:'Safety',exact:true}).waitFor({timeout:15000});await dismiss(page);await page.getByRole('tab',{name:'Safety',exact:true}).click();await page.getByText(${JSON.stringify(schoolTitle)},{exact:true}).waitFor({timeout:15000});await page.reload();await dismiss(page);await page.getByRole('tab',{name:'Safety',exact:true}).click();await page.getByText(${JSON.stringify(schoolTitle)},{exact:true}).waitFor({timeout:15000});return true;`),true,'OA reads persisted own-squad report in institutional safety audit');
+    const download=async(caseId,button,extension)=>{
+      const target=path.join(directory,caseId+'-'+extension+'.'+extension);temporary.push(target);
+      const result=await step(owner,'qa-coach-owner-a',[caseId],`${go}await page.getByLabel('Filter incidents',{exact:true}).fill(${JSON.stringify(title)});${button==='Download Institutional PDF'||button==='Download supporting file'?`await ${row}.click();await page.getByRole('dialog').waitFor();`:''}const pending=page.waitForEvent('download',{timeout:15000});await page.getByRole('button',{name:${JSON.stringify(button)},exact:true}).click();const file=await pending;await file.saveAs(${JSON.stringify(target)});return{filename:file.suggestedFilename()};`);
+      const bytes=readFileSync(target);check(caseId,bytes.length>0&&bytes.length<=2*1024*1024,true,'real bounded downloaded bytes');
+      if(button==='Download supporting file'){check(caseId,createHash('sha256').update(bytes).digest('hex'),createHash('sha256').update(payload).digest('hex'),'exact supporting attachment bytes');return;}
+      let text;if(extension==='pdf'){const parsed=spawnSync(pdfPython,['-c','import sys,io; from pypdf import PdfReader; print("\\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(sys.stdin.buffer.read())).pages))'],{input:bytes,encoding:'utf8',timeout:10000,maxBuffer:2*1024*1024});if(parsed.status!==0)throw Error('Incident PDF parser failed.');text=parsed.stdout;}else text=bytes.toString('utf8');
+      check(caseId,validateIncidentDownload({filename:result.filename,byteCount:bytes.length,text},{required:[id,team.id,uid('qa-coach-owner-a'),eventId,incident.createdAt,'Synthetic Player','Synthetic Witness','FINAL-SAFETY-FACT','status:monitoring','status:follow_up_required'],forbidden:[teamB.id,schoolTitle]}),true,'actual export includes complete original identity people event narrative and audit, without foreign markers');
+      writeFileSync(path.join(certificationArtifactDir,`incident-export-${extension}.json`),JSON.stringify({filename:result.filename,byteCount:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),completeSyntheticFields:true,foreignMarkersAbsent:true}));
+    };
+    await download('incident-export','Download Institutional PDF','pdf');await download('incident-export','Export CSV','csv');await download('incident-attachment','Download supporting file','pdf');
+    for(const [session,actor] of [[owner,'qa-coach-owner-a'],[assistant,'qa-team-assistant']]){
+      const measured=await step(session,actor,['incident-responsive'],`${go}const rows=[];for(const viewport of[{width:1440,height:900},{width:390,height:844}]){await page.setViewportSize(viewport);await page.getByLabel('Filter incidents',{exact:true}).fill(${JSON.stringify(title)});rows.push(await measure(page,{filter:page.getByLabel('Filter incidents',{exact:true}),export:page.getByRole('button',{name:'Export Ledger',exact:true}),csv:page.getByRole('button',{name:'Export CSV',exact:true})}));await ${row}.click();const detail=page.getByRole('dialog');await detail.waitFor();rows.push(await measure(page,{dialog:detail,export:detail.getByRole('button',{name:'Download Institutional PDF',exact:true})}));await page.screenshot({path:${JSON.stringify(path.join(certificationArtifactDir,'incident-'+actor))}+'-'+viewport.width+'.png',fullPage:false});await detail.getByRole('button',{name:'Close',exact:true}).last().click();await page.getByRole('button',{name:'Log Incident',exact:true}).click();const create=page.getByRole('dialog');await create.waitFor();rows.push(await measure(page,{dialog:create,event:create.getByLabel('Incident event',{exact:true}),attachment:create.getByLabel('Supporting incident file',{exact:true}),submit:create.getByRole('button',{name:'Commit Report to Ledger',exact:true})}));await create.getByRole('button',{name:'Close',exact:true}).click();}return rows;`);
+      check('incident-responsive',validatePracticeBounds(measured),true,`${actor} create/detail/filter/export fit both exact viewports`);bounds.push({actor,rows:measured});
+    }
+    writeFileSync(path.join(certificationArtifactDir,'incident-responsive-bounds.json'),JSON.stringify(bounds));
+    await step(owner,'qa-coach-owner-a',['incident-attachment'],`${go}await ${row}.click();const pending=page.waitForResponse(response=>response.url().includes('/api/teams/incidents?')&&response.request().method()==='DELETE',{timeout:15000});await page.getByRole('button',{name:'Delete supporting file',exact:true}).click();if((await pending).status()!==200)throw Error('Attachment delete failed');return true;`);
+    check('incident-attachment',(await request('incident-attachment','qa-team-assistant',{id,extra:'&download=attachment'})).status,404,'stale attachment URL revoked');
+    check('incident-attachment',await withEmulatorAuthAdmin(async(_auth,_db,bucket)=>(await bucket.file(incident.attachment.storagePath).exists())[0]),false,'exact attachment object deleted');
+    check('incident-console',errors.length,0,'all observed staff/OA browser windows have no console errors');check('incident-network',failures.length,0,'all observed staff/OA requests have no unexpected 5xx');
+  } finally {cleanFiles();}
 }
 
 async function runLibraryWorkflowAudit() {

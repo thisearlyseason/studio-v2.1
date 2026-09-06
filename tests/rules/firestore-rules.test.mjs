@@ -487,7 +487,28 @@ test('calendar feed documents are readable and writable only by trusted server c
   }));
 });
 
-test('incident originals are immutable while staff can record an audited status transition', async () => {
+test('incident service owns writes and current team authority revokes historical owner reads', async () => {
+  const staff = authenticatedDb('staff');
+  await assertFails(setDoc(doc(staff, 'teams/team-a/incidents/incomplete'), {
+    teamId: 'team-a', ownerUserId: 'owner', reportedBy: 'staff', createdAt: '2026-09-06T00:00:00.000Z',
+  }));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/team-a/incidents/audit-prefix'), {
+      teamId: 'team-a', ownerUserId: 'former-owner', status: 'monitoring',
+      auditHistory: [{action: 'status:monitoring', userId: 'staff', at: 'original'}],
+    });
+    await setDoc(doc(db, 'users/former-owner'), {role:'coach'});
+  });
+  await assertFails(setDoc(doc(staff, 'teams/team-a/incidents/audit-prefix'), {
+    status: 'follow_up_required', updatedBy:'staff', updatedAt:'now',
+    auditHistory: [{action:'forged',userId:'outsider',at:'rewritten'}, {action:'status:follow_up_required',userId:'staff',at:'now'}],
+  }, {merge:true}));
+  await assertFails(getDoc(doc(authenticatedDb('former-owner'), 'teams/team-a/incidents/audit-prefix')));
+  await assertSucceeds(getDoc(doc(staff, 'teams/team-a/incidents/audit-prefix')));
+});
+
+test('incident originals and status transitions cannot bypass the incident service', async () => {
   const staffDb = authenticatedDb('staff');
   const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
   const incidentRef = doc(staffDb, 'teams', 'team-a', 'incidents', 'incident-a');
@@ -501,7 +522,7 @@ test('incident originals are immutable while staff can record an audited status 
 
   await assertFails(deleteDoc(doc(superAdminDb, 'teams', 'team-a', 'incidents', 'incident-a')));
 
-  await assertSucceeds(setDoc(incidentRef, {
+  await assertFails(setDoc(incidentRef, {
     status: 'resolved',
     resolvedAt: '2026-09-05T01:00:00.000Z',
     resolvedBy: 'staff',

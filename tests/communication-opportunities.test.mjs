@@ -73,7 +73,7 @@ test('institution hub stats resolve authoritative squads and stay team-scoped', 
   assert.match(hub, /if \(!allocatedMembershipIds\.has\(team\.id\)\) return false/);
   assert.match(hub, /for \(const team of organizationSquadCandidates\)/);
   assert.match(hub, /Promise\.allSettled/);
-  assert.match(hub, /organizationTeamIds\.map\(teamId => getDocs\(collection\(db, 'teams', teamId, 'incidents'\)\)\)/);
+  assert.match(hub, /fetch\('\/api\/teams\/incidents\?teamId='/);
   assert.match(hub, /Safety Oversights[\s\S]*clubIncidents\.length/);
   assert.doesNotMatch(hub, /collectionGroup\(db, 'incidents'\)/);
   assert.match(hub, /isHubDataLoading \? <Loader2/);
