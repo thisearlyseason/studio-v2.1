@@ -7199,6 +7199,8 @@ async function runPracticePlanWorkflowAudit() {
       await page.goto(${JSON.stringify(`${BASE_URL}/practice`)});
       await page.getByRole('heading', { name: 'Practice Hub', exact: true }).waitFor({ timeout: 15000 });
       const openPlanner = async () => {
+        await page.goto(${JSON.stringify(`${BASE_URL}/practice`)});
+        await page.getByRole('heading', { name: 'Practice Hub', exact: true }).waitFor({ timeout: 15000 });
         await page.getByRole('button', { name: 'Design Template', exact: true }).click();
         const current = page.getByRole('dialog', { name: 'Develop Protocol' });
         await current.waitFor({ state: 'visible', timeout: 10000 });
