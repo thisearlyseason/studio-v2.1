@@ -8311,6 +8311,11 @@ async function runCalendarFeedLifecycleAudit() {
   const userFeedToken = await issue({ caseId: 'ics-user', actorAlias: 'qa-parent-a', token: parentToken, body: { type: 'user', action: 'create' } });
   const teamFeedToken = await issue({ caseId: 'ics-team', actorAlias: 'qa-adult-player-a', token: adultToken, body: { type: 'team', teamId: teamA.id, action: 'create' } });
   const multiFeedToken = await issue({ caseId: 'ics-multi', actorAlias: 'qa-multi-org', token: multiToken, body: { type: 'multi', teamIds: [teamA.id], action: 'create' } });
+  // Feed mutation is intentionally owner-scoped.  The adult's Team feed
+  // proves the AP scope, but it must not be used as the prior credential for
+  // an owner rotation because the issuer only mutates the authenticated
+  // user's feed records.
+  const ownerRotationToken = await issue({ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: ownerToken, body: { type: 'team', teamId: teamA.id, action: 'create' } });
   const userFeed = await fetchFeed({ caseId: 'ics-user', actorAlias: 'qa-parent-a', token: userFeedToken });
   const teamFeed = await fetchFeed({ caseId: 'ics-team', actorAlias: 'qa-adult-player-a', token: teamFeedToken });
   const multiFeed = await fetchFeed({ caseId: 'ics-multi', actorAlias: 'qa-multi-org', token: multiFeedToken });
@@ -8342,7 +8347,7 @@ async function runCalendarFeedLifecycleAudit() {
     apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'rotate' }) }));
   const rotatedToken = new URL(String(rotated.body?.url || '')).searchParams.get('token') || '';
   expectEqual(rotated.status, 200, 'Calendar feed rotation response');
-  const priorAfterRotate = await fetchFeed({ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: teamFeedToken });
+  const priorAfterRotate = await fetchFeed({ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: ownerRotationToken });
   const freshAfterRotate = await fetchFeed({ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: rotatedToken });
   expectEqual(`${priorAfterRotate.status},${freshAfterRotate.status}`, '404,200', 'Calendar rotation invalidates prior token and serves replacement');
   const revoked = await captureOperationRequests('ics-inactive-token', 'qa-coach-owner-a', () =>

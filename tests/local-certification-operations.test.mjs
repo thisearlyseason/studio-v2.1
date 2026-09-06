@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
@@ -131,6 +132,12 @@ test('operations evidence rejects synthesized request records and requires the e
     })]),
     /does not match the case actor/i,
   );
+});
+
+test('ICS rotation audit issues and rotates the same owner-scoped feed token', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(audit, /const ownerRotationToken = await issue\(\{ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: ownerToken,/);
+  assert.match(audit, /token: ownerRotationToken \}\);/);
 });
 
 test('fully observed operation dimensions describe completion instead of missing cases', async () => {
