@@ -9,16 +9,16 @@ const caseId = (scenarioId, dimension) => `operations-${scenarioId}-${dimension}
 export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
   'attendance-practice-event-member-attendance': Object.freeze({
     happyPath: ['att-staff-record'], negativePath: ['att-duplicate'],
-    permission: ['att-member-readonly', 'att-removed', 'att-tenant-b'], persistence: ['att-race'],
+    permission: ['att-member-readonly', 'att-removed', 'att-removed-read', 'att-tenant-b'], persistence: ['att-race'],
     console: ['att-console'], network: ['att-network'], responsive: ['att-responsive'],
   }),
   'events-event-crud-recurrence': Object.freeze({
-    happyPath: ['evt-crud', 'evt-series', 'evt-dst-spring', 'evt-dst-fall', 'evt-midnight'],
-    negativePath: ['evt-invalid', 'evt-conflict', 'evt-double'], permission: ['evt-member-deny', 'evt-assistant-own', 'evt-team-b-deny'],
+    happyPath: ['evt-crud', 'evt-series', 'evt-occurrence-edit-delete', 'evt-dst-spring', 'evt-dst-fall', 'evt-midnight'],
+    negativePath: ['evt-invalid', 'evt-conflict', 'evt-resource-conflict', 'evt-location-conflict', 'evt-double'], permission: ['evt-member-deny', 'evt-assistant-own', 'evt-team-b-deny'],
     persistence: ['evt-persistence'], console: ['evt-console'], network: ['evt-network'], responsive: ['evt-responsive'],
   }),
   'events-rsvp-attendance-details': Object.freeze({
-    happyPath: ['rsvp-self', 'rsvp-parent-child', 'rsvp-staff'], negativePath: ['rsvp-cancelled', 'rsvp-replay'],
+    happyPath: ['rsvp-self', 'rsvp-parent-child', 'rsvp-parent-team-c', 'rsvp-staff'], negativePath: ['rsvp-cancelled', 'rsvp-replay'],
     permission: ['rsvp-forged-uid', 'rsvp-removed', 'rsvp-tenant-b'], persistence: ['rsvp-race'],
     console: ['rsvp-console'], network: ['rsvp-network'], responsive: ['rsvp-responsive'],
   }),
@@ -29,11 +29,11 @@ export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
   }),
   'calendar-ics-create-fetch-revoke': Object.freeze({
     happyPath: ['ics-user', 'ics-team', 'ics-multi', 'ics-rfc'], negativePath: ['ics-invalid-type', 'ics-foreign-team', 'ics-too-many'],
-    permission: ['ics-invalid-token', 'ics-inactive-token', 'ics-membership-revoke'], persistence: ['ics-rotate'],
+    permission: ['ics-invalid-token', 'ics-unknown-token', 'ics-inactive-token', 'ics-membership-revoke'], persistence: ['ics-rotate'],
     console: ['ics-console', 'ics-secret'], network: ['ics-network'], responsive: ['ics-responsive-na'],
   }),
   'reminders-same-day-fcm-scheduler': Object.freeze({
-    happyPath: ['rem-eligible'], negativePath: ['rem-invalid-time', 'rem-no-token'],
+    happyPath: ['rem-eligible'], negativePath: ['rem-invalid-time', 'rem-past-time', 'rem-no-token'],
     permission: ['rem-pref-off', 'rem-removed', 'rem-sender'], persistence: ['rem-duplicate-run', 'rem-time-boundary', 'rem-retry'],
     console: ['rem-redaction'], network: ['rem-network'], responsive: ['rem-responsive-na'],
   }),
@@ -68,6 +68,39 @@ export function selectCaseOwnedOperationAssertions(assertions, requiredPatterns)
     for (const assertion of matches) if (!selected.includes(assertion)) selected.push(assertion);
   }
   return Object.freeze(selected);
+}
+
+// Named operation cases are evidence records, not labels applied after a
+// scenario-wide workflow.  Keep this validation in the batch module so both
+// the legacy audit bridge and result-manifest writer use the same contract.
+export function assertCaseOwnedOperationArtifacts(cases) {
+  if (!Array.isArray(cases)) throw new TypeError('Operation case artifacts must be an array.');
+  const assertionOwners = new Map();
+  for (const item of cases) {
+    if (!item || typeof item.caseId !== 'string' || !Array.isArray(item.assertions) || item.assertions.length === 0) {
+      throw new Error('Each operation case requires a case ID and at least one exact assertion.');
+    }
+    const execution = item.execution;
+    for (const field of ['actor', 'operation', 'reconciliation', 'observer', 'timeBound', 'cleanupReference']) {
+      if (typeof execution?.[field] !== 'string' || execution[field].trim() === '') {
+        throw new Error(`Operation case ${item.caseId} is missing ${field}.`);
+      }
+    }
+    if (!Array.isArray(execution.requests) || execution.requests.length === 0) {
+      throw new Error(`Operation case ${item.caseId} is missing requests.`);
+    }
+    for (const assertion of item.assertions) {
+      if (!assertion || typeof assertion.id !== 'string' || assertion.id.length === 0) {
+        throw new Error(`Operation case ${item.caseId} has an assertion without a stable ID.`);
+      }
+      const owner = assertionOwners.get(assertion.id);
+      if (owner && owner !== item.caseId) {
+        throw new Error(`Operation case ${item.caseId} reuses shared assertion ID ${assertion.id} from ${owner}.`);
+      }
+      assertionOwners.set(assertion.id, item.caseId);
+    }
+  }
+  return Object.freeze([...cases]);
 }
 
 function externalRequirementsFor(scenario) {

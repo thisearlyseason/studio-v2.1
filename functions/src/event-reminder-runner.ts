@@ -22,6 +22,8 @@ export type ReminderRunner = {
   markSent(entry: Required<Pick<ReminderLedgerEntry, 'teamId' | 'eventId' | 'userId' | 'successCount' | 'failureCount'>>): Promise<void>;
   markFailed(entry: Required<Pick<ReminderLedgerEntry, 'teamId' | 'eventId' | 'userId' | 'diagnostic'>>): Promise<void>;
   deliver(input: { entry: Pick<ReminderLedgerEntry, 'teamId' | 'eventId' | 'userId'>; event: ReminderEvent; targets: ReturnType<typeof selectReminderDeliveryTargets>; title: string; body: string }): Promise<{ successCount: number; failureCount: number }>;
+  /** Deliberately excludes device addresses, user IDs, and message bodies. */
+  diagnostic?(event: { type: 'sent' | 'failed'; teamId: string; eventId: string; targetCount: number; failureCount: number }): void;
 };
 
 /**
@@ -59,10 +61,12 @@ export async function runUpcomingEventReminderCore(runner: ReminderRunner): Prom
         });
         if (outcome.successCount < 1) throw new Error('No registered device accepted the reminder.');
         await runner.markSent({ ...entry, successCount: outcome.successCount, failureCount: outcome.failureCount });
+        runner.diagnostic?.({ type: 'sent', teamId: entry.teamId, eventId: entry.eventId, targetCount: outcome.successCount + outcome.failureCount, failureCount: outcome.failureCount });
         sentCount += 1;
       } catch (error) {
         const diagnostic = error instanceof Error ? error.message : 'Reminder delivery failed.';
         await runner.markFailed({ ...entry, diagnostic });
+        runner.diagnostic?.({ type: 'failed', teamId: entry.teamId, eventId: entry.eventId, targetCount: targets.fcmTokens.length + targets.webPushSubscriptions.length, failureCount: 1 });
         failedCount += 1;
       }
     }

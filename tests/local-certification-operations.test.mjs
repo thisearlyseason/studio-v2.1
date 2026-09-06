@@ -6,6 +6,7 @@ import {
   assertOperationsHandlerExactness,
   handlers,
   LOCAL_OPERATIONS_CASE_REQUIREMENTS,
+  assertCaseOwnedOperationArtifacts,
   selectCaseOwnedOperationAssertions,
 } from '../scripts/qa/certification/local/batches/operations.mjs';
 
@@ -66,4 +67,31 @@ test('operations evidence assigns an assertion to only its declared exact case',
     () => selectCaseOwnedOperationAssertions(assertions, [/missing schedule assertion/]),
     /Missing required operation assertion/,
   );
+});
+
+test('operations evidence rejects reused assertion IDs and incomplete named-case records', () => {
+  const complete = (caseId, assertionId) => ({
+    caseId,
+    assertions: [{ id: assertionId, label: `${caseId} exact assertion` }],
+    execution: {
+      actor: 'qa-coach-owner-a',
+      operation: 'POST /api/test',
+      requests: [{ method: 'POST', pathname: '/api/test', status: 200 }],
+      reconciliation: 'exact emulator record',
+      observer: 'authenticated API response and emulator read',
+      timeBound: '20s request deadline',
+      cleanupReference: `cleanup-${caseId}`,
+    },
+  });
+  assert.doesNotThrow(() => assertCaseOwnedOperationArtifacts([
+    complete('one', 'assertion-one'),
+    complete('two', 'assertion-two'),
+  ]));
+  assert.throws(() => assertCaseOwnedOperationArtifacts([
+    complete('one', 'shared-assertion'),
+    complete('two', 'shared-assertion'),
+  ]), /shared assertion ID/i);
+  const missingRequest = complete('three', 'assertion-three');
+  delete missingRequest.execution.requests;
+  assert.throws(() => assertCaseOwnedOperationArtifacts([missingRequest]), /requests/i);
 });

@@ -12,6 +12,7 @@ import {
   canClaimReminderDelivery,
   selectReminderDeliveryTargets,
 } from '../functions/src/reminder-delivery.ts';
+import { runUpcomingEventReminderCore } from '../functions/src/event-reminder-runner.ts';
 
 test('same-day reminder copy includes event type, friendly time, and location', () => {
   const event = {
@@ -95,6 +96,25 @@ test('reminder delivery claim is idempotent and allows failed or expired work to
   assert.equal(canClaimReminderDelivery({ status: 'processing', leaseExpiresAt: now - 1 }, now), true);
   assert.equal(canClaimReminderDelivery({ status: 'failed' }, now), true);
   assert.equal(canClaimReminderDelivery({}, now), true);
+});
+
+test('scheduler core emits redaction-safe runtime diagnostics for durable outcomes', async () => {
+  const diagnostics = [];
+  const result = await runUpcomingEventReminderCore({
+    now: new Date('2026-07-24T14:00:00.000Z'),
+    listEvents: async () => [{ teamId: 'team_a', eventId: 'event_a', event: { date: '2026-07-24', startTime: '10:30', eventType: 'game' } }],
+    getTeam: async () => ({ timeZone: 'America/Edmonton' }),
+    listMembers: async () => [{ userId: 'user_a', status: 'active' }],
+    getUser: async () => ({ role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, fcmTokens: ['private-token'] }),
+    claim: async () => true,
+    markSent: async () => {},
+    markFailed: async () => {},
+    deliver: async () => ({ successCount: 1, failureCount: 0 }),
+    diagnostic: event => diagnostics.push(event),
+  });
+  assert.deepEqual(result, { sentCount: 1, failedCount: 0, claimedCount: 1 });
+  assert.deepEqual(diagnostics, [{ type: 'sent', teamId: 'team_a', eventId: 'event_a', targetCount: 1, failureCount: 0 }]);
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private-token|user_a/);
 });
 
 test('notification controls are enforced by the UI, API, rules, and scheduler', () => {

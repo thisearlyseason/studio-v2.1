@@ -9,6 +9,7 @@ import {
 import { hasStaffRole } from '@/lib/staff-position';
 import { buildTeamRsvpAuditRecord } from '@/lib/team-rsvp-audit';
 import { canUpdateTeamRsvp } from '@/lib/team-rsvp-policy';
+import { awaitLocalCertificationRequestBarrier } from '@/lib/local-certification-request-barrier';
 
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no_response']);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/;
@@ -20,6 +21,7 @@ function isActiveMember(data: FirebaseFirestore.DocumentData | undefined): boole
 export async function POST(request: NextRequest) {
   const auth = await verifyFirebaseToken(request);
   if (auth instanceof NextResponse) return auth;
+  await awaitLocalCertificationRequestBarrier(request.headers);
 
   try {
     const { teamId, eventId, participantId, status } =

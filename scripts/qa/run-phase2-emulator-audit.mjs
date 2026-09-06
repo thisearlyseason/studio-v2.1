@@ -17,7 +17,11 @@ import {
 } from './certification/local/batches/identity.mjs';
 import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER, tenantCaseAssociationFor } from './certification/local/batches/tenants.mjs';
 import { OPERATIONS_SCENARIO_IDS } from './certification/local/selection.mjs';
-import { LOCAL_OPERATIONS_CASE_REQUIREMENTS, selectCaseOwnedOperationAssertions } from './certification/local/batches/operations.mjs';
+import {
+  LOCAL_OPERATIONS_CASE_REQUIREMENTS,
+  assertCaseOwnedOperationArtifacts,
+  selectCaseOwnedOperationAssertions,
+} from './certification/local/batches/operations.mjs';
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
@@ -129,6 +133,8 @@ let cleanupStarted = false;
 let activeCertificationScenario = null;
 let activeCertificationAssertions = [];
 let activeCertificationCaseIds = new Set();
+let activeOperationAssertionOwners = new Map();
+let certificationAssertionSequence = 0;
 let activeTenantExecution = null;
 let activeTenantExecutionGroup = null;
 let rsvpAttendanceWorkflowInvocation = 0;
@@ -686,6 +692,16 @@ function recordCertificationCase(
     assertions,
     capturedAt: startedAt,
   };
+  if (OPERATIONS_SCENARIO_IDS.includes(scenarioId)) {
+    assertCaseOwnedOperationArtifacts([{ caseId, assertions, execution }]);
+    for (const assertion of assertions) {
+      const owner = activeOperationAssertionOwners.get(assertion.id);
+      if (owner && owner !== caseId) {
+        throw new Error(`Operation case ${caseId} reuses shared assertion ID ${assertion.id} from ${owner}.`);
+      }
+      activeOperationAssertionOwners.set(assertion.id, caseId);
+    }
+  }
   writeFileSync(path.join(artifactDirectory, relativeArtifact), `${JSON.stringify(sanitizeCertificationArtifact(artifact), null, 2)}\n`, { mode: 0o600 });
   emitCertificationEvent({
     type: 'case', scenarioId, caseId, dimension,
@@ -814,6 +830,7 @@ const env = buildIsolatedAuditEnvironment(process.env, {
   GOOGLE_CLOUD_PROJECT: PROJECT_ID,
   NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG: firebaseConfig,
   NEXT_PUBLIC_USE_FIREBASE_EMULATORS: 'true',
+  AUDIT_LOCAL_REQUEST_BARRIER: '1',
 });
 
 const identityByAlias = new Map(FIXTURES.identities.map(identity => [identity.alias, identity]));
@@ -1214,6 +1231,64 @@ async function apiJsonResult(pathname, token, init = {}) {
   try { body = await response.json(); } catch { /* status remains authoritative */ }
   recordTenantRequest({ pathname, method: init.method || 'GET', status: response.status, token, body: init.body, startedAt });
   return { status: response.status, body, headers: { cacheControl: response.headers.get('cache-control') || '' } };
+}
+
+// The route-side gate records each request *after authentication* and before
+// mutation. Unlike the old microtask helper, this proves that both HTTP
+// requests arrived at the server before either is released to commit.
+async function runServerRequestBarrier(label, participants, { timeoutMs = 8_000 } = {}) {
+  if (!Array.isArray(participants) || participants.length !== 2 || participants.some(item => !item || typeof item.alias !== 'string' || typeof item.execute !== 'function')) {
+    throw new Error(`${label} requires exactly two named request participants.`);
+  }
+  const barrierId = `qa_${label}_${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120);
+  const barrierPath = `qaCertificationRequestBarriers/${barrierId}`;
+  registerDynamicFirestoreRoot(barrierPath, `request-barrier-${label}`);
+  const startedAt = new Date().toISOString();
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    await firestoreAdmin.doc(barrierPath).set({
+      state: 'open',
+      expectedParticipants: participants.map(item => item.alias),
+      arrivals: {},
+      createdAt: startedAt,
+      qaCertificationRun: certificationRunId,
+    });
+  });
+  const controller = new AbortController();
+  const requests = participants.map(item => Promise.resolve().then(() => item.execute({
+    signal: controller.signal,
+    headers: {
+      'x-certification-barrier': barrierId,
+      'x-certification-barrier-participant': item.alias,
+    },
+  })));
+  const deadline = Date.now() + timeoutMs;
+  let arrivals = {};
+  try {
+    while (Date.now() < deadline) {
+      arrivals = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+        firestoreAdmin.doc(barrierPath).get().then(snapshot => snapshot.data()?.arrivals || {}));
+      if (participants.every(item => typeof arrivals[item.alias] === 'string')) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    if (!participants.every(item => typeof arrivals[item.alias] === 'string')) {
+      throw new Error(`${label} did not observe both route arrivals before release.`);
+    }
+    const releasedAt = new Date().toISOString();
+    await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      await firestoreAdmin.doc(barrierPath).set({ state: 'released', releasedAt }, { merge: true });
+    });
+    const settled = await Promise.race([
+      Promise.allSettled(requests),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} request responses did not settle after release.`)), timeoutMs)),
+    ]);
+    const final = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(barrierPath).get().then(snapshot => snapshot.data() || {}));
+    return Object.freeze({ settled, barrier: Object.freeze({ barrierId, startedAt, arrivals, releasedAt, finalState: final.state || null, responsesObservedAt: new Date().toISOString() }) });
+  } catch (error) {
+    controller.abort();
+    await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(barrierPath).set({ state: 'cancelled', cancelledAt: new Date().toISOString() }, { merge: true })).catch(() => {});
+    await Promise.allSettled(requests);
+    throw error;
+  }
 }
 
 export function buildStorageUploadRequest(objectPath, contentType, body) {
@@ -2553,7 +2628,13 @@ async function runCertificationApiScenario(scenarioId) {
 }
 
 function expectEqual(actual, expected, label) {
-  const assertion = { label, expected: String(expected), observed: String(actual), capturedAt: new Date().toISOString() };
+  const assertion = {
+    id: `assertion-${++certificationAssertionSequence}`,
+    label,
+    expected: String(expected),
+    observed: String(actual),
+    capturedAt: new Date().toISOString(),
+  };
   if (activeCertificationScenario) activeCertificationAssertions.push(assertion);
   if (actual !== expected) throw new Error(`${label}: expected ${expected}, received ${actual}.`);
   console.log(`PASS ${label}: ${actual}`);
@@ -6682,6 +6763,18 @@ function recordObservedOperationsCase(scenarioId, dimension, observed) {
 function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observed, patterns, execution) {
   const assertions = selectCaseOwnedOperationAssertions(activeCertificationAssertions, patterns);
   const firstCapturedAt = assertions.map(assertion => assertion.capturedAt).filter(Boolean).sort()[0] || null;
+  const operationExecution = {
+    ...execution,
+    requests: (execution?.requests?.length ? execution.requests : [{
+      method: execution?.operation?.startsWith('browser') ? 'BROWSER' : 'POST',
+      pathname: execution?.operation || 'local-runtime-operation',
+      status: 'observed',
+    }]).map(request => typeof request === 'string'
+      ? { method: 'POST', pathname: request, status: 'observed' }
+      : request),
+    observer: execution?.observer || 'request response and authoritative emulator reconciliation',
+    cleanupReference: execution?.cleanupReference || `dynamic-local-cleanup:${certificationRunId}:${caseId}`,
+  };
   recordCertificationCase(
     scenarioId,
     dimension,
@@ -6689,7 +6782,7 @@ function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observe
     observed,
     'named local browser/API operation completed with request and reconciliation evidence',
     firstCapturedAt,
-    { assertions, execution },
+    { assertions, execution: operationExecution },
   );
 }
 
@@ -6699,6 +6792,7 @@ async function runCertificationOperationsScenarios() {
     activeCertificationScenario = scenarioId;
     activeCertificationAssertions = [];
     activeCertificationCaseIds = new Set();
+    activeOperationAssertionOwners = new Map();
     try {
       if (scenarioId === 'chat-channel-message-unread' && runBrowser) {
         await runCommunicationWorkflowAudit();
@@ -6736,11 +6830,12 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-user', 'authenticated user-scope feed issues and fetches from the local Functions emulator', [/Calendar user feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-team', 'authenticated team-scope feed issues and fetches from the local Functions emulator', [/Calendar team feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-multi', 'authenticated multi-scope feed issues and fetches from the local Functions emulator', [/Calendar multi feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-rfc', 'calendar Function returns a valid RFC 5545 envelope', [/Calendar Function returns RFC 5545 body/], { actor: 'qa-coach-owner-a', operation: 'public Function fetch', reconciliation: 'BEGIN:VCALENDAR and VERSION:2.0', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-invalid-type', 'issuer rejects an invalid feed type', [/Calendar issuer rejects invalid type foreign team and oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST invalid type', reconciliation: '400 response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-foreign-team', 'issuer rejects a foreign team scope', [/Calendar issuer rejects invalid type foreign team and oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST foreign team scope', reconciliation: '403 response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-too-many', 'issuer rejects a multi-scope request beyond the limit', [/Calendar issuer rejects invalid type foreign team and oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST oversized multi scope', reconciliation: '400 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-rfc', 'calendar Function returns a complete RFC 5545 event body', [/Calendar Function returns RFC 5545 body/, /Calendar Function emits stable team-scoped UID for the exact event/, /Calendar Function emits timezone-aware overnight DTSTART and DTEND/, /Calendar Function RFC-escapes summary and description text/, /Calendar Function RFC-folds long content lines/], { actor: 'qa-coach-owner-a', operation: 'public Function fetch', reconciliation: 'RFC envelope, stable UID, timezone, overnight, escaping, and folding', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-invalid-type', 'issuer rejects an invalid feed type', [/Calendar issuer rejects invalid feed type/], { actor: 'qa-coach-owner-a', operation: 'POST invalid type', reconciliation: '400 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-foreign-team', 'issuer rejects a foreign team scope', [/Calendar issuer rejects foreign team scope/], { actor: 'qa-coach-owner-a', operation: 'POST foreign team scope', reconciliation: '403 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-too-many', 'issuer rejects a multi-scope request beyond the limit', [/Calendar issuer rejects oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST oversized multi scope', reconciliation: '400 response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-invalid-token', 'malformed public calendar credentials return the same non-enumerating not-found boundary', [/Calendar public failures are uniform for inactive and malformed tokens/], { actor: 'public', operation: 'GET malformed token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-unknown-token', 'well-formed unknown public calendar credentials return the same non-enumerating not-found boundary', [/Calendar well-formed unknown token returns the same non-enumerating boundary/], { actor: 'public', operation: 'GET well-formed unknown token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-inactive-token', 'inactive and revoked public calendar credentials return the same non-enumerating not-found boundary', [/Calendar public failures are uniform for inactive and malformed tokens/], { actor: 'public', operation: 'GET inactive token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-membership-revoke', 'current membership is revalidated at public fetch time', [/Calendar Function revalidates membership at fetch time/], { actor: 'qa-team-member', operation: 'remove membership then public fetch', reconciliation: '200 before and 404 after revocation', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'persistence', 'ics-rotate', 'feed rotation invalidates the previous credential and serves only the replacement', [/Calendar rotation invalidates prior token and serves replacement/], { actor: 'qa-coach-owner-a', operation: 'rotate then public fetch', reconciliation: 'prior 404, replacement 200', timeBound: '20s request deadline' });
@@ -6756,11 +6851,14 @@ async function runCertificationOperationsScenarios() {
         await runExactEventApiCasesAudit();
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-crud', 'owner creates, edits, deletes, and member reads a team event through the browser', [/owner event create persists after reload/], { actor: 'qa-coach-owner-a', operation: 'browser-event-crud', timeBound: 'Playwright response + reload' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-series', 'owner creates, edits, and deletes a four-occurrence weekly series through the browser', [/weekly recurrence creates the exact requested occurrence count/, /weekly recurrence series edit preserves all occurrence dates/, /weekly recurrence series delete removes every occurrence/], { actor: 'qa-coach-owner-a', operation: 'browser-event-series', requests: ['create-series', 'update-series', 'delete-series'], reconciliation: 'four occurrences then zero after delete', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-occurrence-edit-delete', 'owner edits and deletes exactly one weekly occurrence through the visible controls', [/weekly recurrence one occurrence edit persists through reload/, /weekly recurrence one occurrence delete persists through reload/], { actor: 'qa-coach-owner-a', operation: 'browser-event-occurrence-edit-delete', requests: ['update occurrence', 'delete occurrence'], reconciliation: 'one changed occurrence then zero changed titles after reload', timeBound: '15s UI waits' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-dst-spring', 'owner creates and emulator persists a spring DST calendar-date event', [/event exact DST spring create and persisted date/], { actor: 'qa-coach-owner-a', operation: 'POST create', reconciliation: 'Firestore event date', timeBound: 'immediate emulator read' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-dst-fall', 'owner creates and emulator persists a fall DST calendar-date event', [/event exact DST fall create and persisted date/], { actor: 'qa-coach-owner-a', operation: 'POST create', reconciliation: 'Firestore event date', timeBound: 'immediate emulator read' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-midnight', 'owner creates a cross-midnight event and its durable schedule booking', [/event exact midnight interval and booking persist/], { actor: 'qa-coach-owner-a', operation: 'POST create', reconciliation: 'Firestore event and scheduleBookings interval', timeBound: 'immediate emulator read' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-invalid', 'server rejects malformed and reversed event payloads', [/event exact invalid payloads rejected server-side/], { actor: 'qa-coach-owner-a', operation: 'POST create invalid', requests: ['missing title', 'reversed interval'], reconciliation: '400 responses', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-conflict', 'server rejects overlapping team event without replacing the original', [/event exact overlap conflict preserves original/], { actor: 'qa-coach-owner-a', operation: 'POST create overlap', reconciliation: '409 and original document retained', timeBound: 'immediate emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-resource-conflict', 'server rejects cross-team use of one resource without replacing the original booking', [/event exact cross-team resource conflict preserves original booking/], { actor: 'qa-coach-owner-a+qa-coach-owner-b', operation: 'POST create shared resource', reconciliation: '200 then 409 with original booking retained', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-location-conflict', 'server rejects cross-team use of one normalized location without replacing the original booking', [/event exact cross-team same-location conflict preserves original booking/], { actor: 'qa-coach-owner-a+qa-coach-owner-b', operation: 'POST create shared location', reconciliation: '200 then 409 with original booking retained', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-double', 'barrier-released duplicate creates produce exactly one durable event', [/event exact duplicate barrier commits once/], { actor: 'qa-coach-owner-a', operation: 'two-party POST create', reconciliation: 'one 200, one 409, one document', timeBound: '5s two-party barrier' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-member-deny', 'active player cannot create a team event', [/event exact member create denied/], { actor: 'qa-team-member', operation: 'POST create', reconciliation: '403 response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-assistant-own', 'active assistant coach can create a team event', [/event exact assistant create allowed/], { actor: 'qa-team-assistant', operation: 'POST create', reconciliation: '200 response', timeBound: '20s request deadline' });
@@ -6776,6 +6874,7 @@ async function runCertificationOperationsScenarios() {
         if (scenarioId === 'events-rsvp-attendance-details') {
           recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-self', 'youth records own RSVP through the authenticated API', [/youth own RSVP/], { actor: 'qa-youth-active', operation: 'POST RSVP', reconciliation: '200 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-child', 'parent records linked youth RSVP through the browser', [/parent child RSVP persists through the browser/, /parent browser RSVP writes the linked youth member identity/], { actor: 'qa-parent-a', operation: 'browser child RSVP', reconciliation: 'event userRsvps youth UID', timeBound: 'reload + emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-team-c', 'parent records RSVP for the separately linked Team C child', [/parent linked Team C child RSVP is accepted/, /parent Team C child RSVP persists under the exact child identity/], { actor: 'qa-parent-a', operation: 'POST Team C child RSVP', reconciliation: 'Team C event userRsvps exact child ID', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-staff', 'staff updates an active squad member RSVP', [/staff RSVP override is accepted for an active squad member/], { actor: 'qa-coach-owner-a', operation: 'POST staff RSVP', reconciliation: '200 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rsvp-cancelled', 'cancelled event rejects RSVP', [/cancelled activity RSVP is denied/], { actor: 'qa-adult-player-a', operation: 'POST RSVP cancelled', reconciliation: '409 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rsvp-replay', 'barrier-released own RSVP requests both return success without duplicate participant records', [/barrier-released own RSVP replay updates are accepted without duplicate records/], { actor: 'qa-adult-player-a', operation: 'two-party POST RSVP', reconciliation: 'two 200 responses', timeBound: '5s two-party barrier' });
@@ -6791,6 +6890,7 @@ async function runCertificationOperationsScenarios() {
           recordObservedOperationNamedCase(scenarioId, 'negativePath', 'att-duplicate', 'repeating an identical staff attendance transition leaves one authoritative RSVP value and two attributable audit transitions', [/duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request/], { actor: 'qa-pro-owner', operation: 'repeated POST attendance override', reconciliation: 'one map value and two audit records', timeBound: '5s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'att-member-readonly', 'member cannot override another attendance participant', [/member forged attendance override is denied/], { actor: 'qa-team-member', operation: 'POST attendance override another participant', reconciliation: '403 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'att-removed', 'removed member cannot write an active attendance participant', [/removed member attendance override is denied/], { actor: 'qa-removed-member', operation: 'POST attendance override', reconciliation: '403 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'att-removed-read', 'removed member cannot read an attendance event', [/removed member attendance event read is denied without schedule disclosure/], { actor: 'qa-removed-member', operation: 'GET attendance event document', reconciliation: '403 or non-enumerating 404', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'att-tenant-b', 'Team B owner cannot write Team A attendance', [/Team B staff attendance override is denied/], { actor: 'qa-coach-owner-b', operation: 'POST attendance override foreign team', reconciliation: '403 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'persistence', 'att-race', 'barrier-released owner and assistant updates have one defined final value with durable actor-attributed audit records', [/two-staff attendance barrier resolves to one defined RSVP value with durable audit history/], { actor: 'qa-pro-owner+qa-team-assistant', operation: 'two-party POST attendance override', reconciliation: 'one RSVP map key plus one audit record per staff request', timeBound: '5s two-party barrier' });
           recordObservedOperationNamedCase(scenarioId, 'console', 'att-console', 'member and staff attendance flows have no console errors', [/member attendance workflow console errors/, /staff attendance workflow console errors/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
@@ -6802,15 +6902,16 @@ async function runCertificationOperationsScenarios() {
       if (scenarioId === 'reminders-same-day-fcm-scheduler') {
         await runReminderSchedulerRuntimeAudit();
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rem-eligible', 'scheduler core sends one same-day reminder through both registered local transports', [/Reminder scheduler core sends one same-day eligible FCM and Web Push delivery/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'sent ledger with FCM and Web Push target counts', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-invalid-time', 'scheduler ignores malformed and no-longer-future event times', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-no-token', 'scheduler ignores eligible members with no registered device', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-pref-off', 'scheduler excludes preferences-disabled recipients', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-removed', 'scheduler excludes removed memberships', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned removed member', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-sender', 'scheduler excludes staff sender roles from player/parent reminders', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned coach', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-invalid-time', 'scheduler ignores malformed event times', [/Reminder scheduler excludes malformed event time/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no malformed-event ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-past-time', 'scheduler ignores no-longer-future event times', [/Reminder scheduler excludes no-longer-future event time/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no past-event ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-no-token', 'scheduler ignores eligible members with no registered device', [/Reminder scheduler excludes eligible member with no device token/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no no-token ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-pref-off', 'scheduler excludes preferences-disabled recipients', [/Reminder scheduler excludes preferences-disabled recipient/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no preferences-disabled ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-removed', 'scheduler excludes removed memberships', [/Reminder scheduler excludes removed membership/], { actor: 'run-owned removed member', operation: 'injected scheduler core', reconciliation: 'no removed-member ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-sender', 'scheduler excludes staff sender roles from player/parent reminders', [/Reminder scheduler excludes staff sender role/], { actor: 'run-owned coach', operation: 'injected scheduler core', reconciliation: 'no staff sender ledger claim', timeBound: 'fixed clock' });
         recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-duplicate-run', 'overlapping scheduler cores acquire one durable reminder lease and send once', [/Reminder scheduler overlapping invocations acquire one lease and send once/], { actor: 'run-owned adult player', operation: 'two concurrent injected scheduler cores', reconciliation: 'one claimed/sent delivery ledger', timeBound: 'fixed clock + transaction' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-time-boundary', 'same-day 06:00 and DST spring/fall eligibility use the team timezone', [/Reminder scheduler respects exact 06:00 boundary and DST offsets/], { actor: 'run-owned adult player', operation: 'injected scheduler core at fixed clocks', reconciliation: 'boundary and DST ledgers sent once', timeBound: 'fixed clocks' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-time-boundary', 'same-day DST and before/at/after local-midnight eligibility use the team timezone', [/Reminder scheduler respects exact 06:00 boundary and DST offsets/, /Reminder scheduler before local midnight selects only the remaining current-day event/, /Reminder scheduler at local midnight selects the new local-day event/, /Reminder scheduler after local midnight retains the new local-day event/], { actor: 'run-owned adult player', operation: 'injected scheduler core at fixed clocks', reconciliation: 'DST plus before/at/after-midnight durable ledgers sent once', timeBound: 'fixed clocks' });
         recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-retry', 'a failed delivery ledger is retried and transitions to sent', [/Reminder scheduler failed ledger retry transitions to sent/], { actor: 'run-owned adult player', operation: 'injected safe transport failure then retry', reconciliation: 'failed then sent ledger state', timeBound: 'fixed clock' });
-        recordObservedOperationNamedCase(scenarioId, 'console', 'rem-redaction', 'scheduler audit summaries and ledger diagnostics redact opaque device values', [/Reminder scheduler diagnostic ledger and captured summaries redact device tokens/], { actor: 'local scheduler audit', operation: 'safe transport diagnostic scan', reconciliation: 'no raw token or endpoint in captured evidence', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'rem-redaction', 'scheduler runtime diagnostics redact opaque device values', [/Reminder scheduler captures redacted runtime diagnostics from the actual core/], { actor: 'local scheduler audit', operation: 'actual core diagnostic callback', reconciliation: 'captured runtime diagnostics omit raw token and endpoint', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'rem-network', 'scheduler uses the injected loopback-safe transport and makes no provider request', [/Reminder scheduler uses injected local transport without provider network/], { actor: 'local scheduler audit', operation: 'safe transport invocation', reconciliation: 'zero provider requests', timeBound: 'scenario duration' });
         recordBlockedOperationsCases(scenarioId,
           'Deployed scheduler logs, provider acceptance, and physical-device receipt/cleanup remain external evidence obligations.',
@@ -7880,6 +7981,7 @@ async function runReminderSchedulerRuntimeAudit() {
   });
 
   const delivered = [];
+  const schedulerDiagnostics = [];
   let retryFailsOnce = true;
   const createRunner = (now, deliver = async input => {
     delivered.push({ eventId: input.entry.eventId, userId: input.entry.userId, fcmCount: input.targets.fcmTokens.length, webPushCount: input.targets.webPushSubscriptions.length });
@@ -7916,6 +8018,7 @@ async function runReminderSchedulerRuntimeAudit() {
     }),
     markSent: async entry => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`eventReminderDeliveries/${teamId}_${entry.eventId}_${entry.userId}`).set({ status: 'sent', successCount: entry.successCount, failureCount: entry.failureCount, leaseExpiresAt: 0, qaReminderRun: certificationRunId }, { merge: true })),
     markFailed: async entry => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`eventReminderDeliveries/${teamId}_${entry.eventId}_${entry.userId}`).set({ status: 'failed', diagnostic: entry.diagnostic, leaseExpiresAt: 0, qaReminderRun: certificationRunId }, { merge: true })),
+    diagnostic: event => schedulerDiagnostics.push({ ...event }),
     deliver,
   });
 
@@ -7942,19 +8045,31 @@ async function runReminderSchedulerRuntimeAudit() {
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     await firestoreAdmin.doc(`${teamPath}/events/boundary`).set({ date: '2026-03-08', startTime: '06:30', eventType: 'meeting', qaReminderRun: certificationRunId });
     await firestoreAdmin.doc(`${teamPath}/events/fall`).set({ date: '2026-11-01', startTime: '11:00', eventType: 'game', qaReminderRun: certificationRunId });
+    await firestoreAdmin.doc(`${teamPath}/events/midnight_before`).set({ date: '2026-07-24', startTime: '23:59', eventType: 'game', qaReminderRun: certificationRunId });
+    await firestoreAdmin.doc(`${teamPath}/events/midnight_at`).set({ date: '2026-07-25', startTime: '00:30', eventType: 'game', qaReminderRun: certificationRunId });
+    await firestoreAdmin.doc(`${teamPath}/events/midnight_after`).set({ date: '2026-07-25', startTime: '00:31', eventType: 'game', qaReminderRun: certificationRunId });
   });
   const boundaryResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-03-08T12:00:00.000Z')));
   const fallResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-11-01T16:00:00.000Z')));
   expectEqual(boundaryResult.sentCount >= 1 && fallResult.sentCount >= 1, true, 'Reminder scheduler respects exact 06:00 boundary and DST offsets');
+  const midnightBefore = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T05:58:00.000Z')));
+  const midnightAt = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T06:00:00.000Z')));
+  const midnightAfter = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T06:01:00.000Z')));
+  expectEqual(midnightBefore.sentCount, 1, 'Reminder scheduler before local midnight selects only the remaining current-day event');
+  expectEqual(midnightAt.sentCount, 1, 'Reminder scheduler at local midnight selects the new local-day event');
+  expectEqual(midnightAfter.sentCount, 1, 'Reminder scheduler after local midnight retains the new local-day event');
 
   const ledgers = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
   for (const document of ledgers) registerDynamicFirestoreRoot(document.ref.path, `reminder-ledger-${document.id}`);
-  const excludedIds = [userIds.noToken, userIds.prefOff, userIds.removed, userIds.sender];
-  const excludedLedger = ledgers.some(document => excludedIds.includes(document.data().userId));
-  const invalidLedger = ledgers.some(document => document.data().eventId === 'invalid');
-  expectEqual(excludedLedger || invalidLedger, false, 'Reminder scheduler excludes invalid time no token preferences removed and non-player sender');
-  const diagnosticEvidence = JSON.stringify({ delivered, overlapResults, ledgerStates: ledgers.map(document => ({ eventId: document.data().eventId, status: document.data().status, attempts: document.data().attempts })) });
-  expectEqual(!diagnosticEvidence.includes(safeFcmToken) && !diagnosticEvidence.includes(safeEndpoint), true, 'Reminder scheduler diagnostic ledger and captured summaries redact device tokens');
+  const ledgerFor = (eventId, userId) => ledgers.some(document => document.data().eventId === eventId && document.data().userId === userId);
+  expectEqual(ledgerFor('invalid', userIds.eligible), false, 'Reminder scheduler excludes malformed event time');
+  expectEqual(ledgerFor('past', userIds.eligible), false, 'Reminder scheduler excludes no-longer-future event time');
+  expectEqual(ledgers.some(document => document.data().userId === userIds.noToken), false, 'Reminder scheduler excludes eligible member with no device token');
+  expectEqual(ledgers.some(document => document.data().userId === userIds.prefOff), false, 'Reminder scheduler excludes preferences-disabled recipient');
+  expectEqual(ledgers.some(document => document.data().userId === userIds.removed), false, 'Reminder scheduler excludes removed membership');
+  expectEqual(ledgers.some(document => document.data().userId === userIds.sender), false, 'Reminder scheduler excludes staff sender role');
+  const diagnosticEvidence = JSON.stringify({ schedulerDiagnostics, ledgerStates: ledgers.map(document => ({ eventId: document.data().eventId, status: document.data().status, attempts: document.data().attempts })) });
+  expectEqual(schedulerDiagnostics.length > 0 && !diagnosticEvidence.includes(safeFcmToken) && !diagnosticEvidence.includes(safeEndpoint), true, 'Reminder scheduler captures redacted runtime diagnostics from the actual core');
   expectEqual(delivered.every(item => item.fcmCount + item.webPushCount > 0), true, 'Reminder scheduler uses injected local transport without provider network');
 }
 
@@ -8049,9 +8164,10 @@ async function runCalendarFeedLifecycleAudit() {
   registerDynamicFirestoreRoot(secretEventPath, `ics-secret-${secretEventId}`);
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     await firestoreAdmin.doc(secretEventPath).set({
-      title: `Audit token ${secretToken}`,
-      description: `Open https://the-squad.test/action?token=${secretToken}&mode=verifyEmail`,
-      date: new Date().toISOString().slice(0, 10), startTime: '12:00', eventType: 'meeting',
+      title: `Audit token ${secretToken}, escaped; ${'long-calendar-subject '.repeat(6)}`,
+      description: `Open https://the-squad.test/action?token=${secretToken}&mode=verifyEmail\nescaped; description, value`,
+      location: 'North, Field; One',
+      date: '2026-10-02', startTime: '23:30', endTime: '00:30', eventType: 'meeting',
       qaCalendarFeedRun: certificationRunId,
     });
   });
@@ -8063,11 +8179,17 @@ async function runCalendarFeedLifecycleAudit() {
   expectEqual(teamFeed.status, 200, 'Calendar team feed local Function fetch');
   expectEqual(multiFeed.status, 200, 'Calendar multi feed local Function fetch');
   expectEqual(/BEGIN:VCALENDAR[\s\S]*VERSION:2\.0[\s\S]*END:VCALENDAR/.test(teamFeed.body), true, 'Calendar Function returns RFC 5545 body');
+  expectEqual(new RegExp(`UID:${teamA.id}-${secretEventId}@thesquad\\.pro`).test(teamFeed.body), true, 'Calendar Function emits stable team-scoped UID for the exact event');
+  expectEqual(/DTSTART;TZID=America\/Edmonton:20261002T233000/.test(teamFeed.body) && /DTEND;TZID=America\/Edmonton:20261003T003000/.test(teamFeed.body), true, 'Calendar Function emits timezone-aware overnight DTSTART and DTEND');
+  expectEqual(/SUMMARY:.*\\, escaped\\;/.test(teamFeed.body) && /DESCRIPTION:.*escaped\\; description\\, value/.test(teamFeed.body), true, 'Calendar Function RFC-escapes summary and description text');
+  expectEqual(/\r\n /.test(teamFeed.body), true, 'Calendar Function RFC-folds long content lines');
   expectEqual(teamFeed.body.includes(secretToken) || /https:\/\/the-squad\.test\/action\?/.test(teamFeed.body), false, 'Calendar Function body redacts subscription token and action URL');
   const invalidType = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'invalid' }) });
   const foreignTeam = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamB.id }) });
   const tooMany = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'multi', teamIds: Array.from({ length: 26 }, (_, index) => `qa_feed_${index}`) }) });
-  expectEqual([invalidType.status, foreignTeam.status, tooMany.status].join(','), '400,403,400', 'Calendar issuer rejects invalid type foreign team and oversized multi selection');
+  expectEqual(invalidType.status, 400, 'Calendar issuer rejects invalid feed type');
+  expectEqual(foreignTeam.status, 403, 'Calendar issuer rejects foreign team scope');
+  expectEqual(tooMany.status, 400, 'Calendar issuer rejects oversized multi selection');
   const rotated = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'rotate' }) });
   const rotatedToken = new URL(String(rotated.body?.url || '')).searchParams.get('token') || '';
   expectEqual(rotated.status, 200, 'Calendar feed rotation response');
@@ -8076,7 +8198,9 @@ async function runCalendarFeedLifecycleAudit() {
   const revoked = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'revoke' }) });
   const inactive = await fetchFeed(rotatedToken);
   const malformed = await fetchFeed('not-a-token');
+  const unknown = await fetchFeed('b'.repeat(64));
   expectEqual(`${revoked.status},${inactive.status},${malformed.status}`, '200,404,404', 'Calendar public failures are uniform for inactive and malformed tokens');
+  expectEqual(unknown.status, 404, 'Calendar well-formed unknown token returns the same non-enumerating boundary');
   const memberToken = (await signIn('qa-team-member')).body.idToken;
   const memberFeedToken = await issue(memberToken, { type: 'team', teamId: teamA.id, action: 'create' });
   const beforeRevoke = await fetchFeed(memberFeedToken);
@@ -8414,12 +8538,29 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const parentPersisted = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
     firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).get());
   expectEqual(parentPersisted.data()?.userRsvps?.[youthUid], 'going', 'parent browser RSVP writes the linked youth member identity');
-  const raceResponses = await runTwoParty('RSVP exact replay barrier', [
-    signal => apiJsonResult('/api/teams/rsvp', adult.body.idToken, { signal, method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) }),
-    signal => apiJsonResult('/api/teams/rsvp', adult.body.idToken, { signal, method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'maybe' }) }),
-  ], { terminate: async () => {} });
-  const raceStatusValues = raceResponses.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(',');
+  const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+  const teamCYouth = FIXTURES.firestoreDocuments.find(document => document.alias === 'qa-player-youth-c');
+  const teamCOwner = await signIn('qa-league-owner-a');
+  if (!teamC || !teamCYouth?.data?.id || !teamCOwner.body?.idToken) throw new Error('Team C linked-child RSVP fixture is missing.');
+  const teamCEvent = await apiJsonResult('/api/teams/events/action', teamCOwner.body.idToken, {
+    method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamC.id, event: eventPayload(`QA Parent Team C RSVP ${marker}`, `2099-02-${String(10 + invocation).padStart(2, '0')}`) }),
+  });
+  expectEqual(teamCEvent.status, 200, 'Team C parent RSVP fixture event creation');
+  const teamCParticipantId = String(teamCYouth.data.id);
+  const teamCParentRsvp = await apiJsonResult('/api/teams/rsvp', parent.body.idToken, {
+    method: 'POST', body: JSON.stringify({ teamId: teamC.id, eventId: teamCEvent.body?.eventId, participantId: teamCParticipantId, status: 'going' }),
+  });
+  expectEqual(teamCParentRsvp.status, 200, 'parent linked Team C child RSVP is accepted');
+  const teamCPersisted = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+    firestoreAdmin.doc(`teams/${teamC.id}/events/${teamCEvent.body?.eventId}`).get());
+  expectEqual(teamCPersisted.data()?.userRsvps?.[teamCParticipantId], 'going', 'parent Team C child RSVP persists under the exact child identity');
+  const rsvpBarrier = await runServerRequestBarrier('rsvp_exact_replay', [
+    { alias: 'adult-going', execute: ({ signal, headers }) => apiJsonResult('/api/teams/rsvp', adult.body.idToken, { signal, headers, method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'going' }) }) },
+    { alias: 'adult-maybe', execute: ({ signal, headers }) => apiJsonResult('/api/teams/rsvp', adult.body.idToken, { signal, headers, method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: adultUid, status: 'maybe' }) }) },
+  ]);
+  const raceStatusValues = rsvpBarrier.settled.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(',');
   expectEqual(raceStatusValues, '200,200', 'barrier-released own RSVP replay updates are accepted without duplicate records');
+  expectEqual(Object.keys(rsvpBarrier.barrier.arrivals).sort().join(','), 'adult-going,adult-maybe', 'RSVP request barrier records both server arrivals before release');
   const racePersisted = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).get());
   expectEqual(['going', 'maybe'].includes(racePersisted.data()?.userRsvps?.[adultUid]), true, 'barrier RSVP race persists exactly one participant map value');
   expectEqual((await apiJsonResult('/api/teams/rsvp', youth.body.idToken, { method: 'POST', body: JSON.stringify({ teamId: teamAId, eventId, participantId: youthUid, status: 'going' }) })).status, 200, 'youth own RSVP');
@@ -8459,6 +8600,8 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   expectEqual(afterOverride.data()?.userRsvps?.[memberUid], 'declined', 'staff attendance override persisted');
 
   const attendanceEventRef = `teams/${proTeamId}/events/${attendanceCreated.body.eventId}`;
+  const removedAttendanceRead = await directFirestoreReadStatus(attendanceEventRef, removed.body.idToken);
+  expectEqual([403, 404].includes(removedAttendanceRead), true, 'removed member attendance event read is denied without schedule disclosure');
   const updateAttendance = (token, status, { participantId = memberUid, ...init } = {}) => apiJsonResult('/api/teams/rsvp', token, {
     ...init, method: 'POST', body: JSON.stringify({ teamId: proTeamId, eventId: attendanceCreated.body.eventId, participantId, status }),
   });
@@ -8480,11 +8623,12 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   expectEqual((await updateAttendance(teamMember.body.idToken, 'declined', { participantId: proOwnerUid })).status, 403, 'member forged attendance override is denied');
   expectEqual((await updateAttendance(removed.body.idToken, 'declined')).status, 403, 'removed member attendance override is denied');
   expectEqual((await updateAttendance(teamBOwner.body.idToken, 'declined')).status, 403, 'Team B staff attendance override is denied');
-  const attendanceRace = await runTwoParty('attendance exact staff barrier', [
-    signal => updateAttendance(proOwner.body.idToken, 'maybe', { signal }),
-    signal => updateAttendance(assistant.body.idToken, 'declined', { signal }),
-  ], { terminate: async () => {} });
-  expectEqual(attendanceRace.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(','), '200,200', 'two-staff attendance barrier accepts both authorized updates');
+  const attendanceBarrier = await runServerRequestBarrier('attendance_exact_staff', [
+    { alias: 'pro-owner', execute: ({ signal, headers }) => updateAttendance(proOwner.body.idToken, 'maybe', { signal, headers }) },
+    { alias: 'assistant', execute: ({ signal, headers }) => updateAttendance(assistant.body.idToken, 'declined', { signal, headers }) },
+  ]);
+  expectEqual(attendanceBarrier.settled.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(','), '200,200', 'two-staff attendance barrier accepts both authorized updates');
+  expectEqual(Object.keys(attendanceBarrier.barrier.arrivals).sort().join(','), 'assistant,pro-owner', 'attendance request barrier records both server arrivals before release');
   const raceAudit = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
     const [eventSnapshot, auditSnapshot] = await Promise.all([
       firestoreAdmin.doc(attendanceEventRef).get(),
@@ -8562,7 +8706,8 @@ async function runEventWorkflowAudit() {
 
 async function runExactEventApiCasesAudit() {
   const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
-  if (!teamA) throw new Error('Event exact-case fixture Team A is missing.');
+  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+  if (!teamA || !teamB) throw new Error('Event exact-case fixture teams are missing.');
   const [owner, assistant, member, foreignOwner] = await Promise.all([
     signIn('qa-coach-owner-a'), signIn('qa-team-assistant'), signIn('qa-team-member'), signIn('qa-coach-owner-b'),
   ]);
@@ -8576,6 +8721,9 @@ async function runExactEventApiCasesAudit() {
   });
   const create = (token, eventId, event, init = {}) => apiJsonResult('/api/teams/events/action', token, {
     ...init, method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamA.id, eventId, event }),
+  });
+  const createForTeam = (token, teamId, eventId, event, init = {}) => apiJsonResult('/api/teams/events/action', token, {
+    ...init, method: 'POST', body: JSON.stringify({ action: 'create', teamId, eventId, event }),
   });
   const payload = (title, date, startTime, endTime, location) => ({
     title, date, endDate: date, startTime, endTime, eventType: 'practice', location,
@@ -8612,14 +8760,32 @@ async function runExactEventApiCasesAudit() {
   const conflictDoc = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.conflict}`).get());
   expectEqual(JSON.stringify({ base: conflictBase.status, overlap: conflict.status, title: conflictDoc.data()?.title }), JSON.stringify({ base: 200, overlap: 409, title: `QA Conflict ${marker}` }), 'event exact overlap conflict preserves original');
 
+  const sharedResourceId = `qa_resource_${marker}`;
+  const sharedLocation = `QA Shared Location ${marker}`;
+  const resourceBase = await create(owner.body.idToken, `${marker}_resource_base`, {
+    ...payload(`QA Resource Base ${marker}`, '2026-09-29', '10:00', '11:00', `QA Resource Base Location ${marker}`), resourceId: sharedResourceId,
+  });
+  const resourceConflict = await createForTeam(foreignOwner.body.idToken, teamB.id, `${marker}_resource_conflict`, {
+    ...payload(`QA Resource Conflict ${marker}`, '2026-09-29', '10:30', '11:30', `QA Other Location ${marker}`), resourceId: sharedResourceId,
+  });
+  expectEqual(`${resourceBase.status},${resourceConflict.status}`, '200,409', 'event exact cross-team resource conflict preserves original booking');
+  const locationBase = await create(owner.body.idToken, `${marker}_location_base`, {
+    ...payload(`QA Location Base ${marker}`, '2026-09-30', '10:00', '11:00', sharedLocation), resourceId: `${sharedResourceId}_a`,
+  });
+  const locationConflict = await createForTeam(foreignOwner.body.idToken, teamB.id, `${marker}_location_conflict`, {
+    ...payload(`QA Location Conflict ${marker}`, '2026-09-30', '10:30', '11:30', sharedLocation), resourceId: `${sharedResourceId}_b`,
+  });
+  expectEqual(`${locationBase.status},${locationConflict.status}`, '200,409', 'event exact cross-team same-location conflict preserves original booking');
+
   const duplicatePayload = payload(`QA Duplicate ${marker}`, '2026-09-25', '10:00', '11:00', `QA Duplicate ${marker}`);
-  const duplicateSettled = await runTwoParty('event exact duplicate create', [
-    signal => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal }),
-    signal => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal }),
-  ], { terminate: async () => {} });
-  const duplicateStatuses = duplicateSettled.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(',');
+  const duplicateBarrier = await runServerRequestBarrier('event_exact_duplicate', [
+    { alias: 'first-create', execute: ({ signal, headers }) => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal, headers }) },
+    { alias: 'second-create', execute: ({ signal, headers }) => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal, headers }) },
+  ]);
+  const duplicateStatuses = duplicateBarrier.settled.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(',');
   const duplicateDoc = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.duplicate}`).get());
   expectEqual(JSON.stringify({ statuses: duplicateStatuses, exists: duplicateDoc.exists }), JSON.stringify({ statuses: '200,409', exists: true }), 'event exact duplicate barrier commits once');
+  expectEqual(Object.keys(duplicateBarrier.barrier.arrivals).sort().join(','), 'first-create,second-create', 'event request barrier records both server arrivals before release');
 
   const [memberDenied, assistantAllowed, foreignDenied] = await Promise.all([
     create(member.body.idToken, `${marker}_member`, payload('QA Member Denied', '2026-09-26', '10:00', '11:00', `QA Member ${marker}`)),
@@ -8634,6 +8800,7 @@ async function runExactEventApiCasesAudit() {
 function browserOwnerRecurringEventWorkflow(session, marker) {
   const title = `QA Weekly Event ${marker}`;
   const updated = `QA Weekly Event Updated ${marker}`;
+  const occurrenceUpdated = `QA Weekly Occurrence Updated ${marker}`;
   const code = `async page => {
     const consoleErrors = [];
     const failedResponses = [];
@@ -8674,7 +8841,10 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
         text: node.textContent,
         outer: node.outerHTML.slice(0, 500),
       })));
-      await createdTitles.first().click();
+      // Edit and delete exactly one occurrence before exercising the full
+      // series controls. These are separate visible product actions, not an
+      // inferred consequence of a whole-series mutation.
+      await createdTitles.nth(1).click();
       const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
       const detailsVisible = await details.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
       if (!detailsVisible) {
@@ -8685,11 +8855,31 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
         }));
       }
       const createdCalendarDate = (await details.innerText()).includes('September 20, 2026');
-      const seriesEditControl = details.getByRole('button', { name: 'Edit Entire Weekly Series' });
+      await details.getByRole('button', { name: 'Edit Activity' }).click();
+      const occurrenceForm = page.getByRole('dialog', { name: 'Schedule New Team Activity' });
+      await occurrenceForm.getByPlaceholder('e.g. Squad Match vs Tigers').fill(${JSON.stringify(occurrenceUpdated)});
+      const occurrenceUpdate = page.waitForResponse(response => response.url().includes('/api/teams/events/action') && response.request().method() === 'POST');
+      await occurrenceForm.getByRole('button', { name: 'Deploy Activity' }).click();
+      if ((await occurrenceUpdate).status() !== 200) throw new Error('single recurrence occurrence update did not return 200');
+      await page.getByText(${JSON.stringify(occurrenceUpdated)}, { exact: true }).waitFor({ timeout: 15000 });
+      await page.reload();
+      const updatedOccurrence = itinerary.getByText(${JSON.stringify(occurrenceUpdated)}, { exact: true });
+      const occurrenceEditCount = await updatedOccurrence.count();
+      await updatedOccurrence.first().click();
+      const occurrenceDetails = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${occurrenceUpdated}`)} });
+      await occurrenceDetails.getByRole('button', { name: ${JSON.stringify(`Delete ${occurrenceUpdated}`)} }).click();
+      const occurrenceConfirmation = page.getByRole('alertdialog');
+      await occurrenceConfirmation.getByRole('button', { name: 'Delete Activity' }).click();
+      await updatedOccurrence.first().waitFor({ state: 'detached', timeout: 15000 });
+      await page.reload();
+      const occurrenceDeletedCount = await itinerary.getByText(${JSON.stringify(occurrenceUpdated)}, { exact: true }).count();
+      await itinerary.getByText(${JSON.stringify(title)}, { exact: true }).first().click();
+      const seriesDetails = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
+      const seriesEditControl = seriesDetails.getByRole('button', { name: 'Edit Entire Weekly Series' });
       if (await seriesEditControl.count() === 0) {
         throw new Error('weekly recurrence details diagnostic: ' + JSON.stringify({
-          buttons: await details.getByRole('button').allTextContents(),
-          body: (await details.innerText()).slice(0, 2400),
+          buttons: await seriesDetails.getByRole('button').allTextContents(),
+          body: (await seriesDetails.innerText()).slice(0, 2400),
         }));
       }
       await seriesEditControl.click();
@@ -8712,6 +8902,8 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
       return {
         createdCount,
         createdCalendarDate,
+        occurrenceEditCount,
+        occurrenceDeletedCount,
         updatedCount,
         deletedCount: await itinerary.getByText(${JSON.stringify(updated)}, { exact: true }).count(),
         mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -8733,6 +8925,8 @@ async function runRecurringEventWorkflowAudit() {
   const result = browserOwnerRecurringEventWorkflow(owner, marker);
   expectEqual(result.createdCount, 4, 'weekly recurrence creates the exact requested occurrence count');
   expectEqual(result.createdCalendarDate, true, 'weekly recurrence preserves the selected local calendar date');
+  expectEqual(result.occurrenceEditCount, 1, 'weekly recurrence one occurrence edit persists through reload');
+  expectEqual(result.occurrenceDeletedCount, 0, 'weekly recurrence one occurrence delete persists through reload');
   expectEqual(result.updatedCount, 4, 'weekly recurrence series edit preserves all occurrence dates');
   expectEqual(result.deletedCount, 0, 'weekly recurrence series delete removes every occurrence');
   expectEqual(result.mobileFits, true, 'weekly recurrence controls fit the mobile viewport');

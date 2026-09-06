@@ -16,6 +16,7 @@ import { buildRecurringEventDates, shiftCalendarDate } from '@/lib/team-event-re
 import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
 import { validateTeamEventInput } from '@/lib/team-event-input';
 import { eventActionNeedsGeneratedId } from '@/lib/team-event-action';
+import { awaitLocalCertificationRequestBarrier } from '@/lib/local-certification-request-barrier';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const REGISTRATION_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
@@ -128,6 +129,7 @@ async function teamAccess(teamId: string, uid: string, role?: string) {
 export async function POST(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
+  await awaitLocalCertificationRequestBarrier(req.headers);
 
   try {
     const limited = await enforceUserRateLimit(auth.uid, 'team-event-action', 120, 60 * 60 * 1000);
