@@ -6746,11 +6746,21 @@ async function runCertificationOperationsScenarios() {
       }
       if ((scenarioId === 'events-rsvp-attendance-details' || scenarioId === 'attendance-practice-event-member-attendance') && runBrowser) {
         await runRsvpAndAttendanceWorkflowAudit();
-        const observed = scenarioId === 'events-rsvp-attendance-details'
-          ? 'parent, adult, youth, and staff RSVP workflow with forged, removed, cancelled, and concurrent API boundaries completed'
-          : 'staff attendance override and member view workflow completed';
-        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
-          recordObservedOperationsCase(scenarioId, dimension, observed);
+        if (scenarioId === 'events-rsvp-attendance-details') {
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-self', 'youth records own RSVP through the authenticated API', [/youth own RSVP/], { actor: 'qa-youth-active', operation: 'POST RSVP', reconciliation: '200 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rsvp-parent-child', 'parent records linked youth RSVP through the browser', [/parent child RSVP persists through the browser/, /parent browser RSVP writes the linked youth member identity/], { actor: 'qa-parent-a', operation: 'browser child RSVP', reconciliation: 'event userRsvps youth UID', timeBound: 'reload + emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rsvp-cancelled', 'cancelled event rejects RSVP', [/cancelled activity RSVP is denied/], { actor: 'qa-adult-player-a', operation: 'POST RSVP cancelled', reconciliation: '409 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-forged-uid', 'other household cannot RSVP for foreign youth', [/other-household RSVP forge is denied/], { actor: 'qa-parent-b', operation: 'POST forged RSVP', reconciliation: '403 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'rsvp-removed', 'removed member RSVP is denied without participant disclosure', [/removed member RSVP is denied without exposing an inactive participant/], { actor: 'qa-removed-member', operation: 'POST RSVP', reconciliation: '404 response', timeBound: '20s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'console', 'rsvp-console', 'parent RSVP browser flow has no console errors', [/parent RSVP workflow console errors/], { actor: 'qa-parent-a', operation: 'browser RSVP', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'network', 'rsvp-network', 'parent RSVP browser flow has no 5xx responses', [/parent RSVP workflow failed responses/], { actor: 'qa-parent-a', operation: 'browser RSVP', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'responsive', 'rsvp-responsive', 'parent RSVP dialog fits mobile viewport', [/parent RSVP dialog fits mobile viewport/], { actor: 'qa-parent-a', operation: 'mobile browser RSVP', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
+        } else {
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'att-staff-record', 'staff records attendance override through visible RSVP matrix', [/staff attendance override response/, /staff attendance override persisted/], { actor: 'qa-pro-owner', operation: 'browser attendance override', reconciliation: 'event RSVP map', timeBound: 'reload + emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'persistence', 'att-race', 'staff override remains persisted after member RSVP path', [/staff attendance override persisted/], { actor: 'qa-pro-owner', operation: 'attendance persistence read', reconciliation: 'declined RSVP map value', timeBound: 'immediate emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'console', 'att-console', 'member and staff attendance flows have no console errors', [/member attendance workflow console errors/, /staff attendance workflow console errors/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'network', 'att-network', 'member and staff attendance flows have no 5xx responses', [/member attendance workflow failed responses/, /staff attendance workflow failed responses/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'responsive', 'att-responsive', 'staff attendance view fits mobile viewport', [/staff attendance page fits mobile viewport/], { actor: 'qa-pro-owner', operation: 'mobile browser attendance', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         }
         continue;
       }
