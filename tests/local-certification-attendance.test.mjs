@@ -29,4 +29,8 @@ test('Attendance dispatch uses a dedicated Team A workflow without Pro membershi
   assert.match(workflow,/qa-coach-owner-a/);
   assert.doesNotMatch(workflow,/qa-pro|addAttendanceFixtureMembership|withAttendanceMemberships|coaches-corner/);
   assert.match(source,/member\.locator\('\.\.\/\.\.\/\.\.'\)\.getByText\('DECLINED'/);
+  const browser=source.slice(source.indexOf('function browserTeamAAttendanceMatrix'),source.indexOf('async function runTeamAAttendanceWorkflowAudit'));
+  assert.match(browser,/name:'High Priority Team Alert'/);
+  assert.match(browser,/await alert\.getByRole\('button',\{name:'Close',exact:true\}\)\.click\(\)/);
+  assert.doesNotMatch(browser,/name:'Got It'|force:true/);
 });

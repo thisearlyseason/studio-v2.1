@@ -9146,7 +9146,17 @@ function browserTeamAAttendanceMatrix(session, { teamId, title, memberName, staf
       const open = async () => {
         await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
         const title = page.getByText(${JSON.stringify(title)}, { exact:true }).last();
-        await title.waitFor({ state:'visible', timeout:15000 }); await title.click();
+        await title.waitFor({ state:'visible', timeout:15000 });
+        // Team A's seeded alert opens after hydration. Dismiss visibly without
+        // persisting a seen-state change or clicking through its modal overlay.
+        for (let attempt=0;attempt<3;attempt+=1) {
+          const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});
+          const visible=await alert.waitFor({state:'visible',timeout:1500}).then(()=>true).catch(error=>{if(error.name==='TimeoutError')return false;throw error;});
+          if (!visible) break;
+          await alert.getByRole('button',{name:'Close',exact:true}).click();
+          await alert.waitFor({state:'hidden',timeout:5000});
+        }
+        await title.click();
         const dialog = page.getByRole('dialog', { name:${JSON.stringify(`Event Intelligence: ${title}`)} });
         await dialog.getByRole('tab', { name:'Squad Pulse' }).click();
         const member = dialog.getByText(${JSON.stringify(memberName)}, {exact:true});
@@ -9164,12 +9174,16 @@ function browserTeamAAttendanceMatrix(session, { teamId, title, memberName, staf
           await page.setViewportSize(viewport); dialog = await open();
           const controls = {};
           for (const [name,control] of [['dialog',dialog],['matrix',dialog.getByText('Attendance Matrix',{exact:true})],['tab',dialog.getByRole('tab',{name:'Squad Pulse'})],['close',dialog.getByRole('button',{name:'Close event details'})],['export',dialog.getByRole('button',{name:'Export Attendance Ledger'})]]) {
-            await control.scrollIntoViewIfNeeded(); controls[name] = await control.boundingBox();
+            try {
+              await control.scrollIntoViewIfNeeded({timeout:10000}); controls[name] = await control.boundingBox({timeout:10000});
+            } catch (error) { throw new Error('Attendance layout '+JSON.stringify({viewport,dialogs:await page.locator('[role="dialog"]').evaluateAll(nodes=>nodes.map(node=>({title:node.querySelector('h2')?.textContent,hidden:node.getAttribute('aria-hidden')}))),error:error.name})); }
           }
           measurements.push({viewport,controls});
-          const pending=page.waitForEvent('download',{timeout:15000});
-          await dialog.getByRole('button',{name:'Export Attendance Ledger'}).click();
-          const download=await pending, stream=await download.createReadStream();
+          let download;
+          try {
+            [download]=await Promise.all([page.waitForEvent('download',{timeout:15000}),dialog.getByRole('button',{name:'Export Attendance Ledger'}).click({timeout:10000})]);
+          } catch (error) { throw new Error('Attendance export '+JSON.stringify({viewport,dialogs:await page.locator('[role="dialog"]').evaluateAll(nodes=>nodes.map(node=>({title:node.querySelector('h2')?.textContent,hidden:node.getAttribute('aria-hidden')}))),error:error.name})); }
+          const stream=await download.createReadStream();
           const bytes=[];
           for await (const chunk of stream) {
             if (bytes.length+chunk.length>65536) throw new Error('Attendance CSV exceeds bounded download size.');
