@@ -34,6 +34,8 @@ test('Feed replay owns an exact post-count assertion in addition to stable IDs a
 
 test('Feed invalid-media cases own exact before-and-after Storage path absence',()=>{
   assert.match(auditSource,/const idempotencyKey=`feed-invalid-\$\{name\}-\$\{certificationRunId\}`/);
+  assert.match(auditSource,/const ownerUid=FIXTURES\.identities\.find\(item=>item\.alias==='qa-coach-owner-a'\)\?\.uid/);
+  assert.match(auditSource,/update\(`\$\{ownerUid\}:create-post:\$\{idempotencyKey\}`\)/);
   assert.match(auditSource,/invalidObjectPaths/);
   assert.match(auditSource,/\$\{name\} exact Storage path absent before attempt/);
   assert.match(auditSource,/\$\{name\} exact Storage path absent after rejection/);

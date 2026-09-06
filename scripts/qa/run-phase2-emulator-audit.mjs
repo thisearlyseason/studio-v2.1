@@ -8397,6 +8397,8 @@ async function runPollWorkflowAudit() {
 
 async function runFeedWorkflowAudit() {
   const team = FIXTURES.teams.find(item=>item.alias === 'qa-team-a');
+  const ownerUid=FIXTURES.identities.find(item=>item.alias==='qa-coach-owner-a')?.uid;
+  if(!ownerUid)throw Error('Feed owner fixture identity is unavailable.');
   const marker = `QA Feed ${certificationRunId}`;
   const postTitle = `${marker} post`, commentTitle = `${marker} comment`, mediaTitle = `${marker} image`;
   const teamPath = `teams/${team.id}`;
@@ -8484,7 +8486,7 @@ async function runFeedWorkflowAudit() {
   for(const [name,extra,suppliedObjectPaths] of [['mime',{imageUrl:'data:image/svg+xml;base64,PHN2Zz4='},[]],['oversize',{imageUrl:`data:image/png;base64,${Buffer.alloc(5*1024*1024+1).toString('base64')}`},[]],['missing',{imagePath:`${teamPath}/feed/missing/image`},[`${teamPath}/feed/missing/image`]],['foreign',{imagePath:'teams/foreign/feed/foreign/image'},['teams/foreign/feed/foreign/image']]]) {
     const title=`${marker} invalid ${name}`;
     const idempotencyKey=`feed-invalid-${name}-${certificationRunId}`;
-    const wouldBePostId=`feed_${createHash('sha256').update(`${uid('qa-coach-owner-a')}:create-post:${idempotencyKey}`).digest('hex')}`;
+    const wouldBePostId=`feed_${createHash('sha256').update(`${ownerUid}:create-post:${idempotencyKey}`).digest('hex')}`;
     const invalidObjectPaths=[`${teamPath}/feed/${wouldBePostId}/image`,...suppliedObjectPaths];
     for(const objectPath of invalidObjectPaths) check('feed-media-invalid',await withEmulatorAuthAdmin(async (_auth,_db,bucket)=>(await bucket.file(objectPath).exists())[0]),false,`${name} exact Storage path absent before attempt: ${objectPath}`);
     check('feed-media-invalid',(await request('feed-media-invalid','qa-coach-owner-a',{action:'create-post',content:title,idempotencyKey,...extra})).status,400,`${name} application upload rejected`);
