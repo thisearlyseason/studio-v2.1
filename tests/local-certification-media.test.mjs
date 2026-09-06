@@ -12,6 +12,10 @@ test('Media observer retains actual initiating case and ignores foreign origins'
   const foreign={...request,url:()=> 'http://foreign/api/media'};page.emit('request',foreign);page.emit('response',{request:()=>foreign,status:()=>201});
   const rows=observer.finish().observedResponses;assert.deepEqual(rows.map(row=>row.tag),['media-user-avatar','media-console','media-network']);assert.equal(rows[0].pathname,'/api/media');assert.equal(page.listenerCount('response'),0);
 });
+test('adult self-media observer records actual roster navigation under its initiating case',()=>{
+  const page=new EventEmitter(),observer=createMediaBrowserObserver(page,{baseUrl:'http://127.0.0.1:9001'}),request={url:()=> 'http://127.0.0.1:9001/roster',method:()=> 'GET'};
+  observer.start(['media-player-self']);page.emit('request',request);page.emit('response',{request:()=>request,status:()=>200});assert.deepEqual(observer.finish().observedResponses.map(x=>x.pathname),['/roster','/roster','/roster']);
+});
 test('generated MP4 boundary uses a bounded free box and exact actual streamed byte count',async()=>{
   const prefix=Buffer.from('00000018667479706d703432000000006d70343269736f6d','hex');
   let count=0,max=0,first;for await(const chunk of generatedMp4Body(prefix,500*1024*1024+1)){count+=chunk.length;max=Math.max(max,chunk.length);first??=chunk;}

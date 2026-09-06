@@ -49,6 +49,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useTeam, Member, TeamDocument } from '@/components/providers/team-provider';
 import { EmailExportDialog } from '@/components/team/EmailExportDialog';
+import { PlayerSelfMedia } from '@/components/team/player-self-media';
 import { 
   Dialog, 
   DialogClose,
@@ -829,6 +830,7 @@ export default function RosterPage() {
             </DialogClose>
           </div>
           <div className="overflow-y-auto custom-scrollbar flex-1">
+          {selectedMember && <div className="px-4"><PlayerSelfMedia subject={{actorId:user?.id,actorRole:user?.role,isPlayer,member:selectedMember}}/></div>}
           {selectedMember && (() => {
             // Determine if the viewer can see the full detail panel:
             //   - Staff always can
