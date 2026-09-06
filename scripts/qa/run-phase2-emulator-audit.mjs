@@ -7307,6 +7307,7 @@ async function observeWaiverLifecycleDialog() {
       await page.getByRole('tab',{name:'Waivers',exact:true}).click();
       await page.getByRole('button',{name:/New Waiver/}).click();
       const dialog=page.getByRole('dialog');await dialog.waitFor({state:'visible',timeout:15000});
+      await page.waitForTimeout(250);
       measurements.push({viewport:{width:1440,height:900},box:await dialog.boundingBox()});
       await page.setViewportSize({width:390,height:844});
       await page.waitForTimeout(250);
@@ -7449,8 +7450,10 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
             ? `const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Review & Sign")]][1]');await card.getByRole('button',{name:/Review & Sign/}).click();`
             : `const card=title.locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Execute Document")]][1]');await card.getByRole('button',{name:/Execute Document/}).click();`}
         const dialog=page.getByRole('dialog');await dialog.waitFor({state:'visible',timeout:15000});
+        await page.waitForTimeout(250);
         measurements.push({viewport:{width:1440,height:900},box:await dialog.boundingBox()});
         await page.setViewportSize({width:390,height:844});
+        await page.waitForTimeout(250);
         measurements.push({viewport:{width:390,height:844},box:await dialog.boundingBox()});
         const mobileFits=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);
         await page.keyboard.press('Escape');

@@ -50,6 +50,11 @@ test('waiver lifecycle responsive evidence separates dialog bounds from page ove
   const end = audit.indexOf('async function observeWaiverSignatureDialogs(', start);
   const workflow = audit.slice(start, end);
   assert.match(workflow, /overflowElements/);
+  assert.match(workflow, /dialog\.waitFor\([\s\S]*page\.waitForTimeout\(250\);[\s\S]*measurements\.push\(\{viewport:\{width:1440,height:900\}/);
   assert.match(workflow, /Waiver waiver-responsive: actual global waiver dialog fits exact desktop and mobile viewports/);
   assert.match(workflow, /Waiver waiver-responsive: global waiver surface has no horizontal viewport overflow/);
+  const signatureStart = audit.indexOf('async function observeWaiverSignatureDialogs(');
+  const signatureEnd = audit.indexOf('async function runWaiverSignatureWorkflowAudit()', signatureStart);
+  const signatureWorkflow = audit.slice(signatureStart, signatureEnd);
+  assert.match(signatureWorkflow, /dialog\.waitFor\([\s\S]*page\.waitForTimeout\(250\);[\s\S]*measurements\.push\(\{viewport:\{width:1440,height:900\}/);
 });
