@@ -60,6 +60,14 @@ test('Calendar named cases require independent observed request evidence', () =>
   }
 });
 
+test('Calendar workflow reconciles rendered fixtures after every required filter and bounds real overlays', () => {
+  assert.match(source, /Calendar Parent A renders exactly the linked Team A and Team C fixtures and no Team B fixture/);
+  assert.match(source, /Calendar day week month and type filters reconcile exact included and excluded fixtures/);
+  assert.match(source, /Calendar team and child filters reconcile exact included and excluded fixtures/);
+  assert.match(source, /Calendar filter panel and event detail dialog remain within desktop and mobile viewports/);
+  assert.match(source, /assertCalendarFilterAndDetailBounds/);
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {

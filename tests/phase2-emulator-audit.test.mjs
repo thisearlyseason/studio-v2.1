@@ -257,7 +257,7 @@ test('Calendar evidence patterns match the exact single-space assertion labels e
   assert.doesNotMatch(patterns, /Calendar \.\* (?:workflow|fits)/);
   assert.ok(patterns.includes('/Calendar (?:views )?workflow console errors/'));
   assert.ok(patterns.includes('/Calendar (?:views )?workflow failed responses/'));
-  assert.ok(patterns.includes('/Calendar fits the mobile viewport/'));
+  assert.ok(patterns.includes('/Calendar filter panel and event detail dialog remain within desktop and mobile viewports/'));
 });
 
 test('Calendar feed lifecycle uses authenticated visible controls plus a local Functions fetch, while deployed proof remains blocked', () => {
