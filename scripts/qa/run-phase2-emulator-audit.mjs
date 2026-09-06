@@ -7888,7 +7888,14 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
     const youthAOnly = { active: await titleCount(activeTitle), household: await titleCount(householdTitle) };
     currentPanel = await openFilters();
     await currentPanel.getByText('Youth A', { exact: true }).locator('..').click();
+    await currentPanel.getByText('Youth A', { exact: true }).locator('..').getByRole('checkbox').waitFor({ state: 'attached', timeout: 15000 });
+    await currentPanel.getByText('Youth A', { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
+      if (node.getAttribute('data-state') !== 'unchecked') throw new Error('Youth A filter did not settle to unchecked before Youth C selection.');
+    });
     await currentPanel.getByText('Youth C', { exact: true }).locator('..').click();
+    await currentPanel.getByText('Youth C', { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
+      if (node.getAttribute('data-state') !== 'checked') throw new Error('Youth C filter did not settle to checked before calendar reconciliation.');
+    });
     await page.keyboard.press('Escape');
     await page.getByRole('heading', { name: householdTitle, exact: true }).first().waitFor({ timeout: 15000 });
     const youthCOnly = { active: await titleCount(activeTitle), household: await titleCount(householdTitle) };
