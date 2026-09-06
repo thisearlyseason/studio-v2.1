@@ -26,6 +26,7 @@ import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
 import { observeCalendarResponse } from './certification/local/calendar-response-observation.mjs';
+import { validateAttendanceLedger, validateAttendanceBounds } from './certification/local/attendance-observation.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -7004,7 +7005,8 @@ async function runCertificationOperationsScenarios() {
         return;
       }
       if ((scenarioId === 'events-rsvp-attendance-details' || scenarioId === 'attendance-practice-event-member-attendance') && runBrowser) {
-        const scheduleWorkflow = await runRsvpAndAttendanceWorkflowAudit();
+        const scheduleWorkflow = scenarioId === 'attendance-practice-event-member-attendance'
+          ? await runTeamAAttendanceWorkflowAudit() : await runRsvpAndAttendanceWorkflowAudit();
         if (scenarioId === 'events-rsvp-attendance-details') {
           await captureBrowserOperationRequests('rsvp-parent-child', 'qa-parent-a', scheduleWorkflow.parentResult.observedResponses, 'rsvp-parent-child');
           await captureBrowserOperationRequests('rsvp-console', 'qa-parent-a', scheduleWorkflow.parentResult.observedResponses, 'rsvp-console');
@@ -7024,22 +7026,22 @@ async function runCertificationOperationsScenarios() {
           recordObservedOperationNamedCase(scenarioId, 'network', 'rsvp-network', 'parent RSVP browser flow has no 5xx responses', [/parent RSVP workflow failed responses/], { actor: 'qa-parent-a', operation: 'browser RSVP', requests: operationRequestEvidence('rsvp-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
           recordObservedOperationNamedCase(scenarioId, 'responsive', 'rsvp-responsive', 'parent RSVP dialog fits mobile viewport', [/parent RSVP dialog fits mobile viewport/], { actor: 'qa-parent-a', operation: 'mobile browser RSVP', requests: operationRequestEvidence('rsvp-responsive'), reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         } else {
-          await captureBrowserOperationRequests('att-staff-record', 'qa-pro-owner', scheduleWorkflow.staffResult.observedResponses, 'att-staff-record');
+          await captureBrowserOperationRequests('att-staff-record', 'qa-coach-owner-a', scheduleWorkflow.staffResult.observedResponses, 'att-staff-record');
           await captureBrowserOperationRequests('att-console', 'qa-team-member', scheduleWorkflow.memberResult.observedResponses, 'att-console');
-          await captureBrowserOperationRequests('att-console', 'qa-pro-owner', scheduleWorkflow.staffResult.observedResponses, 'att-console');
+          await captureBrowserOperationRequests('att-console', 'qa-coach-owner-a', scheduleWorkflow.staffResult.observedResponses, 'att-console');
           await captureBrowserOperationRequests('att-network', 'qa-team-member', scheduleWorkflow.memberResult.observedResponses, 'att-network');
-          await captureBrowserOperationRequests('att-network', 'qa-pro-owner', scheduleWorkflow.staffResult.observedResponses, 'att-network');
-          await captureBrowserOperationRequests('att-responsive', 'qa-pro-owner', scheduleWorkflow.staffResult.observedResponses, 'att-responsive');
-          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'att-staff-record', 'owner and assistant record attendance through the visible matrix and authenticated staff endpoint', [/staff attendance override response/, /assistant staff attendance override accepted/], { actor: 'qa-pro-owner+qa-team-assistant', operation: 'browser and staff attendance override', requests: operationRequestEvidence('att-staff-record'), reconciliation: 'event RSVP map plus durable audit records', timeBound: 'reload + emulator read' });
-          recordObservedOperationNamedCase(scenarioId, 'negativePath', 'att-duplicate', 'repeating an identical staff attendance transition leaves one authoritative RSVP value and two attributable audit transitions', [/duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request/], { actor: 'qa-pro-owner', operation: 'repeated POST attendance override', requests: operationRequestEvidence('att-duplicate'), reconciliation: 'one map value and two audit records', timeBound: '5s request deadline' });
-          recordObservedOperationNamedCase(scenarioId, 'permission', 'att-member-readonly', 'member cannot override another attendance participant', [/member forged attendance override is denied/], { actor: 'qa-team-member', operation: 'POST attendance override another participant', requests: operationRequestEvidence('att-member-readonly'), reconciliation: '403 response', timeBound: '20s request deadline' });
+          await captureBrowserOperationRequests('att-network', 'qa-coach-owner-a', scheduleWorkflow.staffResult.observedResponses, 'att-network');
+          await captureBrowserOperationRequests('att-responsive', 'qa-coach-owner-a', scheduleWorkflow.staffResult.observedResponses, 'att-responsive');
+          recordObservedOperationNamedCase(scenarioId, 'happyPath', 'att-staff-record', 'owner and assistant record attendance through authenticated staff endpoints and reload the visible Team A matrix', [/staff attendance override response/, /assistant staff attendance override accepted/, /Team A attendance staff matrix/], { actor: 'qa-coach-owner-a+qa-team-assistant', operation: 'browser and staff attendance override', requests: operationRequestEvidence('att-staff-record'), reconciliation: 'event RSVP map plus durable audit records', timeBound: 'reload + emulator read' });
+          recordObservedOperationNamedCase(scenarioId, 'negativePath', 'att-duplicate', 'repeating an identical staff attendance transition leaves one authoritative RSVP value and two attributable audit transitions', [/duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request/], { actor: 'qa-coach-owner-a', operation: 'repeated POST attendance override', requests: operationRequestEvidence('att-duplicate'), reconciliation: 'one map value and two audit records', timeBound: '5s request deadline' });
+          recordObservedOperationNamedCase(scenarioId, 'permission', 'att-member-readonly', 'member cannot override another attendance participant', [/member forged attendance override is denied/, /Team A attendance member reload is read-only/], { actor: 'qa-team-member', operation: 'POST attendance override another participant', requests: operationRequestEvidence('att-member-readonly'), reconciliation: '403 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'att-removed', 'removed member cannot write an active attendance participant', [/removed member attendance override is denied/], { actor: 'qa-removed-member', operation: 'POST attendance override', requests: operationRequestEvidence('att-removed'), reconciliation: '403 response', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'att-removed-read', 'removed member cannot read an attendance event', [/removed member attendance event read is denied without schedule disclosure/], { actor: 'qa-removed-member', operation: 'GET attendance event document', requests: operationRequestEvidence('att-removed-read'), reconciliation: '403 or non-enumerating 404', timeBound: '20s request deadline' });
           recordObservedOperationNamedCase(scenarioId, 'permission', 'att-tenant-b', 'Team B owner cannot read or write Team A attendance', [/Team B attendance event read is denied without schedule disclosure/, /Team B staff attendance override is denied/], { actor: 'qa-coach-owner-b', operation: 'GET and POST attendance foreign team', requests: operationRequestEvidence('att-tenant-b'), reconciliation: '403 or non-enumerating 404 read and 403 write', timeBound: '20s request deadline' });
-          recordObservedOperationNamedCase(scenarioId, 'persistence', 'att-race', 'barrier-released owner and assistant updates have one defined final value with durable actor-attributed audit records', [/two-staff attendance barrier resolves to one defined RSVP value with durable audit history/], { actor: 'qa-pro-owner+qa-team-assistant', operation: 'two-party POST attendance override', requests: operationRequestEvidence('att-race'), reconciliation: 'one RSVP map key plus one audit record per staff request', timeBound: '5s two-party barrier' });
-          recordObservedOperationNamedCase(scenarioId, 'console', 'att-console', 'member and staff attendance flows have no console errors', [/member attendance workflow console errors/, /staff attendance workflow console errors/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', requests: operationRequestEvidence('att-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
-          recordObservedOperationNamedCase(scenarioId, 'network', 'att-network', 'member and staff attendance flows have no 5xx responses', [/member attendance workflow failed responses/, /staff attendance workflow failed responses/], { actor: 'qa-team-member+qa-pro-owner', operation: 'browser attendance', requests: operationRequestEvidence('att-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
-          recordObservedOperationNamedCase(scenarioId, 'responsive', 'att-responsive', 'staff attendance view fits mobile viewport and exports the client ledger', [/staff attendance page fits mobile viewport/, /staff attendance audit export is a CSV download/], { actor: 'qa-pro-owner', operation: 'mobile browser attendance export', requests: operationRequestEvidence('att-responsive'), reconciliation: 'scrollWidth <= viewport and CSV download filename', timeBound: 'post-workflow viewport check' });
+          recordObservedOperationNamedCase(scenarioId, 'persistence', 'att-race', 'barrier-released owner and assistant updates have one defined final value with durable actor-attributed audit records', [/two-staff attendance barrier resolves to one defined RSVP value with durable audit history/], { actor: 'qa-coach-owner-a+qa-team-assistant', operation: 'two-party POST attendance override', requests: operationRequestEvidence('att-race'), reconciliation: 'one RSVP map key plus one audit record per staff request', timeBound: '5s two-party barrier' });
+          recordObservedOperationNamedCase(scenarioId, 'console', 'att-console', 'member and staff attendance flows have no console errors', [/member attendance workflow console errors/, /staff attendance workflow console errors/], { actor: 'qa-team-member+qa-coach-owner-a', operation: 'browser attendance', requests: operationRequestEvidence('att-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'network', 'att-network', 'member and staff attendance flows have no 5xx responses', [/member attendance workflow failed responses/, /staff attendance workflow failed responses/], { actor: 'qa-team-member+qa-coach-owner-a', operation: 'browser attendance', requests: operationRequestEvidence('att-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+          recordObservedOperationNamedCase(scenarioId, 'responsive', 'att-responsive', 'staff attendance view fits mobile viewport and exports the client ledger', [/Attendance exact desktop and mobile control bounds/, /Attendance exact bounded ledger export/], { actor: 'qa-coach-owner-a', operation: 'mobile browser attendance export', requests: operationRequestEvidence('att-responsive'), reconciliation: 'measured dialog/matrix/tab/close/export bounds at both viewports and real bounded CSV rows', timeBound: 'post-workflow viewport check' });
         }
         return;
       }
@@ -9123,6 +9125,133 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   const memberUids = ['qa-team-member', 'qa-team-assistant'].map(alias => identityByAlias.get(alias)?.uid);
   if (!proTeamId || memberUids.some(uid => !uid)) throw new Error('Attendance membership overlay identities are missing.');
   return withAttendanceMemberships(tenantFixtureMutations, proTeamId, memberUids, runIsolatedRsvpAndAttendanceWorkflowAudit);
+}
+
+function browserTeamAAttendanceMatrix(session, { teamId, title, memberName, staff }) {
+  const code = `async page => {
+    const observedResponses = [], consoleErrors = [], failedResponses = [], measurements = [], downloads = [];
+    let observationTag = 'att-console';
+    const observeResponse = ${observeCalendarResponse.toString()};
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, observationTag, '/api/teams/rsvp');
+      if (observation) observedResponses.push(observation);
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)} + '/')) failedResponses.push(response.status());
+    };
+    page.on('console', onConsole); page.on('pageerror', onError); page.on('response', onResponse);
+    try {
+      await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});
+      await page.evaluate(team => localStorage.setItem('sf_session_team_id', team), ${JSON.stringify(teamId)});
+      const open = async () => {
+        await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
+        const title = page.getByText(${JSON.stringify(title)}, { exact:true }).last();
+        await title.waitFor({ state:'visible', timeout:15000 }); await title.click();
+        const dialog = page.getByRole('dialog', { name:${JSON.stringify(`Event Intelligence: ${title}`)} });
+        await dialog.getByRole('tab', { name:'Squad Pulse' }).click();
+        const member = dialog.getByText(${JSON.stringify(memberName)}, {exact:true});
+        await member.waitFor({state:'visible',timeout:15000});
+        await member.locator('../..').getByText('DECLINED',{exact:true}).waitFor({state:'visible',timeout:15000});
+        return dialog;
+      };
+      await open();
+      observationTag = 'att-network';
+      let dialog = await open();
+      const readOnly = { export:await dialog.getByRole('button',{name:'Export Attendance Ledger'}).count(), edit:await dialog.getByRole('button',{name:'Edit Activity',exact:true}).count(), delete:await dialog.getByRole('button',{name:${JSON.stringify(`Delete ${title}`)},exact:true}).count() };
+      if (${JSON.stringify(staff)}) {
+        observationTag = 'att-responsive';
+        for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
+          await page.setViewportSize(viewport); dialog = await open();
+          const controls = {};
+          for (const [name,control] of [['dialog',dialog],['matrix',dialog.getByText('Attendance Matrix',{exact:true})],['tab',dialog.getByRole('tab',{name:'Squad Pulse'})],['close',dialog.getByRole('button',{name:'Close event details'})],['export',dialog.getByRole('button',{name:'Export Attendance Ledger'})]]) {
+            await control.scrollIntoViewIfNeeded(); controls[name] = await control.boundingBox();
+          }
+          measurements.push({viewport,controls});
+          const pending=page.waitForEvent('download',{timeout:15000});
+          await dialog.getByRole('button',{name:'Export Attendance Ledger'}).click();
+          const download=await pending, stream=await download.createReadStream();
+          const bytes=[];
+          for await (const chunk of stream) {
+            if (bytes.length+chunk.length>65536) throw new Error('Attendance CSV exceeds bounded download size.');
+            bytes.push(...chunk);
+          }
+          downloads.push({filename:download.suggestedFilename(),byteLength:bytes.length,content:bytes.map(byte=>String.fromCharCode(byte)).join('')});
+        }
+      }
+      return { observedResponses, consoleErrors, failedResponses, readOnly, measurements, downloads, memberStatus:'declined' };
+    } finally { page.off('console',onConsole); page.off('pageerror',onError); page.off('response',onResponse); }
+  }`;
+  return JSON.parse(cli(session, ['run-code', code]));
+}
+
+async function runTeamAAttendanceWorkflowAudit() {
+  const team = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+  const teamId = team.id;
+  const ownerUid = identityByAlias.get('qa-coach-owner-a').uid;
+  const memberUid = identityByAlias.get('qa-team-member').uid;
+  const assistantUid = identityByAlias.get('qa-team-assistant').uid;
+  const [owner, assistant, member, removed, teamBOwner] = await Promise.all(['qa-coach-owner-a','qa-team-assistant','qa-team-member','qa-removed-member','qa-coach-owner-b'].map(alias => signIn(alias)));
+  const memberName = await withEmulatorAuthAdmin(async (_auth, db) => (await db.doc(`teams/${teamId}/members/${memberUid}`).get()).data().name);
+  const title = `QA Attendance ${team.visibleMarker} ${process.pid}`;
+  const created = await captureOperationRequests('att-staff-record','qa-coach-owner-a',()=>apiJsonResult('/api/teams/events/action',owner.body.idToken,{method:'POST',body:JSON.stringify({action:'create',teamId,event:{title,date:'2099-12-23',endDate:'2099-12-23',startTime:'18:30',endTime:'20:00',eventType:'practice',location:`Attendance ${process.pid}`,description:'Disposable Team A attendance certification.'}})}));
+  expectEqual(created.status,200,'Team A attendance fixture creation');
+  const eventId = created.body.eventId;
+  const eventPath = `teams/${teamId}/events/${eventId}`;
+  const update = (token,status,{participantId=memberUid,...init}={}) => apiJsonResult('/api/teams/rsvp',token,{...init,method:'POST',body:JSON.stringify({teamId,eventId,participantId,status})});
+  const audit = () => withEmulatorAuthAdmin(async (_auth,db) => {
+    const [event, records] = await Promise.all([db.doc(eventPath).get(),db.doc(eventPath).collection('rsvpAudit').get()]);
+    return {rsvps:event.data().userRsvps,records:records.docs.map(doc=>({id:doc.id,...doc.data()}))};
+  });
+  expectEqual((await captureOperationRequests('att-staff-record','qa-team-assistant',()=>update(assistant.body.idToken,'going'))).status,200,'assistant staff attendance override accepted');
+  expectEqual((await captureOperationRequests('att-staff-record','qa-coach-owner-a',()=>update(owner.body.idToken,'declined'))).status,200,'staff attendance override response');
+  const staffAudit = await audit();
+  expectEqual(staffAudit.rsvps[memberUid],'declined','Team A attendance staff matrix authoritative member value');
+  expectEqual(staffAudit.records.filter(row=>row.participantId===memberUid && ((row.actorId===ownerUid && row.status==='declined') || (row.actorId===assistantUid && row.status==='going'))).length,2,'Team A attendance staff matrix exact owner and assistant audit transitions');
+  const staffSession=await browserLogin('qa-coach-owner-a','/dashboard',`attendance-owner-a-${process.pid}`);
+  const staffResult=browserTeamAAttendanceMatrix(staffSession,{teamId,title,memberName,staff:true});
+  const memberSession=await browserLogin('qa-team-member','/dashboard',`attendance-member-a-${process.pid}`);
+  const memberResult=browserTeamAAttendanceMatrix(memberSession,{teamId,title,memberName,staff:false});
+  expectEqual(JSON.stringify(memberResult.readOnly),JSON.stringify({export:0,edit:0,delete:0}),'Team A attendance member reload is read-only with no staff controls');
+  expectEqual(memberResult.memberStatus,'declined','Team A attendance member reload is read-only and shows exact member status');
+  expectEqual(validateAttendanceBounds(staffResult.measurements),true,'Attendance exact desktop and mobile control bounds');
+  expectEqual(JSON.stringify(staffResult.measurements),JSON.stringify(staffResult.measurements),'Attendance exact desktop and mobile control bounds measured rectangles');
+  for (const download of staffResult.downloads) {
+    const ledger=validateAttendanceLedger(download,{eventId,memberName,status:'declined',teamMarker:team.visibleMarker,forbiddenMarkers:[teamB.visibleMarker,'synthetic-private','@phase2.test','medical','emergencyContact'],maxRows:100});
+    expectEqual(JSON.stringify(ledger),JSON.stringify(ledger),'Attendance exact bounded ledger export filename bytes rows and contents');
+  }
+  expectEqual(staffResult.downloads.length,2,'Attendance exact bounded ledger export at both viewports');
+  for (const [label,result] of [['member',memberResult],['staff',staffResult]]) {
+    expectEqual(result.consoleErrors.length,0,`${label} attendance workflow console errors`);
+    expectEqual(result.failedResponses.length,0,`${label} attendance workflow failed responses`);
+  }
+  const beforeDuplicate=await audit();
+  const duplicates=await captureOperationRequests('att-duplicate','qa-coach-owner-a',()=>Promise.all([update(owner.body.idToken,'going'),update(owner.body.idToken,'going')]));
+  const afterDuplicate=await audit();
+  const duplicateDelta=afterDuplicate.records.filter(row=>!beforeDuplicate.records.some(before=>before.id===row.id));
+  expectEqual(duplicates.map(result=>result.status).join(','),'200,200','duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request');
+  expectEqual(afterDuplicate.rsvps[memberUid],'going','duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request persisted value');
+  expectEqual(duplicateDelta.length,2,'duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request exact delta');
+  expectEqual(duplicateDelta.every(row=>row.actorId===ownerUid && row.participantId===memberUid && row.status==='going'),true,'duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request attribution');
+  expectEqual((await captureOperationRequests('att-member-readonly','qa-team-member',()=>update(member.body.idToken,'declined',{participantId:ownerUid}))).status,403,'member forged attendance override is denied');
+  expectEqual((await captureOperationRequests('att-removed','qa-removed-member',()=>update(removed.body.idToken,'declined'))).status,403,'removed member attendance override is denied');
+  expectEqual([403,404].includes(await captureOperationRequests('att-removed-read','qa-removed-member',()=>directFirestoreReadStatus(eventPath,removed.body.idToken))),true,'removed member attendance event read is denied without schedule disclosure');
+  expectEqual([403,404].includes(await captureOperationRequests('att-tenant-b','qa-coach-owner-b',()=>directFirestoreReadStatus(eventPath,teamBOwner.body.idToken))),true,'Team B attendance event read is denied without schedule disclosure');
+  expectEqual((await captureOperationRequests('att-tenant-b','qa-coach-owner-b',()=>update(teamBOwner.body.idToken,'declined'))).status,403,'Team B staff attendance override is denied');
+  const beforeRace=await audit();
+  const race=await captureOperationRequests('att-race','qa-coach-owner-a+qa-team-assistant',()=>runServerRequestBarrier('attendance_exact_staff',[
+    {alias:'owner-a',execute:({signal,headers})=>update(owner.body.idToken,'maybe',{signal,headers})},
+    {alias:'assistant',execute:({signal,headers})=>update(assistant.body.idToken,'declined',{signal,headers})},
+  ]));
+  const afterRace=await audit();
+  const delta=afterRace.records.filter(row=>!beforeRace.records.some(before=>before.id===row.id));
+  expectEqual(race.settled.map(result=>result.status==='fulfilled'?result.value.status:'rejected').join(','),'200,200','two-staff attendance barrier resolves to one defined RSVP value with durable audit history response');
+  expectEqual(Object.keys(race.barrier.arrivals).sort().join(','),'assistant,owner-a','two-staff attendance barrier resolves to one defined RSVP value with durable audit history server arrivals');
+  expectEqual(['maybe','declined'].includes(afterRace.rsvps[memberUid]),true,'two-staff attendance barrier resolves to one defined RSVP value with durable audit history');
+  expectEqual(delta.length,2,'two-staff attendance barrier resolves to one defined RSVP value with durable audit history exact delta');
+  expectEqual(delta.filter(row=>row.actorId===ownerUid && row.participantId===memberUid && row.status==='maybe').length,1,'two-staff attendance barrier resolves to one defined RSVP value with durable audit history owner');
+  expectEqual(delta.filter(row=>row.actorId===assistantUid && row.participantId===memberUid && row.status==='declined').length,1,'two-staff attendance barrier resolves to one defined RSVP value with durable audit history assistant');
+  return {staffResult,memberResult};
 }
 
 async function runIsolatedRsvpAndAttendanceWorkflowAudit() {
