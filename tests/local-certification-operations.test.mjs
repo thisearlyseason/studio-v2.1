@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
 import { OPERATIONS_SCENARIO_IDS } from '../scripts/qa/certification/local/selection.mjs';
 import {
   assertOperationsHandlerExactness,
   handlers,
   LOCAL_OPERATIONS_CASE_REQUIREMENTS,
   assertCaseOwnedOperationArtifacts,
+  runOperationsBatch,
   selectCaseOwnedOperationAssertions,
 } from '../scripts/qa/certification/local/batches/operations.mjs';
 
@@ -94,4 +96,29 @@ test('operations evidence rejects reused assertion IDs and incomplete named-case
   const missingRequest = complete('three', 'assertion-three');
   delete missingRequest.execution.requests;
   assert.throws(() => assertCaseOwnedOperationArtifacts([missingRequest]), /requests/i);
+});
+
+test('fully observed operation dimensions describe completion instead of missing cases', async () => {
+  const scenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'reminders-same-day-fcm-scheduler');
+  const events = Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenario.id]).flatMap(([dimension, caseIds]) =>
+    caseIds.map(caseId => ({
+      type: 'case', scenarioId: scenario.id, caseId, dimension, state: 'OBSERVED',
+      startedAt: '2026-09-06T04:00:00.000Z', completedAt: '2026-09-06T04:00:01.000Z', artifacts: [],
+    }))
+  );
+  const output = await runOperationsBatch({
+    commit: '0123456789abcdef0123456789abcdef01234567',
+    browserEnabled: true,
+    now: () => '2026-09-06T04:00:02.000Z',
+    certificationObservation: {
+      startedAt: '2026-09-06T04:00:00.000Z', completedAt: '2026-09-06T04:00:02.000Z',
+      stdout: events.map(event => `CERTIFICATION_EVENT ${JSON.stringify(event)}`).join('\n'),
+    },
+    operations: { execute: ({ handler, ...input }) => handler(input) },
+  }, [scenario]);
+  assert.equal(output.runErrors.length, 0);
+  for (const dimension of Object.values(output.results[0].dimensions)) {
+    assert.equal(dimension.state, 'OBSERVED');
+    assert.equal(dimension.note, 'All exact operational cases observed locally.');
+  }
 });

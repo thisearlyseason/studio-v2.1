@@ -128,7 +128,8 @@ function resultForScenario({ scenario, context, events, cleanup, execution }) {
       failed ? 'FAIL' : observed ? 'OBSERVED' : notObserved ? 'NOT_OBSERVED' : 'BLOCKED_PRECONDITION',
       matching.map(item => item.caseId),
       failed ? 'A case-owned operational assertion failed.'
-        : notObserved ? matching.map(item => item.observed).join(' ')
+        : observed ? 'All exact operational cases observed locally.'
+          : notObserved ? matching.map(item => item.observed).join(' ')
           : !context.browserEnabled && ['console', 'responsive'].includes(dimension)
             ? 'Browser mode was not enabled for this local operation run.'
             : `Missing exact operational case: ${expected.filter(id => !matchingIds.has(id)).join(', ')}.`,
