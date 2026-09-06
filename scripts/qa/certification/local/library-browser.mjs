@@ -13,3 +13,10 @@ export function validateLibraryDownload({filename,byteCount,sha256},{name,length
   if(sha256!==hash)throw Error('Library attachment SHA-256 mismatch.');
   return true;
 }
+
+export async function completeLibraryUpload(response,reload,deadline){
+  const result=await Promise.race([response.json(),deadline().then(()=>{throw Error('Library response body exceeded its deadline.');})]);
+  if(typeof result?.fileId!=='string'||!result.fileId)throw Error('Library upload omitted its exact file identity.');
+  await reload();
+  return result.fileId;
+}

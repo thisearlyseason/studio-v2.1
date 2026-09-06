@@ -34,7 +34,7 @@ import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSa
 import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent, reorderPracticeDrill, waitForPracticeDeleteResponse} from './certification/local/practice-browser.mjs';
 import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs';
 import {createPollBrowserObserver,findPollCard} from './certification/local/poll-browser.mjs';
-import {createLibraryBrowserObserver,validateLibraryDownload} from './certification/local/library-browser.mjs';
+import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUpload} from './certification/local/library-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -8353,7 +8353,7 @@ async function runLibraryWorkflowAudit() {
   try {
     const owner=await browserLogin('qa-coach-owner-a','/dashboard',`library-owner-${process.pid}`),member=await browserLogin('qa-team-member','/dashboard',`library-member-${process.pid}`);
     browserSelectScheduleTeam(owner,team.id);browserSelectScheduleTeam(member,team.id);
-    const fileId=await browserStep(owner,'qa-coach-owner-a',['lib-upload'],`${goto}await page.getByRole('button',{name:'Upload File',exact:true}).click();await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor();const pending=page.waitForResponse(response=>response.url().includes('/api/teams/library?')&&response.request().method()==='POST',{timeout:15000});await page.locator('input[type=file]').setInputFiles(${JSON.stringify(filePath)});const response=await pending;if(response.status()!==201)throw Error('Library upload '+response.status());await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor({state:'hidden',timeout:15000});await page.reload();await dismiss(page);await card().waitFor({timeout:15000});return(await response.json()).fileId;`);
+    const fileId=await browserStep(owner,'qa-coach-owner-a',['lib-upload'],`${goto}await page.getByRole('button',{name:'Upload File',exact:true}).click();await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor();const pending=page.waitForResponse(response=>response.url().includes('/api/teams/library?')&&response.request().method()==='POST',{timeout:15000});await page.locator('input[type=file]').setInputFiles(${JSON.stringify(filePath)});const response=await pending;if(response.status()!==201)throw Error('Library upload '+response.status());return await (${completeLibraryUpload.toString()})(response,async()=>{await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor({state:'hidden',timeout:15000});await page.reload();await dismiss(page);await card().waitFor({timeout:15000});},()=>page.waitForTimeout(5000));`);
     const metadata=await read(fileId);registerObject(metadata.storagePath);
     check('lib-upload',metadata.storagePath,`teams/${team.id}/library/${fileId}/content`,'exact private object path');check('lib-upload',metadata.url,'','no public or data URL stored');
     check('lib-upload',await withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`teams/${team.id}/files`).where('name','==',name).get()).size),1,'one metadata document');

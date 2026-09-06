@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {EventEmitter} from 'node:events';
-import {createLibraryBrowserObserver,validateLibraryDownload} from '../scripts/qa/certification/local/library-browser.mjs';
+import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUpload} from '../scripts/qa/certification/local/library-browser.mjs';
 import {LOCAL_OPERATIONS_CASE_REQUIREMENTS} from '../scripts/qa/certification/local/batches/operations.mjs';
 test('Library frozen cases are explicit and exact',()=>assert.deepEqual(Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS['files-library-crud-download']).flat().sort(),['lib-upload','lib-download','lib-member-read','lib-mime-spoof','lib-oversize','lib-wrong-path','lib-private-public','lib-delete','lib-stale','lib-team-b','lib-responsive','lib-console','lib-network'].sort()));
 test('Library download cannot pass on name or length alone',()=>{
@@ -14,4 +14,14 @@ test('Library observer associates completed request with original case and exact
   const request={url:()=> 'http://127.0.0.1:9001/api/teams/library?fileId=owned',method:()=> 'GET'};
   observer.start(['lib-download']);page.emit('request',request);observer.start(['lib-delete']);page.emit('response',{request:()=>request,status:()=>200});
   assert.deepEqual(observer.finish().observedResponses.map(row=>row.tag),['lib-download','lib-console','lib-network']);assert.equal(page.listenerCount('response'),0);
+});
+test('Library mutation body must be captured before reload invalidates its browser resource',async()=>{
+  let navigated=false;
+  const response={async json(){if(navigated)throw Error('Response body invalidated by navigation');return{fileId:'owned-id'};}};
+  assert.equal(await completeLibraryUpload(response,async()=>{navigated=true;},()=>new Promise(()=>{})),'owned-id');assert.equal(navigated,true);
+});
+test('Library response-body wait fails closed at its deadline without navigating',{timeout:100},async()=>{
+  let navigated=false;
+  await assert.rejects(()=>completeLibraryUpload({json:()=>new Promise(()=>{})},async()=>{navigated=true;},async()=>{}),/body.*deadline/i);
+  assert.equal(navigated,false);
 });
