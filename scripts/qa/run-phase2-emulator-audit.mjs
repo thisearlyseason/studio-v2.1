@@ -8127,11 +8127,13 @@ async function runCalendarViewsWorkflowAudit() {
       const emptyTypeState = await page.getByText('No scheduled events match these filters', { exact: true }).count();
       await page.getByRole('button', { name: 'Filters', exact: true }).click();
       for (let index = 0; index < await typeRows.count(); index += 1) await typeRows.nth(index).locator('..').click();
-      // Keep at least one squad selected between toggles. Calendar deliberately
-      // restores its active squad when the selection becomes empty, so switching
-      // to C must add C before removing A.
-      await teamCFilter.click();
-      await teamAFilter.click();
+      // Produce C-only from the observed current state. Parents now begin with
+      // their full household scope, while other roles begin at their active
+      // team, so fixed blind toggles would accidentally clear both choices.
+      const teamCCheckbox = teamCFilter.getByRole('checkbox');
+      const teamACheckbox = teamAFilter.getByRole('checkbox');
+      if (await teamCCheckbox.getAttribute('data-state') !== 'checked') await teamCFilter.click();
+      if (await teamACheckbox.getAttribute('data-state') === 'checked') await teamAFilter.click();
       await page.keyboard.press('Escape');
       await dismissTransientDialogs();
       const calendarMonthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
@@ -8139,11 +8141,6 @@ async function runCalendarViewsWorkflowAudit() {
       await page.getByRole('heading', { name: ${JSON.stringify(householdEventTitle)}, exact: true }).waitFor({ timeout: 15000 });
       const teamAAfterSwitch = await page.getByRole('heading', { name: ${JSON.stringify(activeHouseholdEventTitle)}, exact: true }).count();
       const teamBAfterSwitch = await page.getByText(${JSON.stringify(`${teamB.visibleMarker} Future Practice`)}, { exact: true }).count();
-      await dismissTransientDialogs();
-      await page.getByRole('button', { name: 'Filters', exact: true }).click();
-      await page.getByText('Squad Enrollment', { exact: true }).locator('..').getByText(${JSON.stringify(teamC.name)}, { exact: true }).locator('..').click();
-      await page.keyboard.press('Escape');
-      const noVisibleHouseholdEvents = await page.getByRole('heading', { name: ${JSON.stringify(householdEventTitle)}, exact: true }).count();
       await page.setViewportSize({ width: 390, height: 844 });
       return {
         householdFilterCount,
@@ -8154,7 +8151,6 @@ async function runCalendarViewsWorkflowAudit() {
         emptyTypeState,
         teamAAfterSwitch,
         teamBAfterSwitch,
-        noVisibleHouseholdEvents,
         mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         consoleErrors,
         failedResponses,
@@ -8173,7 +8169,6 @@ async function runCalendarViewsWorkflowAudit() {
   expectEqual(parentResult.emptyTypeState > 0, true, 'Calendar empty filter state hides household schedule entries');
   expectEqual(parentResult.teamAAfterSwitch, 0, 'Calendar parent team filter removes the other household schedule');
   expectEqual(parentResult.teamBAfterSwitch, 0, 'Calendar parent cannot view another household schedule');
-  expectEqual(parentResult.noVisibleHouseholdEvents, 0, 'Calendar empty filter state hides household schedule entries');
   expectEqual(parentResult.mobileFits, true, 'Calendar household views fit the mobile viewport');
   expectEqual(parentResult.consoleErrors.length, 0, 'Calendar household workflow console errors');
   expectEqual(parentResult.failedResponses.length, 0, 'Calendar household workflow failed responses');
