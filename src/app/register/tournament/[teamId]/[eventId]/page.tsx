@@ -409,7 +409,7 @@ function RegistrationForm() {
             )}
             {config.registration_cost && parseFloat(config.registration_cost) > 0 && <div className="pt-4 border-t border-primary/10 space-y-4">
               <div className="bg-white p-5 rounded-[2rem] text-[11px] font-medium leading-relaxed border border-primary/5 text-foreground/80 shadow-inner whitespace-pre-wrap">
-                {event?.paymentInstructions || config.offline_payment_instructions || 'Tournament entry fees are processed offline. Contact the tournament organizer for payment instructions.'}
+                {config.offline_payment_instructions}
               </div>
               <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border-2 border-amber-200">
                 <div className="bg-amber-100 p-2 rounded-xl"><Sparkles className="h-4 w-4 text-amber-600" /></div>

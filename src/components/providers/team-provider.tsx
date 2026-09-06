@@ -959,7 +959,7 @@ interface TeamContextType {
   updateLeagueSchedule: (leagueId: string, schedule: any[]) => Promise<void>;
   removeTeamFromLeague: (leagueId: string, teamId: string) => Promise<void>;
   inviteTeamToLeague: (leagueId: string, leagueName: string, email: string, teamName?: string) => Promise<void>;
-  saveLeagueRegistrationConfig: (leagueId: string, protocolId: string, updates: Partial<LeagueRegistrationConfig>) => Promise<void>;
+  saveLeagueRegistrationConfig: (leagueId: string, protocolId: string, updates: Partial<LeagueRegistrationConfig>) => Promise<LeagueRegistrationConfig>;
   submitRegistrationEntry: (targetId: string, protocolId: string, answers: any, version: number, signature?: string, targetType?: 'leagues' | 'teams', eventId?: string) => Promise<string | undefined>;
   assignEntryToTeam: (leagueId: string, entryId: string, teamId: string | null) => Promise<void>;
   toggleRegistrationPaymentStatus: (leagueId: string, entryId: string, paid: boolean) => Promise<void>;
@@ -2067,7 +2067,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
   const updateTeamCode = useCallback(async (tid: string, newCode: string) => {
-    if (!db) return;
+    if (!db) throw new Error('Registration form storage is unavailable.');
     
     // Safety check for cooldown
     const teamDoc = await getDoc(doc(db, 'teams', tid));
@@ -3030,7 +3030,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
   const deleteLeagueInvite = useCallback(async (id: string) => { if (db) await deleteDoc(doc(db, 'leagues', 'global', 'invites', id)); }, [db]);
   const saveLeagueRegistrationConfig = useCallback(async (lId: string, pId: string, u: Partial<LeagueRegistrationConfig>) => {
-    if (!db) return;
+    if (!db) throw new Error('Registration form storage is unavailable.');
     const token = await getAuthToken(firebaseAuth);
     const { id: _id, config_hash: expectedHash, ...config } = clean(u);
     const response = await fetch('/api/registrations/config', {
@@ -3040,149 +3040,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.error || 'Registration form could not be saved.');
+    return { ...u, ...payload.config, id: pId } as LeagueRegistrationConfig;
   }, [db, firebaseAuth]);
   
   const submitRegistrationEntry = useCallback(async (tId: string, pId: string, a: any, v: number, signature?: string, targetType?: any, eventId?: string) => { 
-    if (!db) return; 
-
-    const isTournamentEntry = targetType === 'teams' && Boolean(eventId);
-    const entryParentRef = isTournamentEntry
-      ? doc(db, 'teams', tId, 'events', eventId as string)
-      : doc(db, targetType || 'leagues', tId);
-
-    // Fetch config to get waiver texts for archiving
-    let waiverTextToStore = "";
-    try {
-      const configSnap = await getDoc(doc(collection(entryParentRef, 'registration'), pId));
-      if (configSnap.exists()) {
-        const config = configSnap.data() as LeagueRegistrationConfig;
-        const parts: string[] = [];
-        
-        if (config.require_default_waiver) {
-          parts.push("--- UNIVERSAL WAIVER ---\n" + (config.default_waiver_text || ""));
-        }
-        if (config.custom_waiver_text) {
-          parts.push("--- ORGANIZATION AGREEMENT ---\n" + config.custom_waiver_text);
-        }
-        if (config.team_waivers_content && config.team_waivers_content.length > 0) {
-          config.team_waivers_content.forEach(tw => {
-             parts.push(`--- ${tw.title.toUpperCase()} ---\n${tw.content}`);
-          });
-        }
-        waiverTextToStore = parts.join("\n\n");
-      }
-    } catch (e) {
-      console.error("Error fetching config for waiver archive", e);
-    }
-
-    // Snapshot the registration fee so financial reports remain stable if the
-    // organizer changes the configured fee later.
-    let snapshotRegistrationCost = 0;
-    try {
-      const feeSnap = await getDoc(entryParentRef);
-      if (feeSnap.exists()) {
-        const feeData = feeSnap.data();
-        snapshotRegistrationCost = parseFloat(feeData?.registrationCost || feeData?.registration_cost || '0') || 0;
-      }
-    } catch { /* non-blocking — fee defaults to 0 */ }
-
-    const entryData: any = { 
-      league_id: tId, 
-      protocol_id: pId, 
-      answers: a, 
-      form_version: v, 
-      waiver_signed_text: waiverTextToStore || signature, 
-      signature_date: signature ? new Date().toISOString() : null,
-      status: 'pending',
-      registrationCost: snapshotRegistrationCost,   // ← snapshot fee at submission time
-      payment_received: false,                       // ← explicit default for filter queries
-      created_at: new Date().toISOString(),
-      createdAt: new Date().toISOString()            // ← both field names for compatibility
-    };
-    if ((pId === 'team_config' || pId === 'player_config') && a.manual_enrollment) {
-      entryData.status = 'accepted';
-    }
-    const collectionPath = targetType || 'leagues';
-    const ref = await addDoc(collection(entryParentRef, 'registrationEntries'), clean(entryData));
-    
-    // Universal Waiver Archiving
-    if (signature) {
-      const archId = `arch_waiver_${ref.id}`;
-      await setDoc(doc(collection(entryParentRef, 'archived_waivers'), archId), clean({
-        id: archId,
-        entryId: ref.id,
-        protocolId: pId,
-        title: a.teamName || a.name || 'Participant Registration',
-        signer: signature,
-        signedAt: entryData.signature_date,
-        waiverText: waiverTextToStore, // Store the full text here
-        type: pId === 'player_config' ? 'Individual' : 'Squad',
-        answers: a
-      }));
-    }
-
-    if (pId === 'team_config') {
-      const teamName = a.teamName || a.name;
-      if (teamName) {
-        if (collectionPath === 'leagues') {
-          await updateDoc(doc(db, 'leagues', tId), {
-            [`teams.recruit_${ref.id}`]: { 
-              teamName, 
-              coachName: a.name || 'Recruit Coach', 
-              coachEmail: a.email, 
-              teamLogoUrl: a.teamLogoUrl || teamsRaw.find(t => t.name === teamName)?.teamLogoUrl || '', 
-              wins: 0, 
-              losses: 0, 
-              ties: 0, 
-              points: 0, 
-              status: entryData.status, 
-              signedAt: entryData.signature_date,
-              inviteCode: a.inviteCode || Math.random().toString(36).substring(2, 8).toUpperCase()
-            },
-            memberTeamIds: arrayUnion(`recruit_${ref.id}`)
-          });
-        } else if (collectionPath === 'teams' && eventId) {
-          // Automatic Tournament Roster Inclusion
-          const eventRef = doc(db, 'teams', tId, 'events', eventId);
-          await updateDoc(eventRef, {
-            tournamentTeamsData: arrayUnion(clean({
-              id: `p_${ref.id}`,
-              name: teamName,
-              coach: a.name || 'Pipeline Coach',
-              email: a.email || '',
-              logoUrl: a.teamLogoUrl || '',
-              source: 'pipeline'
-            })),
-            tournamentTeams: arrayUnion(teamName),
-            [`teamAgreements.${teamName}`]: signature ? {
-              signedAt: entryData.signature_date,
-              captainName: signature,
-              status: 'signed'
-            } : null
-          });
-        }
-      }
-    } else if (pId === 'player_config' || pId === 'individual_config') {
-      // Individual Recruit Pool Management
-      if (collectionPath === 'leagues') {
-        const participantName = a.name || a.fullName || 'Recruit Athlete';
-        await updateDoc(doc(db, 'leagues', tId), {
-          [`individualRecruits.recruit_${ref.id}`]: { 
-            name: participantName, 
-            email: a.email, 
-            phone: a.phone || '',
-            status: entryData.status || 'pending',
-            signedAt: entryData.signature_date,
-            teamCode: a.recruiter_code || null,
-            teamName: a.team_name || null,
-            teamId: a.team_id || null
-          },
-          memberIndivIds: arrayUnion(`recruit_${ref.id}`)
-        });
-      }
-    }
-    return ref.id;
-  }, [db]);
+    if (!db) return;
+    const isTournamentEntry=targetType==='teams'&&Boolean(eventId);
+    const configRef=isTournamentEntry?doc(db,'teams',tId,'events',eventId as string,'registration',pId):doc(db,targetType||'leagues',tId,'registration',pId);
+    const configSnap=await getDoc(configRef);if(!configSnap.exists())throw new Error('Registration form is unavailable.');
+    const config=configSnap.data() as LeagueRegistrationConfig;
+    const token=await getAuthToken(firebaseAuth);if(!token)throw new Error('Your session has expired.');
+    const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:isTournamentEntry?'tournament':'league',action:'register',...(isTournamentEntry?{teamId:tId,eventId}:{leagueId:tId}),protocolId:pId,answers:a,formVersion:config.form_version,formHash:config.config_hash,requestId:crypto.randomUUID(),signature})});
+    const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(payload?.error||'Registration could not be created.');return payload.entryId;
+  }, [db, firebaseAuth]);
 
 
   const assignEntryToTeam = useCallback(async (leagueId: string, entryId: string, teamId: string | null) => { 

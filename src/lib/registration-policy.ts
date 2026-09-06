@@ -15,9 +15,13 @@ const text = (value:unknown, max:number, label:string, required=false) => {
 const canonical = (value:unknown):unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.entries(value as Record<string,unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])) : value;
 
+export function registrationPayloadHash(value:unknown) {
+  return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+}
+
 export function registrationConfigHash(config:Record<string,unknown>) {
   const {config_hash:_,...value}=config;
-  return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+  return registrationPayloadHash(value);
 }
 
 export function validateRegistrationConfig(raw:unknown) {
@@ -50,6 +54,7 @@ export function validateRegistrationConfig(raw:unknown) {
     require_division_selection:input.require_division_selection===true,available_divisions:Array.isArray(input.available_divisions)?input.available_divisions.slice(0,100).map((value:unknown)=>text(value,100,'division',true)):[],
     selected_team_waivers:Array.isArray(input.selected_team_waivers)?input.selected_team_waivers.slice(0,100).map((value:unknown)=>text(value,200,'waiver id',true)):[],
     team_waivers_content:Array.isArray(input.team_waivers_content)?input.team_waivers_content.slice(0,20).map((waiver:any)=>({id:text(waiver?.id,200,'waiver id',true),title:text(waiver?.title,200,'waiver title',true),content:text(waiver?.content,50000,'waiver content',true)})):[]};
+  registrationPaymentSnapshot(result);
   result.config_hash=registrationConfigHash(result);return result;
 }
 

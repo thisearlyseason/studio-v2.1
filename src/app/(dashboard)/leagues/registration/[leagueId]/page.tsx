@@ -257,7 +257,7 @@ export default function LeagueRegistrationAdminPage() {
         title: pipelineType === 'player' ? 'Athlete Registration' : pipelineType === 'team' ? 'Team Registration' : 'Waiver Form',
         is_active: false,
         form_schema: pipelineType === 'player' ? defaultPlayerSchema : pipelineType === 'team' ? defaultTeamSchema : defaultWaiverSchema,
-        form_version: 1
+        form_version: 0
       });
     }
   }, [config, isConfigLoading, configId, pipelineType]);
@@ -278,7 +278,7 @@ export default function LeagueRegistrationAdminPage() {
       title: pipelineType === 'player' ? 'Athlete Registration' : 'Team Registration',
       is_active: false, 
       form_schema: pipelineType === 'player' ? defaultPlayerSchema : defaultTeamSchema, 
-      form_version: 1 
+      form_version: 0
     };
     const updated = { ...base, ...updates } as LeagueRegistrationConfig;
     
@@ -292,33 +292,13 @@ export default function LeagueRegistrationAdminPage() {
       updated.team_waivers_content = contents;
     }
 
-    const waiverKeys: (keyof LeagueRegistrationConfig)[] = [
-      'require_default_waiver',
-      'default_waiver_text',
-      'custom_waiver_text',
-      'selected_team_waivers',
-      'team_waivers_content'
-    ];
-    const hasWaiverUpdates = Object.keys(updates).some(key => waiverKeys.includes(key as keyof LeagueRegistrationConfig));
-
     setLocalConfig(updated);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     const performSync = async () => {
       setSaveStatus('saving');
       try {
-        await saveLeagueRegistrationConfig(leagueId as string, configId, updated);
-        if (hasWaiverUpdates) {
-          const waiverUpdates: Partial<LeagueRegistrationConfig> = {};
-          for (const key of waiverKeys) {
-            if (updated[key] !== undefined) {
-              (waiverUpdates as any)[key] = updated[key];
-            }
-          }
-          const otherConfigs = ['player_config', 'team_config', 'waiver_config'].filter(id => id !== configId);
-          for (const otherId of otherConfigs) {
-            await saveLeagueRegistrationConfig(leagueId as string, otherId, waiverUpdates);
-          }
-        }
+        const saved = await saveLeagueRegistrationConfig(leagueId as string, configId, updated);
+        setLocalConfig(saved);
         setSaveStatus('saved');
       } catch (error: any) {
         setLocalConfig(config || null);
@@ -333,7 +313,7 @@ export default function LeagueRegistrationAdminPage() {
     const schema = localConfig?.form_schema || config?.form_schema || [];
     if (!editingField?.label || !editingField?.type) return;
     const newField = { ...editingField, id: `f_${Date.now()}` } as RegistrationFormField;
-    handleUpdateConfig({ form_schema: [...schema, newField], form_version: (localConfig?.form_version || 0) + 1 }, true);
+    handleUpdateConfig({ form_schema: [...schema, newField] }, true);
     setEditingField(null);
   };
 
@@ -356,7 +336,7 @@ export default function LeagueRegistrationAdminPage() {
             manual_enrollment: true 
           }, 
           0, 
-          'Manual Enrollment', 
+          undefined,
           'leagues'
         );
         setIsManualAddOpen(false);
@@ -381,7 +361,7 @@ export default function LeagueRegistrationAdminPage() {
             manual_enrollment: true 
           }, 
           0, 
-          'Manual Enrollment', 
+          undefined,
           'leagues'
         );
         setIsManualAddOpen(false);
@@ -556,6 +536,11 @@ export default function LeagueRegistrationAdminPage() {
                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Form Title</Label>
                       <Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black shadow-sm" placeholder="e.g. 2024 Spring Season Registration" />
                     </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2"><Label htmlFor="league-registration-fee" className="text-[10px] font-black uppercase tracking-widest ml-1">Registration Fee</Label><Input id="league-registration-fee" type="number" min="0" step="0.01" value={localConfig?.registration_cost || '0'} onChange={e=>handleUpdateConfig({registration_cost:e.target.value})} /></div>
+                      <div className="space-y-2"><Label htmlFor="league-registration-currency" className="text-[10px] font-black uppercase tracking-widest ml-1">Currency</Label><Input id="league-registration-currency" maxLength={3} value={localConfig?.currency || 'CAD'} onChange={e=>handleUpdateConfig({currency:e.target.value.toUpperCase()})} /></div>
+                    </div>
+                    {Number(localConfig?.registration_cost||0)>0&&<div className="space-y-2"><Label htmlFor="league-offline-payment" className="text-[10px] font-black uppercase tracking-widest ml-1">Offline Payment Instructions</Label><Textarea id="league-offline-payment" value={localConfig?.offline_payment_instructions||''} onChange={e=>handleUpdateConfig({offline_payment_instructions:e.target.value})} placeholder="Explain exactly how and when payment should be made."/><p className="text-[10px] font-bold text-amber-700">Paid registrations remain pending until an organizer confirms the offline payment.</p></div>}
                   </div>
                 </CardContent>
               </Card>

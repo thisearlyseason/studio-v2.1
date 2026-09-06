@@ -51,7 +51,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 // CRITICAL BUILD FIX: Prevent static generation failures for dynamic enrollment routes
@@ -142,7 +141,8 @@ export default function TournamentRegistrationAdminPage() {
       form_version: 1,
     };
     const token = await getAuthToken(auth);
-    const createResponse = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId: newId, expectedVersion: 0, expectedHash: '', config: newForm }) });
+    const { id: _id, ...newConfig } = newForm;
+    const createResponse = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId: newId, expectedVersion: 0, expectedHash: '', config: newConfig }) });
     if (!createResponse.ok) throw new Error((await createResponse.json().catch(() => null))?.error || 'Registration form could not be created.');
     setNewFormName('');
     setIsCreatingForm(false);
@@ -218,10 +218,6 @@ export default function TournamentRegistrationAdminPage() {
     });
   }, [rawEntries, legacyEntries, filterStatus]);
 
-  const registrationEntryRef = (entryId: string) => legacyEntryIds.has(entryId)
-    ? doc(db, 'teams', teamId as string, 'registrationEntries', entryId)
-    : doc(db, 'teams', teamId as string, 'events', eventId as string, 'registrationEntries', entryId);
-
   const getAnswerLabel = (key: string) => {
     const schemaField = (localConfig?.form_schema || config?.form_schema || []).find(field => field.id === key);
     if (schemaField?.label) return schemaField.label;
@@ -232,10 +228,15 @@ export default function TournamentRegistrationAdminPage() {
       .replace(/\b\w/g, letter => letter.toUpperCase());
   };
 
-  const deleteRegistrationEntry = (entry: RegistrationEntry) => {
+  const mutateRegistrationEntry = async (entry: RegistrationEntry, action:'delete-registration'|'update-registration', status?:'pending'|'accepted') => {
+    if(legacyEntryIds.has(entry.id))throw new Error('Legacy registrations must be migrated before mutation.');
+    const token=await getAuthToken(auth);const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:'tournament',action,teamId,eventId,entryId:entry.id,...(status?{status}:{})})});
+    const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(payload?.error||'Registration could not be updated.');
+  };
+  const deleteRegistrationEntry = async (entry: RegistrationEntry) => {
     const teamName = entry.answers?.teamName || entry.answers?.name || 'this team';
     if (!window.confirm(`Delete the registration for ${teamName}? This cannot be undone.`)) return;
-    deleteDocumentNonBlocking(registrationEntryRef(entry.id));
+    try{await mutateRegistrationEntry(entry,'delete-registration');toast({title:'Registration Deleted'});}catch(error){toast({title:'Delete Failed',description:error instanceof Error?error.message:'Registration could not be deleted.',variant:'destructive'});}
   };
 
   const [localConfig, setLocalConfig] = useState<Partial<LeagueRegistrationConfig> | null>(null);
@@ -270,14 +271,14 @@ export default function TournamentRegistrationAdminPage() {
         description: event?.description || '',
         is_active: false,
         form_schema: [DIVISION_FIELD],
-        form_version: 1
+        form_version: 0
       });
     }
   }, [config, isConfigLoading, event, isSaving]);
 
   const handleUpdateConfig = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
     if (!teamId || !eventId || !configRef) return;
-    const base = localConfig || config || { id: configId, type: 'team', title: '', is_active: false, form_schema: [], form_version: 1 };
+    const base = localConfig || config || { id: configId, type: 'team', title: '', is_active: false, form_schema: [], form_version: 0 };
     const updated = { ...base, ...updates } as LeagueRegistrationConfig;
     setHasSaved(false);
 
@@ -346,7 +347,7 @@ export default function TournamentRegistrationAdminPage() {
     const schema = localConfig?.form_schema || config?.form_schema || [];
     if (!editingField?.label || !editingField?.type) return;
     const newField = { ...editingField, id: `f_${Date.now()}` } as RegistrationFormField;
-    handleUpdateConfig({ form_schema: [...schema, newField], form_version: (localConfig?.form_version || 0) + 1 }, true);
+    handleUpdateConfig({ form_schema: [...schema, newField] }, true);
     setEditingField(null);
   };
 
@@ -354,7 +355,7 @@ export default function TournamentRegistrationAdminPage() {
     if (!manualForm.teamName || !manualForm.coachName || !manualForm.email || !teamId || !eventId) return;
     setIsManualProcessing(true);
     try {
-      await submitRegistrationEntry(teamId as string, 'team_config', { teamName: manualForm.teamName, name: manualForm.coachName, email: manualForm.email, manual_enrollment: true }, 0, 'Manual Enrollment', 'teams', eventId as string);
+      await submitRegistrationEntry(teamId as string, 'team_config', { teamName: manualForm.teamName, name: manualForm.coachName, email: manualForm.email, manual_enrollment: true }, 0, undefined, 'teams', eventId as string);
       setIsManualAddOpen(false);
       setManualForm({ teamName: '', coachName: '', email: '' });
       toast({ title: "Team Added" });
@@ -519,8 +520,8 @@ export default function TournamentRegistrationAdminPage() {
                                       <div className="space-y-4">{Object.entries(entry.answers || {}).map(([key, val]) => (<div key={key} className="space-y-1"><p className="text-[8px] font-black uppercase opacity-40">{getAnswerLabel(key)}</p><p className="text-xs font-bold leading-relaxed">{Array.isArray(val) ? val.join(', ') : val?.toString() || '--'}</p></div>))}</div>
                                     </ScrollArea>
                                     <div className="flex flex-col gap-2">
-                                       <Button className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => updateDoc(registrationEntryRef(entry.id), { status: 'accepted' })}>Accept Registration</Button>
-                                       <Button variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => updateDoc(registrationEntryRef(entry.id), { status: 'pending' })}>Revert to Pending</Button>
+                                       <Button className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => void mutateRegistrationEntry(entry,'update-registration','accepted').catch(error=>toast({title:'Update Failed',description:error instanceof Error?error.message:'Registration could not be updated.',variant:'destructive'}))}>Accept Registration</Button>
+                                       <Button variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => void mutateRegistrationEntry(entry,'update-registration','pending').catch(error=>toast({title:'Update Failed',description:error instanceof Error?error.message:'Registration could not be updated.',variant:'destructive'}))}>Revert to Pending</Button>
                                     </div>
                                   </div>
                                 </DialogContent>

@@ -115,7 +115,6 @@ export function publicTournament(id: string, event: any) {
       division: team.division,
     })),
     tournamentGames: (event.tournamentGames || []).map(publicGame),
-    teamWaiverText: event.teamWaiverText,
     teamAgreements: Object.fromEntries(Object.entries(event.teamAgreements || {}).map(([teamName, raw]) => {
       const agreement = raw as any;
       return [teamName, {

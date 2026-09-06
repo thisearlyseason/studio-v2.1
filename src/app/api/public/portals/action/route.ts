@@ -21,7 +21,7 @@ import {
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { getTeamAuthority } from '@/lib/server-team-access';
 import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
-import { registrationPaymentSnapshot, RegistrationInputError } from '@/lib/registration-policy';
+import { registrationPaymentSnapshot, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
 
 function requestFingerprint(req: NextRequest) {
   const address = (req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local').slice(0, 100);
@@ -65,6 +65,18 @@ function sanitizeRegistrationAnswers(raw: Record<string, unknown>, config: Recor
     else if (Array.isArray(value) && value.length <= 50 && value.every(item => typeof item === 'string')) {
       answers[key] = value.map(item => item.trim().slice(0, 500));
     }
+  }
+
+  for (const field of schema) {
+    const key=String(field.id||''),value=answers[key],type=String(field.type||'');
+    if(value==null||value==='')continue;
+    const options=Array.isArray(field.options)?field.options.map(String):[];
+    if(type==='email'&&(typeof value!=='string'||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))throw new RegistrationInputError(`Invalid ${field.label || 'email'}.`);
+    if(type==='number'&&(typeof value!=='number'&&!/^[-+]?\d+(\.\d+)?$/.test(String(value))))throw new RegistrationInputError(`Invalid ${field.label || 'number'}.`);
+    if(type==='date'&&(typeof value!=='string'||Number.isNaN(new Date(`${value}T00:00:00Z`).getTime())))throw new RegistrationInputError(`Invalid ${field.label || 'date'}.`);
+    if(['select','dropdown','radio'].includes(type)&&!options.includes(String(value)))throw new RegistrationInputError(`Invalid ${field.label || 'selection'}.`);
+    if(type==='multi_select'&&(!Array.isArray(value)||value.some(item=>!options.includes(String(item)))))throw new RegistrationInputError(`Invalid ${field.label || 'selection'}.`);
+    if(type==='checkbox'&&typeof value!=='boolean')throw new RegistrationInputError(`Invalid ${field.label || 'confirmation'}.`);
   }
 
   return { answers, schema };
@@ -122,12 +134,14 @@ export async function POST(req: NextRequest) {
           const currentStaff = authority.isSuperAdmin || team.data()?.ownerUserId === auth.uid || Boolean(member?.exists && (memberData?.userId === auth.uid || (!memberData?.userId && member.id === auth.uid)) && memberData?.status !== 'removed' && memberData?.isDeleted !== true);
           if (!freshEvent.exists || !currentStaff) throw new RegistrationInputError('Tournament staff access required.', 403);
           if (!entry.exists) return;
+          if(Array.isArray(freshEvent.data()?.tournamentGames)&&freshEvent.data()!.tournamentGames.length>0)throw new RegistrationInputError('Registration cannot be deleted after the bracket is published.',409);
           transaction.delete(entryRef);
           transaction.delete(eventRef.collection('archived_waivers').doc(`arch_waiver_${entryId}`));
           const marker = `p_${entryId}`;
+          const remainingTeams=(freshEvent.data()?.tournamentTeamsData||[]).filter((teamEntry:any)=>teamEntry.id!==marker);
           transaction.update(eventRef, {
-            tournamentTeams: (freshEvent.data()?.tournamentTeams || []).filter((name: string) => name !== entry.data()?.answers?.teamName),
-            tournamentTeamsData: (freshEvent.data()?.tournamentTeamsData || []).filter((teamEntry: any) => teamEntry.id !== marker),
+            tournamentTeams: [...new Set(remainingTeams.map((teamEntry:any)=>String(teamEntry.name||teamEntry.teamName||'')).filter(Boolean))],
+            tournamentTeamsData: remainingTeams,
           });
         });
         return NextResponse.json({ success: true });
@@ -157,6 +171,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === 'update-registration' && kind === 'tournament') {
+      const auth=await verifyFirebaseToken(req);if(auth instanceof NextResponse)return auth;
+      const teamId=String(body.teamId||''),eventId=String(body.eventId||''),entryId=String(body.entryId||''),status=String(body.status||'');
+      if(!isSafeId(teamId)||!isSafeId(eventId)||!isSafeId(entryId)||!['pending','accepted','declined'].includes(status))return NextResponse.json({error:'Invalid registration update.'},{status:400});
+      const authority=await getTeamAuthority(teamId,auth.uid,auth.role);if(!authority?.isStaff)return NextResponse.json({error:'Tournament staff access required.'},{status:403});
+      const eventRef=authority.teamRef.collection('events').doc(eventId),entryRef=eventRef.collection('registrationEntries').doc(entryId);
+      await adminDb.runTransaction(async transaction=>{const [team,event,entry]=await Promise.all([transaction.get(authority.teamRef),transaction.get(eventRef),transaction.get(entryRef)]);const member=authority.member?await transaction.get(authority.member.ref):null,memberData=member?.data();const active=authority.isSuperAdmin||team.data()?.ownerUserId===auth.uid||Boolean(member?.exists&&(memberData?.userId===auth.uid||(!memberData?.userId&&member.id===auth.uid))&&memberData?.status!=='removed'&&memberData?.isDeleted!==true);if(!active)throw new RegistrationInputError('Tournament staff access required.',403);if(!event.exists||!entry.exists)throw new RegistrationInputError('Registration not found.',404);transaction.update(entryRef,{status,updatedAt:new Date().toISOString(),updatedBy:auth.uid});});
+      return NextResponse.json({success:true});
+    }
+
     if (action === 'lookup-team') {
       const teamCode = String(body.teamCode || '').trim().toUpperCase();
       if (teamCode.length < 3 || teamCode.length > 20) return NextResponse.json({ error: 'Invalid team code.' }, { status: 400 });
@@ -172,6 +196,7 @@ export async function POST(req: NextRequest) {
       const submittedHash = String(body.formHash || '').trim();
       const rawAnswers = body.answers && typeof body.answers === 'object' && !Array.isArray(body.answers) ? body.answers : null;
       const signature = typeof body.signature === 'string' ? body.signature.trim().slice(0, 300) : '';
+      if(signature&&!/\p{L}.*\p{L}/u.test(signature))return NextResponse.json({error:'Enter a meaningful signature.'},{status:400});
       if (!isSafeId(protocolId) || !/^[A-Za-z0-9_-]{16,100}$/.test(requestId)
         || !Number.isInteger(submittedVersion) || submittedVersion < 1
         || !/^[a-f0-9]{64}$/.test(submittedHash)
@@ -185,6 +210,12 @@ export async function POST(req: NextRequest) {
       let registrationCost = 0;
       let eventId: string | undefined;
       let entitlementRef: DocumentReference | null = null;
+      let registrationEventRef: DocumentReference | null = null;
+      let linkedMemberRef: DocumentReference | null = null;
+      let linkedActorUid: string | null = null;
+      let manualActorUid: string | null = null;
+      let manualMemberRef: DocumentReference | null = null;
+      let manualSuperAdmin=false;
 
       if (kind === 'league') {
         const identifier = String(body.leagueId || '');
@@ -220,11 +251,14 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: 'This subscription does not include public registration.' }, { status: 403 });
         }
         const eventRef = parentRef.collection('events').doc(eventId);
+        registrationEventRef = eventRef;
         const eventSnap = await eventRef.get();
         if (!eventSnap.exists || !eventSnap.data()?.isTournament) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
         entryParentRef = eventRef;
         configRef = eventRef.collection('registration').doc(protocolId);
       }
+
+      if(rawAnswers.manual_enrollment===true){const actor=await verifyFirebaseToken(req);if(actor instanceof NextResponse)return actor;manualSuperAdmin=actor.role==='superadmin';if(kind==='league'){const parent=await parentRef.get();if(!manualSuperAdmin&&parent.data()?.creatorId!==actor.uid)return NextResponse.json({error:'League organizer access required.'},{status:403});}else{const authority=await getTeamAuthority(parentRef.id,actor.uid,actor.role);if(!authority?.isStaff)return NextResponse.json({error:'Tournament staff access required.'},{status:403});manualMemberRef=authority.member?.ref||null;}manualActorUid=actor.uid;}
 
       const configSnap = await configRef.get();
       if (!configSnap.exists || configSnap.data()?.is_active !== true) return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 409 });
@@ -260,6 +294,8 @@ export async function POST(req: NextRequest) {
         if (!authority?.isStaff) {
           return NextResponse.json({ error: 'Squad staff access is required for linked registration.' }, { status: 403 });
         }
+        linkedMemberRef = authority.member?.ref || null;
+        linkedActorUid = auth.uid;
         linkedTeam = await authority.teamRef.get();
       }
 
@@ -284,9 +320,10 @@ export async function POST(req: NextRequest) {
       }
 
       if (kind === 'tournament') {
-        const requiredCore = ['teamName', 'name', 'email'];
+        const registrationType = String(config.type || (protocolId === 'team_config' ? 'team' : 'player')).toLowerCase();
+        const requiredCore = registrationType === 'team' ? ['teamName', 'name', 'email'] : ['fullName', 'email', 'dateOfBirth'];
         if (requiredCore.some(key => typeof answers[key] !== 'string' || !answers[key].trim())) {
-          return NextResponse.json({ error: 'Please complete the required team and contact details.' }, { status: 400 });
+          return NextResponse.json({ error: `Please complete the required ${registrationType === 'team' ? 'team and contact' : 'participant'} details.` }, { status: 400 });
         }
 
         const baselineAliases = [
@@ -305,15 +342,15 @@ export async function POST(req: NextRequest) {
       if (kind === 'league') {
         const registrationType = config.type || (protocolId === 'team_config' ? 'team' : protocolId === 'waiver_config' ? 'waiver' : 'player');
         const requiredCore = registrationType === 'team'
-          ? ['teamName', 'name', 'email', 'phone']
+          ? (manualActorUid ? ['teamName', 'name', 'email'] : ['teamName', 'name', 'email', 'phone'])
           : registrationType === 'waiver'
             ? ['fullName', 'email', 'phone']
-            : ['fullName', 'email', 'phone', 'dateOfBirth'];
+            : (manualActorUid ? ['name', 'email'] : ['fullName', 'email', 'phone', 'dateOfBirth']);
         if (requiredCore.some(key => typeof answers[key] !== 'string' || !answers[key].trim())) {
           return NextResponse.json({ error: 'Please complete the required registration details.' }, { status: 400 });
         }
 
-        if (registrationType === 'player') {
+        if (registrationType === 'player' && !manualActorUid) {
           const birthDate = new Date(String(answers.dateOfBirth));
           if (Number.isNaN(birthDate.getTime())) {
             return NextResponse.json({ error: 'Enter a valid date of birth.' }, { status: 400 });
@@ -337,6 +374,8 @@ export async function POST(req: NextRequest) {
       if (missingRequired) {
         return NextResponse.json({ error: 'Please complete every required registration field.' }, { status: 400 });
       }
+      if(typeof answers.email==='string'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answers.email))return NextResponse.json({error:'Enter a valid email address.'},{status:400});
+      if(typeof answers.phone==='string'&&answers.phone.replace(/\D/g,'').length<7)return NextResponse.json({error:'Enter a valid phone number.'},{status:400});
       const waiverParts = [
         config.require_default_waiver ? config.default_waiver_text : '',
         config.custom_waiver_text || '',
@@ -346,9 +385,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'A signature is required for this registration.' }, { status: 400 });
       }
       const createdAt = new Date().toISOString();
-      const entryId = createHash('sha256').update(`${kind}:${entryParentRef.path}:${protocolId}:${requestId}`).digest('hex');
+      const registrantEmail=String(answers.email||'').trim().toLowerCase();
+      const entryId = createHash('sha256').update(`${kind}:${entryParentRef.path}:${protocolId}:${registrantEmail}`).digest('hex');
       const entry = entryParentRef.collection('registrationEntries').doc(entryId);
-      const payloadHash = createHash('sha256').update(JSON.stringify({ answers, signature, submittedVersion, submittedHash })).digest('hex');
+      const payloadHash = registrationPayloadHash({ answers, signature, submittedVersion, submittedHash });
       const entryData = {
         league_id: kind === 'league' ? parentRef.id : null,
         event_id: eventId || null,
@@ -360,9 +400,11 @@ export async function POST(req: NextRequest) {
         payload_hash: payloadHash,
         waiver_signed_text: waiverParts.join('\n\n') || signature || null,
         signature_date: signature ? createdAt : null,
-        status: 'pending', registrationCost, payment, payment_received: false,
+        status: manualActorUid ? 'accepted' : 'pending', manualActorUid, registrationCost, payment, payment_received: false,
         created_at: createdAt, createdAt,
       };
+      const waiverArchiveRef=entryParentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`);
+      const waiverArchiveData={id:waiverArchiveRef.id,entryId:entry.id,protocolId,title:configuredAnswer(answers,schema,['teamName','name','fullName'],/team name|participant|athlete|full name/i)||'Participant Registration',signer:signature,signedAt:createdAt,waiverText:waiverParts.join('\n\n'),type:protocolId==='player_config'?'Individual':'Squad',answers,formVersion:submittedVersion,configHash:submittedHash,payloadHash,immutable:true};
 
       if (kind === 'tournament' && protocolId === 'team_config' && eventId) {
         const teamName = configuredAnswer(answers, schema, ['teamName'], /team name|squad name/i).slice(0, 200);
@@ -374,17 +416,19 @@ export async function POST(req: NextRequest) {
 
         const tournamentEventRef = parentRef.collection('events').doc(eventId);
         const result = await adminDb.runTransaction(async transaction => {
-          const [freshEvent, freshConfig, existingEntry, freshTeam] = await Promise.all([
+          const [freshEvent, freshConfig, existingEntry, freshTeam, existingArchive, freshManualMember] = await Promise.all([
             transaction.get(tournamentEventRef),
             transaction.get(configRef),
             transaction.get(entry),
             transaction.get(parentRef),
+            transaction.get(waiverArchiveRef),
+            manualMemberRef?transaction.get(manualMemberRef):Promise.resolve(null),
           ]);
           if (!freshEvent.exists || freshEvent.data()?.isTournament !== true || freshEvent.data()?.isArchived === true) {
             return { accepted: false as const, code: 'TOURNAMENT_NOT_FOUND', message: 'Tournament registration is inactive.', status: 404 };
           }
           const closeAt = freshEvent.data()?.registrationCloseAt ? new Date(freshEvent.data()!.registrationCloseAt).getTime() : null;
-          if (freshEvent.data()?.registrationOpen === false || (closeAt != null && Number.isFinite(closeAt) && closeAt <= Date.now())) {
+          if (freshEvent.data()?.registrationOpen !== true || freshEvent.data()?.status === 'cancelled' || (closeAt != null && (!Number.isFinite(closeAt) || closeAt <= Date.now()))) {
             return { accepted: false as const, code: 'REGISTRATION_CLOSED', message: 'Tournament registration is closed.', status: 409 };
           }
           if (!freshConfig.exists || freshConfig.data()?.is_active !== true) {
@@ -393,18 +437,21 @@ export async function POST(req: NextRequest) {
           if (!freshTeam.exists || !permitsLegacyOrPaidPortals(freshTeam.data()?.planId, freshTeam.data()?.plan_type, freshTeam.data()?.subscriptionPlanId)) {
             return { accepted: false as const, code: 'REGISTRATION_UNAVAILABLE', message: 'This subscription does not include public registration.', status: 403 };
           }
+          if(manualActorUid&&!manualSuperAdmin){const memberData=freshManualMember?.data();const active=freshTeam.data()?.ownerUserId===manualActorUid||Boolean(freshManualMember?.exists&&(memberData?.userId===manualActorUid||(!memberData?.userId&&freshManualMember.id===manualActorUid))&&memberData?.status!=='removed'&&memberData?.isDeleted!==true);if(!active)return {accepted:false as const,code:'STAFF_REVOKED',message:'Tournament staff access required.',status:403};}
           if (Number(freshConfig.data()?.form_version || 0) !== submittedVersion || String(freshConfig.data()?.config_hash || '') !== submittedHash) {
             return { accepted: false as const, code: 'REGISTRATION_CHANGED', message: 'Registration form changed. Reload before submitting.', status: 409 };
           }
           if (existingEntry.exists) {
-            return existingEntry.data()?.payload_hash === payloadHash
-              ? { accepted: true as const, replay: true }
-              : { accepted: false as const, code: 'REQUEST_COLLISION', message: 'This registration request was already used with different details.', status: 409 };
+            if(existingEntry.data()?.payload_hash!==payloadHash)return { accepted: false as const, code: 'REQUEST_COLLISION', message: 'This registration request was already used with different details.', status: 409 };
+            if(signature){if(existingArchive.exists&&(existingArchive.data()?.payloadHash!==payloadHash||existingArchive.data()?.configHash!==submittedHash||existingArchive.data()?.signer!==signature))return {accepted:false as const,code:'RECEIPT_CONFLICT',message:'The stored waiver receipt conflicts with this registration.',status:409};if(!existingArchive.exists)transaction.create(waiverArchiveRef,waiverArchiveData);}
+            return { accepted: true as const, replay: true };
           }
           if (Array.isArray(freshEvent.data()?.tournamentGames) && freshEvent.data()!.tournamentGames.length > 0) {
             return { accepted: false as const, code: 'TOURNAMENT_ROSTER_LOCKED', message: 'Registration is closed because the tournament bracket has already been published.', status: 409 };
           }
-          const capacity = Math.max(0, Number(freshEvent.data()?.registrationCapacity || freshEvent.data()?.maxRegistrations || 0));
+          const rawCapacity=freshEvent.data()?.registrationCapacity??freshEvent.data()?.maxRegistrations??0;
+          if(!Number.isInteger(Number(rawCapacity))||Number(rawCapacity)<0||Number(rawCapacity)>100000)return {accepted:false as const,code:'INVALID_CAPACITY',message:'Tournament registration configuration is invalid.',status:409};
+          const capacity = Number(rawCapacity);
           if (capacity > 0) {
             const registrations = await transaction.get(entryParentRef.collection('registrationEntries').limit(capacity));
             if (registrations.size >= capacity) return { accepted: false as const, code: 'REGISTRATION_FULL', message: 'Tournament registration is at capacity.', status: 409 };
@@ -412,11 +459,7 @@ export async function POST(req: NextRequest) {
 
           transaction.create(entry, entryData);
           if (signature) {
-            transaction.set(entryParentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`), {
-              id: `arch_waiver_${entry.id}`, entryId: entry.id, protocolId,
-              title: teamName, signer: signature, signedAt: createdAt,
-              waiverText: waiverParts.join('\n\n'), type: 'Squad', answers,
-            });
+            transaction.create(waiverArchiveRef,waiverArchiveData);
           }
           transaction.update(tournamentEventRef, {
             tournamentTeams: FieldValue.arrayUnion(teamName),
@@ -441,31 +484,52 @@ export async function POST(req: NextRequest) {
       // response and the league's operational projection in one atomic batch so
       // organizers never receive an entry that is absent from team/player tools.
       const commitResult = await adminDb.runTransaction(async batch => {
-        const [freshConfig, existingEntry, freshParent, freshEntitlement] = await Promise.all([
+        const [freshConfig, existingEntry, freshParent, freshEntitlement, freshEvent, freshLinkedTeam, freshLinkedMember, existingArchive, freshManualMember] = await Promise.all([
           batch.get(configRef),
           batch.get(entry),
           batch.get(parentRef),
           entitlementRef ? batch.get(entitlementRef) : Promise.resolve(null),
+          registrationEventRef ? batch.get(registrationEventRef) : Promise.resolve(null),
+          linkedTeam ? batch.get(linkedTeam.ref) : Promise.resolve(null),
+          linkedMemberRef ? batch.get(linkedMemberRef) : Promise.resolve(null),
+          batch.get(waiverArchiveRef),
+          manualMemberRef?batch.get(manualMemberRef):Promise.resolve(null),
         ]);
         if (!freshParent.exists || !freshConfig.exists || freshConfig.data()?.is_active !== true) {
           return { accepted: false as const, message: 'Registration portal is inactive.', status: 409 };
         }
-        const closeAt = freshParent.data()?.registrationCloseAt ? new Date(freshParent.data()!.registrationCloseAt).getTime() : null;
-        if (freshParent.data()?.isActive === false || freshParent.data()?.registrationOpen === false || (closeAt != null && Number.isFinite(closeAt) && closeAt <= Date.now())) {
+        const freshScope = kind === 'tournament' ? freshEvent?.data() : freshParent.data();
+        const closeAt = freshScope?.registrationCloseAt ? new Date(freshScope.registrationCloseAt).getTime() : null;
+        if (freshScope?.isActive === false || freshScope?.registrationOpen === false || (closeAt != null && Number.isFinite(closeAt) && closeAt <= Date.now())) {
           return { accepted: false as const, message: 'Registration portal is closed.', status: 409 };
         }
         if (kind === 'league' && (!freshEntitlement?.exists || !permitsLegacyOrPaidPortals(freshEntitlement.data()?.plan_type))) {
           return { accepted: false as const, message: 'This subscription does not include public registration.', status: 403 };
         }
+        if(manualActorUid&&!manualSuperAdmin&&kind==='league'&&freshParent.data()?.creatorId!==manualActorUid)return {accepted:false as const,message:'League organizer access required.',status:403};
+        if(manualActorUid&&!manualSuperAdmin&&kind==='tournament'){const memberData=freshManualMember?.data();const active=freshParent.data()?.ownerUserId===manualActorUid||Boolean(freshManualMember?.exists&&(memberData?.userId===manualActorUid||(!memberData?.userId&&freshManualMember.id===manualActorUid))&&memberData?.status!=='removed'&&memberData?.isDeleted!==true);if(!active)return {accepted:false as const,message:'Tournament staff access required.',status:403};}
+        if (kind === 'tournament' && (!freshEvent?.exists || freshEvent.data()?.isTournament !== true || freshEvent.data()?.isArchived === true || freshEvent.data()?.registrationOpen !== true || freshEvent.data()?.status === 'cancelled')) {
+          return { accepted: false as const, message: 'Tournament registration is inactive.', status: 409 };
+        }
+        if (linkedTeam) {
+          const linkedData = freshLinkedTeam?.data() || {};
+          const codeStillMatches = !recruiterCode || [linkedData.inviteCode, linkedData.teamCode, linkedData.code].some(value => String(value || '').toUpperCase() === recruiterCode);
+          const canonicalName = String(linkedData.name || linkedData.teamName || '').trim().slice(0, 200);
+          const memberData = freshLinkedMember?.data();
+          const actorStillAuthorized = !linkedActorUid || linkedData.ownerUserId === linkedActorUid || Boolean(freshLinkedMember?.exists && (memberData?.userId === linkedActorUid || (!memberData?.userId && freshLinkedMember.id === linkedActorUid)) && memberData?.status !== 'removed' && memberData?.isDeleted !== true);
+          if (!freshLinkedTeam?.exists || !codeStillMatches || !actorStillAuthorized || canonicalName !== answers.team_name || linkedTeam.id !== answers.team_id) return { accepted: false as const, message: 'Linked squad authority changed. Reload before submitting.', status: 409 };
+        }
         if (Number(freshConfig.data()?.form_version || 0) !== submittedVersion || String(freshConfig.data()?.config_hash || '') !== submittedHash) {
           return { accepted: false as const, message: 'Registration form changed. Reload before submitting.', status: 409 };
         }
         if (existingEntry.exists) {
-          return existingEntry.data()?.payload_hash === payloadHash
-            ? { accepted: true as const, replay: true }
-            : { accepted: false as const, message: 'This registration request was already used with different details.', status: 409 };
+          if(existingEntry.data()?.payload_hash!==payloadHash)return { accepted: false as const, message: 'This registration request was already used with different details.', status: 409 };
+          if(signature){if(existingArchive.exists&&(existingArchive.data()?.payloadHash!==payloadHash||existingArchive.data()?.configHash!==submittedHash||existingArchive.data()?.signer!==signature))return {accepted:false as const,message:'The stored waiver receipt conflicts with this registration.',status:409};if(!existingArchive.exists)batch.create(waiverArchiveRef,waiverArchiveData);}
+          return { accepted: true as const, replay: true };
         }
-        const capacity = Math.max(0, Number(freshConfig.data()?.max_registrations || freshParent.data()?.registrationCapacity || freshParent.data()?.maxRegistrations || 0));
+        const rawCapacity=freshConfig.data()?.max_registrations??freshScope?.registrationCapacity??freshScope?.maxRegistrations??0;
+        if(!Number.isInteger(Number(rawCapacity))||Number(rawCapacity)<0||Number(rawCapacity)>100000)return {accepted:false as const,message:'Registration capacity configuration is invalid.',status:409};
+        const capacity = Number(rawCapacity);
         if (capacity > 0) {
           const registrations = await batch.get(entryParentRef.collection('registrationEntries').limit(capacity));
           if (registrations.size >= capacity) return { accepted: false as const, message: 'Registration is at capacity.', status: 409 };
@@ -530,13 +594,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (signature) {
-        const registrationName = configuredAnswer(answers, schema, ['teamName', 'name', 'fullName'], /team name|participant|athlete|full name/i);
-        batch.set(entryParentRef.collection('archived_waivers').doc(`arch_waiver_${entry.id}`), {
-          id: `arch_waiver_${entry.id}`, entryId: entry.id, protocolId,
-          title: registrationName || 'Participant Registration',
-          signer: signature, signedAt: createdAt, waiverText: waiverParts.join('\n\n'),
-          type: protocolId === 'player_config' ? 'Individual' : 'Squad', answers,
-        });
+        batch.create(waiverArchiveRef,waiverArchiveData);
       }
         return { accepted: true as const, replay: false };
       });
@@ -631,6 +689,7 @@ export async function POST(req: NextRequest) {
         const signer = String(body.signer || '').trim();
         const registrationCode = String(body.registrationCode || '').trim().toUpperCase();
         const signedDate = String(body.signedDate || '').trim();
+        const expectedVersion=Number(body.expectedVersion),expectedHash=String(body.expectedHash||'');
         const parsedSignedDate = /^\d{4}-\d{2}-\d{2}$/.test(signedDate)
           ? new Date(`${signedDate}T00:00:00.000Z`)
           : null;
@@ -638,7 +697,7 @@ export async function POST(req: NextRequest) {
         const isValidSignedDate = parsedSignedDate != null &&
           !Number.isNaN(parsedSignedDate.getTime()) &&
           parsedSignedDate.toISOString().startsWith(signedDate) && signedDate === today;
-        if (!teamName || !signer || signer.length > 300 || !isValidSignedDate || !/^[A-Z0-9_-]{4,32}$/.test(registrationCode)) {
+        if (!teamName || !signer || signer.length > 300 || !isValidSignedDate || !Number.isInteger(expectedVersion) || expectedVersion < 1 || !/^[a-f0-9]{64}$/.test(expectedHash) || !/^[A-Z0-9_-]{4,32}$/.test(registrationCode)) {
           return NextResponse.json({ error: 'A valid tournament team, signer, and signature date are required.' }, { status: 400 });
         }
         const auth = await verifyFirebaseToken(req);
@@ -664,13 +723,14 @@ export async function POST(req: NextRequest) {
           if (!activeStaff) return { ok: false as const, status: 403, error: 'Verified squad staff access is required to sign this waiver.' };
           if (!config.exists || config.data()?.is_active !== true || !config.data()?.config_hash || !Number.isInteger(Number(config.data()?.form_version))) return { ok: false as const, status: 409, error: 'Tournament waiver configuration is unavailable.' };
           const configData = config.data()!;
+          if(Number(configData.form_version)!==expectedVersion||String(configData.config_hash)!==expectedHash)return {ok:false as const,status:409,error:'Tournament waiver changed. Review the current version.'};
           const waiverText = [configData.require_default_waiver ? configData.default_waiver_text : '', configData.custom_waiver_text || '', ...(configData.team_waivers_content || []).map((item: any) => item.content || '')].filter(Boolean).join('\n\n');
           if (!waiverText) return { ok: false as const, status: 409, error: 'Tournament waiver configuration is unavailable.' };
           const waiverHash = createHash('sha256').update(`${configData.form_version}:${configData.config_hash}:${waiverText}`).digest('hex');
           const archiveId = `arch_tournament_${createHash('sha256').update(`${eventId}:${sourceTeamId}:${waiverHash}`).digest('hex')}`;
           const archiveRef = adminDb.collection('teams').doc(teamId).collection('archived_waivers').doc(archiveId);
           const prior = await transaction.get(archiveRef);
-          if (prior.exists) return prior.data()?.signedBy === auth.uid && prior.data()?.signer === signer
+          if (prior.exists) return prior.data()?.signedBy === auth.uid && prior.data()?.signer === signer && prior.data()?.tournamentTeamName === teamName && prior.data()?.signedDate === signedDate
             ? { ok: true as const, replay: true }
             : { ok: false as const, status: 409, error: 'This waiver version was already signed with different details.' };
           transaction.update(ref, new FieldPath('teamAgreements', teamName), { agreed: true, captainName: signer, signedAt, signedDate, signedBy: auth.uid, sourceTeamId, waiverHash, waiverVersion: configData.form_version });

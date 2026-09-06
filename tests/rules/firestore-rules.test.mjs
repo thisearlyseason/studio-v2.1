@@ -1193,9 +1193,15 @@ test('a guardian can maintain their child record and an outsider cannot', async 
 test('leagues are visible only to organizers or registered members', async () => {
   const memberDb = authenticatedDb('member');
   const outsiderDb = authenticatedDb('outsider');
+  const ownerDb = authenticatedDb('owner');
+  await testEnv.withSecurityRulesDisabled(async context=>{const db=context.firestore();await setDoc(doc(db,'leagues','league-a','registration','team_config'),{is_active:false,title:'Private draft'});await setDoc(doc(db,'leagues','league-a','registrationEntries','private-entry'),{answers:{email:'private@example.test'}});});
 
   await assertSucceeds(getDoc(doc(memberDb, 'leagues', 'league-a')));
   await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(memberDb,'leagues','league-a','registration','team_config')));
+  await assertFails(getDoc(doc(memberDb,'leagues','league-a','registrationEntries','private-entry')));
+  await assertSucceeds(getDoc(doc(ownerDb,'leagues','league-a','registration','team_config')));
+  await assertSucceeds(getDoc(doc(ownerDb,'leagues','league-a','registrationEntries','private-entry')));
   await assertFails(setDoc(doc(outsiderDb, 'leagues', 'forged-league'), {
     creatorId: 'outsider',
     memberUserIds: ['outsider', 'member'],

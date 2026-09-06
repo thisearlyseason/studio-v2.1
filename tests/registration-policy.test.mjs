@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   registrationConfigHash,
+  registrationPayloadHash,
   validateRegistrationConfig,
   registrationPaymentSnapshot,
 } from '../src/lib/registration-policy.ts';
@@ -23,6 +24,13 @@ test('registration config normalizes a closed schema and creates a stable versio
   assert.match(first.config_hash, /^[a-f0-9]{64}$/);
 });
 
+test('registration replay hashes are stable across equivalent answer key ordering', () => {
+  assert.equal(
+    registrationPayloadHash({ answers: { email: 'coach@example.test', name: 'Coach' }, signature: 'Coach Name' }),
+    registrationPayloadHash({ signature: 'Coach Name', answers: { name: 'Coach', email: 'coach@example.test' } }),
+  );
+});
+
 test('registration config rejects duplicate ids unsupported types empty options and oversized schemas', () => {
   assert.throws(()=>validateRegistrationConfig({...valid,form_schema:[valid.form_schema[0],valid.form_schema[0]]}),/duplicate/i);
   assert.throws(()=>validateRegistrationConfig({...valid,form_schema:[{id:'x',label:'X',type:'script'}]}),/type/i);
@@ -34,4 +42,5 @@ test('registration payment snapshot is truthful for free and configured offline 
   assert.deepEqual(registrationPaymentSnapshot({registration_cost:'0'}),{amount:0,currency:'CAD',mode:'free',status:'not_required',instructions:null});
   assert.deepEqual(registrationPaymentSnapshot({registration_cost:'25.50',offline_payment_instructions:'Pay at check-in',currency:'cad'}),{amount:25.5,currency:'CAD',mode:'offline',status:'pending',instructions:'Pay at check-in'});
   assert.throws(()=>registrationPaymentSnapshot({registration_cost:'25.50'}),/instructions/i);
+  assert.throws(()=>validateRegistrationConfig({...valid,registration_cost:'25.50'}),/instructions/i);
 });

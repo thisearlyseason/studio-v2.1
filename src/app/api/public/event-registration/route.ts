@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
+import { registrationPayloadHash } from '@/lib/registration-policy';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -43,9 +44,10 @@ function publicFields(value: unknown) {
 
 function registrationAvailable(team: FirebaseFirestore.DocumentData, event: FirebaseFirestore.DocumentData) {
   if (!permitsLegacyOrPaidPortals(team.planId, team.plan_type, team.subscriptionPlanId)) return false;
-  if (team.isArchived === true || team.isActive === false || event.isArchived === true || event.registrationOpen === false) return false;
-  const eventDate = new Date(event.endDate || event.date);
-  return Number.isNaN(eventDate.getTime()) || eventDate.getTime() + 24 * 60 * 60 * 1000 >= Date.now();
+  if (team.isArchived === true || team.isActive === false || event.isArchived === true || event.registrationOpen !== true || event.status === 'cancelled') return false;
+  const rawDate=event.endDate||event.date;if(!rawDate)return false;
+  const eventDate = new Date(rawDate);
+  return !Number.isNaN(eventDate.getTime()) && eventDate.getTime() + 24 * 60 * 60 * 1000 >= Date.now();
 }
 
 function publicEvent(id: string, event: FirebaseFirestore.DocumentData) {
@@ -137,9 +139,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const registrationId = createHash('sha256').update(`${teamId}:${eventId}:${requestId}`).digest('hex');
+    const registrationId = createHash('sha256').update(`${teamId}:${eventId}:${email}`).digest('hex');
     const registrationRef = registration.eventRef.collection('registrations').doc(registrationId);
-    const payloadHash = createHash('sha256').update(JSON.stringify({ name, email, phone, responses, submittedVersion, submittedHash })).digest('hex');
+    const payloadHash = registrationPayloadHash({ name, email, phone, responses, submittedVersion, submittedHash });
     const result = await adminDb.runTransaction(async transaction => {
       const [freshEvent, freshTeam, existing] = await Promise.all([
         transaction.get(registration.eventRef),
@@ -155,6 +157,8 @@ export async function POST(req: NextRequest) {
       if (freshVersion !== submittedVersion || freshHash !== submittedHash) return 'changed';
 
       const capacity = Math.max(0, Number(freshData.registrationCapacity || freshData.maxRegistrations || freshData.capacity || 0));
+      const rawCapacity=freshData.registrationCapacity??freshData.maxRegistrations??freshData.capacity??0;
+      if(!Number.isInteger(Number(rawCapacity))||Number(rawCapacity)<0||Number(rawCapacity)>100000)return 'inactive';
       if (capacity > 0) {
         const existingRegistrations = await transaction.get(registration.eventRef.collection('registrations').limit(capacity));
         if (existingRegistrations.size >= capacity) return 'full';

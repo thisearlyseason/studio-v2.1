@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { TeamEvent } from '@/components/providers/team-provider';
+import { LeagueRegistrationConfig, TeamEvent } from '@/components/providers/team-provider';
 import { usePublicPortal } from '@/hooks/use-public-portal';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -59,8 +59,9 @@ export default function PublicTournamentWaiverPage() {
     }
   }, []);
 
-  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
-  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent>(portalUrl);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament-registration&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}&protocolId=team_config` : null;
+  const { data: portal, isLoading, error, status, retry } = usePublicPortal<{event:TeamEvent;config:LeagueRegistrationConfig}>(portalUrl);
+  const event=portal?.event, config=portal?.config;
 
   const unsignedTeams = useMemo(() => {
     if (!event?.tournamentTeams) return [];
@@ -79,7 +80,7 @@ export default function PublicTournamentWaiverPage() {
       if (!token) throw new Error('Sign in with an authorized squad staff account to continue.');
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ kind: 'tournament', action: 'waiver', teamId, eventId, teamName: selectedTeam, signer: coachName, signedDate: signDate, registrationCode }),
+        body: JSON.stringify({ kind: 'tournament', action: 'waiver', teamId, eventId, teamName: selectedTeam, signer: coachName, signedDate: signDate, registrationCode, expectedVersion: config?.form_version, expectedHash: config?.config_hash }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Verification failed.');
@@ -176,8 +177,8 @@ export default function PublicTournamentWaiverPage() {
               </div>
               <div className="p-1 bg-muted rounded-2xl border-2">
                 <div className="h-48 p-5 bg-white rounded-xl overflow-y-auto">
-                  {event.teamWaiverText ? (
-                    <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{event.teamWaiverText}</p>
+                  {(config?.default_waiver_text || config?.custom_waiver_text || config?.team_waivers_content?.length) ? (
+                    <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{[config.require_default_waiver ? config.default_waiver_text : '', config.custom_waiver_text || '', ...(config.team_waivers_content || []).map(item=>item.content)].filter(Boolean).join('\n\n')}</p>
                   ) : (
                     <div className="text-center py-10 opacity-40 space-y-2">
                       <FileText className="h-8 w-8 mx-auto" />

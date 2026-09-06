@@ -788,7 +788,8 @@ allow create, update: if false; // Authenticated incident service only.
       match /registrationEntries/{entryId} {
         allow create: if isSuperAdmin() || (isSignedIn() &&
           get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
-        allow read: if isSuperAdmin() || isLeagueMember(leagueId);
+        allow read: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
         allow update, delete: if isSuperAdmin() || (isSignedIn() &&
           get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
       }
@@ -799,7 +800,8 @@ allow create, update: if false; // Authenticated incident service only.
       }
 
       match /registration/{configId} {
-        allow read: if isSuperAdmin() || isLeagueMember(leagueId);
+        allow read: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
         allow write: if false;
       }
 
