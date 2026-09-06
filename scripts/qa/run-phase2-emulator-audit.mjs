@@ -6669,6 +6669,22 @@ function recordObservedOperationsCase(scenarioId, dimension, observed) {
   );
 }
 
+// Named frozen schedule cases may only consume assertions made by that exact
+// operation.  This deliberately rejects a scenario-wide assertion bag.
+function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observed, patterns, execution) {
+  const assertions = selectCaseOwnedOperationAssertions(activeCertificationAssertions, patterns);
+  const firstCapturedAt = assertions.map(assertion => assertion.capturedAt).filter(Boolean).sort()[0] || null;
+  recordCertificationCase(
+    scenarioId,
+    dimension,
+    caseId,
+    observed,
+    'named local browser/API operation completed with request and reconciliation evidence',
+    firstCapturedAt,
+    { assertions, execution },
+  );
+}
+
 async function runCertificationOperationsScenarios() {
   const scenarioIds = OPERATIONS_SCENARIO_IDS.filter(id => selectedOperationsScenarios.has(id));
   for (const scenarioId of scenarioIds) {
@@ -6710,9 +6726,22 @@ async function runCertificationOperationsScenarios() {
       if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
         await runEventWorkflowAudit();
         await runRecurringEventWorkflowAudit();
-        for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
-          recordObservedOperationsCase(scenarioId, dimension, 'staff event CRUD, recurrence, validation, permission, persistence, and responsive workflow completed');
-        }
+        await runExactEventApiCasesAudit();
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-crud', 'owner creates, edits, deletes, and member reads a team event through the browser', [/owner event create persists after reload/], { actor: 'qa-coach-owner-a', operation: 'browser-event-crud', timeBound: 'Playwright response + reload' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-series', 'owner creates, edits, and deletes a four-occurrence weekly series through the browser', [/weekly recurrence creates the exact requested occurrence count/, /weekly recurrence series edit preserves all occurrence dates/, /weekly recurrence series delete removes every occurrence/], { actor: 'qa-coach-owner-a', operation: 'browser-event-series', requests: ['create-series', 'update-series', 'delete-series'], reconciliation: 'four occurrences then zero after delete', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-dst-spring', 'owner creates and emulator persists a spring DST calendar-date event', [/event exact DST spring create and persisted date/], { actor: 'qa-coach-owner-a', operation: 'POST create', reconciliation: 'Firestore event date', timeBound: 'immediate emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-dst-fall', 'owner creates and emulator persists a fall DST calendar-date event', [/event exact DST fall create and persisted date/], { actor: 'qa-coach-owner-a', operation: 'POST create', reconciliation: 'Firestore event date', timeBound: 'immediate emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-midnight', 'owner creates a cross-midnight event and its durable schedule booking', [/event exact midnight interval and booking persist/], { actor: 'qa-coach-owner-a', operation: 'POST create', reconciliation: 'Firestore event and scheduleBookings interval', timeBound: 'immediate emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-invalid', 'server rejects malformed and reversed event payloads', [/event exact invalid payloads rejected server-side/], { actor: 'qa-coach-owner-a', operation: 'POST create invalid', requests: ['missing title', 'reversed interval'], reconciliation: '400 responses', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-conflict', 'server rejects overlapping team event without replacing the original', [/event exact overlap conflict preserves original/], { actor: 'qa-coach-owner-a', operation: 'POST create overlap', reconciliation: '409 and original document retained', timeBound: 'immediate emulator read' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'evt-double', 'barrier-released duplicate creates produce exactly one durable event', [/event exact duplicate barrier commits once/], { actor: 'qa-coach-owner-a', operation: 'two-party POST create', reconciliation: 'one 200, one 409, one document', timeBound: '5s two-party barrier' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-member-deny', 'active player cannot create a team event', [/event exact member create denied/], { actor: 'qa-team-member', operation: 'POST create', reconciliation: '403 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-assistant-own', 'active assistant coach can create a team event', [/event exact assistant create allowed/], { actor: 'qa-team-assistant', operation: 'POST create', reconciliation: '200 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'evt-team-b-deny', 'Team B owner cannot create an event in Team A', [/event exact foreign team create denied/], { actor: 'qa-coach-owner-b', operation: 'POST create Team A', reconciliation: '403 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'evt-persistence', 'owner event edit survives browser reload', [/owner event edit persists after reload/], { actor: 'qa-coach-owner-a', operation: 'browser event update', reconciliation: 'reload shows updated title', timeBound: '15s UI wait' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'evt-console', 'event browser paths complete without console errors', [/owner event create console errors/, /member event workflow console errors/, /weekly recurrence workflow console errors/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'browser event flows', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'evt-network', 'event browser paths complete without server failures', [/owner event create failed responses/, /member event workflow failed responses/, /weekly recurrence workflow failed responses/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'browser event flows', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'responsive', 'evt-responsive', 'recurrence controls remain within the mobile viewport', [/weekly recurrence controls fit the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'browser mobile viewport', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         continue;
       }
       if ((scenarioId === 'events-rsvp-attendance-details' || scenarioId === 'attendance-practice-event-member-attendance') && runBrowser) {
@@ -8088,6 +8117,79 @@ async function runEventWorkflowAudit() {
   expectEqual(ownerResult.failedResponses.length, 0, 'owner event edit/delete failed responses');
 }
 
+async function runExactEventApiCasesAudit() {
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  if (!teamA) throw new Error('Event exact-case fixture Team A is missing.');
+  const [owner, assistant, member, foreignOwner] = await Promise.all([
+    signIn('qa-coach-owner-a'), signIn('qa-team-assistant'), signIn('qa-team-member'), signIn('qa-coach-owner-b'),
+  ]);
+  if (![owner, assistant, member, foreignOwner].every(result => result.status === 200 && result.body?.idToken)) {
+    throw new Error('Event exact-case actor sign-in failed.');
+  }
+  const marker = `exact_event_${process.pid}_${Date.now()}`;
+  const ids = Object.freeze({
+    spring: `${marker}_spring`, fall: `${marker}_fall`, midnight: `${marker}_midnight`,
+    conflict: `${marker}_conflict`, duplicate: `${marker}_duplicate`, assistant: `${marker}_assistant`,
+  });
+  const create = (token, eventId, event, init = {}) => apiJsonResult('/api/teams/events/action', token, {
+    ...init, method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamA.id, eventId, event }),
+  });
+  const payload = (title, date, startTime, endTime, location) => ({
+    title, date, endDate: date, startTime, endTime, eventType: 'practice', location,
+  });
+
+  const spring = await create(owner.body.idToken, ids.spring,
+    payload(`QA DST Spring ${marker}`, '2026-03-08', '01:30', '03:30', `QA DST Spring ${marker}`));
+  const fall = await create(owner.body.idToken, ids.fall,
+    payload(`QA DST Fall ${marker}`, '2026-11-01', '01:30', '02:30', `QA DST Fall ${marker}`));
+  const midnight = await create(owner.body.idToken, ids.midnight,
+    payload(`QA Midnight ${marker}`, '2026-09-22', '23:30', '00:30', `QA Midnight ${marker}`));
+  expectEqual([spring.status, fall.status, midnight.status].join(','), '200,200,200', 'event exact DST and midnight creates accepted');
+
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const [springDoc, fallDoc, midnightDoc, midnightBooking] = await firestoreAdmin.getAll(
+      firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.spring}`),
+      firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.fall}`),
+      firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.midnight}`),
+      firestoreAdmin.doc(`scheduleBookings/team_event_${teamA.id}_${ids.midnight}`),
+    );
+    expectEqual(springDoc.data()?.date, '2026-03-08', 'event exact DST spring create and persisted date');
+    expectEqual(fallDoc.data()?.date, '2026-11-01', 'event exact DST fall create and persisted date');
+    expectEqual(JSON.stringify({ date: midnightDoc.data()?.date, endDate: midnightDoc.data()?.endDate, start: midnightBooking.data()?.startMinute, end: midnightBooking.data()?.endMinute }), JSON.stringify({ date: '2026-09-22', endDate: '2026-09-22', start: 1410, end: 1470 }), 'event exact midnight interval and booking persist');
+  });
+
+  const [missingTitle, reversed] = await Promise.all([
+    create(owner.body.idToken, `${marker}_missing`, { date: '2026-09-23', startTime: '10:00' }),
+    create(owner.body.idToken, `${marker}_reversed`, payload('QA Reversed', '2026-09-23', '12:00', '11:00', `QA Reversed ${marker}`)),
+  ]);
+  expectEqual([missingTitle.status, reversed.status].join(','), '400,400', 'event exact invalid payloads rejected server-side');
+
+  const conflictBase = await create(owner.body.idToken, ids.conflict,
+    payload(`QA Conflict ${marker}`, '2026-09-24', '10:00', '11:00', `QA Conflict ${marker}`));
+  const conflict = await create(owner.body.idToken, `${marker}_conflict_second`,
+    payload(`QA Conflict Second ${marker}`, '2026-09-24', '10:30', '11:30', `QA Other ${marker}`));
+  const conflictDoc = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.conflict}`).get());
+  expectEqual(JSON.stringify({ base: conflictBase.status, overlap: conflict.status, title: conflictDoc.data()?.title }), JSON.stringify({ base: 200, overlap: 409, title: `QA Conflict ${marker}` }), 'event exact overlap conflict preserves original');
+
+  const duplicatePayload = payload(`QA Duplicate ${marker}`, '2026-09-25', '10:00', '11:00', `QA Duplicate ${marker}`);
+  const duplicateSettled = await runTwoParty('event exact duplicate create', [
+    signal => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal }),
+    signal => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal }),
+  ], { terminate: async () => {} });
+  const duplicateStatuses = duplicateSettled.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(',');
+  const duplicateDoc = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.duplicate}`).get());
+  expectEqual(JSON.stringify({ statuses: duplicateStatuses, exists: duplicateDoc.exists }), JSON.stringify({ statuses: '200,409', exists: true }), 'event exact duplicate barrier commits once');
+
+  const [memberDenied, assistantAllowed, foreignDenied] = await Promise.all([
+    create(member.body.idToken, `${marker}_member`, payload('QA Member Denied', '2026-09-26', '10:00', '11:00', `QA Member ${marker}`)),
+    create(assistant.body.idToken, ids.assistant, payload('QA Assistant Allowed', '2026-09-27', '10:00', '11:00', `QA Assistant ${marker}`)),
+    create(foreignOwner.body.idToken, `${marker}_foreign`, payload('QA Foreign Denied', '2026-09-28', '10:00', '11:00', `QA Foreign ${marker}`)),
+  ]);
+  expectEqual(memberDenied.status, 403, 'event exact member create denied');
+  expectEqual(assistantAllowed.status, 200, 'event exact assistant create allowed');
+  expectEqual(foreignDenied.status, 403, 'event exact foreign team create denied');
+}
+
 function browserOwnerRecurringEventWorkflow(session, marker) {
   const title = `QA Weekly Event ${marker}`;
   const updated = `QA Weekly Event Updated ${marker}`;
@@ -8117,8 +8219,9 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
       await page.getByRole('option', { name: 'Four weekly activities' }).click();
       const createResponse = page.waitForResponse(response => response.url().includes('/api/teams/events/action') && response.request().method() === 'POST');
       await form.getByRole('button', { name: 'Deploy Activity' }).click();
-      const createStatus = (await createResponse).status();
-      if (createStatus !== 200) throw new Error('weekly recurrence create response status: ' + createStatus);
+      const create = await createResponse;
+      const createStatus = create.status();
+      if (createStatus !== 200) throw new Error('weekly recurrence create response: ' + createStatus + ' ' + await create.text() + ' request=' + create.request().postData());
       await page.getByText(${JSON.stringify(title)}, { exact: true }).first().waitFor({ timeout: 15000 });
       await page.reload();
       const itinerary = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Itinerary', exact: true }) });
