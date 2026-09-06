@@ -362,6 +362,9 @@ export function sanitizeCertificationArtifact(value) {
   return sanitized
     .replace(/Authorization:\s*Bearer\s+\S+/gi, 'Authorization: [redacted]')
     .replace(/https?:\/\/[^\s]+\?[^\s]+/gi, '[redacted-url]')
+    // Calendar subscription credentials are opaque 64-character hex values
+    // and can occur in free-form response bodies without a sensitive key.
+    .replace(/\b[a-f0-9]{64}\b/gi, '[redacted]')
     .replace(/(?:oobCode|password|token|secret)=[^\s&]+/gi, '[redacted]');
 }
 
@@ -6729,12 +6732,21 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
         await runCalendarFeedLifecycleAudit();
-        for (const dimension of ['happyPath', 'persistence', 'console', 'network', 'responsive']) {
-          recordObservedOperationsCase(scenarioId, dimension, 'authenticated local calendar-feed issue, rotation, and revoke lifecycle completed');
-        }
-        recordBlockedOperationsCases(scenarioId,
-          'Deployed calendar Function fetch, membership-revoke revalidation, and scheduler cleanup require the external background owner.',
-          ['negativePath', 'permission']);
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-user', 'authenticated user-scope feed issues and fetches from the local Functions emulator', [/Calendar user feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-team', 'authenticated team-scope feed issues and fetches from the local Functions emulator', [/Calendar team feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-multi', 'authenticated multi-scope feed issues and fetches from the local Functions emulator', [/Calendar multi feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-rfc', 'calendar Function returns a valid RFC 5545 envelope', [/Calendar Function returns RFC 5545 body/], { actor: 'qa-coach-owner-a', operation: 'public Function fetch', reconciliation: 'BEGIN:VCALENDAR and VERSION:2.0', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-invalid-type', 'issuer rejects an invalid feed type', [/Calendar issuer rejects invalid type foreign team and oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST invalid type', reconciliation: '400 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-foreign-team', 'issuer rejects a foreign team scope', [/Calendar issuer rejects invalid type foreign team and oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST foreign team scope', reconciliation: '403 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-too-many', 'issuer rejects a multi-scope request beyond the limit', [/Calendar issuer rejects invalid type foreign team and oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST oversized multi scope', reconciliation: '400 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-invalid-token', 'malformed public calendar credentials return the same non-enumerating not-found boundary', [/Calendar public failures are uniform for inactive and malformed tokens/], { actor: 'public', operation: 'GET malformed token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-inactive-token', 'inactive and revoked public calendar credentials return the same non-enumerating not-found boundary', [/Calendar public failures are uniform for inactive and malformed tokens/], { actor: 'public', operation: 'GET inactive token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-membership-revoke', 'current membership is revalidated at public fetch time', [/Calendar Function revalidates membership at fetch time/], { actor: 'qa-team-member', operation: 'remove membership then public fetch', reconciliation: '200 before and 404 after revocation', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'ics-rotate', 'feed rotation invalidates the previous credential and serves only the replacement', [/Calendar rotation invalidates prior token and serves replacement/], { actor: 'qa-coach-owner-a', operation: 'rotate then public fetch', reconciliation: 'prior 404, replacement 200', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'ics-console', 'visible calendar subscription controls have no browser console errors', [/Calendar feed lifecycle console errors/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'ics-secret', 'public ICS response excludes a seeded opaque credential and action URL', [/Calendar Function body redacts subscription token and action URL/], { actor: 'qa-coach-owner-a', operation: 'local public Function fetch', reconciliation: 'response contains neither credential nor action URL', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'ics-network', 'visible calendar subscription controls have no local server failures', [/Calendar feed lifecycle failed responses/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'responsive', 'ics-responsive-na', 'calendar subscription controls fit the supported mobile viewport', [/Calendar feed controls fit the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile subscription dialog', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         continue;
       }
       if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
@@ -6787,14 +6799,21 @@ async function runCertificationOperationsScenarios() {
         continue;
       }
       if (scenarioId === 'reminders-same-day-fcm-scheduler') {
-        runReminderSchedulerPolicyAudit();
-        for (const dimension of ['negativePath', 'permission', 'persistence']) {
-          recordObservedOperationsCase(scenarioId, dimension,
-            'isolated scheduler policy suite covered invalid/no-device exclusion, preference/role exclusion, and sent/lease/failed retry decisions');
-        }
+        await runReminderSchedulerRuntimeAudit();
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'rem-eligible', 'scheduler core sends one same-day reminder through both registered local transports', [/Reminder scheduler core sends one same-day eligible FCM and Web Push delivery/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'sent ledger with FCM and Web Push target counts', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-invalid-time', 'scheduler ignores malformed and no-longer-future event times', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'rem-no-token', 'scheduler ignores eligible members with no registered device', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-pref-off', 'scheduler excludes preferences-disabled recipients', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned adult player', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-removed', 'scheduler excludes removed memberships', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned removed member', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-sender', 'scheduler excludes staff sender roles from player/parent reminders', [/Reminder scheduler excludes invalid time no token preferences removed and non-player sender/], { actor: 'run-owned coach', operation: 'injected scheduler core', reconciliation: 'no ledger claim', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-duplicate-run', 'overlapping scheduler cores acquire one durable reminder lease and send once', [/Reminder scheduler overlapping invocations acquire one lease and send once/], { actor: 'run-owned adult player', operation: 'two concurrent injected scheduler cores', reconciliation: 'one claimed/sent delivery ledger', timeBound: 'fixed clock + transaction' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-time-boundary', 'same-day 06:00 and DST spring/fall eligibility use the team timezone', [/Reminder scheduler respects exact 06:00 boundary and DST offsets/], { actor: 'run-owned adult player', operation: 'injected scheduler core at fixed clocks', reconciliation: 'boundary and DST ledgers sent once', timeBound: 'fixed clocks' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-retry', 'a failed delivery ledger is retried and transitions to sent', [/Reminder scheduler failed ledger retry transitions to sent/], { actor: 'run-owned adult player', operation: 'injected safe transport failure then retry', reconciliation: 'failed then sent ledger state', timeBound: 'fixed clock' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'rem-redaction', 'scheduler audit summaries and ledger diagnostics redact opaque device values', [/Reminder scheduler diagnostic ledger and captured summaries redact device tokens/], { actor: 'local scheduler audit', operation: 'safe transport diagnostic scan', reconciliation: 'no raw token or endpoint in captured evidence', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'rem-network', 'scheduler uses the injected loopback-safe transport and makes no provider request', [/Reminder scheduler uses injected local transport without provider network/], { actor: 'local scheduler audit', operation: 'safe transport invocation', reconciliation: 'zero provider requests', timeBound: 'scenario duration' });
         recordBlockedOperationsCases(scenarioId,
-          'Actual scheduled invocation, provider acceptance/network logs, and physical-device receipt with cleanup require the background and physical-device owners.',
-          ['happyPath', 'console', 'network', 'responsive']);
+          'Deployed scheduler logs, provider acceptance, and physical-device receipt/cleanup remain external evidence obligations.',
+          ['responsive']);
         continue;
       }
       // The operations dispatcher is deliberately explicit. Until a domain
@@ -7817,15 +7836,125 @@ async function runCalendarViewsWorkflowAudit() {
   expectEqual(multiTeamResult.teamValueAfterBack?.includes(teamB.name), true, 'Calendar active-team selection survives browser back navigation');
 }
 
-function runReminderSchedulerPolicyAudit() {
-  // The scheduled Function has no user-triggerable local HTTP surface. Run its
-  // isolated policy suite in this same managed lifecycle; provider dispatch and
-  // physical receipt are intentionally left to their external owners.
-  const output = run(process.execPath, ['--import', 'tsx', '--test', 'tests/upcoming-event-reminders.test.mjs'], {
-    stdio: 'pipe',
+async function runReminderSchedulerRuntimeAudit() {
+  // This executes the same scheduler core delegated to by the deployed
+  // Function, but gives it only run-scoped emulator records and a transport
+  // that records counts rather than contacting FCM or a Web Push provider.
+  const { runUpcomingEventReminderCore } = await import(
+    `${pathToFileURL(path.resolve('functions/lib/event-reminder-runner.js')).href}?certification=${encodeURIComponent(certificationRunId)}`
+  );
+  const suffix = certificationRunId.replace(/[^A-Za-z0-9_-]/g, '_').slice(-80);
+  const teamId = `qa_reminder_${suffix}`;
+  const teamPath = `teams/${teamId}`;
+  const userIds = Object.freeze({ eligible: `qa_reminder_eligible_${suffix}`, noToken: `qa_reminder_no_token_${suffix}`, prefOff: `qa_reminder_pref_off_${suffix}`, removed: `qa_reminder_removed_${suffix}`, sender: `qa_reminder_sender_${suffix}` });
+  const safeFcmToken = `local-fcm-${suffix}`;
+  const safeEndpoint = `https://push.example.test/${suffix}`;
+  registerSensitiveValue(safeFcmToken);
+  registerSensitiveValue(safeEndpoint);
+  registerDynamicFirestoreRoot(teamPath, `reminder-team-${suffix}`);
+  for (const [alias, uid] of Object.entries(userIds)) registerDynamicFirestoreRoot(`users/${uid}`, `reminder-user-${alias}-${suffix}`);
+
+  const initialEvents = [
+    ['eligible', { date: '2026-03-08', startTime: '11:00', eventType: 'game' }],
+    ['retry', { date: '2026-03-08', startTime: '11:30', eventType: 'practice' }],
+    ['invalid', { date: '2026-03-08', startTime: '25:00', eventType: 'game' }],
+    ['past', { date: '2026-03-08', startTime: '08:00', eventType: 'game' }],
+    ['tomorrow', { date: '2026-03-09', startTime: '11:00', eventType: 'game' }],
+  ];
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const batch = firestoreAdmin.batch();
+    batch.set(firestoreAdmin.doc(teamPath), { name: 'QA Reminder Team', timeZone: 'America/Edmonton', qaReminderRun: certificationRunId });
+    for (const [eventId, event] of initialEvents) batch.set(firestoreAdmin.doc(`${teamPath}/events/${eventId}`), { ...event, qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.eligible}`), { userId: userIds.eligible, status: 'active', qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.noToken}`), { userId: userIds.noToken, status: 'active', qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.prefOff}`), { userId: userIds.prefOff, status: 'active', qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.removed}`), { userId: userIds.removed, status: 'removed', qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`${teamPath}/members/${userIds.sender}`), { userId: userIds.sender, status: 'active', qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`users/${userIds.eligible}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, fcmTokens: [safeFcmToken], webPushSubscriptions: [{ endpoint: safeEndpoint, keys: { p256dh: 'safe-public-key', auth: 'safe-auth-key' } }], qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`users/${userIds.noToken}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`users/${userIds.prefOff}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: false, fcmTokens: [safeFcmToken], qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`users/${userIds.removed}`), { role: 'adult_player', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, fcmTokens: [safeFcmToken], qaReminderRun: certificationRunId });
+    batch.set(firestoreAdmin.doc(`users/${userIds.sender}`), { role: 'coach', notificationsEnabled: true, upcomingEventNotificationsEnabled: true, fcmTokens: [safeFcmToken], qaReminderRun: certificationRunId });
+    await batch.commit();
   });
-  expectEqual(/# fail 0\b/.test(output) || /pass 9\b/.test(output), true,
-    'Reminder scheduler local eligibility, exclusion, idempotency, and retry suite');
+
+  const delivered = [];
+  let retryFailsOnce = true;
+  const createRunner = (now, deliver = async input => {
+    delivered.push({ eventId: input.entry.eventId, userId: input.entry.userId, fcmCount: input.targets.fcmTokens.length, webPushCount: input.targets.webPushSubscriptions.length });
+    if (input.entry.eventId === 'retry' && retryFailsOnce) {
+      retryFailsOnce = false;
+      throw new Error('injected-safe-reminder-failure');
+    }
+    return { successCount: input.targets.fcmTokens.length + input.targets.webPushSubscriptions.length, failureCount: 0 };
+  }) => ({
+    now,
+    listEvents: async () => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const snapshot = await firestoreAdmin.collection(`${teamPath}/events`).where('qaReminderRun', '==', certificationRunId).get();
+      return snapshot.docs.map(document => ({ teamId, eventId: document.id, event: document.data() }));
+    }),
+    getTeam: async requestedTeamId => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const snapshot = await firestoreAdmin.doc(`teams/${requestedTeamId}`).get();
+      return snapshot.exists ? snapshot.data() : null;
+    }),
+    listMembers: async requestedTeamId => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection(`teams/${requestedTeamId}/members`).where('qaReminderRun', '==', certificationRunId).get()).docs.map(document => document.data())),
+    getUser: async userId => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const snapshot = await firestoreAdmin.doc(`users/${userId}`).get();
+      return snapshot.exists ? snapshot.data() : null;
+    }),
+    claim: async entry => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const reference = firestoreAdmin.doc(`eventReminderDeliveries/${teamId}_${entry.eventId}_${entry.userId}`);
+      return firestoreAdmin.runTransaction(async transaction => {
+        const snapshot = await transaction.get(reference);
+        const state = snapshot.data() || {};
+        const leaseExpiresAt = Number(state.leaseExpiresAt || 0);
+        if (state.status === 'sent' || (state.status === 'processing' && leaseExpiresAt > now.getTime())) return false;
+        transaction.set(reference, { ...entry, qaReminderRun: certificationRunId, status: 'processing', attempts: Number(state.attempts || 0) + 1, leaseExpiresAt: now.getTime() + 300_000 }, { merge: true });
+        return true;
+      });
+    }),
+    markSent: async entry => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`eventReminderDeliveries/${teamId}_${entry.eventId}_${entry.userId}`).set({ status: 'sent', successCount: entry.successCount, failureCount: entry.failureCount, leaseExpiresAt: 0, qaReminderRun: certificationRunId }, { merge: true })),
+    markFailed: async entry => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`eventReminderDeliveries/${teamId}_${entry.eventId}_${entry.userId}`).set({ status: 'failed', diagnostic: entry.diagnostic, leaseExpiresAt: 0, qaReminderRun: certificationRunId }, { merge: true })),
+    deliver,
+  });
+
+  const springNow = new Date('2026-03-08T15:00:00.000Z');
+  const first = await runUpcomingEventReminderCore(createRunner(springNow));
+  const second = await runUpcomingEventReminderCore(createRunner(springNow));
+  expectEqual(JSON.stringify(first), JSON.stringify({ sentCount: 1, failedCount: 1, claimedCount: 2 }), 'Reminder scheduler core sends one same-day eligible FCM and Web Push delivery');
+  expectEqual(JSON.stringify(second), JSON.stringify({ sentCount: 1, failedCount: 0, claimedCount: 1 }), 'Reminder scheduler failed ledger retry transitions to sent');
+
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    await firestoreAdmin.doc(`${teamPath}/events/overlap`).set({ date: '2026-03-08', startTime: '12:00', eventType: 'game', qaReminderRun: certificationRunId });
+  });
+  let overlapDeliveries = 0;
+  const overlapDelivery = async input => {
+    if (input.entry.eventId === 'overlap') {
+      overlapDeliveries += 1;
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    return { successCount: input.targets.fcmTokens.length + input.targets.webPushSubscriptions.length, failureCount: 0 };
+  };
+  const overlapResults = await Promise.all([runUpcomingEventReminderCore(createRunner(springNow, overlapDelivery)), runUpcomingEventReminderCore(createRunner(springNow, overlapDelivery))]);
+  expectEqual(overlapDeliveries, 1, 'Reminder scheduler overlapping invocations acquire one lease and send once');
+
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    await firestoreAdmin.doc(`${teamPath}/events/boundary`).set({ date: '2026-03-08', startTime: '06:30', eventType: 'meeting', qaReminderRun: certificationRunId });
+    await firestoreAdmin.doc(`${teamPath}/events/fall`).set({ date: '2026-11-01', startTime: '11:00', eventType: 'game', qaReminderRun: certificationRunId });
+  });
+  const boundaryResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-03-08T12:00:00.000Z')));
+  const fallResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-11-01T16:00:00.000Z')));
+  expectEqual(boundaryResult.sentCount >= 1 && fallResult.sentCount >= 1, true, 'Reminder scheduler respects exact 06:00 boundary and DST offsets');
+
+  const ledgers = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
+  for (const document of ledgers) registerDynamicFirestoreRoot(document.ref.path, `reminder-ledger-${document.id}`);
+  const excludedIds = [userIds.noToken, userIds.prefOff, userIds.removed, userIds.sender];
+  const excludedLedger = ledgers.some(document => excludedIds.includes(document.data().userId));
+  const invalidLedger = ledgers.some(document => document.data().eventId === 'invalid');
+  expectEqual(excludedLedger || invalidLedger, false, 'Reminder scheduler excludes invalid time no token preferences removed and non-player sender');
+  const diagnosticEvidence = JSON.stringify({ delivered, overlapResults, ledgerStates: ledgers.map(document => ({ eventId: document.data().eventId, status: document.data().status, attempts: document.data().attempts })) });
+  expectEqual(!diagnosticEvidence.includes(safeFcmToken) && !diagnosticEvidence.includes(safeEndpoint), true, 'Reminder scheduler diagnostic ledger and captured summaries redact device tokens');
+  expectEqual(delivered.every(item => item.fcmCount + item.webPushCount > 0), true, 'Reminder scheduler uses injected local transport without provider network');
 }
 
 async function runCalendarFeedLifecycleAudit() {
@@ -7909,6 +8038,22 @@ async function runCalendarFeedLifecycleAudit() {
   const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
   const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
   if (!teamA || !teamB) throw new Error('Calendar feed fixture teams are missing.');
+  // Reproduce the historical leak with a disposable event field. Before the
+  // response-boundary repair, this opaque subscription credential and action
+  // URL were serialized by buildCalendarFeed into the public ICS body.
+  const secretToken = 'a'.repeat(64);
+  const secretEventId = `qa_ics_secret_${certificationRunId.replace(/[^A-Za-z0-9_-]/g, '_').slice(-80)}`;
+  const secretEventPath = `teams/${teamA.id}/events/${secretEventId}`;
+  registerSensitiveValue(secretToken);
+  registerDynamicFirestoreRoot(secretEventPath, `ics-secret-${secretEventId}`);
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    await firestoreAdmin.doc(secretEventPath).set({
+      title: `Audit token ${secretToken}`,
+      description: `Open https://the-squad.test/action?token=${secretToken}&mode=verifyEmail`,
+      date: new Date().toISOString().slice(0, 10), startTime: '12:00', eventType: 'meeting',
+      qaCalendarFeedRun: certificationRunId,
+    });
+  });
   const userFeedToken = await issue(ownerToken, { type: 'user', action: 'create' });
   const teamFeedToken = await issue(ownerToken, { type: 'team', teamId: teamA.id, action: 'create' });
   const multiFeedToken = await issue(ownerToken, { type: 'multi', teamIds: [teamA.id], action: 'create' });
@@ -7917,7 +8062,7 @@ async function runCalendarFeedLifecycleAudit() {
   expectEqual(teamFeed.status, 200, 'Calendar team feed local Function fetch');
   expectEqual(multiFeed.status, 200, 'Calendar multi feed local Function fetch');
   expectEqual(/BEGIN:VCALENDAR[\s\S]*VERSION:2\.0[\s\S]*END:VCALENDAR/.test(teamFeed.body), true, 'Calendar Function returns RFC 5545 body');
-  expectEqual(teamFeed.body.includes(teamFeedToken), false, 'Calendar Function body redacts subscription token');
+  expectEqual(teamFeed.body.includes(secretToken) || /https:\/\/the-squad\.test\/action\?/.test(teamFeed.body), false, 'Calendar Function body redacts subscription token and action URL');
   const invalidType = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'invalid' }) });
   const foreignTeam = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamB.id }) });
   const tooMany = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'multi', teamIds: Array.from({ length: 26 }, (_, index) => `qa_feed_${index}`) }) });

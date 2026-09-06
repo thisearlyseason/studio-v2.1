@@ -235,7 +235,7 @@ test('Calendar views and filters have a dedicated two-viewport operations workfl
   const operationsBlock = source.slice(start, end);
   assert.match(operationsBlock, /scenarioId === 'calendar-team-family-views-and-filters' && runBrowser/);
   assert.match(operationsBlock, /await runCalendarViewsWorkflowAudit\(\)/);
-  assert.match(operationsBlock, /\['happyPath', 'console', 'network', 'responsive'\]/);
+  assert.match(operationsBlock, /'cal-team-a-b'/);
   const calendarBranchStart = operationsBlock.indexOf("scenarioId === 'calendar-team-family-views-and-filters'");
   const calendarBranchEnd = operationsBlock.indexOf("if (scenarioId ===", calendarBranchStart + 1);
   const calendarBranch = operationsBlock.slice(calendarBranchStart, calendarBranchEnd);
@@ -260,19 +260,21 @@ test('Calendar evidence patterns match the exact single-space assertion labels e
   assert.ok(patterns.includes('/Calendar fits the mobile viewport/'));
 });
 
-test('Calendar feed lifecycle uses the authenticated visible subscription controls and leaves deployed fetch proof blocked', () => {
+test('Calendar feed lifecycle uses authenticated visible controls plus a local Functions fetch, while deployed proof remains blocked', () => {
   const start = source.indexOf('async function runCertificationOperationsScenarios()');
   const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
   const operationsBlock = source.slice(start, end);
   assert.match(operationsBlock, /scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser/);
   assert.match(operationsBlock, /await runCalendarFeedLifecycleAudit\(\)/);
-  assert.match(operationsBlock, /Deployed calendar Function fetch, membership-revoke revalidation, and scheduler cleanup require the external background owner/);
+  assert.match(operationsBlock, /Deployed scheduler logs, provider acceptance, and physical-device receipt\/cleanup remain external evidence obligations/);
   const workflowStart = source.indexOf('async function runCalendarFeedLifecycleAudit()');
   const workflowEnd = source.indexOf('function browserOwnerEventCreate', workflowStart);
   const workflow = source.slice(workflowStart, workflowEnd);
   assert.match(workflow, /name: \/Current Squad\//);
   assert.match(workflow, /name: 'Rotate Link', exact: true/);
   assert.match(workflow, /name: 'Revoke Feed', exact: true/);
+  assert.match(workflow, /Calendar Function body redacts subscription token and action URL/);
+  assert.match(workflow, /registerDynamicFirestoreRoot\(secretEventPath/);
 });
 
 test('communication browser workflow uses the run-scoped Team A identifier for its chat target', () => {
@@ -898,6 +900,18 @@ test('Task 3 case artifacts sanitize actor values before writing', () => {
   assert.equal(sanitized.tenantAlias, 'qa-parent-a');
   assert.equal(sanitized.email, '[synthetic-email]');
   assert.doesNotMatch(JSON.stringify(sanitized), /token-value|oobCode=secret/);
+});
+
+test('certification artifacts never retain opaque calendar subscription tokens or action URLs in free-form evidence', () => {
+  const token = 'f'.repeat(64);
+  const sanitized = auditRunner.sanitizeCertificationArtifact({
+    observed: `ICS body note https://the-squad.test/action?token=${token}&mode=verifyEmail`,
+    nested: { body: `subscription ${token}` },
+  });
+  const flattened = JSON.stringify(sanitized);
+  assert.doesNotMatch(flattened, new RegExp(token));
+  assert.doesNotMatch(flattened, /https:\/\/the-squad\.test\/action\?/);
+  assert.match(flattened, /\[redacted-url\]/);
 });
 
 test('Task 3 artifact sanitation replaces embedded emails and registered dynamic identities', () => {

@@ -16,7 +16,7 @@ import {
   type WebPushSubscription,
 } from "./reminder-delivery";
 import { buildCalendarFeed, CalendarFeedEvent, CalendarFeedTeam } from "./calendar-feed";
-import { publicCalendarFeedFailure } from "./calendar-feed-public-boundary";
+import { publicCalendarFeedFailure, redactCalendarFeedPublicResponse } from "./calendar-feed-public-boundary";
 import { runUpcomingEventReminderCore } from "./event-reminder-runner";
 
 admin.initializeApp();
@@ -269,18 +269,6 @@ async function getCurrentCalendarTeamIds(userId: string): Promise<string[]> {
   return [...teamIds];
 }
 
-// Subscription tokens are bearer secrets.  Legacy event descriptions may have
-// copied a subscription URL into free-form notes, so sanitize all string event
-// fields before serializing an otherwise public ICS response.
-function redactCalendarFeedTokens<T>(value: T): T {
-  if (typeof value === "string") return value.replace(/\b[a-f0-9]{64}\b/gi, "[redacted]") as T;
-  if (Array.isArray(value)) return value.map(item => redactCalendarFeedTokens(item)) as T;
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, redactCalendarFeedTokens(item)])) as T;
-  }
-  return value;
-}
-
 export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
   // Path format expected: /calendar/feed/{token}
   // If not using path params, can use query string ?token=...
@@ -416,7 +404,7 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
     const calendarName = type === "multi"
       ? "Squad Family Schedule"
       : (type === "team" ? teamMap[resolvedTeamIds[0]]?.name : "Master Schedule") || "Master Schedule";
-    const calendar = buildCalendarFeed(uniqueEvents.map(event => redactCalendarFeedTokens(event)), teamMap, calendarName)
+    const calendar = buildCalendarFeed(uniqueEvents.map(event => redactCalendarFeedPublicResponse(event)), teamMap, calendarName)
       // Defense in depth for values introduced by calendar serialization itself.
       .replace(/\b[a-f0-9]{64}\b/gi, "[redacted]");
 

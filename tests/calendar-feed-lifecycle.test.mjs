@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { resolveCalendarFeedMutation } from '../src/lib/calendar-feed-lifecycle.ts';
-import { publicCalendarFeedFailure } from '../functions/src/calendar-feed-public-boundary.ts';
+import {
+  publicCalendarFeedFailure,
+  redactCalendarFeedPublicResponse,
+} from '../functions/src/calendar-feed-public-boundary.ts';
 
 const activeTeamFeed = {
   id: 'a'.repeat(64),
@@ -75,4 +78,20 @@ test('public calendar fetch failures are intentionally non-enumerating not-found
       body: 'Calendar feed not found.',
     });
   }
+});
+
+test('public calendar response strips opaque subscription tokens and action URLs before ICS serialization or evidence capture', () => {
+  const token = 'a'.repeat(64);
+  const event = {
+    title: `Team briefing ${token}`,
+    description: `Open https://the-squad.test/action?token=${token}&mode=verifyEmail then review the subscription.`,
+    nested: { notes: `calendar://subscribe/${token}` },
+  };
+
+  const sanitized = redactCalendarFeedPublicResponse(event);
+  const flattened = JSON.stringify(sanitized);
+  assert.doesNotMatch(flattened, new RegExp(token));
+  assert.doesNotMatch(flattened, /https:\/\/the-squad\.test\/action\?/);
+  assert.match(flattened, /\[redacted-url\]/);
+  assert.match(flattened, /\[redacted\]/);
 });
