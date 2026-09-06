@@ -3,7 +3,7 @@ import test from 'node:test';
 import {EventEmitter} from 'node:events';
 import {readFileSync} from 'node:fs';
 import {LOCAL_OPERATIONS_CASE_REQUIREMENTS} from '../scripts/qa/certification/local/batches/operations.mjs';
-import {createMediaBrowserObserver,generatedMp4Body} from '../scripts/qa/certification/local/media-browser.mjs';
+import {createMediaBrowserObserver,generatedMp4Body,parseMediaBrowserEnvelope} from '../scripts/qa/certification/local/media-browser.mjs';
 test('Media frozen cases are explicit and exact',()=>assert.deepEqual(Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS['files-avatar-branding-player-media-paths']).flat().sort(),['media-user-avatar','media-player-self','media-parent','media-team-owner','media-branding','media-private-public','media-wrong-player','media-wrong-team','media-outsider','media-unverified','media-suspended','media-type','media-image-boundary','media-video-boundary','media-delete','media-responsive','media-console','media-network'].sort()));
 test('Media observer retains actual initiating case and ignores foreign origins',()=>{
   const page=new EventEmitter(),observer=createMediaBrowserObserver(page,{baseUrl:'http://127.0.0.1:9001'});
@@ -24,4 +24,10 @@ test('affected Film records supported protected upload and gallery deletion uses
   assert.match(film,/captureOperationRequests\('film-photo'[\s\S]*?apiJsonResult\('\/api\/media\?path='/);
   const ui=readFileSync(new URL('../src/app/(dashboard)/coaches-corner/page.tsx',import.meta.url),'utf8');
   assert.match(ui,/e\.stopPropagation\(\);\s*void handleDeletePhoto\(photoUrl\)/);
+});
+test('Media browser steps reject empty or malformed stdout with exact case diagnostics',()=>{
+  for(const raw of['','\n','{}','not json'])assert.throws(()=>parseMediaBrowserEnvelope(raw,'media-user-avatar'),/media-user-avatar.*envelope/);
+  assert.equal(parseMediaBrowserEnvelope('{"value":true,"observedResponses":[],"consoleErrors":[],"failedResponses":[]}', 'media-user-avatar').value,true);
+  const source=readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs',import.meta.url),'utf8'),media=source.slice(source.indexOf('async function runMediaWorkflowAudit'),source.indexOf('async function runLibraryWorkflowAudit'));
+  assert.doesNotMatch(media,/waitForEvent\(['"]filechooser/);
 });

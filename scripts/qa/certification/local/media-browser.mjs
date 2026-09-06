@@ -16,3 +16,9 @@ export async function* generatedMp4Body(prefix,total){
   let remaining=total-prefix.length-8;const zeros=Buffer.alloc(64*1024);
   while(remaining){const count=Math.min(remaining,zeros.length);yield zeros.subarray(0,count);remaining-=count;}
 }
+
+export function parseMediaBrowserEnvelope(raw,caseId){
+  let result;try{result=JSON.parse(raw);}catch{throw Error(`Media ${caseId} browser envelope is missing or invalid (${raw.length} stdout characters).`);}
+  if(!result||!Object.hasOwn(result,'value')||!['observedResponses','consoleErrors','failedResponses'].every(key=>Array.isArray(result[key])))throw Error(`Media ${caseId} browser envelope is incomplete.`);
+  return result;
+}
