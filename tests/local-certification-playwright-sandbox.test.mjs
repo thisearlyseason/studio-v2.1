@@ -69,6 +69,15 @@ test('Calendar workflow reconciles rendered fixtures after every required filter
   assert.match(source, /getByText\('Event Types', \{ exact: true \}\)\.locator\('\.\.'\)\.getByText\('practice', \{ exact: true \}\)/);
 });
 
+test('Calendar bounds helper opens the responsive Agenda surface before selecting the event detail', () => {
+  const helperStart = source.indexOf('async function assertCalendarFilterAndDetailBounds');
+  const helperEnd = source.indexOf('async function assertCalendarRenderedFilterReconciliation');
+  const helper = source.slice(helperStart, helperEnd);
+  assert.match(helper, /getByRole\('button', \{ name: 'Agenda', exact: true \}\)\.click\(\)/);
+  assert.match(helper, /const eventHeading = page\.getByRole\('heading', \{ name: \$\{JSON\.stringify\(activeEventTitle\)\}, exact: true \}\)\.first\(\)/);
+  assert.match(helper, /await eventHeading\.click\(\)/);
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {
