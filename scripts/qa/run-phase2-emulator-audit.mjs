@@ -25,6 +25,7 @@ import {
 import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
+import { observeCalendarResponse } from './certification/local/calendar-response-observation.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -8198,15 +8199,14 @@ async function runCalendarFeedLifecycleAudit() {
     const feedResponses = [];
     const observedResponses = [];
     let observationTag = 'ics-console';
+    const observeResponse = ${observeCalendarResponse.toString()};
     const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
     const onPageError = error => consoleErrors.push(error.message);
     const onResponse = response => {
       if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
       if (response.url().includes('/api/calendar/feed')) feedResponses.push(response.status());
-      const url = new URL(response.url());
-      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/calendar/feed')) {
-        observedResponses.push({ tag: observationTag, method: response.request().method(), pathname: url.pathname, status: response.status() });
-      }
+      const observedResponse = observeResponse(response, ${JSON.stringify(BASE_URL)}, observationTag);
+      if (observedResponse) observedResponses.push(observedResponse);
     };
     page.on('console', onConsole);
     page.on('pageerror', onPageError);
