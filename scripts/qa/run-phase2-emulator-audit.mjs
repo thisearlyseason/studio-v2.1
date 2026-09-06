@@ -8539,7 +8539,10 @@ async function runRsvpAndAttendanceWorkflowAudit() {
     firestoreAdmin.collection('teams').doc(teamAId).collection('events').doc(eventId).get());
   expectEqual(parentPersisted.data()?.userRsvps?.[youthUid], 'going', 'parent browser RSVP writes the linked youth member identity');
   const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
-  const teamCYouth = FIXTURES.firestoreDocuments.find(document => document.alias === 'qa-player-youth-c');
+  // Player fixtures are catalogued by their data fixtureAlias, while their
+  // document aliases identify the concrete player document path. Resolve the
+  // Team C child by the public catalog identity rather than an absent alias.
+  const teamCYouth = FIXTURES.firestoreDocuments.find(document => document.data?.fixtureAlias === 'qa-player-youth-c');
   const teamCOwner = await signIn('qa-league-owner-a');
   if (!teamC || !teamCYouth?.data?.id || !teamCOwner.body?.idToken) throw new Error('Team C linked-child RSVP fixture is missing.');
   const teamCEvent = await apiJsonResult('/api/teams/events/action', teamCOwner.body.idToken, {

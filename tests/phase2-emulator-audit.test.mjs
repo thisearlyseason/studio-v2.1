@@ -1411,6 +1411,14 @@ test('recurrence date evidence inspects the selected first occurrence before ope
   assert.match(recurrenceBlock.slice(firstOccurrence, laterOccurrence), /Close event details/);
 });
 
+test('Team C linked-child RSVP resolves the player fixture by its durable fixtureAlias', () => {
+  const start = source.indexOf('async function runRsvpAndAttendanceWorkflowAudit()');
+  const end = source.indexOf('function browserOwnerRecurringEventWorkflow(', start);
+  const rsvpBlock = source.slice(start, end);
+  assert.match(rsvpBlock, /document\.data\?\.fixtureAlias === 'qa-player-youth-c'/);
+  assert.doesNotMatch(rsvpBlock, /document\.alias === 'qa-player-youth-c'/);
+});
+
 test('emulator audit exercises facility and resource CRUD with destructive confirmation', () => {
   assert.match(source, /workflow-facilities-only/);
   assert.match(source, /facility requires name and address/);
