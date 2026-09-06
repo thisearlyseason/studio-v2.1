@@ -1400,6 +1400,17 @@ test('single-occurrence recurrence evidence scopes the updated title to the itin
   assert.doesNotMatch(recurrenceBlock, /await page\.getByText\(\$\{JSON\.stringify\(occurrenceUpdated\), \{ exact: true \}\)\.waitFor/);
 });
 
+test('recurrence date evidence inspects the selected first occurrence before operating on a later weekly occurrence', () => {
+  const start = source.indexOf('function browserOwnerRecurringEventWorkflow(');
+  const end = source.indexOf('async function runRecurringEventWorkflowAudit()', start);
+  const recurrenceBlock = source.slice(start, end);
+  const firstOccurrence = recurrenceBlock.indexOf('await createdTitles.first().click();');
+  const laterOccurrence = recurrenceBlock.indexOf('await createdTitles.nth(1).click();');
+  assert.ok(firstOccurrence >= 0, 'first occurrence is opened for selected-date evidence');
+  assert.ok(laterOccurrence > firstOccurrence, 'later occurrence is operated after selected-date evidence');
+  assert.match(recurrenceBlock.slice(firstOccurrence, laterOccurrence), /Close event details/);
+});
+
 test('emulator audit exercises facility and resource CRUD with destructive confirmation', () => {
   assert.match(source, /workflow-facilities-only/);
   assert.match(source, /facility requires name and address/);

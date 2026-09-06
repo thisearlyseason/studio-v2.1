@@ -8841,10 +8841,10 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
         text: node.textContent,
         outer: node.outerHTML.slice(0, 500),
       })));
-      // Edit and delete exactly one occurrence before exercising the full
-      // series controls. These are separate visible product actions, not an
-      // inferred consequence of a whole-series mutation.
-      await createdTitles.nth(1).click();
+      // The series begins on the exact local date selected in the form. Check
+      // its first occurrence rather than accidentally asserting that the
+      // second weekly instance falls on the series-start calendar date.
+      await createdTitles.first().click();
       const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${title}`)} });
       const detailsVisible = await details.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
       if (!detailsVisible) {
@@ -8854,7 +8854,14 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
           dialogs: await page.getByRole('dialog').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label') || node.textContent?.slice(0, 300))),
         }));
       }
-      const createdCalendarDate = (await details.innerText()).includes('September 20, 2026');
+      const createdDetailsText = await details.innerText();
+      const createdCalendarDate = createdDetailsText.includes('September 20, 2026');
+      await details.getByRole('button', { name: 'Close event details' }).click();
+      await details.waitFor({ state: 'detached', timeout: 15000 });
+      // Edit and delete exactly one later occurrence before exercising the
+      // full series controls. These are distinct visible product actions.
+      await createdTitles.nth(1).click();
+      await details.waitFor({ state: 'visible', timeout: 15000 });
       await details.getByRole('button', { name: 'Edit Activity' }).click();
       const occurrenceForm = page.getByRole('dialog', { name: 'Schedule New Team Activity' });
       await occurrenceForm.getByPlaceholder('e.g. Squad Match vs Tigers').fill(${JSON.stringify(occurrenceUpdated)});
@@ -8905,6 +8912,7 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
       return {
         createdCount,
         createdCalendarDate,
+        createdDetailsText,
         occurrenceEditCount,
         occurrenceDeletedCount,
         updatedCount,
@@ -8927,7 +8935,9 @@ async function runRecurringEventWorkflowAudit() {
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `events-series-owner-${process.pid}`);
   const result = browserOwnerRecurringEventWorkflow(owner, marker);
   expectEqual(result.createdCount, 4, 'weekly recurrence creates the exact requested occurrence count');
-  expectEqual(result.createdCalendarDate, true, 'weekly recurrence preserves the selected local calendar date');
+  if (!result.createdCalendarDate) {
+    throw new Error(`weekly recurrence preserves the selected local calendar date: expected September 20, 2026 in event details; received ${JSON.stringify(result.createdDetailsText)}`);
+  }
   expectEqual(result.occurrenceEditCount, 1, 'weekly recurrence one occurrence edit persists through reload');
   expectEqual(result.occurrenceDeletedCount, 0, 'weekly recurrence one occurrence delete persists through reload');
   expectEqual(result.updatedCount, 4, 'weekly recurrence series edit preserves all occurrence dates');
