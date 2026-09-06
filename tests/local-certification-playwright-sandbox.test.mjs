@@ -69,12 +69,50 @@ test('Calendar workflow reconciles rendered fixtures after every required filter
   assert.match(source, /getByText\('Event Types', \{ exact: true \}\)\.locator\('\.\.'\)\.getByText\('practice', \{ exact: true \}\)/);
 });
 
+test('Calendar evidence rejects duplicate event markers across views, households, filters, and team switches', () => {
+  const markerStart = source.indexOf('async function assertCalendarExactMarkerIsolation');
+  const boundsStart = source.indexOf('async function assertCalendarFilterAndDetailBounds', markerStart);
+  const markerHelper = source.slice(markerStart, boundsStart);
+  assert.match(markerHelper, /result\.included === 1/);
+  assert.doesNotMatch(markerHelper, /result\.included > 0/);
+
+  const reconciliationStart = source.indexOf('async function assertCalendarRenderedFilterReconciliation');
+  const workflowStart = source.indexOf('async function runCalendarViewsWorkflowAudit', reconciliationStart);
+  const reconciliation = source.slice(reconciliationStart, workflowStart);
+  assert.match(reconciliation, /ownerResult\.monthCount === 1 && ownerResult\.dayCount === 1 && ownerResult\.weekCount === 1 && ownerResult\.agendaCount === 1/);
+  assert.match(reconciliation, /teamARows === 1 && parentResult\.householdProjection\.teamCRows === 1/);
+  assert.match(reconciliation, /parentResult\.bothVisible\.active === 1 && parentResult\.bothVisible\.household === 1/);
+  assert.match(reconciliation, /parentResult\.teamAOnly\.active === 1/);
+
+  const workflowEnd = source.indexOf('async function runReminderSchedulerRuntimeAudit', workflowStart);
+  const workflow = source.slice(workflowStart, workflowEnd);
+  assert.match(workflow, /result\.enrolledSquads === 1/);
+  assert.match(workflow, /parentResult\.householdFilterCount, 2/);
+  assert.match(workflow, /parentResult\.athleteCount, 2/);
+  assert.match(workflow, /parentBResult\.teamB === 1/);
+  assert.match(workflow, /multiTeamResult\.firstBView === 1 && multiTeamResult\.finalBView === 1/);
+});
+
+test('Calendar responsive evidence measures the real Radix popover shell and exact role surfaces', () => {
+  const helperStart = source.indexOf('async function assertCalendarFilterAndDetailBounds');
+  const helperEnd = source.indexOf('async function assertCalendarRenderedFilterReconciliation');
+  const helper = source.slice(helperStart, helperEnd);
+  assert.match(helper, /\[data-radix-popper-content-wrapper\] > \[data-state="open"\]\[data-side\]\[data-align\]/);
+  assert.doesNotMatch(helper, /getByText\('Squad Enrollment', \{ exact: true \}\)\.locator\('\.\.'\)/);
+  assert.match(helper, /getByRole\('dialog', \{ name: 'Event Details: ' \+ eventTitle, exact: true \}\)/);
+  assert.match(helper, /captureBrowserOperationRequests\('cal-responsive', actorAlias/);
+  for (const actorAlias of ['qa-coach-owner-a', 'qa-parent-a', 'qa-parent-b', 'qa-multi-org']) {
+    assert.match(source, new RegExp(`actorAlias: '${actorAlias}'`));
+  }
+  assert.match(source, /actor: 'qa-coach-owner-a\+qa-parent-a\+qa-parent-b\+qa-multi-org'/);
+});
+
 test('Calendar bounds helper opens the responsive Agenda surface before selecting the event detail', () => {
   const helperStart = source.indexOf('async function assertCalendarFilterAndDetailBounds');
   const helperEnd = source.indexOf('async function assertCalendarRenderedFilterReconciliation');
   const helper = source.slice(helperStart, helperEnd);
   assert.match(helper, /getByRole\('button', \{ name: 'Agenda', exact: true \}\)\.click\(\)/);
-  assert.match(helper, /const eventHeading = page\.getByRole\('heading', \{ name: \$\{JSON\.stringify\(activeEventTitle\)\}, exact: true \}\)\.first\(\)/);
+  assert.match(helper, /const eventHeading = page\.getByRole\('heading', \{ name: eventTitle, exact: true \}\)\.first\(\)/);
   assert.match(helper, /await eventHeading\.click\(\)/);
 });
 
@@ -82,7 +120,7 @@ test('Calendar bounds helper measures the event dialog only after its geometry s
   const helperStart = source.indexOf('async function assertCalendarFilterAndDetailBounds');
   const helperEnd = source.indexOf('async function assertCalendarRenderedFilterReconciliation');
   const helper = source.slice(helperStart, helperEnd);
-  assert.match(helper, /await detailDialog\.evaluate\(async node =>/);
+  assert.match(helper, /await settleGeometry\(detailDialog, 'event detail dialog'\)/);
   assert.match(helper, /stableFrames >= 2/);
   assert.match(helper, /Math\.abs\(current\[index\] - previous\[index\]\) <= 0\.5/);
 });

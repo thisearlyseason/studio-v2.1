@@ -6937,7 +6937,6 @@ async function runCertificationOperationsScenarios() {
         await captureCalendarCaseNavigations('cal-dst-fall', ['qa-coach-owner-a']);
         await captureCalendarCaseNavigations('cal-console', ['qa-coach-owner-a', 'qa-parent-a']);
         await captureCalendarCaseNavigations('cal-network', ['qa-coach-owner-a', 'qa-parent-a']);
-        await captureCalendarCaseNavigations('cal-responsive', ['qa-coach-owner-a'], { mobile: true });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-team-a-b', 'Team A and Team B calendar views expose only their respective squad schedules', [/Calendar Team A renders only the exact Team A schedule marker/, /Calendar Team B renders only the exact Team B schedule marker/], { actor: 'qa-coach-owner-a+qa-coach-owner-b', operation: 'visible calendar results', requests: operationRequestEvidence('cal-team-a-b'), reconciliation: 'exact Team A/Team B marker inclusion and exclusion', timeBound: '15s UI waits' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-family-a-c', 'Parents render exactly their authorized household schedules', [/Calendar Parent A renders exactly the linked Team A and Team C fixtures and no Team B fixture/, /Calendar Parent B renders only the linked Team B marker and filter/], { actor: 'qa-parent-a+qa-parent-b', operation: 'visible household calendar results', requests: operationRequestEvidence('cal-family-a-c'), reconciliation: 'Parent A A+C only; Parent B B only', timeBound: '15s UI waits' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-filters', 'Calendar day week month type team and child filters reconcile exact fixtures', [/Calendar day week month and type filters reconcile exact included and excluded fixtures/, /Calendar team and child filters reconcile exact included and excluded fixtures/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'visible calendar result filters', requests: operationRequestEvidence('cal-filters'), reconciliation: 'exact dynamic titles present and excluded after each interaction', timeBound: '15s UI waits' });
@@ -6950,7 +6949,7 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-dst-fall', 'DST fall event placement is stable and non-duplicated', [/Calendar DST fall event is placed exactly once/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', requests: operationRequestEvidence('cal-dst-fall'), reconciliation: 'exactly one local-day placement', timeBound: '15s UI waits' });
         recordObservedOperationNamedCase(scenarioId, 'console', 'cal-console', 'Calendar flows have no browser console errors', [/Calendar views workflow console errors/, /Calendar household workflow console errors/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', requests: operationRequestEvidence('cal-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'cal-network', 'Calendar flows have no local server failures', [/Calendar views workflow failed responses/, /Calendar household workflow failed responses/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', requests: operationRequestEvidence('cal-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
-        recordObservedOperationNamedCase(scenarioId, 'responsive', 'cal-responsive', 'Calendar controls and overlays fit desktop and mobile viewports', [/Calendar filter panel and event detail dialog remain within desktop and mobile viewports/], { actor: 'qa-coach-owner-a', operation: 'Calendar filter panel and event detail dialog', requests: operationRequestEvidence('cal-responsive'), reconciliation: 'both overlay bounds inside desktop and mobile viewports', timeBound: 'post-workflow viewport check' });
+        recordObservedOperationNamedCase(scenarioId, 'responsive', 'cal-responsive', 'Calendar controls and actual overlay shells fit desktop and mobile viewports for every applicable role surface', [/Calendar filter panel and event detail dialog remain within desktop and mobile viewports/], { actor: 'qa-coach-owner-a+qa-parent-a+qa-parent-b+qa-multi-org', operation: 'Calendar Radix filter popover shell and Event Details dialog across four role surfaces', requests: operationRequestEvidence('cal-responsive'), reconciliation: 'actual popover and dialog bounds inside 1440 by 900 and 390 by 844 for Owner, Parent A, Parent B, and multi-org', timeBound: 'post-workflow viewport check' });
         return;
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
@@ -7804,36 +7803,20 @@ async function assertCalendarExactMarkerIsolation({ actorAlias, includedTitle, e
       excluded: await Promise.all(${JSON.stringify(excludedTitles)}.map(title => page.getByText(title, { exact: true }).count())),
     };
   }` ]));
-  expectEqual(result.included > 0 && result.excluded.every(count => count === 0), true, label);
+  expectEqual(result.included === 1 && result.excluded.every(count => count === 0), true, label);
 }
 
-async function assertCalendarFilterAndDetailBounds(activeEventTitle) {
+async function assertCalendarFilterAndDetailBounds(actorSurfaces) {
   const viewportResults = [];
-  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
-    const session = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-bounds-${viewport.width}-${process.pid}`);
+  for (const { actorAlias, landingPath, eventTitle } of actorSurfaces) {
+    const session = await browserLogin(actorAlias, landingPath, `calendar-bounds-${actorAlias}-${process.pid}`);
     const result = JSON.parse(cli(session, ['run-code', `async page => {
-      const viewport = ${JSON.stringify(viewport)};
+      const eventTitle = ${JSON.stringify(eventTitle)};
+      const observedResponses = [];
+      const observeResponse = ${observeCalendarResponse.toString()};
       const boundsTolerance = 0.5;
-      const inside = box => !!box && box.x >= -boundsTolerance && box.y >= -boundsTolerance && box.x + box.width <= viewport.width + boundsTolerance && box.y + box.height <= viewport.height + boundsTolerance;
-      await page.setViewportSize(viewport);
-      await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
-      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
-      await page.getByRole('button', { name: 'Agenda', exact: true }).click();
-      const monthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
-      await monthHeader.getByRole('button', { name: 'Today', exact: true }).click();
-      await monthHeader.getByRole('button').last().click();
-      const eventHeading = page.getByRole('heading', { name: ${JSON.stringify(activeEventTitle)}, exact: true }).first();
-      await eventHeading.waitFor({ timeout: 15000 });
-      await page.getByRole('button', { name: 'Filters', exact: true }).click();
-      const filterPanel = page.getByText('Squad Enrollment', { exact: true }).locator('..');
-      await filterPanel.waitFor({ state: 'visible', timeout: 15000 });
-      const filterPanelBox = await filterPanel.boundingBox();
-      const filterPanelWithinViewport = inside(filterPanelBox);
-      await page.keyboard.press('Escape');
-      await eventHeading.click();
-      const detailDialog = page.getByRole('dialog').filter({ hasText: ${JSON.stringify(activeEventTitle)} });
-      await detailDialog.waitFor({ state: 'visible', timeout: 15000 });
-      await detailDialog.evaluate(async node => {
+      const inside = (box, viewport) => !!box && box.x >= -boundsTolerance && box.y >= -boundsTolerance && box.x + box.width <= viewport.width + boundsTolerance && box.y + box.height <= viewport.height + boundsTolerance;
+      const settleGeometry = async (locator, label) => locator.evaluate(async (node, locatorLabel) => {
         const geometry = () => {
           const rect = node.getBoundingClientRect();
           return [rect.x, rect.y, rect.width, rect.height];
@@ -7850,17 +7833,68 @@ async function assertCalendarFilterAndDetailBounds(activeEventTitle) {
           if (stableFrames >= 2) return;
           previous = current;
         }
-        throw new Error('Calendar detail dialog geometry did not settle within 2 seconds.');
-      });
-      const detailDialogBox = await detailDialog.boundingBox();
-      const detailDialogWithinViewport = inside(detailDialogBox);
-      return { viewport, filterPanelBox, filterPanelWithinViewport, detailDialogBox, detailDialogWithinViewport, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
+        throw new Error('Calendar ' + locatorLabel + ' geometry did not settle within 2 seconds.');
+      }, label);
+      const dismissTransientDialogs = async () => {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const dialog = page.getByRole('dialog').last();
+          if (!await dialog.waitFor({ state: 'visible', timeout: 800 }).then(() => true).catch(() => false)) break;
+          const acknowledge = dialog.getByRole('button', { name: 'Got It', exact: true });
+          if (await acknowledge.count()) await acknowledge.click();
+          else await page.keyboard.press('Escape');
+          await dialog.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+        }
+      };
+      const onResponse = response => {
+        const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, 'cal-responsive', '/api/calendar/feed');
+        if (observation) observedResponses.push(observation);
+      };
+      page.on('response', onResponse);
+      try {
+        const results = [];
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+          await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+          await dismissTransientDialogs();
+          await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+          const monthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
+          await monthHeader.getByRole('button', { name: 'Today', exact: true }).click();
+          await monthHeader.getByRole('button').last().click();
+          const eventHeading = page.getByRole('heading', { name: eventTitle, exact: true }).first();
+          await eventHeading.waitFor({ timeout: 15000 });
+          await page.getByRole('button', { name: 'Filters', exact: true }).click();
+          const filterPopover = page.locator('[data-radix-popper-content-wrapper] > [data-state="open"][data-side][data-align]').filter({ hasText: 'Squad Enrollment' });
+          await filterPopover.waitFor({ state: 'visible', timeout: 15000 });
+          await settleGeometry(filterPopover, 'filter popover');
+          const filterPopoverBox = await filterPopover.boundingBox();
+          const filterPopoverWithinViewport = inside(filterPopoverBox, viewport);
+          const filterPopoverShellCount = await filterPopover.count();
+          await page.keyboard.press('Escape');
+          await filterPopover.waitFor({ state: 'hidden', timeout: 5000 });
+          await eventHeading.click();
+          const detailDialog = page.getByRole('dialog', { name: 'Event Details: ' + eventTitle, exact: true });
+          await detailDialog.waitFor({ state: 'visible', timeout: 15000 });
+          await settleGeometry(detailDialog, 'event detail dialog');
+          const detailDialogBox = await detailDialog.boundingBox();
+          const detailDialogWithinViewport = inside(detailDialogBox, viewport);
+          results.push({ viewport, filterPopoverBox, filterPopoverWithinViewport, filterPopoverShellCount, detailDialogBox, detailDialogWithinViewport, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) });
+          await page.keyboard.press('Escape');
+          await detailDialog.waitFor({ state: 'hidden', timeout: 5000 });
+        }
+        return { results, observedResponses };
+      } finally {
+        page.off('response', onResponse);
+      }
     }` ]));
-    viewportResults.push(result);
+    await captureBrowserOperationRequests('cal-responsive', actorAlias, result.observedResponses, 'cal-responsive');
+    viewportResults.push(...result.results.map(viewport => ({ actorAlias, ...viewport })));
   }
-  const allWithinViewport = viewportResults.every(result => result.filterPanelWithinViewport && result.detailDialogWithinViewport && result.mobileFits);
+  const allWithinViewport = viewportResults.length === actorSurfaces.length * 2 && viewportResults.every(result =>
+    result.filterPopoverShellCount === 1 && result.filterPopoverWithinViewport && result.detailDialogWithinViewport && result.mobileFits);
   if (!allWithinViewport) throw new Error(`Calendar overlay bounds failed: ${JSON.stringify(viewportResults)}`);
-  expectEqual(allWithinViewport, true, 'Calendar filter panel and event detail dialog remain within desktop and mobile viewports');
+  const measuredBounds = viewportResults.map(({ actorAlias, viewport, filterPopoverBox, detailDialogBox }) => ({ actorAlias, viewport, filterPopoverBox, detailDialogBox }));
+  expectEqual(allWithinViewport, true, `Calendar filter panel and event detail dialog remain within desktop and mobile viewports ${JSON.stringify(measuredBounds)}`);
 }
 
 async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, householdEventTitle, teamA, teamB, teamC }) {
@@ -7899,7 +7933,7 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
     results.typeRestoredCount = await page.getByRole('heading', { name: title, exact: true }).count();
     return results;
   }` ]));
-  expectEqual(ownerResult.monthCount > 0 && ownerResult.dayCount > 0 && ownerResult.weekCount > 0 && ownerResult.agendaCount > 0 && ownerResult.typeHiddenCount === 0 && ownerResult.typeRestoredCount > 0, true,
+  expectEqual(ownerResult.monthCount === 1 && ownerResult.dayCount === 1 && ownerResult.weekCount === 1 && ownerResult.agendaCount === 1 && ownerResult.typeHiddenCount === 0 && ownerResult.typeRestoredCount === 1, true,
     'Calendar day week month and type filters reconcile exact included and excluded fixtures');
 
   const parent = await browserLogin('qa-parent-a', '/family', `calendar-family-results-${process.pid}`);
@@ -7930,7 +7964,8 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
     const youthA = panel.getByText(${JSON.stringify(youthAName)}, { exact: true }).locator('..');
     const youthC = panel.getByText(${JSON.stringify(youthCName)}, { exact: true }).locator('..');
     const householdProjection = {
-      teamRows: (await teamA.count()) + (await teamC.count()),
+      teamARows: await teamA.count(),
+      teamCRows: await teamC.count(),
       teamBRows: await teamB.count(),
       youthARows: await youthA.count(),
       youthCRows: await youthC.count(),
@@ -7992,9 +8027,9 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
     const directYouthCOnly = await inspectChildFilter();
     return { householdProjection, bothVisible, teamAOnly, teamCOnly, youthAOnly, youthCOnly, directYouthCOnly };
   }` ]));
-  expectEqual(parentResult.householdProjection.teamRows === 2 && parentResult.householdProjection.teamBRows === 0 && parentResult.householdProjection.youthARows === 1 && parentResult.householdProjection.youthCRows === 1 && parentResult.bothVisible.active > 0 && parentResult.bothVisible.household > 0 && parentResult.bothVisible.foreign === 0, true,
+  expectEqual(parentResult.householdProjection.teamARows === 1 && parentResult.householdProjection.teamCRows === 1 && parentResult.householdProjection.teamBRows === 0 && parentResult.householdProjection.youthARows === 1 && parentResult.householdProjection.youthCRows === 1 && parentResult.bothVisible.active === 1 && parentResult.bothVisible.household === 1 && parentResult.bothVisible.foreign === 0, true,
     'Calendar Parent A renders exactly the linked Team A and Team C fixtures and no Team B fixture');
-  const childFiltersReconciled = parentResult.teamAOnly.active > 0 && parentResult.teamAOnly.household === 0 && parentResult.teamCOnly.active === 0 && parentResult.teamCOnly.household > 0 && parentResult.youthAOnly.active > 0 && parentResult.youthAOnly.household === 0 && parentResult.youthCOnly.active === 0 && parentResult.youthCOnly.household > 0 && parentResult.directYouthCOnly.active === 0 && parentResult.directYouthCOnly.household > 0;
+  const childFiltersReconciled = parentResult.teamAOnly.active === 1 && parentResult.teamAOnly.household === 0 && parentResult.teamCOnly.active === 0 && parentResult.teamCOnly.household === 1 && parentResult.youthAOnly.active === 1 && parentResult.youthAOnly.household === 0 && parentResult.youthCOnly.active === 0 && parentResult.youthCOnly.household === 1 && parentResult.directYouthCOnly.active === 0 && parentResult.directYouthCOnly.household === 1;
   if (!childFiltersReconciled) throw new Error(`Calendar child filter reconciliation failed: ${JSON.stringify(parentResult)}`);
   expectEqual(childFiltersReconciled, true, 'Calendar team and child filters reconcile exact included and excluded fixtures');
 }
@@ -8053,7 +8088,7 @@ async function runCalendarViewsWorkflowAudit() {
       page.off('response', onResponse);
     }
   }`]));
-  expectEqual(result.enrolledSquads > 0, true, 'Calendar exposes the authenticated owner squad filter choices');
+  expectEqual(result.enrolledSquads === 1, true, 'Calendar exposes exactly one authenticated owner squad filter choice');
   expectEqual(result.weekVisible === 1 && result.dayVisible === 1 && result.monthVisible === 1, true,
     'Calendar day week and month view controls settle through visible clicks');
   expectEqual(result.mobileFits, true, 'Calendar fits the mobile viewport');
@@ -8232,12 +8267,12 @@ async function runCalendarViewsWorkflowAudit() {
       page.off('response', onResponse);
     }
   }` ]));
-  expectEqual(parentResult.householdFilterCount > 0, true, 'Calendar parent sees both household team filters');
+  expectEqual(parentResult.householdFilterCount, 2, 'Calendar parent sees exactly both household team filters');
   expectEqual(parentResult.outsiderFilterCount, 0, 'Calendar parent cannot discover another household team filter');
   expectEqual(parentResult.eventTypeCount, 5, 'Calendar exposes every event type filter through visible controls');
-  expectEqual(parentResult.athleteCount >= 2, true, 'Calendar parent athlete filter exposes every authorized household athlete');
+  expectEqual(parentResult.athleteCount, 2, 'Calendar parent athlete filter exposes exactly every authorized household athlete');
   expectEqual(parentResult.selectedAthleteCount, 1, 'Calendar parent athlete filter selects only an authorized household athlete');
-  expectEqual(parentResult.emptyTypeState > 0, true, 'Calendar empty filter state hides household schedule entries');
+  expectEqual(parentResult.emptyTypeState, 1, 'Calendar empty filter state hides household schedule entries exactly once');
   expectEqual(parentResult.teamAAfterSwitch, 0, 'Calendar parent team filter removes the other household schedule');
   expectEqual(parentResult.teamBAfterSwitch, 0, 'Calendar parent cannot view another household schedule');
   expectEqual(parentResult.mobileFits, true, 'Calendar household views fit the mobile viewport');
@@ -8251,8 +8286,6 @@ async function runCalendarViewsWorkflowAudit() {
     teamB,
     teamC,
   });
-  await assertCalendarFilterAndDetailBounds(activeHouseholdEventTitle);
-
   const parentB = await browserLogin('qa-parent-b', '/family', `calendar-parent-b-${process.pid}`);
   const parentBResult = JSON.parse(cli(parentB, ['run-code', `async page => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -8273,8 +8306,15 @@ async function runCalendarViewsWorkflowAudit() {
       teamBFilter: await panel.getByText(${JSON.stringify(teamB.name)}, { exact: true }).count(),
     };
   }` ]));
-  expectEqual(parentBResult.teamB > 0 && parentBResult.teamA === 0 && parentBResult.teamBFilter > 0 && parentBResult.teamAFilter === 0 && parentBResult.teamCFilter === 0, true,
+  expectEqual(parentBResult.teamB === 1 && parentBResult.teamA === 0 && parentBResult.teamBFilter === 1 && parentBResult.teamAFilter === 0 && parentBResult.teamCFilter === 0, true,
     'Calendar Parent B renders only the linked Team B marker and filter');
+
+  await assertCalendarFilterAndDetailBounds([
+    { actorAlias: 'qa-coach-owner-a', landingPath: '/dashboard', eventTitle: activeHouseholdEventTitle },
+    { actorAlias: 'qa-parent-a', landingPath: '/family', eventTitle: activeHouseholdEventTitle },
+    { actorAlias: 'qa-parent-b', landingPath: '/family', eventTitle: `${teamB.visibleMarker} Future Practice` },
+    { actorAlias: 'qa-multi-org', landingPath: '/dashboard', eventTitle: activeHouseholdEventTitle },
+  ]);
 
   const placementOwner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-placement-${process.pid}`);
   const placementResult = JSON.parse(cli(placementOwner, ['run-code', `async page => {
@@ -8364,7 +8404,7 @@ async function runCalendarViewsWorkflowAudit() {
     await showTeamBCalendar();
     return { firstBView, persistedTeamId, teamValueAfterBack, finalBView: await page.getByText(teamBMarker, { exact: true }).count() };
   }` ]));
-  expectEqual(multiTeamResult.firstBView > 0 && multiTeamResult.finalBView > 0, true, 'Calendar rapid Team A and Team B switches settle on the selected squad');
+  expectEqual(multiTeamResult.firstBView === 1 && multiTeamResult.finalBView === 1, true, 'Calendar rapid Team A and Team B switches settle on the selected squad with exactly one event');
   expectEqual(multiTeamResult.persistedTeamId, teamB.id, 'Calendar active-team selection persists through reload');
   expectEqual(multiTeamResult.teamValueAfterBack?.includes(teamB.name), true, 'Calendar active-team selection survives browser back navigation');
 }
