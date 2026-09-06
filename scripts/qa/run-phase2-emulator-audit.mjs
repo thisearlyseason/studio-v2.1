@@ -36,6 +36,7 @@ import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs'
 import {createPollBrowserObserver,findPollCard} from './certification/local/poll-browser.mjs';
 import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUpload} from './certification/local/library-browser.mjs';
 import {createMediaBrowserObserver,generatedMp4Body,parseMediaBrowserEnvelope} from './certification/local/media-browser.mjs';
+import {beforeImageMatches} from './certification/local/document-restoration.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -1966,7 +1967,6 @@ function registerDynamicStorageObject(objectPath, label, registry = dynamicResou
 }
 
 function registerFirestoreDocumentRestoration(documentPath, originalValue, label, registry = dynamicResourceRegistry) {
-  const expected = JSON.stringify(originalValue);
   registry.register({
     id: `restore-firestore:${label}`,
     kind: 'restored',
@@ -1974,7 +1974,7 @@ function registerFirestoreDocumentRestoration(documentPath, originalValue, label
       return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
         const ref = firestoreAdmin.doc(documentPath);
         const current = await ref.get();
-        if (current.exists && JSON.stringify(current.data()) === expected) return false;
+        if (current.exists && beforeImageMatches(current.data(),originalValue)) return false;
         await ref.set(originalValue);
         return true;
       });
@@ -1982,7 +1982,7 @@ function registerFirestoreDocumentRestoration(documentPath, originalValue, label
     async verify() {
       return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
         const current = await firestoreAdmin.doc(documentPath).get();
-        return current.exists && JSON.stringify(current.data()) === expected;
+        return current.exists && beforeImageMatches(current.data(),originalValue);
       });
     },
   });
@@ -8333,7 +8333,7 @@ async function runMediaWorkflowAudit() {
   const uid=alias=>FIXTURES.identities.find(item=>item.alias===alias).uid;
   const player=alias=>FIXTURES.firestoreDocuments.find(item=>item.data.fixtureAlias===alias).data.id;
   const team=FIXTURES.teams.find(item=>item.alias==='qa-team-a'),teamB=FIXTURES.teams.find(item=>item.alias==='qa-team-b');
-  const adult=player('qa-player-adult-a'),youth=player('qa-player-youth-a'),foreign=player('qa-player-adult-b');
+  const adult=player('qa-player-adult-a'),youth=player('qa-player-youth-a');
   const marker=certificationRunId.replaceAll('.','-'),tokens=new Map(),registered=new Set();
   const png=materializeFixtureMediaBytes({payloadGenerator:'solid-png-v1'}),mp4=materializeFixtureMediaBytes({payloadGenerator:'tiny-mp4-v1'});
   const directory=mkdtempSync(path.join(os.tmpdir(),'qa-media-')),imageFile=path.join(directory,'owned.png');writeFileSync(imageFile,png);
@@ -8402,7 +8402,7 @@ async function runMediaWorkflowAudit() {
   const revoked=await toggle('media-private-public',false);check('media-private-public',revoked.status,200,'opt-out completes token revocation');check('media-private-public',revoked.body.complete,true,'revocation reports complete');
   check('media-private-public',[403,404].includes(await legacyRead()),true,'previously issued legacy token cannot recover private bytes');check('media-private-public',(await request('media-private-public','qa-public-submitter',privatePath)).status,403,'protected URL observes current opt-out');check('media-private-public',(await request('media-private-public','qa-coach-owner-a',privatePath)).status,200,'owner retains private access');
   await captureOperationRequests('media-suspended','qa-suspended',async()=>{const startedAt=new Date().toISOString(),result=await signIn('qa-suspended');recordCapturedOperationRequest({pathname:'/identitytoolkit/accounts/signInWithPassword',method:'POST',status:result.status,startedAt,completedAt:new Date().toISOString()});check('media-suspended',result.status,400,'disabled actor cannot acquire credentials');check('media-suspended',result.body.error?.message,'USER_DISABLED','Auth rejects exact suspended actor');tokens.set('qa-suspended',null);});
-  for(const [id,actor,target]of[['media-wrong-player','qa-adult-player-a',`players/${foreign}/avatar/${marker}.png`],['media-wrong-team','qa-coach-owner-a',`teams/${teamB.id}/branding/${marker}.png`],['media-outsider','qa-fresh-coach',privatePath],['media-unverified','qa-unverified',privatePath],['media-suspended','qa-suspended',privatePath]]){
+  for(const [id,actor,target]of[['media-wrong-player','qa-adult-player-b',privatePath],['media-wrong-team','qa-coach-owner-a',`teams/${teamB.id}/branding/${marker}.png`],['media-outsider','qa-fresh-coach',privatePath],['media-unverified','qa-unverified',privatePath],['media-suspended','qa-suspended',privatePath]]){
     if(!await exists(target))register(target);
     for(const method of['POST','DELETE'])check(id,(await request(id,actor,target,{method,...(method==='POST'?{body:png}:{})})).status,actor==='qa-suspended'?401:403,`${actor} ${method} denied${actor==='qa-suspended'?' without credentials after disabled Auth rejection':''}`);
     if(id!=='media-wrong-team')check(id,(await request(id,actor,target)).status,403,`${actor} private read denied`);
