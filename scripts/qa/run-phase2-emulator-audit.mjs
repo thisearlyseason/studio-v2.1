@@ -9719,6 +9719,16 @@ function browserChatSend(session, { teamId, chatId, marker, tag = 'chat-sync', p
   }`]));
 }
 
+function browserChatParkOnList(session, { teamId, chatId }) {
+  return JSON.parse(cli(session, ['run-code', `async page => {
+    await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});
+    await page.getByRole('heading',{name:'Coordination Hub',exact:true}).waitFor({timeout:15000});
+    const card=page.locator(${JSON.stringify(`a[href="/chats/${chatId}?teamId=${teamId}"]`)});
+    await card.waitFor({state:'attached',timeout:15000});
+    return{pathname:await page.evaluate(()=>location.pathname),cardCount:await card.count()};
+  }`]));
+}
+
 function browserChatUnread(session, { teamId, chatId, marker, pageProperty = '' }) {
   return JSON.parse(cli(session, ['run-code', `async page => {
     ${pageProperty ? `page=page[${JSON.stringify(pageProperty)}];if(!page)throw Error(${JSON.stringify(`Missing peer page ${pageProperty}.`)});` : ''}
@@ -9792,6 +9802,7 @@ async function runCommunicationWorkflowAudit() {
   const sender=await request('chat-sender',ownerAlias,'/api/teams/chat/message',{teamId:team.id,chatId,type:'text',content:`${marker} sender`,requestId:'chat-sender'});
   const senderState=await read();expectEqual(sender.status,200,'Chat chat-sender: authorized sender request accepted');expectEqual(senderState.unreadBy?.[ownerUid],0,'Chat chat-sender: sender unread remains zero');expectEqual(senderState.unreadBy?.[memberUid],1,'Chat chat-sender: only recipient unread increments');
   await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(chatPath).update({unreadBy:{}}));
+  const parked=browserChatParkOnList(owner,{teamId:team.id,chatId});expectEqual(JSON.stringify(parked),JSON.stringify({pathname:'/chats',cardCount:1}),'Chat chat-unread: recipient is parked on exact channel list before member send');
 
   const sent=browserChatSend(owner,{teamId:team.id,chatId,marker,pageProperty:'qaChatMember'});expectEqual(sent.status,200,'Chat chat-sync: member visible send returns 200');expectEqual(sent.count,1,'Chat chat-sync: live sender surface renders exactly one message');expectEqual(sent.emptyDisabled,true,'Chat chat-sync: empty send remains disabled');expectEqual(sent.consoleErrors.length,0,'Chat chat-sync: sender console clean');expectEqual(sent.failedResponses.length,0,'Chat chat-sync: sender network has no 5xx');await captureBrowserOperationRequests('chat-sync',memberAlias,sent.observedResponses,'chat-sync');
   expectEqual((await read()).unreadBy?.[ownerUid],1,'Chat chat-unread: recipient unread is exactly one before open');
