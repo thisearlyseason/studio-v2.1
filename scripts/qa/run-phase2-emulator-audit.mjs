@@ -6909,7 +6909,7 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-removed', 'scheduler excludes removed memberships', [/Reminder scheduler excludes removed membership/], { actor: 'run-owned removed member', operation: 'injected scheduler core', reconciliation: 'no removed-member ledger claim', timeBound: 'fixed clock' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'rem-sender', 'scheduler excludes staff sender roles from player/parent reminders', [/Reminder scheduler excludes staff sender role/], { actor: 'run-owned coach', operation: 'injected scheduler core', reconciliation: 'no staff sender ledger claim', timeBound: 'fixed clock' });
         recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-duplicate-run', 'overlapping scheduler cores acquire one durable reminder lease and send once', [/Reminder scheduler overlapping invocations acquire one lease and send once/], { actor: 'run-owned adult player', operation: 'two concurrent injected scheduler cores', reconciliation: 'one claimed/sent delivery ledger', timeBound: 'fixed clock + transaction' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-time-boundary', 'same-day DST and before/at/after local-midnight eligibility use the team timezone', [/Reminder scheduler respects exact 06:00 boundary and DST offsets/, /Reminder scheduler before local midnight selects only the remaining current-day event/, /Reminder scheduler at local midnight selects the new local-day event/, /Reminder scheduler after local midnight retains the new local-day event/], { actor: 'run-owned adult player', operation: 'injected scheduler core at fixed clocks', reconciliation: 'DST plus before/at/after-midnight durable ledgers sent once', timeBound: 'fixed clocks' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-time-boundary', 'same-day DST, local-midnight rollover, and the 06:00 quiet-hours boundary use the team timezone', [/Reminder scheduler respects exact 06:00 boundary and DST offsets/, /Reminder scheduler before local midnight selects only the remaining current-day event/, /Reminder scheduler at and after local midnight preserves the 06:00 quiet-hours boundary/, /Reminder scheduler exact 06:00 start selects the future new-local-day event/, /Reminder scheduler exact 06:00 repeat is idempotent/, /Reminder scheduler local-midnight ledgers reconcile the prior-day and quiet-hours exclusions/], { actor: 'run-owned adult player', operation: 'injected scheduler core at fixed clocks', reconciliation: 'before-midnight and exact-06:00 ledgers sent once; prior-day and pre-06:00 events remain unclaimed', timeBound: 'fixed clocks' });
         recordObservedOperationNamedCase(scenarioId, 'persistence', 'rem-retry', 'a failed delivery ledger is retried and transitions to sent', [/Reminder scheduler failed ledger retry transitions to sent/], { actor: 'run-owned adult player', operation: 'injected safe transport failure then retry', reconciliation: 'failed then sent ledger state', timeBound: 'fixed clock' });
         recordObservedOperationNamedCase(scenarioId, 'console', 'rem-redaction', 'scheduler runtime diagnostics redact opaque device values', [/Reminder scheduler captures redacted runtime diagnostics from the actual core/], { actor: 'local scheduler audit', operation: 'actual core diagnostic callback', reconciliation: 'captured runtime diagnostics omit raw token and endpoint', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'rem-network', 'scheduler uses the injected loopback-safe transport and makes no provider request', [/Reminder scheduler uses injected local transport without provider network/], { actor: 'local scheduler audit', operation: 'safe transport invocation', reconciliation: 'zero provider requests', timeBound: 'scenario duration' });
@@ -8048,16 +8048,26 @@ async function runReminderSchedulerRuntimeAudit() {
     await firestoreAdmin.doc(`${teamPath}/events/midnight_before`).set({ date: '2026-07-24', startTime: '23:59', eventType: 'game', qaReminderRun: certificationRunId });
     await firestoreAdmin.doc(`${teamPath}/events/midnight_at`).set({ date: '2026-07-25', startTime: '00:30', eventType: 'game', qaReminderRun: certificationRunId });
     await firestoreAdmin.doc(`${teamPath}/events/midnight_after`).set({ date: '2026-07-25', startTime: '00:31', eventType: 'game', qaReminderRun: certificationRunId });
+    await firestoreAdmin.doc(`${teamPath}/events/midnight_six`).set({ date: '2026-07-25', startTime: '06:30', eventType: 'game', qaReminderRun: certificationRunId });
   });
   const boundaryResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-03-08T12:00:00.000Z')));
   const fallResult = await runUpcomingEventReminderCore(createRunner(new Date('2026-11-01T16:00:00.000Z')));
   expectEqual(boundaryResult.sentCount >= 1 && fallResult.sentCount >= 1, true, 'Reminder scheduler respects exact 06:00 boundary and DST offsets');
   const midnightBefore = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T05:58:00.000Z')));
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    // Added after the before-midnight run so its missing ledger proves the
+    // midnight invocation rejected the previous local calendar day rather
+    // than merely encountering an already-sent idempotency record.
+    await firestoreAdmin.doc(`${teamPath}/events/midnight_prior_day_probe`).set({ date: '2026-07-24', startTime: '23:59', eventType: 'game', qaReminderRun: certificationRunId });
+  });
   const midnightAt = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T06:00:00.000Z')));
   const midnightAfter = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T06:01:00.000Z')));
+  const reminderStart = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T12:00:00.000Z')));
+  const reminderStartRepeat = await runUpcomingEventReminderCore(createRunner(new Date('2026-07-25T12:00:00.000Z')));
   expectEqual(midnightBefore.sentCount, 1, 'Reminder scheduler before local midnight selects only the remaining current-day event');
-  expectEqual(midnightAt.sentCount, 1, 'Reminder scheduler at local midnight selects the new local-day event');
-  expectEqual(midnightAfter.sentCount, 1, 'Reminder scheduler after local midnight retains the new local-day event');
+  expectEqual(JSON.stringify({ at: midnightAt.sentCount, after: midnightAfter.sentCount }), JSON.stringify({ at: 0, after: 0 }), 'Reminder scheduler at and after local midnight preserves the 06:00 quiet-hours boundary');
+  expectEqual(reminderStart.sentCount, 1, 'Reminder scheduler exact 06:00 start selects the future new-local-day event');
+  expectEqual(reminderStartRepeat.sentCount, 0, 'Reminder scheduler exact 06:00 repeat is idempotent');
 
   const ledgers = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.collection('eventReminderDeliveries').where('qaReminderRun', '==', certificationRunId).get()).docs);
   for (const document of ledgers) registerDynamicFirestoreRoot(document.ref.path, `reminder-ledger-${document.id}`);
@@ -8068,6 +8078,17 @@ async function runReminderSchedulerRuntimeAudit() {
   expectEqual(ledgers.some(document => document.data().userId === userIds.prefOff), false, 'Reminder scheduler excludes preferences-disabled recipient');
   expectEqual(ledgers.some(document => document.data().userId === userIds.removed), false, 'Reminder scheduler excludes removed membership');
   expectEqual(ledgers.some(document => document.data().userId === userIds.sender), false, 'Reminder scheduler excludes staff sender role');
+  const midnightLedgerState = Object.fromEntries(['midnight_before', 'midnight_prior_day_probe', 'midnight_at', 'midnight_after', 'midnight_six'].map(eventId => {
+    const record = ledgers.find(document => document.data().eventId === eventId && document.data().userId === userIds.eligible)?.data();
+    return [eventId, record ? { status: record.status, attempts: record.attempts } : null];
+  }));
+  expectEqual(JSON.stringify(midnightLedgerState), JSON.stringify({
+    midnight_before: { status: 'sent', attempts: 1 },
+    midnight_prior_day_probe: null,
+    midnight_at: null,
+    midnight_after: null,
+    midnight_six: { status: 'sent', attempts: 1 },
+  }), 'Reminder scheduler local-midnight ledgers reconcile the prior-day and quiet-hours exclusions');
   const diagnosticEvidence = JSON.stringify({ schedulerDiagnostics, ledgerStates: ledgers.map(document => ({ eventId: document.data().eventId, status: document.data().status, attempts: document.data().attempts })) });
   expectEqual(schedulerDiagnostics.length > 0 && !diagnosticEvidence.includes(safeFcmToken) && !diagnosticEvidence.includes(safeEndpoint), true, 'Reminder scheduler captures redacted runtime diagnostics from the actual core');
   expectEqual(delivered.every(item => item.fcmCount + item.webPushCount > 0), true, 'Reminder scheduler uses injected local transport without provider network');

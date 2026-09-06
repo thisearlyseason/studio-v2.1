@@ -5,6 +5,7 @@ import {
   buildUpcomingEventMessage,
   candidateDateKeys,
   formatClockTime,
+  getZonedClock,
   normalizeEventKind,
   shouldSendSameDayReminder,
 } from '../functions/src/event-reminders.ts';
@@ -53,6 +54,44 @@ test('reminders are limited to future events on the local calendar day', () => {
     shouldSendSameDayReminder({ ...event, status: 'cancelled' }, now, 'America/Edmonton'),
     false
   );
+});
+
+test('local-midnight rollover preserves the 06:00 reminder window and excludes the prior day', () => {
+  const beforeMidnight = new Date('2026-07-25T05:58:00.000Z'); // Jul 24 23:58 Edmonton
+  const atMidnight = new Date('2026-07-25T06:00:00.000Z'); // Jul 25 00:00 Edmonton
+  const afterMidnight = new Date('2026-07-25T06:01:00.000Z'); // Jul 25 00:01 Edmonton
+  const atReminderStart = new Date('2026-07-25T12:00:00.000Z'); // Jul 25 06:00 Edmonton
+
+  assert.deepEqual(getZonedClock(atMidnight, 'America/Edmonton'), {
+    date: '2026-07-25',
+    minutes: 0,
+    timeZone: 'America/Edmonton',
+  });
+  assert.equal(shouldSendSameDayReminder(
+    { date: '2026-07-24', startTime: '23:59' },
+    beforeMidnight,
+    'America/Edmonton'
+  ), true);
+  assert.equal(shouldSendSameDayReminder(
+    { date: '2026-07-24', startTime: '23:59' },
+    atMidnight,
+    'America/Edmonton'
+  ), false);
+  assert.equal(shouldSendSameDayReminder(
+    { date: '2026-07-25', startTime: '00:30' },
+    atMidnight,
+    'America/Edmonton'
+  ), false);
+  assert.equal(shouldSendSameDayReminder(
+    { date: '2026-07-25', startTime: '00:31' },
+    afterMidnight,
+    'America/Edmonton'
+  ), false);
+  assert.equal(shouldSendSameDayReminder(
+    { date: '2026-07-25', startTime: '06:30' },
+    atReminderStart,
+    'America/Edmonton'
+  ), true);
 });
 
 test('scheduler searches the UTC boundary dates needed for local-time filtering', () => {
