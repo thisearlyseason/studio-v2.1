@@ -132,6 +132,30 @@ test('validation rejects unsupported environments, invalid time ranges, and bloc
   }]), /cleanup state/i);
 });
 
+test('physical-device-owned rows retain local cleanup proof while their external cleanup gate remains blocked', async () => {
+  const reminder = CERTIFICATION_SCENARIOS.find(item => item.id === 'reminders-same-day-fcm-scheduler');
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'reminder-cleanup-proof-'));
+  const runId = 'final-cert-reminder-cleanup-proof';
+  const commit = '0123456789abcdef0123456789abcdef01234567';
+  try {
+    await mkdir(path.join(directory, 'cleanup'));
+    await writeFile(path.join(directory, 'cleanup/fixture-cleanup-marker.json'), JSON.stringify({
+      runId, commit, fixtureRunId: 'reminder-fixture', state: 'OBSERVED',
+      counts: { deleted: 4, restored: 0, retainedAuditRecords: 0 },
+      measured: { fixture: { firestore: 4, auth: 0, storage: 0 }, dynamic: { state: 'OBSERVED', counts: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, reconciled: { deleted: 0, restored: 0, retainedAuditRecords: 0 }, selectors: [], residuals: [], diagnostics: [] } },
+      capturedAt: '2026-09-04T18:02:00.000Z',
+    }));
+    const result = {
+      ...validResult({ scenarioId: reminder.id, role: reminder.roles.join('/'), environmentGaps: reminder.environments.filter(value => value !== 'local-emulator'), externalRequirements: ['physical-device receipt and cleanup evidence'] }),
+      commit,
+      cleanup: { owner: reminder.cleanupOwner, reference: 'fixture-cleanup-reminder', selectors: ['firestore:run-owned-reminder'], counts: { deleted: 4, restored: 0, retainedAuditRecords: 0 }, state: 'BLOCKED_PRECONDITION', proof: ['cleanup/fixture-cleanup-marker.json'] },
+    };
+    assert.equal(validateScenarioResults([reminder], [result], { artifactRoot: directory, expectedRunId: runId, expectedCommit: commit })[0].cleanup.state, 'BLOCKED_PRECONDITION');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('validation enforces required case IDs and inspectable contained artifact provenance', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'task3-artifact-validation-'));
   const casesDirectory = path.join(directory, 'cases');

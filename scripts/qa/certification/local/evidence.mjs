@@ -161,8 +161,13 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
       if (cleanupCapturedAt < parseTimestamp(result.startedAt, 'result startedAt')) {
         throw new Error(`${result.scenarioId} cleanup proof timestamp predates the result.`);
       }
+      // A local run can reconcile its disposable records even when the frozen
+      // scenario assigns final cleanup to a later background or physical-device
+      // batch. Preserve that external gate without discarding proven local
+      // cleanup.
+      const externalCleanupOwner = ['background-batch', 'physical-device-batch'].includes(scenario.cleanupOwner);
       const stateMatches = parsed.state === cleanup.state ||
-        (scenario.cleanupOwner === 'background-batch' && cleanup.state === 'BLOCKED_PRECONDITION' && parsed.state === 'OBSERVED');
+        (externalCleanupOwner && cleanup.state === 'BLOCKED_PRECONDITION' && parsed.state === 'OBSERVED');
       if (!stateMatches || JSON.stringify(parsed.counts) !== JSON.stringify(cleanup.counts)) {
         throw new Error(`${result.scenarioId} cleanup proof does not reconcile with cleanup metadata.`);
       }
