@@ -7438,12 +7438,25 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
       const onResponse=response=>{if(response.status()>=500)failedResponses.push({status:response.status(),url:response.url()})};
       page.on('console',onConsole);page.on('response',onResponse);
       const measurements=[];
+      const dismissedDialogs=[];
+      const dismissTransientDialogs=async()=>{
+        for(let attempt=0;attempt<3;attempt+=1){
+          const dialog=page.getByRole('dialog').last();
+          if(!await dialog.waitFor({state:'visible',timeout:800}).then(()=>true).catch(()=>false))break;
+          const text=String(await dialog.textContent()||'').trim().slice(0,160);
+          const acknowledge=dialog.getByRole('button',{name:'Got It',exact:true});
+          if(await acknowledge.count())await acknowledge.click();else await page.keyboard.press('Escape');
+          await dialog.waitFor({state:'hidden',timeout:3000}).catch(()=>{});
+          dismissedDialogs.push(text);
+        }
+      };
       try{
         await page.setViewportSize({width:1440,height:900});
         ${spec.teamId ? `await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(spec.teamId)});` : ''}
         await page.goto(${JSON.stringify(BASE_URL + spec.route)});
         const title=page.getByText(${JSON.stringify(spec.title)},{exact:true}).first();
         await title.waitFor({state:'visible',timeout:15000});
+        await dismissTransientDialogs();
         ${spec.kind === 'coach'
           ? `const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
           : spec.route === '/family'
@@ -7461,7 +7474,7 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
         measurements.push({viewport:{width:390,height:844},box:await dialog.boundingBox()});
         const mobileFits=await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth);
         await page.keyboard.press('Escape');
-        return{measurements,mobileFits,consoleErrors,failedResponses};
+        return{measurements,mobileFits,consoleErrors,failedResponses,dismissedDialogs};
       }finally{page.off('console',onConsole);page.off('response',onResponse)}
     }`]));
     if (observation.interactionFailure) throw new Error(`Waiver ${spec.alias} signing control interaction failed: ${JSON.stringify(observation.interactionFailure)}`);

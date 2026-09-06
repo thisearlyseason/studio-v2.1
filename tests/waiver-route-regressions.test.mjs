@@ -62,4 +62,5 @@ test('waiver lifecycle responsive evidence separates dialog bounds from page ove
   assert.match(signatureWorkflow, /following-sibling::button\[contains\(normalize-space\(\.\),"Review & Sign"\)\]/);
   assert.match(signatureWorkflow, /interactionFailure/);
   assert.match(signatureWorkflow, /elementFromPoint/);
+  assert.match(signatureWorkflow, /dismissTransientDialogs/);
 });
