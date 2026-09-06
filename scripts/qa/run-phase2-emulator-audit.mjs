@@ -7432,7 +7432,7 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
   const observations = [];
   for (const spec of specs) {
     const session = await browserLogin(spec.alias, spec.route, `waiver-sign-${spec.alias}-${process.pid}`);
-    observations.push({ alias: spec.alias, ...JSON.parse(cli(session, ['run-code', `async page => {
+    const observation = JSON.parse(cli(session, ['run-code', `async page => {
       const consoleErrors=[];const failedResponses=[];
       const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text())};
       const onResponse=response=>{if(response.status()>=500)failedResponses.push({status:response.status(),url:response.url()})};
@@ -7445,10 +7445,14 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
         const title=page.getByText(${JSON.stringify(spec.title)},{exact:true}).first();
         await title.waitFor({state:'visible',timeout:15000});
         ${spec.kind === 'coach'
-          ? `const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');await trigger.click();`
+          ? `const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
           : spec.route === '/family'
-            ? `const trigger=title.locator('xpath=../../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');await trigger.click();`
-            : `const trigger=title.locator('xpath=../following-sibling::*//button[contains(normalize-space(.),"Execute Document")]');await trigger.click();`}
+            ? `const trigger=title.locator('xpath=../../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
+            : `const trigger=title.locator('xpath=../following-sibling::*//button[contains(normalize-space(.),"Execute Document")]');`}
+        await trigger.scrollIntoViewIfNeeded();
+        const triggerBox=await trigger.boundingBox();
+        const hit=triggerBox?await page.evaluate(({x,y})=>{const element=document.elementFromPoint(x,y);return element?{tag:element.tagName.toLowerCase(),className:String(element.className||'').slice(0,160),text:String(element.textContent||'').trim().slice(0,100)}:null},{x:triggerBox.x+triggerBox.width/2,y:triggerBox.y+triggerBox.height/2}):null;
+        try{await trigger.click({timeout:5000})}catch(error){return{interactionFailure:{triggerBox,hit,message:String(error?.message||error).slice(-300)}}}
         const dialog=page.getByRole('dialog');await dialog.waitFor({state:'visible',timeout:15000});
         await page.waitForTimeout(250);
         measurements.push({viewport:{width:1440,height:900},box:await dialog.boundingBox()});
@@ -7459,7 +7463,9 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
         await page.keyboard.press('Escape');
         return{measurements,mobileFits,consoleErrors,failedResponses};
       }finally{page.off('console',onConsole);page.off('response',onResponse)}
-    }`])) });
+    }`]));
+    if (observation.interactionFailure) throw new Error(`Waiver ${spec.alias} signing control interaction failed: ${JSON.stringify(observation.interactionFailure)}`);
+    observations.push({ alias: spec.alias, ...observation });
   }
   return observations;
 }
