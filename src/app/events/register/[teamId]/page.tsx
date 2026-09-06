@@ -18,6 +18,8 @@ type PublicEvent = {
   date: string | null;
   startTime: string;
   location: string;
+  formVersion: number;
+  formHash: string;
   customFormFields: Array<{ id: string; label: string; type: 'short_text' | 'long_text' | 'checkbox'; required: boolean }>;
 };
 
@@ -32,6 +34,7 @@ function RegistrationForm() {
   const [formData, setFormData] = useState({ name: '', email: '', phone: '' });
   const [customResponses, setCustomResponses] = useState<Record<string, any>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [requestId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     async function loadEvent() {
@@ -59,14 +62,14 @@ function RegistrationForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.email || isSubmitting) return;
+    if (!event || !formData.name || !formData.email || isSubmitting) return;
     
     setIsSubmitting(true);
     try {
       const response = await fetch('/api/public/event-registration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId, eventId, ...formData, responses: customResponses }),
+        body: JSON.stringify({ teamId, eventId, ...formData, responses: customResponses, requestId, formVersion: event.formVersion, formHash: event.formHash }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || 'Registration failed.');

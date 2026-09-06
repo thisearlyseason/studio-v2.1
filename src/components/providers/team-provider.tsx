@@ -657,6 +657,8 @@ export type LeagueRegistrationConfig = {
   custom_waiver_text?: string;
   confirmation_message?: string;
   form_version?: number;
+  config_hash?: string;
+  currency?: string;
   registration_cost?: string;
   offline_payment_instructions?: string;
   require_division_selection?: boolean;
@@ -684,6 +686,7 @@ export type RegistrationEntry = {
   created_at: string;
   status: 'pending' | 'assigned' | 'accepted' | 'declined';
   payment_received: boolean;
+  payment?: { amount: number; currency: string; mode: 'free' | 'offline'; status: 'not_required' | 'pending'; instructions: string | null };
   assigned_team_id?: string;
   assigned_team_owner_id?: string;
   waiver_signed_text?: string;
@@ -3026,7 +3029,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [db]);
   const deleteLeagueInvite = useCallback(async (id: string) => { if (db) await deleteDoc(doc(db, 'leagues', 'global', 'invites', id)); }, [db]);
-  const saveLeagueRegistrationConfig = useCallback(async (lId: string, pId: string, u: any) => { if (db) await setDoc(doc(db, 'leagues', lId, 'registration', pId), clean(u), { merge: true }); }, [db]);
+  const saveLeagueRegistrationConfig = useCallback(async (lId: string, pId: string, u: Partial<LeagueRegistrationConfig>) => {
+    if (!db) return;
+    const token = await getAuthToken(firebaseAuth);
+    const { id: _id, config_hash: expectedHash, ...config } = clean(u);
+    const response = await fetch('/api/registrations/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ targetKind: 'league', targetId: lId, configId: pId, expectedVersion: u.form_version || 0, expectedHash: expectedHash || '', config }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error || 'Registration form could not be saved.');
+  }, [db, firebaseAuth]);
   
   const submitRegistrationEntry = useCallback(async (tId: string, pId: string, a: any, v: number, signature?: string, targetType?: any, eventId?: string) => { 
     if (!db) return; 

@@ -73,6 +73,7 @@ function RegistrationForm() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
+  const [requestId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     if (protocolId !== 'team_config' || !squadId || !squadName) return;
@@ -167,7 +168,7 @@ function RegistrationForm() {
       const token = squadId ? await getAuthToken(auth) : null;
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ kind: 'tournament', action: 'register', teamId, eventId, protocolId: config.id, answers, formVersion: config.form_version || 0, signature }),
+        body: JSON.stringify({ kind: 'tournament', action: 'register', teamId, eventId, protocolId: config.id, answers, formVersion: config.form_version || 0, formHash: config.config_hash || '', requestId, signature }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Submission failed.');
@@ -406,7 +407,7 @@ function RegistrationForm() {
             ) : (
               <p className="text-sm font-black text-green-600 uppercase tracking-widest">✓ NO FEE — Free Entry</p>
             )}
-            <div className="pt-4 border-t border-primary/10 space-y-4">
+            {config.registration_cost && parseFloat(config.registration_cost) > 0 && <div className="pt-4 border-t border-primary/10 space-y-4">
               <div className="bg-white p-5 rounded-[2rem] text-[11px] font-medium leading-relaxed border border-primary/5 text-foreground/80 shadow-inner whitespace-pre-wrap">
                 {event?.paymentInstructions || config.offline_payment_instructions || 'Tournament entry fees are processed offline. Contact the tournament organizer for payment instructions.'}
               </div>
@@ -414,7 +415,7 @@ function RegistrationForm() {
                 <div className="bg-amber-100 p-2 rounded-xl"><Sparkles className="h-4 w-4 text-amber-600" /></div>
                 <p className="text-[10px] font-black uppercase text-amber-700 tracking-tight leading-tight">Online payment is not yet available</p>
               </div>
-            </div>
+            </div>}
           </div>
         </div>
 

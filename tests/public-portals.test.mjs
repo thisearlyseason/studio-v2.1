@@ -31,8 +31,9 @@ test('starter/free plans cannot activate premium public portals', () => {
   assert.equal(permitsLegacyOrPaidPortals('free'), false);
 });
 
-test('legacy accounts without a plan marker retain existing portal access', () => {
-  assert.equal(permitsLegacyOrPaidPortals(undefined), true);
+test('missing and unknown subscription markers fail public portals closed', () => {
+  assert.equal(permitsLegacyOrPaidPortals(undefined), false);
+  assert.equal(permitsLegacyOrPaidPortals('mystery-plan'), false);
 });
 
 test('public league payload excludes private contacts, PINs, finances, and invite codes', () => {
@@ -132,10 +133,8 @@ test('public tournament actions honor every supported team plan marker', async (
     source.indexOf("      } else {\n        const teamId"),
     source.indexOf("      const configSnap =", source.indexOf("      } else {\n        const teamId")),
   );
-  const tournamentActions = source.slice(
-    source.indexOf("    if (kind === 'tournament')", source.indexOf("    if (kind === 'tournament')") + 1),
-    source.indexOf("    if (kind === 'league')", source.indexOf("    if (kind === 'tournament')", source.indexOf("    if (kind === 'tournament')") + 1)),
-  );
+  const tournamentActionsStart = source.lastIndexOf("    if (kind === 'tournament')");
+  const tournamentActions = source.slice(tournamentActionsStart, source.indexOf("    if (kind === 'league')", tournamentActionsStart));
 
   for (const section of [tournamentRegistration, tournamentActions]) {
     assert.match(section, /teamSnap\.data\(\)\?\.planId/);

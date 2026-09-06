@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       const league = await findLeague(identifier);
       if (!league) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
       const creator = league.data()?.creatorId ? await adminDb.collection('users').doc(league.data()!.creatorId).get() : null;
-      if (creator?.exists && !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
+      if (!creator?.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       const publicLeagueData = publicLeague(league.id, league.data());
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
       const creatorId = league.data()?.creatorId;
       if (creatorId) {
         const creator = await adminDb.collection('users').doc(String(creatorId)).get();
-        if (creator.exists && !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
+        if (!creator.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
           return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
         }
       }

@@ -141,7 +141,9 @@ export default function TournamentRegistrationAdminPage() {
       form_schema: [DIVISION_FIELD],
       form_version: 1,
     };
-    await setDoc(doc(db, 'teams', teamId as string, 'events', eventId as string, 'registration', newId), newForm);
+    const token = await getAuthToken(auth);
+    const createResponse = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId: newId, expectedVersion: 0, expectedHash: '', config: newForm }) });
+    if (!createResponse.ok) throw new Error((await createResponse.json().catch(() => null))?.error || 'Registration form could not be created.');
     setNewFormName('');
     setIsCreatingForm(false);
     setConfigId(newId);
@@ -299,19 +301,12 @@ export default function TournamentRegistrationAdminPage() {
       }
       setIsSaving(true);
       try {
-        await setDoc(configRef, updated, { merge: true });
-        if (eventRef) {
-          const waiverDocuments = updated.team_waivers_content || [];
-          await updateDoc(eventRef, {
-            waiverIds: updated.selected_team_waivers || [],
-            waiverDocuments,
-            teamWaiverText: waiverDocuments.map(waiver => `${waiver.title}\n\n${waiver.content}`).join('\n\n'),
-          });
-        }
-        // Sync cost to the event doc for top-level reads
-        if (updates.registration_cost !== undefined && eventRef) {
-          await updateDoc(eventRef, { registration_cost: updates.registration_cost });
-        }
+        const token = await getAuthToken(auth);
+        const { id: _id, config_hash: expectedHash, ...configPayload } = updated;
+        const response = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId, expectedVersion: updated.form_version || 0, expectedHash: expectedHash || '', config: configPayload }) });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error || 'Registration form could not be saved.');
+        setLocalConfig({ ...updated, ...payload.config, id: configId });
         // Scorekeeper credentials belong to the event itself, not the registration form.
         // Keeping this write here makes the builder and public scorekeeper portal agree.
         if ((updates as any).scoringCode !== undefined && eventRef) {

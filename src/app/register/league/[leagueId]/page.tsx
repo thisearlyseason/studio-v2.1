@@ -91,6 +91,7 @@ function RegistrationForm() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
+  const [requestId] = useState(() => crypto.randomUUID());
 
   const [teamCode, setTeamCode] = useState('');
   const [validatingCode, setValidatingCode] = useState(false);
@@ -391,6 +392,8 @@ function RegistrationForm() {
           protocolId: config.id,
           answers: finalAnswers,
           formVersion: config.form_version || 0,
+          formHash: config.config_hash || '',
+          requestId,
           signature,
         }),
       });
@@ -530,6 +533,14 @@ function RegistrationForm() {
              <p className="text-[11px] font-medium leading-relaxed text-foreground/70">
                 Your registration information is sent securely to the {config?.type === 'team' ? 'team organizers' : 'league organizers'} responsible for this form.
              </p>
+          </div>
+          <div className="bg-white p-6 rounded-3xl border space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-primary">Registration Fee</p>
+            {Number(config?.registration_cost || 0) > 0 ? <>
+              <p className="text-2xl font-black">${config?.registration_cost} {config?.currency || 'CAD'}</p>
+              <p className="text-xs font-medium whitespace-pre-wrap">{config?.offline_payment_instructions}</p>
+              <p className="text-[10px] font-black uppercase text-amber-700">Payment is due offline and remains pending until confirmed by the organizer.</p>
+            </> : <p className="text-sm font-black uppercase text-green-600">No fee — free registration</p>}
           </div>
         </div>
 

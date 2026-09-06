@@ -11,13 +11,11 @@ export function permitsLegacyOrPaidPortals(...planIds: Array<string | null | und
   const markers = planIds
     .filter((planId): planId is string => typeof planId === 'string' && planId.trim().length > 0)
     .map(planId => planId.toLowerCase());
-  if (markers.length === 0) return true;
+  if (markers.length === 0) return false;
   // Older team documents can retain a free planId after a user-level subscription
   // sync. Any paid marker is authoritative when more than one plan field exists.
   if (markers.some(planId => PUBLIC_PLAN_IDS.has(planId))) return true;
-  // Legacy records may use a paid plan name that is not in the current catalog.
-  // Only explicit free/demo markers should disable a public portal.
-  return markers.every(planId => !['free', 'starter', 'starter_squad', 'school_demo', 'basic_demo', 'parent_demo', 'player_demo', 'league_demo'].includes(planId));
+  return false;
 }
 
 export function publicGame(game: any) {
@@ -165,8 +163,12 @@ export function publicRegistrationConfig(id: string, config: any) {
     custom_waiver_text: config.custom_waiver_text,
     confirmation_message: config.confirmation_message,
     form_version: Number(config.form_version || 1),
-    registration_cost: config.registration_cost,
-    offline_payment_instructions: config.offline_payment_instructions,
+    config_hash: typeof config.config_hash === 'string' ? config.config_hash : '',
+    registration_cost: String(config.registration_cost || '0'),
+    currency: typeof config.currency === 'string' ? config.currency : 'CAD',
+    offline_payment_instructions: typeof config.offline_payment_instructions === 'string'
+      ? config.offline_payment_instructions
+      : '',
     require_division_selection: config.require_division_selection === true,
     available_divisions: Array.isArray(config.available_divisions)
       ? config.available_divisions.map(String)

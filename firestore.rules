@@ -410,15 +410,18 @@ service cloud.firestore {
         // Registration forms and responses contain applicant contact details,
         // so only the squad owner and staff may access them from the client.
         match /registration/{configId} {
-          allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
         }
 
         match /registrationEntries/{entryId} {
-          allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
         }
 
         match /archived_waivers/{waiverId} {
-          allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
         }
 
         // Public event submissions are created by the Admin SDK. The client may
@@ -783,7 +786,8 @@ allow create, update: if false; // Authenticated incident service only.
       );
 
       match /registrationEntries/{entryId} {
-        allow create: if isLeagueMember(leagueId);
+        allow create: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
         allow read: if isSuperAdmin() || isLeagueMember(leagueId);
         allow update, delete: if isSuperAdmin() || (isSignedIn() &&
           get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
@@ -796,8 +800,7 @@ allow create, update: if false; // Authenticated incident service only.
 
       match /registration/{configId} {
         allow read: if isSuperAdmin() || isLeagueMember(leagueId);
-        allow write: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow write: if false;
       }
 
       match /scores/{scoreId} {
