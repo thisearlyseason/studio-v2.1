@@ -7011,9 +7011,9 @@ async function runCertificationOperationsScenarios() {
           ['happyPath','film-upload','Practice film valid upload creates one player video object and metadata','qa-coach-owner-a','one exact object and one metadata record'],
           ['happyPath','film-photo','Practice film valid thumbnail uses the declared player thumbnail path','qa-coach-owner-a','one exact player thumbnail object'],
           ['happyPath','film-mark','Practice film valid coach mark persists and seeks exact timestamp','qa-coach-owner-a','one exact timestamped staff mark'],
-          ['negativePath','film-type','Practice film unsafe MIME fails before durable metadata','qa-coach-owner-a','zero object and metadata'],
-          ['negativePath','film-size','Practice film size overflow fails before durable metadata','qa-coach-owner-a','zero object and metadata'],
-          ['negativePath','film-url','Practice film unsafe external URLs fail before durable metadata','qa-coach-owner-a','zero unsafe metadata'],
+          ['negativePath','film-type','Practice film unsafe MIME fails before durable metadata','qa-coach-owner-a','exact invalid-title query returns zero and exact would-be object GET returns 404'],
+          ['negativePath','film-size','Practice film size overflow fails before durable metadata','qa-coach-owner-a','exact invalid-title query returns zero and exact boundary-plus-one would-be object GET returns 404'],
+          ['negativePath','film-url','Practice film unsafe external URLs fail before durable metadata','qa-coach-owner-a','exact invalid-title query returns zero and exact reserved no-upload object GET returns 404'],
           ['negativePath','film-time-invalid','Practice film negative NaN and beyond-duration timestamps fail','qa-coach-owner-a','zero invalid marks'],
           ['permission','film-progress-forge','Practice film player cannot forge another user progress','qa-adult-player-a','403 foreign progress write'],
           ['permission','film-mark-player','Practice film player cannot create or alter coach marks','qa-adult-player-a','403 film metadata update'],
@@ -7194,6 +7194,39 @@ async function capturePracticeStorageRequest(caseId, actorAlias, token, objectPa
       completedAt: new Date().toISOString(),
     });
     return status;
+  });
+}
+
+async function captureRejectedFilmAbsence(caseId, actorAlias, token, { playerId, title, objectPath }) {
+  return captureOperationRequests(caseId, actorAlias, async () => {
+    const queryStartedAt = new Date().toISOString();
+    const query = await fetch(
+      `http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/players/${encodeURIComponent(playerId)}:runQuery`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Connection: 'close' },
+        body: JSON.stringify({ structuredQuery: {
+          from: [{ collectionId: 'videos' }],
+          where: { fieldFilter: { field: { fieldPath: 'title' }, op: 'EQUAL', value: { stringValue: title } } },
+        } }),
+        signal: AbortSignal.timeout(20_000),
+      },
+    );
+    recordCapturedOperationRequest({
+      pathname: '/firestore/query', method: 'POST', status: query.status, token,
+      startedAt: queryStartedAt, completedAt: new Date().toISOString(),
+    });
+    if (query.status !== 200) throw new Error(`Rejected Film title reconciliation returned ${query.status}.`);
+    const rows = await query.json();
+    const metadataCount = rows.filter(row => row?.document).length;
+
+    const objectStartedAt = new Date().toISOString();
+    const objectStatus = await storageObjectStatus(objectPath, token, { method: 'GET' });
+    recordCapturedOperationRequest({
+      pathname: '/storage/object', method: 'GET', status: objectStatus, token,
+      startedAt: objectStartedAt, completedAt: new Date().toISOString(),
+    });
+    return { metadataCount, objectStatus };
   });
 }
 
@@ -7629,12 +7662,19 @@ async function runPracticeFilmWorkflowAudit() {
   const uploadName = `${runSafe}-film.webm`;
   const storagePath = `players/${playerId}/videos/${fixedUploadNow}_${uploadName}`;
   const thumbnailPath = `players/${playerId}/thumbnails/${runSafe}-thumbnail.png`;
+  const invalidTypeTitle = `Invalid type ${FIXTURES.runId}`;
+  const invalidSizeTitle = `Invalid size ${FIXTURES.runId}`;
+  const invalidUrlTitle = `Invalid URL ${FIXTURES.runId}`;
+  const invalidTypePath = `players/${playerId}/videos/${fixedUploadNow + 1}_${runSafe}-unsafe.txt`;
+  const invalidSizePath = `players/${playerId}/videos/${fixedUploadNow + 2}_${runSafe}-oversized.mp4`;
+  const invalidUrlPath = `players/${playerId}/videos/${fixedUploadNow + 3}_${runSafe}-unsafe-url`;
   const ownerSession = await browserLogin('qa-coach-owner-a', '/dashboard', `practice-film-owner-${process.pid}`);
   browserSelectScheduleTeam(ownerSession, teamA.id);
   const athleteUrl = `${BASE_URL}/coaches-corner?athlete=${encodeURIComponent(memberId)}`;
+  const tokens = new Map(await Promise.all(['qa-coach-owner-a', 'qa-adult-player-a', 'qa-coach-owner-b'].map(async alias => [alias, (await signIn(alias)).body.idToken])));
 
-  await registerDynamicStorageObject(storagePath, 'practice-film-video');
-  await registerDynamicStorageObject(thumbnailPath, 'practice-film-thumbnail');
+  await registerDynamicStorageObject(storagePath, 'practice-film-video-visible-delete-verified-absent');
+  await registerDynamicStorageObject(thumbnailPath, 'practice-film-thumbnail-cleanup-deleted');
   const invalidResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
     const consoleErrors = []; const failedResponses = [];
     const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
@@ -7673,17 +7713,20 @@ async function runPracticeFilmWorkflowAudit() {
     };
     try {
       await page.setViewportSize({ width: 1440, height: 900 });
-      let dialog = await openFilm(${JSON.stringify(`Invalid type ${FIXTURES.runId}`)});
+      let dialog = await openFilm(${JSON.stringify(invalidTypeTitle)});
+      await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow + 1});
       await dialog.locator('#film-upload').evaluate(input => {
-        const transfer = new DataTransfer(); transfer.items.add(new File(['not video'], 'unsafe.txt', { type: 'text/plain' })); input.files = transfer.files;
+        const transfer = new DataTransfer(); transfer.items.add(new File(['not video'], ${JSON.stringify(`${runSafe}-unsafe.txt`)}, { type: 'text/plain' })); input.files = transfer.files;
         input.dispatchEvent(new Event('change', { bubbles: true }));
       });
       await page.getByText('Invalid Video', { exact: true }).last().waitFor({ timeout: 10000 });
       const invalidType = 1;
-      dialog = await openFilm(${JSON.stringify(`Invalid size ${FIXTURES.runId}`)});
+      dialog = await openFilm(${JSON.stringify(invalidSizeTitle)});
+      await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow + 2});
       await dialog.locator('#film-upload').evaluate(input => {
-        const file = new File(['x'], 'oversized.mp4', { type: 'video/mp4' });
-        Object.defineProperty(file, 'size', { configurable: true, value: 500 * 1024 * 1024 + 1 });
+        const chunk = new Blob([new Uint8Array(1024 * 1024)]);
+        const file = new File([...Array(500).fill(chunk), new Uint8Array(1)], ${JSON.stringify(`${runSafe}-oversized.mp4`)}, { type: 'video/mp4' });
+        if (file.size !== 500 * 1024 * 1024 + 1) throw new Error('Browser-native Film overflow fixture has the wrong exact size.');
         const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
         input.dispatchEvent(new Event('change', { bubbles: true }));
       });
@@ -7691,7 +7734,7 @@ async function runPracticeFilmWorkflowAudit() {
       const invalidSize = 1;
       let unsafeUrls = 0;
       for (const value of ['javascript:alert(1)', 'https://user:pass@example.com/video', 'https://127.0.0.1/video', 'not a url', 'https://example.com/' + 'a'.repeat(2050)]) {
-        dialog = await openFilm(${JSON.stringify(`Invalid URL ${FIXTURES.runId}`)});
+        dialog = await openFilm(${JSON.stringify(invalidUrlTitle)});
         await dialog.getByPlaceholder('https://youtu.be/... or Local Upload').fill(value);
         const submit = dialog.getByRole('button', { name: 'Archive Film', exact: true });
         await submit.focus(); await page.keyboard.press('Enter');
@@ -7704,8 +7747,23 @@ async function runPracticeFilmWorkflowAudit() {
   expectEqual(invalidResult.invalidType, 1, 'Practice film unsafe MIME fails before durable metadata');
   expectEqual(invalidResult.invalidSize, 1, 'Practice film size overflow fails before durable metadata');
   expectEqual(invalidResult.unsafeUrls, 5, 'Practice film unsafe external URLs fail before durable metadata');
+  const invalidTypeAbsence = await captureRejectedFilmAbsence('film-type', 'qa-coach-owner-a', tokens.get('qa-coach-owner-a'), { playerId, title: invalidTypeTitle, objectPath: invalidTypePath });
+  expectEqual(invalidTypeAbsence.metadataCount === 0 && invalidTypeAbsence.objectStatus === 404, true, 'Practice film unsafe MIME fails before durable metadata');
+  const invalidSizeAbsence = await captureRejectedFilmAbsence('film-size', 'qa-coach-owner-a', tokens.get('qa-coach-owner-a'), { playerId, title: invalidSizeTitle, objectPath: invalidSizePath });
+  expectEqual(invalidSizeAbsence.metadataCount === 0 && invalidSizeAbsence.objectStatus === 404, true, 'Practice film size overflow fails before durable metadata');
+  const invalidUrlAbsence = await captureRejectedFilmAbsence('film-url', 'qa-coach-owner-a', tokens.get('qa-coach-owner-a'), { playerId, title: invalidUrlTitle, objectPath: invalidUrlPath });
+  expectEqual(invalidUrlAbsence.metadataCount === 0 && invalidUrlAbsence.objectStatus === 404, true, 'Practice film unsafe external URLs fail before durable metadata');
 
   const uploadResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
+    const storageResponses = []; const requestStartedAt = new WeakMap();
+    const onUploadRequest = request => { if (request.method() !== 'GET' && decodeURIComponent(request.url()).includes(${JSON.stringify(storagePath)})) requestStartedAt.set(request, new Date().toISOString()); };
+    const onUploadResponse = response => {
+      const request = response.request();
+      if (request.method() === 'GET' || !decodeURIComponent(response.url()).includes(${JSON.stringify(storagePath)})) return;
+      storageResponses.push({ tag: 'film-storage-upload', pathname: '/storage/object', method: request.method(), status: response.status(), startedAt: requestStartedAt.get(request) || new Date().toISOString(), completedAt: new Date().toISOString() });
+    };
+    page.on('request', onUploadRequest); page.on('response', onUploadResponse);
+    try {
     const generatedFilm = await page.evaluate(async name => {
       const canvas = document.createElement('canvas');
       canvas.width = 320; canvas.height = 180;
@@ -7762,9 +7820,11 @@ async function runPracticeFilmWorkflowAudit() {
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
     await page.reload();
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
-    return { count: await page.getByText(${JSON.stringify(marker)}, { exact: true }).count(), fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
+    return { count: await page.getByText(${JSON.stringify(marker)}, { exact: true }).count(), fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), storageResponses };
+    } finally { page.off('request', onUploadRequest); page.off('response', onUploadResponse); }
   }`]));
   expectEqual(uploadResult.count, 1, 'Practice film valid upload creates one player video object and metadata');
+  await captureBrowserOperationRequests('film-upload', 'qa-coach-owner-a', uploadResult.storageResponses, 'film-storage-upload');
 
   const videoRecord = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin, bucket) => {
     const snapshot = await firestoreAdmin.collection(`players/${playerId}/videos`).where('title', '==', marker).get();
@@ -7772,10 +7832,9 @@ async function runPracticeFilmWorkflowAudit() {
     if (snapshot.size !== 1) throw new Error(`Expected one run-scoped film metadata record, received ${snapshot.size}.`);
     return { path: snapshot.docs[0].ref.path, data: snapshot.docs[0].data(), objectExists };
   });
-  await registerDynamicFirestoreRoot(videoRecord.path, 'practice-film-metadata');
+  await registerDynamicFirestoreRoot(videoRecord.path, 'practice-film-metadata-visible-delete-verified-absent');
   expectEqual(videoRecord.objectExists && videoRecord.data.storagePath === storagePath, true, 'Practice film valid upload creates one player video object and metadata');
 
-  const tokens = new Map(await Promise.all(['qa-coach-owner-a', 'qa-adult-player-a', 'qa-coach-owner-b'].map(async alias => [alias, (await signIn(alias)).body.idToken])));
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
   const photoStatus = await capturePracticeStorageRequest('film-photo', 'qa-coach-owner-a', tokens.get('qa-coach-owner-a'), thumbnailPath, { method: 'POST', contentType: 'image/png', body: png });
   expectEqual(photoStatus, 200, 'Practice film valid thumbnail uses the declared player thumbnail path');
@@ -7905,11 +7964,12 @@ async function runPracticeFilmWorkflowAudit() {
     const snapshot = await firestoreAdmin.doc(progressPath).get(); return snapshot.exists ? snapshot.data() : null;
   });
   expectEqual(progress?.userId === adultUid && progress?.percentage === 75, true, 'Practice film player own watch progress persists');
+  await registerDynamicFirestoreRoot(progressPath, 'practice-film-watch-progress-cleanup-deleted');
 
   const actor = alias => ({ alias, token: tokens.get(alias) });
   await capturePracticeDocumentReads('film-upload', [actor('qa-coach-owner-a')], videoRecord.path);
   await capturePracticeDocumentReads('film-mark', [actor('qa-coach-owner-a')], videoRecord.path);
-  for (const caseId of ['film-type', 'film-size', 'film-url', 'film-time-invalid']) await capturePracticeDocumentReads(caseId, [actor('qa-coach-owner-a')], videoRecord.path);
+  await capturePracticeDocumentReads('film-time-invalid', [actor('qa-coach-owner-a')], videoRecord.path);
   await capturePracticeDocumentReads('film-progress-own', [actor('qa-adult-player-a')], progressPath);
   const forgeTargetUid = identityByAlias.get('qa-coach-owner-a').uid;
   const forge = await captureOperationRequests('film-progress-forge', 'qa-adult-player-a', () => probeForgedWatchProgressDenial({ projectId: PROJECT_ID, documentPath: `${videoRecord.path}/watchProgress/${forgeTargetUid}`, idToken: tokens.get('qa-adult-player-a'), actorUid: adultUid, targetUserId: forgeTargetUid, percentage: 100, watchedAt: new Date().toISOString() }));

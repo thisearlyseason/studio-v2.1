@@ -310,6 +310,19 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.ok(generatedFilmIndex >= 0);
   assert.ok(generatedFilmIndex < filmBlock.indexOf('await page.goto', uploadBlockStart));
   assert.ok(generatedFilmIndex < filmBlock.indexOf("const addFilm = page.getByRole('button', { name: 'Add Film'", uploadBlockStart));
+  assert.doesNotMatch(filmBlock, /Object\.defineProperty\(file, 'size'/);
+  assert.match(filmBlock, /new File\(\[\.\.\.Array\(500\)\.fill\(chunk\), new Uint8Array\(1\)\]/);
+  assert.match(filmBlock, /500 \* 1024 \* 1024 \+ 1/);
+  assert.match(filmBlock, /captureBrowserOperationRequests\('film-upload', 'qa-coach-owner-a'/);
+  assert.match(filmBlock, /captureRejectedFilmAbsence\('film-type'/);
+  assert.match(filmBlock, /captureRejectedFilmAbsence\('film-size'/);
+  assert.match(filmBlock, /captureRejectedFilmAbsence\('film-url'/);
+  assert.doesNotMatch(filmBlock, /for \(const caseId of \['film-type', 'film-size', 'film-url'/);
+  assert.match(filmBlock, /practice-film-metadata-visible-delete-verified-absent/);
+  assert.match(filmBlock, /practice-film-video-visible-delete-verified-absent/);
+  assert.match(filmBlock, /practice-film-thumbnail-cleanup-deleted/);
+  assert.match(filmBlock, /practice-film-watch-progress-cleanup-deleted/);
+  assert.match(filmBlock, /registerDynamicFirestoreRoot\(progressPath, 'practice-film-watch-progress-cleanup-deleted'/);
 });
 
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
