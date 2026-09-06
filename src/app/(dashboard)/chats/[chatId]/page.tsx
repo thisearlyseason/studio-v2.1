@@ -62,6 +62,7 @@ import {
 } from "@/components/ui/tooltip";
 import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { normalizeChatMessage } from '@/lib/chat-message-normalization';
+import { validatePollInput } from '@/lib/poll-policy';
 
 function ChatRoomInner() {
   const { chatId } = useParams();
@@ -83,6 +84,7 @@ function ChatRoomInner() {
   
   const [input, setInput] = useState('');
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
+  const [isPollSending,setIsPollSending] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
   const [isMembersDialogOpen, setIsMembersDialogOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -184,14 +186,16 @@ function ChatRoomInner() {
     }
   };
 
-  const handleCreatePoll = () => {
-    if (!chatId || !user) return;
-    const question = pollPrompt;
-    const finalOptions = pollOptions.filter(o => o.text.trim() !== '');
-    if (!question || finalOptions.length < 2) return;
-    const pollData = { id: 'p' + Date.now(), question, options: finalOptions.map(o => ({ text: o.text, imageUrl: o.image, votes: 0 })), totalVotes: 0, voters: {}, isClosed: false };
-    addMessage(chatId as string, user.name, '', 'poll', undefined, pollData, effectiveTeamId || undefined);
-    setIsPollDialogOpen(false); setPollPrompt(''); setPollOptions([{text: '', image: undefined}, {text: '', image: undefined}]);
+  const handleCreatePoll = async () => {
+    if (!chatId || !user || isPollSending) return;
+    try {
+      const input=validatePollInput({question:pollPrompt,options:pollOptions});
+      setIsPollSending(true);
+      await addMessage(chatId as string,user.name,'','poll',undefined,input,effectiveTeamId || undefined);
+      setIsPollDialogOpen(false);setPollPrompt('');setPollOptions([{text:''},{text:''}]);
+    } catch(error) {
+      toast({title:'Invalid Poll',description:error instanceof Error ? error.message : 'Unable to create poll.',variant:'destructive'});
+    } finally {setIsPollSending(false);}
   };
 
   if (isChatLoading) {
@@ -354,8 +358,8 @@ function ChatRoomInner() {
                           const percentage = msg.poll!.totalVotes > 0 ? (opt.votes / msg.poll!.totalVotes) * 100 : 0;
                           return (
                             <button 
-                              key={i} 
-                              onClick={() => votePoll(chatId as string, msg.id, i, effectiveTeamId || undefined)}
+                              key={opt.id || i}
+                              onClick={() => votePoll(chatId as string, msg.id, opt.id || i, effectiveTeamId || undefined)}
                               className="w-full text-left space-y-2 group/opt active:scale-[0.98] transition-all"
                             >
                               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest px-1">
@@ -614,11 +618,11 @@ function ChatRoomInner() {
                     <Input key={i} placeholder={`Option ${i+1}`} value={o.text} onChange={e => { const n = [...pollOptions]; n[i].text = e.target.value; setPollOptions(n); }} className="h-11 rounded-xl bg-muted/20 border-none font-bold" />
                   ))}
                 </div>
-                <Button variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest text-primary h-8" onClick={() => setPollOptions([...pollOptions, {text: '', image: undefined}])}>+ Add Option</Button>
+                <Button disabled={pollOptions.length >= 10 || isPollSending} variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest text-primary h-8" onClick={() => setPollOptions([...pollOptions, {text: '', image: undefined}])}>+ Add Option</Button>
               </div>
             </div>
             <DialogFooter className="mt-8">
-              <Button className="w-full h-16 rounded-2xl font-black text-lg uppercase shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreatePoll}>Deploy Squad Poll</Button>
+              <Button disabled={isPollSending} className="w-full h-16 rounded-2xl font-black text-lg uppercase shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreatePoll}>Deploy Squad Poll</Button>
             </DialogFooter>
           </div>
         </DialogContent>

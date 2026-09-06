@@ -799,9 +799,9 @@ export type Message = {
   poll?: {
     id: string;
     question: string;
-    options: Array<{ text: string; votes: number }>;
+    options: Array<{ id?: string; text: string; votes: number }>;
     totalVotes: number;
-    voters: Record<string, number>;
+    voters: Record<string, number | string>;
     isClosed: boolean;
   };
   createdAt: string;
@@ -899,7 +899,7 @@ interface TeamContextType {
   createChat: (name: string, members: string[], contextId?: string) => Promise<string>;
   deleteChat: (chatId: string) => Promise<void>;
   hideChatForUser: (chatId: string) => Promise<void>;
-  votePoll: (chatId: string, messageId: string, optionIdx: number, teamId?: string) => Promise<void>;
+  votePoll: (chatId: string, messageId: string, optionIdx: number | string, teamId?: string) => Promise<void>;
   updateChat: (chatId: string, data: any) => Promise<void>;
   resetSquadData: (categories: string[]) => Promise<void>;
   addVolunteerOpportunity: (data: any) => Promise<void>;
@@ -2423,7 +2423,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const deleteChat = useCallback(async (chatId: string) => { if (activeTeam?.id && db) await updateDoc(doc(db, 'teams', activeTeam.id, 'groupChats', chatId), { isDeleted: true }); }, [activeTeam, db]);
   const hideChatForUser = useCallback(async (chatId: string) => { if (!firebaseUser || !db) return; await setDoc(doc(db, 'users', firebaseUser.uid, 'hiddenChats', chatId), { id: `${firebaseUser.uid}_${chatId}`, userId: firebaseUser.uid, chatId, hiddenAt: new Date().toISOString() }); }, [firebaseUser, db]);
   
-  const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number, teamId?: string) => {
+  const votePoll = useCallback(async (chatId: string, messageId: string, optionIdx: number | string, teamId?: string) => {
     const targetTeamId = teamId || activeTeam?.id;
     if (!targetTeamId || !firebaseAuth) return;
     try {
@@ -2432,7 +2432,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const response = await fetch('/api/teams/chat/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
-        body: JSON.stringify({ teamId: targetTeamId, chatId, messageId, optionIdx }),
+        body: JSON.stringify({ teamId: targetTeamId, chatId, messageId, ...(typeof optionIdx === 'string' ? {optionId:optionIdx} : {optionIdx}) }),
       });
       if (!response.ok) throw new Error((await response.json()).error || 'Unable to record your vote.');
     } catch (error: any) {

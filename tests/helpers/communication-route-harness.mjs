@@ -9,6 +9,8 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
     'next/server': `export class NextResponse extends Response { static json(body, init={}) { return new NextResponse(JSON.stringify(body), init); } }`,
     '@/lib/firebase-admin': `export const adminDb = globalThis[${JSON.stringify(key)}].db; export function getAdminStorageBucketName() {return 'demo-test.appspot.com';}`,
     'firebase-admin/storage': `export function getStorage() {return {bucket:()=>globalThis[${JSON.stringify(key)}].db.bucket};}`,
+    'firebase-admin/firestore': `export const FieldValue={increment:value=>({__increment:value})};`,
+    '@/lib/server-notification-delivery': `export async function sendNotificationToUsers(){return {fcmSuccessCount:0,fcmFailureCount:0,webPushSuccessCount:0,webPushFailureCount:0};}`,
     '@/lib/api-auth': `export async function verifyFirebaseToken() { return globalThis[${JSON.stringify(key)}].auth; }`,
     '@/lib/server-request-guards': `export class RequestBodyError extends Error {} export async function enforceUserRateLimit() { return null; } export async function readJsonBodyWithLimit(req) { return req.json(); }`,
   };
@@ -31,6 +33,15 @@ export function communicationDb(initial) {
     async get() {return snapshot(this);}
     async create(value) {if(records.has(this.path)) throw Object.assign(new Error('exists'),{code:6});records.set(this.path,structuredClone(value));}
     async set(value) {records.set(this.path,structuredClone(value));}
+    async update(value) {
+      const prior=structuredClone(records.get(this.path));
+      for(const [key,item] of Object.entries(value)) {
+        const parts=key.split('.');let target=prior;
+        for(const part of parts.slice(0,-1)) target=target[part] ||= {};
+        const field=parts.at(-1);target[field]=item?.__increment ? Number(target[field]||0)+item.__increment : structuredClone(item);
+      }
+      records.set(this.path,prior);
+    }
     async delete() {records.delete(this.path);}
   }
   class Query {

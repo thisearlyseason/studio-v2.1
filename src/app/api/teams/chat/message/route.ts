@@ -3,6 +3,8 @@ import { adminDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { findActiveTeamMember } from '@/lib/server-team-access';
+import { randomUUID } from 'node:crypto';
+import { validatePollInput } from '@/lib/poll-policy';
 import { sendNotificationToUsers } from '@/lib/server-notification-delivery';
 import {
   enforceUserRateLimit,
@@ -49,19 +51,13 @@ export async function POST(req: NextRequest) {
 
     let safePoll: Record<string, unknown> | null = null;
     if (type === 'poll') {
-      const options = Array.isArray(poll?.options)
-        ? poll.options.slice(0, 10).map((option: any) => ({
-            text: String(option?.text || '').trim().slice(0, 240),
-            image: typeof option?.image === 'string' ? option.image.slice(0, 500_000) : null,
-            votes: 0,
-          })).filter((option: any) => option.text)
-        : [];
-      if (!poll || typeof poll.question !== 'string' || poll.question.trim().length < 1 || options.length < 2) {
-        return NextResponse.json({ error: 'A poll needs a question and at least two options.' }, { status: 400 });
-      }
+      if (team.data()?.features?.tacticalChat === false || chat.data()?.isDeleted === true) return NextResponse.json({error:'Polls are unavailable in this channel.'},{status:403});
+      let input;
+      try {input=validatePollInput(poll);} catch(error) {return NextResponse.json({error:error instanceof Error ? error.message : 'Invalid poll.'},{status:400});}
       safePoll = {
-        question: poll.question.trim().slice(0, 500),
-        options,
+        id:`poll_${randomUUID()}`,
+        question: input.question,
+        options: input.options.map(option=>({...option,id:`option_${randomUUID()}`,votes:0})),
         voters: {},
         totalVotes: 0,
         isClosed: false,

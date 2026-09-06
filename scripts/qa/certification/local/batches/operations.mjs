@@ -7,6 +7,11 @@ const caseId = (scenarioId, dimension) => `operations-${scenarioId}-${dimension}
 // dimension placeholder. Every frozen Task 5 case is represented exactly once;
 // console/network/persistence envelopes remain separate evidence observations.
 export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
+  'polls-create-vote-change-tally': Object.freeze({
+    happyPath:['poll-create','poll-vote','poll-change'], negativePath:['poll-invalid','poll-replay','poll-invalid-option'],
+    permission:['poll-ineligible','poll-removed','poll-team-b','poll-module-off'], persistence:['poll-race'],
+    console:['poll-console'],network:['poll-network'],responsive:['poll-responsive'],
+  }),
   'feed-post-media-comment-moderation': Object.freeze({
     happyPath: ['feed-post-comment','feed-media','feed-author-delete','feed-moderator-delete'],
     negativePath: ['feed-media-invalid','feed-replay'],

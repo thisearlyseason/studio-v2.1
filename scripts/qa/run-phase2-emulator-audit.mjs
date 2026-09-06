@@ -33,6 +33,7 @@ import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from 
 import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert, findSavedFilmMark, observeFilmDeletionReconciliation } from './certification/local/film-playback.mjs';
 import {createPracticeBrowserObserver, requirePracticeResponses, measurePracticeBounds, validatePracticeBounds, deleteUnusedPracticeTemplate, findPracticeAssignedEvent, reorderPracticeDrill, waitForPracticeDeleteResponse} from './certification/local/practice-browser.mjs';
 import {createFeedBrowserObserver} from './certification/local/feed-browser.mjs';
+import {createPollBrowserObserver} from './certification/local/poll-browser.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
@@ -6967,6 +6968,18 @@ async function runCertificationOperationsScenarios() {
         }
         return;
       }
+      if (scenarioId === 'polls-create-vote-change-tally' && runBrowser) {
+        await runPollWorkflowAudit();
+        for(const [dimension,caseIds] of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]))for(const caseId of caseIds){
+          const requests=operationRequestEvidence(caseId);
+          recordObservedOperationNamedCase(scenarioId,dimension,caseId,`${caseId} completed with exact actors and owned state`,[new RegExp(`^Poll ${caseId}:`)],{
+            actor:[...new Set(requests.map(request=>request.actorAlias))].sort().join('+'),
+            operation:'visible channel poll interaction or authenticated poll application request',requests,
+            reconciliation:'exact message option IDs, canonical voter map, tallies and owned channel cleanup',timeBound:'15s UI, 20s HTTP, 8s server-verified barrier',
+          });
+        }
+        return;
+      }
       if (scenarioId === 'sports-hub-browse-search-filter-bookmark-preferences' && runBrowser) {
         await runSportsHubBrowseWorkflowAudit();
         for (const dimension of ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']) {
@@ -8290,6 +8303,96 @@ async function runSurfaceSmokeAudit({ remainderOnly = false, includeMember = tru
     { path: '/club', expected: '/club' },
     { path: '/competition', expected: '/competition' },
   ], { mobile: true }), 'trusted admin remaining surface sweep');
+}
+
+async function runPollWorkflowAudit() {
+  const team=FIXTURES.teams.find(item=>item.alias==='qa-team-a'), teamB=FIXTURES.teams.find(item=>item.alias==='qa-team-b');
+  const uid=alias=>FIXTURES.identities.find(item=>item.alias===alias).uid;
+  const chatId=`poll_${certificationRunId}`,chatPath=`teams/${team.id}/groupChats/${chatId}`,teamPath=`teams/${team.id}`;
+  const question=`QA Poll ${certificationRunId}`,tokens=new Map();
+  const check=(caseId,actual,want,detail)=>expectEqual(actual,want,`Poll ${caseId}: ${detail}`);
+  const token=async actor=>{if(!tokens.has(actor))tokens.set(actor,(await signIn(actor)).body.idToken);return tokens.get(actor);};
+  const request=async(caseId,actor,route,body)=>captureOperationRequests(caseId,actor,async()=>apiJsonResult(`/api/teams/chat/${route}`,await token(actor),{method:'POST',body:JSON.stringify({teamId:team.id,chatId,...body})}));
+  const read=messageId=>withEmulatorAuthAdmin(async(_auth,db)=>(await db.doc(`${chatPath}/messages/${messageId}`).get()).data());
+  registerDynamicFirestoreRoot(chatPath,'poll-owned-channel');
+  let originalTeam;
+  await withEmulatorAuthAdmin(async(_auth,db)=>{
+    originalTeam=(await db.doc(teamPath).get()).data();
+    registerFirestoreDocumentRestoration(teamPath,originalTeam,'poll-team-settings',activeOperationResourceRegistry);
+    await db.doc(chatPath).set({id:chatId,name:question,createdBy:uid('qa-coach-owner-a'),createdAt:new Date().toISOString(),memberIds:['qa-coach-owner-a','qa-team-member','qa-adult-player-a','qa-removed-member'].map(uid),unreadBy:{},lastMessage:'',lastMessageAt:new Date().toISOString(),type:'custom'});
+  });
+  const owner=await browserLogin('qa-coach-owner-a','/dashboard',`poll-owner-${process.pid}`),member=await browserLogin('qa-team-member','/dashboard',`poll-member-${process.pid}`);
+  browserSelectScheduleTeam(owner,team.id);browserSelectScheduleTeam(member,team.id);
+  const errors=[],failures=[];
+  const browserStep=async(session,actor,cases,body)=>{
+    const result=JSON.parse(cli(session,['run-code',`async page=>{
+      const observer=(${createPollBrowserObserver.toString()})(page,{baseUrl:${JSON.stringify(BASE_URL)},chatId:${JSON.stringify(chatId)}});
+      const dismissAlerts=${dismissFilmTeamAlert.toString()},measure=${measurePracticeBounds.toString()};
+      const card=()=>page.getByRole('heading',{name:${JSON.stringify(question)},exact:true}).locator('xpath=../../..');
+      const mutation=route=>page.waitForResponse(response=>response.url()===${JSON.stringify(BASE_URL)}+'/api/teams/chat/'+route&&response.request().method()==='POST',{timeout:15000});
+      observer.start(${JSON.stringify(cases)});
+      let value;try{value=await(async()=>{${body}})();}finally{var observation=observer.finish();}return{value,...observation};
+    }`]));
+    errors.push(...result.consoleErrors);failures.push(...result.failedResponses);
+    for(const caseId of [...cases,'poll-console','poll-network'])await captureBrowserOperationRequests(caseId,actor,result.observedResponses,caseId);
+    return result.value;
+  };
+  const goto=`await page.goto(${JSON.stringify(`${BASE_URL}/chats/${chatId}?teamId=${team.id}`)});await page.getByPlaceholder('Tactical update...').waitFor({state:'attached',timeout:15000});await dismissAlerts(page);await page.getByRole('button',{name:'Create poll',exact:true}).waitFor({timeout:15000});`;
+  const messageId=await browserStep(owner,'qa-coach-owner-a',['poll-create'],`${goto}await page.getByRole('button',{name:'Create poll',exact:true}).click();await page.getByPlaceholder('e.g. Jersey design choice?').fill(${JSON.stringify(question)});await page.getByPlaceholder('Option 1',{exact:true}).fill('Morning');await page.getByPlaceholder('Option 2',{exact:true}).fill('Evening');const pending=mutation('message');await page.getByRole('button',{name:'Deploy Squad Poll',exact:true}).click();const response=await pending;if(response.status()!==200)throw Error('Poll create '+response.status());await card().waitFor({timeout:15000});return(await response.json()).messageId;`);
+  const initial=(await read(messageId)).poll,optionIds=initial.options.map(option=>option.id);
+  check('poll-create',optionIds.every(id=>typeof id==='string'&&id.startsWith('option_')),true,'server-issued stable option IDs');check('poll-create',new Set(optionIds).size,2,'distinct IDs');check('poll-create',initial.totalVotes,0,'initial exact zero tally');
+  await browserStep(member,'qa-team-member',['poll-vote'],`${goto}await card().waitFor({timeout:15000});const pending=mutation('vote');await card().getByRole('button',{name:/Morning/}).click();const response=await pending;if(response.status()!==200)throw Error('Vote '+response.status());await card().getByText('1 TOTAL SQUAD RESPONSES',{exact:true}).waitFor({timeout:15000});return true;`);
+  check('poll-vote',JSON.stringify((await read(messageId)).poll.voters),JSON.stringify({[uid('qa-team-member')]:optionIds[0]}),'member stable-ID vote persisted');
+  check('poll-vote',await browserStep(owner,'qa-coach-owner-a',['poll-vote'],`await card().getByRole('button',{name:/Morning.*1 votes/}).waitFor({timeout:15000});await page.reload();await dismissAlerts(page);await card().getByRole('button',{name:/Morning.*1 votes/}).waitFor({timeout:15000});return true;`),true,'owner open session synchronized then reload retained exact tally');
+  await browserStep(member,'qa-team-member',['poll-change'],`const pending=mutation('vote');await card().getByRole('button',{name:/Evening/}).click();const response=await pending;if(response.status()!==200)throw Error('Change '+response.status());await card().getByRole('button',{name:/Evening.*1 votes/}).waitFor({timeout:15000});await page.reload();await dismissAlerts(page);await card().getByRole('button',{name:/Evening.*1 votes/}).waitFor({timeout:15000});return true;`);
+  check('poll-change',JSON.stringify((await read(messageId)).poll.options.map(option=>option.votes)),JSON.stringify([0,1]),'prior tally decremented next incremented exactly once');
+  check('poll-change',await browserStep(owner,'qa-coach-owner-a',['poll-change'],`await card().getByRole('button',{name:/Evening.*1 votes/}).waitFor({timeout:15000});await page.reload();await dismissAlerts(page);await card().getByRole('button',{name:/Morning.*0 votes/}).waitFor({timeout:15000});return true;`),true,'both sessions reflect change after reload');
+  const snapshot=JSON.stringify((await read(messageId)).poll);
+  check('poll-replay',(await request('poll-replay','qa-team-member','vote',{messageId,optionId:optionIds[1]})).status,200,'identical vote replay acknowledged');check('poll-replay',JSON.stringify((await read(messageId)).poll),snapshot,'duplicate leaves canonical map and total byte-identical');
+  const invalid=[{question:'',options:[{text:'A'},{text:'B'}]},{question:'Choose',options:[{text:'A'}]},{question:'Choose',options:[{text:'A'},{text:' a '}]},{question:'Choose',options:[{text:'A'},{text:''}]},{question:'Choose',options:Array.from({length:11},(_,i)=>({text:String(i)}))},{question:'Choose',options:[{text:'x'.repeat(241)},{text:'B'}]}];
+  const messageCount=()=>withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`${chatPath}/messages`).get()).size);
+  const beforeInvalid=await messageCount();
+  for(const [index,poll]of invalid.entries())check('poll-invalid',(await request('poll-invalid','qa-coach-owner-a','message',{type:'poll',poll})).status,400,`invalid input ${index} rejected`);
+  check('poll-invalid',await messageCount(),beforeInvalid,'all invalid polls absent from messages');
+  const memberToken=await token('qa-team-member'),adultToken=await token('qa-adult-player-a');
+  const race=await captureOperationRequests('poll-race','qa-team-member+qa-adult-player-a',()=>runServerRequestBarrier('poll_votes',[
+    {alias:'member',execute:options=>apiJsonResult('/api/teams/chat/vote',memberToken,{...options,method:'POST',body:JSON.stringify({teamId:team.id,chatId,messageId,optionId:optionIds[0]})})},
+    {alias:'adult',execute:options=>apiJsonResult('/api/teams/chat/vote',adultToken,{...options,method:'POST',body:JSON.stringify({teamId:team.id,chatId,messageId,optionId:optionIds[1]})})},
+  ]));
+  check('poll-race',Object.keys(race.barrier.arrivals).length,2,'both authenticated route arrivals observed before release');
+  check('poll-race',race.settled.every(row=>row.status==='fulfilled'&&row.value.status===200),true,'both released responses settled 200');
+  const raced=(await read(messageId)).poll;
+  check('poll-race',JSON.stringify(raced.options.map(option=>option.votes)),JSON.stringify([1,1]),'concurrent exact option totals');check('poll-race',raced.totalVotes,2,'canonical voter total two');
+  check('poll-race',raced.voters[uid('qa-team-member')],optionIds[0],'member canonical choice');check('poll-race',raced.voters[uid('qa-adult-player-a')],optionIds[1],'adult canonical choice');
+  for(const [session,actor]of[[owner,'qa-coach-owner-a'],[member,'qa-team-member']]){
+    check('poll-race',await browserStep(session,actor,['poll-race'],`await page.reload();await dismissAlerts(page);await card().getByText('2 TOTAL SQUAD RESPONSES',{exact:true}).waitFor({timeout:15000});return true;`),true,`${actor} race totals persist after reload`);
+    const bounds=await browserStep(session,actor,['poll-responsive'],`const rows=[];for(const viewport of[{width:1440,height:900},{width:390,height:844}]){await page.setViewportSize(viewport);await page.reload();await dismissAlerts(page);await card().waitFor({timeout:15000});rows.push(await measure(page,{question:card().getByRole('heading'),morning:card().getByRole('button',{name:/Morning/}),evening:card().getByRole('button',{name:/Evening/}),tally:card().getByText('2 TOTAL SQUAD RESPONSES',{exact:true}),create:page.getByRole('button',{name:'Create poll',exact:true})}));await page.getByRole('button',{name:'Create poll',exact:true}).click();const dialog=page.getByRole('dialog').filter({has:page.getByPlaceholder('e.g. Jersey design choice?')});rows.push(await measure(page,{dialog,question:dialog.getByPlaceholder('e.g. Jersey design choice?'),first:dialog.getByPlaceholder('Option 1',{exact:true}),second:dialog.getByPlaceholder('Option 2',{exact:true}),add:dialog.getByRole('button',{name:'+ Add Option',exact:true}),submit:dialog.getByRole('button',{name:'Deploy Squad Poll',exact:true})}));await page.screenshot({path:${JSON.stringify(path.join(certificationArtifactDir,`poll-${actor}`))}+'-'+viewport.width+'.png',fullPage:false});await dialog.getByRole('button',{name:'Close',exact:true}).click();}return rows;`);
+    check('poll-responsive',validatePracticeBounds(bounds),true,`${actor} create dialog options vote tally fit desktop and mobile`);
+  }
+  check('poll-invalid-option',(await request('poll-invalid-option','qa-team-member','vote',{messageId,optionId:'unknown'})).status,400,'unknown option rejected');
+  for(const [variant,patch,want]of[['closed',{'poll.isClosed':true},400],['deleted-option',{'poll.isClosed':false,'poll.options':raced.options.map((option,index)=>({...option,isDeleted:index===0}))},400],['deleted-message',{isDeleted:true},404]]){
+    await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(`${chatPath}/messages/${messageId}`).update(patch));
+    check('poll-invalid-option',(await request('poll-invalid-option','qa-team-member','vote',{messageId,optionId:optionIds[0]})).status,want,`${variant} rejected`);
+  }
+  await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(`${chatPath}/messages/${messageId}`).update({poll:raced,isDeleted:false}));
+  for(const [caseId,actor]of[['poll-ineligible','qa-parent-a'],['poll-team-b','qa-coach-owner-b']]){
+    check(caseId,(await request(caseId,actor,'vote',{messageId,optionId:optionIds[0]})).status,403,'non-channel or foreign actor vote denied');
+    check(caseId,(await request(caseId,actor,'message',{type:'poll',poll:{question:'Denied',options:[{text:'A'},{text:'B'}]}})).status,403,'non-channel or foreign poll creation denied');
+  }
+  const foreignMembership=`teams/${teamB.id}/members/${uid('qa-removed-member')}`;
+  await tenantFixtureMutations.withFirestoreOverlay([foreignMembership],async()=>{
+    await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(foreignMembership).set({userId:uid('qa-removed-member'),position:'Player',status:'active'}));
+    check('poll-removed',(await request('poll-removed','qa-removed-member','vote',{messageId,optionId:optionIds[0]})).status,403,'removed target-team actor denied despite active foreign membership and stale channel inclusion');
+    check('poll-removed',(await request('poll-removed','qa-removed-member','message',{type:'poll',poll:{question:'Denied',options:[{text:'A'},{text:'B'}]}})).status,403,'removed actor poll creation denied');
+  });
+  await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(teamPath).update({features:{...originalTeam.features,tacticalChat:false}}));
+  for(const actor of['qa-coach-owner-a','qa-team-member']){
+    check('poll-module-off',(await request('poll-module-off',actor,'vote',{messageId,optionId:optionIds[0]})).status,403,`${actor} module-off vote denied`);
+    check('poll-module-off',(await request('poll-module-off',actor,'message',{type:'poll',poll:{question:'Denied',options:[{text:'A'},{text:'B'}]}})).status,403,`${actor} module-off creation denied`);
+  }
+  await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(teamPath).set(originalTeam));
+  check('poll-module-off',JSON.stringify((await read(messageId)).poll),JSON.stringify(raced),'all denial attempts leave canonical poll unchanged');
+  check('poll-console',errors.length,0,'owner and member observed windows have zero console errors');check('poll-network',failures.length,0,'owner and member observed windows have zero unexpected 5xx');
 }
 
 async function runFeedWorkflowAudit() {

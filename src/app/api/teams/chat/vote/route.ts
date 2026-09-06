@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
+import { applyPollVote } from '@/lib/poll-policy';
+import { awaitLocalCertificationRequestBarrier } from '@/lib/local-certification-request-barrier';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -13,29 +15,30 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { teamId, chatId, messageId, optionIdx } =
+    const { teamId, chatId, messageId, optionIdx, optionId } =
       await readJsonBodyWithLimit<{
         teamId?: unknown;
         chatId?: unknown;
         messageId?: unknown;
         optionIdx?: unknown;
+        optionId?: unknown;
       }>(req, 8_000);
     if (
-      typeof teamId !== 'string' ||
-      typeof chatId !== 'string' ||
-      typeof messageId !== 'string' ||
-      typeof optionIdx !== 'number' ||
-      !Number.isInteger(optionIdx) ||
-      optionIdx < 0
+      typeof teamId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(teamId) ||
+      typeof chatId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(chatId) ||
+      typeof messageId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(messageId) ||
+      (optionId !== undefined ? typeof optionId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(optionId) || optionIdx !== undefined
+        : typeof optionIdx !== 'number' || !Number.isInteger(optionIdx) || optionIdx < 0)
     ) {
       return NextResponse.json({ error: 'Invalid poll vote.' }, { status: 400 });
     }
     const rateLimit = await enforceUserRateLimit(auth.uid, 'team-chat-vote', 60, 5 * 60 * 1000);
     if (rateLimit) return rateLimit;
+    await awaitLocalCertificationRequestBarrier(req.headers);
 
     const teamRef = adminDb.collection('teams').doc(teamId);
     const chatRef = teamRef.collection('groupChats').doc(chatId);
-    const activeMembershipsQuery = adminDb.collectionGroup('members').where('userId', '==', auth.uid).limit(50);
+    const activeMembershipsQuery = teamRef.collection('members').where('userId', '==', auth.uid).limit(50);
     const messageRef = teamRef.collection('groupChats').doc(chatId).collection('messages').doc(messageId);
     await adminDb.runTransaction(async (transaction) => {
       const [team, chat, message] = await Promise.all([
@@ -54,6 +57,8 @@ export async function POST(req: NextRequest) {
       if (
         !team.exists ||
         !chat.exists ||
+        chat.data()?.isDeleted === true ||
+        team.data()?.features?.tacticalChat === false ||
         (
           !isPrivileged &&
           (!chatMembers.includes(auth.uid) || !hasActiveMembership)
@@ -64,21 +69,9 @@ export async function POST(req: NextRequest) {
       if (!message.exists) throw new Error('NOT_FOUND');
 
       const poll = message.data()?.poll;
-      if (!poll || poll.isClosed || !Array.isArray(poll.options) || optionIdx >= poll.options.length) {
-        throw new Error('INVALID_POLL');
-      }
-      const voters = { ...(poll.voters || {}) };
-      const previousVote = voters[auth.uid];
-      if (previousVote === optionIdx) return;
-
-      const options = poll.options.map((option: any, index: number) => ({
-        ...option,
-        votes: Math.max(0, Number(option.votes || 0) + (index === optionIdx ? 1 : index === previousVote ? -1 : 0)),
-      }));
-      voters[auth.uid] = optionIdx;
-      transaction.update(messageRef, {
-        poll: { ...poll, options, voters, totalVotes: previousVote === undefined ? Number(poll.totalVotes || 0) + 1 : Number(poll.totalVotes || 0) },
-      });
+      if (message.data()?.isDeleted === true) throw new Error('NOT_FOUND');
+      const next = applyPollVote(poll,auth.uid,(optionId ?? optionIdx) as string | number);
+      if (JSON.stringify(next) !== JSON.stringify(poll)) transaction.update(messageRef,{poll:next});
     });
     return NextResponse.json({ success: true });
   } catch (err: any) {
