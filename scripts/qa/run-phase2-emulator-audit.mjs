@@ -7556,7 +7556,8 @@ async function runPracticeFilmWorkflowAudit() {
         };
         throw new Error('Practice film athlete profile did not expose Add Film: ' + JSON.stringify(state) + '; ' + error.message);
       }
-      await page.getByRole('button', { name: 'Add Film', exact: true }).click();
+      const addFilm = page.getByRole('button', { name: 'Add Film', exact: true });
+      await addFilm.focus(); await page.keyboard.press('Enter');
       const dialog = page.getByRole('dialog', { name: 'Archive Film' });
       await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(title);
       return dialog;
@@ -7596,7 +7597,8 @@ async function runPracticeFilmWorkflowAudit() {
     await page.goto(${JSON.stringify(athleteUrl)});
     await page.getByRole('button', { name: 'Add Film', exact: true }).waitFor({ timeout: 15000 });
     await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow});
-    await page.getByRole('button', { name: 'Add Film', exact: true }).click();
+    const addFilm = page.getByRole('button', { name: 'Add Film', exact: true });
+    await addFilm.focus(); await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Archive Film' });
     await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(${JSON.stringify(marker)});
     const response = await page.request.get(${JSON.stringify(sourceVideoUrl)});
