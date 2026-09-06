@@ -9665,7 +9665,7 @@ function browserCreateChatChannel(session, { teamId, memberName, channelName }) 
       await page.setViewportSize({width:1440,height:900});
       await page.goto(${JSON.stringify(`${BASE_URL}/dashboard`)});await page.evaluate(value=>localStorage.setItem('sf_session_team_id',value),${JSON.stringify(teamId)});
       await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await page.getByRole('heading',{name:'Coordination Hub',exact:true}).waitFor({timeout:15000});
-      for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.isVisible().catch(()=>false))break;await alert.getByRole('button',{name:'Got It'}).click();}
+      for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.waitFor({state:'visible',timeout:1800}).then(()=>true).catch(()=>false))break;await alert.getByRole('button',{name:'Got It',exact:true}).click();await alert.waitFor({state:'hidden',timeout:5000});}
       await page.getByRole('button',{name:'Establish Channel',exact:true}).click();
       const dialog=page.getByRole('dialog',{name:'New Tactical Group',exact:true});await dialog.waitFor({timeout:10000});
       await dialog.getByLabel('Channel Name').fill(${JSON.stringify(channelName)});

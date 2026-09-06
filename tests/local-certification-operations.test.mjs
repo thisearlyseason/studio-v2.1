@@ -103,6 +103,8 @@ test('Chat simultaneous actors use isolated contexts in one owned browser sessio
   for (const source of [peerHarness, chatHarness, contextProbe]) {
     assert.doesNotMatch(source, /new URL\(/, 'Playwright run-code sandbox has no URL global');
   }
+  assert.match(chatHarness, /alert\.waitFor\(\{state:'visible',timeout:1800\}\)/);
+  assert.doesNotMatch(chatHarness, /if\(!await alert\.isVisible\(\)\.catch\(\(\)=>false\)\)break/);
 });
 
 test('all frozen Task 5 waiver case IDs are present exactly once across their scenario dimensions', () => {
