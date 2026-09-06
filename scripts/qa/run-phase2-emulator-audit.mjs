@@ -7796,6 +7796,8 @@ async function assertCalendarFilterAndDetailBounds(activeEventTitle) {
 }
 
 async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, householdEventTitle, teamA, teamB, teamC }) {
+  const youthAName = `Youth A ${teamA.visibleMarker}`;
+  const youthCName = `Youth C ${teamC.visibleMarker}`;
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-view-results-${process.pid}`);
   const ownerResult = JSON.parse(cli(owner, ['run-code', `async page => {
     const title = ${JSON.stringify(activeEventTitle)};
@@ -7857,8 +7859,8 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
     const teamA = panel.getByText(${JSON.stringify(teamA.name)}, { exact: true }).locator('..');
     const teamC = panel.getByText(${JSON.stringify(teamC.name)}, { exact: true }).locator('..');
     const teamB = panel.getByText(${JSON.stringify(teamB.name)}, { exact: true });
-    const youthA = panel.getByText('Youth A', { exact: true }).locator('..');
-    const youthC = panel.getByText('Youth C', { exact: true }).locator('..');
+    const youthA = panel.getByText(${JSON.stringify(youthAName)}, { exact: true }).locator('..');
+    const youthC = panel.getByText(${JSON.stringify(youthCName)}, { exact: true }).locator('..');
     const householdProjection = {
       teamRows: (await teamA.count()) + (await teamC.count()),
       teamBRows: await teamB.count(),
@@ -7883,18 +7885,18 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
     await page.keyboard.press('Escape');
     await page.getByRole('heading', { name: activeTitle, exact: true }).first().waitFor({ timeout: 15000 });
     currentPanel = await openFilters();
-    await currentPanel.getByText('Youth A', { exact: true }).locator('..').click();
+    await currentPanel.getByText(${JSON.stringify(youthAName)}, { exact: true }).locator('..').click();
     await page.keyboard.press('Escape');
     await page.getByRole('heading', { name: activeTitle, exact: true }).first().waitFor({ timeout: 15000 });
     const youthAOnly = { active: await titleCount(activeTitle), household: await titleCount(householdTitle) };
     currentPanel = await openFilters();
-    await currentPanel.getByText('Youth A', { exact: true }).locator('..').click();
-    await currentPanel.getByText('Youth A', { exact: true }).locator('..').getByRole('checkbox').waitFor({ state: 'attached', timeout: 15000 });
-    await currentPanel.getByText('Youth A', { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
+    await currentPanel.getByText(${JSON.stringify(youthAName)}, { exact: true }).locator('..').click();
+    await currentPanel.getByText(${JSON.stringify(youthAName)}, { exact: true }).locator('..').getByRole('checkbox').waitFor({ state: 'attached', timeout: 15000 });
+    await currentPanel.getByText(${JSON.stringify(youthAName)}, { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
       if (node.getAttribute('data-state') !== 'unchecked') throw new Error('Youth A filter did not settle to unchecked before Youth C selection.');
     });
-    await currentPanel.getByText('Youth C', { exact: true }).locator('..').click();
-    await currentPanel.getByText('Youth C', { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
+    await currentPanel.getByText(${JSON.stringify(youthCName)}, { exact: true }).locator('..').click();
+    await currentPanel.getByText(${JSON.stringify(youthCName)}, { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
       if (node.getAttribute('data-state') !== 'checked') throw new Error('Youth C filter did not settle to checked before calendar reconciliation.');
     });
     await page.keyboard.press('Escape');
@@ -7914,8 +7916,8 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
     await directMonthHeader.getByRole('button').last().click();
     await page.getByRole('heading', { name: householdTitle, exact: true }).first().waitFor({ timeout: 15000 });
     currentPanel = await openFilters();
-    await currentPanel.getByText('Youth C', { exact: true }).locator('..').click();
-    await currentPanel.getByText('Youth C', { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
+    await currentPanel.getByText(${JSON.stringify(youthCName)}, { exact: true }).locator('..').click();
+    await currentPanel.getByText(${JSON.stringify(youthCName)}, { exact: true }).locator('..').getByRole('checkbox').evaluate(node => {
       if (node.getAttribute('data-state') !== 'checked') throw new Error('Direct Youth C filter did not settle to checked.');
     });
     await page.keyboard.press('Escape');
