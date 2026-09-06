@@ -6883,19 +6883,32 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'calendar-team-family-views-and-filters' && runBrowser) {
         await runCalendarViewsWorkflowAudit();
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-team-a-b', 'Team A and Team B calendar views expose only their respective squad schedules', [/Calendar exposes the authenticated owner squad filter choices/], { actor: 'qa-coach-owner-a+qa-coach-owner-b', operation: 'visible calendar filters', reconciliation: 'team scoped filter choices', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-family-a-c', 'Parent A sees the linked Team A and Team C household schedules', [/Calendar parent sees both household team filters/], { actor: 'qa-parent-a', operation: 'visible household calendar filters', reconciliation: 'two linked squad choices', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-filters', 'Calendar day week month type and child filters react through visible controls', [/Calendar day week and month view controls settle through visible clicks/, /Calendar exposes every event type filter through visible controls/, /Calendar parent athlete filter selects only an authorized household athlete/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'visible calendar controls', reconciliation: 'view and filter controls present', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'cal-empty', 'Empty type filtering hides scheduled events without crashing the Calendar', [/Calendar empty filter state hides household schedule entries/], { actor: 'qa-parent-a', operation: 'visible type filters', reconciliation: 'empty-state presentation', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'cal-invalid', 'Malformed legacy dates are ignored safely by Calendar', [/Calendar ignores malformed legacy dates without rendering a corrupted event/], { actor: 'qa-coach-owner-a', operation: 'visible Calendar rendering', reconciliation: 'legacy invalid event absent and zero console errors', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'cal-outsider', 'Parent A cannot discover Team B through the Calendar filter surface', [/Calendar parent cannot discover another household team filter/], { actor: 'qa-parent-a', operation: 'visible household filters', reconciliation: 'zero Team B choices', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-rapid-switch', 'Rapid Team A and Team B switches settle and persist across reload and browser history', [/Calendar rapid Team A and Team B switches settle on the selected squad/, /Calendar active-team selection persists through reload/, /Calendar active-team selection survives browser back navigation/], { actor: 'qa-multi-org', operation: 'visible active-team switching', reconciliation: 'Team B schedule rendered after switch, reload, and back/forward', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-midnight', 'Cross-midnight event placement spans exactly both affected local calendar days', [/Calendar cross-midnight event is placed on both affected local days/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', reconciliation: 'exactly two local-day placements', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-dst-spring', 'DST spring event placement is stable and non-duplicated', [/Calendar DST spring event is placed exactly once/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', reconciliation: 'exactly one local-day placement', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-dst-fall', 'DST fall event placement is stable and non-duplicated', [/Calendar DST fall event is placed exactly once/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', reconciliation: 'exactly one local-day placement', timeBound: '15s UI waits' });
-        recordObservedOperationNamedCase(scenarioId, 'console', 'cal-console', 'Calendar flows have no browser console errors', [/Calendar views workflow console errors/, /Calendar household workflow console errors/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
-        recordObservedOperationNamedCase(scenarioId, 'network', 'cal-network', 'Calendar flows have no local server failures', [/Calendar views workflow failed responses/, /Calendar household workflow failed responses/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
-        recordObservedOperationNamedCase(scenarioId, 'responsive', 'cal-responsive', 'Calendar controls fit the mobile viewport', [/Calendar fits the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile calendar controls', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
+        await captureCalendarCaseNavigations('cal-team-a-b', ['qa-coach-owner-a', 'qa-coach-owner-b']);
+        await captureCalendarCaseNavigations('cal-family-a-c', ['qa-parent-a']);
+        await captureCalendarCaseNavigations('cal-filters', ['qa-coach-owner-a', 'qa-parent-a']);
+        await captureCalendarCaseNavigations('cal-empty', ['qa-parent-a']);
+        await captureCalendarCaseNavigations('cal-invalid', ['qa-coach-owner-a']);
+        await captureCalendarCaseNavigations('cal-outsider', ['qa-parent-a']);
+        await captureCalendarCaseNavigations('cal-rapid-switch', ['qa-multi-org']);
+        await captureCalendarCaseNavigations('cal-midnight', ['qa-coach-owner-a']);
+        await captureCalendarCaseNavigations('cal-dst-spring', ['qa-coach-owner-a']);
+        await captureCalendarCaseNavigations('cal-dst-fall', ['qa-coach-owner-a']);
+        await captureCalendarCaseNavigations('cal-console', ['qa-coach-owner-a', 'qa-parent-a']);
+        await captureCalendarCaseNavigations('cal-network', ['qa-coach-owner-a', 'qa-parent-a']);
+        await captureCalendarCaseNavigations('cal-responsive', ['qa-coach-owner-a'], { mobile: true });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-team-a-b', 'Team A and Team B calendar views expose only their respective squad schedules', [/Calendar exposes the authenticated owner squad filter choices/], { actor: 'qa-coach-owner-a+qa-coach-owner-b', operation: 'visible calendar filters', requests: operationRequestEvidence('cal-team-a-b'), reconciliation: 'team scoped filter choices', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-family-a-c', 'Parent A sees the linked Team A and Team C household schedules', [/Calendar parent sees both household team filters/], { actor: 'qa-parent-a', operation: 'visible household calendar filters', requests: operationRequestEvidence('cal-family-a-c'), reconciliation: 'two linked squad choices', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-filters', 'Calendar day week month type and child filters react through visible controls', [/Calendar day week and month view controls settle through visible clicks/, /Calendar exposes every event type filter through visible controls/, /Calendar parent athlete filter selects only an authorized household athlete/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'visible calendar controls', requests: operationRequestEvidence('cal-filters'), reconciliation: 'view and filter controls present', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'cal-empty', 'Empty type filtering hides scheduled events without crashing the Calendar', [/Calendar empty filter state hides household schedule entries/], { actor: 'qa-parent-a', operation: 'visible type filters', requests: operationRequestEvidence('cal-empty'), reconciliation: 'empty-state presentation', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'cal-invalid', 'Malformed legacy dates are ignored safely by Calendar', [/Calendar ignores malformed legacy dates without rendering a corrupted event/], { actor: 'qa-coach-owner-a', operation: 'visible Calendar rendering', requests: operationRequestEvidence('cal-invalid'), reconciliation: 'legacy invalid event absent and zero console errors', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'cal-outsider', 'Parent A cannot discover Team B through the Calendar filter surface', [/Calendar parent cannot discover another household team filter/], { actor: 'qa-parent-a', operation: 'visible household filters', requests: operationRequestEvidence('cal-outsider'), reconciliation: 'zero Team B choices', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-rapid-switch', 'Rapid Team A and Team B switches settle and persist across reload and browser history', [/Calendar rapid Team A and Team B switches settle on the selected squad/, /Calendar active-team selection persists through reload/, /Calendar active-team selection survives browser back navigation/], { actor: 'qa-multi-org', operation: 'visible active-team switching', requests: operationRequestEvidence('cal-rapid-switch'), reconciliation: 'Team B schedule rendered after switch, reload, and back/forward', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-midnight', 'Cross-midnight event placement spans exactly both affected local calendar days', [/Calendar cross-midnight event is placed on both affected local days/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', requests: operationRequestEvidence('cal-midnight'), reconciliation: 'exactly two local-day placements', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-dst-spring', 'DST spring event placement is stable and non-duplicated', [/Calendar DST spring event is placed exactly once/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', requests: operationRequestEvidence('cal-dst-spring'), reconciliation: 'exactly one local-day placement', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-dst-fall', 'DST fall event placement is stable and non-duplicated', [/Calendar DST fall event is placed exactly once/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', requests: operationRequestEvidence('cal-dst-fall'), reconciliation: 'exactly one local-day placement', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'cal-console', 'Calendar flows have no browser console errors', [/Calendar views workflow console errors/, /Calendar household workflow console errors/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', requests: operationRequestEvidence('cal-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'cal-network', 'Calendar flows have no local server failures', [/Calendar views workflow failed responses/, /Calendar household workflow failed responses/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', requests: operationRequestEvidence('cal-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'responsive', 'cal-responsive', 'Calendar controls fit the mobile viewport', [/Calendar fits the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile calendar controls', requests: operationRequestEvidence('cal-responsive'), reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         return;
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
@@ -7710,6 +7723,26 @@ async function runSportsHubBrowseWorkflowAudit() {
   expectEqual(ownerResult.mobileFits, true, 'Sports Hub preferences fit the mobile viewport');
   expectEqual(ownerResult.consoleErrors.length, 0, 'Sports Hub owner workflow console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'Sports Hub owner workflow failed responses');
+}
+
+async function captureCalendarCaseNavigations(caseId, actorAliases, { mobile = false } = {}) {
+  for (const actorAlias of actorAliases) {
+    const session = await browserLogin(actorAlias, '/dashboard', `calendar-${caseId}-${actorAlias}-${process.pid}`);
+    const result = JSON.parse(cli(session, ['run-code', `async page => {
+      const observedResponses = [];
+      const observeResponse = ${observeCalendarResponse.toString()};
+      page.on('response', response => {
+        const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, ${JSON.stringify(caseId)}, '/api/calendar/feed');
+        if (observation) observedResponses.push(observation);
+      });
+      await page.setViewportSize(${mobile ? '{ width: 390, height: 844 }' : '{ width: 1440, height: 900 }'});
+      await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      return { observedResponses, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
+    }` ]));
+    if (mobile) expectEqual(result.mobileFits, true, 'Calendar evidence navigation fits the mobile viewport');
+    await captureBrowserOperationRequests(caseId, actorAlias, result.observedResponses, caseId);
+  }
 }
 
 async function runCalendarViewsWorkflowAudit() {

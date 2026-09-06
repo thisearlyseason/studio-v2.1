@@ -53,6 +53,13 @@ test('RSVP named cases require independent observed request evidence', () => {
   }
 });
 
+test('Calendar named cases require independent observed request evidence', () => {
+  const source = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  for (const caseId of ['cal-team-a-b', 'cal-family-a-c', 'cal-filters', 'cal-empty', 'cal-invalid', 'cal-outsider', 'cal-rapid-switch', 'cal-midnight', 'cal-dst-spring', 'cal-dst-fall', 'cal-console', 'cal-network', 'cal-responsive']) {
+    assert.match(source, new RegExp(`'${caseId}'[^\\n]+requests: operationRequestEvidence\\('${caseId}'\\)`));
+  }
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {
