@@ -1904,7 +1904,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                        ) : null}
                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-all"><Play className="h-6 w-6 text-white fill-current shadow-2xl" /></div>
                        <Badge className="absolute top-1 left-1 bg-primary text-white border-none font-black text-[6px] h-4 px-1.5">
-                          {v.isTacticalClip ? 'TACTICAL CLIP' : v.type.toUpperCase()}
+                          {v.isTacticalClip ? 'TACTICAL CLIP' : (v.type || 'Highlight').toUpperCase()}
                        </Badge>
                        {v.isTacticalClip && (
                          <div className="absolute top-1 right-1 bg-purple-600 text-white p-0.5 rounded-md shadow-lg">
@@ -1937,6 +1937,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                       </div>
                       <div className="flex items-center gap-1">
                         <Button 
+                          aria-label={`Delete ${v.title}`}
                           size="icon" 
                           variant="ghost" 
                           className="h-8 w-8 text-zinc-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"

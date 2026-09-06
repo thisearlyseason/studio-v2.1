@@ -651,6 +651,8 @@ export function buildFixtureCatalog(runSuffix) {
       data.playerId = playerIdFor('qa-player-youth-a');
       data.parentId = uidFor('qa-parent-a');
     }
+    if (userAlias === 'qa-adult-player-a') data.playerId = playerIdFor('qa-player-adult-a');
+    if (userAlias === 'qa-adult-player-b') data.playerId = playerIdFor('qa-player-adult-b');
     addDocument('roster', {
       alias: `${teamAlias}-${userAlias}-member`,
       path: `teams/${team.id}/members/${user.uid}`,

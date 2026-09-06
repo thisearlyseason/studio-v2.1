@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -75,7 +75,7 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy, where, onSnapshot } from 'firebase/firestore';
+import { collection, doc, query, orderBy, setDoc, where, onSnapshot } from 'firebase/firestore';
 import {
   Tooltip,
   TooltipContent,
@@ -153,6 +153,7 @@ export default function RosterPage() {
 
   const [videos, setVideos] = useState<any[]>([]);
   const [activeVideo, setActiveVideo] = useState<any | null>(null);
+  const savedFilmProgressRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!db || !selectedMember?.playerId) {
@@ -1150,8 +1151,7 @@ export default function RosterPage() {
                       )}
                     </div>
 
-                    {isStaff && (
-                      <div className="space-y-6 pt-6 border-t">
+                    <div data-player-highlight-reel className="space-y-6 pt-6 border-t">
                         <div className="flex items-center gap-3">
                           <div className="bg-primary/10 p-2 rounded-xl text-primary"><Video className="h-5 w-5" /></div>
                           <h4 className="text-xs font-black uppercase tracking-[0.2em] text-foreground">Highlight Reel</h4>
@@ -1172,7 +1172,6 @@ export default function RosterPage() {
                           )}
                         </div>
                       </div>
-                    )}
 
                     {isStaff && (
                       <div className="space-y-6 pt-10 border-t">
@@ -1281,12 +1280,32 @@ export default function RosterPage() {
           <DialogTitle className="sr-only">{activeVideo?.title || 'Video Viewer'}</DialogTitle>
           {activeVideo && (
             <div className="bg-black aspect-video relative flex items-center justify-center">
+              {/^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(activeVideo.url) ? (
                 <iframe
                   src={activeVideo.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/').split('&')[0]}
                   className="absolute inset-0 w-full h-full"
                   allow="autoplay; fullscreen"
                   allowFullScreen
                 />
+              ) : (
+                <video
+                  data-player-film-video
+                  src={activeVideo.url}
+                  className="absolute inset-0 w-full h-full object-contain"
+                  controls
+                  onTimeUpdate={(event) => {
+                    const media = event.currentTarget;
+                    const isOwnPlayer = isPlayer && selectedMember?.userId === user?.id;
+                    if (!isOwnPlayer || !selectedMember?.playerId || !user?.id || !activeVideo.id || media.duration <= 0 || media.currentTime / media.duration < 0.75 || savedFilmProgressRef.current === activeVideo.id) return;
+                    savedFilmProgressRef.current = activeVideo.id;
+                    void setDoc(doc(db, 'players', selectedMember.playerId, 'videos', activeVideo.id, 'watchProgress', user.id), {
+                      userId: user.id,
+                      percentage: 75,
+                      watchedAt: new Date().toISOString(),
+                    }).catch(() => { savedFilmProgressRef.current = null; });
+                  }}
+                />
+              )}
             </div>
           )}
         </DialogContent>

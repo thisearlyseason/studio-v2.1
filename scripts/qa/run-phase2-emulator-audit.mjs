@@ -7166,6 +7166,22 @@ async function capturePracticeDocumentReads(caseId, actorTokens, documentPath) {
   });
 }
 
+async function capturePracticeStorageRequest(caseId, actorAlias, token, objectPath, options = {}) {
+  return captureOperationRequests(caseId, actorAlias, async () => {
+    const startedAt = new Date().toISOString();
+    const status = await storageObjectStatus(objectPath, token, options);
+    recordCapturedOperationRequest({
+      pathname: '/storage/object',
+      method: options.method || 'GET',
+      status,
+      token,
+      startedAt,
+      completedAt: new Date().toISOString(),
+    });
+    return status;
+  });
+}
+
 async function runPracticePlanWorkflowAudit() {
   const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
   const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
@@ -7488,7 +7504,246 @@ async function runPracticeDrillWorkflowAudit() {
 }
 
 async function runPracticeFilmWorkflowAudit() {
-  throw new Error('Practice film workflow is not implemented.');
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  if (!teamA) throw new Error('Practice film Team A fixture is missing.');
+  const adultUid = identityByAlias.get('qa-adult-player-a')?.uid;
+  const playerId = FIXTURES.firestoreDocuments.find(item => item.data?.fixtureAlias === 'qa-player-adult-a')?.data?.id;
+  const memberFixture = FIXTURES.firestoreDocuments.find(item => item.path.startsWith(`teams/${teamA.id}/members/`) && item.data?.userId === adultUid);
+  if (!adultUid || !playerId || !memberFixture) throw new Error('Practice film adult player fixture is incomplete.');
+  const memberId = memberFixture.path.split('/').at(-1);
+  const memberName = memberFixture.data.name;
+  const marker = `QA Film ${FIXTURES.runId}`;
+  const markText = `QA Coach Mark ${FIXTURES.runId}`;
+  const runSafe = FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_');
+  const fixedUploadNow = 1_900_000_000_000;
+  const uploadName = `${runSafe}-film.mp4`;
+  const storagePath = `players/${playerId}/videos/${fixedUploadNow}_${uploadName}`;
+  const thumbnailPath = `players/${playerId}/thumbnails/${runSafe}-thumbnail.png`;
+  const ownerSession = await browserLogin('qa-coach-owner-a', '/dashboard', `practice-film-owner-${process.pid}`);
+  browserSelectScheduleTeam(ownerSession, teamA.id);
+  const athleteUrl = `${BASE_URL}/coaches-corner?athlete=${encodeURIComponent(memberId)}`;
+  const sourceVideoUrl = `${BASE_URL}/faq/how-to-create-a-game.mp4`;
+
+  await registerDynamicStorageObject(storagePath, 'practice-film-video');
+  await registerDynamicStorageObject(thumbnailPath, 'practice-film-thumbnail');
+  const invalidResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
+    const consoleErrors = []; const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0]); };
+    page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+    const openFilm = async title => {
+      await page.goto(${JSON.stringify(athleteUrl)});
+      await page.getByRole('heading', { name: 'Coaches Corner', exact: true }).waitFor({ timeout: 15000 });
+      const athlete = page.getByRole('button').filter({ hasText: ${JSON.stringify(memberName)} }).first();
+      await athlete.waitFor({ timeout: 15000 });
+      await page.waitForFunction(
+        ({ memberName }) => [...document.querySelectorAll('button')].some(button => button.textContent?.includes(memberName) && button.className.includes('bg-primary')),
+        { memberName: ${JSON.stringify(memberName)} },
+        { timeout: 15000 },
+      );
+      try {
+        await page.getByRole('button', { name: 'Add Film', exact: true }).waitFor({ timeout: 15000 });
+      } catch (error) {
+        const selectedMatches = await page.locator('button.bg-primary').filter({ hasText: ${JSON.stringify(memberName)} }).count();
+        const state = {
+          url: page.url(),
+          identityMissing: await page.getByRole('heading', { name: 'Identity Link Missing', exact: true }).count(),
+          loading: await page.getByText('Opening Tactical Folder...', { exact: true }).count(),
+          highlightReel: await page.getByText('Highlight Reel', { exact: true }).count(),
+          selectedMatches,
+          body: (await page.locator('body').innerText()).slice(-3000),
+        };
+        throw new Error('Practice film athlete profile did not expose Add Film: ' + JSON.stringify(state) + '; ' + error.message);
+      }
+      await page.getByRole('button', { name: 'Add Film', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Archive Film' });
+      await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(title);
+      return dialog;
+    };
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      let dialog = await openFilm(${JSON.stringify(`Invalid type ${FIXTURES.runId}`)});
+      await dialog.locator('#film-upload').setInputFiles({ name: 'unsafe.txt', mimeType: 'text/plain', buffer: Buffer.from('not video') });
+      await page.getByText('Invalid Video', { exact: true }).last().waitFor({ timeout: 10000 });
+      const invalidType = 1;
+      dialog = await openFilm(${JSON.stringify(`Invalid size ${FIXTURES.runId}`)});
+      await dialog.locator('#film-upload').evaluate(input => {
+        const file = new File(['x'], 'oversized.mp4', { type: 'video/mp4' });
+        Object.defineProperty(file, 'size', { configurable: true, value: 500 * 1024 * 1024 + 1 });
+        const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.getByText('Invalid Video', { exact: true }).last().waitFor({ timeout: 10000 });
+      const invalidSize = 1;
+      let unsafeUrls = 0;
+      for (const value of ['javascript:alert(1)', 'https://user:pass@example.com/video', 'https://127.0.0.1/video', 'not a url', 'https://example.com/' + 'a'.repeat(2050)]) {
+        dialog = await openFilm(${JSON.stringify(`Invalid URL ${FIXTURES.runId}`)});
+        await dialog.getByPlaceholder('https://youtu.be/... or Local Upload').fill(value);
+        const submit = dialog.getByRole('button', { name: 'Archive Film', exact: true });
+        await submit.focus(); await page.keyboard.press('Enter');
+        await page.getByText('Archival Failed', { exact: true }).last().waitFor({ timeout: 10000 });
+        unsafeUrls += 1;
+      }
+      return { invalidType, invalidSize, unsafeUrls, consoleErrors, failedResponses };
+    } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
+  }`]));
+  expectEqual(invalidResult.invalidType, 1, 'Practice film unsafe MIME fails before durable metadata');
+  expectEqual(invalidResult.invalidSize, 1, 'Practice film size overflow fails before durable metadata');
+  expectEqual(invalidResult.unsafeUrls, 5, 'Practice film unsafe external URLs fail before durable metadata');
+
+  const uploadResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
+    await page.goto(${JSON.stringify(athleteUrl)});
+    await page.getByRole('button', { name: 'Add Film', exact: true }).waitFor({ timeout: 15000 });
+    await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow});
+    await page.getByRole('button', { name: 'Add Film', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Archive Film' });
+    await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(${JSON.stringify(marker)});
+    const response = await page.request.get(${JSON.stringify(sourceVideoUrl)});
+    if (!response.ok()) throw new Error('Fixture film download failed with ' + response.status());
+    await dialog.locator('#film-upload').setInputFiles({ name: ${JSON.stringify(uploadName)}, mimeType: 'video/mp4', buffer: await response.body() });
+    await dialog.getByRole('button', { name: 'Archive Film', exact: true }).click();
+    await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
+    await page.reload();
+    await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
+    return { count: await page.getByText(${JSON.stringify(marker)}, { exact: true }).count(), fits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
+  }`]));
+  expectEqual(uploadResult.count, 1, 'Practice film valid upload creates one player video object and metadata');
+
+  const videoRecord = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin, bucket) => {
+    const snapshot = await firestoreAdmin.collection(`players/${playerId}/videos`).where('title', '==', marker).get();
+    const [objectExists] = await bucket.file(storagePath).exists();
+    if (snapshot.size !== 1) throw new Error(`Expected one run-scoped film metadata record, received ${snapshot.size}.`);
+    return { path: snapshot.docs[0].ref.path, data: snapshot.docs[0].data(), objectExists };
+  });
+  await registerDynamicFirestoreRoot(videoRecord.path, 'practice-film-metadata');
+  expectEqual(videoRecord.objectExists && videoRecord.data.storagePath === storagePath, true, 'Practice film valid upload creates one player video object and metadata');
+
+  const tokens = new Map(await Promise.all(['qa-coach-owner-a', 'qa-adult-player-a', 'qa-coach-owner-b'].map(async alias => [alias, (await signIn(alias)).body.idToken])));
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  const photoStatus = await capturePracticeStorageRequest('film-photo', 'qa-coach-owner-a', tokens.get('qa-coach-owner-a'), thumbnailPath, { method: 'POST', contentType: 'image/png', body: png });
+  expectEqual(photoStatus, 200, 'Practice film valid thumbnail uses the declared player thumbnail path');
+
+  const markResult = JSON.parse(cli(ownerSession, ['run-code', `async page => {
+    const consoleErrors = []; const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0]); };
+    page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(athleteUrl)});
+      await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
+      await page.getByText(${JSON.stringify(marker)}, { exact: true }).click();
+      const viewer = page.getByRole('dialog', { name: 'Video Viewer' });
+      const video = viewer.locator('video');
+      await video.waitFor({ state: 'visible', timeout: 15000 });
+      await video.evaluate(media => media.readyState >= 1 ? true : new Promise(resolve => media.addEventListener('loadedmetadata', () => resolve(true), { once: true })));
+      const duration = await video.evaluate(media => media.duration);
+      let invalidTimestamps = 0;
+      for (const value of ['-1', 'NaN', String(Math.ceil(duration / 60) + 10) + ':00']) {
+        await viewer.getByPlaceholder('Timestamp (e.g. 1:24)').fill(value);
+        await viewer.getByPlaceholder('e.g. Great hip rotation on this swing...').fill('Invalid mark must not persist');
+        await viewer.getByRole('button', { name: 'Save Mark', exact: true }).click();
+        const toast = page.getByText('Invalid Timestamp', { exact: true }).last();
+        await toast.waitFor({ timeout: 10000 }); invalidTimestamps += 1;
+        await toast.waitFor({ state: 'hidden', timeout: 10000 });
+      }
+      await viewer.getByPlaceholder('Timestamp (e.g. 1:24)').fill('0:01');
+      await viewer.getByPlaceholder('e.g. Great hip rotation on this swing...').fill(${JSON.stringify(markText)});
+      await viewer.getByRole('button', { name: 'Save Mark', exact: true }).click();
+      await viewer.getByText(${JSON.stringify(markText)}, { exact: true }).waitFor({ timeout: 15000 });
+      await viewer.getByText(${JSON.stringify(markText)}, { exact: true }).click();
+      await page.waitForTimeout(250);
+      const seekTime = await video.evaluate(media => media.currentTime);
+      const desktopBounds = await viewer.boundingBox();
+      await page.setViewportSize({ width: 390, height: 844 });
+      const mobileBounds = await viewer.boundingBox();
+      const boundsFit = !!desktopBounds && !!mobileBounds && desktopBounds.x >= -0.5 && desktopBounds.y >= -0.5 && desktopBounds.x + desktopBounds.width <= 1440.5 && desktopBounds.y + desktopBounds.height <= 900.5 && mobileBounds.x >= -0.5 && mobileBounds.y >= -0.5 && mobileBounds.x + mobileBounds.width <= 390.5 && mobileBounds.y + mobileBounds.height <= 844.5;
+      return { duration, invalidTimestamps, seekTime, boundsFit, pageFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
+    } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
+  }`]));
+  expectEqual(Number.isFinite(markResult.duration) && markResult.duration > 1 && Math.abs(markResult.seekTime - 1) < 0.75, true, 'Practice film valid coach mark persists and seeks exact timestamp');
+  expectEqual(markResult.invalidTimestamps, 3, 'Practice film negative NaN and beyond-duration timestamps fail');
+
+  const marked = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.doc(videoRecord.path).get()).data());
+  const exactMarks = (marked.comments || []).filter(comment => comment.text === markText && comment.timestamp === 1);
+  expectEqual(exactMarks.length, 1, 'Practice film valid coach mark persists and seeks exact timestamp');
+  expectEqual((marked.comments || []).filter(comment => comment.text === 'Invalid mark must not persist').length, 0, 'Practice film negative NaN and beyond-duration timestamps fail');
+
+  const playerSession = await browserLogin('qa-adult-player-a', '/dashboard', `practice-film-player-${process.pid}`);
+  browserSelectScheduleTeam(playerSession, teamA.id);
+  const playerResult = JSON.parse(cli(playerSession, ['run-code', `async page => {
+    const consoleErrors = []; const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0]); };
+    page.on('console', onConsole); page.on('pageerror', onPageError); page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/roster`)});
+      await page.getByText(${JSON.stringify(memberName)}, { exact: true }).first().waitFor({ timeout: 15000 });
+      await page.getByText(${JSON.stringify(memberName)}, { exact: true }).first().click();
+      const profile = page.getByRole('dialog', { name: ${JSON.stringify(`Player Profile: ${memberName}`)} });
+      await profile.locator('[data-player-highlight-reel]').waitFor({ timeout: 15000 });
+      await profile.getByText(${JSON.stringify(marker)}, { exact: true }).click();
+      const viewer = page.getByRole('dialog', { name: ${JSON.stringify(marker)} });
+      const video = viewer.locator('[data-player-film-video]');
+      await video.waitFor({ state: 'visible', timeout: 15000 });
+      await video.evaluate(media => media.readyState >= 1 ? true : new Promise(resolve => media.addEventListener('loadedmetadata', () => resolve(true), { once: true })));
+      await video.evaluate(media => { media.currentTime = media.duration * 0.8; media.dispatchEvent(new Event('timeupdate', { bubbles: true })); });
+      await page.waitForTimeout(1000);
+      const desktopBounds = await viewer.boundingBox();
+      await page.setViewportSize({ width: 390, height: 844 });
+      const mobileBounds = await viewer.boundingBox();
+      const boundsFit = !!desktopBounds && !!mobileBounds && desktopBounds.x >= -0.5 && desktopBounds.y >= -0.5 && desktopBounds.x + desktopBounds.width <= 1440.5 && desktopBounds.y + desktopBounds.height <= 900.5 && mobileBounds.x >= -0.5 && mobileBounds.y >= -0.5 && mobileBounds.x + mobileBounds.width <= 390.5 && mobileBounds.y + mobileBounds.height <= 844.5;
+      return { boundsFit, pageFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
+    } finally { page.off('console', onConsole); page.off('pageerror', onPageError); page.off('response', onResponse); }
+  }`]));
+  const progressPath = `${videoRecord.path}/watchProgress/${adultUid}`;
+  const progress = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const snapshot = await firestoreAdmin.doc(progressPath).get(); return snapshot.exists ? snapshot.data() : null;
+  });
+  expectEqual(progress?.userId === adultUid && progress?.percentage === 75, true, 'Practice film player own watch progress persists');
+
+  const actor = alias => ({ alias, token: tokens.get(alias) });
+  await capturePracticeDocumentReads('film-upload', [actor('qa-coach-owner-a')], videoRecord.path);
+  await capturePracticeDocumentReads('film-mark', [actor('qa-coach-owner-a')], videoRecord.path);
+  for (const caseId of ['film-type', 'film-size', 'film-url', 'film-time-invalid']) await capturePracticeDocumentReads(caseId, [actor('qa-coach-owner-a')], videoRecord.path);
+  await capturePracticeDocumentReads('film-progress-own', [actor('qa-adult-player-a')], progressPath);
+  const forge = await captureOperationRequests('film-progress-forge', 'qa-adult-player-a', () => patchFirestoreFields({ projectId: PROJECT_ID, documentPath: `${videoRecord.path}/watchProgress/${identityByAlias.get('qa-coach-owner-a').uid}`, idToken: tokens.get('qa-adult-player-a'), fields: { userId: identityByAlias.get('qa-coach-owner-a').uid, percentage: 100, watchedAt: new Date().toISOString() } }));
+  expectEqual(forge.status, 403, 'Practice film player cannot forge another user progress');
+  const playerMark = await captureOperationRequests('film-mark-player', 'qa-adult-player-a', () => patchFirestoreFields({ projectId: PROJECT_ID, documentPath: videoRecord.path, idToken: tokens.get('qa-adult-player-a'), fields: { comments: [{ text: 'forged player mark', timestamp: 1 }] } }));
+  expectEqual(playerMark.status, 403, 'Practice film player cannot create or alter coach marks');
+  const foreign = await captureOperationRequests('film-team-b', 'qa-coach-owner-b', async () => {
+    const metadataStatus = await directFirestoreReadStatus(videoRecord.path, tokens.get('qa-coach-owner-b'));
+    const startedAt = new Date().toISOString();
+    const objectStatus = await storageObjectStatus(storagePath, tokens.get('qa-coach-owner-b'), { method: 'GET' });
+    recordCapturedOperationRequest({ pathname: '/storage/object', method: 'GET', status: objectStatus, token: tokens.get('qa-coach-owner-b'), startedAt, completedAt: new Date().toISOString() });
+    return { metadataStatus, objectStatus };
+  });
+  expectEqual(foreign.metadataStatus === 403 && foreign.objectStatus === 403, true, 'Practice film Team B cannot access Team A film');
+  expectEqual(markResult.boundsFit && markResult.pageFits && playerResult.boundsFit && playerResult.pageFits, true, 'Practice film staff and player views fit desktop and mobile viewports');
+  expectEqual([...invalidResult.consoleErrors, ...markResult.consoleErrors, ...playerResult.consoleErrors].length, 0, 'Practice film workflow console errors');
+  expectEqual([...invalidResult.failedResponses, ...markResult.failedResponses, ...playerResult.failedResponses].length, 0, 'Practice film workflow failed responses');
+  for (const caseId of ['film-console', 'film-network', 'film-responsive']) await capturePracticeDocumentReads(caseId, [actor('qa-coach-owner-a'), actor('qa-adult-player-a')], videoRecord.path);
+
+  await cli(ownerSession, ['run-code', `async page => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(${JSON.stringify(athleteUrl)});
+    await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
+    page.on('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: ${JSON.stringify(`Delete ${marker}`)} }).click();
+    await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ state: 'detached', timeout: 15000 });
+    return true;
+  }`]);
+  await captureOperationRequests('film-delete', 'qa-coach-owner-a', async () => {
+    const metadataStatus = await directFirestoreReadStatus(videoRecord.path, tokens.get('qa-coach-owner-a'));
+    const startedAt = new Date().toISOString();
+    const objectStatus = await storageObjectStatus(storagePath, tokens.get('qa-coach-owner-a'), { method: 'GET' });
+    recordCapturedOperationRequest({ pathname: '/storage/object', method: 'GET', status: objectStatus, token: tokens.get('qa-coach-owner-a'), startedAt, completedAt: new Date().toISOString() });
+    expectEqual(metadataStatus === 404 && objectStatus === 404, true, 'Practice film delete removes metadata and exact object');
+  });
 }
 
 function browserVisibleAdminNavigationAudit(session, shouldExposeAdmin, canonicalPath) {
