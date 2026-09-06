@@ -78,6 +78,15 @@ test('Calendar bounds helper opens the responsive Agenda surface before selectin
   assert.match(helper, /await eventHeading\.click\(\)/);
 });
 
+test('Calendar bounds helper measures the event dialog only after its geometry settles', () => {
+  const helperStart = source.indexOf('async function assertCalendarFilterAndDetailBounds');
+  const helperEnd = source.indexOf('async function assertCalendarRenderedFilterReconciliation');
+  const helper = source.slice(helperStart, helperEnd);
+  assert.match(helper, /await detailDialog\.evaluate\(async node =>/);
+  assert.match(helper, /stableFrames >= 2/);
+  assert.match(helper, /Math\.abs\(current\[index\] - previous\[index\]\) <= 0\.5/);
+});
+
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
   const unsafe = [];
   function visit(node) {

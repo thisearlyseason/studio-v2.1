@@ -7789,6 +7789,25 @@ async function assertCalendarFilterAndDetailBounds(activeEventTitle) {
       await eventHeading.click();
       const detailDialog = page.getByRole('dialog').filter({ hasText: ${JSON.stringify(activeEventTitle)} });
       await detailDialog.waitFor({ state: 'visible', timeout: 15000 });
+      await detailDialog.evaluate(async node => {
+        const geometry = () => {
+          const rect = node.getBoundingClientRect();
+          return [rect.x, rect.y, rect.width, rect.height];
+        };
+        const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+        let previous = geometry();
+        let stableFrames = 0;
+        const deadline = performance.now() + 2000;
+        while (performance.now() < deadline) {
+          await nextFrame();
+          const current = geometry();
+          const stable = current.every((value, index) => Math.abs(current[index] - previous[index]) <= 0.5);
+          stableFrames = stable ? stableFrames + 1 : 0;
+          if (stableFrames >= 2) return;
+          previous = current;
+        }
+        throw new Error('Calendar detail dialog geometry did not settle within 2 seconds.');
+      });
       const detailDialogBox = await detailDialog.boundingBox();
       const detailDialogWithinViewport = inside(detailDialogBox);
       return { viewport, filterPanelBox, filterPanelWithinViewport, detailDialogBox, detailDialogWithinViewport, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
