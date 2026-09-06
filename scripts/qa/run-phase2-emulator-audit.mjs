@@ -7888,6 +7888,55 @@ async function runCalendarFeedLifecycleAudit() {
   expectEqual(result.mobileFits, true, 'Calendar feed controls fit the mobile viewport');
   expectEqual(result.consoleErrors.length, 0, 'Calendar feed lifecycle console errors');
   expectEqual(result.failedResponses.length, 0, 'Calendar feed lifecycle failed responses');
+
+  // Exercise the actual locally-emulated public Function.  The authenticated
+  // issuer returns an HTTPS-shaped subscription URL, while this audit sends
+  // its opaque token only to the isolated loopback Function endpoint.
+  const functionBase = `http://127.0.0.1:5001/${PROJECT_ID}/us-central1/getCalendarFeed`;
+  const issue = async (token, body) => {
+    const response = await apiJsonResult('/api/calendar/feed', token, { method: 'POST', body: JSON.stringify(body) });
+    expectEqual(response.status, 200, `Calendar feed ${body.type} issuer response`);
+    const issuedUrl = typeof response.body?.url === 'string' ? response.body.url : '';
+    const issuedToken = new URL(issuedUrl).searchParams.get('token') || '';
+    expectEqual(/^[a-f0-9]{64}$/.test(issuedToken), true, `Calendar feed ${body.type} issuer opaque token format`);
+    return issuedToken;
+  };
+  const fetchFeed = async token => {
+    const response = await fetch(`${functionBase}?token=${encodeURIComponent(token)}`, { headers: { Connection: 'close' } });
+    return { status: response.status, body: await response.text() };
+  };
+  const ownerToken = (await signIn('qa-coach-owner-a')).body.idToken;
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+  if (!teamA || !teamB) throw new Error('Calendar feed fixture teams are missing.');
+  const userFeedToken = await issue(ownerToken, { type: 'user', action: 'create' });
+  const teamFeedToken = await issue(ownerToken, { type: 'team', teamId: teamA.id, action: 'create' });
+  const multiFeedToken = await issue(ownerToken, { type: 'multi', teamIds: [teamA.id], action: 'create' });
+  const [userFeed, teamFeed, multiFeed] = await Promise.all([fetchFeed(userFeedToken), fetchFeed(teamFeedToken), fetchFeed(multiFeedToken)]);
+  expectEqual(userFeed.status, 200, 'Calendar user feed local Function fetch');
+  expectEqual(teamFeed.status, 200, 'Calendar team feed local Function fetch');
+  expectEqual(multiFeed.status, 200, 'Calendar multi feed local Function fetch');
+  expectEqual(/BEGIN:VCALENDAR[\s\S]*VERSION:2\.0[\s\S]*END:VCALENDAR/.test(teamFeed.body), true, 'Calendar Function returns RFC 5545 body');
+  expectEqual(teamFeed.body.includes(teamFeedToken), false, 'Calendar Function body redacts subscription token');
+  const invalidType = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'invalid' }) });
+  const foreignTeam = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamB.id }) });
+  const tooMany = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'multi', teamIds: Array.from({ length: 26 }, (_, index) => `qa_feed_${index}`) }) });
+  expectEqual([invalidType.status, foreignTeam.status, tooMany.status].join(','), '400,403,400', 'Calendar issuer rejects invalid type foreign team and oversized multi selection');
+  const rotated = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'rotate' }) });
+  const rotatedToken = new URL(String(rotated.body?.url || '')).searchParams.get('token') || '';
+  expectEqual(rotated.status, 200, 'Calendar feed rotation response');
+  const [priorAfterRotate, freshAfterRotate] = await Promise.all([fetchFeed(teamFeedToken), fetchFeed(rotatedToken)]);
+  expectEqual(`${priorAfterRotate.status},${freshAfterRotate.status}`, '404,200', 'Calendar rotation invalidates prior token and serves replacement');
+  const revoked = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'revoke' }) });
+  const inactive = await fetchFeed(rotatedToken);
+  const malformed = await fetchFeed('not-a-token');
+  expectEqual(`${revoked.status},${inactive.status},${malformed.status}`, '200,404,404', 'Calendar public failures are uniform for inactive and malformed tokens');
+  const memberToken = (await signIn('qa-team-member')).body.idToken;
+  const memberFeedToken = await issue(memberToken, { type: 'team', teamId: teamA.id, action: 'create' });
+  const beforeRevoke = await fetchFeed(memberFeedToken);
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}/members/${identityByAlias.get('qa-team-member').uid}`).update({ status: 'removed' }));
+  const afterRevoke = await fetchFeed(memberFeedToken);
+  expectEqual(`${beforeRevoke.status},${afterRevoke.status}`, '200,404', 'Calendar Function revalidates membership at fetch time');
 }
 
 function browserOwnerEventCreate(session, marker) {
