@@ -57,6 +57,15 @@ test('persisted operations evidence requires unique assertion IDs, exact executi
     assert.throws(validate, /cleanup reference/i);
     artifacts[0].execution = { ...execution, requests: [] }; cases[0].execution = structuredClone(artifacts[0].execution); await write();
     assert.throws(validate, /requests/i);
+    const injectedReminderCore = {
+      evidenceId: 'invocation-rem-eligible-parent-a', method: 'INVOKE', pathname: '/__local/reminder-core', status: 200,
+      actorAlias: 'qa-coach-owner-a', invocationType: 'injected-reminder-core', invocationId: 'rem-eligible-core-1',
+      startedAt: at, completedAt: at,
+    };
+    artifacts[0].execution = { ...execution, requests: [injectedReminderCore] };
+    cases[0].execution = structuredClone(artifacts[0].execution);
+    await write();
+    assert.doesNotThrow(validate);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

@@ -282,9 +282,12 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
       for (const key of ['actor', 'operation', 'reconciliation', 'observer', 'timeBound', 'cleanupReference']) assertPlainString(execution?.[key], `operation execution ${key}`);
       if (!Array.isArray(execution.requests) || execution.requests.length === 0) throw new Error(`${caseRecord.caseId} requires operation requests.`);
       for (const request of execution.requests) {
-        assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'startedAt', 'completedAt'], 'Operation request');
+        assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'invocationType', 'invocationId', 'startedAt', 'completedAt'], 'Operation request');
         assertPlainString(request.evidenceId, 'operation request evidenceId');
-        if (!/^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method) ||
+        const isHttp = /^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method);
+        const isInjectedReminderCore = request.method === 'INVOKE' && request.pathname === '/__local/reminder-core' &&
+          request.invocationType === 'injected-reminder-core' && typeof request.invocationId === 'string' && request.invocationId.length > 0;
+        if ((!isHttp && !isInjectedReminderCore) ||
             typeof request.pathname !== 'string' || !request.pathname.startsWith('/') || request.pathname.includes('?') ||
             !Number.isInteger(request.status) || request.status < 100 || request.status > 599 ||
             typeof request.actorAlias !== 'string' || !execution.actor.split('+').map(actor => actor.trim()).includes(request.actorAlias)) {
