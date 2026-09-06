@@ -8353,7 +8353,19 @@ async function runLibraryWorkflowAudit() {
   try {
     const owner=await browserLogin('qa-coach-owner-a','/dashboard',`library-owner-${process.pid}`),member=await browserLogin('qa-team-member','/dashboard',`library-member-${process.pid}`);
     browserSelectScheduleTeam(owner,team.id);browserSelectScheduleTeam(member,team.id);
-    const fileId=await browserStep(owner,'qa-coach-owner-a',['lib-upload'],`${goto}await page.getByRole('button',{name:'Upload File',exact:true}).click();await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor();const pending=page.waitForResponse(response=>response.url().includes('/api/teams/library?')&&response.request().method()==='POST',{timeout:15000});await page.locator('input[type=file]').setInputFiles(${JSON.stringify(filePath)});const response=await pending;if(response.status()!==201)throw Error('Library upload '+response.status());return await (${completeLibraryUpload.toString()})(response,async()=>{await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor({state:'hidden',timeout:15000});await page.reload();await dismiss(page);await card().waitFor({timeout:15000});},()=>page.waitForTimeout(5000));`);
+    const uploadStatus=await browserStep(owner,'qa-coach-owner-a',['lib-upload'],`${goto}await page.getByRole('button',{name:'Upload File',exact:true}).click();await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor();const pending=page.waitForResponse(response=>response.url().includes('/api/teams/library?')&&response.request().method()==='POST',{timeout:15000});await page.locator('input[type=file]').setInputFiles(${JSON.stringify(filePath)});const response=await pending;if(response.status()!==201)throw Error('Library upload '+response.status());await page.getByRole('dialog',{name:'Archive Resource',exact:true}).waitFor({state:'hidden',timeout:15000});await card().waitFor({timeout:15000});await page.reload();await dismiss(page);await card().waitFor({timeout:15000});return response.status();`);
+    const ownerToken=(await signIn('qa-coach-owner-a')).body.idToken;
+    const uploaded=await completeLibraryUpload({status:uploadStatus},()=>captureOperationRequests('lib-upload','qa-coach-owner-a',async()=>{
+      const startedAt=new Date().toISOString();
+      const response=await fetch(`http://127.0.0.1:8080/v1/projects/${PROJECT_ID}/databases/(default)/documents/teams/${team.id}:runQuery`,{
+        method:'POST',headers:{Authorization:`Bearer ${ownerToken}`,'Content-Type':'application/json',Connection:'close'},
+        body:JSON.stringify({structuredQuery:{from:[{collectionId:'files'}],where:{fieldFilter:{field:{fieldPath:'name'},op:'EQUAL',value:{stringValue:name}}},select:{fields:[{fieldPath:'name'},{fieldPath:'storagePath'}]},limit:2}}),signal:AbortSignal.timeout(20_000),
+      });
+      recordCapturedOperationRequest({pathname:'/firestore/query',method:'POST',status:response.status,token:ownerToken,startedAt,completedAt:new Date().toISOString()});
+      if(response.status!==200)throw Error(`Library authenticated metadata query returned ${response.status}.`);
+      return(await response.json()).filter(row=>row.document).map(({document})=>({fileId:document.name.split('/').at(-1),name:document.fields?.name?.stringValue,storagePath:document.fields?.storagePath?.stringValue}));
+    }),{teamId:team.id,name});
+    const fileId=uploaded.fileId;
     const metadata=await read(fileId);registerObject(metadata.storagePath);
     check('lib-upload',metadata.storagePath,`teams/${team.id}/library/${fileId}/content`,'exact private object path');check('lib-upload',metadata.url,'','no public or data URL stored');
     check('lib-upload',await withEmulatorAuthAdmin(async(_auth,db)=>(await db.collection(`teams/${team.id}/files`).where('name','==',name).get()).size),1,'one metadata document');

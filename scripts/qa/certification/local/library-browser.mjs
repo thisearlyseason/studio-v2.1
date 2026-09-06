@@ -14,9 +14,11 @@ export function validateLibraryDownload({filename,byteCount,sha256},{name,length
   return true;
 }
 
-export async function completeLibraryUpload(response,reload,deadline){
-  const result=await Promise.race([response.json(),deadline().then(()=>{throw Error('Library response body exceeded its deadline.');})]);
-  if(typeof result?.fileId!=='string'||!result.fileId)throw Error('Library upload omitted its exact file identity.');
-  await reload();
-  return result.fileId;
+export async function completeLibraryUpload(response,query,{teamId,name}){
+  if(response.status!==201)throw Error('Library upload did not return 201.');
+  const rows=await query();
+  if(!Array.isArray(rows)||rows.length!==1)throw Error('Library upload requires exactly one matching metadata document.');
+  const result=rows[0];
+  if(!/^[A-Za-z0-9_-]{1,200}$/.test(result?.fileId||'')||result.name!==name||result.storagePath!==`teams/${teamId}/library/${result.fileId}/content`)throw Error('Library upload metadata identity or ownership mismatch.');
+  return result;
 }

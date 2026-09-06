@@ -15,13 +15,16 @@ test('Library observer associates completed request with original case and exact
   observer.start(['lib-download']);page.emit('request',request);observer.start(['lib-delete']);page.emit('response',{request:()=>request,status:()=>200});
   assert.deepEqual(observer.finish().observedResponses.map(row=>row.tag),['lib-download','lib-console','lib-network']);assert.equal(page.listenerCount('response'),0);
 });
-test('Library mutation body must be captured before reload invalidates its browser resource',async()=>{
-  let navigated=false;
-  const response={async json(){if(navigated)throw Error('Response body invalidated by navigation');return{fileId:'owned-id'};}};
-  assert.equal(await completeLibraryUpload(response,async()=>{navigated=true;},()=>new Promise(()=>{})),'owned-id');assert.equal(navigated,true);
+const uploaded={fileId:'owned-id',name:'Run owned.pdf',storagePath:'teams/team-a/library/owned-id/content'};
+test('Library resolves its exact postcondition without reading the browser response body',async()=>{
+  const response={status:201,json(){throw Error('Browser response body is unavailable');}};
+  assert.deepEqual(await completeLibraryUpload(response,async()=>[uploaded],{teamId:'team-a',name:'Run owned.pdf'}),uploaded);
 });
-test('Library response-body wait fails closed at its deadline without navigating',{timeout:100},async()=>{
-  let navigated=false;
-  await assert.rejects(()=>completeLibraryUpload({json:()=>new Promise(()=>{})},async()=>{navigated=true;},async()=>{}),/body.*deadline/i);
-  assert.equal(navigated,false);
+test('Library postcondition rejects failed upload, absence, duplicates and mismatched ownership',async()=>{
+  for(const [status,rows]of[[500,[uploaded]],[201,[]],[201,[uploaded,uploaded]],[201,[{...uploaded,name:'Other'}]],[201,[{...uploaded,storagePath:'teams/team-b/library/owned-id/content'}]],[201,[{...uploaded,fileId:'../escape'}]]]){
+    await assert.rejects(()=>completeLibraryUpload({status},async()=>rows,{teamId:'team-a',name:'Run owned.pdf'}),/Library/);
+  }
+});
+test('Library postcondition propagates the bounded authenticated query failure',async()=>{
+  await assert.rejects(()=>completeLibraryUpload({status:201},async()=>{throw Error('Query deadline exceeded');},{teamId:'team-a',name:'Run owned.pdf'}),/Query deadline/);
 });
