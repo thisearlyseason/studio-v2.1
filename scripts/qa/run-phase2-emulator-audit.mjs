@@ -8376,14 +8376,13 @@ function browserOwnerEventCreate(session, marker) {
     const consoleErrors = [];
     const failedResponses = [];
     const observedResponses = [];
+    const observeResponse = ${observeCalendarResponse.toString()};
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.message));
     page.on('response', response => {
       if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
-      const url = new URL(response.url());
-      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/teams/events/action')) {
-        observedResponses.push({ tag: 'owner-create', method: response.request().method(), pathname: url.pathname, status: response.status() });
-      }
+      const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, 'owner-create', '/api/teams/events/action');
+      if (observation) observedResponses.push(observation);
     });
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -8427,14 +8426,13 @@ function browserMemberEventRsvp(session, marker) {
     const consoleErrors = [];
     const failedResponses = [];
     const observedResponses = [];
+    const observeResponse = ${observeCalendarResponse.toString()};
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.message));
     page.on('response', response => {
       if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
-      const url = new URL(response.url());
-      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/teams/rsvp')) {
-        observedResponses.push({ tag: 'member-read-rsvp', method: response.request().method(), pathname: url.pathname, status: response.status() });
-      }
+      const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, 'member-read-rsvp', '/api/teams/rsvp');
+      if (observation) observedResponses.push(observation);
     });
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -8837,14 +8835,13 @@ function browserOwnerEventEditDelete(session, marker) {
     const consoleErrors = [];
     const failedResponses = [];
     const observedResponses = [];
+    const observeResponse = ${observeCalendarResponse.toString()};
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.message));
     page.on('response', response => {
       if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
-      const url = new URL(response.url());
-      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/teams/events/action')) {
-        observedResponses.push({ tag: 'owner-edit-delete', method: response.request().method(), pathname: url.pathname, status: response.status() });
-      }
+      const observation = observeResponse(response, ${JSON.stringify(BASE_URL)}, 'owner-edit-delete', '/api/teams/events/action');
+      if (observation) observedResponses.push(observation);
     });
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
     await page.getByText(${JSON.stringify(original)}, { exact: true }).last().click();

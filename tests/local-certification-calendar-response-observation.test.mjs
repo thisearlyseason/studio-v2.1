@@ -17,3 +17,15 @@ test('ICS response observation runs without URL globals in the actual serialized
   assert.equal(observe(response('http://127.0.0.1:9002/api/calendar/feed'), base, 'ics-console'), null);
   assert.equal(observe(response(`${base}/api/unrelated`), base, 'ics-console'), null);
 });
+
+test('the sandbox-safe observer captures only the exact supplied Event action or RSVP route', () => {
+  const observe = vm.runInNewContext(`(${observeCalendarResponse.toString()})`);
+  const base = 'http://127.0.0.1:9001';
+  for (const pathname of ['/api/teams/events/action', '/api/teams/rsvp']) {
+    const response = { url: () => `${base}${pathname}?discard=value`, status: () => 200,
+      request: () => ({ isNavigationRequest: () => false, method: () => 'POST' }) };
+    assert.deepEqual(JSON.parse(JSON.stringify(observe(response, base, 'event', pathname))),
+      { tag: 'event', method: 'POST', pathname, status: 200 });
+    assert.equal(observe(response, base, 'event', '/api/calendar/feed'), null);
+  }
+});
