@@ -197,7 +197,7 @@ test('validation enforces required case IDs and inspectable contained artifact p
       expected: caseRecord.expected,
       observed: caseRecord.observed,
       capturedAt: '2026-09-04T18:00:01.500Z',
-      assertions: [{ label: 'stored once', expected: 'true', observed: 'true', capturedAt: '2026-09-04T18:00:01.250Z' }],
+      assertions: [{ id: 'assertion-1', label: 'stored once', expected: 'true', observed: 'true', capturedAt: '2026-09-04T18:00:01.250Z' }],
     }));
     await mkdir(path.join(directory, 'cleanup'));
     await writeFile(path.join(directory, 'cleanup/marker.json'), JSON.stringify({

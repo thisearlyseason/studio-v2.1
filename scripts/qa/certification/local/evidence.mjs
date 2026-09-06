@@ -473,7 +473,8 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           throw new Error(`${caseRecord.caseId} observed artifact requires exact assertions.`);
         }
         for (const assertion of parsed.assertions || []) {
-          assertClosedObject(assertion, ['label', 'expected', 'observed', 'capturedAt'], 'Assertion');
+          assertClosedObject(assertion, ['id', 'label', 'expected', 'observed', 'capturedAt'], 'Assertion');
+          if (assertion.id !== undefined) assertPlainString(assertion.id, 'artifact assertion id');
           assertPlainString(assertion.label, 'artifact assertion label');
           if (String(assertion.expected) !== String(assertion.observed)) {
             throw new Error(`${caseRecord.caseId} artifact assertion mismatch for ${assertion.label}.`);
