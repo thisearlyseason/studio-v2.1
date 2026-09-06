@@ -416,7 +416,9 @@ export const getCalendarFeed = onRequest({ cors: true }, async (req, res) => {
     const calendarName = type === "multi"
       ? "Squad Family Schedule"
       : (type === "team" ? teamMap[resolvedTeamIds[0]]?.name : "Master Schedule") || "Master Schedule";
-    const calendar = buildCalendarFeed(uniqueEvents.map(event => redactCalendarFeedTokens(event)), teamMap, calendarName);
+    const calendar = buildCalendarFeed(uniqueEvents.map(event => redactCalendarFeedTokens(event)), teamMap, calendarName)
+      // Defense in depth for values introduced by calendar serialization itself.
+      .replace(/\b[a-f0-9]{64}\b/gi, "[redacted]");
 
     // 5. Return Deployment Payload
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
