@@ -38,11 +38,38 @@ const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 const admin = __importStar(require("firebase-admin"));
+const webpush = __importStar(require("web-push"));
 const account_deletion_1 = require("./account-deletion");
 const event_reminders_1 = require("./event-reminders");
+const reminder_delivery_1 = require("./reminder-delivery");
 const calendar_feed_1 = require("./calendar-feed");
 admin.initializeApp();
 const db = admin.firestore();
+function reminderWebPushConfiguration() {
+    const subject = process.env.WEB_PUSH_VAPID_SUBJECT?.trim();
+    const publicKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim();
+    const privateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim();
+    if (!subject || !publicKey || !privateKey)
+        return null;
+    return { subject, publicKey, privateKey };
+}
+async function sendReminderWebPush(subscriptions, title, body) {
+    if (!subscriptions.length)
+        return { successCount: 0, failureCount: 0 };
+    if (process.env.AUDIT_OUTBOUND_PROVIDER_MODE === "block") {
+        throw new Error("Notification outbound provider access is blocked for the isolated emulator audit.");
+    }
+    const configuration = reminderWebPushConfiguration();
+    if (!configuration)
+        return { successCount: 0, failureCount: subscriptions.length };
+    webpush.setVapidDetails(configuration.subject, configuration.publicKey, configuration.privateKey);
+    const payload = JSON.stringify({ webPush: { title, body, url: "/calendar" } });
+    const results = await Promise.allSettled(subscriptions.map(subscription => webpush.sendNotification(subscription, payload, { TTL: 3_600, urgency: "high" })));
+    return {
+        successCount: results.filter(result => result.status === "fulfilled").length,
+        failureCount: results.filter(result => result.status === "rejected").length,
+    };
+}
 /**
  * League documents cache the user IDs entitled to read them. This field is
  * maintained by trusted server code, never by the browser. It includes the
@@ -622,24 +649,16 @@ exports.sendUpcomingEventReminders = (0, scheduler_1.onSchedule)({
             if (!userSnap.exists)
                 continue;
             const user = userSnap.data() || {};
-            if (!["parent", "adult_player", "youth_player"].includes(user.role))
-                continue;
-            if (user.notificationsEnabled === false || user.upcomingEventNotificationsEnabled === false)
-                continue;
-            const tokens = Array.isArray(user.fcmTokens)
-                ? [...new Set(user.fcmTokens.filter((token) => typeof token === "string" && !!token))]
-                : [];
-            if (!tokens.length)
+            const targets = (0, reminder_delivery_1.selectReminderDeliveryTargets)(user);
+            if (!targets.fcmTokens.length && !targets.webPushSubscriptions.length)
                 continue;
             const deliveryRef = db.collection("eventReminderDeliveries")
                 .doc(`${teamId}_${eventSnap.id}_${userSnap.id}`);
             const claimed = await db.runTransaction(async (transaction) => {
                 const delivery = await transaction.get(deliveryRef);
                 const data = delivery.data() || {};
-                if (data.status === "sent")
-                    return false;
                 const leaseExpiresAt = data.leaseExpiresAt?.toMillis?.() || 0;
-                if (data.status === "processing" && leaseExpiresAt > Date.now())
+                if (!(0, reminder_delivery_1.canClaimReminderDelivery)({ status: data.status, leaseExpiresAt }, Date.now()))
                     return false;
                 transaction.set(deliveryRef, {
                     teamId,
@@ -655,26 +674,32 @@ exports.sendUpcomingEventReminders = (0, scheduler_1.onSchedule)({
             if (!claimed)
                 continue;
             try {
-                const result = await admin.messaging().sendEachForMulticast({
-                    tokens,
-                    notification: {
-                        title: `Upcoming ${(0, event_reminders_1.normalizeEventKind)(eventData).replace(/^./, (letter) => letter.toUpperCase())}`,
-                        body: (0, event_reminders_1.buildUpcomingEventMessage)(eventData),
-                    },
-                    webpush: {
-                        notification: {
-                            icon: "/favicon-192.png",
-                            badge: "/favicon-192.png",
-                        },
-                        fcmOptions: { link: "/calendar" },
-                    },
-                });
-                if (result.successCount < 1)
+                const title = `Upcoming ${(0, event_reminders_1.normalizeEventKind)(eventData).replace(/^./, (letter) => letter.toUpperCase())}`;
+                const body = (0, event_reminders_1.buildUpcomingEventMessage)(eventData);
+                const [fcm, webPush] = await Promise.all([
+                    targets.fcmTokens.length
+                        ? admin.messaging().sendEachForMulticast({
+                            tokens: targets.fcmTokens,
+                            notification: { title, body },
+                            webpush: {
+                                notification: {
+                                    icon: "/favicon-192.png",
+                                    badge: "/favicon-192.png",
+                                },
+                                fcmOptions: { link: "/calendar" },
+                            },
+                        })
+                        : Promise.resolve({ successCount: 0, failureCount: 0 }),
+                    sendReminderWebPush(targets.webPushSubscriptions, title, body),
+                ]);
+                const successCount = fcm.successCount + webPush.successCount;
+                const failureCount = fcm.failureCount + webPush.failureCount;
+                if (successCount < 1)
                     throw new Error("No registered device accepted the reminder.");
                 await deliveryRef.set({
                     status: "sent",
-                    successCount: result.successCount,
-                    failureCount: result.failureCount,
+                    successCount,
+                    failureCount,
                     sentAt: admin.firestore.FieldValue.serverTimestamp(),
                     leaseExpiresAt: admin.firestore.FieldValue.delete(),
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),

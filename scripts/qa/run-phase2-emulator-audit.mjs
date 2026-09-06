@@ -6681,6 +6681,17 @@ async function runCertificationOperationsScenarios() {
         }
         continue;
       }
+      if (scenarioId === 'reminders-same-day-fcm-scheduler') {
+        runReminderSchedulerPolicyAudit();
+        for (const dimension of ['negativePath', 'permission', 'persistence']) {
+          recordObservedOperationsCase(scenarioId, dimension,
+            'isolated scheduler policy suite covered invalid/no-device exclusion, preference/role exclusion, and sent/lease/failed retry decisions');
+        }
+        recordBlockedOperationsCases(scenarioId,
+          'Actual scheduled invocation, provider acceptance/network logs, and physical-device receipt with cleanup require the background and physical-device owners.',
+          ['happyPath', 'console', 'network', 'responsive']);
+        continue;
+      }
       // The operations dispatcher is deliberately explicit. Until a domain
       // handler supplies case-owned browser/API evidence, every dimension is
       // reported as NOT_OBSERVED instead of allowing the old generic audit to
@@ -7382,9 +7393,21 @@ async function runCalendarViewsWorkflowAudit() {
     page.on('pageerror', onPageError);
     page.on('response', onResponse);
     try {
+      const dismissTransientDialogs = async () => {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const dialogs = page.getByRole('dialog');
+          const dialog = dialogs.last();
+          if (!await dialog.waitFor({ state: 'visible', timeout: 800 }).then(() => true).catch(() => false)) break;
+          const acknowledge = dialog.getByRole('button', { name: 'Got It', exact: true });
+          if (await acknowledge.count()) await acknowledge.click();
+          else await page.keyboard.press('Escape');
+          await dialog.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+        }
+      };
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
       await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      await dismissTransientDialogs();
       const agenda = page.getByRole('button', { name: 'Agenda', exact: true });
       await agenda.click();
       const agendaActive = await agenda.getAttribute('data-state').catch(() => null);
@@ -7408,6 +7431,132 @@ async function runCalendarViewsWorkflowAudit() {
   expectEqual(result.mobileFits, true, 'Calendar fits the mobile viewport');
   expectEqual(result.consoleErrors.length, 0, 'Calendar views workflow console errors');
   expectEqual(result.failedResponses.length, 0, 'Calendar views workflow failed responses');
+
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+  const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+  if (!teamA || !teamB || !teamC) throw new Error('Calendar household fixture teams are missing.');
+  const activeHouseholdEventTitle = `QA Calendar Active Household ${process.pid}`;
+  const householdEventTitle = `QA Calendar Household ${process.pid}`;
+  const teamAOwner = await signIn('qa-coach-owner-a');
+  const teamCOwner = await signIn('qa-league-owner-a');
+  const activeHouseholdEvent = await apiJsonResult('/api/teams/events/action', teamAOwner.body.idToken, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'create', teamId: teamA.id, event: {
+      title: activeHouseholdEventTitle,
+      date: '2026-10-16',
+      endDate: '2026-10-16',
+      startTime: '16:00',
+      endTime: '17:00',
+      eventType: 'practice',
+      location: `QA Calendar Active Household ${process.pid}`,
+    } }),
+  });
+  expectEqual(activeHouseholdEvent.status, 200, 'Calendar active household event fixture creation');
+  const householdEvent = await apiJsonResult('/api/teams/events/action', teamCOwner.body.idToken, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'create', teamId: teamC.id, event: {
+      title: householdEventTitle,
+      date: '2026-10-15',
+      endDate: '2026-10-15',
+      startTime: '16:00',
+      endTime: '17:00',
+      eventType: 'practice',
+      location: `QA Calendar Household ${process.pid}`,
+    } }),
+  });
+  expectEqual(householdEvent.status, 200, 'Calendar household event fixture creation');
+  const parent = await browserLogin('qa-parent-a', '/family', `calendar-parent-${process.pid}`);
+  const parentResult = JSON.parse(cli(parent, ['run-code', `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) {
+        failedResponses.push({ status: response.status(), path: response.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/, 1)[0] });
+      }
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      const dismissTransientDialogs = async () => {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const dialog = page.getByRole('dialog').last();
+          if (!await dialog.waitFor({ state: 'visible', timeout: 800 }).then(() => true).catch(() => false)) break;
+          const acknowledge = dialog.getByRole('button', { name: 'Got It', exact: true });
+          if (await acknowledge.count()) await acknowledge.click();
+          else await page.keyboard.press('Escape');
+          await dialog.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+        }
+      };
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      await dismissTransientDialogs();
+      await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+      await page.getByRole('button', { name: 'Filters', exact: true }).click();
+      const filterPanel = page.getByText('Squad Enrollment', { exact: true }).locator('..');
+      const teamAFilter = filterPanel.getByText(${JSON.stringify(teamA.name)}, { exact: true }).locator('..');
+      const teamCFilter = filterPanel.getByText(${JSON.stringify(teamC.name)}, { exact: true }).locator('..');
+      await teamAFilter.waitFor({ timeout: 15000 });
+      await teamCFilter.waitFor({ timeout: 15000 });
+      const householdFilterCount = (await teamAFilter.count()) + (await teamCFilter.count());
+      const outsiderFilterCount = await filterPanel.getByText(${JSON.stringify(teamB.name)}, { exact: true }).count();
+      // Keep at least one squad selected between toggles. Calendar deliberately
+      // restores its active squad when the selection becomes empty, so switching
+      // to C must add C before removing A.
+      await teamCFilter.click();
+      await teamAFilter.click();
+      await page.keyboard.press('Escape');
+      await dismissTransientDialogs();
+      const calendarMonthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
+      await calendarMonthHeader.getByRole('button').last().click();
+      await page.getByRole('heading', { name: ${JSON.stringify(householdEventTitle)}, exact: true }).waitFor({ timeout: 15000 });
+      const teamAAfterSwitch = await page.getByRole('heading', { name: ${JSON.stringify(activeHouseholdEventTitle)}, exact: true }).count();
+      const teamBAfterSwitch = await page.getByText(${JSON.stringify(`${teamB.visibleMarker} Future Practice`)}, { exact: true }).count();
+      await dismissTransientDialogs();
+      await page.getByRole('button', { name: 'Filters', exact: true }).click();
+      await page.getByText('Squad Enrollment', { exact: true }).locator('..').getByText(${JSON.stringify(teamC.name)}, { exact: true }).locator('..').click();
+      await page.keyboard.press('Escape');
+      const noVisibleHouseholdEvents = await page.getByRole('heading', { name: ${JSON.stringify(householdEventTitle)}, exact: true }).count();
+      await page.setViewportSize({ width: 390, height: 844 });
+      return {
+        householdFilterCount,
+        outsiderFilterCount,
+        teamAAfterSwitch,
+        teamBAfterSwitch,
+        noVisibleHouseholdEvents,
+        mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        consoleErrors,
+        failedResponses,
+      };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }` ]));
+  expectEqual(parentResult.householdFilterCount > 0, true, 'Calendar parent sees both household team filters');
+  expectEqual(parentResult.outsiderFilterCount, 0, 'Calendar parent cannot discover another household team filter');
+  expectEqual(parentResult.teamAAfterSwitch, 0, 'Calendar parent team filter removes the other household schedule');
+  expectEqual(parentResult.teamBAfterSwitch, 0, 'Calendar parent cannot view another household schedule');
+  expectEqual(parentResult.noVisibleHouseholdEvents, 0, 'Calendar empty filter state hides household schedule entries');
+  expectEqual(parentResult.mobileFits, true, 'Calendar household views fit the mobile viewport');
+  expectEqual(parentResult.consoleErrors.length, 0, 'Calendar household workflow console errors');
+  expectEqual(parentResult.failedResponses.length, 0, 'Calendar household workflow failed responses');
+}
+
+function runReminderSchedulerPolicyAudit() {
+  // The scheduled Function has no user-triggerable local HTTP surface. Run its
+  // isolated policy suite in this same managed lifecycle; provider dispatch and
+  // physical receipt are intentionally left to their external owners.
+  const output = run(process.execPath, ['--import', 'tsx', '--test', 'tests/upcoming-event-reminders.test.mjs'], {
+    stdio: 'pipe',
+  });
+  expectEqual(/# fail 0\b/.test(output) || /pass 9\b/.test(output), true,
+    'Reminder scheduler local eligibility, exclusion, idempotency, and retry suite');
 }
 
 async function runCalendarFeedLifecycleAudit() {

@@ -8,6 +8,10 @@ import {
   normalizeEventKind,
   shouldSendSameDayReminder,
 } from '../functions/src/event-reminders.ts';
+import {
+  canClaimReminderDelivery,
+  selectReminderDeliveryTargets,
+} from '../functions/src/reminder-delivery.ts';
 
 test('same-day reminder copy includes event type, friendly time, and location', () => {
   const event = {
@@ -58,6 +62,41 @@ test('scheduler searches the UTC boundary dates needed for local-time filtering'
   ]);
 });
 
+test('reminder delivery accepts the current Web Push registration alongside legacy FCM', () => {
+  const targets = selectReminderDeliveryTargets({
+    role: 'parent',
+    notificationsEnabled: true,
+    upcomingEventNotificationsEnabled: true,
+    fcmTokens: ['legacy-token-1'],
+    webPushSubscriptions: [{
+      endpoint: 'https://push.example.test/subscription',
+      keys: { p256dh: 'public_key', auth: 'auth_key' },
+    }],
+  });
+  assert.deepEqual(targets.fcmTokens, ['legacy-token-1']);
+  assert.deepEqual(targets.webPushSubscriptions, [{
+    endpoint: 'https://push.example.test/subscription',
+    keys: { p256dh: 'public_key', auth: 'auth_key' },
+  }]);
+  assert.deepEqual(selectReminderDeliveryTargets({
+    role: 'parent', notificationsEnabled: true, upcomingEventNotificationsEnabled: false,
+    fcmTokens: ['legacy-token-1'], webPushSubscriptions: targets.webPushSubscriptions,
+  }), { fcmTokens: [], webPushSubscriptions: [] });
+  assert.deepEqual(selectReminderDeliveryTargets({
+    role: 'coach', notificationsEnabled: true, upcomingEventNotificationsEnabled: true,
+    fcmTokens: ['legacy-token-1'], webPushSubscriptions: targets.webPushSubscriptions,
+  }), { fcmTokens: [], webPushSubscriptions: [] });
+});
+
+test('reminder delivery claim is idempotent and allows failed or expired work to retry', () => {
+  const now = Date.parse('2026-07-24T14:00:00.000Z');
+  assert.equal(canClaimReminderDelivery({ status: 'sent' }, now), false);
+  assert.equal(canClaimReminderDelivery({ status: 'processing', leaseExpiresAt: now + 1 }, now), false);
+  assert.equal(canClaimReminderDelivery({ status: 'processing', leaseExpiresAt: now - 1 }, now), true);
+  assert.equal(canClaimReminderDelivery({ status: 'failed' }, now), true);
+  assert.equal(canClaimReminderDelivery({}, now), true);
+});
+
 test('notification controls are enforced by the UI, API, rules, and scheduler', () => {
   const settings = fs.readFileSync(new URL('../src/app/(dashboard)/settings/page.tsx', import.meta.url), 'utf8');
   const notifyRoute = fs.readFileSync(new URL('../src/app/api/notify/route.ts', import.meta.url), 'utf8');
@@ -71,7 +110,8 @@ test('notification controls are enforced by the UI, API, rules, and scheduler', 
   assert.match(notificationDelivery, /notificationsEnabled === false/);
   assert.match(rules, /upcomingEventNotificationsEnabled/);
   assert.match(scheduler, /eventReminderDeliveries/);
-  assert.match(scheduler, /user\.upcomingEventNotificationsEnabled === false/);
+  assert.match(scheduler, /selectReminderDeliveryTargets\(user\)/);
+  assert.match(scheduler, /sendReminderWebPush/);
 });
 
 test('push opt-in is branded, explicit, and registers the device through a protected route', () => {

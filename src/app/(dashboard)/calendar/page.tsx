@@ -81,6 +81,7 @@ import {
 import { WeatherPulse } from '@/components/WeatherPulse';
 import { useCollection, useMemoFirebase } from '@/firebase';
 import { collection, limit, orderBy, query } from 'firebase/firestore';
+import { rsvpParticipantId } from '@/lib/team-rsvp-policy';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -353,9 +354,11 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
   const team = teams.find(t => t.id === event.teamId);
   const relevantParticipants = [
-    // If user is a parent (and not also a player/staff with their own roster spot), they don't RSVP for themselves
-    ...(isParent && !isPlayer && !isStaff ? [] : [{ id: user?.id, name: 'You', isChild: false }]),
-    ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: c.id, name: c.firstName, isChild: true })) : [])
+    // Guardian profile authority is child-only even when legacy memberships
+    // also look player-like. Keep the participant identity aligned with the
+    // authenticated team-member record used by the RSVP API.
+    ...(isParent ? [] : [{ id: user?.id, name: 'You', isChild: false }]),
+    ...(isParent ? (myChildren || []).filter(c => c.joinedTeamIds?.includes(event.teamId)).map(c => ({ id: rsvpParticipantId(c), name: c.firstName, isChild: true })) : [])
   ];
 
   const attendees = Object.entries(event.userRsvps || {}).map(([uid, status]) => {
