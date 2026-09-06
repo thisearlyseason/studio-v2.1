@@ -107,6 +107,7 @@ test('Chat simultaneous actors use isolated contexts in one owned browser sessio
   assert.doesNotMatch(chatHarness, /if\(!await alert\.isVisible\(\)\.catch\(\(\)=>false\)\)break/);
   assert.match(chatHarness, /browserChatParkOnList\(owner,\{teamId:team\.id,chatId\}\);[\s\S]*?browserChatSend\(owner,\{teamId:team\.id,chatId,marker,pageProperty:'qaChatMember'\}\)/);
   assert.match(chatHarness, /const markReadPending=page\.waitForResponse\([\s\S]*?method\(\)==='PATCH'[\s\S]*?await card\(\)\.click\(\);[\s\S]*?const markReadStatus=\(await markReadPending\)\.status\(\);/);
+  assert.match(chatHarness, /await Promise\.all\(\[a\.waitFor\(\{state:'visible',timeout:15000\}\),b\.waitFor\(\{state:'visible',timeout:15000\}\)\]\)/);
 });
 
 test('all frozen Task 5 waiver case IDs are present exactly once across their scenario dimensions', () => {
