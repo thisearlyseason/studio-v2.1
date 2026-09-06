@@ -88,6 +88,23 @@ test('all frozen Task 5 Chat case IDs are present exactly once across their scen
   for (const caseId of expected) assert.equal(actual.filter(value => value === caseId).length, 1, caseId);
 });
 
+test('Chat simultaneous actors use isolated contexts in one owned browser session', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(audit, /browserLoginPeerContext\(owner, memberAlias, '\/dashboard', 'qaChatMember'/);
+  assert.match(audit, /browserLoginPeerContext\(owner, 'qa-multi-org', '\/dashboard', 'qaChatMulti'/);
+  assert.doesNotMatch(audit, /browserLogin\(memberAlias, '\/dashboard', `chat-member-/);
+  assert.doesNotMatch(audit, /browserLogin\('qa-multi-org', '\/dashboard', `chat-multi-/);
+  const peerHarness = audit.slice(
+    audit.indexOf('async function browserLoginPeerContext'),
+    audit.indexOf('async function browserLoginCredentials'),
+  );
+  const chatHarness = audit.slice(audit.indexOf('function browserCreateChatChannel'), audit.indexOf('function sportsHubStorageKey'));
+  const contextProbe = audit.slice(audit.indexOf('async function runChatContextProbeAudit'), audit.indexOf('function browserScheduleAppAudit'));
+  for (const source of [peerHarness, chatHarness, contextProbe]) {
+    assert.doesNotMatch(source, /new URL\(/, 'Playwright run-code sandbox has no URL global');
+  }
+});
+
 test('all frozen Task 5 waiver case IDs are present exactly once across their scenario dimensions', () => {
   const expected = {
     'waivers-team-global-waiver-lifecycle': [

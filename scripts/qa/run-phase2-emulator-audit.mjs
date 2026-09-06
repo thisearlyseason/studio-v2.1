@@ -127,6 +127,7 @@ const tournamentDenialOnly = process.argv.includes('--tournament-denial-only');
 const parentAdminSurfaceOnly = process.argv.includes('--parent-admin-surface-only');
 const workflowCommunicationOnly = process.argv.includes('--workflow-communication-only');
 const workflowChatProbeOnly = process.argv.includes('--workflow-chat-probe-only');
+const workflowChatContextProbeOnly = process.argv.includes('--workflow-chat-context-probe-only');
 const workflowEventsOnly = process.argv.includes('--workflow-events-only');
 const workflowFacilitiesOnly = process.argv.includes('--workflow-facilities-only');
 const workflowEquipmentOnly = process.argv.includes('--workflow-equipment-only');
@@ -2863,6 +2864,57 @@ async function closeBrowserSessionNow(session) {
 
 async function browserLogin(alias, expectedPath, sessionLabel = alias) {
   return browserLoginCredentials(emailForAlias(alias), password, expectedPath, sessionLabel, alias);
+}
+
+async function browserLoginPeerContext(session, alias, expectedPath, propertyName, primaryAlias = 'qa-coach-owner-a') {
+  const email = emailForAlias(alias);
+  const primaryUid = identityByAlias.get(primaryAlias)?.uid;
+  const peerUid = identityByAlias.get(alias)?.uid;
+  if (!primaryUid || !peerUid) throw new Error(`Missing fixture identity for ${primaryAlias} or ${alias}.`);
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const browser=page.context().browser();if(!browser)throw Error('Owned browser is unavailable.');
+    const context=await browser.newContext();const peer=await context.newPage();
+    page[${JSON.stringify(propertyName)}]=peer;page[${JSON.stringify(`${propertyName}Context`)}]=context;
+    const consoleErrors=[],failedResponses=[];
+    const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};
+    const onError=error=>consoleErrors.push(error.stack||error.message);
+    const onResponse=response=>{if(response.status()>=400&&response.url().startsWith(${JSON.stringify(BASE_URL)}))failedResponses.push({status:response.status(),url:response.url()});};
+    peer.on('console',onConsole);peer.on('pageerror',onError);peer.on('response',onResponse);
+    try{
+      await page.evaluate(()=>localStorage.setItem('__qa_chat_context','primary'));
+      await peer.goto(${JSON.stringify(`${BASE_URL}/login`)});
+      await peer.locator('#email').fill(${JSON.stringify(email)});await peer.locator('#password').fill(${JSON.stringify(password)});
+      await peer.getByRole('button',{name:'Sign In'}).click();
+      await peer.waitForFunction(expected=>location.pathname===expected,${JSON.stringify(expectedPath)},{timeout:20000});
+      await peer.evaluate(value=>localStorage.setItem('__qa_chat_context',value),${JSON.stringify(propertyName)});
+      const [primaryResponse,peerResponse]=await Promise.all([
+        page.context().request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)}),
+        context.request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)}),
+      ]);
+      const [primarySession,peerSession,primaryCookies,peerCookies]=await Promise.all([
+        primaryResponse.json(),peerResponse.json(),page.context().cookies(),context.cookies(),
+      ]);
+      const primaryCookie=primaryCookies.find(cookie=>cookie.name==='__session');const peerCookie=peerCookies.find(cookie=>cookie.name==='__session');
+      return{pathname:await peer.evaluate(()=>location.pathname),primaryUid:primarySession.uid,peerUid:peerSession.uid,
+        primaryStatus:primaryResponse.status(),peerStatus:peerResponse.status(),contextCount:browser.contexts().length,
+        primaryMarker:await page.evaluate(()=>localStorage.getItem('__qa_chat_context')),peerMarker:await peer.evaluate(()=>localStorage.getItem('__qa_chat_context')),
+        cookiesDistinct:Boolean(primaryCookie&&peerCookie&&primaryCookie.value!==peerCookie.value),consoleErrors,
+        failedResponses:failedResponses.filter(item=>item.url.startsWith(${JSON.stringify(BASE_URL)}))};
+    }finally{peer.off('console',onConsole);peer.off('pageerror',onError);peer.off('response',onResponse);}
+  }`], { sensitive: true }));
+  expectEqual(result.pathname, expectedPath, `${alias} peer-context login destination`);
+  expectEqual(result.primaryUid, primaryUid, `${alias} peer-context preserves primary authentication`);
+  expectEqual(result.peerUid, peerUid, `${alias} peer-context authenticates exact peer`);
+  expectEqual(result.primaryStatus === 200 && result.peerStatus === 200, true, `${alias} peer-context sessions remain concurrently addressable`);
+  expectEqual(result.contextCount >= 2, true, `${alias} peer-context is isolated in one owned browser`);
+  expectEqual(result.primaryMarker === 'primary' && result.peerMarker === propertyName, true, `${alias} peer-context local storage is isolated`);
+  expectEqual(result.cookiesDistinct, true, `${alias} peer-context cookies are isolated`);
+  expectEqual(result.consoleErrors.length, 0, `${alias} peer-context login workflow console errors`);
+  expectEqual(result.failedResponses.length, 0, `${alias} peer-context login workflow unexpected responses`);
+}
+
+function closeBrowserPeerContexts(session, propertyNames) {
+  return JSON.parse(cli(session, ['run-code', `async page=>{let closed=0;for(const propertyName of ${JSON.stringify(propertyNames)}){const context=page[propertyName+'Context'];if(context){await context.close();delete page[propertyName+'Context'];delete page[propertyName];closed++;}}return{closed,remaining:page.context().browser()?.contexts().length||0};}`]));
 }
 
 async function browserLoginCredentials(email, suppliedPassword, expectedPath, sessionLabel, diagnosticLabel = 'disposable identity') {
@@ -9607,7 +9659,7 @@ function browserCreateChatChannel(session, { teamId, memberName, channelName }) 
     const observedResponses=[],consoleErrors=[],failedResponses=[];let tag='chat-create';
     const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};
     const onError=error=>consoleErrors.push(error.message);
-    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=new URL(url).pathname,status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
+    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
     page.on('console',onConsole);page.on('pageerror',onError);page.on('response',onResponse);
     try{
       await page.setViewportSize({width:1440,height:900});
@@ -9628,11 +9680,12 @@ function browserCreateChatChannel(session, { teamId, memberName, channelName }) 
   }`]));
 }
 
-function browserChatSend(session, { teamId, chatId, marker, tag = 'chat-sync' }) {
+function browserChatSend(session, { teamId, chatId, marker, tag = 'chat-sync', pageProperty = '' }) {
   return JSON.parse(cli(session, ['run-code', `async page => {
+    ${pageProperty ? `page=page[${JSON.stringify(pageProperty)}];if(!page)throw Error(${JSON.stringify(`Missing peer page ${pageProperty}.`)});` : ''}
     const observedResponses=[],consoleErrors=[],failedResponses=[];const tag=${JSON.stringify(tag)};
     const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};const onError=error=>consoleErrors.push(error.message);
-    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=new URL(url).pathname,status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
+    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
     page.on('console',onConsole);page.on('pageerror',onError);page.on('response',onResponse);
     try{await page.goto(${JSON.stringify(`${BASE_URL}/chats/${chatId}?teamId=${teamId}`)});const input=page.getByPlaceholder('Tactical update...');await input.waitFor({timeout:15000});
       const emptyDisabled=await page.getByRole('button',{name:'Send message'}).isDisabled();await input.fill(${JSON.stringify(marker)});
@@ -9643,11 +9696,12 @@ function browserChatSend(session, { teamId, chatId, marker, tag = 'chat-sync' })
   }`]));
 }
 
-function browserChatUnread(session, { teamId, chatId, marker }) {
+function browserChatUnread(session, { teamId, chatId, marker, pageProperty = '' }) {
   return JSON.parse(cli(session, ['run-code', `async page => {
+    ${pageProperty ? `page=page[${JSON.stringify(pageProperty)}];if(!page)throw Error(${JSON.stringify(`Missing peer page ${pageProperty}.`)});` : ''}
     const observedResponses=[],consoleErrors=[],failedResponses=[];const tag='chat-unread';
     const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};const onError=error=>consoleErrors.push(error.message);
-    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=new URL(url).pathname,status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
+    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
     page.on('console',onConsole);page.on('pageerror',onError);page.on('response',onResponse);
     try{const card=()=>page.locator(${JSON.stringify(`a[href="/chats/${chatId}?teamId=${teamId}"]`)});await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await card().waitFor({timeout:15000});const before=await card().locator('div.bg-primary.text-white').count();
       await card().click();await page.getByText(${JSON.stringify(marker)},{exact:true}).waitFor({timeout:15000});await page.reload();await page.getByText(${JSON.stringify(marker)},{exact:true}).waitFor({timeout:15000});const persistedMessageCount=await page.getByText(${JSON.stringify(marker)},{exact:true}).count();
@@ -9657,11 +9711,12 @@ function browserChatUnread(session, { teamId, chatId, marker }) {
   }`]));
 }
 
-function browserChatOfflineRetry(session, { teamId, chatId, marker }) {
+function browserChatOfflineRetry(session, { teamId, chatId, marker, pageProperty = '' }) {
   return JSON.parse(cli(session, ['run-code', `async page => {
+    ${pageProperty ? `page=page[${JSON.stringify(pageProperty)}];if(!page)throw Error(${JSON.stringify(`Missing peer page ${pageProperty}.`)});` : ''}
     const observedResponses=[],requestIds=[];const tag='chat-offline';
     const onRequest=request=>{if(request.url()===${JSON.stringify(`${BASE_URL}/api/teams/chat/message`)}){try{requestIds.push(request.postDataJSON().requestId);}catch{}}};
-    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;observedResponses.push({tag,pathname:new URL(url).pathname,method:response.request().method(),status:response.status(),startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
+    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;observedResponses.push({tag,pathname:url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',method:response.request().method(),status:response.status(),startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
     page.on('request',onRequest);page.on('response',onResponse);
     try{await page.goto(${JSON.stringify(`${BASE_URL}/chats/${chatId}?teamId=${teamId}`)});const input=page.getByPlaceholder('Tactical update...');await input.waitFor({timeout:15000});await input.fill(${JSON.stringify(marker)});
       await page.context().setOffline(true);await page.getByRole('button',{name:'Send message'}).click();await page.getByText('Message not sent. Your draft is preserved.',{exact:true}).waitFor({timeout:15000});const retained=await input.inputValue();
@@ -9672,11 +9727,12 @@ function browserChatOfflineRetry(session, { teamId, chatId, marker }) {
   }`]));
 }
 
-function browserChatQualityEvidence(session, { teamId, chatId, actor }) {
+function browserChatQualityEvidence(session, { teamId, chatId, actor, pageProperty = '' }) {
   return JSON.parse(cli(session, ['run-code', `async page => {
+    ${pageProperty ? `page=page[${JSON.stringify(pageProperty)}];if(!page)throw Error(${JSON.stringify(`Missing peer page ${pageProperty}.`)});` : ''}
     const observedResponses=[],consoleErrors=[],failedResponses=[],bounds=[];let tag='chat-console';
     const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};const onError=error=>consoleErrors.push(error.message);
-    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=new URL(url).pathname,status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
+    const onResponse=response=>{const url=response.url();if(!url.startsWith(${JSON.stringify(BASE_URL)}))return;const pathname=url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',status=response.status();if(status>=500)failedResponses.push({pathname,status});observedResponses.push({tag,pathname,method:response.request().method(),status,startedAt:new Date().toISOString(),completedAt:new Date().toISOString()});};
     page.on('console',onConsole);page.on('pageerror',onError);page.on('response',onResponse);
     try{for(const [caseId,viewport] of [['chat-console',{width:1440,height:900}],['chat-network',{width:1440,height:900}],['chat-responsive',{width:1440,height:900}],['chat-responsive',{width:390,height:844}]]){tag=caseId;await page.setViewportSize(viewport);await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await page.getByRole('heading',{name:'Coordination Hub',exact:true}).waitFor({timeout:15000});const link=page.locator(${JSON.stringify(`a[href="/chats/${chatId}?teamId=${teamId}"]`)});await link.waitFor({timeout:15000});
         await link.scrollIntoViewIfNeeded();const box=await link.boundingBox();bounds.push({actor:${JSON.stringify(actor)},caseId,viewport,box,fits:await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)});
@@ -9686,8 +9742,8 @@ function browserChatQualityEvidence(session, { teamId, chatId, actor }) {
   }`]));
 }
 
-function browserChatRevoked(session) {
-  return JSON.parse(cli(session, ['run-code', `async page=>{await page.getByRole('heading',{name:'Channel unavailable',exact:true}).waitFor({timeout:15000});return{unavailable:await page.getByRole('heading',{name:'Channel unavailable',exact:true}).count(),composer:await page.getByPlaceholder('Tactical update...').count()};}`]));
+function browserChatRevoked(session, pageProperty = '') {
+  return JSON.parse(cli(session, ['run-code', `async page=>{${pageProperty ? `page=page[${JSON.stringify(pageProperty)}];if(!page)throw Error(${JSON.stringify(`Missing peer page ${pageProperty}.`)});` : ''}await page.getByRole('heading',{name:'Channel unavailable',exact:true}).waitFor({timeout:15000});return{unavailable:await page.getByRole('heading',{name:'Channel unavailable',exact:true}).count(),composer:await page.getByPlaceholder('Tactical update...').count()};}`]));
 }
 
 async function runCommunicationWorkflowAudit() {
@@ -9701,7 +9757,8 @@ async function runCommunicationWorkflowAudit() {
   const tokens=new Map();for(const alias of aliases)tokens.set(alias,(await signIn(alias)).body.idToken);
   const request=(caseId,actor,pathname,body)=>captureOperationRequests(caseId,actor,()=>apiJsonResult(pathname,tokens.get(actor),{method:'POST',body:JSON.stringify(body)}));
   const memberName=await withEmulatorAuthAdmin(async(_auth,db)=>(await db.doc(`${teamPath}/members/${memberUid}`).get()).data().name);
-  const owner=await browserLogin(ownerAlias,'/dashboard',`chat-owner-${process.pid}`),member=await browserLogin(memberAlias,'/dashboard',`chat-member-${process.pid}`);
+  const owner=await browserLogin(ownerAlias,'/dashboard',`chat-owner-${process.pid}`);
+  await browserLoginPeerContext(owner, memberAlias, '/dashboard', 'qaChatMember', ownerAlias);
   const created=browserCreateChatChannel(owner,{teamId:team.id,memberName,channelName});
   expectEqual(created.status,200,'Chat chat-create: visible owner channel creation returns 200');expectEqual(created.consoleErrors.length,0,'Chat chat-create: owner creation console clean');expectEqual(created.failedResponses.length,0,'Chat chat-create: owner creation has no 5xx');
   await captureBrowserOperationRequests('chat-create',ownerAlias,created.observedResponses,'chat-create');
@@ -9713,7 +9770,7 @@ async function runCommunicationWorkflowAudit() {
   const senderState=await read();expectEqual(sender.status,200,'Chat chat-sender: authorized sender request accepted');expectEqual(senderState.unreadBy?.[ownerUid],0,'Chat chat-sender: sender unread remains zero');expectEqual(senderState.unreadBy?.[memberUid],1,'Chat chat-sender: only recipient unread increments');
   await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(chatPath).update({unreadBy:{}}));
 
-  const sent=browserChatSend(member,{teamId:team.id,chatId,marker});expectEqual(sent.status,200,'Chat chat-sync: member visible send returns 200');expectEqual(sent.count,1,'Chat chat-sync: live sender surface renders exactly one message');expectEqual(sent.emptyDisabled,true,'Chat chat-sync: empty send remains disabled');expectEqual(sent.consoleErrors.length,0,'Chat chat-sync: sender console clean');expectEqual(sent.failedResponses.length,0,'Chat chat-sync: sender network has no 5xx');await captureBrowserOperationRequests('chat-sync',memberAlias,sent.observedResponses,'chat-sync');
+  const sent=browserChatSend(owner,{teamId:team.id,chatId,marker,pageProperty:'qaChatMember'});expectEqual(sent.status,200,'Chat chat-sync: member visible send returns 200');expectEqual(sent.count,1,'Chat chat-sync: live sender surface renders exactly one message');expectEqual(sent.emptyDisabled,true,'Chat chat-sync: empty send remains disabled');expectEqual(sent.consoleErrors.length,0,'Chat chat-sync: sender console clean');expectEqual(sent.failedResponses.length,0,'Chat chat-sync: sender network has no 5xx');await captureBrowserOperationRequests('chat-sync',memberAlias,sent.observedResponses,'chat-sync');
   expectEqual((await read()).unreadBy?.[ownerUid],1,'Chat chat-unread: recipient unread is exactly one before open');
   const unread=browserChatUnread(owner,{teamId:team.id,chatId,marker});expectEqual(unread.before,1,'Chat chat-unread: owner list shows one unread badge');expectEqual(unread.after,0,'Chat chat-unread: open clears recipient badge only');expectEqual(unread.reloaded,0,'Chat chat-unread: clear persists after reload');expectEqual(unread.persistedMessageCount,1,'Chat chat-sync: recipient reload renders exactly one persisted message');expectEqual((await read()).unreadBy?.[memberUid]||0,0,'Chat chat-unread: sender unread remains zero');await captureBrowserOperationRequests('chat-unread',ownerAlias,unread.observedResponses,'chat-unread');
 
@@ -9721,22 +9778,23 @@ async function runCommunicationWorkflowAudit() {
   const dup1=await request('chat-duplicate',ownerAlias,'/api/teams/chat/message',duplicateBody),dup2=await request('chat-duplicate',ownerAlias,'/api/teams/chat/message',duplicateBody);
   expectEqual(dup1.status,200,'Chat chat-duplicate: initial request accepted');expectEqual(dup2.body?.replayed,true,'Chat chat-duplicate: repeated request reported replay');expectEqual((await messages()).filter(item=>item.requestId==='chat-duplicate').length,1,'Chat chat-duplicate: one durable message for one request identity');
 
-  const offlineMarker=`${marker} offline`,offline=browserChatOfflineRetry(member,{teamId:team.id,chatId,marker:offlineMarker});
+  const offlineMarker=`${marker} offline`,offline=browserChatOfflineRetry(owner,{teamId:team.id,chatId,marker:offlineMarker,pageProperty:'qaChatMember'});
   expectEqual(offline.retained,offlineMarker,'Chat chat-offline: mounted offline failure preserves exact draft');expectEqual(offline.requestIds.length,2,'Chat chat-offline: one failed attempt and one explicit retry observed');expectEqual(new Set(offline.requestIds).size,1,'Chat chat-offline: retry reuses one request identity');expectEqual(offline.status,200,'Chat chat-offline: recovered retry returns 200');expectEqual(offline.count,1,'Chat chat-offline: recovered retry renders exactly once');expectEqual((await messages()).filter(item=>item.content===offlineMarker).length,1,'Chat chat-offline: recovered retry persists exactly once');await captureBrowserOperationRequests('chat-offline',memberAlias,offline.observedResponses,'chat-offline');
 
   for(const [actor,label]of[['qa-parent-a','parent'],['qa-adult-player-a','adult player']]){const response=await request('chat-audience',actor,'/api/teams/chat/message',{teamId:team.id,chatId,type:'text',content:'denied',requestId:`audience-${label.replace(' ','-')}`});expectEqual(response.status,403,`Chat chat-audience: ${label} outside exact channel denied`);}
   expectEqual((await request('chat-removed','qa-removed-member','/api/teams/chat/message',{teamId:team.id,chatId,type:'text',content:'denied',requestId:'removed'})).status,403,'Chat chat-removed: removed member stale access denied');
   expectEqual((await request('chat-team-b','qa-coach-owner-b','/api/teams/chat/message',{teamId:team.id,chatId,type:'text',content:'denied',requestId:'team-b'})).status,403,'Chat chat-team-b: foreign owner denied host channel');
-  const multi=await browserLogin('qa-multi-org','/dashboard',`chat-multi-${process.pid}`);const multiResult=JSON.parse(cli(multi,['run-code',`async page=>{await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await page.getByRole('heading',{name:'Coordination Hub',exact:true}).waitFor({timeout:15000});return{a:await page.locator('a[href="/chats/qa-team-chat?teamId=${team.id}"]').count(),b:await page.locator('a[href="/chats/qa-team-chat?teamId=${teamB.id}"]').count()};}`]));expectEqual(JSON.stringify(multiResult),JSON.stringify({a:1,b:1}),'Chat chat-team-b: composite identity renders same chat ID once per exact tenant');
+  await browserLoginPeerContext(owner, 'qa-multi-org', '/dashboard', 'qaChatMulti', ownerAlias);const multiResult=JSON.parse(cli(owner,['run-code',`async page=>{page=page.qaChatMulti;if(!page)throw Error('Missing peer page qaChatMulti.');await page.goto(${JSON.stringify(`${BASE_URL}/chats`)});await page.getByRole('heading',{name:'Coordination Hub',exact:true}).waitFor({timeout:15000});return{a:await page.locator('a[href="/chats/qa-team-chat?teamId=${team.id}"]').count(),b:await page.locator('a[href="/chats/qa-team-chat?teamId=${teamB.id}"]').count()};}`]));expectEqual(JSON.stringify(multiResult),JSON.stringify({a:1,b:1}),'Chat chat-team-b: composite identity renders same chat ID once per exact tenant');
 
   await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(teamPath).update({'features.tacticalChat':false}));
   expectEqual((await request('chat-module-off',memberAlias,'/api/teams/chat/message',{teamId:team.id,chatId,type:'text',content:'denied',requestId:'module-off'})).status,403,'Chat chat-module-off: disabled module denies message');
   await withEmulatorAuthAdmin(async(_auth,db)=>db.doc(teamPath).set({...originalTeam,features:{...(originalTeam.features||{}),tacticalChat:true},parentChatEnabled:false}));
 
-  for(const [session,actor]of[[owner,ownerAlias],[member,memberAlias]]){const quality=browserChatQualityEvidence(session,{teamId:team.id,chatId,actor});expectEqual(quality.consoleErrors.length,0,`Chat chat-console: ${actor} console clean`);expectEqual(quality.failedResponses.length,0,`Chat chat-network: ${actor} has no unexpected 5xx`);expectEqual(quality.bounds.every(item=>item.fits&&item.box&&item.box.x>=0&&item.box.y>=0&&item.box.x+item.box.width<=item.viewport.width+1&&item.box.y+item.box.height<=item.viewport.height+1),true,`Chat chat-responsive: ${actor} list composer controls fit exact desktop/mobile viewports`);for(const caseId of['chat-console','chat-network','chat-responsive'])await captureBrowserOperationRequests(caseId,actor,quality.observedResponses,caseId);}
+  for(const [actor,pageProperty]of[[ownerAlias,''],[memberAlias,'qaChatMember']]){const quality=browserChatQualityEvidence(owner,{teamId:team.id,chatId,actor,pageProperty});expectEqual(quality.consoleErrors.length,0,`Chat chat-console: ${actor} console clean`);expectEqual(quality.failedResponses.length,0,`Chat chat-network: ${actor} has no unexpected 5xx`);expectEqual(quality.bounds.every(item=>item.fits&&item.box&&item.box.x>=0&&item.box.y>=0&&item.box.x+item.box.width<=item.viewport.width+1&&item.box.y+item.box.height<=item.viewport.height+1),true,`Chat chat-responsive: ${actor} list composer controls fit exact desktop/mobile viewports`);for(const caseId of['chat-console','chat-network','chat-responsive'])await captureBrowserOperationRequests(caseId,actor,quality.observedResponses,caseId);}
 
   const deleted=await captureOperationRequests('chat-deleted',ownerAlias,()=>apiJsonResult('/api/teams/chat',tokens.get(ownerAlias),{method:'PATCH',body:JSON.stringify({action:'delete',teamId:team.id,chatId})}));expectEqual(deleted.status,200,'Chat chat-deleted: owner server deletion accepted');
-  const stale=await request('chat-deleted',memberAlias,'/api/teams/chat/message',{teamId:team.id,chatId,type:'text',content:'denied',requestId:'deleted'});expectEqual(stale.status,403,'Chat chat-deleted: stale composer request denied');const revoked=browserChatRevoked(member);expectEqual(JSON.stringify(revoked),JSON.stringify({unavailable:1,composer:0}),'Chat chat-deleted: live member surface revokes explicitly without stale composer');
+  const stale=await request('chat-deleted',memberAlias,'/api/teams/chat/message',{teamId:team.id,chatId,type:'text',content:'denied',requestId:'deleted'});expectEqual(stale.status,403,'Chat chat-deleted: stale composer request denied');const revoked=browserChatRevoked(owner,'qaChatMember');expectEqual(JSON.stringify(revoked),JSON.stringify({unavailable:1,composer:0}),'Chat chat-deleted: live member surface revokes explicitly without stale composer');
+  const closedPeers=closeBrowserPeerContexts(owner,['qaChatMember','qaChatMulti']);expectEqual(JSON.stringify(closedPeers),JSON.stringify({closed:2,remaining:1}),'Chat chat-deleted: isolated peer contexts close explicitly while primary remains owned');
 }
 
 function sportsHubStorageKey(kind, userId) {
@@ -12436,6 +12494,26 @@ async function runChatProbeAudit() {
   expectEqual(result.ready, true, 'seeded member chat detail loads');
 }
 
+async function runChatContextProbeAudit() {
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `chat-context-probe-${process.pid}`);
+  await browserLoginPeerContext(owner, 'qa-team-member', '/dashboard', 'qaChatMember', 'qa-coach-owner-a');
+  const addressable = JSON.parse(cli(owner, ['run-code', `async page=>{
+    const peer=page.qaChatMember;if(!peer)throw Error('Missing peer page qaChatMember.');
+    const [primaryResponse,peerResponse]=await Promise.all([
+      page.context().request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)}),
+      peer.context().request.get(${JSON.stringify(`${BASE_URL}/api/auth/session`)}),
+    ]);
+    const [primary,member]=await Promise.all([primaryResponse.json(),peerResponse.json()]);
+    return{primaryUid:primary.uid,memberUid:member.uid,primaryPath:await page.evaluate(()=>location.pathname),memberPath:await peer.evaluate(()=>location.pathname)};
+  }`]));
+  expectEqual(addressable.primaryUid, identityByAlias.get('qa-coach-owner-a').uid, 'chat context probe primary remains authenticated');
+  expectEqual(addressable.memberUid, identityByAlias.get('qa-team-member').uid, 'chat context probe member remains authenticated');
+  expectEqual(addressable.primaryPath, '/dashboard', 'chat context probe primary remains addressable');
+  expectEqual(addressable.memberPath, '/dashboard', 'chat context probe member remains addressable');
+  const closed = closeBrowserPeerContexts(owner, ['qaChatMember']);
+  expectEqual(JSON.stringify(closed), JSON.stringify({ closed: 1, remaining: 1 }), 'chat context probe closes isolated peer explicitly');
+}
+
 function browserScheduleAppAudit(session) {
   const code = `async page => {
     const onlineConsoleErrors = [];
@@ -12945,6 +13023,10 @@ async function runBrowserAudit() {
     await runChatProbeAudit();
     return;
   }
+  if (workflowChatContextProbeOnly) {
+    await runChatContextProbeAudit();
+    return;
+  }
   if (workflowEventsOnly) {
     await runEventWorkflowAudit();
     return;
@@ -13208,7 +13290,7 @@ async function main() {
     });
     if (certificationOperations) await runCertificationOperationsScenarios();
   } else {
-    if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
+    if (!scheduleAppOnly && !teamSwitchOnly && !alertsOnly && !identityOnly && !identityStateOnly && !deletionLoginOnly && !surfaceSmokeOnly && !surfaceRemainderOnly && !tournamentDenialOnly && !parentAdminSurfaceOnly && !workflowCommunicationOnly && !workflowChatProbeOnly && !workflowChatContextProbeOnly && !workflowEventsOnly && !workflowFacilitiesOnly && !workflowEquipmentOnly) await runApiAudit();
     if (runBrowser) await runBrowserAudit();
   }
   console.log(`Phase 2 emulator audit completed${runBrowser ? ' with browser routes' : ''}.`);
