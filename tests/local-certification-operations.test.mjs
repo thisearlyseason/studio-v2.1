@@ -124,6 +124,13 @@ test('operations evidence rejects synthesized request records and requires the e
       /actual same-origin HTTP request evidence|exact actor alias/i,
     );
   }
+
+  assert.throws(
+    () => assertCaseOwnedOperationArtifacts([complete({
+      method: 'POST', pathname: '/api/rsvp', status: 200, actorAlias: 'qa-team-member',
+    })]),
+    /does not match the case actor/i,
+  );
 });
 
 test('fully observed operation dimensions describe completion instead of missing cases', async () => {

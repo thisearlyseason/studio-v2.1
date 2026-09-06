@@ -102,6 +102,10 @@ export function assertCaseOwnedOperationArtifacts(cases) {
       if (typeof actorAlias !== 'string' || !actorAlias.startsWith('qa-') || actorAlias === 'catalog-scenario-actor') {
         throw new Error(`Operation case ${item.caseId} requires an exact actor alias on every request.`);
       }
+      const caseActors = execution.actor.split('+').map(actor => actor.trim()).filter(Boolean);
+      if (!caseActors.includes(actorAlias)) {
+        throw new Error(`Operation request actor ${actorAlias} does not match the case actor for ${item.caseId}.`);
+      }
     }
     for (const assertion of item.assertions) {
       if (!assertion || typeof assertion.id !== 'string' || assertion.id.length === 0) {

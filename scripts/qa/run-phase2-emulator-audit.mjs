@@ -135,6 +135,9 @@ let activeCertificationScenario = null;
 let activeCertificationAssertions = [];
 let activeCertificationCaseIds = new Set();
 let activeOperationAssertionOwners = new Map();
+let activeOperationRequestCapture = null;
+const capturedOperationRequests = new Map();
+const consumedOperationRequestCaptures = new Set();
 let certificationAssertionSequence = 0;
 let activeTenantExecution = null;
 let activeTenantExecutionGroup = null;
@@ -1077,7 +1080,50 @@ function tenantOperationFromRequest(pathname, method, status) {
   return 'update';
 }
 
+async function captureOperationRequests(caseId, actorAlias, operation) {
+  if (typeof caseId !== 'string' || typeof actorAlias !== 'string' || !actorAlias.startsWith('qa-')) {
+    throw new Error('Operation request capture requires a named case and exact fixture actor alias.');
+  }
+  if (activeOperationRequestCapture) throw new Error(`Operation request capture ${activeOperationRequestCapture.caseId} overlaps ${caseId}.`);
+  activeOperationRequestCapture = { caseId, actorAlias };
+  try {
+    return await operation();
+  } finally {
+    activeOperationRequestCapture = null;
+  }
+}
+
+function recordCapturedOperationRequest({ pathname, method, status, token = null, startedAt, completedAt }) {
+  const capture = activeOperationRequestCapture;
+  if (!capture) return;
+  const actorAlias = token ? tenantTokenActors.get(token) : capture.actorAlias;
+  if (actorAlias !== capture.actorAlias) {
+    throw new Error(`Operation request capture ${capture.caseId} observed actor ${actorAlias || 'unknown'}, expected ${capture.actorAlias}.`);
+  }
+  const request = Object.freeze({
+    evidenceId: `request-${capture.caseId}-${(capturedOperationRequests.get(capture.caseId)?.length || 0) + 1}`,
+    method: String(method).toUpperCase(),
+    pathname: String(pathname).split('?')[0],
+    status: Number(status),
+    actorAlias,
+    startedAt: startedAt || new Date().toISOString(),
+    completedAt: completedAt || new Date().toISOString(),
+  });
+  const records = capturedOperationRequests.get(capture.caseId) || [];
+  records.push(request);
+  capturedOperationRequests.set(capture.caseId, records);
+}
+
+function operationRequestEvidence(caseId) {
+  if (consumedOperationRequestCaptures.has(caseId)) throw new Error(`Operation request capture ${caseId} was reused by another named case.`);
+  const requests = capturedOperationRequests.get(caseId);
+  if (!requests?.length) throw new Error(`Operation case ${caseId} has no captured HTTP request evidence.`);
+  consumedOperationRequestCaptures.add(caseId);
+  return requests;
+}
+
 function recordTenantRequest({ pathname, method = 'GET', status, token = null, documentPath = null, body = null, startedAt, completedAt }) {
+  recordCapturedOperationRequest({ pathname, method, status, token, startedAt, completedAt });
   if (activeTenantExecutions().length === 0) return;
   let parsedBody = {};
   try { parsedBody = body ? JSON.parse(body) : {}; } catch { parsedBody = {}; }
@@ -6800,6 +6846,9 @@ async function runCertificationOperationsScenarios() {
     activeCertificationAssertions = [];
     activeCertificationCaseIds = new Set();
     activeOperationAssertionOwners = new Map();
+    activeOperationRequestCapture = null;
+    capturedOperationRequests.clear();
+    consumedOperationRequestCaptures.clear();
     activeOperationResourceRegistry = createResourceRegistry({ maxAttempts: 3 });
     await registerScheduleDiscovery({
       registry: activeOperationResourceRegistry, scopeId: scenarioId,
@@ -6839,18 +6888,18 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
         await runCalendarFeedLifecycleAudit();
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-user', 'authenticated user-scope feed issues and fetches from the local Functions emulator', [/Calendar user feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-team', 'authenticated team-scope feed issues and fetches from the local Functions emulator', [/Calendar team feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-multi', 'authenticated multi-scope feed issues and fetches from the local Functions emulator', [/Calendar multi feed local Function fetch/], { actor: 'qa-coach-owner-a', operation: 'issue + public Function fetch', reconciliation: '200 ICS response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-rfc', 'calendar Function returns a complete RFC 5545 event body', [/Calendar Function returns RFC 5545 body/, /Calendar Function emits stable team-scoped UID for the exact event/, /Calendar Function emits timezone-aware overnight DTSTART and DTEND/, /Calendar Function RFC-escapes summary and description text/, /Calendar Function RFC-folds long content lines/], { actor: 'qa-coach-owner-a', operation: 'public Function fetch', reconciliation: 'RFC envelope, stable UID, timezone, overnight, escaping, and folding', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-invalid-type', 'issuer rejects an invalid feed type', [/Calendar issuer rejects invalid feed type/], { actor: 'qa-coach-owner-a', operation: 'POST invalid type', reconciliation: '400 response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-foreign-team', 'issuer rejects a foreign team scope', [/Calendar issuer rejects foreign team scope/], { actor: 'qa-coach-owner-a', operation: 'POST foreign team scope', reconciliation: '403 response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-too-many', 'issuer rejects a multi-scope request beyond the limit', [/Calendar issuer rejects oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST oversized multi scope', reconciliation: '400 response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-invalid-token', 'malformed public calendar credentials return the same non-enumerating not-found boundary', [/Calendar malformed token returns a non-enumerating boundary/], { actor: 'public', operation: 'GET malformed token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-unknown-token', 'well-formed unknown public calendar credentials return the same non-enumerating not-found boundary', [/Calendar well-formed unknown token returns the same non-enumerating boundary/], { actor: 'public', operation: 'GET well-formed unknown token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-inactive-token', 'inactive and revoked public calendar credentials return the same non-enumerating not-found boundary', [/Calendar inactive token returns a non-enumerating boundary/], { actor: 'public', operation: 'GET inactive token', reconciliation: '404 generic response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-membership-revoke', 'current membership is revalidated at public fetch time', [/Calendar Function revalidates membership at fetch time/], { actor: 'qa-team-member', operation: 'remove membership then public fetch', reconciliation: '200 before and 404 after revocation', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'persistence', 'ics-rotate', 'feed rotation invalidates the previous credential and serves only the replacement', [/Calendar rotation invalidates prior token and serves replacement/], { actor: 'qa-coach-owner-a', operation: 'rotate then public fetch', reconciliation: 'prior 404, replacement 200', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-user', 'authenticated user-scope feed issues and fetches from the local Functions emulator', [/Calendar user feed local Function fetch/], { actor: 'qa-parent-a', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-user'), reconciliation: '200 ICS response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-team', 'authenticated team-scope feed issues and fetches from the local Functions emulator', [/Calendar team feed local Function fetch/], { actor: 'qa-adult-player-a', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-team'), reconciliation: '200 ICS response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-multi', 'authenticated multi-scope feed issues and fetches from the local Functions emulator', [/Calendar multi feed local Function fetch/], { actor: 'qa-multi-org', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-multi'), reconciliation: '200 ICS response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-rfc', 'calendar Function returns a complete RFC 5545 event body', [/Calendar Function returns RFC 5545 body/, /Calendar Function emits stable team-scoped UID for the exact event/, /Calendar Function emits timezone-aware overnight DTSTART and DTEND/, /Calendar Function RFC-escapes summary and description text/, /Calendar Function RFC-folds long content lines/], { actor: 'qa-adult-player-a', operation: 'public Function fetch', requests: operationRequestEvidence('ics-rfc'), reconciliation: 'RFC envelope, stable UID, timezone, overnight, escaping, and folding', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-invalid-type', 'issuer rejects an invalid feed type', [/Calendar issuer rejects invalid feed type/], { actor: 'qa-coach-owner-a', operation: 'POST invalid type', requests: operationRequestEvidence('ics-invalid-type'), reconciliation: '400 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-foreign-team', 'issuer rejects a foreign team scope', [/Calendar issuer rejects foreign team scope/], { actor: 'qa-coach-owner-a', operation: 'POST foreign team scope', requests: operationRequestEvidence('ics-foreign-team'), reconciliation: '403 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-too-many', 'issuer rejects a multi-scope request beyond the limit', [/Calendar issuer rejects oversized multi selection/], { actor: 'qa-coach-owner-a', operation: 'POST oversized multi scope', requests: operationRequestEvidence('ics-too-many'), reconciliation: '400 response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-invalid-token', 'malformed public calendar credentials return the same non-enumerating not-found boundary', [/Calendar malformed token returns a non-enumerating boundary/], { actor: 'qa-public-submitter', operation: 'GET malformed token', requests: operationRequestEvidence('ics-invalid-token'), reconciliation: '404 generic response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-unknown-token', 'well-formed unknown public calendar credentials return the same non-enumerating not-found boundary', [/Calendar well-formed unknown token returns the same non-enumerating boundary/], { actor: 'qa-public-submitter', operation: 'GET well-formed unknown token', requests: operationRequestEvidence('ics-unknown-token'), reconciliation: '404 generic response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-inactive-token', 'inactive and revoked public calendar credentials return the same non-enumerating not-found boundary', [/Calendar inactive token returns a non-enumerating boundary/], { actor: 'qa-coach-owner-a', operation: 'GET inactive token', requests: operationRequestEvidence('ics-inactive-token'), reconciliation: '404 generic response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-membership-revoke', 'current membership is revalidated at public fetch time', [/Calendar Function revalidates membership at fetch time/], { actor: 'qa-team-member', operation: 'remove membership then public fetch', requests: operationRequestEvidence('ics-membership-revoke'), reconciliation: '200 before and 404 after revocation', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'ics-rotate', 'feed rotation invalidates the previous credential and serves only the replacement', [/Calendar rotation invalidates prior token and serves replacement/], { actor: 'qa-coach-owner-a', operation: 'rotate then public fetch', requests: operationRequestEvidence('ics-rotate'), reconciliation: 'prior 404, replacement 200', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'console', 'ics-console', 'visible calendar subscription controls have no browser console errors', [/Calendar feed lifecycle console errors/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
         recordObservedOperationNamedCase(scenarioId, 'console', 'ics-secret', 'public ICS response excludes a seeded opaque credential and action URL', [/Calendar Function body redacts subscription token and action URL/], { actor: 'qa-coach-owner-a', operation: 'local public Function fetch', reconciliation: 'response contains neither credential nor action URL', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'network', 'ics-network', 'visible calendar subscription controls have no local server failures', [/Calendar feed lifecycle failed responses/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
@@ -8196,19 +8245,24 @@ async function runCalendarFeedLifecycleAudit() {
   // issuer returns an HTTPS-shaped subscription URL, while this audit sends
   // its opaque token only to the isolated loopback Function endpoint.
   const functionBase = `http://127.0.0.1:5001/${PROJECT_ID}/us-central1/getCalendarFeed`;
-  const issue = async (token, body) => {
+  const issue = async ({ caseId, actorAlias, token, body }) => captureOperationRequests(caseId, actorAlias, async () => {
     const response = await apiJsonResult('/api/calendar/feed', token, { method: 'POST', body: JSON.stringify(body) });
     expectEqual(response.status, 200, `Calendar feed ${body.type} issuer response`);
     const issuedUrl = typeof response.body?.url === 'string' ? response.body.url : '';
     const issuedToken = new URL(issuedUrl).searchParams.get('token') || '';
     expectEqual(/^[a-f0-9]{64}$/.test(issuedToken), true, `Calendar feed ${body.type} issuer opaque token format`);
     return issuedToken;
-  };
-  const fetchFeed = async token => {
+  });
+  const fetchFeed = async ({ caseId, actorAlias, token }) => captureOperationRequests(caseId, actorAlias, async () => {
     const response = await fetch(`${functionBase}?token=${encodeURIComponent(token)}`, { headers: { Connection: 'close' } });
-    return { status: response.status, body: await response.text() };
-  };
+    const body = await response.text();
+    recordCapturedOperationRequest({ pathname: '/getCalendarFeed', method: 'GET', status: response.status });
+    return { status: response.status, body };
+  });
   const ownerToken = (await signIn('qa-coach-owner-a')).body.idToken;
+  const parentToken = (await signIn('qa-parent-a')).body.idToken;
+  const adultToken = (await signIn('qa-adult-player-a')).body.idToken;
+  const multiToken = (await signIn('qa-multi-org')).body.idToken;
   const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
   const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
   if (!teamA || !teamB) throw new Error('Calendar feed fixture teams are missing.');
@@ -8229,13 +8283,16 @@ async function runCalendarFeedLifecycleAudit() {
       qaCalendarFeedRun: certificationRunId,
     });
   });
-  const userFeedToken = await issue(ownerToken, { type: 'user', action: 'create' });
-  const teamFeedToken = await issue(ownerToken, { type: 'team', teamId: teamA.id, action: 'create' });
-  const multiFeedToken = await issue(ownerToken, { type: 'multi', teamIds: [teamA.id], action: 'create' });
-  const [userFeed, teamFeed, multiFeed] = await Promise.all([fetchFeed(userFeedToken), fetchFeed(teamFeedToken), fetchFeed(multiFeedToken)]);
+  const userFeedToken = await issue({ caseId: 'ics-user', actorAlias: 'qa-parent-a', token: parentToken, body: { type: 'user', action: 'create' } });
+  const teamFeedToken = await issue({ caseId: 'ics-team', actorAlias: 'qa-adult-player-a', token: adultToken, body: { type: 'team', teamId: teamA.id, action: 'create' } });
+  const multiFeedToken = await issue({ caseId: 'ics-multi', actorAlias: 'qa-multi-org', token: multiToken, body: { type: 'multi', teamIds: [teamA.id], action: 'create' } });
+  const userFeed = await fetchFeed({ caseId: 'ics-user', actorAlias: 'qa-parent-a', token: userFeedToken });
+  const teamFeed = await fetchFeed({ caseId: 'ics-team', actorAlias: 'qa-adult-player-a', token: teamFeedToken });
+  const multiFeed = await fetchFeed({ caseId: 'ics-multi', actorAlias: 'qa-multi-org', token: multiFeedToken });
   expectEqual(userFeed.status, 200, 'Calendar user feed local Function fetch');
   expectEqual(teamFeed.status, 200, 'Calendar team feed local Function fetch');
   expectEqual(multiFeed.status, 200, 'Calendar multi feed local Function fetch');
+  await fetchFeed({ caseId: 'ics-rfc', actorAlias: 'qa-adult-player-a', token: teamFeedToken });
   expectEqual(/BEGIN:VCALENDAR[\s\S]*VERSION:2\.0[\s\S]*END:VCALENDAR/.test(teamFeed.body), true, 'Calendar Function returns RFC 5545 body');
   // RFC 5545 permits the intentionally long, stable UID to be folded. Unfold
   // before comparing the logical property value so the proof verifies both
@@ -8246,30 +8303,36 @@ async function runCalendarFeedLifecycleAudit() {
   expectEqual(/SUMMARY:.*\\, escaped\\;/.test(unfoldedTeamFeed) && /DESCRIPTION:.*escaped\\; description\\, value/.test(unfoldedTeamFeed), true, 'Calendar Function RFC-escapes summary and description text');
   expectEqual(/\r\n /.test(teamFeed.body), true, 'Calendar Function RFC-folds long content lines');
   expectEqual(teamFeed.body.includes(secretToken) || /https:\/\/the-squad\.test\/action\?/.test(teamFeed.body), false, 'Calendar Function body redacts subscription token and action URL');
-  const invalidType = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'invalid' }) });
-  const foreignTeam = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamB.id }) });
-  const tooMany = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'multi', teamIds: Array.from({ length: 26 }, (_, index) => `qa_feed_${index}`) }) });
+  const invalidType = await captureOperationRequests('ics-invalid-type', 'qa-coach-owner-a', () =>
+    apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'invalid' }) }));
+  const foreignTeam = await captureOperationRequests('ics-foreign-team', 'qa-coach-owner-a', () =>
+    apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamB.id }) }));
+  const tooMany = await captureOperationRequests('ics-too-many', 'qa-coach-owner-a', () =>
+    apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'multi', teamIds: Array.from({ length: 26 }, (_, index) => `qa_feed_${index}`) }) }));
   expectEqual(invalidType.status, 400, 'Calendar issuer rejects invalid feed type');
   expectEqual(foreignTeam.status, 403, 'Calendar issuer rejects foreign team scope');
   expectEqual(tooMany.status, 400, 'Calendar issuer rejects oversized multi selection');
-  const rotated = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'rotate' }) });
+  const rotated = await captureOperationRequests('ics-rotate', 'qa-coach-owner-a', () =>
+    apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'rotate' }) }));
   const rotatedToken = new URL(String(rotated.body?.url || '')).searchParams.get('token') || '';
   expectEqual(rotated.status, 200, 'Calendar feed rotation response');
-  const [priorAfterRotate, freshAfterRotate] = await Promise.all([fetchFeed(teamFeedToken), fetchFeed(rotatedToken)]);
+  const priorAfterRotate = await fetchFeed({ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: teamFeedToken });
+  const freshAfterRotate = await fetchFeed({ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: rotatedToken });
   expectEqual(`${priorAfterRotate.status},${freshAfterRotate.status}`, '404,200', 'Calendar rotation invalidates prior token and serves replacement');
-  const revoked = await apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'revoke' }) });
-  const inactive = await fetchFeed(rotatedToken);
-  const malformed = await fetchFeed('not-a-token');
-  const unknown = await fetchFeed('b'.repeat(64));
+  const revoked = await captureOperationRequests('ics-inactive-token', 'qa-coach-owner-a', () =>
+    apiJsonResult('/api/calendar/feed', ownerToken, { method: 'POST', body: JSON.stringify({ type: 'team', teamId: teamA.id, action: 'revoke' }) }));
+  const inactive = await fetchFeed({ caseId: 'ics-inactive-token', actorAlias: 'qa-coach-owner-a', token: rotatedToken });
+  const malformed = await fetchFeed({ caseId: 'ics-invalid-token', actorAlias: 'qa-public-submitter', token: 'not-a-token' });
+  const unknown = await fetchFeed({ caseId: 'ics-unknown-token', actorAlias: 'qa-public-submitter', token: 'b'.repeat(64) });
   expectEqual(revoked.status, 200, 'Calendar feed revoke response');
   expectEqual(inactive.status, 404, 'Calendar inactive token returns a non-enumerating boundary');
   expectEqual(malformed.status, 404, 'Calendar malformed token returns a non-enumerating boundary');
   expectEqual(unknown.status, 404, 'Calendar well-formed unknown token returns the same non-enumerating boundary');
   const memberToken = (await signIn('qa-team-member')).body.idToken;
-  const memberFeedToken = await issue(memberToken, { type: 'team', teamId: teamA.id, action: 'create' });
-  const beforeRevoke = await fetchFeed(memberFeedToken);
+  const memberFeedToken = await issue({ caseId: 'ics-membership-revoke', actorAlias: 'qa-team-member', token: memberToken, body: { type: 'team', teamId: teamA.id, action: 'create' } });
+  const beforeRevoke = await fetchFeed({ caseId: 'ics-membership-revoke', actorAlias: 'qa-team-member', token: memberFeedToken });
   await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}/members/${identityByAlias.get('qa-team-member').uid}`).update({ status: 'removed' }));
-  const afterRevoke = await fetchFeed(memberFeedToken);
+  const afterRevoke = await fetchFeed({ caseId: 'ics-membership-revoke', actorAlias: 'qa-team-member', token: memberFeedToken });
   expectEqual(`${beforeRevoke.status},${afterRevoke.status}`, '200,404', 'Calendar Function revalidates membership at fetch time');
 }
 
