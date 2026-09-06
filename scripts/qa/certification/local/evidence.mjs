@@ -284,7 +284,8 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
       for (const request of execution.requests) {
         assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'invocationType', 'invocationId', 'startedAt', 'completedAt'], 'Operation request');
         assertPlainString(request.evidenceId, 'operation request evidenceId');
-        const isHttp = /^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method);
+        const isHttp = /^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method) &&
+          request.invocationType === undefined && request.invocationId === undefined;
         const isInjectedReminderCore = request.method === 'INVOKE' && request.pathname === '/__local/reminder-core' &&
           request.invocationType === 'injected-reminder-core' && typeof request.invocationId === 'string' && request.invocationId.length > 0;
         if ((!isHttp && !isInjectedReminderCore) ||

@@ -163,6 +163,7 @@ test('operations evidence accepts only an observed injected reminder-core invoca
     { ...observed, pathname: '/api/reminders' },
     { ...observed, invocationType: 'loopback-http' },
     { ...observed, invocationId: '' },
+    { ...observed, method: 'POST', pathname: '/api/reminders' },
   ]) {
     assert.throws(
       () => assertCaseOwnedOperationArtifacts([complete('rem-eligible', synthetic)]),

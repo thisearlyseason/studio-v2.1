@@ -97,7 +97,7 @@ export function assertCaseOwnedOperationArtifacts(cases) {
       const actorAlias = request?.actorAlias;
       const isHttp = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
         && typeof pathname === 'string' && pathname.startsWith('/') && !pathname.includes('?')
-        && Number.isInteger(status);
+        && Number.isInteger(status) && request?.invocationType === undefined && request?.invocationId === undefined;
       const isInjectedReminderCore = method === 'INVOKE' && pathname === '/__local/reminder-core'
         && Number.isInteger(status) && request?.invocationType === 'injected-reminder-core'
         && typeof request?.invocationId === 'string' && request.invocationId.length > 0;
