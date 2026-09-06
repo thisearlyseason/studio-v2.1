@@ -229,8 +229,7 @@ export default function TournamentRegistrationAdminPage() {
   };
 
   const mutateRegistrationEntry = async (entry: RegistrationEntry, action:'delete-registration'|'update-registration', status?:'pending'|'accepted') => {
-    if(legacyEntryIds.has(entry.id))throw new Error('Legacy registrations must be migrated before mutation.');
-    const token=await getAuthToken(auth);const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:'tournament',action,teamId,eventId,entryId:entry.id,...(status?{status}:{})})});
+    const token=await getAuthToken(auth);const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:'tournament',action,teamId,eventId,entryId:entry.id,legacy:legacyEntryIds.has(entry.id),...(status?{status}:{})})});
     const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(payload?.error||'Registration could not be updated.');
   };
   const deleteRegistrationEntry = async (entry: RegistrationEntry) => {

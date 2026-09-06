@@ -567,7 +567,8 @@ allow create, update: if false; // Authenticated incident service only.
       // Compatibility path for tournament responses created before entries
       // moved beneath their event. Keep applicant data staff-only.
       match /registrationEntries/{entryId} {
-        allow read, write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow write: if false;
       }
 
       match /archived_waivers/{waiverId} {
@@ -786,17 +787,15 @@ allow create, update: if false; // Authenticated incident service only.
       );
 
       match /registrationEntries/{entryId} {
-        allow create: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
         allow read: if isSuperAdmin() || (isSignedIn() &&
           get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
-        allow update, delete: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow write: if false;
       }
 
       match /archived_waivers/{waiverId} {
-        allow read, write: if isSuperAdmin() || (isSignedIn() &&
+        allow read: if isSuperAdmin() || (isSignedIn() &&
           get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow write: if false;
       }
 
       match /registration/{configId} {

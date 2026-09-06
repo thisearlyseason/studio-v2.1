@@ -19,6 +19,10 @@ export function registrationPayloadHash(value:unknown) {
   return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }
 
+export function registrationArchiveMatches(actual:unknown, expected:unknown) {
+  return registrationPayloadHash(actual) === registrationPayloadHash(expected);
+}
+
 export function registrationConfigHash(config:Record<string,unknown>) {
   const {config_hash:_,...value}=config;
   return registrationPayloadHash(value);
@@ -65,4 +69,36 @@ export function registrationPaymentSnapshot(config:Record<string,unknown>) {
   if(amount===0)return {amount:0,currency,mode:'free' as const,status:'not_required' as const,instructions:null};
   const instructions=text(config.offline_payment_instructions,2000,'offline payment instructions',true);
   return {amount,currency,mode:'offline' as const,status:'pending' as const,instructions};
+}
+
+export function effectiveLeagueRegistrationConfig(config:Record<string,unknown>, league:Record<string,unknown>):Record<string,any> {
+  const {config_hash:_,...value}=config;
+  const nestedCost=String(value.registration_cost??'').trim();
+  const legacyCost=String(league.registrationCost??league.registration_cost??'').trim();
+  const registration_cost=nestedCost||legacyCost;
+  const nestedInstructions=String(value.offline_payment_instructions??'').trim();
+  const legacyInstructions=String(league.paymentInstructions??league.offline_payment_instructions??'').trim();
+  const result={...value,registration_cost,offline_payment_instructions:nestedInstructions||legacyInstructions};
+  registrationPaymentSnapshot(result);
+  return {...result,config_hash:registrationConfigHash(result)};
+}
+
+export function isCalendarDate(value:unknown) {
+  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value))return false;
+  const datePart=value.slice(0,10),[year,month,day]=datePart.split('-').map(Number);
+  const exact=new Date(Date.UTC(year,month-1,day));
+  return exact.getUTCFullYear()===year&&exact.getUTCMonth()===month-1&&exact.getUTCDate()===day;
+}
+
+export function isCalendarDateCurrent(value:unknown, now=Date.now()) {
+  if(!isCalendarDate(value))return false;
+  const calendarValue=String(value),instant=new Date(calendarValue.length===10?`${calendarValue}T23:59:59.999Z`:calendarValue).getTime();
+  return Number.isFinite(instant)&&instant>=now;
+}
+
+export function nextRegistrationCount(current:unknown, capacity:unknown) {
+  const count=Number(current),limit=Number(capacity);
+  if(!Number.isInteger(count)||count<0)throw new RegistrationInputError('Registration counter is invalid.',409);
+  if(!Number.isInteger(limit)||limit<0||limit>100000)throw new RegistrationInputError('Registration capacity is invalid.',409);
+  return limit>0&&count>=limit?{accepted:false as const,count}:{accepted:true as const,count:count+1};
 }

@@ -597,11 +597,11 @@ test('event registration contact details are readable only by staff', async () =
   }));
 });
 
-test('legacy tournament responses remain staff-only while organizers migrate them', async () => {
+test('legacy tournament responses remain staff-readable and server-only while organizers migrate them', async () => {
   const responsePath = ['teams', 'team-a', 'registrationEntries', 'legacy-response'];
   await assertFails(getDoc(doc(authenticatedDb('member'), ...responsePath)));
   await assertSucceeds(getDoc(doc(authenticatedDb('staff'), ...responsePath)));
-  await assertSucceeds(setDoc(doc(authenticatedDb('staff'), ...responsePath), { status: 'accepted' }, { merge: true }));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), ...responsePath), { status: 'accepted' }, { merge: true }));
 });
 
 test('league creation is server-only and legacy invite PII is admin-only', async () => {
@@ -1202,6 +1202,8 @@ test('leagues are visible only to organizers or registered members', async () =>
   await assertFails(getDoc(doc(memberDb,'leagues','league-a','registrationEntries','private-entry')));
   await assertSucceeds(getDoc(doc(ownerDb,'leagues','league-a','registration','team_config')));
   await assertSucceeds(getDoc(doc(ownerDb,'leagues','league-a','registrationEntries','private-entry')));
+  await assertFails(setDoc(doc(ownerDb,'leagues','league-a','registrationEntries','private-entry'),{verified:true},{merge:true}));
+  await assertFails(deleteDoc(doc(ownerDb,'leagues','league-a','registrationEntries','private-entry')));
   await assertFails(setDoc(doc(outsiderDb, 'leagues', 'forged-league'), {
     creatorId: 'outsider',
     memberUserIds: ['outsider', 'member'],

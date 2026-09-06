@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, LeagueArchiveWaiver, TeamDocument } from '@/components/providers/team-provider';
-import { useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { useAuth, useFirestore, useDoc, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { doc, collection, query, orderBy, where, deleteDoc, getDocs } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { jsPDF } from 'jspdf';
 import { addSquadBranding, generateBrandedPDF } from '@/lib/pdf-utils';
 import { format } from 'date-fns';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
 
 // CRITICAL BUILD FIX: Prevent static generation failures for dynamic enrollment routes
 export const dynamic = 'force-dynamic';
@@ -80,6 +81,7 @@ export default function LeagueRegistrationAdminPage() {
     isStarter
   } = useTeam();
   const db = useFirestore();
+  const auth = useAuth();
 
   // --- STATE ---
   const [pipelineType, setPipelineType] = useState<'player' | 'team' | 'waiver'>('player');
@@ -238,7 +240,11 @@ export default function LeagueRegistrationAdminPage() {
 
   useEffect(() => {
     if (config) {
-      setLocalConfig(config);
+      setLocalConfig({
+        ...config,
+        registration_cost: config.registration_cost || activeLeague?.registrationCost || activeLeague?.registration_cost || '',
+        offline_payment_instructions: config.offline_payment_instructions || activeLeague?.paymentInstructions || activeLeague?.offline_payment_instructions || '',
+      });
     } else if (!isConfigLoading && !config) {
       const defaultPlayerSchema: RegistrationFormField[] = [
         { id: 'f_position', label: 'Position / Role', type: 'short_text', required: false, step: 'identity' },
@@ -260,7 +266,7 @@ export default function LeagueRegistrationAdminPage() {
         form_version: 0
       });
     }
-  }, [config, isConfigLoading, configId, pipelineType]);
+  }, [config, isConfigLoading, configId, pipelineType, activeLeague]);
 
   const handleUpdateConfig = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
     if (!leagueId) return;
@@ -1234,9 +1240,9 @@ export default function LeagueRegistrationAdminPage() {
                     )}
                     onClick={async () => {
                       if (!db || !leagueId || !inspectingEntry?.id) return;
-                      const { updateDoc: ud, doc: docFn } = await import('firebase/firestore');
                       const isVerified = (inspectingEntry as any)?.verified;
-                      await ud(docFn(db, 'leagues', leagueId as string, 'registrationEntries', inspectingEntry.id), { verified: !isVerified });
+                      const token=await getAuthToken(auth);const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:'league',action:'update-registration',leagueId,entryId:inspectingEntry.id,verified:!isVerified})});
+                      if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error||'Verification could not be updated.');
                       toast({ title: isVerified ? 'Verification Revoked' : 'Entry Verified' });
                     }}
                   >

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
-import { registrationPayloadHash } from '@/lib/registration-policy';
+import { isCalendarDateCurrent, nextRegistrationCount, registrationPayloadHash } from '@/lib/registration-policy';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -45,9 +45,7 @@ function publicFields(value: unknown) {
 function registrationAvailable(team: FirebaseFirestore.DocumentData, event: FirebaseFirestore.DocumentData) {
   if (!permitsLegacyOrPaidPortals(team.planId, team.plan_type, team.subscriptionPlanId)) return false;
   if (team.isArchived === true || team.isActive === false || event.isArchived === true || event.registrationOpen !== true || event.status === 'cancelled') return false;
-  const rawDate=event.endDate||event.date;if(!rawDate)return false;
-  const eventDate = new Date(rawDate);
-  return !Number.isNaN(eventDate.getTime()) && eventDate.getTime() + 24 * 60 * 60 * 1000 >= Date.now();
+  return isCalendarDateCurrent(event.endDate||event.date);
 }
 
 function publicEvent(id: string, event: FirebaseFirestore.DocumentData) {
@@ -156,13 +154,11 @@ export async function POST(req: NextRequest) {
       const freshHash = createHash('sha256').update(JSON.stringify(freshFields)).digest('hex');
       if (freshVersion !== submittedVersion || freshHash !== submittedHash) return 'changed';
 
-      const capacity = Math.max(0, Number(freshData.registrationCapacity || freshData.maxRegistrations || freshData.capacity || 0));
       const rawCapacity=freshData.registrationCapacity??freshData.maxRegistrations??freshData.capacity??0;
       if(!Number.isInteger(Number(rawCapacity))||Number(rawCapacity)<0||Number(rawCapacity)>100000)return 'inactive';
-      if (capacity > 0) {
-        const existingRegistrations = await transaction.get(registration.eventRef.collection('registrations').limit(capacity));
-        if (existingRegistrations.size >= capacity) return 'full';
-      }
+      const capacity=Number(rawCapacity);let currentCount=freshData.registrationCount;
+      if(capacity>0&&!Number.isInteger(Number(currentCount))){const legacy=await transaction.get(registration.eventRef.collection('registrations').limit(1));if(!legacy.empty)return 'counter_migration';currentCount=0;}
+      const nextCount=nextRegistrationCount(Number(currentCount??0),capacity);if(!nextCount.accepted)return 'full';
 
       transaction.create(registrationRef, {
         name,
@@ -177,11 +173,13 @@ export async function POST(req: NextRequest) {
         payloadHash,
         createdAt: FieldValue.serverTimestamp(),
       });
+      transaction.update(registration.eventRef,{registrationCount:nextCount.count});
       return 'saved';
     });
 
     if (result === 'inactive') return NextResponse.json({ error: 'Event registration is unavailable.' }, { status: 404 });
     if (result === 'full') return NextResponse.json({ error: 'This event is already at capacity.' }, { status: 409 });
+    if (result === 'counter_migration') return NextResponse.json({ error: 'Event registration requires organizer migration.' }, { status: 409 });
     if (result === 'changed') return NextResponse.json({ error: 'Registration form changed. Reload before submitting.' }, { status: 409 });
     if (result === 'collision') return NextResponse.json({ error: 'This registration request was already used with different details.' }, { status: 409 });
     return NextResponse.json({ success: true, alreadyRegistered: result === 'duplicate' });

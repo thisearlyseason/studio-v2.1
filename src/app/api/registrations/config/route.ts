@@ -4,6 +4,7 @@ import {verifyFirebaseToken} from '@/lib/api-auth';
 import {readJsonBodyWithLimit,RequestBodyError} from '@/lib/server-request-guards';
 import {getTeamAuthority} from '@/lib/server-team-access';
 import {RegistrationInputError,validateRegistrationConfig} from '@/lib/registration-policy';
+import {hasStaffRole} from '@/lib/staff-position';
 
 const id=(value:unknown):value is string=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(value);
 const fail=(error:string,status:number)=>NextResponse.json({error},{status,headers:{'Cache-Control':'private, no-store'}});
@@ -29,7 +30,7 @@ export async function POST(req:NextRequest){
         const team=await transaction.get(adminDb.collection('teams').doc(targetId));
         const authorityMember=teamAuthority?.member?await transaction.get(teamAuthority.member.ref):null;
         const data=authorityMember?.data();
-        const active=auth.role==='superadmin'||team.data()?.ownerUserId===auth.uid||Boolean(authorityMember?.exists&&(data?.userId===auth.uid||(!data?.userId&&authorityMember?.id===auth.uid))&&data?.status!=='removed'&&data?.isDeleted!==true);
+        const active=auth.role==='superadmin'||team.data()?.ownerUserId===auth.uid||Boolean(authorityMember?.exists&&(data?.userId===auth.uid||(!data?.userId&&authorityMember?.id===auth.uid))&&data?.status!=='removed'&&data?.isDeleted!==true&&hasStaffRole(data));
         if(!team.exists||parent.data()?.isTournament!==true||!active)throw new RegistrationInputError('Tournament staff access required.',403);
       }
       const currentData=current.data()||{},currentVersion=Number(currentData.form_version||0),currentHash=String(currentData.config_hash||'');

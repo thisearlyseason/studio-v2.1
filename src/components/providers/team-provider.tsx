@@ -3079,7 +3079,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
     }
   }, [firebaseAuth, isStaff, isPrimaryClubAuthority]);
-  const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => { if (!db) return; await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: paid }); }, [db]);
+  const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => { if (!firebaseAuth) return;const token=await getAuthToken(firebaseAuth);const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:'league',action:'update-registration',leagueId,entryId,payment_received:paid})});const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(payload?.error||'Payment status could not be updated.'); }, [firebaseAuth]);
   
   const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => { 
     if (!activeTeam?.id || !firebaseAuth) return false;

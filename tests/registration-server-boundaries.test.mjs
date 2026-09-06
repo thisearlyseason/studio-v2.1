@@ -13,8 +13,12 @@ test('public league and tournament submissions bind idempotency schema entitleme
   assert.match(source,/registrationPaymentSnapshot\(config\)/);
   assert.match(source,/protocolId}:\$\{registrantEmail}/);
   assert.match(source,/Linked squad authority changed/);
-  assert.match(source,/existingArchive\.data\(\)\?\.payloadHash/);
-  assert.match(source,/formVersion:submittedVersion,configHash:submittedHash,payloadHash/);
+  assert.match(source,/registrationArchiveMatches\(existingArchive\.data\(\),expectedArchive\)/);
+  assert.match(source,/formVersion:stored\.form_version,configHash:stored\.config_hash,payloadHash:stored\.payload_hash/);
+  assert.match(source,/effectiveLeagueRegistrationConfig/);
+  assert.match(source,/hasStaffRole\(memberData\)/);
+  assert.doesNotMatch(source,/\.limit\(capacity\)/);
+  assert.match(source,/registrationEntryCount/);
 });
 
 test('tournament waiver is actor squad and immutable version bound in one transaction',async()=>{
@@ -25,10 +29,11 @@ test('tournament waiver is actor squad and immutable version bound in one transa
   assert.match(waiver,/transaction\.get\(teamAuthority\.teamRef\)/);
   assert.match(waiver,/sourceTeamId/);
   assert.match(waiver,/waiverHash/);
-  assert.match(waiver,/configHash: configData\.config_hash/);
+  assert.match(waiver,/configHash:configData\.config_hash/);
   assert.match(waiver,/transaction\.create\(archiveRef/);
   assert.match(waiver,/Number\(configData\.form_version\)!==expectedVersion/);
-  assert.match(waiver,/prior\.data\(\)\?\.tournamentTeamName === teamName/);
+  assert.match(waiver,/receiptHash === receiptHash/);
+  assert.match(waiver,/registrationArchiveMatches/);
 });
 
 test('event registration rechecks fresh team event schema and request collision transactionally',async()=>{
@@ -40,6 +45,8 @@ test('event registration rechecks fresh team event schema and request collision 
   assert.match(source,/: 'collision'/);
   assert.match(source,/registrationOpen !== true/);
   assert.match(source,/Number\.isInteger\(Number\(rawCapacity\)\)/);
+  assert.doesNotMatch(source,/\.limit\(capacity\)/);
+  assert.match(source,/registrationCount:nextCount\.count/);
 });
 
 test('registration deletion reconciles entries waiver receipts and roster projections transactionally',async()=>{
@@ -51,6 +58,8 @@ test('registration deletion reconciles entries waiver receipts and roster projec
   assert.match(deletion,/tournamentTeamsData:/);
   assert.match(deletion,/individualRecruits/);
   assert.match(deletion,/Registration cannot be deleted after the bracket is published/);
+  assert.match(deletion,/teamAgreements/);
+  assert.match(deletion,/arch_tournament_/);
 });
 
 test('builders retain server versions and protected ledger writes do not use direct client mutation',async()=>{
@@ -62,4 +71,5 @@ test('builders retain server versions and protected ledger writes do not use dir
   assert.match(tournament,/setLocalConfig\(\{ \.\.\.updated, \.\.\.payload\.config/);
   assert.doesNotMatch(provider,/addDoc\(collection\(entryParentRef, 'registrationEntries'/);
   assert.match(provider,/api\/public\/portals\/action/);
+  assert.doesNotMatch(provider,/registrationEntries', entryId\), \{ payment_received/);
 });

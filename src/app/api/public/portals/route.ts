@@ -6,6 +6,7 @@ import {
   publicRegistrationConfig,
   publicTournament,
 } from '@/lib/public-portal-data';
+import { effectiveLeagueRegistrationConfig, RegistrationInputError } from '@/lib/registration-policy';
 import { enforceUserRateLimit } from '@/lib/server-request-guards';
 import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
 
@@ -44,7 +45,8 @@ export async function GET(req: NextRequest) {
       if (!config.exists || config.data()?.is_active !== true) {
         return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 404 });
       }
-      return NextResponse.json({ data: { league: publicLeagueData, config: publicRegistrationConfig(config.id, config.data()) } });
+      const effectiveConfig = effectiveLeagueRegistrationConfig(config.data() || {}, league.data() || {});
+      return NextResponse.json({ data: { league: publicLeagueData, config: publicRegistrationConfig(config.id, effectiveConfig) } });
     }
 
     if (kind === 'tournament-registration') {
@@ -131,6 +133,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid portal kind.' }, { status: 400 });
   } catch (error: any) {
+    if (error instanceof RegistrationInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('[public/portals] Error:', error.message);
     return NextResponse.json({ error: 'Portal service is temporarily unavailable.' }, { status: 500 });
   }
