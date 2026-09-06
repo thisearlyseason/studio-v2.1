@@ -231,6 +231,8 @@ test('browser league schedule mutations use the server route and bookings remain
   assert.match(service, /withScheduleMutationLock\(\(\) => mutateLeagueScheduleGameUnlocked/);
   assert.match(service, /runRecoverableDeployment/);
   assert.match(teamEventRoute, /withScheduleMutationLock/);
+  assert.match(teamEventRoute, /ScheduleDeploymentError/);
+  assert.match(teamEventRoute, /error instanceof ScheduleDeploymentError/);
   assert.match(teamEventRoute, /collection\('scheduleBookings'\)/);
   assert.match(teamEventRoute, /assertEventAvailability/);
   assert.match(provider, /action: 'create'.*teamId: activeTeam\.id/s);

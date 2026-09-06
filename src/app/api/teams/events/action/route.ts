@@ -9,7 +9,7 @@ import {
   RequestBodyError,
 } from '@/lib/server-request-guards';
 import { hasStaffRole } from '@/lib/staff-position';
-import { withScheduleMutationLock } from '@/lib/server-schedule-deployment';
+import { ScheduleDeploymentError, withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 import { buildTournamentReplicationEvent } from '@/lib/server-tournament-replication';
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
 import { buildRecurringEventDates, shiftCalendarDate } from '@/lib/team-event-recurrence';
@@ -466,6 +466,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     if (error instanceof EventMutationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof ScheduleDeploymentError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error('[teams/events/action] Error:', error);

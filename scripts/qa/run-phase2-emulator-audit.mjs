@@ -8158,10 +8158,8 @@ async function runExactEventApiCasesAudit() {
     expectEqual(JSON.stringify({ date: midnightDoc.data()?.date, endDate: midnightDoc.data()?.endDate, start: midnightBooking.data()?.startMinute, end: midnightBooking.data()?.endMinute }), JSON.stringify({ date: '2026-09-22', endDate: '2026-09-23', start: 1410, end: 1470 }), 'event exact midnight interval and booking persist');
   });
 
-  const [missingTitle, reversed] = await Promise.all([
-    create(owner.body.idToken, `${marker}_missing`, { date: '2026-09-23', startTime: '10:00' }),
-    create(owner.body.idToken, `${marker}_reversed`, payload('QA Reversed', '2026-09-23', '12:00', '11:00', `QA Reversed ${marker}`)),
-  ]);
+  const missingTitle = await create(owner.body.idToken, `${marker}_missing`, { date: '2026-09-23', startTime: '10:00' });
+  const reversed = await create(owner.body.idToken, `${marker}_reversed`, payload('QA Reversed', '2026-09-23', '12:00', '11:00', `QA Reversed ${marker}`));
   expectEqual([missingTitle.status, reversed.status].join(','), '400,400', 'event exact invalid payloads rejected server-side');
 
   const conflictBase = await create(owner.body.idToken, ids.conflict,
