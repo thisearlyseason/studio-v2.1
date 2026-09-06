@@ -1122,6 +1122,16 @@ function operationRequestEvidence(caseId) {
   return requests;
 }
 
+async function captureBrowserOperationRequests(caseId, actorAlias, responses, tag) {
+  const selected = (responses || []).filter(response => response?.tag === tag);
+  if (selected.length === 0) throw new Error(`Browser operation ${caseId} did not return a captured ${tag} response.`);
+  await captureOperationRequests(caseId, actorAlias, async () => {
+    for (const response of selected) {
+      recordCapturedOperationRequest(response);
+    }
+  });
+}
+
 function recordTenantRequest({ pathname, method = 'GET', status, token = null, documentPath = null, body = null, startedAt, completedAt }) {
   recordCapturedOperationRequest({ pathname, method, status, token, startedAt, completedAt });
   if (activeTenantExecutions().length === 0) return;
@@ -6900,10 +6910,10 @@ async function runCertificationOperationsScenarios() {
         recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-inactive-token', 'inactive and revoked public calendar credentials return the same non-enumerating not-found boundary', [/Calendar inactive token returns a non-enumerating boundary/], { actor: 'qa-coach-owner-a', operation: 'GET inactive token', requests: operationRequestEvidence('ics-inactive-token'), reconciliation: '404 generic response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'permission', 'ics-membership-revoke', 'current membership is revalidated at public fetch time', [/Calendar Function revalidates membership at fetch time/], { actor: 'qa-team-member', operation: 'remove membership then public fetch', requests: operationRequestEvidence('ics-membership-revoke'), reconciliation: '200 before and 404 after revocation', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'persistence', 'ics-rotate', 'feed rotation invalidates the previous credential and serves only the replacement', [/Calendar rotation invalidates prior token and serves replacement/], { actor: 'qa-coach-owner-a', operation: 'rotate then public fetch', requests: operationRequestEvidence('ics-rotate'), reconciliation: 'prior 404, replacement 200', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'console', 'ics-console', 'visible calendar subscription controls have no browser console errors', [/Calendar feed lifecycle console errors/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
-        recordObservedOperationNamedCase(scenarioId, 'console', 'ics-secret', 'public ICS response excludes a seeded opaque credential and action URL', [/Calendar Function body redacts subscription token and action URL/], { actor: 'qa-coach-owner-a', operation: 'local public Function fetch', reconciliation: 'response contains neither credential nor action URL', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'network', 'ics-network', 'visible calendar subscription controls have no local server failures', [/Calendar feed lifecycle failed responses/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
-        recordObservedOperationNamedCase(scenarioId, 'responsive', 'ics-responsive-na', 'calendar subscription controls fit the supported mobile viewport', [/Calendar feed controls fit the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile subscription dialog', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'ics-console', 'visible calendar subscription controls have no browser console errors', [/Calendar feed lifecycle console errors/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', requests: operationRequestEvidence('ics-console'), reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'ics-secret', 'public ICS response excludes a seeded opaque credential and action URL', [/Calendar Function body redacts subscription token and action URL/], { actor: 'qa-coach-owner-a', operation: 'local public Function fetch', requests: operationRequestEvidence('ics-secret'), reconciliation: 'response contains neither credential nor action URL', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'ics-network', 'visible calendar subscription controls have no local server failures', [/Calendar feed lifecycle failed responses/], { actor: 'qa-coach-owner-a', operation: 'browser subscribe dialog', requests: operationRequestEvidence('ics-network'), reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'responsive', 'ics-responsive-na', 'calendar subscription controls fit the supported mobile viewport', [/Calendar feed controls fit the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile subscription dialog', requests: operationRequestEvidence('ics-responsive-na'), reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         return;
       }
       if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
@@ -8186,11 +8196,17 @@ async function runCalendarFeedLifecycleAudit() {
     const consoleErrors = [];
     const failedResponses = [];
     const feedResponses = [];
+    const observedResponses = [];
+    let observationTag = 'ics-console';
     const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
     const onPageError = error => consoleErrors.push(error.message);
     const onResponse = response => {
       if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
       if (response.url().includes('/api/calendar/feed')) feedResponses.push(response.status());
+      const url = new URL(response.url());
+      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/calendar/feed')) {
+        observedResponses.push({ tag: observationTag, method: response.request().method(), pathname: url.pathname, status: response.status() });
+      }
     };
     page.on('console', onConsole);
     page.on('pageerror', onPageError);
@@ -8228,14 +8244,23 @@ async function runCalendarFeedLifecycleAudit() {
       await dialog.getByRole('button', { name: 'Revoke Feed', exact: true }).click();
       if ((await revoke).status() !== 200) throw new Error('calendar feed revoke did not return 200');
       await dialog.getByText('Choose Your Feed', { exact: true }).waitFor({ timeout: 10000 });
+      observationTag = 'ics-network';
+      await page.reload();
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      observationTag = 'ics-responsive';
       await page.setViewportSize({ width: 390, height: 844 });
-      return { feedResponses, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
+      await page.reload();
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      return { feedResponses, observedResponses, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
     } finally {
       page.off('console', onConsole);
       page.off('pageerror', onPageError);
       page.off('response', onResponse);
     }
   }` ]));
+  await captureBrowserOperationRequests('ics-console', 'qa-coach-owner-a', result.observedResponses, 'ics-console');
+  await captureBrowserOperationRequests('ics-network', 'qa-coach-owner-a', result.observedResponses, 'ics-network');
+  await captureBrowserOperationRequests('ics-responsive-na', 'qa-coach-owner-a', result.observedResponses, 'ics-responsive');
   expectEqual(result.feedResponses.join(','), '200,200,200', 'Calendar feed issue, rotation, and revoke responses');
   expectEqual(result.mobileFits, true, 'Calendar feed controls fit the mobile viewport');
   expectEqual(result.consoleErrors.length, 0, 'Calendar feed lifecycle console errors');
@@ -8293,6 +8318,7 @@ async function runCalendarFeedLifecycleAudit() {
   expectEqual(teamFeed.status, 200, 'Calendar team feed local Function fetch');
   expectEqual(multiFeed.status, 200, 'Calendar multi feed local Function fetch');
   await fetchFeed({ caseId: 'ics-rfc', actorAlias: 'qa-adult-player-a', token: teamFeedToken });
+  await fetchFeed({ caseId: 'ics-secret', actorAlias: 'qa-coach-owner-a', token: teamFeedToken });
   expectEqual(/BEGIN:VCALENDAR[\s\S]*VERSION:2\.0[\s\S]*END:VCALENDAR/.test(teamFeed.body), true, 'Calendar Function returns RFC 5545 body');
   // RFC 5545 permits the intentionally long, stable UID to be folded. Unfold
   // before comparing the logical property value so the proof verifies both
