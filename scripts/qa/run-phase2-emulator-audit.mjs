@@ -30,7 +30,7 @@ import { validateAttendanceLedger, validateAttendanceBounds } from './certificat
 import { operationActorAliases } from './certification/local/operation-actors.mjs';
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
 import { loadReminderSchedulerCore, REMINDER_ELIGIBLE_ASSERTION_PATTERNS } from './certification/local/reminder-runtime.mjs';
-import { observeFilmPlayback, validateFilmPlayback } from './certification/local/film-playback.mjs';
+import { observeFilmPlayback, validateFilmPlayback, dismissFilmTeamAlert } from './certification/local/film-playback.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import { patchFirestoreFields as patchFirestoreFieldsRequest } from './certification/local/tenant-mutation-probes.mjs';
@@ -7691,6 +7691,7 @@ async function runPracticeFilmWorkflowAudit() {
       const viewer = page.getByRole('dialog', { name: 'Video Viewer' });
       const video = viewer.locator('video');
       await video.waitFor({ state: 'visible', timeout: 15000 });
+      await (${dismissFilmTeamAlert.toString()})(page);
       const mediaReadiness = await video.evaluate(media => {
         if (media.readyState >= 1) return { state: 'loaded', duration: media.duration, errorCode: null, networkState: media.networkState };
         return new Promise(resolve => {
@@ -7754,6 +7755,7 @@ async function runPracticeFilmWorkflowAudit() {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.goto(${JSON.stringify(`${BASE_URL}/roster`)});
       await page.getByText(${JSON.stringify(memberName)}, { exact: true }).first().waitFor({ timeout: 15000 });
+      await (${dismissFilmTeamAlert.toString()})(page);
       await page.getByText(${JSON.stringify(memberName)}, { exact: true }).first().click();
       const profile = page.getByRole('dialog', { name: ${JSON.stringify(`Player Profile: ${memberName}`)} });
       await profile.locator('[data-player-highlight-reel]').waitFor({ timeout: 15000 });

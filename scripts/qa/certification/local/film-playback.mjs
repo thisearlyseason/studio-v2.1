@@ -5,6 +5,14 @@ export function validateFilmPlayback({duration, before, after, paused}) {
   return true;
 }
 
+export async function dismissFilmTeamAlert(page) {
+  const alert = page.getByRole('dialog', {name: 'High Priority Team Alert', exact: true});
+  try { await alert.waitFor({state: 'visible', timeout: 1500}); }
+  catch (error) { if (error.name === 'TimeoutError') return; throw error; }
+  await alert.getByRole('button', {name: 'Close', exact: true}).click();
+  await alert.waitFor({state: 'hidden', timeout: 5000});
+}
+
 // Serialized into the real browser; no synthetic timeupdate/watch event.
 export async function observeFilmPlayback(media, startFraction = 0) {
   media.muted = true;
