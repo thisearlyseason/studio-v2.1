@@ -102,7 +102,9 @@ test('public tournament games expose only safe bracket topology needed for score
 });
 
 test('tournament team registration is transactional and fails closed after bracket publication', async () => {
+  const readRoute = await readFile(new URL('../src/app/api/public/portals/route.ts', import.meta.url), 'utf8');
   const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  assert.match(readRoute, /event\.data\(\)\?\.registrationOpen !== true/);
   assert.match(source, /adminDb\.runTransaction/);
   assert.match(source, /TOURNAMENT_ROSTER_LOCKED/);
   assert.match(source, /tournamentGames\.length > 0/);

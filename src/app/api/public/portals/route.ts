@@ -59,6 +59,9 @@ export async function GET(req: NextRequest) {
         adminDb.collection('teams').doc(teamId).get(),
       ]);
       if (!team.exists || !event.exists || !event.data()?.isTournament) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
+      if (event.data()?.registrationOpen !== true || event.data()?.status === 'cancelled') {
+        return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 404 });
+      }
       if (!permitsLegacyOrPaidPortals(team.data()?.planId, team.data()?.plan_type, team.data()?.subscriptionPlanId)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
