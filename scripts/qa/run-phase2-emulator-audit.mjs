@@ -7604,11 +7604,7 @@ async function runPracticeFilmWorkflowAudit() {
     );
     await page.getByRole('button', { name: 'Add Film', exact: true }).waitFor({ timeout: 15000 });
     await page.evaluate(value => { Date.now = () => value; }, ${fixedUploadNow});
-    const addFilm = page.getByRole('button', { name: 'Add Film', exact: true });
-    await addFilm.focus(); await page.keyboard.press('Enter');
-    const dialog = page.getByRole('dialog', { name: 'Archive Film' });
-    await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(${JSON.stringify(marker)});
-    const generatedFilm = await dialog.locator('#film-upload').evaluate(async (input, name) => {
+    const generatedFilm = await page.evaluate(async name => {
       const canvas = document.createElement('canvas');
       canvas.width = 320; canvas.height = 180;
       const context = canvas.getContext('2d');
@@ -7629,11 +7625,21 @@ async function runPracticeFilmWorkflowAudit() {
       recorder.stop(); await stopped; stream.getTracks().forEach(track => track.stop());
       const file = new File(chunks, name, { type: 'video/webm' });
       if (file.size <= 0) throw new Error('Browser-native film fixture is empty.');
-      const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+      window.__qaPracticeFilmFile = file;
       return { size: file.size, type: file.type };
     }, ${JSON.stringify(uploadName)});
     if (generatedFilm.type !== 'video/webm' || generatedFilm.size <= 0) throw new Error('Browser-native film fixture failed validation.');
+    const addFilm = page.getByRole('button', { name: 'Add Film', exact: true });
+    await addFilm.focus(); await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Archive Film' });
+    await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(${JSON.stringify(marker)});
+    await dialog.locator('#film-upload').evaluate(input => {
+      const file = window.__qaPracticeFilmFile;
+      if (!(file instanceof File)) throw new Error('Browser-native film fixture is unavailable.');
+      const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.getByText('Video Optimized', { exact: true }).last().waitFor({ timeout: 10000 });
     const archiveFilm = dialog.getByRole('button', { name: 'Archive Film', exact: true });
     await archiveFilm.focus(); await page.keyboard.press('Enter');
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
