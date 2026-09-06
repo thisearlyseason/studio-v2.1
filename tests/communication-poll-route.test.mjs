@@ -264,14 +264,14 @@ test('Chat directory returns only server-authorized multi-team channels without 
     'teams/team-b':{ownerUserId:'owner-b',name:'Team B',features:{tacticalChat:true}},
     'teams/team-c':{ownerUserId:'owner-c',name:'Team C',features:{tacticalChat:true}},
     'teams/team-a/members/multi':{userId:'multi',position:'Assistant Coach',status:'active'},
-    'teams/team-b/members/multi':{userId:'multi',position:'Player',status:'active'},
+    'teams/team-b/members/legacy-multi-member':{userId:'multi',position:'Player',status:'active'},
     'teams/team-c/members/multi':{userId:'multi',position:'Player',status:'removed'},
     'teams/team-a/groupChats/shared':{name:'A marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-a',memberId:'multi'}},unreadBy:{multi:2,other:9},createdAt:'2026-09-06T01:00:00.000Z',isDeleted:false},
-    'teams/team-b/groupChats/shared':{name:'B marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-b',memberId:'multi'}},unreadBy:{multi:3,other:8},createdAt:'2026-09-06T02:00:00.000Z',isDeleted:false},
-    'teams/team-c/groupChats/shared':{name:'C removed marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-c',memberId:'multi'}},unreadBy:{multi:4},isDeleted:false},
+    'teams/team-b/groupChats/shared':{name:'B marker',memberIds:['multi'],unreadBy:{multi:3,other:8},createdAt:'2026-09-06T02:00:00.000Z'},
+    'teams/team-c/groupChats/shared':{name:'C removed marker',memberIds:['multi'],unreadBy:{multi:4}},
     'teams/team-b/groupChats/deleted':{name:'Deleted marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-b',memberId:'multi'}},isDeleted:true},
   };
-  const {db}=communicationDb(seed);
+  const {db,records}=communicationDb(seed);
   const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'multi'});
   try {
     const response=await loaded.route.GET({nextUrl:new URL('http://127.0.0.1/api/teams/chat?teamId=team-a')});
@@ -283,6 +283,11 @@ test('Chat directory returns only server-authorized multi-team channels without 
       ['team-a','shared','A marker',2],
     ]);
     assert.equal(body.channels.every(channel=>channel.memberIds===undefined&&channel.memberAuthorities===undefined&&channel.unreadBy===undefined),true);
+    assert.deepEqual(records.get('teams/team-b/groupChats/shared').memberAuthorities?.multi,{teamId:'team-b',memberId:'legacy-multi-member'});
+    assert.equal(records.get('teams/team-b/groupChats/shared').isDeleted,false);
+    assert.equal(records.get('teams/team-b/groupChats/shared').teamId,'team-b');
+    assert.equal(records.get('teams/team-c/groupChats/shared').memberAuthorities,undefined);
+    assert.equal(records.get('teams/team-c/groupChats/shared').isDeleted,undefined);
   } finally {loaded.dispose();}
 });
 

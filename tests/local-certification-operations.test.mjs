@@ -110,6 +110,10 @@ test('Chat simultaneous actors use isolated contexts in one owned browser sessio
   assert.match(chatHarness, /Authorized multi-team chat directory did not render both exact channels/);
   assert.match(chatHarness, /const priorityAlert=page\.getByRole\('dialog',\{name:'High Priority Team Alert'\}\);[\s\S]*?priorityAlert\.getByRole\('button',\{name:'Got It',exact:true\}\)\.click\(\);[\s\S]*?const a=page\.locator/);
   assert.match(chatHarness, /chatDirectoryStatuses/);
+  assert.match(chatHarness, /legacy-multi-org-member/);
+  assert.match(chatHarness, /legacyBackfill/);
+  assert.match(chatHarness, /directoryProjection/);
+  assert.match(chatHarness, /privateFieldCount/);
   assert.match(chatHarness, /dismissedPriorityAlerts/);
   assert.match(chatHarness, /Team A chat marker did not render for its authorized tenant/);
   assert.match(chatHarness, /Team B chat marker did not render for its authorized tenant/);

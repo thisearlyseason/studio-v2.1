@@ -47,15 +47,6 @@ function tacticalChatEnabled(teamData: FirebaseFirestore.DocumentData) {
   return teamData.features?.tacticalChat !== false;
 }
 
-async function repairLegacyTeamChats(teamId: string) {
-  const snapshot = await adminDb.collection('teams').doc(teamId).collection('groupChats').limit(500).get();
-  const legacy = snapshot.docs.filter(document => document.data().isDeleted === undefined);
-  if (!legacy.length) return;
-  const batch = adminDb.batch();
-  for (const document of legacy) batch.update(document.ref, { isDeleted: false, teamId });
-  await batch.commit();
-}
-
 function chatTimestamp(value: unknown) {
   if (typeof value === 'string') return value;
   if (value instanceof Date) return value.toISOString();
@@ -66,11 +57,24 @@ function chatTimestamp(value: unknown) {
 }
 
 async function listAuthorizedChatChannels(uid: string, tokenRole?: string): Promise<AuthorizedChatChannel[]> {
-  const snapshot = await adminDb.collectionGroup('groupChats')
-    .where('memberIds', 'array-contains', uid)
-    .where('isDeleted', '==', false)
-    .limit(500)
-    .get();
+  const [snapshot, linkedMemberships] = await Promise.all([
+    adminDb.collectionGroup('groupChats')
+      .where('memberIds', 'array-contains', uid)
+      .limit(500)
+      .get(),
+    adminDb.collectionGroup('members')
+      .where('userId', '==', uid)
+      .limit(500)
+      .get(),
+  ]);
+  const membershipRefsByTeam = new Map<string, FirebaseFirestore.DocumentReference[]>();
+  for (const membership of linkedMemberships.docs) {
+    const segments = membership.ref.path.split('/');
+    if (segments.length !== 4 || segments[0] !== 'teams' || segments[2] !== 'members') continue;
+    const refs = membershipRefsByTeam.get(segments[1]) || [];
+    refs.push(membership.ref);
+    membershipRefsByTeam.set(segments[1], refs);
+  }
   const summaries = await Promise.all(snapshot.docs.map(async chat => {
     const segments = chat.ref.path.split('/');
     if (segments.length !== 4 || segments[0] !== 'teams' || segments[2] !== 'groupChats') return null;
@@ -81,20 +85,42 @@ async function listAuthorizedChatChannels(uid: string, tokenRole?: string): Prom
       const data = freshChat.data() || {};
       if (!freshChat.exists || data.isDeleted === true || !Array.isArray(data.memberIds) ||
           !data.memberIds.includes(uid) || !team.exists || !tacticalChatEnabled(team.data() || {})) return null;
+      if (typeof data.teamId === 'string' && data.teamId !== teamId) return null;
+      const legacyUpdates: Record<string, unknown> = {};
+      if (data.isDeleted === undefined) legacyUpdates.isDeleted = false;
+      if (data.teamId === undefined) legacyUpdates.teamId = teamId;
       const privileged = tokenRole === 'superadmin' || team.data()?.ownerUserId === uid;
       if (!privileged) {
         const authority = data.memberAuthorities?.[uid];
-        const sourceTeamId = typeof authority?.teamId === 'string' && ID_PATTERN.test(authority.teamId)
-          ? authority.teamId : teamId;
-        const sourceMemberId = typeof authority?.memberId === 'string' && ID_PATTERN.test(authority.memberId)
-          ? authority.memberId : uid;
-        const member = await transaction.get(
-          adminDb.collection('teams').doc(sourceTeamId).collection('members').doc(sourceMemberId),
-        );
-        const memberData = member.data() || {};
-        if (!member.exists || memberData.status === 'removed' || memberData.isDeleted === true ||
-            (memberData.userId !== uid && sourceMemberId !== uid)) return null;
+        if (authority) {
+          const sourceTeamId = typeof authority.teamId === 'string' && ID_PATTERN.test(authority.teamId)
+            ? authority.teamId : '';
+          const sourceMemberId = typeof authority.memberId === 'string' && ID_PATTERN.test(authority.memberId)
+            ? authority.memberId : '';
+          if (!sourceTeamId || !sourceMemberId) return null;
+          const member = await transaction.get(
+            adminDb.collection('teams').doc(sourceTeamId).collection('members').doc(sourceMemberId),
+          );
+          const memberData = member.data() || {};
+          if (!member.exists || memberData.status === 'removed' || memberData.isDeleted === true ||
+              (memberData.userId !== uid && (sourceMemberId !== uid || Boolean(memberData.userId)))) return null;
+        } else {
+          const memberCollection = adminDb.collection('teams').doc(teamId).collection('members');
+          const candidateRefs = new Map(
+            [...(membershipRefsByTeam.get(teamId) || []), memberCollection.doc(uid)]
+              .map(ref => [ref.path, ref]),
+          );
+          const candidates = await Promise.all([...candidateRefs.values()].map(ref => transaction.get(ref)));
+          const member = candidates.find(candidate => {
+            const memberData = candidate.data() || {};
+            if (!candidate.exists || memberData.status === 'removed' || memberData.isDeleted === true) return false;
+            return memberData.userId === uid || (candidate.id === uid && !memberData.userId);
+          });
+          if (!member) return null;
+          legacyUpdates[`memberAuthorities.${uid}`] = { teamId, memberId: member.id };
+        }
       }
+      if (Object.keys(legacyUpdates).length) transaction.update(chat.ref, legacyUpdates);
       return {
         id: freshChat.id,
         teamId,
@@ -234,7 +260,6 @@ export async function GET(req: NextRequest) {
     if (!tacticalChatEnabled(result.authority.teamData)) {
       return NextResponse.json({ error: 'Tactical chat is unavailable for this squad.' }, { status: 403 });
     }
-    await repairLegacyTeamChats(teamId);
     const channels = await listAuthorizedChatChannels(auth.uid, auth.role);
     return NextResponse.json(
       { contexts: result.contexts, channels },
