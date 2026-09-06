@@ -7516,13 +7516,12 @@ async function runPracticeFilmWorkflowAudit() {
   const markText = `QA Coach Mark ${FIXTURES.runId}`;
   const runSafe = FIXTURES.runId.replace(/[^A-Za-z0-9_-]/g, '_');
   const fixedUploadNow = 1_900_000_000_000;
-  const uploadName = `${runSafe}-film.mp4`;
+  const uploadName = `${runSafe}-film.webm`;
   const storagePath = `players/${playerId}/videos/${fixedUploadNow}_${uploadName}`;
   const thumbnailPath = `players/${playerId}/thumbnails/${runSafe}-thumbnail.png`;
   const ownerSession = await browserLogin('qa-coach-owner-a', '/dashboard', `practice-film-owner-${process.pid}`);
   browserSelectScheduleTeam(ownerSession, teamA.id);
   const athleteUrl = `${BASE_URL}/coaches-corner?athlete=${encodeURIComponent(memberId)}`;
-  const sourceVideoUrl = `${BASE_URL}/faq/how-to-create-a-game.mp4`;
 
   await registerDynamicStorageObject(storagePath, 'practice-film-video');
   await registerDynamicStorageObject(thumbnailPath, 'practice-film-thumbnail');
@@ -7609,9 +7608,32 @@ async function runPracticeFilmWorkflowAudit() {
     await addFilm.focus(); await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Archive Film' });
     await dialog.getByPlaceholder('e.g. Spring Showcase – Pitching').fill(${JSON.stringify(marker)});
-    const response = await page.request.get(${JSON.stringify(sourceVideoUrl)});
-    if (!response.ok()) throw new Error('Fixture film download failed with ' + response.status());
-    await dialog.locator('#film-upload').setInputFiles({ name: ${JSON.stringify(uploadName)}, mimeType: 'video/mp4', buffer: await response.body() });
+    const generatedFilm = await dialog.locator('#film-upload').evaluate(async (input, name) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320; canvas.height = 180;
+      const context = canvas.getContext('2d');
+      if (!context || typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') throw new Error('Browser-native film fixture APIs are unavailable.');
+      const stream = canvas.captureStream(12);
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' : 'video/webm';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      const chunks = [];
+      recorder.addEventListener('dataavailable', event => { if (event.data.size > 0) chunks.push(event.data); });
+      const stopped = new Promise(resolve => recorder.addEventListener('stop', resolve, { once: true }));
+      recorder.start(100);
+      for (let frame = 0; frame < 18; frame += 1) {
+        context.fillStyle = frame % 2 === 0 ? '#C81E1E' : '#111111';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = '#FFFFFF'; context.font = '24px sans-serif'; context.fillText('The Squad QA Film', 45, 95);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      recorder.stop(); await stopped; stream.getTracks().forEach(track => track.stop());
+      const file = new File(chunks, name, { type: 'video/webm' });
+      if (file.size <= 0) throw new Error('Browser-native film fixture is empty.');
+      const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return { size: file.size, type: file.type };
+    }, ${JSON.stringify(uploadName)});
+    if (generatedFilm.type !== 'video/webm' || generatedFilm.size <= 0) throw new Error('Browser-native film fixture failed validation.');
     await dialog.getByRole('button', { name: 'Archive Film', exact: true }).click();
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
     await page.reload();

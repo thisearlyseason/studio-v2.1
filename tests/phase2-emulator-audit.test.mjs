@@ -301,6 +301,9 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.ok((filmBlock.match(/button\.className\.includes\('bg-primary'\)/g) || []).length >= 4);
   assert.ok((filmBlock.match(/media\.addEventListener\('error'/g) || []).length >= 2);
   assert.ok((filmBlock.match(/setTimeout\(\(\) => finish\('timeout'\), 10000\)/g) || []).length >= 2);
+  assert.match(filmBlock, /canvas\.captureStream/);
+  assert.match(filmBlock, /new MediaRecorder/);
+  assert.doesNotMatch(filmBlock, /faq\/how-to-create-a-game\.mp4/);
 });
 
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
