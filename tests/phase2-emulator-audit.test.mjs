@@ -12,6 +12,35 @@ const { processEnv, resetEnv } = nextEnvironment;
 const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
 const seederSource = await readFile(new URL('../scripts/qa/seed-phase2-emulator-fixtures.mjs', import.meta.url), 'utf8');
 
+test('calendar feed scope evidence counts exact markers only from unfolded VEVENT summaries', () => {
+  assert.equal(typeof auditRunner.calendarFeedSummaryMarkerCounts, 'function');
+  const body = [
+    'BEGIN:VCALENDAR',
+    'BEGIN:VEVENT',
+    'SUMMARY:[Team A] QA ICS Scope A run-123',
+    'DESCRIPTION:QA ICS Scope C run-123 is description-only and must not count',
+    'END:VEVENT',
+    'BEGIN:VEVENT',
+    'SUMMARY:[Team B] QA ICS Scope B ',
+    ' run-123',
+    'END:VEVENT',
+    'BEGIN:VEVENT',
+    'SUMMARY:[Team B] QA ICS Scope B run-123',
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\r\n');
+
+  assert.deepEqual(
+    auditRunner.calendarFeedSummaryMarkerCounts(body, [
+      'QA ICS Scope A run-123',
+      'QA ICS Scope B run-123',
+      'QA ICS Scope C run-123',
+    ]),
+    [1, 2, 0],
+  );
+});
+
 test('roster browser source preserves escaped line-break regexes inside generated Playwright code', () => {
   const start = source.indexOf("if (scenarioId === 'roster-search-filter-sort-export')");
   const end = source.indexOf('const plan = buildTenantApiProbePlan(FIXTURES);', start);

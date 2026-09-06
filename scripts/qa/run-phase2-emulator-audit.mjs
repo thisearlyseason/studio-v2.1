@@ -6954,9 +6954,9 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
         await runCalendarFeedLifecycleAudit();
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-user', 'authenticated user-scope feed issues and fetches from the local Functions emulator', [/Calendar user feed local Function fetch/], { actor: 'qa-parent-a', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-user'), reconciliation: '200 ICS response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-team', 'authenticated team-scope feed issues and fetches from the local Functions emulator', [/Calendar team feed local Function fetch/], { actor: 'qa-adult-player-a', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-team'), reconciliation: '200 ICS response', timeBound: '20s request deadline' });
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-multi', 'authenticated multi-scope feed issues and fetches from the local Functions emulator', [/Calendar multi feed local Function fetch/], { actor: 'qa-multi-org', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-multi'), reconciliation: '200 ICS response', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-user', 'Parent A user-scope feed contains exactly the authorized Team A and Team C event markers', [/Calendar user feed local Function fetch/, /Calendar Parent A user feed contains exactly one Team A and Team C marker and excludes Team B/], { actor: 'qa-parent-a', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-user'), reconciliation: '200 ICS response; Team A=1, Team C=1, Team B=0 in parsed VEVENT summaries', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-team', 'Adult Player A team-scope feed contains exactly the authorized Team A event marker', [/Calendar team feed local Function fetch/, /Calendar Adult Player A team feed contains exactly one Team A marker and excludes Team B and Team C/], { actor: 'qa-adult-player-a', operation: 'issue + public Function fetch', requests: operationRequestEvidence('ics-team'), reconciliation: '200 ICS response; Team A=1, Team B=0, Team C=0 in parsed VEVENT summaries', timeBound: '20s request deadline' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-multi', 'Multi-org Team A and Team B feed contains exactly both requested team event markers', [/Calendar multi feed local Function fetch/, /Calendar multi feed stores exact requested Team A and Team B scope/, /Calendar multi-org feed contains exactly one Team A and Team B marker and excludes Team C/], { actor: 'qa-multi-org', operation: 'issue exact Team A+Team B scope + public Function fetch', requests: operationRequestEvidence('ics-multi'), reconciliation: 'stored scope Team A+Team B; 200 ICS response; Team A=1, Team B=1, Team C=0 in parsed VEVENT summaries', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'ics-rfc', 'calendar Function returns a complete RFC 5545 event body', [/Calendar Function returns RFC 5545 body/, /Calendar Function emits stable team-scoped UID for the exact event/, /Calendar Function emits timezone-aware overnight DTSTART and DTEND/, /Calendar Function RFC-escapes summary and description text/, /Calendar Function RFC-folds long content lines/], { actor: 'qa-adult-player-a', operation: 'public Function fetch', requests: operationRequestEvidence('ics-rfc'), reconciliation: 'RFC envelope, stable UID, timezone, overnight, escaping, and folding', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-invalid-type', 'issuer rejects an invalid feed type', [/Calendar issuer rejects invalid feed type/], { actor: 'qa-coach-owner-a', operation: 'POST invalid type', requests: operationRequestEvidence('ics-invalid-type'), reconciliation: '400 response', timeBound: '20s request deadline' });
         recordObservedOperationNamedCase(scenarioId, 'negativePath', 'ics-foreign-team', 'issuer rejects a foreign team scope', [/Calendar issuer rejects foreign team scope/], { actor: 'qa-coach-owner-a', operation: 'POST foreign team scope', requests: operationRequestEvidence('ics-foreign-team'), reconciliation: '403 response', timeBound: '20s request deadline' });
@@ -8583,6 +8583,16 @@ async function runReminderSchedulerRuntimeAudit() {
   expectEqual(delivered.every(item => item.fcmCount + item.webPushCount > 0), true, 'Reminder scheduler safe transport receives only registered local delivery targets');
 }
 
+export function calendarFeedSummaryMarkerCounts(body, markers) {
+  const unfolded = String(body).replace(/(?:\r\n|\n|\r)[ \t]/g, '');
+  const eventBlocks = unfolded.match(/BEGIN:VEVENT(?:\r\n|\n|\r)[\s\S]*?(?:\r\n|\n|\r)END:VEVENT/g) || [];
+  const summaries = eventBlocks.flatMap(block => block
+    .split(/\r\n|\n|\r/)
+    .filter(line => /^SUMMARY(?:;[^:]*)?:/.test(line))
+    .map(line => line.slice(line.indexOf(':') + 1)));
+  return markers.map(marker => summaries.filter(summary => summary.includes(marker)).length);
+}
+
 async function runCalendarFeedLifecycleAudit() {
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-feed-owner-${process.pid}`);
   const result = JSON.parse(cli(owner, ['run-code', `async page => {
@@ -8682,7 +8692,44 @@ async function runCalendarFeedLifecycleAudit() {
   const multiToken = (await signIn('qa-multi-org')).body.idToken;
   const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
   const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
-  if (!teamA || !teamB) throw new Error('Calendar feed fixture teams are missing.');
+  const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+  if (!teamA || !teamB || !teamC) throw new Error('Calendar feed fixture teams are missing.');
+  const scopeSuffix = certificationRunId.replace(/[^A-Za-z0-9_-]/g, '_').slice(-56);
+  const scopeMarkers = {
+    teamA: `QA ICS Scope A ${scopeSuffix}`,
+    teamB: `QA ICS Scope B ${scopeSuffix}`,
+    teamC: `QA ICS Scope C ${scopeSuffix}`,
+  };
+  const scopeEventDate = new Date(Date.now() + (14 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+  const scopeEvents = [
+    { team: teamA, key: 'teamA', time: '18:00' },
+    { team: teamB, key: 'teamB', time: '18:15' },
+    { team: teamC, key: 'teamC', time: '18:30' },
+  ].map(({ team, key, time }) => ({
+    team,
+    marker: scopeMarkers[key],
+    id: `qa_ics_scope_${key}_${scopeSuffix}`,
+    time,
+  }));
+  for (const event of scopeEvents) {
+    registerDynamicFirestoreRoot(`teams/${event.team.id}/events/${event.id}`, `ics-scope-${event.id}`);
+  }
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const batch = firestoreAdmin.batch();
+    for (const event of scopeEvents) {
+      batch.set(firestoreAdmin.doc(`teams/${event.team.id}/events/${event.id}`), {
+        title: event.marker,
+        description: 'Run-owned calendar-feed scope marker',
+        location: 'Certification Field',
+        date: scopeEventDate,
+        startTime: event.time,
+        endTime: event.time,
+        eventType: 'meeting',
+        qaCalendarFeedRun: certificationRunId,
+      });
+    }
+    await batch.commit();
+  });
   // Reproduce the historical leak with a disposable event field. Before the
   // response-boundary repair, this opaque subscription credential and action
   // URL were serialized by buildCalendarFeed into the public ICS body.
@@ -8702,7 +8749,7 @@ async function runCalendarFeedLifecycleAudit() {
   });
   const userFeedToken = await issue({ caseId: 'ics-user', actorAlias: 'qa-parent-a', token: parentToken, body: { type: 'user', action: 'create' } });
   const teamFeedToken = await issue({ caseId: 'ics-team', actorAlias: 'qa-adult-player-a', token: adultToken, body: { type: 'team', teamId: teamA.id, action: 'create' } });
-  const multiFeedToken = await issue({ caseId: 'ics-multi', actorAlias: 'qa-multi-org', token: multiToken, body: { type: 'multi', teamIds: [teamA.id], action: 'create' } });
+  const multiFeedToken = await issue({ caseId: 'ics-multi', actorAlias: 'qa-multi-org', token: multiToken, body: { type: 'multi', teamIds: [teamA.id, teamB.id], action: 'create' } });
   // Feed mutation is intentionally owner-scoped.  The adult's Team feed
   // proves the AP scope, but it must not be used as the prior credential for
   // an owner rotation because the issuer only mutates the authenticated
@@ -8714,6 +8761,28 @@ async function runCalendarFeedLifecycleAudit() {
   expectEqual(userFeed.status, 200, 'Calendar user feed local Function fetch');
   expectEqual(teamFeed.status, 200, 'Calendar team feed local Function fetch');
   expectEqual(multiFeed.status, 200, 'Calendar multi feed local Function fetch');
+  expectEqual(
+    JSON.stringify(calendarFeedSummaryMarkerCounts(userFeed.body, [scopeMarkers.teamA, scopeMarkers.teamC, scopeMarkers.teamB])),
+    JSON.stringify([1, 1, 0]),
+    'Calendar Parent A user feed contains exactly one Team A and Team C marker and excludes Team B',
+  );
+  expectEqual(
+    JSON.stringify(calendarFeedSummaryMarkerCounts(teamFeed.body, [scopeMarkers.teamA, scopeMarkers.teamB, scopeMarkers.teamC])),
+    JSON.stringify([1, 0, 0]),
+    'Calendar Adult Player A team feed contains exactly one Team A marker and excludes Team B and Team C',
+  );
+  const storedMultiScope = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+    (await firestoreAdmin.doc(`calendarFeeds/${multiFeedToken}`).get()).data()?.teamIds || []);
+  expectEqual(
+    JSON.stringify(storedMultiScope),
+    JSON.stringify([teamA.id, teamB.id].sort()),
+    'Calendar multi feed stores exact requested Team A and Team B scope',
+  );
+  expectEqual(
+    JSON.stringify(calendarFeedSummaryMarkerCounts(multiFeed.body, [scopeMarkers.teamA, scopeMarkers.teamB, scopeMarkers.teamC])),
+    JSON.stringify([1, 1, 0]),
+    'Calendar multi-org feed contains exactly one Team A and Team B marker and excludes Team C',
+  );
   await fetchFeed({ caseId: 'ics-rfc', actorAlias: 'qa-adult-player-a', token: teamFeedToken });
   await fetchFeed({ caseId: 'ics-secret', actorAlias: 'qa-coach-owner-a', token: teamFeedToken });
   expectEqual(/BEGIN:VCALENDAR[\s\S]*VERSION:2\.0[\s\S]*END:VCALENDAR/.test(teamFeed.body), true, 'Calendar Function returns RFC 5545 body');
