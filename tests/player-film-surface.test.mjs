@@ -21,3 +21,8 @@ test('adult player certification membership is linked to its player document', (
 test('legacy film without a type renders with a safe highlight label', () => {
   assert.match(coachesCornerSource, /\(v\.type\s*\|\|\s*['"]Highlight['"]\)\.toUpperCase\(\)/);
 });
+
+test('coach film rows expose a keyboard-operable viewer control', () => {
+  assert.match(coachesCornerSource, /role="button"[\s\S]{0,180}aria-label=\{`Open film \$\{v\.title\}`\}/);
+  assert.match(coachesCornerSource, /onKeyDown=\{event => \{[\s\S]{0,220}setSelectedVideo\(v\)/);
+});

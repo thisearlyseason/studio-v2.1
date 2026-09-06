@@ -7649,7 +7649,8 @@ async function runPracticeFilmWorkflowAudit() {
         { timeout: 15000 },
       );
       await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
-      await page.getByText(${JSON.stringify(marker)}, { exact: true }).click();
+      const filmRow = page.getByRole('button', { name: ${JSON.stringify(`Open film ${marker}`)}, exact: true });
+      await filmRow.focus(); await page.keyboard.press('Enter');
       const viewer = page.getByRole('dialog', { name: 'Video Viewer' });
       const video = viewer.locator('video');
       await video.waitFor({ state: 'visible', timeout: 15000 });

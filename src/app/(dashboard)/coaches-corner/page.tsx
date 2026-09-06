@@ -1891,7 +1891,20 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               {videos.length > 0 ? (
                 <div className="space-y-3">
                   {videos.map(v => (
-                    <div key={v.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/30 cursor-pointer group" onClick={() => setSelectedVideo(v)}>
+                    <div
+                      key={v.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open film ${v.title}`}
+                      className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/30 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      onClick={() => setSelectedVideo(v)}
+                      onKeyDown={event => {
+                        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                          event.preventDefault();
+                          setSelectedVideo(v);
+                        }
+                      }}
+                    >
                      <div className="aspect-video relative w-24 h-16 bg-black rounded-xl overflow-hidden shrink-0">
                        {v.thumbnailUrl ? (
                          <img src={v.thumbnailUrl} className="absolute inset-0 w-full h-full object-cover opacity-60" alt="" />
