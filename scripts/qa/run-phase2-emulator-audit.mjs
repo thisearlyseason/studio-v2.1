@@ -7565,7 +7565,10 @@ async function runPracticeFilmWorkflowAudit() {
     try {
       await page.setViewportSize({ width: 1440, height: 900 });
       let dialog = await openFilm(${JSON.stringify(`Invalid type ${FIXTURES.runId}`)});
-      await dialog.locator('#film-upload').setInputFiles({ name: 'unsafe.txt', mimeType: 'text/plain', buffer: Buffer.from('not video') });
+      await dialog.locator('#film-upload').evaluate(input => {
+        const transfer = new DataTransfer(); transfer.items.add(new File(['not video'], 'unsafe.txt', { type: 'text/plain' })); input.files = transfer.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
       await page.getByText('Invalid Video', { exact: true }).last().waitFor({ timeout: 10000 });
       const invalidType = 1;
       dialog = await openFilm(${JSON.stringify(`Invalid size ${FIXTURES.runId}`)});

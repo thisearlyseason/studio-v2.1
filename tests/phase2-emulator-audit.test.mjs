@@ -294,6 +294,9 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.match(coachCorner, /players\/\$\{member\.playerId\}\/thumbnails\/\$\{fileName\}/);
   assert.match(source, /javascript.*credentialed.*private-host.*malformed.*overlong/i);
   assert.match(source, /negative.*NaN.*beyond-duration/i);
+  const filmStart = source.indexOf('async function runPracticeFilmWorkflowAudit()');
+  const filmEnd = source.indexOf('function browserVisibleAdminNavigationAudit', filmStart);
+  assert.doesNotMatch(source.slice(filmStart, filmEnd), /setInputFiles\([^)]*Buffer\.from/);
 });
 
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
