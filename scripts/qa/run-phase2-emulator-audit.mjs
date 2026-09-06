@@ -7309,9 +7309,20 @@ async function observeWaiverLifecycleDialog() {
       const dialog=page.getByRole('dialog');await dialog.waitFor({state:'visible',timeout:15000});
       measurements.push({viewport:{width:1440,height:900},box:await dialog.boundingBox()});
       await page.setViewportSize({width:390,height:844});
+      await page.waitForTimeout(250);
       measurements.push({viewport:{width:390,height:844},box:await dialog.boundingBox()});
+      const layout=await page.evaluate(()=>({
+        innerWidth:window.innerWidth,clientWidth:document.documentElement.clientWidth,scrollWidth:document.documentElement.scrollWidth,
+        overflowElements:Array.from(document.querySelectorAll('body *')).flatMap(element=>{
+          const style=getComputedStyle(element);if(style.display==='none'||style.visibility==='hidden')return[];
+          const rect=element.getBoundingClientRect();
+          return rect.left < -0.5 || rect.right > window.innerWidth + 0.5
+            ? [{tag:element.tagName.toLowerCase(),testId:element.getAttribute('data-testid'),className:String(element.className||'').slice(0,120),left:rect.left,right:rect.right,width:rect.width}]
+            : [];
+        }).slice(0,12),
+      }));
       await page.keyboard.press('Escape');
-      return{measurements,consoleErrors,failedResponses,mobileFits:await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)};
+      return{measurements,consoleErrors,failedResponses,layout};
     }finally{page.off('console',onConsole);page.off('response',onResponse)}
   }`]));
 }
@@ -7406,7 +7417,8 @@ async function runWaiverLifecycleWorkflowAudit() {
   }
   expectEqual(browser.consoleErrors.length, 0, 'Waiver waiver-console: lifecycle browser has zero console errors');
   expectEqual(browser.failedResponses.length, 0, 'Waiver waiver-network: lifecycle browser has zero 5xx responses');
-  expectEqual(fits && browser.mobileFits, true, 'Waiver waiver-responsive: global waiver dialog fits exact desktop and mobile viewports');
+  expectEqual(fits, true, `Waiver waiver-responsive: actual global waiver dialog fits exact desktop and mobile viewports (${JSON.stringify(browser.measurements)})`);
+  expectEqual(browser.layout.scrollWidth <= browser.layout.innerWidth, true, `Waiver waiver-responsive: global waiver surface has no horizontal viewport overflow (${JSON.stringify(browser.layout)})`);
 }
 
 async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coachTeamId }) {

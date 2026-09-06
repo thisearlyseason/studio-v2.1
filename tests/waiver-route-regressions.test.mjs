@@ -43,3 +43,13 @@ test('global waiver editor constrains the actual dialog shell to the mobile view
   assert.match(dialog, /max-h-\[calc\(100dvh-2rem\)\]/);
   assert.match(dialog, /flex-1 min-h-0 overflow-y-auto/);
 });
+
+test('waiver lifecycle responsive evidence separates dialog bounds from page overflow diagnostics', async () => {
+  const audit = await source('../scripts/qa/run-phase2-emulator-audit.mjs');
+  const start = audit.indexOf('async function observeWaiverLifecycleDialog()');
+  const end = audit.indexOf('async function observeWaiverSignatureDialogs(', start);
+  const workflow = audit.slice(start, end);
+  assert.match(workflow, /overflowElements/);
+  assert.match(workflow, /Waiver waiver-responsive: actual global waiver dialog fits exact desktop and mobile viewports/);
+  assert.match(workflow, /Waiver waiver-responsive: global waiver surface has no horizontal viewport overflow/);
+});
