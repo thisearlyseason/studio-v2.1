@@ -239,6 +239,9 @@ export async function startLocalHarness({
     AUDIT_CERTIFICATION_COMMIT: commit,
     AUDIT_LOCAL_MAIL_TRANSPORT: 'memory-sink',
     NEXT_PUBLIC_APP_URL: endpoints.app,
+    // The issuer needs an HTTPS-shaped URL, but the local operation batch
+    // never fetches this placeholder or contacts a deployed Function.
+    CALENDAR_FEED_BASE_URL: 'https://calendar.local/feed',
     FIREBASE_AUTH_EMULATOR_HOST: endpoints.auth,
     FIRESTORE_EMULATOR_HOST: endpoints.firestore,
     FIREBASE_STORAGE_EMULATOR_HOST: endpoints.storage,

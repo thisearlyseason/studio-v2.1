@@ -78,6 +78,7 @@ test('one legacy identity execution receives a unique scope and stripped outboun
   assert.equal(calls[0].env.AUDIT_BROWSER_SESSION_PREFIX, 'cert-final-cert-t3-20260904-180000-a1');
   assert.equal(calls[0].env.AUDIT_OUTBOUND_PROVIDER_MODE, 'block');
   assert.equal(calls[0].env.NEXT_PUBLIC_APP_URL, 'http://127.0.0.1:9001');
+  assert.equal(calls[0].env.CALENDAR_FEED_BASE_URL, 'https://calendar.local/feed');
   assert.equal(calls[0].env.STRIPE_SECRET_KEY, '');
   assert.equal(calls[0].env.RESEND_API_KEY, '');
   assert.equal(calls[0].env.INTERNAL_API_SECRET, '');

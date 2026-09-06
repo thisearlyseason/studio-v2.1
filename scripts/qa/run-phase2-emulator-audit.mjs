@@ -6653,6 +6653,16 @@ async function runCertificationOperationsScenarios() {
         }
         continue;
       }
+      if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
+        await runCalendarFeedLifecycleAudit();
+        for (const dimension of ['happyPath', 'persistence', 'console', 'network', 'responsive']) {
+          recordObservedOperationsCase(scenarioId, dimension, 'authenticated local calendar-feed issue, rotation, and revoke lifecycle completed');
+        }
+        recordBlockedOperationsCases(scenarioId,
+          'Deployed calendar Function fetch, membership-revoke revalidation, and scheduler cleanup require the external background owner.',
+          ['negativePath', 'permission']);
+        continue;
+      }
       if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
         await runEventWorkflowAudit();
         await runRecurringEventWorkflowAudit();
@@ -7388,6 +7398,68 @@ async function runCalendarViewsWorkflowAudit() {
   expectEqual(result.mobileFits, true, 'Calendar fits the mobile viewport');
   expectEqual(result.consoleErrors.length, 0, 'Calendar views workflow console errors');
   expectEqual(result.failedResponses.length, 0, 'Calendar views workflow failed responses');
+}
+
+async function runCalendarFeedLifecycleAudit() {
+  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-feed-owner-${process.pid}`);
+  const result = JSON.parse(cli(owner, ['run-code', `async page => {
+    const consoleErrors = [];
+    const failedResponses = [];
+    const feedResponses = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    const onResponse = response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
+      if (response.url().includes('/api/calendar/feed')) feedResponses.push(response.status());
+    };
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    page.on('response', onResponse);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Filters', exact: true }).click();
+      await page.getByText('Squad Enrollment', { exact: true }).waitFor({ timeout: 10000 });
+      await page.keyboard.press('Escape');
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+        if (!await alert.waitFor({ state: 'visible', timeout: 1200 }).then(() => true).catch(() => false)) break;
+        await alert.getByRole('button', { name: 'Got It' }).click();
+        await alert.waitFor({ state: 'hidden' });
+      }
+      await page.getByRole('button', { name: 'Subscribe', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Synchronize Device', exact: true });
+      await dialog.getByRole('button', { name: /Current Squad/ }).click();
+      const feedReady = await dialog.getByText('Feed Ready', { exact: true }).waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+      if (!feedReady) throw new Error('calendar feed issue diagnostic: ' + JSON.stringify({
+        feedResponses,
+        url: page.url(),
+        dialogCount: await dialog.count(),
+        dialogs: await page.getByRole('dialog').allTextContents(),
+        toasts: await page.locator('[data-sonner-toast]').allTextContents(),
+      }));
+      if (feedResponses.at(-1) !== 200) throw new Error('calendar feed issue response status: ' + feedResponses.at(-1));
+      const rotate = page.waitForResponse(response => response.url().includes('/api/calendar/feed') && response.request().method() === 'POST');
+      await dialog.getByRole('button', { name: 'Rotate Link', exact: true }).click();
+      if ((await rotate).status() !== 200) throw new Error('calendar feed rotate did not return 200');
+      await dialog.getByText('Feed Ready', { exact: true }).waitFor({ timeout: 10000 });
+      const revoke = page.waitForResponse(response => response.url().includes('/api/calendar/feed') && response.request().method() === 'POST');
+      await dialog.getByRole('button', { name: 'Revoke Feed', exact: true }).click();
+      if ((await revoke).status() !== 200) throw new Error('calendar feed revoke did not return 200');
+      await dialog.getByText('Choose Your Feed', { exact: true }).waitFor({ timeout: 10000 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      return { feedResponses, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), consoleErrors, failedResponses };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+      page.off('response', onResponse);
+    }
+  }` ]));
+  expectEqual(result.feedResponses.join(','), '200,200,200', 'Calendar feed issue, rotation, and revoke responses');
+  expectEqual(result.mobileFits, true, 'Calendar feed controls fit the mobile viewport');
+  expectEqual(result.consoleErrors.length, 0, 'Calendar feed lifecycle console errors');
+  expectEqual(result.failedResponses.length, 0, 'Calendar feed lifecycle failed responses');
 }
 
 function browserOwnerEventCreate(session, marker) {

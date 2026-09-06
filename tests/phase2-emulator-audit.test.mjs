@@ -243,6 +243,21 @@ test('Calendar views and filters have a dedicated two-viewport operations workfl
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
 });
 
+test('Calendar feed lifecycle uses the authenticated visible subscription controls and leaves deployed fetch proof blocked', () => {
+  const start = source.indexOf('async function runCertificationOperationsScenarios()');
+  const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
+  const operationsBlock = source.slice(start, end);
+  assert.match(operationsBlock, /scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser/);
+  assert.match(operationsBlock, /await runCalendarFeedLifecycleAudit\(\)/);
+  assert.match(operationsBlock, /Deployed calendar Function fetch, membership-revoke revalidation, and scheduler cleanup require the external background owner/);
+  const workflowStart = source.indexOf('async function runCalendarFeedLifecycleAudit()');
+  const workflowEnd = source.indexOf('function browserOwnerEventCreate', workflowStart);
+  const workflow = source.slice(workflowStart, workflowEnd);
+  assert.match(workflow, /name: \/Current Squad\//);
+  assert.match(workflow, /name: 'Rotate Link', exact: true/);
+  assert.match(workflow, /name: 'Revoke Feed', exact: true/);
+});
+
 test('communication browser workflow uses the run-scoped Team A identifier for its chat target', () => {
   const start = source.indexOf('function browserMemberCommunication(');
   const end = source.indexOf('async function runCommunicationWorkflowAudit()', start);
