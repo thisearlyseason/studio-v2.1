@@ -54,9 +54,14 @@ test('operations evidence assigns an assertion to only its declared exact case',
     { label: 'owner event create persists after reload' },
     { label: 'member cannot edit team event' },
     { label: 'owner event create console errors' },
+    { label: 'weekly recurrence controls fit the mobile viewport' },
   ];
   const selected = selectCaseOwnedOperationAssertions(assertions, [/owner event create persists after reload/]);
   assert.deepEqual(selected, [assertions[0]]);
+  assert.deepEqual(
+    selectCaseOwnedOperationAssertions(assertions, [/weekly recurrence controls fit the mobile viewport/]),
+    [assertions[3]],
+  );
   assert.throws(
     () => selectCaseOwnedOperationAssertions(assertions, [/missing schedule assertion/]),
     /Missing required operation assertion/,

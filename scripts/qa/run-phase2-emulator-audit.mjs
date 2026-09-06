@@ -6623,7 +6623,7 @@ const OPERATION_CASE_ASSERTION_PATTERNS = Object.freeze({
     permission: [/member cannot edit team event/],
     persistence: [/owner event edit persists after reload/],
     console: [/event .* console errors$/], network: [/event .* failed responses$/],
-    responsive: [/weekly recurrence controls fit mobile viewport/],
+    responsive: [/weekly recurrence controls fit the mobile viewport/],
   }),
   'events-rsvp-attendance-details': Object.freeze({
     happyPath: [/parent child RSVP persists through the browser/], negativePath: [/cancelled activity RSVP is denied/],
