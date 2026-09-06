@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {communicationDb,communicationRequest,loadCommunicationRoute} from './helpers/communication-route-harness.mjs';
 
@@ -255,4 +256,75 @@ test('Chat lifecycle revalidates deletion and authority in the same transaction 
     assert.equal(response.status,403);
     assert.notEqual(records.get('teams/team-a/groupChats/channel').name,'Raced rename');
   } finally {loaded.dispose();}
+});
+
+test('Chat directory returns only server-authorized multi-team channels without private audience fields',async()=>{
+  const seed={
+    'teams/team-a':{ownerUserId:'owner-a',name:'Team A',features:{tacticalChat:true}},
+    'teams/team-b':{ownerUserId:'owner-b',name:'Team B',features:{tacticalChat:true}},
+    'teams/team-c':{ownerUserId:'owner-c',name:'Team C',features:{tacticalChat:true}},
+    'teams/team-a/members/multi':{userId:'multi',position:'Assistant Coach',status:'active'},
+    'teams/team-b/members/multi':{userId:'multi',position:'Player',status:'active'},
+    'teams/team-c/members/multi':{userId:'multi',position:'Player',status:'removed'},
+    'teams/team-a/groupChats/shared':{name:'A marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-a',memberId:'multi'}},unreadBy:{multi:2,other:9},createdAt:'2026-09-06T01:00:00.000Z',isDeleted:false},
+    'teams/team-b/groupChats/shared':{name:'B marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-b',memberId:'multi'}},unreadBy:{multi:3,other:8},createdAt:'2026-09-06T02:00:00.000Z',isDeleted:false},
+    'teams/team-c/groupChats/shared':{name:'C removed marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-c',memberId:'multi'}},unreadBy:{multi:4},isDeleted:false},
+    'teams/team-b/groupChats/deleted':{name:'Deleted marker',memberIds:['multi'],memberAuthorities:{multi:{teamId:'team-b',memberId:'multi'}},isDeleted:true},
+  };
+  const {db}=communicationDb(seed);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'multi'});
+  try {
+    const response=await loaded.route.GET({nextUrl:new URL('http://127.0.0.1/api/teams/chat?teamId=team-a')});
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('cache-control'),'private, no-store');
+    const body=await response.json();
+    assert.deepEqual(body.channels.map(channel=>[channel.teamId,channel.id,channel.name,channel.unread]),[
+      ['team-b','shared','B marker',3],
+      ['team-a','shared','A marker',2],
+    ]);
+    assert.equal(body.channels.every(channel=>channel.memberIds===undefined&&channel.memberAuthorities===undefined&&channel.unreadBy===undefined),true);
+  } finally {loaded.dispose();}
+});
+
+test('Chat directory revalidates channel audience inside its read transaction',async()=>{
+  const seed={
+    'teams/team-a':{ownerUserId:'owner-a',name:'Team A',features:{tacticalChat:true}},
+    'teams/team-a/members/member':{userId:'member',position:'Player',status:'active'},
+    'teams/team-a/groupChats/channel':{name:'Private',memberIds:['member'],memberAuthorities:{member:{teamId:'team-a',memberId:'member'}},isDeleted:false},
+  };
+  const {db}=communicationDb(seed,{beforeTransaction:({records})=>records.set('teams/team-a/members/member',{userId:'member',position:'Player',status:'removed'})});
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'member'});
+  try {
+    const response=await loaded.route.GET({nextUrl:new URL('http://127.0.0.1/api/teams/chat?teamId=team-a')});
+    assert.equal(response.status,200);
+    assert.deepEqual((await response.json()).channels,[]);
+  } finally {loaded.dispose();}
+});
+
+test('Chat directory honors server-derived remote authority and module revocation',async()=>{
+  const seed={
+    'teams/host':{ownerUserId:'owner-host',name:'Host',features:{tacticalChat:true}},
+    'teams/source':{ownerUserId:'owner-source',name:'Source',features:{tacticalChat:true}},
+    'teams/off':{ownerUserId:'owner-off',name:'Off',features:{tacticalChat:false}},
+    'teams/source/members/remote':{userId:'remote',position:'Assistant Coach',status:'active'},
+    'teams/host/groupChats/league':{name:'League marker',memberIds:['remote'],memberAuthorities:{remote:{teamId:'source',memberId:'remote'}},isDeleted:false},
+    'teams/off/groupChats/off-channel':{name:'Off marker',memberIds:['remote'],memberAuthorities:{remote:{teamId:'source',memberId:'remote'}},isDeleted:false},
+  };
+  const {db}=communicationDb(seed);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'remote'});
+  try {
+    const response=await loaded.route.GET({nextUrl:new URL('http://127.0.0.1/api/teams/chat?teamId=source')});
+    assert.equal(response.status,200);
+    const body=await response.json();
+    assert.deepEqual(body.channels.map(channel=>[channel.teamId,channel.id]),[['host','league']]);
+  } finally {loaded.dispose();}
+});
+
+test('Chat list consumes the authenticated server directory and exposes directory failures',async()=>{
+  const source=await readFile(new URL('../src/app/(dashboard)/chats/page.tsx',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/collectionGroup\(db, 'groupChats'\)/);
+  assert.match(source,/setAuthorizedChats\(Array\.isArray\(payload\.channels\) \? payload\.channels : \[\]\)/);
+  assert.match(source,/setAuthorizedChats\(\[\]\);[\s\S]*?getAuthToken\(auth\)/);
+  assert.match(source,/role="alert"/);
+  assert.match(source,/Unable to load approved chat channels\./);
 });

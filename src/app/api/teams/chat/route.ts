@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import {
-  findActiveTeamMember,
   getTeamAuthority,
   isParentMember,
   isStaffMember,
@@ -34,6 +33,16 @@ type ChatContext = {
   recipients: Recipient[];
 };
 
+type AuthorizedChatChannel = {
+  id: string;
+  teamId: string;
+  name: string;
+  createdAt: string;
+  lastMessage: string;
+  lastMessageAt: string;
+  unread: number;
+};
+
 function tacticalChatEnabled(teamData: FirebaseFirestore.DocumentData) {
   return teamData.features?.tacticalChat !== false;
 }
@@ -45,6 +54,61 @@ async function repairLegacyTeamChats(teamId: string) {
   const batch = adminDb.batch();
   for (const document of legacy) batch.update(document.ref, { isDeleted: false, teamId });
   await batch.commit();
+}
+
+function chatTimestamp(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  if (value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate(): Date }).toDate().toISOString();
+  }
+  return '';
+}
+
+async function listAuthorizedChatChannels(uid: string, tokenRole?: string): Promise<AuthorizedChatChannel[]> {
+  const snapshot = await adminDb.collectionGroup('groupChats')
+    .where('memberIds', 'array-contains', uid)
+    .where('isDeleted', '==', false)
+    .limit(500)
+    .get();
+  const summaries = await Promise.all(snapshot.docs.map(async chat => {
+    const segments = chat.ref.path.split('/');
+    if (segments.length !== 4 || segments[0] !== 'teams' || segments[2] !== 'groupChats') return null;
+    const teamId = segments[1];
+    return adminDb.runTransaction(async transaction => {
+      const teamRef = adminDb.collection('teams').doc(teamId);
+      const [freshChat, team] = await Promise.all([transaction.get(chat.ref), transaction.get(teamRef)]);
+      const data = freshChat.data() || {};
+      if (!freshChat.exists || data.isDeleted === true || !Array.isArray(data.memberIds) ||
+          !data.memberIds.includes(uid) || !team.exists || !tacticalChatEnabled(team.data() || {})) return null;
+      const privileged = tokenRole === 'superadmin' || team.data()?.ownerUserId === uid;
+      if (!privileged) {
+        const authority = data.memberAuthorities?.[uid];
+        const sourceTeamId = typeof authority?.teamId === 'string' && ID_PATTERN.test(authority.teamId)
+          ? authority.teamId : teamId;
+        const sourceMemberId = typeof authority?.memberId === 'string' && ID_PATTERN.test(authority.memberId)
+          ? authority.memberId : uid;
+        const member = await transaction.get(
+          adminDb.collection('teams').doc(sourceTeamId).collection('members').doc(sourceMemberId),
+        );
+        const memberData = member.data() || {};
+        if (!member.exists || memberData.status === 'removed' || memberData.isDeleted === true ||
+            (memberData.userId !== uid && sourceMemberId !== uid)) return null;
+      }
+      return {
+        id: freshChat.id,
+        teamId,
+        name: String(data.name || 'Team Chat').slice(0, 100),
+        createdAt: chatTimestamp(data.createdAt),
+        lastMessage: String(data.lastMessage || '').slice(0, 10_000),
+        lastMessageAt: chatTimestamp(data.lastMessageAt),
+        unread: Math.max(0, Number(data.unreadBy?.[uid] || 0)),
+      } satisfies AuthorizedChatChannel;
+    });
+  }));
+  return summaries
+    .filter((channel): channel is AuthorizedChatChannel => Boolean(channel))
+    .sort((left, right) => (right.lastMessageAt || right.createdAt).localeCompare(left.lastMessageAt || left.createdAt));
 }
 
 function recipientFrom(data: FirebaseFirestore.DocumentData, squadName: string, teamId: string, memberId: string): Recipient | null {
@@ -171,7 +235,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Tactical chat is unavailable for this squad.' }, { status: 403 });
     }
     await repairLegacyTeamChats(teamId);
-    return NextResponse.json({ contexts: result.contexts });
+    const channels = await listAuthorizedChatChannels(auth.uid, auth.role);
+    return NextResponse.json(
+      { contexts: result.contexts, channels },
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   } catch (error) {
     console.error('[teams/chat GET] Error:', error);
     return NextResponse.json({ error: 'Unable to load approved chat recipients.' }, { status: 500 });

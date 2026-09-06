@@ -23,7 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, collectionGroup, query, orderBy, where, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, where, getDocs } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -58,6 +58,9 @@ export default function ChatsPage() {
   const [selectedContextId, setSelectedContextId] = useState('');
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [updatingParentSetting, setUpdatingParentSetting] = useState<string | null>(null);
+  const [authorizedChats, setAuthorizedChats] = useState<any[]>([]);
+  const [isAuthorizedChatsLoading, setIsAuthorizedChatsLoading] = useState(true);
+  const [chatDirectoryError, setChatDirectoryError] = useState('');
 
   // Localized chat fetching for performance
   const chatsQuery = useMemoFirebase(() => {
@@ -72,27 +75,18 @@ export default function ChatsPage() {
   }, [activeTeam?.id, db, user?.id]);
 
   const { data: chatsData, isLoading: isChatsLoading } = useCollection(chatsQuery);
-  const sharedChatsQuery = useMemoFirebase(() => {
-    if (!db || !user?.id || activeTeam?.id.startsWith('demo_')) return null;
-    return query(
-      collectionGroup(db, 'groupChats'),
-      where('memberIds', 'array-contains', user.id),
-      where('isDeleted', '==', false),
-    );
-  }, [db, user?.id, activeTeam?.id]);
-  const { data: sharedChatsData, isLoading: isSharedChatsLoading } = useCollection(sharedChatsQuery);
   const teamChats = useMemo(() => {
     const raw = mergeChatChannels(
-      [...(chatsData || []), ...(sharedChatsData || [])].filter(chat => chat.isDeleted !== true),
+      [...authorizedChats, ...(chatsData || [])].filter(chat => chat.isDeleted !== true),
       activeTeam?.id || '',
     ).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     const withUnread = raw.map(chat => ({
       ...chat,
-      unread: Math.max(0, Number(chat.unreadBy?.[user?.id || ''] || 0)),
+      unread: Math.max(0, Number(chat.unreadBy?.[user?.id || ''] ?? chat.unread ?? 0)),
     }));
     if (!searchTerm.trim()) return withUnread;
     return withUnread.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [activeTeam?.id, chatsData, sharedChatsData, searchTerm, user?.id]);
+  }, [activeTeam?.id, authorizedChats, chatsData, searchTerm, user?.id]);
 
   // Governance: Filter member list based on position
   const filteredMembers = useMemo(() => {
@@ -123,6 +117,9 @@ export default function ChatsPage() {
   useEffect(() => {
     if (!activeTeam?.id || !auth) return;
     let cancelled = false;
+    setIsAuthorizedChatsLoading(true);
+    setChatDirectoryError('');
+    setAuthorizedChats([]);
     getAuthToken(auth)
       .then(token => {
         if (!token) throw new Error('Your session has expired.');
@@ -136,13 +133,21 @@ export default function ChatsPage() {
         if (!cancelled) {
           const contexts = payload.contexts as ChatContext[];
           setChatContexts(contexts);
+          setAuthorizedChats(Array.isArray(payload.channels) ? payload.channels : []);
           setSelectedContextId(current =>
             contexts.some(context => context.id === current) ? current : (contexts[0]?.id || '')
           );
         }
       })
       .catch(() => {
-        if (!cancelled) setChatContexts([]);
+        if (!cancelled) {
+          setChatContexts([]);
+          setAuthorizedChats([]);
+          setChatDirectoryError('Unable to load approved chat channels.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsAuthorizedChatsLoading(false);
       });
     return () => { cancelled = true; };
   }, [activeTeam?.id, auth]);
@@ -183,7 +188,7 @@ export default function ChatsPage() {
     setMounted(true);
   }, []);
 
-  if (!mounted || !activeTeam || ((isChatsLoading || isSharedChatsLoading) && !teamChats.length)) {
+  if (!mounted || !activeTeam || ((isChatsLoading || isAuthorizedChatsLoading) && !teamChats.length)) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
         <div className="h-12 w-12 bg-primary/10 rounded-full mb-4 flex items-center justify-center">
@@ -252,6 +257,11 @@ export default function ChatsPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {chatDirectoryError && (
+        <div role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm font-bold text-destructive">
+          {chatDirectoryError}
+        </div>
+      )}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Ops</Badge>
