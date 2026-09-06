@@ -9,11 +9,21 @@ test('Film playback evidence rejects unready, paused, and non-advancing media', 
   for(const invalid of [{...observed,duration:Infinity},{...observed,after:0},{...observed,paused:true},{...observed,after:3}]) assert.throws(()=>module.validateFilmPlayback(invalid));
 });
 
+test('Film drains sequential Everyone and Coach alerts rather than exposing the next overlay',async()=>{
+  let closed=0;
+  const page={getByRole(){return{
+    async waitFor({state}){if(state==='visible'&&closed===2)throw Object.assign(new Error('no next alert'),{name:'TimeoutError'});},
+    getByRole(){return{async click(){closed++;}};},
+  };}};
+  await module.dismissFilmTeamAlert(page);
+  assert.equal(closed,2);
+});
+
 test('Film alert dismissal closes only the exact visible alert and preserves unexpected failures',async()=>{
   assert.equal(typeof module.dismissFilmTeamAlert,'function');
   const actions=[];
   const page={getByRole(role,options){assert.equal(role,'dialog');assert.deepEqual(options,{name:'High Priority Team Alert',exact:true});return{
-    async waitFor({state}){actions.push(state);},
+    async waitFor({state}){if(state==='visible'&&actions.includes('close'))throw Object.assign(new Error('absent'),{name:'TimeoutError'});actions.push(state);},
     getByRole(role,options){assert.equal(role,'button');assert.deepEqual(options,{name:'Close',exact:true});return{async click(){actions.push('close');}};},
   };}};
   await module.dismissFilmTeamAlert(page);
@@ -22,4 +32,8 @@ test('Film alert dismissal closes only the exact visible alert and preserves une
   await module.dismissFilmTeamAlert(missing);
   const broken={getByRole(){return{async waitFor(){throw new Error('session closed');}};}};
   await assert.rejects(module.dismissFilmTeamAlert(broken),/session closed/);
+  let closed=0;
+  const overflowing={getByRole(){return{async waitFor(){},getByRole(){return{async click(){closed++;}};}};}};
+  await assert.rejects(module.dismissFilmTeamAlert(overflowing),/four-alert fixture bound/);
+  assert.equal(closed,4);
 });
