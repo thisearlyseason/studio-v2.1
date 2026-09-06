@@ -1354,7 +1354,7 @@ export default function MasterCalendarPage() {
           </Button>
           <Popover>
             <PopoverTrigger asChild><Button aria-label="Filters" variant="outline" className="rounded-xl h-10 sm:h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground"><Filter className="h-4 w-4" /><span className="hidden sm:inline">Filters</span></Button></PopoverTrigger>
-            <PopoverContent className="w-72 sm:w-80 rounded-2xl shadow-2xl p-6" align="end">
+            <PopoverContent className="w-72 sm:w-80 max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain rounded-2xl shadow-2xl p-6" align="end">
               <div className="space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary">Squad Enrollment</p>
                 <ScrollArea className="h-48">
