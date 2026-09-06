@@ -6918,10 +6918,13 @@ async function runCertificationOperationsScenarios() {
         return;
       }
       if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
-        await runEventWorkflowAudit();
+        const eventWorkflow = await runEventWorkflowAudit();
+        await captureBrowserOperationRequests('evt-crud', 'qa-coach-owner-a', eventWorkflow.created.observedResponses, 'owner-create');
+        await captureBrowserOperationRequests('evt-crud', 'qa-team-member', eventWorkflow.memberResult.observedResponses, 'member-read-rsvp');
+        await captureBrowserOperationRequests('evt-crud', 'qa-coach-owner-a', eventWorkflow.ownerResult.observedResponses, 'owner-edit-delete');
         await runRecurringEventWorkflowAudit();
         await runExactEventApiCasesAudit();
-        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-crud', 'owner creates, edits, deletes, and member reads a team event through the browser', [/owner event create persists after reload/], { actor: 'qa-coach-owner-a', operation: 'browser-event-crud', reconciliation: 'browser reload shows created event before the owner edit/delete lifecycle', timeBound: 'Playwright response + reload' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-crud', 'owner creates, edits, deletes, and member reads a team event through the browser', [/owner event create persists after reload/, /member sees owner event/, /owner event edit persists after reload/, /owner event delete persists after reload/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'browser-event-crud', requests: operationRequestEvidence('evt-crud'), reconciliation: 'owner create/edit/delete and active member read each persist through reload', timeBound: 'Playwright response + reload' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-series', 'owner creates, edits, and deletes a four-occurrence weekly series through the browser', [/weekly recurrence creates the exact requested occurrence count/, /weekly recurrence series edit preserves all remaining occurrence dates/, /weekly recurrence series delete removes every occurrence/], { actor: 'qa-coach-owner-a', operation: 'browser-event-series', requests: ['create-series', 'update-series', 'delete-series'], reconciliation: 'four occurrences, then three remaining after an occurrence delete, then zero after series delete', timeBound: '15s UI waits' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-occurrence-edit-delete', 'owner edits and deletes exactly one weekly occurrence through the visible controls', [/weekly recurrence one occurrence edit persists through reload/, /weekly recurrence one occurrence delete persists through reload/], { actor: 'qa-coach-owner-a', operation: 'browser-event-occurrence-edit-delete', requests: ['update occurrence', 'delete occurrence'], reconciliation: 'one changed occurrence then zero changed titles after reload', timeBound: '15s UI waits' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-dst-spring', 'owner creates and emulator persists a spring DST calendar-date event', [/event exact DST spring create and persisted date/], { actor: 'qa-coach-owner-a', operation: 'POST create', reconciliation: 'Firestore event date', timeBound: 'immediate emulator read' });
@@ -8372,9 +8375,16 @@ function browserOwnerEventCreate(session, marker) {
   const code = `async page => {
     const consoleErrors = [];
     const failedResponses = [];
+    const observedResponses = [];
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.message));
-    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    page.on('response', response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
+      const url = new URL(response.url());
+      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/teams/events/action')) {
+        observedResponses.push({ tag: 'owner-create', method: response.request().method(), pathname: url.pathname, status: response.status() });
+      }
+    });
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
@@ -8403,6 +8413,7 @@ function browserOwnerEventCreate(session, marker) {
     return {
       incomplete,
       createdAfterReload: await page.getByText(${JSON.stringify(title)}, { exact: true }).count(),
+      observedResponses,
       consoleErrors,
       failedResponses,
     };
@@ -8415,9 +8426,16 @@ function browserMemberEventRsvp(session, marker) {
   const code = `async page => {
     const consoleErrors = [];
     const failedResponses = [];
+    const observedResponses = [];
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.message));
-    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    page.on('response', response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
+      const url = new URL(response.url());
+      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/teams/rsvp')) {
+        observedResponses.push({ tag: 'member-read-rsvp', method: response.request().method(), pathname: url.pathname, status: response.status() });
+      }
+    });
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
@@ -8458,6 +8476,7 @@ function browserMemberEventRsvp(session, marker) {
       eventVisible: await page.getByText(${JSON.stringify(title)}, { exact: true }).count(),
       editControls,
       rsvpAfterReload: await reloaded.getByText('GOING', { exact: true }).count(),
+      observedResponses,
       consoleErrors,
       failedResponses,
     };
@@ -8817,9 +8836,16 @@ function browserOwnerEventEditDelete(session, marker) {
   const code = `async page => {
     const consoleErrors = [];
     const failedResponses = [];
+    const observedResponses = [];
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => consoleErrors.push(error.message));
-    page.on('response', response => { if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url()); });
+    page.on('response', response => {
+      if (response.status() >= 500 && response.url().startsWith(${JSON.stringify(BASE_URL)})) failedResponses.push(response.url());
+      const url = new URL(response.url());
+      if (url.origin === ${JSON.stringify(BASE_URL)} && (response.request().isNavigationRequest() || url.pathname === '/api/teams/events/action')) {
+        observedResponses.push({ tag: 'owner-edit-delete', method: response.request().method(), pathname: url.pathname, status: response.status() });
+      }
+    });
     await page.goto(${JSON.stringify(`${BASE_URL}/events`)});
     await page.getByText(${JSON.stringify(original)}, { exact: true }).last().click();
     const details = page.getByRole('dialog', { name: ${JSON.stringify(`Event Intelligence: ${original}`)} });
@@ -8843,6 +8869,7 @@ function browserOwnerEventEditDelete(session, marker) {
     return {
       editedAfterReload,
       deletedAfterReload: await page.getByText(${JSON.stringify(updated)}, { exact: true }).count(),
+      observedResponses,
       consoleErrors,
       failedResponses,
     };
@@ -8878,6 +8905,7 @@ async function runEventWorkflowAudit() {
   expectEqual(ownerResult.deletedAfterReload, 0, 'owner event delete persists after reload');
   expectEqual(ownerResult.consoleErrors.length, 0, 'owner event edit/delete console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'owner event edit/delete failed responses');
+  return { created, memberResult, ownerResult };
 }
 
 async function runExactEventApiCasesAudit() {
