@@ -1296,6 +1296,28 @@ export function localTransportDiagnostic(method, pathname, error) {
   return `Local ${String(method || 'GET').toUpperCase()} ${pathname} transport failed (${code}).`;
 }
 
+export function localRequestMaxAttempts(pathname, init = {}) {
+  const method = String(init.method || 'GET').toUpperCase();
+  if (method === 'GET') return 3;
+  if (method !== 'POST' || pathname !== '/api/teams/chat/message' || typeof init.body !== 'string') return 1;
+  try {
+    const requestId = JSON.parse(init.body)?.requestId;
+    return typeof requestId === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(requestId) ? 3 : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function isRetryableLocalTransportError(error) {
+  const retryableCodes = new Set(['ECONNRESET', 'UND_ERR_SOCKET', 'UND_ERR_CONN_RESET', 'UND_ERR_CLOSED']);
+  let current = error;
+  for (let depth = 0; current && depth < 4; depth += 1) {
+    if (retryableCodes.has(String(current.code || ''))) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
 export function isExpiredDemoCreation(creationTimeMs, nowMs, lifetimeMs = 15 * 60 * 1000) {
   return Number.isFinite(creationTimeMs) && Number.isFinite(nowMs) && nowMs - creationTimeMs > lifetimeMs;
 }
@@ -1331,7 +1353,7 @@ async function apiStatus(pathname, token, init = {}) {
 async function apiJsonResult(pathname, token, init = {}) {
   const startedAt = new Date().toISOString();
   let response;
-  const maxAttempts = String(init.method || 'GET').toUpperCase() === 'GET' ? 3 : 1;
+  const maxAttempts = localRequestMaxAttempts(pathname, init);
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -1352,6 +1374,7 @@ async function apiJsonResult(pathname, token, init = {}) {
     } catch (error) {
       lastError = error;
       if (init.signal?.aborted) break;
+      if (!isRetryableLocalTransportError(error)) break;
       if (attempt < maxAttempts) await new Promise(resolve => setTimeout(resolve, attempt * 100));
     }
   }

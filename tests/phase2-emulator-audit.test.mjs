@@ -1442,6 +1442,39 @@ test('Task 3 transport diagnostics retain only local method, path, and error cod
   );
 });
 
+test('local audit retries only request-identified Chat sends after a transient dev-server reset', () => {
+  assert.equal(auditRunner.localRequestMaxAttempts('/api/test', { method: 'GET' }), 3);
+  assert.equal(auditRunner.localRequestMaxAttempts('/api/teams/chat/message', {
+    method: 'POST',
+    body: JSON.stringify({ requestId: 'chat-sender' }),
+  }), 3);
+  assert.equal(auditRunner.localRequestMaxAttempts('/api/teams/chat/message', {
+    method: 'POST',
+    body: JSON.stringify({ content: 'missing durable identity' }),
+  }), 1);
+  assert.equal(auditRunner.localRequestMaxAttempts('/api/teams/chat', {
+    method: 'POST',
+    body: JSON.stringify({ requestId: 'not-a-message-send' }),
+  }), 1);
+  assert.equal(auditRunner.localRequestMaxAttempts('/api/teams/chat/message', {
+    method: 'POST',
+    body: '{malformed',
+  }), 1);
+  assert.equal(auditRunner.localRequestMaxAttempts('/api/teams/chat/message', {
+    method: 'POST',
+    body: JSON.stringify({ requestId: 'not valid because spaces collide' }),
+  }), 1);
+  assert.equal(auditRunner.isRetryableLocalTransportError(
+    new TypeError('fetch failed', { cause: Object.assign(new Error('reset'), { code: 'ECONNRESET' }) }),
+  ), true);
+  assert.equal(auditRunner.isRetryableLocalTransportError(
+    new TypeError('fetch failed', { cause: Object.assign(new Error('closed'), { code: 'UND_ERR_SOCKET' }) }),
+  ), true);
+  assert.equal(auditRunner.isRetryableLocalTransportError(
+    new TypeError('fetch failed', { cause: Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }) }),
+  ), false);
+});
+
 test('emulator audit sweeps remaining role surfaces for rendering and route-policy failures', () => {
   assert.match(source, /surface-smoke-only/);
   assert.match(source, /owner remaining surface sweep/);
