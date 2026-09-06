@@ -7634,7 +7634,8 @@ async function runPracticeFilmWorkflowAudit() {
       return { size: file.size, type: file.type };
     }, ${JSON.stringify(uploadName)});
     if (generatedFilm.type !== 'video/webm' || generatedFilm.size <= 0) throw new Error('Browser-native film fixture failed validation.');
-    await dialog.getByRole('button', { name: 'Archive Film', exact: true }).click();
+    const archiveFilm = dialog.getByRole('button', { name: 'Archive Film', exact: true });
+    await archiveFilm.focus(); await page.keyboard.press('Enter');
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });
     await page.reload();
     await page.getByText(${JSON.stringify(marker)}, { exact: true }).waitFor({ timeout: 20000 });

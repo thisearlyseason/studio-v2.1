@@ -304,6 +304,7 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.match(filmBlock, /canvas\.captureStream/);
   assert.match(filmBlock, /new MediaRecorder/);
   assert.doesNotMatch(filmBlock, /faq\/how-to-create-a-game\.mp4/);
+  assert.match(filmBlock, /const archiveFilm = dialog\.getByRole\('button', \{ name: 'Archive Film', exact: true \}\);[\s\S]{0,100}archiveFilm\.focus\(\)/);
 });
 
 test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
