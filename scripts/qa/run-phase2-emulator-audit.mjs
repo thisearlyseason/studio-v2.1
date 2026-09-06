@@ -8088,8 +8088,8 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   expectEqual(afterOverride.data()?.userRsvps?.[memberUid], 'declined', 'staff attendance override persisted');
 
   const attendanceEventRef = `teams/${proTeamId}/events/${attendanceCreated.body.eventId}`;
-  const updateAttendance = (token, status, init = {}) => apiJsonResult('/api/teams/rsvp', token, {
-    ...init, method: 'POST', body: JSON.stringify({ teamId: proTeamId, eventId: attendanceCreated.body.eventId, participantId: memberUid, status }),
+  const updateAttendance = (token, status, { participantId = memberUid, ...init } = {}) => apiJsonResult('/api/teams/rsvp', token, {
+    ...init, method: 'POST', body: JSON.stringify({ teamId: proTeamId, eventId: attendanceCreated.body.eventId, participantId, status }),
   });
   expectEqual((await updateAttendance(assistant.body.idToken, 'going')).status, 200, 'assistant staff attendance override accepted');
   const duplicateResults = await Promise.all([
@@ -8106,7 +8106,7 @@ async function runRsvpAndAttendanceWorkflowAudit() {
   });
   expectEqual(duplicateAudit.status, 'going', 'duplicate staff attendance transitions preserve one authoritative RSVP value and audit each request');
   expectEqual(duplicateAudit.records.filter(record => record.actorId === proOwnerUid && record.status === 'going').length >= 2, true, 'duplicate staff attendance audit retains both attributable requests');
-  expectEqual((await updateAttendance(teamMember.body.idToken, 'declined')).status, 403, 'member forged attendance override is denied');
+  expectEqual((await updateAttendance(teamMember.body.idToken, 'declined', { participantId: proOwnerUid })).status, 403, 'member forged attendance override is denied');
   expectEqual((await updateAttendance(removed.body.idToken, 'declined')).status, 403, 'removed member attendance override is denied');
   expectEqual((await updateAttendance(teamBOwner.body.idToken, 'declined')).status, 403, 'Team B staff attendance override is denied');
   const attendanceRace = await runTwoParty('attendance exact staff barrier', [
