@@ -7,6 +7,18 @@ const caseId = (scenarioId, dimension) => `operations-${scenarioId}-${dimension}
 // dimension placeholder. Every frozen Task 5 case is represented exactly once;
 // console/network/persistence envelopes remain separate evidence observations.
 export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
+  'forms-league-tournament-registration-builder':Object.freeze({
+    happyPath:['form-create','form-edit'],negativePath:['form-duplicate-field','form-invalid-type','form-empty-options','form-overlimit','form-unpublished'],
+    permission:['form-owner-b','form-registrant','form-division-architect'],persistence:['form-persistence'],console:['form-console'],network:['form-network'],responsive:['form-responsive'],
+  }),
+  'tournaments-registration-waiver':Object.freeze({
+    happyPath:['tourn-public-register','tourn-linked-team','tourn-waiver'],negativePath:['tourn-invalid-code','tourn-wrong-team','tourn-invalid-form','tourn-duplicate','tourn-unpublished','tourn-bracket-locked','tourn-waiver-replay','tourn-waiver-wrong-child','tourn-waiver-wrong-date'],
+    permission:['tourn-ledger-private','tourn-owner-b-ledger-deny','tourn-anonymous-direct-write'],persistence:['tourn-persistence'],console:['tourn-console'],network:['tourn-network'],responsive:['tourn-responsive'],
+  }),
+  'public-portals-squad-event-registration':Object.freeze({
+    happyPath:['portal-squad-view','portal-event-read','portal-event-submit'],negativePath:['portal-squad-invalid','portal-squad-code','portal-squad-tenant','portal-event-duplicate','portal-event-race','portal-event-invalid','portal-event-unpublished'],
+    permission:['portal-ledger-private','portal-pii'],persistence:['portal-event-review'],console:['portal-console'],network:['portal-network'],responsive:['portal-responsive'],
+  }),
   'safety-incident-create-read-export':Object.freeze({
     happyPath:['incident-create','incident-export','incident-attachment'],negativePath:['incident-required','incident-edit-delete'],
     permission:['incident-participant','incident-outsider','incident-team-b'],persistence:['incident-read'],

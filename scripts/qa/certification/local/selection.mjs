@@ -23,6 +23,8 @@ export const OPERATIONS_SCENARIO_IDS = Object.freeze([
   'waivers-team-global-waiver-lifecycle',
   'waivers-parent-player-coach-signature',
   'forms-league-tournament-registration-builder',
+  'tournaments-registration-waiver',
+  'public-portals-squad-event-registration',
   'safety-incident-create-read-export',
   'facilities-facility-field-crud-rename',
   'facilities-availability-booking-delete',
