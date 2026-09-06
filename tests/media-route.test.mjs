@@ -71,3 +71,9 @@ test('healthy promoted video has tokenless final metadata; verification cannot d
   const replacement=await loadMediaRoute('../../src/app/api/media/route.ts',db,{uid:'owner'});
   try{assert.equal((await replacement.route.POST(request(image,{method:'POST',bytes:materializeFixtureMediaBytes({payloadGenerator:'solid-png-v1'})}))).status,503);assert.equal(objects.get(image).bytes.toString(),'other writer');}finally{replacement.dispose();}
 });
+test('video starts its new resumable session at zero with bounded production chunks',async()=>{
+  const {db}=mediaDb(initial),base=db.bucket.file.bind(db.bucket),options=[];
+  db.bucket.file=(name,...args)=>{const file=base(name,...args);return{...file,createWriteStream(value){options.push(value);return file.createWriteStream(value);}};};
+  const owner=await loadMediaRoute('../../src/app/api/media/route.ts',db,{uid:'owner'});
+  try{assert.equal((await owner.route.POST(request('players/p/videos/session.mp4',{method:'POST',type:'video/mp4',bytes:materializeFixtureMediaBytes({payloadGenerator:'tiny-mp4-v1'})}))).status,201);assert.equal(options.length,1);assert.equal(options[0].resumable,true);assert.equal(options[0].offset,0);assert.equal(options[0].chunkSize,8*1024*1024);assert.equal(options[0].preconditionOpts.ifGenerationMatch,0);}finally{owner.dispose();}
+});

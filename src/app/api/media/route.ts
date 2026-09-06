@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import type {FileMetadata} from '@google-cloud/storage';
 import sharp from 'sharp';
 import {mediaBucket} from '@/lib/server-media-storage';
+import {mediaResumableOptions,cancelMediaUpload,mediaUploadAbortAdapter} from '@/lib/media-resumable';
 import {mediaActor,mediaAuthorityState,mediaFailure,mediaHeaders} from '@/lib/server-media';
 import {canManageMedia,canReadMedia} from '@/lib/media-authority';
 import {consumeMediaBytes,MediaInputError,mediaByteLimit,mediaStorageMetadata,parseMediaPath,parseMediaRange,validateMediaSignature} from '@/lib/media-policy';
@@ -28,9 +29,16 @@ export async function POST(req:NextRequest){
     }else{
       if((await file.exists())[0])throw new MediaInputError('Use a new video object identity.',409);
       const pending=bucket.file(`players/${target.subjectId}/pending/${randomUUID()}`);
-      const writer=pending.createWriteStream({resumable:false,metadata,preconditionOpts:{ifGenerationMatch:0},timeout:120_000});
+      const transport=mediaResumableOptions(bucket.name);
+      const transportAbort=new AbortController();
+      pending.interceptors.push({request:options=>({...options,uri:'uri' in options?options.uri:options.url,adapter:mediaUploadAbortAdapter(transportAbort.signal)})});
+      const [uri]=await pending.createResumableUpload({metadata,preconditionOpts:{ifGenerationMatch:0}});
+      // This is a newly created session, never a resume/retry. Explicit zero
+      // avoids a status-query PUT that this emulator incorrectly finalizes.
+      const writer=pending.createWriteStream({...transport,uri,offset:0,metadata,preconditionOpts:{ifGenerationMatch:0},timeout:120_000});
+      let uploaded=false;
       const settled=finished(writer);void settled.catch(()=>{});
-      const signal=AbortSignal.timeout(120_000);const abort=()=>writer.destroy(new Error('Media upload deadline exceeded.'));
+      const signal=AbortSignal.timeout(120_000);const abort=()=>{transportAbort.abort();writer.destroy(new Error('Media upload deadline exceeded.'));};
       signal.addEventListener('abort',abort,{once:true});let prefix=Buffer.alloc(0),validated=false;
       const write=(chunk:Uint8Array)=>new Promise<void>((resolve,reject)=>writer.write(chunk,error=>error?reject(error):resolve()));
       try{
@@ -38,8 +46,8 @@ export async function POST(req:NextRequest){
           if(!validated){const take=Math.min(12-prefix.length,chunk.length);prefix=Buffer.concat([prefix,Buffer.from(chunk.subarray(0,take))]);if(prefix.length<12)return;validateMediaSignature(prefix,type,true);validated=true;await write(prefix);prefix=Buffer.alloc(0);if(take<chunk.length)await write(chunk.subarray(take));}else await write(chunk);
         }});
         if(!validated){validateMediaSignature(prefix,type,true);await write(prefix);}
-        writer.end();await settled;await pending.copy(file,{preconditionOpts:{ifGenerationMatch:0}});
-      }catch(error){writer.destroy();await settled.catch(()=>{});throw error;}
+        writer.end();await settled;uploaded=true;await pending.copy(file,{preconditionOpts:{ifGenerationMatch:0}});
+      }catch(error){transportAbort.abort();writer.destroy(error instanceof Error?error:new Error('Media upload interrupted.'));await settled.catch(()=>{});if(!uploaded)await cancelMediaUpload({bucket:bucket.name,name:pending.name,uri});throw error;}
       finally{signal.removeEventListener('abort',abort);await pending.delete({ignoreNotFound:true});}
     }
     let stored:FileMetadata|undefined;

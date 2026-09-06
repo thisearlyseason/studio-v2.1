@@ -9,8 +9,10 @@ export function mediaDb(initial){
   let generation=0;
   const metadata=(value,size)=>({...value,size,generation:String(++generation),metadata:Object.fromEntries(Object.entries(value?.metadata||{}).map(([key,v])=>[key,typeof v==='string'?v:JSON.stringify(v)]))});
   state.db.bucket={
+    name:'demo-the-squad-rules-test.appspot.com',
     async getFiles({prefix,maxResults=200}){const names=[...objects.keys()].filter(x=>x.startsWith(prefix));return[names.slice(0,maxResults).map(name=>state.db.bucket.file(name)),names.length>maxResults?{}:null];},
-    file(name,options={}){return{name,
+    file(name,options={}){return{name,interceptors:[],
+      async createResumableUpload(){return[`https://storage.googleapis.com/upload/storage/v1/b/demo-the-squad-rules-test.appspot.com/o?upload_id=owned&name=${encodeURIComponent(name)}`];},
       async exists(){return[objects.has(name)];},async getMetadata(){return[objects.get(name)?.metadata];},
       async save(bytes,options){objects.set(name,{bytes:Buffer.from(bytes),metadata:metadata(options.metadata,bytes.length)});},
       async setMetadata(value){const current=objects.get(name);current.metadata={...current.metadata,metadata:{...current.metadata.metadata,...value.metadata}};for(const [key,v]of Object.entries(current.metadata.metadata))if(v===null)delete current.metadata.metadata[key];},
