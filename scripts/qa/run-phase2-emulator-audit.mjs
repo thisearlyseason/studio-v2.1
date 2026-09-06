@@ -7841,6 +7841,7 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
       await page.getByRole('button', { name: 'Filters', exact: true }).click();
       const panel = page.getByText('Squad Enrollment', { exact: true }).locator('..');
       await panel.waitFor({ state: 'visible', timeout: 15000 });
+      await page.getByText('Household Athletes', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
       return panel;
     };
     await page.setViewportSize({ width: 1440, height: 900 });
