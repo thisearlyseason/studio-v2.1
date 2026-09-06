@@ -247,6 +247,19 @@ test('Calendar views and filters have a dedicated two-viewport operations workfl
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
 });
 
+test('Calendar evidence patterns match the exact single-space assertion labels emitted by its workflow', () => {
+  const patternsStart = source.indexOf("'calendar-team-family-views-and-filters': Object.freeze({", source.indexOf('const OPERATION_CASE_ASSERTION_PATTERNS'));
+  const patternsEnd = source.indexOf("'calendar-ics-create-fetch-revoke'", patternsStart);
+  const patterns = source.slice(patternsStart, patternsEnd);
+  // These labels are emitted by runCalendarViewsWorkflowAudit. A `Calendar .*`
+  // matcher requires two spaces when no intervening word exists, so it silently
+  // left otherwise-observed console/network/responsive cases unrecorded.
+  assert.doesNotMatch(patterns, /Calendar \.\* (?:workflow|fits)/);
+  assert.ok(patterns.includes('/Calendar (?:views )?workflow console errors/'));
+  assert.ok(patterns.includes('/Calendar (?:views )?workflow failed responses/'));
+  assert.ok(patterns.includes('/Calendar fits the mobile viewport/'));
+});
+
 test('Calendar feed lifecycle uses the authenticated visible subscription controls and leaves deployed fetch proof blocked', () => {
   const start = source.indexOf('async function runCertificationOperationsScenarios()');
   const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);

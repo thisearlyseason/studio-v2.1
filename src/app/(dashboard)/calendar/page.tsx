@@ -82,6 +82,7 @@ import { WeatherPulse } from '@/components/WeatherPulse';
 import { useCollection, useMemoFirebase } from '@/firebase';
 import { collection, limit, orderBy, query } from 'firebase/firestore';
 import { rsvpParticipantId } from '@/lib/team-rsvp-policy';
+import { calendarEventDate } from '@/lib/calendar-event-date';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -92,9 +93,11 @@ const EVENT_TYPE_COLORS: Record<EventType, string> = {
 };
 
 const formatDateRange = (start: string | Date, end?: string | Date) => {
-  const startDate = new Date(start);
+  const startDate = calendarEventDate(start);
+  if (!startDate) return 'Date unavailable';
   if (!end) return format(startDate, 'MMM dd');
-  const endDate = new Date(end);
+  const endDate = calendarEventDate(end);
+  if (!endDate) return format(startDate, 'MMM dd');
   if (isSameDay(startDate, endDate)) return format(startDate, 'MMM dd');
   
   if (startDate.getMonth() === endDate.getMonth()) {
@@ -947,13 +950,14 @@ function LeagueScheduleButton({ events }: { events: TeamEvent[] }) {
 }
 
 export default function MasterCalendarPage() {
-  const { teams, householdEvents, householdGames, activeTeamEvents, isParent, activeTeam, db, updateRSVP } = useTeam();
+  const { teams, householdEvents, householdGames, activeTeamEvents, isParent, activeTeam, db, updateRSVP, myChildren } = useTeam();
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'month' | 'week' | 'day' | 'list'>('month');
   const [selectedEventTypes, setSelectedEventTypes] = useState<EventType[]>(['game', 'practice', 'tournament', 'meeting', 'other']);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
+  const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeDetailedEventId, setActiveDetailedEventId] = useState<string | null>(null);
 
@@ -1092,6 +1096,25 @@ export default function MasterCalendarPage() {
     return Array.from(new Set([...fromTeams, ...fromEvents]));
   }, [teams, allEvents]);
 
+  // A family schedule is scoped through the already-authorized household
+  // roster. Selecting an athlete narrows to that athlete's linked squads; it
+  // never derives a child from arbitrary event data or exposes another family.
+  const householdChildren = useMemo(() => (myChildren || []).flatMap(child => {
+    const id = typeof child?.id === 'string' ? child.id : '';
+    const teamIds = Array.isArray(child?.joinedTeamIds)
+      ? child.joinedTeamIds.filter((teamId): teamId is string => typeof teamId === 'string' && teamId.length > 0)
+      : [];
+    if (!id || teamIds.length === 0) return [];
+    const name = [child.firstName, child.lastName].filter(Boolean).join(' ').trim() || 'Athlete';
+    return [{ id, name, teamIds }];
+  }), [myChildren]);
+
+  const childTeamIds = useMemo(() => new Set(
+    householdChildren
+      .filter(child => selectedChildIds.includes(child.id))
+      .flatMap(child => child.teamIds),
+  ), [householdChildren, selectedChildIds]);
+
   useEffect(() => {
     if (discoveryTeamIds.length > 0 && selectedTeamIds.length === 0) {
       if (activeTeam?.id && discoveryTeamIds.includes(activeTeam.id)) {
@@ -1106,14 +1129,15 @@ export default function MasterCalendarPage() {
     return allEvents.filter(event => {
       const matchesTeam = selectedTeamIds.includes(event.teamId);
       const matchesType = selectedEventTypes.includes(event.eventType as EventType || 'other');
+      const matchesChild = selectedChildIds.length === 0 || childTeamIds.has(event.teamId);
       const matchesSearch = (event.title || '').toLowerCase().includes(searchTerm.toLowerCase());
       
       // TACTICAL FILTER: Filter out placeholder/TBD matches to ensure only confirmed deployments are visible
       const isConfirmed = !event.title?.includes('TBD VS TBD');
       
-      return matchesTeam && matchesType && matchesSearch && isConfirmed;
+      return matchesTeam && matchesType && matchesChild && matchesSearch && isConfirmed;
     });
-  }, [allEvents, selectedTeamIds, selectedEventTypes, searchTerm]);
+  }, [allEvents, selectedTeamIds, selectedEventTypes, selectedChildIds, childTeamIds, searchTerm]);
 
   // ── Auto-sync: keep localStorage fresh whenever events load ──────────────
   useEffect(() => {
@@ -1174,8 +1198,11 @@ export default function MasterCalendarPage() {
 
       filteredEvents.forEach(event => {
         // Handle standard span of the tournament/event
-        const start = startOfDay(new Date(event.date));
-        const end = event.endDate ? startOfDay(new Date(event.endDate)) : start;
+        const eventStartDate = calendarEventDate(event.date);
+        const eventEndDate = calendarEventDate(event.endDate || event.date);
+        if (!eventStartDate || !eventEndDate) return;
+        const start = startOfDay(eventStartDate);
+        const end = startOfDay(eventEndDate);
         
         if (isWithinInterval(dayStart, { start, end }) || isWithinInterval(dayEnd, { start, end })) {
           if (!map[dayKey]) map[dayKey] = [];
@@ -1235,6 +1262,21 @@ export default function MasterCalendarPage() {
     return eventsByDay[format(selectedDay, 'yyyy-MM-dd')] || [];
   }, [selectedDay, eventsByDay]);
 
+  const focusedEvents = useMemo(() => {
+    if (viewMode === 'list' || viewMode === 'month') return filteredEvents;
+    const anchor = selectedDay || currentDate;
+    const start = viewMode === 'day' ? startOfDay(anchor) : startOfWeek(anchor);
+    const end = viewMode === 'day' ? endOfDay(anchor) : endOfWeek(anchor);
+    return filteredEvents.filter(event => {
+      const eventStartDate = calendarEventDate(event.date);
+      const eventEndDate = calendarEventDate(event.endDate || event.date);
+      if (!eventStartDate || !eventEndDate) return false;
+      const eventStart = startOfDay(eventStartDate);
+      const eventEnd = startOfDay(eventEndDate);
+      return eventStart <= end && eventEnd >= start;
+    });
+  }, [viewMode, filteredEvents, selectedDay, currentDate]);
+
   const nextTournament = useMemo(() => {
     return allEvents
       .filter(e => e.isTournament || e.eventType === 'game')
@@ -1289,7 +1331,9 @@ export default function MasterCalendarPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="bg-muted/50 p-1 rounded-xl border-2 flex items-center shadow-inner">
-            <Button variant={viewMode === 'grid' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('grid')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Grid</span></Button>
+            <Button variant={viewMode === 'month' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('month')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Month</span></Button>
+            <Button variant={viewMode === 'week' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('week')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarDays className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Week</span></Button>
+            <Button variant={viewMode === 'day' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('day')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarIcon className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Day</span></Button>
             <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Agenda</span></Button>
           </div>
           {/* League Schedule Button */}
@@ -1318,6 +1362,26 @@ export default function MasterCalendarPage() {
                     ))}
                   </div>
                 </ScrollArea>
+                <div className="border-t pt-4 space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-primary">Event Types</p>
+                  {(['game', 'practice', 'tournament', 'meeting', 'other'] as EventType[]).map(type => (
+                    <div key={type} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedEventTypes(prev => prev.includes(type) ? prev.filter(value => value !== type) : [...prev, type])}>
+                      <Checkbox checked={selectedEventTypes.includes(type)} onCheckedChange={() => {}} />
+                      <Label className="text-xs font-bold truncate uppercase text-foreground">{type}</Label>
+                    </div>
+                  ))}
+                </div>
+                {isParent && householdChildren.length > 0 && (
+                  <div className="border-t pt-4 space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-primary">Household Athletes</p>
+                    {householdChildren.map(child => (
+                      <div key={child.id} className="flex items-center space-x-3 p-2 hover:bg-muted/5 rounded-lg transition-colors cursor-pointer" onClick={() => setSelectedChildIds(prev => prev.includes(child.id) ? prev.filter(value => value !== child.id) : [...prev, child.id])}>
+                        <Checkbox checked={selectedChildIds.includes(child.id)} onCheckedChange={() => {}} />
+                        <Label className="text-xs font-bold truncate uppercase text-foreground">{child.name}</Label>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </PopoverContent>
           </Popover>
@@ -1358,7 +1422,7 @@ export default function MasterCalendarPage() {
         </div>
 
         <CardContent className="p-0">
-          {viewMode === 'grid' ? (
+          {viewMode === 'month' ? (
             <div className="flex flex-col">
               <div className="grid grid-cols-7 border-b bg-muted/10 min-w-[400px]">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
@@ -1445,7 +1509,17 @@ export default function MasterCalendarPage() {
           ) : (
             <ScrollArea className="h-[600px]">
               <div className="p-6 space-y-10">
-                {Object.entries(eventsByDay).sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, dayEvents]) => (
+                {focusedEvents.length === 0 ? (
+                  <div className="py-16 text-center rounded-2xl border-2 border-dashed border-muted/30">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-50">No scheduled events match these filters</p>
+                  </div>
+                ) : Object.entries(eventsByDay)
+                  .filter(([dayKey]) => viewMode === 'list' || focusedEvents.some(event => {
+                    const start = event.date;
+                    const end = event.endDate || event.date;
+                    return dayKey >= start && dayKey <= end;
+                  }))
+                  .sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, dayEvents]) => (
                   <div key={dayKey} className="space-y-4">
                     <div className="flex items-center gap-4">
                       <div className="text-center w-12 shrink-0">

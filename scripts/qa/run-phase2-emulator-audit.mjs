@@ -6637,7 +6637,7 @@ const OPERATION_CASE_ASSERTION_PATTERNS = Object.freeze({
   'calendar-team-family-views-and-filters': Object.freeze({
     happyPath: [/Calendar exposes the authenticated owner squad filter choices/], negativePath: [/Calendar empty filter state hides household schedule entries/],
     permission: [/Calendar parent cannot discover another household team filter/], persistence: [],
-    console: [/Calendar .* workflow console errors/], network: [/Calendar .* workflow failed responses/], responsive: [/Calendar .* fits the mobile viewport/],
+    console: [/Calendar (?:views )?workflow console errors/], network: [/Calendar (?:views )?workflow failed responses/], responsive: [/Calendar fits the mobile viewport/],
   }),
   'calendar-ics-create-fetch-revoke': Object.freeze({
     happyPath: [/Calendar feed issue, rotation, and revoke responses/], negativePath: [], permission: [],
@@ -6708,9 +6708,19 @@ async function runCertificationOperationsScenarios() {
       }
       if (scenarioId === 'calendar-team-family-views-and-filters' && runBrowser) {
         await runCalendarViewsWorkflowAudit();
-        for (const dimension of ['happyPath', 'console', 'network', 'responsive']) {
-          recordObservedOperationsCase(scenarioId, dimension, 'authenticated Calendar views and filters workflow completed');
-        }
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-team-a-b', 'Team A and Team B calendar views expose only their respective squad schedules', [/Calendar exposes the authenticated owner squad filter choices/], { actor: 'qa-coach-owner-a+qa-coach-owner-b', operation: 'visible calendar filters', reconciliation: 'team scoped filter choices', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-family-a-c', 'Parent A sees the linked Team A and Team C household schedules', [/Calendar parent sees both household team filters/], { actor: 'qa-parent-a', operation: 'visible household calendar filters', reconciliation: 'two linked squad choices', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'happyPath', 'cal-filters', 'Calendar day week month type and child filters react through visible controls', [/Calendar day week and month view controls settle through visible clicks/, /Calendar exposes every event type filter through visible controls/, /Calendar parent athlete filter selects only an authorized household athlete/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'visible calendar controls', reconciliation: 'view and filter controls present', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'cal-empty', 'Empty type filtering hides scheduled events without crashing the Calendar', [/Calendar empty filter state hides household schedule entries/], { actor: 'qa-parent-a', operation: 'visible type filters', reconciliation: 'empty-state presentation', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'negativePath', 'cal-invalid', 'Malformed legacy dates are ignored safely by Calendar', [/Calendar ignores malformed legacy dates without rendering a corrupted event/], { actor: 'qa-coach-owner-a', operation: 'visible Calendar rendering', reconciliation: 'legacy invalid event absent and zero console errors', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'permission', 'cal-outsider', 'Parent A cannot discover Team B through the Calendar filter surface', [/Calendar parent cannot discover another household team filter/], { actor: 'qa-parent-a', operation: 'visible household filters', reconciliation: 'zero Team B choices', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-rapid-switch', 'Rapid Team A and Team B switches settle and persist across reload and browser history', [/Calendar rapid Team A and Team B switches settle on the selected squad/, /Calendar active-team selection persists through reload/, /Calendar active-team selection survives browser back navigation/], { actor: 'qa-multi-org', operation: 'visible active-team switching', reconciliation: 'Team B schedule rendered after switch, reload, and back/forward', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-midnight', 'Cross-midnight event placement spans exactly both affected local calendar days', [/Calendar cross-midnight event is placed on both affected local days/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', reconciliation: 'exactly two local-day placements', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-dst-spring', 'DST spring event placement is stable and non-duplicated', [/Calendar DST spring event is placed exactly once/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', reconciliation: 'exactly one local-day placement', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'persistence', 'cal-dst-fall', 'DST fall event placement is stable and non-duplicated', [/Calendar DST fall event is placed exactly once/], { actor: 'qa-coach-owner-a', operation: 'visible Agenda placement', reconciliation: 'exactly one local-day placement', timeBound: '15s UI waits' });
+        recordObservedOperationNamedCase(scenarioId, 'console', 'cal-console', 'Calendar flows have no browser console errors', [/Calendar views workflow console errors/, /Calendar household workflow console errors/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', reconciliation: 'zero console errors', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'network', 'cal-network', 'Calendar flows have no local server failures', [/Calendar views workflow failed responses/, /Calendar household workflow failed responses/], { actor: 'qa-coach-owner-a+qa-parent-a', operation: 'browser calendar flows', reconciliation: 'zero 5xx responses', timeBound: 'scenario duration' });
+        recordObservedOperationNamedCase(scenarioId, 'responsive', 'cal-responsive', 'Calendar controls fit the mobile viewport', [/Calendar fits the mobile viewport/], { actor: 'qa-coach-owner-a', operation: 'mobile calendar controls', reconciliation: 'scrollWidth <= viewport', timeBound: 'post-workflow viewport check' });
         continue;
       }
       if (scenarioId === 'calendar-ics-create-fetch-revoke' && runBrowser) {
@@ -7508,12 +7518,16 @@ async function runCalendarViewsWorkflowAudit() {
       await page.getByText('Squad Enrollment', { exact: true }).waitFor({ timeout: 10000 });
       const enrolledSquads = await page.getByText(/Phase 2 (Falcons|Bluebirds)/).count();
       await page.keyboard.press('Escape');
-      await page.getByRole('button', { name: 'Grid', exact: true }).click();
-      const gridActive = await page.getByRole('button', { name: 'Grid', exact: true }).getAttribute('data-state').catch(() => null);
+      await page.getByRole('button', { name: 'Week', exact: true }).click();
+      const weekVisible = await page.getByRole('button', { name: 'Week', exact: true }).count();
+      await page.getByRole('button', { name: 'Day', exact: true }).click();
+      const dayVisible = await page.getByRole('button', { name: 'Day', exact: true }).count();
+      await page.getByRole('button', { name: 'Month', exact: true }).click();
+      const monthVisible = await page.getByRole('button', { name: 'Month', exact: true }).count();
       await page.setViewportSize({ width: 390, height: 844 });
       await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 10000 });
       const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-      return { agendaActive, gridActive, enrolledSquads, mobileFits, consoleErrors, failedResponses };
+      return { agendaActive, weekVisible, dayVisible, monthVisible, enrolledSquads, mobileFits, consoleErrors, failedResponses };
     } finally {
       page.off('console', onConsole);
       page.off('pageerror', onPageError);
@@ -7521,6 +7535,8 @@ async function runCalendarViewsWorkflowAudit() {
     }
   }`]));
   expectEqual(result.enrolledSquads > 0, true, 'Calendar exposes the authenticated owner squad filter choices');
+  expectEqual(result.weekVisible === 1 && result.dayVisible === 1 && result.monthVisible === 1, true,
+    'Calendar day week and month view controls settle through visible clicks');
   expectEqual(result.mobileFits, true, 'Calendar fits the mobile viewport');
   expectEqual(result.consoleErrors.length, 0, 'Calendar views workflow console errors');
   expectEqual(result.failedResponses.length, 0, 'Calendar views workflow failed responses');
@@ -7531,6 +7547,10 @@ async function runCalendarViewsWorkflowAudit() {
   if (!teamA || !teamB || !teamC) throw new Error('Calendar household fixture teams are missing.');
   const activeHouseholdEventTitle = `QA Calendar Active Household ${process.pid}`;
   const householdEventTitle = `QA Calendar Household ${process.pid}`;
+  const crossMidnightTitle = `QA Calendar Cross Midnight ${process.pid}`;
+  const dstSpringTitle = `QA Calendar DST Spring ${process.pid}`;
+  const dstFallTitle = `QA Calendar DST Fall ${process.pid}`;
+  const malformedLegacyTitle = `QA Calendar Legacy Invalid ${process.pid}`;
   const teamAOwner = await signIn('qa-coach-owner-a');
   const teamCOwner = await signIn('qa-league-owner-a');
   const activeHouseholdEvent = await apiJsonResult('/api/teams/events/action', teamAOwner.body.idToken, {
@@ -7559,6 +7579,34 @@ async function runCalendarViewsWorkflowAudit() {
     } }),
   });
   expectEqual(householdEvent.status, 200, 'Calendar household event fixture creation');
+  const calendarPlacementFixtures = [
+    { title: crossMidnightTitle, date: '2026-10-20', endDate: '2026-10-21', startTime: '23:30', endTime: '00:30' },
+    { title: dstSpringTitle, date: '2026-03-08', endDate: '2026-03-08', startTime: '01:30', endTime: '03:30' },
+    { title: dstFallTitle, date: '2026-11-01', endDate: '2026-11-01', startTime: '01:30', endTime: '02:30' },
+  ];
+  for (const fixture of calendarPlacementFixtures) {
+    const created = await apiJsonResult('/api/teams/events/action', teamAOwner.body.idToken, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'create', teamId: teamA.id, event: { ...fixture, eventType: 'practice', location: fixture.title } }),
+    });
+    expectEqual(created.status, 200, `Calendar ${fixture.title} fixture creation`);
+    if (typeof created.body?.eventId !== 'string') throw new Error(`Calendar ${fixture.title} fixture did not return an event id.`);
+    registerDynamicFirestoreRoot(`teams/${teamA.id}/events/${created.body.eventId}`, `calendar-${fixture.title}-event`);
+    registerDynamicFirestoreRoot(`scheduleBookings/team_event_${teamA.id}_${created.body.eventId}`, `calendar-${fixture.title}-booking`);
+  }
+  const malformedLegacyId = `calendar_legacy_invalid_${process.pid}`;
+  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    await firestoreAdmin.doc(`teams/${teamA.id}/events/${malformedLegacyId}`).set({
+      id: malformedLegacyId,
+      teamId: teamA.id,
+      title: malformedLegacyTitle,
+      date: '2026-02-30',
+      startTime: '12:00',
+      eventType: 'practice',
+      location: 'legacy invalid date fixture',
+    });
+  });
+  registerDynamicFirestoreRoot(`teams/${teamA.id}/events/${malformedLegacyId}`, 'calendar-malformed-legacy-event');
   const parent = await browserLogin('qa-parent-a', '/family', `calendar-parent-${process.pid}`);
   const parentResult = JSON.parse(cli(parent, ['run-code', `async page => {
     const consoleErrors = [];
@@ -7597,6 +7645,30 @@ async function runCalendarViewsWorkflowAudit() {
       await teamCFilter.waitFor({ timeout: 15000 });
       const householdFilterCount = (await teamAFilter.count()) + (await teamCFilter.count());
       const outsiderFilterCount = await filterPanel.getByText(${JSON.stringify(teamB.name)}, { exact: true }).count();
+      const eventTypePanel = page.getByText('Event Types', { exact: true }).locator('..');
+      const eventTypeCount = await eventTypePanel.getByText(/^(game|practice|tournament|meeting|other)$/i).count();
+      // The parent profile, memberships, and private athlete collection are
+      // independent Firestore subscriptions.  Wait for the athlete projection
+      // instead of treating the first rendered filter shell as settled.
+      await page.getByText('Household Athletes', { exact: true }).waitFor({ timeout: 15000 });
+      const athletePanel = page.getByText('Household Athletes', { exact: true }).locator('..');
+      const athleteCount = await athletePanel.locator('[role="checkbox"]').count();
+      // This visible checkbox click is a real family-scope filter action. The
+      // selected athlete can only contribute their already-authorized teams.
+      if (athleteCount > 0) await athletePanel.locator('[role="checkbox"]').first().locator('..').click();
+      // Radix mirrors data-state onto the indicator as well as the checkbox
+      // root; count the accessible controls rather than implementation nodes.
+      const selectedAthleteCount = await athletePanel.locator('[role="checkbox"][data-state="checked"]').count();
+      if (athleteCount > 0) await athletePanel.locator('[role="checkbox"]').first().locator('..').click();
+      // An empty type selection is a stable, user-visible no-results state;
+      // restore the values so the subsequent team-view checks use the full
+      // household schedule.
+      const typeRows = eventTypePanel.getByText(/^(game|practice|tournament|meeting|other)$/i);
+      for (let index = 0; index < await typeRows.count(); index += 1) await typeRows.nth(index).locator('..').click();
+      await page.keyboard.press('Escape');
+      const emptyTypeState = await page.getByText('No scheduled events match these filters', { exact: true }).count();
+      await page.getByRole('button', { name: 'Filters', exact: true }).click();
+      for (let index = 0; index < await typeRows.count(); index += 1) await typeRows.nth(index).locator('..').click();
       // Keep at least one squad selected between toggles. Calendar deliberately
       // restores its active squad when the selection becomes empty, so switching
       // to C must add C before removing A.
@@ -7618,6 +7690,10 @@ async function runCalendarViewsWorkflowAudit() {
       return {
         householdFilterCount,
         outsiderFilterCount,
+        eventTypeCount,
+        athleteCount,
+        selectedAthleteCount,
+        emptyTypeState,
         teamAAfterSwitch,
         teamBAfterSwitch,
         noVisibleHouseholdEvents,
@@ -7633,12 +7709,108 @@ async function runCalendarViewsWorkflowAudit() {
   }` ]));
   expectEqual(parentResult.householdFilterCount > 0, true, 'Calendar parent sees both household team filters');
   expectEqual(parentResult.outsiderFilterCount, 0, 'Calendar parent cannot discover another household team filter');
+  expectEqual(parentResult.eventTypeCount, 5, 'Calendar exposes every event type filter through visible controls');
+  expectEqual(parentResult.athleteCount >= 2, true, 'Calendar parent athlete filter exposes every authorized household athlete');
+  expectEqual(parentResult.selectedAthleteCount, 1, 'Calendar parent athlete filter selects only an authorized household athlete');
+  expectEqual(parentResult.emptyTypeState > 0, true, 'Calendar empty filter state hides household schedule entries');
   expectEqual(parentResult.teamAAfterSwitch, 0, 'Calendar parent team filter removes the other household schedule');
   expectEqual(parentResult.teamBAfterSwitch, 0, 'Calendar parent cannot view another household schedule');
   expectEqual(parentResult.noVisibleHouseholdEvents, 0, 'Calendar empty filter state hides household schedule entries');
   expectEqual(parentResult.mobileFits, true, 'Calendar household views fit the mobile viewport');
   expectEqual(parentResult.consoleErrors.length, 0, 'Calendar household workflow console errors');
   expectEqual(parentResult.failedResponses.length, 0, 'Calendar household workflow failed responses');
+
+  const placementOwner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-placement-${process.pid}`);
+  const placementResult = JSON.parse(cli(placementOwner, ['run-code', `async page => {
+    const consoleErrors = [];
+    const onConsole = message => { if (message.type() === 'error') consoleErrors.push(message.text()); };
+    const onPageError = error => consoleErrors.push(error.message);
+    page.on('console', onConsole);
+    page.on('pageerror', onPageError);
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+      await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+      await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+      const monthHeader = () => page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
+      await monthHeader().getByRole('button').last().click();
+      await page.getByRole('heading', { name: ${JSON.stringify(crossMidnightTitle)}, exact: true }).first().waitFor({ timeout: 15000 });
+      const crossMidnightPlacements = await page.getByRole('heading', { name: ${JSON.stringify(crossMidnightTitle)}, exact: true }).count();
+      const malformedLegacyVisible = await page.getByRole('heading', { name: ${JSON.stringify(malformedLegacyTitle)}, exact: true }).count();
+      await monthHeader().getByRole('button', { name: 'Today', exact: true }).click();
+      for (let index = 0; index < 6; index += 1) await monthHeader().getByRole('button').first().click();
+      await page.getByRole('heading', { name: ${JSON.stringify(dstSpringTitle)}, exact: true }).waitFor({ timeout: 15000 });
+      const dstSpringPlacements = await page.getByRole('heading', { name: ${JSON.stringify(dstSpringTitle)}, exact: true }).count();
+      await monthHeader().getByRole('button', { name: 'Today', exact: true }).click();
+      for (let index = 0; index < 2; index += 1) await monthHeader().getByRole('button').last().click();
+      await page.getByRole('heading', { name: ${JSON.stringify(dstFallTitle)}, exact: true }).waitFor({ timeout: 15000 });
+      const dstFallPlacements = await page.getByRole('heading', { name: ${JSON.stringify(dstFallTitle)}, exact: true }).count();
+      return { crossMidnightPlacements, malformedLegacyVisible, dstSpringPlacements, dstFallPlacements, consoleErrors };
+    } finally {
+      page.off('console', onConsole);
+      page.off('pageerror', onPageError);
+    }
+  }` ]));
+  expectEqual(placementResult.crossMidnightPlacements, 2, 'Calendar cross-midnight event is placed on both affected local days');
+  expectEqual(placementResult.malformedLegacyVisible, 0, 'Calendar ignores malformed legacy dates without rendering a corrupted event');
+  expectEqual(placementResult.dstSpringPlacements, 1, 'Calendar DST spring event is placed exactly once');
+  expectEqual(placementResult.dstFallPlacements, 1, 'Calendar DST fall event is placed exactly once');
+  expectEqual(placementResult.consoleErrors.length, 0, 'Calendar malformed and DST placement workflow console errors');
+
+  const multiTeam = await browserLogin('qa-multi-org', '/dashboard', `calendar-multi-team-${process.pid}`);
+  const multiTeamResult = JSON.parse(cli(multiTeam, ['run-code', `async page => {
+    const teamBMarker = ${JSON.stringify(`${teamB.visibleMarker} Future Practice`)};
+    const dismissTransientDialogs = async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const dialog = page.getByRole('dialog').last();
+        if (!await dialog.waitFor({ state: 'visible', timeout: 800 }).then(() => true).catch(() => false)) break;
+        const acknowledge = dialog.getByRole('button', { name: 'Got It', exact: true });
+        if (await acknowledge.count()) await acknowledge.click();
+        else await page.keyboard.press('Escape');
+        await dialog.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+      }
+    };
+    const switchTo = async teamName => {
+      await dismissTransientDialogs();
+      const switcher = page.getByRole('combobox').first();
+      await switcher.click();
+      await page.getByRole('option', { name: teamName, exact: false }).click();
+      await page.waitForTimeout(250);
+    };
+    const showTeamBCalendar = async () => {
+      await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+      const monthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
+      await monthHeader.getByRole('button', { name: 'Today', exact: true }).click();
+      await monthHeader.getByRole('button').last().click();
+      await page.getByText(teamBMarker, { exact: true }).waitFor({ timeout: 15000 });
+    };
+    await page.goto(${JSON.stringify(`${BASE_URL}/team`)});
+    await page.getByRole('combobox').first().waitFor({ timeout: 15000 });
+    await dismissTransientDialogs();
+    await switchTo(${JSON.stringify(teamB.name)});
+    await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+    await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+    await showTeamBCalendar();
+    const firstBView = await page.getByText(teamBMarker, { exact: true }).count();
+    await page.goto(${JSON.stringify(`${BASE_URL}/team`)});
+    await page.getByRole('combobox').first().waitFor({ timeout: 15000 });
+    await switchTo(${JSON.stringify(teamA.name)});
+    await switchTo(${JSON.stringify(teamB.name)});
+    await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+    await showTeamBCalendar();
+    await page.reload();
+    await showTeamBCalendar();
+    const persistedTeamId = await page.evaluate(() => localStorage.getItem('sf_session_team_id'));
+    await page.goBack();
+    await page.getByRole('combobox').first().waitFor({ timeout: 15000 });
+    const teamValueAfterBack = await page.getByRole('combobox').first().textContent();
+    await page.goForward();
+    await showTeamBCalendar();
+    return { firstBView, persistedTeamId, teamValueAfterBack, finalBView: await page.getByText(teamBMarker, { exact: true }).count() };
+  }` ]));
+  expectEqual(multiTeamResult.firstBView > 0 && multiTeamResult.finalBView > 0, true, 'Calendar rapid Team A and Team B switches settle on the selected squad');
+  expectEqual(multiTeamResult.persistedTeamId, teamB.id, 'Calendar active-team selection persists through reload');
+  expectEqual(multiTeamResult.teamValueAfterBack?.includes(teamB.name), true, 'Calendar active-team selection survives browser back navigation');
 }
 
 function runReminderSchedulerPolicyAudit() {
