@@ -7818,12 +7818,12 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
       results[property] = await page.getByRole('heading', { name: title, exact: true }).count();
     }
     await page.getByRole('button', { name: 'Filters', exact: true }).click();
-    const typeRow = page.getByText('practice', { exact: true }).locator('..');
+    const typeRow = page.getByText('Event Types', { exact: true }).locator('..').getByText('practice', { exact: true }).locator('..');
     await typeRow.click();
     await page.keyboard.press('Escape');
     results.typeHiddenCount = await page.getByRole('heading', { name: title, exact: true }).count();
     await page.getByRole('button', { name: 'Filters', exact: true }).click();
-    await page.getByText('practice', { exact: true }).locator('..').click();
+    await page.getByText('Event Types', { exact: true }).locator('..').getByText('practice', { exact: true }).locator('..').click();
     await page.keyboard.press('Escape');
     await page.getByRole('heading', { name: title, exact: true }).first().waitFor({ timeout: 15000 });
     results.typeRestoredCount = await page.getByRole('heading', { name: title, exact: true }).count();

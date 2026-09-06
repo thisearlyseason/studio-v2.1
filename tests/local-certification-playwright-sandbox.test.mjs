@@ -66,6 +66,7 @@ test('Calendar workflow reconciles rendered fixtures after every required filter
   assert.match(source, /Calendar team and child filters reconcile exact included and excluded fixtures/);
   assert.match(source, /Calendar filter panel and event detail dialog remain within desktop and mobile viewports/);
   assert.match(source, /assertCalendarFilterAndDetailBounds/);
+  assert.match(source, /getByText\('Event Types', \{ exact: true \}\)\.locator\('\.\.'\)\.getByText\('practice', \{ exact: true \}\)/);
 });
 
 test('serialized Playwright templates never reference the CLI-unavailable URL constructor', () => {
