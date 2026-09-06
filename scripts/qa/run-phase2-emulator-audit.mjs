@@ -7654,8 +7654,24 @@ async function runPracticeFilmWorkflowAudit() {
       const viewer = page.getByRole('dialog', { name: 'Video Viewer' });
       const video = viewer.locator('video');
       await video.waitFor({ state: 'visible', timeout: 15000 });
-      await video.evaluate(media => media.readyState >= 1 ? true : new Promise(resolve => media.addEventListener('loadedmetadata', () => resolve(true), { once: true })));
-      const duration = await video.evaluate(media => media.duration);
+      const mediaReadiness = await video.evaluate(media => {
+        if (media.readyState >= 1) return { state: 'loaded', duration: media.duration, errorCode: null, networkState: media.networkState };
+        return new Promise(resolve => {
+          let settled = false;
+          let timer;
+          const finish = state => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve({ state, duration: media.duration, errorCode: media.error?.code || null, networkState: media.networkState });
+          };
+          timer = setTimeout(() => finish('timeout'), 10000);
+          media.addEventListener('loadedmetadata', () => finish('loaded'), { once: true });
+          media.addEventListener('error', () => finish('error'), { once: true });
+        });
+      });
+      if (mediaReadiness.state !== 'loaded') throw new Error('Coach film media readiness failed: ' + JSON.stringify(mediaReadiness));
+      const duration = mediaReadiness.duration;
       let invalidTimestamps = 0;
       for (const value of ['-1', 'NaN', String(Math.ceil(duration / 60) + 10) + ':00']) {
         await viewer.getByPlaceholder('Timestamp (e.g. 1:24)').fill(value);
@@ -7706,7 +7722,23 @@ async function runPracticeFilmWorkflowAudit() {
       const viewer = page.getByRole('dialog', { name: ${JSON.stringify(marker)} });
       const video = viewer.locator('[data-player-film-video]');
       await video.waitFor({ state: 'visible', timeout: 15000 });
-      await video.evaluate(media => media.readyState >= 1 ? true : new Promise(resolve => media.addEventListener('loadedmetadata', () => resolve(true), { once: true })));
+      const mediaReadiness = await video.evaluate(media => {
+        if (media.readyState >= 1) return { state: 'loaded', duration: media.duration, errorCode: null, networkState: media.networkState };
+        return new Promise(resolve => {
+          let settled = false;
+          let timer;
+          const finish = state => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve({ state, duration: media.duration, errorCode: media.error?.code || null, networkState: media.networkState });
+          };
+          timer = setTimeout(() => finish('timeout'), 10000);
+          media.addEventListener('loadedmetadata', () => finish('loaded'), { once: true });
+          media.addEventListener('error', () => finish('error'), { once: true });
+        });
+      });
+      if (mediaReadiness.state !== 'loaded') throw new Error('Player film media readiness failed: ' + JSON.stringify(mediaReadiness));
       await video.evaluate(media => { media.currentTime = media.duration * 0.8; media.dispatchEvent(new Event('timeupdate', { bubbles: true })); });
       await page.waitForTimeout(1000);
       const desktopBounds = await viewer.boundingBox();
