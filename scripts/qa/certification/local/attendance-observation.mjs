@@ -11,7 +11,7 @@ export function validateAttendanceLedger(download, { eventId, memberName, status
 export function validateAttendanceBounds(measurements, { staff = true, rsvp = false } = {}) {
   if (measurements.length !== 2 || measurements.map(item => `${item.viewport.width}x${item.viewport.height}`).join(',') !== '1440x900,390x844') throw new Error('Attendance requires exact desktop and mobile measurements.');
   for (const { viewport, controls } of measurements) {
-    for (const name of ['dialog', 'matrix', 'tab', 'close', ...(staff ? ['export'] : []), ...(rsvp ? ['going', 'maybe', 'declined'] : [])]) {
+    for (const name of ['dialog', 'matrix', 'tab', 'close', ...(staff ? ['export'] : []), ...(rsvp ? ['going', 'maybe', 'decline'] : [])]) {
       const box = controls[name];
       if (!box || ![box.x,box.y,box.width,box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0 || box.x < -1 || box.y < -1 || box.x+box.width > viewport.width+1 || box.y+box.height > viewport.height+1) throw new Error(`Attendance ${name} exceeds ${viewport.width}x${viewport.height}: ${JSON.stringify(box)}`);
     }

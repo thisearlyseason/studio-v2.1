@@ -37,4 +37,6 @@ test('Attendance dispatch uses a dedicated Team A workflow without Pro membershi
   assert.match(browser,/name:'High Priority Team Alert'/);
   assert.match(browser,/await alert\.getByRole\('button',\{name:'Close',exact:true\}\)\.click\(\)/);
   assert.doesNotMatch(browser,/name:'Got It'|force:true/);
+  assert.match(browser,/\['Going','Maybe','Decline'\]/);
+  assert.match(source,/captureBrowserOperationRequests\('att-responsive', 'qa-team-member'/);
 });
