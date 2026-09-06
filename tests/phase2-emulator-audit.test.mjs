@@ -322,6 +322,7 @@ test('Practice rows use dedicated browser-backed workflows and never fall throug
   assert.match(filmBlock, /practice-film-video-visible-delete-verified-absent/);
   assert.match(filmBlock, /practice-film-thumbnail-cleanup-deleted/);
   assert.match(filmBlock, /practice-film-watch-progress-cleanup-deleted/);
+  assert.match(filmBlock, /registerDynamicFirestoreDocument\(videoRecord\.path, 'practice-film-metadata-visible-delete-verified-absent'/);
   assert.match(filmBlock, /registerDynamicFirestoreRoot\(progressPath, 'practice-film-watch-progress-cleanup-deleted'/);
 });
 

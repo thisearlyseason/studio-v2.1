@@ -1655,6 +1655,25 @@ function registerDynamicFirestoreRoot(documentPath, label, registry = activeOper
   });
 }
 
+function registerDynamicFirestoreDocument(documentPath, label, registry = activeOperationResourceRegistry || dynamicResourceRegistry) {
+  registry.register({
+    id: `firestore:${activeOperationResourceRegistry ? `${activeCertificationScenario}:` : ''}${label}`,
+    kind: 'deleted',
+    async cleanup() {
+      return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const ref = firestoreAdmin.doc(documentPath);
+        const existed = (await ref.get()).exists;
+        if (existed) await ref.delete();
+        return existed;
+      });
+    },
+    async verify() {
+      return withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
+        !(await firestoreAdmin.doc(documentPath).get()).exists);
+    },
+  });
+}
+
 async function demoGraphSnapshots(firestoreAdmin, uid) {
   const [ownedTeams, demoTeams, leagues, demoLeagues, players, facilities] = await Promise.all([
     firestoreAdmin.collection('teams').where('ownerUserId', '==', uid).get(),
@@ -7832,7 +7851,7 @@ async function runPracticeFilmWorkflowAudit() {
     if (snapshot.size !== 1) throw new Error(`Expected one run-scoped film metadata record, received ${snapshot.size}.`);
     return { path: snapshot.docs[0].ref.path, data: snapshot.docs[0].data(), objectExists };
   });
-  await registerDynamicFirestoreRoot(videoRecord.path, 'practice-film-metadata-visible-delete-verified-absent');
+  await registerDynamicFirestoreDocument(videoRecord.path, 'practice-film-metadata-visible-delete-verified-absent');
   expectEqual(videoRecord.objectExists && videoRecord.data.storagePath === storagePath, true, 'Practice film valid upload creates one player video object and metadata');
 
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
