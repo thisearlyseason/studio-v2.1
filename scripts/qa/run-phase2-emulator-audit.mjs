@@ -7745,6 +7745,25 @@ async function captureCalendarCaseNavigations(caseId, actorAliases, { mobile = f
   }
 }
 
+async function assertCalendarExactMarkerIsolation({ actorAlias, includedTitle, excludedTitles, label }) {
+  const session = await browserLogin(actorAlias, '/dashboard', `calendar-marker-${actorAlias}-${process.pid}`);
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+    await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+    const monthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
+    await monthHeader.getByRole('button', { name: 'Today', exact: true }).click();
+    await monthHeader.getByRole('button').last().click();
+    await page.getByText(${JSON.stringify(includedTitle)}, { exact: true }).waitFor({ timeout: 15000 });
+    return {
+      included: await page.getByText(${JSON.stringify(includedTitle)}, { exact: true }).count(),
+      excluded: await Promise.all(${JSON.stringify(excludedTitles)}.map(title => page.getByText(title, { exact: true }).count())),
+    };
+  }` ]));
+  expectEqual(result.included > 0 && result.excluded.every(count => count === 0), true, label);
+}
+
 async function runCalendarViewsWorkflowAudit() {
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-owner-${process.pid}`);
   const result = JSON.parse(cli(owner, ['run-code', `async page => {
@@ -7810,6 +7829,16 @@ async function runCalendarViewsWorkflowAudit() {
   const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
   const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
   if (!teamA || !teamB || !teamC) throw new Error('Calendar household fixture teams are missing.');
+  await assertCalendarExactMarkerIsolation({
+    actorAlias: 'qa-coach-owner-a', includedTitle: `${teamA.visibleMarker} Future Practice`,
+    excludedTitles: [`${teamB.visibleMarker} Future Practice`],
+    label: 'Calendar Team A renders only the exact Team A schedule marker',
+  });
+  await assertCalendarExactMarkerIsolation({
+    actorAlias: 'qa-coach-owner-b', includedTitle: `${teamB.visibleMarker} Future Practice`,
+    excludedTitles: [`${teamA.visibleMarker} Future Practice`],
+    label: 'Calendar Team B renders only the exact Team B schedule marker',
+  });
   const activeHouseholdEventTitle = `QA Calendar Active Household ${process.pid}`;
   const householdEventTitle = `QA Calendar Household ${process.pid}`;
   const crossMidnightTitle = `QA Calendar Cross Midnight ${process.pid}`;
@@ -7984,6 +8013,29 @@ async function runCalendarViewsWorkflowAudit() {
   expectEqual(parentResult.mobileFits, true, 'Calendar household views fit the mobile viewport');
   expectEqual(parentResult.consoleErrors.length, 0, 'Calendar household workflow console errors');
   expectEqual(parentResult.failedResponses.length, 0, 'Calendar household workflow failed responses');
+
+  const parentB = await browserLogin('qa-parent-b', '/family', `calendar-parent-b-${process.pid}`);
+  const parentBResult = JSON.parse(cli(parentB, ['run-code', `async page => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(${JSON.stringify(`${BASE_URL}/calendar`)});
+    await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Agenda', exact: true }).click();
+    const monthHeader = page.locator('h2').filter({ hasText: /2026/ }).first().locator('../..');
+    await monthHeader.getByRole('button', { name: 'Today', exact: true }).click();
+    await monthHeader.getByRole('button').last().click();
+    await page.getByText(${JSON.stringify(`${teamB.visibleMarker} Future Practice`)}, { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Filters', exact: true }).click();
+    const panel = page.getByText('Squad Enrollment', { exact: true }).locator('..');
+    return {
+      teamB: await page.getByText(${JSON.stringify(`${teamB.visibleMarker} Future Practice`)}, { exact: true }).count(),
+      teamA: await page.getByText(${JSON.stringify(`${teamA.visibleMarker} Future Practice`)}, { exact: true }).count(),
+      teamCFilter: await panel.getByText(${JSON.stringify(teamC.name)}, { exact: true }).count(),
+      teamAFilter: await panel.getByText(${JSON.stringify(teamA.name)}, { exact: true }).count(),
+      teamBFilter: await panel.getByText(${JSON.stringify(teamB.name)}, { exact: true }).count(),
+    };
+  }` ]));
+  expectEqual(parentBResult.teamB > 0 && parentBResult.teamA === 0 && parentBResult.teamBFilter > 0 && parentBResult.teamAFilter === 0 && parentBResult.teamCFilter === 0, true,
+    'Calendar Parent B renders only the linked Team B marker and filter');
 
   const placementOwner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-placement-${process.pid}`);
   const placementResult = JSON.parse(cli(placementOwner, ['run-code', `async page => {
