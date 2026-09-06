@@ -8035,6 +8035,10 @@ async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, ho
 }
 
 async function runCalendarViewsWorkflowAudit() {
+  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
+  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
+  const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
+  if (!teamA || !teamB || !teamC) throw new Error('Calendar household fixture teams are missing.');
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `calendar-owner-${process.pid}`);
   const result = JSON.parse(cli(owner, ['run-code', `async page => {
     const consoleErrors = [];
@@ -8069,8 +8073,9 @@ async function runCalendarViewsWorkflowAudit() {
       await agenda.click();
       const agendaActive = await agenda.getAttribute('data-state').catch(() => null);
       await page.getByRole('button', { name: 'Filters', exact: true }).click();
-      await page.getByText('Squad Enrollment', { exact: true }).waitFor({ timeout: 10000 });
-      const enrolledSquads = await page.getByText(/Phase 2 (Falcons|Bluebirds)/).count();
+      const filterPopover = page.locator('[data-radix-popper-content-wrapper] > [data-state="open"][data-side][data-align]').filter({ hasText: 'Squad Enrollment' });
+      await filterPopover.waitFor({ state: 'visible', timeout: 10000 });
+      const ownerTeamIds = await filterPopover.locator('[data-calendar-team-id]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-calendar-team-id')));
       await page.keyboard.press('Escape');
       await page.getByRole('button', { name: 'Week', exact: true }).click();
       const weekVisible = await page.getByRole('button', { name: 'Week', exact: true }).count();
@@ -8081,24 +8086,20 @@ async function runCalendarViewsWorkflowAudit() {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.getByRole('heading', { name: 'Master Calendar', exact: true }).waitFor({ timeout: 10000 });
       const mobileFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-      return { agendaActive, weekVisible, dayVisible, monthVisible, enrolledSquads, mobileFits, consoleErrors, failedResponses };
+      return { agendaActive, weekVisible, dayVisible, monthVisible, ownerTeamIds, mobileFits, consoleErrors, failedResponses };
     } finally {
       page.off('console', onConsole);
       page.off('pageerror', onPageError);
       page.off('response', onResponse);
     }
   }`]));
-  expectEqual(result.enrolledSquads === 1, true, 'Calendar exposes exactly one authenticated owner squad filter choice');
+  expectEqual(JSON.stringify(result.ownerTeamIds), JSON.stringify([teamA.id]), 'Calendar exposes exactly one authenticated owner squad filter choice');
   expectEqual(result.weekVisible === 1 && result.dayVisible === 1 && result.monthVisible === 1, true,
     'Calendar day week and month view controls settle through visible clicks');
   expectEqual(result.mobileFits, true, 'Calendar fits the mobile viewport');
   expectEqual(result.consoleErrors.length, 0, 'Calendar views workflow console errors');
   expectEqual(result.failedResponses.length, 0, 'Calendar views workflow failed responses');
 
-  const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
-  const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
-  const teamC = FIXTURES.teams.find(team => team.alias === 'qa-team-c');
-  if (!teamA || !teamB || !teamC) throw new Error('Calendar household fixture teams are missing.');
   await assertCalendarExactMarkerIsolation({
     actorAlias: 'qa-coach-owner-a', includedTitle: `${teamA.visibleMarker} Future Practice`,
     excludedTitles: [`${teamB.visibleMarker} Future Practice`],

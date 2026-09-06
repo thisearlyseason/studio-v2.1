@@ -86,7 +86,8 @@ test('Calendar evidence rejects duplicate event markers across views, households
 
   const workflowEnd = source.indexOf('async function runReminderSchedulerRuntimeAudit', workflowStart);
   const workflow = source.slice(workflowStart, workflowEnd);
-  assert.match(workflow, /result\.enrolledSquads === 1/);
+  assert.match(workflow, /filterPopover\.locator\('\[data-calendar-team-id\]'\)\.evaluateAll/);
+  assert.match(workflow, /JSON\.stringify\(result\.ownerTeamIds\), JSON\.stringify\(\[teamA\.id\]\)/);
   assert.match(workflow, /parentResult\.householdFilterCount, 2/);
   assert.match(workflow, /parentResult\.athleteCount, 2/);
   assert.match(workflow, /parentBResult\.teamB === 1/);
