@@ -7783,18 +7783,21 @@ async function assertCalendarFilterAndDetailBounds(activeEventTitle) {
       await page.getByRole('button', { name: 'Filters', exact: true }).click();
       const filterPanel = page.getByText('Squad Enrollment', { exact: true }).locator('..');
       await filterPanel.waitFor({ state: 'visible', timeout: 15000 });
-      const filterPanelWithinViewport = inside(await filterPanel.boundingBox());
+      const filterPanelBox = await filterPanel.boundingBox();
+      const filterPanelWithinViewport = inside(filterPanelBox);
       await page.keyboard.press('Escape');
       await eventHeading.click();
       const detailDialog = page.getByRole('dialog').filter({ hasText: ${JSON.stringify(activeEventTitle)} });
       await detailDialog.waitFor({ state: 'visible', timeout: 15000 });
-      const detailDialogWithinViewport = inside(await detailDialog.boundingBox());
-      return { filterPanelWithinViewport, detailDialogWithinViewport, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
+      const detailDialogBox = await detailDialog.boundingBox();
+      const detailDialogWithinViewport = inside(detailDialogBox);
+      return { viewport, filterPanelBox, filterPanelWithinViewport, detailDialogBox, detailDialogWithinViewport, mobileFits: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) };
     }` ]));
     viewportResults.push(result);
   }
-  expectEqual(viewportResults.every(result => result.filterPanelWithinViewport && result.detailDialogWithinViewport && result.mobileFits), true,
-    'Calendar filter panel and event detail dialog remain within desktop and mobile viewports');
+  const allWithinViewport = viewportResults.every(result => result.filterPanelWithinViewport && result.detailDialogWithinViewport && result.mobileFits);
+  if (!allWithinViewport) throw new Error(`Calendar overlay bounds failed: ${JSON.stringify(viewportResults)}`);
+  expectEqual(allWithinViewport, true, 'Calendar filter panel and event detail dialog remain within desktop and mobile viewports');
 }
 
 async function assertCalendarRenderedFilterReconciliation({ activeEventTitle, householdEventTitle, teamA, teamB, teamC }) {
