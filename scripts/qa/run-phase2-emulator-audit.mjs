@@ -131,6 +131,7 @@ const workflowEventsOnly = process.argv.includes('--workflow-events-only');
 const workflowFacilitiesOnly = process.argv.includes('--workflow-facilities-only');
 const workflowEquipmentOnly = process.argv.includes('--workflow-equipment-only');
 const waiverSignatureNavigationOnly = process.argv.includes('--waiver-sign-navigation-only');
+const waiverCoachVisibilityOnly = process.argv.includes('--waiver-coach-visibility-only');
 const playwrightCli = process.env.PLAYWRIGHT_CLI || '';
 const password = randomBytes(24).toString('base64url');
 const sensitiveValues = new Set([password]);
@@ -7453,12 +7454,79 @@ async function runWaiverSignatureNavigationProbe() {
   console.log('Waiver signature landing/target navigation probe completed.');
 }
 
-async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coachTeamId }) {
+async function runWaiverCoachVisibilityProbe() {
+  const actors = await waiverActors(['qa-school-owner', 'qa-school-delegate']);
+  const owner = actors.get('qa-school-owner');
+  const delegate = actors.get('qa-school-delegate');
+  const team = waiverTeam('qa-school-squad-1');
+  const requestId = `coach_visibility_${FIXTURES.runId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 100);
+  const title = `Coach Visibility ${FIXTURES.runId}`;
+  const created = await apiJsonResult('/api/organizations/waivers', owner.token, waiverBody({ body: {
+    requestId, teamIds: [team.id], title, content: 'Focused coach waiver visibility probe', waiverAudience: 'team',
+  } }));
+  expectEqual(created.status, 201, 'coach visibility probe deployment status');
+  const copyId = `${created.body.deploymentId}_1`;
+  const persisted = await withEmulatorAuthAdmin(async (_auth, db) => {
+    const [copy, membership] = await Promise.all([
+      db.doc(`teams/${team.id}/documents/${copyId}`).get(),
+      db.doc(`teams/${team.id}/members/${delegate.uid}`).get(),
+    ]);
+    return { copyExists: copy.exists, persistedCopy: copy.data() || {}, membership: membership.data() || {} };
+  });
+  expectEqual(persisted.copyExists, true, 'coach visibility probe copy exists');
+  expectEqual(persisted.persistedCopy.teamId, team.id, 'coach visibility probe copy team');
+  expectEqual(persisted.persistedCopy.title, title, 'coach visibility probe copy title');
+  expectEqual(persisted.persistedCopy.isClubMaster, true, 'coach visibility probe copy master flag');
+  expectEqual(persisted.persistedCopy.isActive, true, 'coach visibility probe copy active flag');
+  expectEqual(persisted.persistedCopy.waiverAudience, 'team', 'coach visibility probe copy audience');
+  expectEqual(persisted.membership.userId, delegate.uid, 'coach visibility probe delegate membership');
+  expectEqual(persisted.membership.status, 'active', 'coach visibility probe delegate status');
+
+  const session = await browserLogin(delegate.alias, '/club', `waiver-coach-visibility-${process.pid}`);
+  const observation = JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors=[];const failedResponses=[];
+    const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text())};
+    const onResponse=response=>{if(response.status()>=400)failedResponses.push({status:response.status(),url:response.url()})};
+    page.on('console',onConsole);page.on('response',onResponse);
+    try{
+      await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(team.id)});
+      await page.goto(${JSON.stringify(`${BASE_URL}/coaches-corner`)});
+      await page.waitForFunction(expected=>window.location.pathname===expected,'/coaches-corner',{timeout:15000});
+      await page.locator('[data-testid="squad-switcher-trigger"]:visible').first().waitFor({state:'visible',timeout:15000});
+      await page.waitForTimeout(2000);
+      const banner=page.getByRole('button',{name:/Review & Sign/}).first();
+      const bannerCount=await banner.count();
+      if(bannerCount===1)await banner.click();
+      const exactTitle=page.getByText(${JSON.stringify(title)},{exact:true});
+      if(bannerCount===1)await exactTitle.first().waitFor({state:'visible',timeout:5000}).catch(()=>{});
+      const switchers=page.getByTestId('squad-switcher-trigger');
+      return{
+        storedTeamId:await page.evaluate(()=>localStorage.getItem('sf_session_team_id')),
+        selectedTeamCount:await switchers.evaluateAll((elements,name)=>elements.filter(element=>element.getClientRects().length>0&&element.textContent?.includes(name)).length,${JSON.stringify(team.name)}),
+        bannerCount,
+        titleCount:await exactTitle.count(),
+        consoleErrors,
+        failedResponses:failedResponses.filter(item=>item.url.startsWith(${JSON.stringify(BASE_URL)})),
+        bodyText:String(await page.locator('body').innerText()).slice(0,4000),
+      };
+    }finally{page.off('console',onConsole);page.off('response',onResponse)}
+  }`]));
+  console.log(`Waiver coach visibility observation ${JSON.stringify(observation)}`);
+  expectEqual(observation.storedTeamId, team.id, 'coach visibility probe stored team');
+  expectEqual(observation.selectedTeamCount, 1, 'coach visibility probe selected team');
+  expectEqual(observation.bannerCount, 1, 'coach visibility probe unsigned banner');
+  expectEqual(observation.titleCount, 1, 'coach visibility probe exact waiver title');
+  expectEqual(observation.consoleErrors.length, 0, 'coach visibility probe console errors');
+  expectEqual(observation.failedResponses.length, 0, 'coach visibility probe unexpected responses');
+}
+
+async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coachTeamId, coachTeamName }) {
   const specs = WAIVER_SIGNATURE_SURFACES.map(spec => ({
     ...spec,
     title: spec.kind === 'coach' ? coachTitle : participantTitle,
     button: spec.kind === 'coach' ? 'Review & Sign' : spec.route === '/family' ? 'Review & Sign' : 'Execute Document',
     teamId: spec.kind === 'coach' ? coachTeamId : undefined,
+    teamName: spec.kind === 'coach' ? coachTeamName : undefined,
   }));
   const observations = [];
   for (const spec of specs) {
@@ -7486,13 +7554,12 @@ async function observeWaiverSignatureDialogs({ participantTitle, coachTitle, coa
         ${spec.teamId ? `await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(spec.teamId)});` : ''}
         await page.goto(${JSON.stringify(BASE_URL + spec.route)});
         const title=page.getByText(${JSON.stringify(spec.title)},{exact:true}).first();
-        await title.waitFor({state:'visible',timeout:15000});
         await dismissTransientDialogs();
         ${spec.kind === 'coach'
-          ? `const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
+          ? `const selectedTeam=page.locator('[data-testid="squad-switcher-trigger"]:visible').filter({hasText:${JSON.stringify(spec.teamName)}});if(await selectedTeam.count()!==1)throw new Error('Expected exact selected coach waiver squad');const banner=page.getByRole('button',{name:/Review & Sign/}).first();await banner.click();await title.waitFor({state:'visible',timeout:15000});const trigger=title.locator('xpath=../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
           : spec.route === '/family'
-            ? `const trigger=title.locator('xpath=../../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
-            : `const trigger=title.locator('xpath=../following-sibling::*//button[contains(normalize-space(.),"Execute Document")]');`}
+            ? `await title.waitFor({state:'visible',timeout:15000});const trigger=title.locator('xpath=../../following-sibling::button[contains(normalize-space(.),"Review & Sign")]');`
+            : `await title.waitFor({state:'visible',timeout:15000});const trigger=title.locator('xpath=../following-sibling::*//button[contains(normalize-space(.),"Execute Document")]');`}
         await trigger.scrollIntoViewIfNeeded();
         const triggerBox=await trigger.boundingBox();
         const hit=triggerBox?await page.evaluate(({x,y})=>{const element=document.elementFromPoint(x,y);return element?{tag:element.tagName.toLowerCase(),className:String(element.className||'').slice(0,160),text:String(element.textContent||'').trim().slice(0,100)}:null},{x:triggerBox.x+triggerBox.width/2,y:triggerBox.y+triggerBox.height/2}):null;
@@ -7580,7 +7647,7 @@ async function runWaiverSignatureWorkflowAudit() {
   // Parent and youth intentionally target the same subject/version; only the first
   // signature is durable, so the youth attempt below uses version two instead.
 
-  const browser = await observeWaiverSignatureDialogs({ participantTitle, coachTitle: `Coach Waiver ${scope}`, coachTeamId: schoolTeam.id });
+  const browser = await observeWaiverSignatureDialogs({ participantTitle, coachTitle: `Coach Waiver ${scope}`, coachTeamId: schoolTeam.id, coachTeamName: schoolTeam.name });
 
   const participantBody = (signer, memberId, signatureName, extra = {}) => ({
     teamId: teamA.id, memberId, documentId: participant.documentId, signatureName,
@@ -12946,7 +13013,8 @@ async function main() {
   ownedNextServerProcess = startProcess('npm', ['run', 'dev'], 'next.log');
   await waitForHttp(`${BASE_URL}/login`);
 
-  if (waiverSignatureNavigationOnly) await runWaiverSignatureNavigationProbe();
+  if (waiverCoachVisibilityOnly) await runWaiverCoachVisibilityProbe();
+  else if (waiverSignatureNavigationOnly) await runWaiverSignatureNavigationProbe();
   else if (certificationIdentity || certificationTenants || certificationOperations) {
     await runSelectedCertificationBatches({
       certificationIdentity,

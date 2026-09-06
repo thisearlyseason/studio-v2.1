@@ -71,5 +71,11 @@ test('waiver lifecycle responsive evidence separates dialog bounds from page ove
   assert.match(audit, /if \(waiverSignatureNavigationOnly\) await runWaiverSignatureNavigationProbe\(\)/);
   assert.match(audit, /pathname:await page\.evaluate\(\(\)=>location\.pathname\)/);
   assert.doesNotMatch(audit.slice(audit.indexOf('async function runWaiverSignatureNavigationProbe()'), audit.indexOf('async function observeWaiverSignatureDialogs(')), /new URL\(page\.url\(\)\)/);
+  assert.match(audit, /async function runWaiverCoachVisibilityProbe\(\)/);
+  assert.match(audit, /persistedCopy\.waiverAudience, 'team'/);
+  assert.match(audit, /observation\.selectedTeamCount, 1/);
+  assert.match(audit, /observation\.titleCount, 1/);
+  assert.match(audit, /evaluateAll\(\(elements,name\)=>elements\.filter\(element=>element\.getClientRects\(\)\.length>0&&element\.textContent\?\.includes\(name\)\)\.length/);
+  assert.match(signatureWorkflow, /await banner\.click\(\);await title\.waitFor\(\{state:'visible',timeout:15000\}\)/);
   assert.match(signatureWorkflow, /WAIVER_SIGNATURE_SURFACES/);
 });
