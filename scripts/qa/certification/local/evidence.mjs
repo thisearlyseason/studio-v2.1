@@ -292,7 +292,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (caseShape === 'operations' && caseRecord.state === 'OBSERVED') {
       const execution = caseRecord.execution;
       const exactCompetitionContract = /^(leagues-(create-edit-clone-delete|schedule-generation-deployment|registration-assignment|scorekeeper-spectator)|tournaments-(create-configure-replicate-archive|schedule-pools-brackets-referees|scoring-dispute-public-standings))$/.test(result.scenarioId);
-      assertClosedObject(execution, ['actor', 'operation', 'requests', 'reconciliation', 'observer', 'timeBound', 'cleanupReference', 'runId', 'requestId', 'postconditionIds', 'cleanupSelectors', 'method', 'route', 'expectedStatuses'], 'Operation execution');
+      assertClosedObject(execution, ['actor', 'operation', 'requests', 'reconciliation', 'observer', 'timeBound', 'cleanupReference', 'runId', 'requestId', 'replayOf', 'postconditionIds', 'cleanupSelectors', 'method', 'route', 'expectedStatuses', 'browser'], 'Operation execution');
       for (const key of ['actor', 'operation', 'reconciliation', 'observer', 'timeBound', 'cleanupReference']) assertPlainString(execution?.[key], `operation execution ${key}`);
       if (!Array.isArray(execution.requests) || execution.requests.length === 0) throw new Error(`${caseRecord.caseId} requires operation requests.`);
       if (exactCompetitionContract && (execution.runId !== caseRecord.runId || !Array.isArray(execution.postconditionIds) || !execution.postconditionIds.length ||
@@ -302,7 +302,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
       if (exactCompetitionContract) for (const key of ['requestId', 'method', 'route']) assertPlainString(execution[key], `operation execution ${key}`);
       assertOperationActorAliases(caseRecord.actorAliases, execution);
       for (const request of execution.requests) {
-        assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'invocationType', 'invocationId', 'startedAt', 'completedAt'], 'Operation request');
+        assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'requestId', 'payloadHash', 'invocationType', 'invocationId', 'startedAt', 'completedAt'], 'Operation request');
         assertPlainString(request.evidenceId, 'operation request evidenceId');
         const isHttp = /^(GET|POST|PATCH|PUT|DELETE)$/.test(request.method) &&
           request.invocationType === undefined && request.invocationId === undefined;
@@ -523,7 +523,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           throw new Error(`${caseRecord.caseId} observed artifact requires exact assertions.`);
         }
         for (const assertion of parsed.assertions || []) {
-          assertClosedObject(assertion, ['id', 'label', 'expected', 'observed', 'capturedAt', 'postconditionId'], 'Assertion');
+          assertClosedObject(assertion, ['id', 'label', 'expected', 'observed', 'capturedAt', 'kind', 'postconditionId'], 'Assertion');
           if (caseShape === 'operations' || assertion.id !== undefined) assertPlainString(assertion.id, 'artifact assertion id');
           if (caseShape === 'operations') {
             const owner = `${result.scenarioId}:${caseRecord.caseId}`;

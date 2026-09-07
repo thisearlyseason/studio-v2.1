@@ -69,6 +69,7 @@ const REQUIRED_ALIASES = [
   'qa-parent-b',
   'qa-adult-player-a',
   'qa-adult-player-b',
+  'qa-referee',
   'qa-youth-invite',
   'qa-youth-active',
   'qa-superadmin',

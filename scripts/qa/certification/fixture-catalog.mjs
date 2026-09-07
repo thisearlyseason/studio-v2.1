@@ -119,6 +119,7 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-parent-b', 'registered', 'parent', 'active', ['qa-team-b'], 'free', '/family'],
     ['qa-adult-player-a', 'registered', 'adult_player', 'active', ['qa-team-a'], 'free', '/dashboard'],
     ['qa-adult-player-b', 'registered', 'adult_player', 'active', ['qa-team-b'], 'free', '/dashboard'],
+    ['qa-referee', 'registered', 'referee', 'active', [], 'free', '/dashboard'],
     ['qa-youth-invite', 'mailbox-only', 'youth_player', 'accountless', ['qa-team-c'], 'free', null],
     ['qa-youth-active', 'registered', 'youth_player', 'active', ['qa-team-a'], 'free', '/dashboard'],
     ['qa-superadmin', 'registered', 'superadmin', 'active', [], 'free', '/admin'],

@@ -126,16 +126,24 @@ export async function snapshotCompetitionRoots(firestore, { leagueIds, teamIds }
   return [...new Set(paths)].sort();
 }
 
-export async function registerCompetitionDiscovery({ registry, scopeId, runId, snapshot, inspect, registerRoot }) {
+function containsExactReference(value, references) {
+  if (typeof value === 'string') return references.has(value);
+  if (Array.isArray(value)) return value.some(item => containsExactReference(item, references));
+  if (value && typeof value === 'object') return Object.values(value).some(item => containsExactReference(item, references));
+  return false;
+}
+
+export async function registerCompetitionDiscovery({ registry, scopeId, runId, runOwnedReferences = [], snapshot, inspect, registerRoot }) {
   const baseline = new Set(await snapshot());
   const discovered = new Set();
+  const exactRunOwnedReferences = new Set(runOwnedReferences.filter(value => typeof value === 'string' && value));
   registry.register({
     id: `competition-discovery:${scopeId}:${runId}`, kind: 'obligation',
     async cleanup() {
       for (const documentPath of await snapshot()) {
         if (baseline.has(documentPath) || discovered.has(documentPath)) continue;
         const value = await inspect(documentPath);
-        let isRunOwned = JSON.stringify(value || {}).includes(runId);
+        let isRunOwned = JSON.stringify(value || {}).includes(runId) || containsExactReference(value, exactRunOwnedReferences);
         const pathOperationId = documentPath.split('/').at(-1);
         const operationId = typeof value?.operationId === 'string' ? value.operationId
           : /^competition_[A-Za-z0-9_-]+$/.test(pathOperationId || '') ? pathOperationId : '';

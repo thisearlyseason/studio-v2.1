@@ -168,6 +168,22 @@ export const COMPETITION_SCENARIO_CASES = Object.freeze(Object.fromEntries(
   COMPETITION_SCENARIO_IDS.map(id => [id, SCHEDULE_CASE_REQUIREMENTS[id]]),
 ));
 
+export function competitionScenarioExecutionOrder(scenarioId) {
+  const frozen = COMPETITION_SCENARIO_CASES[scenarioId];
+  if (!frozen) throw new Error(`Unknown competition scenario ${scenarioId}.`);
+  const caseIds = Object.values(frozen).flat();
+  if (scenarioId !== 'tournaments-create-configure-replicate-archive') return caseIds;
+  const beforeArchive = [
+    'tournament-create',
+    'tournament-lifecycle-replay',
+    'tournament-configure',
+    'tournament-replicate',
+    'tournament-lifecycle-reload',
+    'tournament-archive',
+  ];
+  return [...beforeArchive, ...caseIds.filter(caseId => !beforeArchive.includes(caseId))];
+}
+
 const COMPETITION_EXECUTION_BASE = Object.freeze({
   'leagues-create-edit-clone-delete': { actor: 'qa-league-owner-a', foreignActor: 'qa-league-owner-b', route: '/api/leagues/lifecycle', fixtureFamily: 'qa-league-a+qa-league-b', handler: 'runCompetitionLifecycleWorkflowAudit' },
   'leagues-schedule-generation-deployment': { actor: 'qa-league-owner-a', foreignActor: 'qa-league-owner-b', route: '/api/leagues/schedule', fixtureFamily: 'qa-league-a+qa-league-b', handler: 'runCompetitionScheduleWorkflowAudit' },
@@ -199,6 +215,7 @@ const PUBLIC_SCOREKEEPER_CASES = new Set([
 const EXACT_COMPETITION_ACTORS = Object.freeze({
   'league-score-outsider-deny': 'qa-removed-member',
   'tournament-referee-role-deny': 'qa-adult-player-a',
+  'tournament-schedule-mobile': 'qa-referee',
   'tournament-foreign-staff': 'qa-school-delegate',
   'tournament-foreign-team': 'qa-coach-owner-b',
   'tournament-schedule-foreign-deny': 'qa-coach-owner-b',
@@ -231,7 +248,9 @@ const ASSIGNMENT_CASES = new Set([
 ]);
 const BROWSER_COMPETITION_DIMENSIONS = new Set(['console', 'network', 'responsive']);
 const browserPathForCompetitionScenario = scenarioId => scenarioId.startsWith('tournaments-') ? '/manage-tournaments' : '/competition';
-const routeForCompetitionCase = (base, caseId, scenarioId, dimension) => caseId === 'tournament-archive-cancel' || (BROWSER_COMPETITION_DIMENSIONS.has(dimension) && dimension !== 'network')
+const routeForCompetitionCase = (base, caseId, scenarioId, dimension) => caseId === 'tournament-schedule-mobile'
+  ? '/tournaments/referee/{teamId}/{eventId}'
+  : caseId === 'tournament-archive-cancel' || (BROWSER_COMPETITION_DIMENSIONS.has(dimension) && dimension !== 'network')
   ? browserPathForCompetitionScenario(scenarioId)
   : PUBLIC_ACTION_CASES.has(caseId)
   ? '/api/public/portals/action'
@@ -275,6 +294,10 @@ const COMPETITION_EXACT_STATUS = Object.freeze({
   'tournament-score-wrong-pin': [403], 'tournament-score-replay': [200], 'tournament-score-downstream-conflict': [409],
   'tournament-score-narrow-scope': [403], 'tournament-score-outsider-deny': [403],
 });
+const COMPETITION_REPLAY_OF = Object.freeze({
+  'league-replay': 'league-create',
+  'tournament-lifecycle-replay': 'tournament-create',
+});
 
 export const COMPETITION_CASE_EXECUTION_CONTRACTS = Object.freeze(Object.fromEntries(
   COMPETITION_SCENARIO_IDS.map(scenarioId => {
@@ -292,7 +315,9 @@ export const COMPETITION_CASE_EXECUTION_CONTRACTS = Object.freeze(Object.fromEnt
         cleanupSelectors: Object.freeze([
           `competition-discovery:${scenarioId}:{runId}`,
         ]),
-        requestId: `qa-${id}-{runId}`, assertionId: `assertion-${id}-{sequence}`,
+        requestId: COMPETITION_REPLAY_OF[id] ? `qa-${COMPETITION_REPLAY_OF[id]}-{runId}` : `qa-${id}-{runId}`,
+        ...(COMPETITION_REPLAY_OF[id] ? { replayOf: COMPETITION_REPLAY_OF[id] } : {}),
+        assertionId: `assertion-${id}-{sequence}`,
         expectedResult: 'exact case postcondition and explicit HTTP status',
         fixtureFamily: base.fixtureFamily, handler: base.handler,
         cleanupOwner: 'scenario-resource-registry',
@@ -301,6 +326,10 @@ export const COMPETITION_CASE_EXECUTION_CONTRACTS = Object.freeze(Object.fromEnt
         responsiveBounds: dimension === 'responsive'
           ? Object.freeze(id.endsWith('mobile') ? [{ width: 390, height: 844 }] : [{ width: 1440, height: 900 }])
           : Object.freeze([]),
+        ...((BROWSER_COMPETITION_DIMENSIONS.has(dimension) || id === 'tournament-archive-cancel') ? { browser: Object.freeze({
+          actor: actorForCompetitionCase(base, id), route: routeForCompetitionCase(base, id, scenarioId, dimension),
+          selectorId: `${id}-interaction`, controlId: `${id}-result`,
+        }) } : {}),
       })]),
     )))];
   }),
@@ -360,10 +389,15 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
       if (item.dimension !== contract.dimension || item.execution.actor !== contract.actor) throw new Error(`Competition case ${required} actor or dimension does not match its frozen contract.`);
       if (typeof item.execution.runId !== 'string' || item.execution.runId !== item.runId) throw new Error(`Competition case ${required} has mismatched run ownership.`);
       const expectedRequestId = contract.requestId.replace('{runId}', item.runId);
-      if (item.execution.requestId !== expectedRequestId) throw new Error(`Competition case ${required} has mismatched request ID.`);
+      const atomicRace = required === 'league-partial-clone' || required === 'tournament-partial-replica';
+      if (item.execution.requestId !== (atomicRace ? `${expectedRequestId}-a` : expectedRequestId)) throw new Error(`Competition case ${required} has mismatched request ID.`);
       const expectedSelectors = contract.cleanupSelectors.map(selector => selector.replace('{runId}', item.runId));
       if (JSON.stringify(item.execution.cleanupSelectors) !== JSON.stringify(expectedSelectors)) throw new Error(`Competition case ${required} has mismatched cleanup selectors.`);
       if (JSON.stringify(item.execution.postconditionIds) !== JSON.stringify(contract.postconditions)) throw new Error(`Competition case ${required} has mismatched postcondition IDs.`);
+      const coveredPostconditions = new Set(item.assertions.map(assertion => assertion?.postconditionId));
+      if (coveredPostconditions.size !== contract.postconditions.length || contract.postconditions.some(id => !coveredPostconditions.has(id))) {
+        throw new Error(`Competition case ${required} has incomplete postcondition coverage.`);
+      }
       for (const assertion of item.assertions) {
         if (!assertion?.id) throw new Error(`Competition case ${required} is missing assertion ID.`);
         if (assertionOwners.has(assertion.id)) throw new Error(`Duplicate assertion ID ${assertion.id}.`);
@@ -371,6 +405,8 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
         if (!new RegExp(`^assertion-${required}-\\d+$`).test(assertion.id) || !contract.postconditions.includes(assertion.postconditionId)) {
           throw new Error(`Competition case ${required} has an assertion outside its frozen contract.`);
         }
+        const expectedKind = assertion.postconditionId === contract.postconditions[0] ? 'transport' : 'state';
+        if (assertion.kind !== expectedKind) throw new Error(`Competition case ${required} assertion kind does not match its semantic postcondition.`);
       }
       for (const request of item.execution.requests) {
         if (!request?.evidenceId) throw new Error(`Competition case ${required} is missing request evidence ID.`);
@@ -380,6 +416,32 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
         if (item.execution.method !== contract.method || JSON.stringify(item.execution.expectedStatuses) !== JSON.stringify(contract.expectedStatuses) ||
             request.actorAlias !== contract.actor || request.method !== contract.method || request.pathname !== frozenRuntimeRoute || !contract.expectedStatuses.includes(request.status)) {
           throw new Error(`Competition case ${required} has request evidence outside its frozen method, route, actor, or status contract.`);
+        }
+        if (request.method !== 'GET' && request.pathname.startsWith('/api/')) {
+          if ((!atomicRace && request.requestId !== item.execution.requestId) || typeof request.requestId !== 'string' || !request.requestId || !/^sha256:[A-Za-z0-9_-]{43}$/.test(request.payloadHash || '')) {
+            throw new Error(`Competition case ${required} is missing captured request identity or payload hash.`);
+          }
+        }
+      }
+      if (atomicRace) {
+        const capturedIds = [...new Set(item.execution.requests.map(request => request.requestId))].sort();
+        if (JSON.stringify(capturedIds) !== JSON.stringify([`${expectedRequestId}-a`, `${expectedRequestId}-b`])) {
+          throw new Error(`Competition case ${required} has mismatched atomic request identities.`);
+        }
+      }
+      if ((contract.replayOf || null) !== (item.execution.replayOf || null)) throw new Error(`Competition case ${required} has mismatched replay linkage.`);
+      if (contract.replayOf) {
+        const original = cases.find(candidate => candidate.caseId === contract.replayOf);
+        if (!original || original.execution?.requestId !== item.execution.requestId || original.execution?.requests?.[0]?.payloadHash !== item.execution.requests?.[0]?.payloadHash) {
+          throw new Error(`Competition case ${required} did not replay the original captured request identity and payload hash.`);
+        }
+      }
+      if (contract.browser) {
+        const browser = item.execution.browser;
+        if (!browser || browser.actor !== contract.browser.actor || browser.route !== item.execution.route || browser.selectorId !== contract.browser.selectorId || browser.controlId !== contract.browser.controlId ||
+            typeof browser.session !== 'string' || !browser.session || !Array.isArray(browser.viewports) || browser.viewports.length !== 2 ||
+            !Number.isInteger(browser.consoleCount) || !Number.isInteger(browser.networkCount)) {
+          throw new Error(`Competition case ${required} has missing or mismatched browser provenance.`);
         }
       }
     }

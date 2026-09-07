@@ -13,6 +13,7 @@ import {
   LOCAL_OPERATIONS_CASE_REQUIREMENTS,
   assertAuthoritativeCompetitionEvents,
   assertCompetitionCaseContracts,
+  competitionScenarioExecutionOrder,
   selectFrozenCompetitionRequests,
   handlers,
 } from '../scripts/qa/certification/local/batches/operations.mjs';
@@ -82,16 +83,24 @@ const frozenCaseIds = Object.freeze({
 function strictCompetitionEvent(scenarioId, caseId, assertionId = `assertion-${caseId}-1`) {
   const contract = COMPETITION_CASE_EXECUTION_CONTRACTS[scenarioId][caseId];
   const runId = 'strict-contract-run';
+  const atomicRace = ['league-partial-clone', 'tournament-partial-replica'].includes(caseId);
+  const frozenRequestId = contract.requestId.replace('{runId}', runId);
   return {
     type: 'case', scenarioId, caseId, dimension: contract.dimension, runId, state: 'OBSERVED',
-    assertions: [{ id: assertionId, postconditionId: contract.postconditions[0] }],
+    assertions: [
+      { id: assertionId, kind: 'transport', postconditionId: contract.postconditions[0] },
+      { id: `assertion-${caseId}-2`, kind: 'state', postconditionId: contract.postconditions[1] },
+    ],
     execution: {
-      actor: contract.actor, runId, requestId: contract.requestId.replace('{runId}', runId),
+      actor: contract.actor, runId, requestId: atomicRace ? `${frozenRequestId}-a` : frozenRequestId,
+      ...(contract.replayOf ? { replayOf: contract.replayOf } : {}),
+      ...(contract.browser ? { browser: { actor: contract.actor, route: contract.route, selectorId: contract.browser.selectorId, controlId: contract.browser.controlId, session: `session-${caseId}`, viewports: [{ width: 1440, height: 900 }, { width: 390, height: 844 }], consoleCount: 0, networkCount: 0 } } : {}),
       method: contract.method, route: contract.route, expectedStatuses: [...contract.expectedStatuses],
       cleanupReference: 'fixture-cleanup-strict-contract-run',
       cleanupSelectors: contract.cleanupSelectors.map(value => value.replace('{runId}', runId)),
       postconditionIds: [...contract.postconditions],
-      requests: contract.expectedStatuses.map((status, index) => ({ evidenceId: `request-${caseId}-${index + 1}`, actorAlias: contract.actor, method: contract.method, pathname: contract.route, status })),
+      requests: contract.expectedStatuses.map((status, index) => ({ evidenceId: `request-${caseId}-${index + 1}`, actorAlias: contract.actor, method: contract.method, pathname: contract.route, status,
+        requestId: contract.method === 'GET' || !contract.route.startsWith('/api/') ? null : atomicRace ? `${frozenRequestId}-${index ? 'b' : 'a'}` : frozenRequestId, payloadHash: contract.method === 'GET' || !contract.route.startsWith('/api/') ? null : `sha256:${'a'.repeat(43)}` })),
     },
   };
 }
@@ -122,7 +131,8 @@ test('every competition row has the exact frozen case map and executable provena
       } else if (caseId === 'league-score-narrow-scope') {
         assert.equal(execution.route, '/v1/projects/{projectId}/databases/(default)/documents/leagues/{leagueId}/private/lifecycle');
         assert.equal(execution.method, 'GET');
-      } else if (['console', 'responsive'].includes(dimension) || caseId === 'tournament-archive-cancel') assert.match(execution.route, /^\/(competition|manage-tournaments)$/);
+      } else if (caseId === 'tournament-schedule-mobile') assert.equal(execution.route, '/tournaments/referee/{teamId}/{eventId}');
+      else if (['console', 'responsive'].includes(dimension) || caseId === 'tournament-archive-cancel') assert.match(execution.route, /^\/(competition|manage-tournaments)$/);
       else assert.match(execution.route, /^\/api\//);
       assert.match(execution.requestId, /\{runId\}/);
       assert.match(execution.assertionId, /\{sequence\}/);
@@ -158,6 +168,27 @@ test('competition contracts reject missing and duplicate assertion or request ow
   ], ['leagues-create-edit-clone-delete']), /missing assertion/i);
 });
 
+test('competition evidence requires complete semantic postcondition coverage and matching assertion kinds', () => {
+  const id = 'leagues-create-edit-clone-delete';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  const missingState = structuredClone(cases);
+  missingState[0].assertions = missingState[0].assertions.slice(0, 1);
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...missingState, cleanup], [id]), /postcondition coverage/i);
+  const mislabeled = structuredClone(cases);
+  mislabeled[0].assertions[0].kind = 'state';
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...mislabeled, cleanup], [id]), /assertion kind/i);
+});
+
+test('competition browser cases reject missing or mismatched session and selector provenance', () => {
+  const id = 'leagues-create-edit-clone-delete';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  const browserCase = cases.find(item => item.caseId === 'league-lifecycle-desktop');
+  delete browserCase.execution.browser;
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
+});
+
 test('competition evidence keeps only requests inside the exact frozen transport contract', () => {
   const contract = {
     actor: 'qa-league-owner-a', method: 'PATCH', route: '/v1/projects/demo/databases/(default)/documents/leagues/league-a', expectedStatuses: [403],
@@ -168,6 +199,31 @@ test('competition evidence keeps only requests inside the exact frozen transport
   ];
   assert.deepEqual(selectFrozenCompetitionRequests(requests, contract), [requests[1]]);
   assert.throws(() => selectFrozenCompetitionRequests(requests.slice(0, 1), contract), /missing exact frozen request evidence/i);
+});
+
+test('competition mutation evidence requires captured request identity and payload hash', () => {
+  const id = 'leagues-create-edit-clone-delete';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  cases.find(item => item.caseId === 'league-create').execution.requests[0].payloadHash = null;
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /request identity|payload hash/i);
+});
+
+test('atomic competition races require the exact captured a and b request identities', () => {
+  const id = 'tournaments-create-configure-replicate-archive';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  assert.doesNotThrow(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]));
+  cases.find(item => item.caseId === 'tournament-partial-replica').execution.requests[1].requestId = 'qa-unrelated-request';
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /atomic request identities/i);
+});
+
+test('Tournament create replay is executed before archive while archive remains later', () => {
+  const order = competitionScenarioExecutionOrder('tournaments-create-configure-replicate-archive');
+  assert.ok(order.indexOf('tournament-create') < order.indexOf('tournament-lifecycle-replay'));
+  assert.ok(order.indexOf('tournament-lifecycle-replay') < order.indexOf('tournament-archive'));
+  assert.equal(new Set(order).size, order.length);
+  assert.deepEqual(new Set(order), new Set(Object.values(frozenCaseIds['tournaments-create-configure-replicate-archive']).flat()));
 });
 
 test('authoritative competition validation fails child, timeout, omission, unobserved, and cleanup residue', () => {
@@ -299,6 +355,25 @@ test('competition discovery removes only run-owned post-baseline residue', async
   assert.equal(await obligations[0].verify(), true);
   paths.push('leagues/not-owned');
   await assert.rejects(() => obligations[0].cleanup(), /refused non-run-owned residue/i);
+});
+
+test('competition discovery accepts an exact run-owned fixture reference without a copied runId field', async () => {
+  const runId = 'final-cert-task9';
+  const eventId = 'qa-tournament-a-task9';
+  let paths = [];
+  const registrations = [];
+  const obligations = [];
+  await registerCompetitionDiscovery({
+    registry: { register(value) { obligations.push(value); } }, scopeId: 'referees', runId,
+    runOwnedReferences: [eventId],
+    snapshot: async () => [...paths],
+    inspect: async () => ({ eventId, refereeId: 'qa-referee-task9' }),
+    registerRoot(documentPath) { registrations.push(documentPath); paths = paths.filter(path => path !== documentPath); },
+  });
+  paths.push('tournamentRefereeAssignments/tr_exact');
+  await obligations[0].cleanup();
+  assert.deepEqual(registrations, ['tournamentRefereeAssignments/tr_exact']);
+  assert.equal(await obligations[0].verify(), true);
 });
 
 test('competition discovery covers profile state and all team-owned subcollections', async () => {

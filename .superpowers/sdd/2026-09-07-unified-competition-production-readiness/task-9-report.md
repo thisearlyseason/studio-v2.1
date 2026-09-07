@@ -1,7 +1,7 @@
 # Task 9 implementation report
 
 Base: `cbbba158840a1f0be52bf81d0d43507dd4035ec4`
-Commits: `9919b7d3` plus the focused round-2 evidence-hardening commit recorded in Git history
+Commits: `9919b7d3`, `7a8d1e3e`, plus the focused round-3 evidence-hardening commit recorded in Git history
 
 ## Frozen map and implementation
 
@@ -28,6 +28,18 @@ Final GREEN (round 2):
 
 Result: **77/77 passed**.
 
+Round-3 RED/GREEN added exact semantic postcondition coverage, transport-derived request IDs and payload hashes, concurrent `-a`/`-b` request identity validation, browser session/control/viewport provenance, exact run-owned reference cleanup, and Tournament replay ordering. The REDs failed on the former subset-only postcondition validation, contract-derived request identity, missing browser provenance, unsuffixed atomic request validation, and assignment discovery without an exact run-owned reference.
+
+Final GREEN (round 3):
+
+`node --test tests/local-certification-competition.test.mjs tests/local-certification-evidence.test.mjs tests/local-certification-operations.test.mjs tests/local-certification-schedule-isolation.test.mjs tests/tournament-scoring-route.test.mjs`
+
+Result: **83/83 passed**.
+
+`npx tsx --test tests/final-certification-fixtures.test.mjs`
+
+Result: **29/29 passed**.
+
 ## Bounded launch smoke
 
 Command shape:
@@ -44,6 +56,13 @@ Fresh bounded round-2 executions completed every dedicated handler with the stre
 - `tournaments-schedule-pools-brackets-referees`: `final-cert-t5-260907-131416-02d0`, 12/12 cases, real schedule/referee actor/state/public DTO proof and cleanup observed.
 - `tournaments-scoring-dispute-public-standings`: `final-cert-t5-260907-131520-ecef`, 14/14 cases, score/dispute/standings authoritative DTO proof and cleanup observed.
 
+Fresh round-3 affected-row reruns:
+
+- `tournaments-create-configure-replicate-archive`: `final-cert-t5-260907-142508-c747`, wrapper exit 0, 16/16 cases, zero run errors, create replay before archive with byte-identical event IDs/response, one root/receipt/audit/canonical mapping set, retained replica reload, idempotent archive replay, mapping/public revocation, and cleanup observed.
+- `tournaments-schedule-pools-brackets-referees`: `final-cert-t5-260907-142633-2e90`, wrapper exit 0, 12/12 cases, zero run errors, isolated `qa-referee` authentication and visible referee route/control, exact browser provenance, assignment persistence, and cleanup observed.
+
+The result envelope remains `BLOCKED_PRECONDITION` because final external/staging adjudication is intentionally reserved for Task 10; both bounded Task 9 wrappers exited successfully with all local dimensions observed.
+
 These are bounded Task 9 launch proofs, not the authoritative combined adjudication owned by Task 10. The runner deliberately states that final matrix PASS is not inferred.
 
 ## Bugs found and fixed under TDD
@@ -56,14 +75,21 @@ These are bounded Task 9 launch proofs, not the authoritative combined adjudicat
 6. League registration/scoring browser evidence originally stopped at the outer `Leagues` tab. The runner now selects the exact run-owned League and clicks the real in-hub `Portals` button before asserting the row-specific `Team Registration` or `Scorekeeper Hub` control.
 7. Partial clone/replica cases now use two distinct request IDs concurrently against one destination and assert the exact success/conflict split plus one canonical root, receipt, reservation/mapping, and audit with no loser residue. Tournament archive cancel is a real confirm dismissal with zero lifecycle requests and unchanged private/public state.
 8. Every emitted case is validated against its exact frozen runtime route, method, actor, request ID, status set, postcondition IDs, and scenario/run-owned cleanup selector. The validator rejects shared/later cleanup events, residue, child failure, and timeout artifacts mislabeled as observed.
+9. Postconditions are now attached semantically when assertions are created. Validation requires exact full frozen-postcondition coverage and rejects a transport assertion mislabeled as authoritative state.
+10. League and Tournament reloads now target retained run-created entities. Create replay uses the exact captured request body identity/hash and proves byte-equivalent response/event IDs plus one mutation root, receipt, audit, and reservation/canonical mappings. Tournament create replay runs immediately after create; archive then proves its own identical replay, single receipt/audit, and expected mapping/public revocation.
+11. Atomic clone/replica evidence now captures and validates the exact distinct `-a` and `-b` transport identities instead of comparing a real request to the unsuffixed contract template.
+12. Added an isolated registered `qa-referee` fixture/session. Organizer assignment remains an organizer action, the referee-facing responsive case authenticates as the referee on the production referee route, and non-referee denial remains separate.
+13. Browser evidence now binds the actual authenticated actor/session, runtime route, row-specific selector/control IDs, viewport measurements, console capture, and network capture to the frozen case. Missing or mismatched provenance is rejected.
+14. Competition discovery now accepts only exact declared run-owned fixture references when a derived document (such as a referee assignment) cannot carry the run ID or operation ID itself; unrelated post-baseline state is still refused.
 
 ## Final verification
 
 - `command -v npx` — PASS.
 - syntax checks for the runner, operations, evidence, and isolation modules — PASS.
-- focused contract/regression tests — 77/77 PASS.
+- focused contract/regression tests — 83/83 PASS.
+- final fixture/catalog tests — 29/29 PASS.
 - `npm run typecheck` — PASS.
-- scoped ESLint — PASS with zero errors; nine existing warnings (eight in the legacy runner and the existing scoring `Data = Record<string, any>` warning).
+- scoped ESLint — PASS with zero errors and nine existing warnings in the legacy runner.
 - `git diff --check` — PASS.
 
 ## Scoped files
