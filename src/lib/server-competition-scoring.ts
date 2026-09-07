@@ -402,7 +402,9 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
       const before = priorGames[candidateIndex];
       const changed = JSON.stringify(candidate) !== JSON.stringify(before);
       return changed ? { ...candidate, gameVersion: Number(before?.gameVersion || 0) + 1, updatedAt: now } : candidate;
-    });
+    }).map(candidate => Object.fromEntries(
+      Object.entries(candidate).filter(([, value]) => value !== undefined),
+    ) as TournamentGame);
     const updatedGame = games.find(candidate => candidate.id === input.gameId)!;
     const nextScheduleVersion = input.expectedScheduleVersion + 1;
     const resultingScore = updatedGame.isCompleted ? { home: Number(updatedGame.score1 || 0), away: Number(updatedGame.score2 || 0) } : null;
@@ -420,10 +422,16 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
       createdAt: now,
     });
     queueExternalEffect({ effectId: 'spectator-refresh', kind: 'tournament-spectator-refresh', payload: { teamId: input.teamId, eventId: input.eventId, scheduleVersion: nextScheduleVersion } });
+    const tournament = JSON.parse(JSON.stringify(scorekeeperTournament(input.eventId, {
+      ...currentEvent,
+      tournamentGames: games,
+      scheduleVersion: nextScheduleVersion,
+      credentialVersion: migratedCredentialVersion,
+      scorekeeperConfigured: Boolean(migratedHash || currentCredential.scorekeeperCodeHash || currentEvent.scorekeeperConfigured),
+    })));
     return { success: true, lifecycleVersion: input.expectedLifecycleVersion, scheduleVersion: nextScheduleVersion,
       credentialVersion: migratedCredentialVersion, gameVersion: Number(updatedGame.gameVersion || 0),
-      tournament: scorekeeperTournament(input.eventId, { ...currentEvent, tournamentGames: games, scheduleVersion: nextScheduleVersion, credentialVersion: migratedCredentialVersion,
-        scorekeeperConfigured: Boolean(migratedHash || currentCredential.scorekeeperCodeHash || currentEvent.scorekeeperConfigured) }) };
+      tournament };
   }));
 }
 

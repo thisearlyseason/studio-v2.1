@@ -43,6 +43,9 @@ async function post(app, body) {
 }
 
 const auditCount = records => [...records.keys()].filter(path => path.startsWith('teams/team-a/events/cup-a/scoreAudit/')).length;
+const containsUndefined = value => value !== null && typeof value === 'object'
+  ? Object.values(value).some(item => item === undefined || containsUndefined(item))
+  : false;
 
 test('Tournament score replay is one mutation and changed payload collides', async () => {
   const { app, records } = await setup();
@@ -55,6 +58,9 @@ test('Tournament score replay is one mutation and changed payload collides', asy
     assert.deepEqual([...records], after);
     assert.equal(auditCount(records), 1);
     const game = records.get('teams/team-a/events/cup-a').tournamentGames[0];
+    assert.equal(Object.values(game).includes(undefined), false, 'Firestore-bound game state must not contain undefined values');
+    const receipt = [...records.entries()].find(([path]) => path.startsWith('competitionOperations/'))?.[1];
+    assert.equal(containsUndefined(receipt?.result), false, 'Firestore-bound operation result must not contain nested undefined values');
     assert.equal(game.gameVersion, 3);
     assert.equal(game.reportedBy, undefined);
     assert.equal(game.score1, 3);

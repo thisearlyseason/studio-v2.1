@@ -1,0 +1,260 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+import {
+  COMPETITION_SCENARIO_IDS,
+  selectLocalScenarios,
+} from '../scripts/qa/certification/local/selection.mjs';
+import {
+  COMPETITION_SCENARIO_CASES,
+  COMPETITION_CASE_EXECUTION_CONTRACTS,
+  LOCAL_OPERATIONS_CASE_REQUIREMENTS,
+  assertAuthoritativeCompetitionEvents,
+  assertCompetitionCaseContracts,
+  handlers,
+} from '../scripts/qa/certification/local/batches/operations.mjs';
+import {
+  registerCompetitionDiscovery,
+  runOperationScenarioSequence,
+  snapshotCompetitionRoots,
+} from '../scripts/qa/certification/local/schedule-isolation.mjs';
+
+const frozenCaseIds = Object.freeze({
+  'leagues-create-edit-clone-delete': {
+    happyPath: ['league-create', 'league-edit', 'league-clone', 'league-delete'],
+    negativePath: ['league-duplicate', 'league-quota', 'league-partial-clone'],
+    permission: ['league-foreign-owner', 'league-anonymous-write'],
+    persistence: ['league-reload', 'league-replay'],
+    console: ['league-lifecycle-console'], network: ['league-lifecycle-network'],
+    responsive: ['league-lifecycle-desktop', 'league-lifecycle-mobile'],
+  },
+  'leagues-schedule-generation-deployment': {
+    happyPath: ['league-schedule-generate', 'league-schedule-deploy'],
+    negativePath: ['league-schedule-impossible', 'league-schedule-blackout', 'league-schedule-race'],
+    permission: ['league-schedule-foreign-owner', 'league-schedule-direct-write'],
+    persistence: ['league-schedule-reload'], console: ['league-schedule-console'],
+    network: ['league-schedule-network'], responsive: ['league-schedule-desktop'],
+  },
+  'leagues-registration-assignment': {
+    happyPath: ['league-register', 'league-review', 'league-assign'],
+    negativePath: ['league-register-duplicate', 'league-register-invalid', 'league-register-unpublished'],
+    permission: ['league-ledger-private', 'league-registrant-assign-deny', 'league-assignment-foreign-owner'],
+    persistence: ['league-assignment-reload'], console: ['league-assignment-console'],
+    network: ['league-assignment-network'],
+    responsive: ['league-assignment-desktop', 'league-assignment-mobile'],
+  },
+  'leagues-scorekeeper-spectator': {
+    happyPath: ['league-score-submit', 'league-public-score'],
+    negativePath: ['league-score-wrong-pin', 'league-score-replay', 'league-score-downstream-conflict'],
+    permission: ['league-score-narrow-scope', 'league-score-outsider-deny'],
+    persistence: ['league-score-reload'], console: ['league-score-console'], network: ['league-score-network'],
+    responsive: ['league-score-desktop', 'league-score-mobile'],
+  },
+  'tournaments-create-configure-replicate-archive': {
+    happyPath: ['tournament-create', 'tournament-configure', 'tournament-replicate', 'tournament-archive'],
+    negativePath: ['tournament-invalid-format', 'tournament-partial-replica', 'tournament-duplicate', 'tournament-archive-cancel'],
+    permission: ['tournament-foreign-staff', 'tournament-foreign-team'],
+    persistence: ['tournament-lifecycle-reload', 'tournament-lifecycle-replay'],
+    console: ['tournament-lifecycle-console'], network: ['tournament-lifecycle-network'],
+    responsive: ['tournament-lifecycle-desktop', 'tournament-lifecycle-mobile'],
+  },
+  'tournaments-schedule-pools-brackets-referees': {
+    happyPath: ['tournament-schedule-generate', 'tournament-pools-bracket', 'tournament-referee-assign'],
+    negativePath: ['tournament-schedule-impossible', 'tournament-referee-conflict'],
+    permission: ['tournament-referee-role-deny', 'tournament-schedule-foreign-deny'],
+    persistence: ['tournament-schedule-reload'], console: ['tournament-schedule-console'],
+    network: ['tournament-schedule-network'],
+    responsive: ['tournament-schedule-desktop', 'tournament-schedule-mobile'],
+  },
+  'tournaments-scoring-dispute-public-standings': {
+    happyPath: ['tournament-score-submit', 'tournament-dispute-open', 'tournament-dispute-resolve', 'tournament-public-standings'],
+    negativePath: ['tournament-score-wrong-pin', 'tournament-score-replay', 'tournament-score-downstream-conflict'],
+    permission: ['tournament-score-narrow-scope', 'tournament-score-outsider-deny'],
+    persistence: ['tournament-scoring-reload'], console: ['tournament-scoring-console'],
+    network: ['tournament-scoring-network'],
+    responsive: ['tournament-scoring-desktop', 'tournament-scoring-mobile'],
+  },
+});
+
+test('the exact seven frozen competition rows are assigned to local operations', () => {
+  assert.deepEqual(COMPETITION_SCENARIO_IDS, Object.keys(frozenCaseIds));
+  const selected = selectLocalScenarios({ scenarioIds: COMPETITION_SCENARIO_IDS });
+  assert.deepEqual(selected.map(item => item.id), COMPETITION_SCENARIO_IDS);
+  for (const id of COMPETITION_SCENARIO_IDS) assert.equal(typeof handlers[id], 'function', id);
+});
+
+test('every competition row has the exact frozen case map and executable provenance', () => {
+  assert.deepEqual(COMPETITION_SCENARIO_CASES, frozenCaseIds);
+  assert.deepEqual(
+    Object.fromEntries(COMPETITION_SCENARIO_IDS.map(id => [id, LOCAL_OPERATIONS_CASE_REQUIREMENTS[id]])),
+    frozenCaseIds,
+  );
+  assert.doesNotThrow(() => assertCompetitionCaseContracts(COMPETITION_SCENARIO_CASES));
+  for (const [scenarioId, dimensions] of Object.entries(frozenCaseIds)) {
+    for (const [dimension, caseIds] of Object.entries(dimensions)) for (const caseId of caseIds) {
+      const execution = COMPETITION_CASE_EXECUTION_CONTRACTS[scenarioId][caseId];
+      assert.equal(execution.caseId, caseId);
+      assert.equal(execution.dimension, dimension);
+      assert.match(execution.actor, /^qa-/);
+      if (caseId === 'league-schedule-direct-write') {
+        assert.equal(execution.route, '/v1/projects/{projectId}/databases/(default)/documents/leagues/{leagueId}');
+        assert.equal(execution.method, 'PATCH');
+      } else if (caseId === 'league-score-narrow-scope') {
+        assert.equal(execution.route, '/v1/projects/{projectId}/databases/(default)/documents/leagues/{leagueId}/private/lifecycle');
+        assert.equal(execution.method, 'GET');
+      } else assert.match(execution.route, /^\/api\//);
+      assert.match(execution.requestId, /\{runId\}/);
+      assert.match(execution.assertionId, /\{sequence\}/);
+      assert.equal(execution.networkCapture, true);
+      assert.equal(execution.cleanupOwner, 'scenario-resource-registry');
+      assert.equal(typeof execution.handlerId, 'string');
+      assert.equal(typeof execution.method, 'string');
+      assert.ok(Array.isArray(execution.expectedStatuses) && execution.expectedStatuses.length > 0);
+      assert.equal(execution.expectedStatuses.length, 1, `${caseId} must freeze one exact response status`);
+      assert.ok(Array.isArray(execution.postconditions) && execution.postconditions.length > 0);
+      assert.ok(Array.isArray(execution.cleanupSelectors) && execution.cleanupSelectors.length > 0);
+      if (dimension === 'responsive') assert.deepEqual(execution.responsiveBounds[0], caseId.endsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+    }
+  }
+  assert.deepEqual(
+    { actor: COMPETITION_CASE_EXECUTION_CONTRACTS['leagues-registration-assignment']['league-register'].actor,
+      method: COMPETITION_CASE_EXECUTION_CONTRACTS['leagues-registration-assignment']['league-register'].method,
+      route: COMPETITION_CASE_EXECUTION_CONTRACTS['leagues-registration-assignment']['league-register'].route },
+    { actor: 'qa-public-submitter', method: 'POST', route: '/api/public/portals/action' },
+  );
+});
+
+test('competition contracts reject missing and duplicate assertion or request ownership', () => {
+  const valid = COMPETITION_SCENARIO_CASES['leagues-create-edit-clone-delete'].happyPath[0];
+  assert.throws(() => assertCompetitionCaseContracts({}), /missing competition scenario/i);
+  assert.throws(() => assertAuthoritativeCompetitionEvents([
+    { type: 'case', scenarioId: 'leagues-create-edit-clone-delete', caseId: valid, state: 'OBSERVED', assertions: [{ id: 'same' }], execution: { requests: [{ evidenceId: 'req-a' }] } },
+    { type: 'case', scenarioId: 'leagues-create-edit-clone-delete', caseId: 'league-edit', state: 'OBSERVED', assertions: [{ id: 'same' }], execution: { requests: [{ evidenceId: 'req-b' }] } },
+  ], ['leagues-create-edit-clone-delete']), /duplicate assertion/i);
+  assert.throws(() => assertAuthoritativeCompetitionEvents([
+    { type: 'case', scenarioId: 'leagues-create-edit-clone-delete', caseId: valid, state: 'OBSERVED', assertions: [], execution: { requests: [{ evidenceId: 'req-a' }] } },
+  ], ['leagues-create-edit-clone-delete']), /missing assertion/i);
+});
+
+test('authoritative competition validation fails child, timeout, omission, unobserved, and cleanup residue', () => {
+  const id = 'leagues-create-edit-clone-delete';
+  assert.throws(() => assertAuthoritativeCompetitionEvents([], [id]), /missing competition case/i);
+  assert.throws(() => assertAuthoritativeCompetitionEvents([{ type: 'scenario-error', scenarioId: id, stage: 'timeout' }], [id]), /timeout|scenario/i);
+  const events = Object.values(frozenCaseIds[id]).flat().map((caseId, index) => ({
+    type: 'case', scenarioId: id, caseId, state: index ? 'OBSERVED' : 'NOT_OBSERVED',
+    assertions: [{ id: `assert-${caseId}` }], execution: { requests: [{ evidenceId: `request-${caseId}` }] },
+  }));
+  assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id]), /not observed/i);
+  events[0].state = 'OBSERVED';
+  assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id]), /cleanup evidence/i);
+  events.push({ type: 'cleanup', cleanupId: 'competition-cleanup', state: 'FAIL', residuals: ['leagues/run-owned'] });
+  assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id]), /cleanup residue/i);
+  assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id], { childCode: 1 }), /child/i);
+});
+
+test('runner uses dedicated competition workflows, isolated sessions and numeric responsive bounds', async () => {
+  const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  for (const id of COMPETITION_SCENARIO_IDS) {
+    assert.match(source, new RegExp(`scenarioId === '${id}'`));
+  }
+  assert.match(source, /runCompetitionLifecycleWorkflowAudit/);
+  assert.match(source, /runCompetitionScheduleWorkflowAudit/);
+  assert.match(source, /runCompetitionAssignmentWorkflowAudit/);
+  assert.match(source, /runCompetitionScoringWorkflowAudit/);
+  assert.match(source, /width: 1440, height: 900/);
+  assert.match(source, /width: 390, height: 844/);
+  assert.match(source, /consoleErrors/);
+  assert.match(source, /failedResponses/);
+  assert.match(source, /operationSessionName/);
+  assert.match(source, /COMPETITION_CASE_HANDLER_REGISTRY/);
+  assert.match(source, /COMPETITION_CREDENTIAL_HMAC_SECRET:/);
+  assert.match(source, /withFirestoreOverlay/);
+  const competitionBlock = source.slice(
+    source.indexOf('const COMPETITION_BROWSER_CONTRACTS'),
+    source.indexOf('async function runCertificationOperationsScenarios'),
+  );
+  assert.doesNotMatch(competitionBlock, /__certification_probe__/);
+  assert.doesNotMatch(competitionBlock, /response\.status < 500/);
+  assert.doesNotMatch(competitionBlock, /return runCompetitionCaseMatrix/);
+  assert.doesNotMatch(competitionBlock, /return \{ pathname: route/);
+  assert.doesNotMatch(competitionBlock, /recordObservedOperationsCase\(/);
+  assert.doesNotMatch(competitionBlock, /makeCompetitionCaseHandler/);
+  assert.match(competitionBlock, /browserContract\.path === '\/manage-tournaments'.*sf_session_team_id/s);
+  assert.match(competitionBlock, /QA Scoring Tournament.*date: '2029-11-05'.*endDate: '2029-11-05'/s);
+  assert.match(competitionBlock, /interactionRole: 'tab'.*interactionRole: 'button'.*getByRole\(\$\{JSON\.stringify\(browserContract\.interactionRole\)\}.*interaction\.click\(\)/s);
+});
+
+test('competition timeout still finalizes and fails the wrapper truthfully', async () => {
+  let finalized = 0;
+  const reported = [];
+  await assert.rejects(() => runOperationScenarioSequence(['competition-timeout'], {
+    timeoutMs: 5,
+    execute: () => new Promise(() => {}),
+    finalize: async () => { finalized += 1; },
+    onError: (_id, error) => reported.push(error.message),
+    failFast: true,
+  }), /selected operation scenario.*failed/i);
+  assert.equal(finalized, 1);
+  assert.match(reported[0], /timed out/i);
+});
+
+test('competition discovery removes only run-owned post-baseline residue', async () => {
+  const runId = 'final-cert-task9';
+  let paths = ['leagues/ambient'];
+  const registrations = [];
+  const obligations = [];
+  const registry = { register(value) { obligations.push(value); } };
+  await registerCompetitionDiscovery({
+    registry, scopeId: 'league-lifecycle', runId,
+    snapshot: async () => [...paths],
+    inspect: async documentPath => ({ documentPath, fixtureRunId: documentPath.includes('not-owned') ? 'ambient' : runId }),
+    registerRoot(documentPath) { registrations.push(documentPath); paths = paths.filter(path => path !== documentPath); },
+  });
+  paths.push('competitionOperations/run-owned');
+  await obligations[0].cleanup();
+  assert.deepEqual(registrations, ['competitionOperations/run-owned']);
+  assert.equal(await obligations[0].verify(), true);
+  paths.push('leagues/not-owned');
+  await assert.rejects(() => obligations[0].cleanup(), /refused non-run-owned residue/i);
+});
+
+test('competition discovery covers profile state and all team-owned subcollections', async () => {
+  const collectionReads = [];
+  const documentCollectionReads = [];
+  const emptyCollection = path => ({
+    async listDocuments() { collectionReads.push(path); return []; },
+  });
+  const firestore = {
+    collection: name => emptyCollection(name),
+    doc(documentPath) {
+      return {
+        collection: name => emptyCollection(`${documentPath}/${name}`),
+        async listCollections() { documentCollectionReads.push(documentPath); return []; },
+      };
+    },
+  };
+  await snapshotCompetitionRoots(firestore, { leagueIds: ['league-a'], teamIds: ['team-a'] });
+  assert.ok(collectionReads.includes('users'), 'profile roots must be in the competition residue baseline');
+  assert.ok(documentCollectionReads.includes('teams/team-a'), 'team alerts and other team-owned state must be discovered');
+});
+
+test('competition discovery traces outbox and team-alert residue to run-owned operation receipts', async () => {
+  const runId = 'final-cert-task9';
+  let paths = [];
+  const registrations = [];
+  const obligations = [];
+  await registerCompetitionDiscovery({
+    registry: { register(value) { obligations.push(value); } }, scopeId: 'scoring', runId,
+    snapshot: async () => [...paths],
+    inspect: async documentPath => documentPath.startsWith('competitionOperationOutbox/')
+      ? { operationId: 'competition_receipt' }
+      : documentPath === 'competitionOperations/competition_receipt' ? { requestId: `qa-score-${runId}` } : {},
+    registerRoot(documentPath) { registrations.push(documentPath); paths = paths.filter(path => path !== documentPath); },
+  });
+  paths.push('competitionOperationOutbox/effect');
+  await obligations[0].cleanup();
+  paths.push('teams/team-a/alerts/competition_receipt');
+  await obligations[0].cleanup();
+  assert.deepEqual(registrations, ['competitionOperationOutbox/effect', 'teams/team-a/alerts/competition_receipt']);
+});

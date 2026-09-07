@@ -12,11 +12,18 @@ export async function selectScheduleTeam(page, { teamId, url }) {
   await page.goto(url);
 }
 
-export async function runOperationScenarioSequence(ids, { execute, finalize, onError, failFast }) {
+export async function runOperationScenarioSequence(ids, { execute, finalize, onError, failFast, timeoutMs = 60_000 }) {
   const failures = [];
   for (const id of ids) {
     let failure;
-    try { await execute(id); } catch (error) { failure = error; }
+    let timeout;
+    try {
+      await Promise.race([
+        execute(id),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(`Operation scenario ${id} timed out after ${timeoutMs}ms.`)), timeoutMs); }),
+      ]);
+    } catch (error) { failure = error; }
+    finally { clearTimeout(timeout); }
     try { await finalize(id); } catch (error) {
       failure = failure ? new AggregateError([failure, error], 'Operation and scenario cleanup failed.') : error;
     }
@@ -60,4 +67,71 @@ export async function snapshotScheduleRoots(firestore, teamIds) {
     paths.push(...events.map(ref => ref.path), ...bookings.docs.map(doc => doc.ref.path));
   }
   return paths;
+}
+
+const COMPETITION_AUXILIARY_COLLECTIONS = Object.freeze([
+  'competitionOperations', 'competitionOperationOutbox', 'competitionOperationProgress',
+  'publicLeagueViews', 'publicTournamentViews', 'scheduleBookings',
+  'tournamentRefereeAssignments', 'tournamentReferees', 'tournamentRegistrationCodes',
+  'tournamentLifecycleAudits',
+]);
+
+export async function snapshotCompetitionRoots(firestore, { leagueIds, teamIds }) {
+  const paths = [];
+  const addDocuments = documents => paths.push(...documents.map(document => document.ref?.path || document.path));
+  for (const collectionName of COMPETITION_AUXILIARY_COLLECTIONS) addDocuments(await firestore.collection(collectionName).listDocuments());
+  const profiles = await firestore.collection('users').listDocuments();
+  addDocuments(profiles);
+  for (const profile of profiles) {
+    for (const collection of await firestore.doc(profile.path).listCollections()) addDocuments(await collection.listDocuments());
+  }
+  addDocuments(await firestore.collection('leagues').listDocuments());
+  for (const leagueId of new Set(leagueIds)) {
+    const root = firestore.doc(`leagues/${leagueId}`);
+    for (const collection of await root.listCollections()) addDocuments(await collection.listDocuments());
+  }
+  addDocuments(await firestore.collection('teams').listDocuments());
+  for (const teamId of new Set(teamIds)) {
+    const team = firestore.doc(`teams/${teamId}`);
+    for (const collection of await team.listCollections()) {
+      const documents = await collection.listDocuments();
+      addDocuments(documents);
+      if (collection.id === 'events') {
+        for (const event of documents) for (const nested of await event.listCollections()) addDocuments(await nested.listDocuments());
+      }
+    }
+  }
+  return [...new Set(paths)].sort();
+}
+
+export async function registerCompetitionDiscovery({ registry, scopeId, runId, snapshot, inspect, registerRoot }) {
+  const baseline = new Set(await snapshot());
+  const discovered = new Set();
+  registry.register({
+    id: `competition-discovery:${scopeId}:${runId}`, kind: 'obligation',
+    async cleanup() {
+      for (const documentPath of await snapshot()) {
+        if (baseline.has(documentPath) || discovered.has(documentPath)) continue;
+        const value = await inspect(documentPath);
+        let isRunOwned = JSON.stringify(value || {}).includes(runId);
+        const pathOperationId = documentPath.split('/').at(-1);
+        const operationId = typeof value?.operationId === 'string' ? value.operationId
+          : /^competition_[A-Za-z0-9_-]+$/.test(pathOperationId || '') ? pathOperationId : '';
+        if (!isRunOwned && operationId && /^[^/\s]+$/.test(operationId)) {
+          const receipt = await inspect(`competitionOperations/${operationId}`);
+          isRunOwned = JSON.stringify(receipt || {}).includes(runId);
+        }
+        if (!isRunOwned) {
+          throw new Error(`Competition discovery refused non-run-owned residue ${documentPath}.`);
+        }
+        registerRoot(documentPath);
+        discovered.add(documentPath);
+      }
+      return false;
+    },
+    async verify() {
+      const remaining = await snapshot();
+      return remaining.every(documentPath => baseline.has(documentPath) || discovered.has(documentPath));
+    },
+  });
 }

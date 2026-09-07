@@ -2,6 +2,16 @@ import { CERTIFICATION_SCENARIOS } from '../scenario-catalog.mjs';
 
 export const LOCAL_BATCH_ORDER = Object.freeze(['identity', 'tenants', 'operations']);
 
+export const COMPETITION_SCENARIO_IDS = Object.freeze([
+  'leagues-create-edit-clone-delete',
+  'leagues-schedule-generation-deployment',
+  'leagues-registration-assignment',
+  'leagues-scorekeeper-spectator',
+  'tournaments-create-configure-replicate-archive',
+  'tournaments-schedule-pools-brackets-referees',
+  'tournaments-scoring-dispute-public-standings',
+]);
+
 export const OPERATIONS_SCENARIO_IDS = Object.freeze([
   'attendance-practice-event-member-attendance',
   'events-event-crud-recurrence',
@@ -30,6 +40,7 @@ export const OPERATIONS_SCENARIO_IDS = Object.freeze([
   'facilities-availability-booking-delete',
   'equipment-inventory-assignment-return',
   'sports-hub-browse-search-filter-bookmark-preferences',
+  ...COMPETITION_SCENARIO_IDS,
 ]);
 
 export const SCENARIO_BATCH_ASSIGNMENTS = Object.freeze({

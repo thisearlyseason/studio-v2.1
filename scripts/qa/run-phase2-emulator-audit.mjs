@@ -16,8 +16,10 @@ import {
   LOCAL_IDENTITY_CASE_REQUIREMENTS,
 } from './certification/local/batches/identity.mjs';
 import { LOCAL_TENANT_CASE_REQUIREMENTS, TENANT_EXECUTION_ORDER, tenantCaseAssociationFor } from './certification/local/batches/tenants.mjs';
-import { OPERATIONS_SCENARIO_IDS } from './certification/local/selection.mjs';
+import { COMPETITION_SCENARIO_IDS, OPERATIONS_SCENARIO_IDS } from './certification/local/selection.mjs';
 import {
+  COMPETITION_SCENARIO_CASES,
+  COMPETITION_CASE_EXECUTION_CONTRACTS,
   LOCAL_OPERATIONS_CASE_REQUIREMENTS,
   assertCaseOwnedOperationArtifacts,
   selectCaseOwnedOperationAssertions,
@@ -38,7 +40,7 @@ import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUplo
 import {createIncidentBrowserObserver,validateIncidentDownload} from './certification/local/incident-browser.mjs';
 import {createMediaBrowserObserver,generatedMp4Body,parseMediaBrowserEnvelope} from './certification/local/media-browser.mjs';
 import {beforeImageMatches} from './certification/local/document-restoration.mjs';
-import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from './certification/local/schedule-isolation.mjs';
+import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots, registerCompetitionDiscovery, snapshotCompetitionRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
   patchFirestoreFields as patchFirestoreFieldsRequest,
@@ -46,6 +48,7 @@ import {
 } from './certification/local/tenant-mutation-probes.mjs';
 import { inspectTenantCapabilities, TENANT_SCENARIO_CAPABILITIES } from './certification/local/tenant-capabilities.mjs';
 import { registrationConfigHash } from '../../src/lib/registration-policy.ts';
+import { generateTournamentSchedule } from '../../src/lib/scheduler-utils.ts';
 
 export function resolveAuditRuntimeConfiguration({ environment = process.env, argv = process.argv.slice(2) } = {}) {
   const baseUrl = parseLoopbackHttpOrigin(
@@ -321,6 +324,13 @@ function certificationActorAliases(scenarioId) {
     'practice-practice-plans-templates': ['qa-coach-owner-a', 'qa-team-member', 'qa-coach-owner-b'],
     'practice-drill-playbook-crud-search': ['qa-coach-owner-a', 'qa-team-member', 'qa-coach-owner-b'],
     'practice-film-upload-coach-marks-watch': ['qa-coach-owner-a', 'qa-adult-player-a', 'qa-coach-owner-b'],
+    'leagues-create-edit-clone-delete': ['qa-league-owner-a', 'qa-league-owner-b'],
+    'leagues-schedule-generation-deployment': ['qa-league-owner-a', 'qa-league-owner-b'],
+    'leagues-registration-assignment': ['qa-league-owner-a', 'qa-coach-owner-a', 'qa-public-submitter'],
+    'leagues-scorekeeper-spectator': ['qa-league-owner-a', 'qa-team-member', 'qa-public-submitter'],
+    'tournaments-create-configure-replicate-archive': ['qa-coach-owner-a', 'qa-coach-owner-b'],
+    'tournaments-schedule-pools-brackets-referees': ['qa-coach-owner-a', 'qa-coach-owner-b', 'qa-team-member'],
+    'tournaments-scoring-dispute-public-standings': ['qa-coach-owner-a', 'qa-team-member', 'qa-public-submitter'],
   };
   return [...new Set([...(actors[scenarioId] || ['catalog-scenario-actor']), 'qa-public-submitter'])];
 }
@@ -739,6 +749,7 @@ function recordCertificationCase(
     tenantAlias: tenantAlias || certificationTenantAlias(scenarioId),
     ...tenantCaseAssociations(scenarioId, dimension, caseId, execution),
     ...(execution ? { execution } : {}),
+    ...(OPERATIONS_SCENARIO_IDS.includes(scenarioId) ? { assertions } : {}),
     expected: String(expected), observed: String(observed), state: 'OBSERVED',
     startedAt: caseStartedAt || startedAt, completedAt: new Date().toISOString(), artifacts: [relativeArtifact],
   });
@@ -859,6 +870,9 @@ const env = buildIsolatedAuditEnvironment(process.env, {
   NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG: firebaseConfig,
   NEXT_PUBLIC_USE_FIREBASE_EMULATORS: 'true',
   AUDIT_LOCAL_REQUEST_BARRIER: '1',
+  // The local scoring/registration credential migration path must exercise the
+  // same HMAC contract as production without inheriting a real provider secret.
+  COMPETITION_CREDENTIAL_HMAC_SECRET: 'local-certification-competition-secret-at-least-32-bytes',
 });
 
 const identityByAlias = new Map(FIXTURES.identities.map(identity => [identity.alias, identity]));
@@ -1008,7 +1022,7 @@ function run(command, args, options = {}) {
   });
   if (result.status !== 0) {
     const output = `${result.stderr || ''}\n${result.stdout || ''}`.trim();
-    const diagnostic = output.length > 2_000 ? output.slice(-2_000) : output;
+    const diagnostic = output.length > 10_000 ? output.slice(-10_000) : output;
     throw new Error(redact(`${path.basename(command)} exited ${result.status}.\n${diagnostic}`));
   }
   return result.stdout.trim();
@@ -2815,7 +2829,7 @@ function expectEqual(actual, expected, label) {
 
 function cli(session, args, { sensitive = false } = {}) {
   shutdownState.throwIfRequested();
-  const output = run(playwrightCli, [`-s=${session}`, '--raw', ...args], sensitive ? { stdio: 'pipe' } : {});
+  const output = run(playwrightCli, [`-s=${session}`, '--raw', ...args], { ...(sensitive ? { stdio: 'pipe' } : {}), timeout: 60_000, killSignal: 'SIGKILL' });
   shutdownState.throwIfRequested();
   return output;
 }
@@ -7009,6 +7023,629 @@ function recordObservedOperationNamedCase(scenarioId, dimension, caseId, observe
   );
 }
 
+const COMPETITION_BROWSER_CONTRACTS = Object.freeze({
+  'leagues-create-edit-clone-delete': { actor: 'qa-league-owner-a', path: '/competition', route: '/api/leagues/lifecycle', control: /^Leagues$/i, interactionRole: 'tab', interaction: /^Leagues$/i },
+  'leagues-schedule-generation-deployment': { actor: 'qa-league-owner-a', path: '/competition', route: '/api/leagues/schedule', control: /^Leagues$/i, interactionRole: 'tab', interaction: /^Leagues$/i },
+  'leagues-registration-assignment': { actor: 'qa-league-owner-a', path: '/competition', route: '/api/leagues/assignments', control: /^Leagues$/i, interactionRole: 'tab', interaction: /^Leagues$/i },
+  'leagues-scorekeeper-spectator': { actor: 'qa-league-owner-a', path: '/competition', route: '/api/leagues/scoring', control: /^Leagues$/i, interactionRole: 'tab', interaction: /^Leagues$/i },
+  'tournaments-create-configure-replicate-archive': { actor: 'qa-coach-owner-a', path: '/manage-tournaments', route: '/api/tournaments/lifecycle', control: /Tournament/i, interactionRole: 'button', interaction: /Launch Hub/i },
+  'tournaments-schedule-pools-brackets-referees': { actor: 'qa-coach-owner-a', path: '/manage-tournaments', route: '/api/tournaments/schedule', control: /Schedule|Bracket/i, interactionRole: 'button', interaction: /Launch Hub/i },
+  'tournaments-scoring-dispute-public-standings': { actor: 'qa-coach-owner-a', path: '/manage-tournaments', route: '/api/tournaments/scoring', control: /Standings|Score|Bracket/i, interactionRole: 'button', interaction: /Launch Hub/i },
+});
+
+const COMPETITION_NEGATIVE_OR_DENIAL_CASES = new Set([
+  'league-duplicate', 'league-quota', 'league-partial-clone', 'league-foreign-owner', 'league-anonymous-write',
+  'league-schedule-impossible', 'league-schedule-blackout', 'league-schedule-foreign-owner', 'league-schedule-direct-write',
+  'league-register-duplicate', 'league-register-invalid', 'league-register-unpublished', 'league-ledger-private',
+  'league-registrant-assign-deny', 'league-assignment-foreign-owner', 'league-score-wrong-pin',
+  'league-score-replay', 'league-score-downstream-conflict', 'league-score-outsider-deny', 'tournament-invalid-format',
+  'tournament-partial-replica', 'tournament-duplicate', 'tournament-foreign-staff', 'tournament-foreign-team',
+  'tournament-schedule-impossible', 'tournament-referee-conflict', 'tournament-referee-role-deny',
+  'tournament-schedule-foreign-deny', 'tournament-score-wrong-pin', 'tournament-score-replay', 'tournament-score-downstream-conflict', 'tournament-score-narrow-scope',
+  'tournament-score-outsider-deny',
+]);
+
+const COMPETITION_BROWSER_CASES = new Set(Object.values(COMPETITION_SCENARIO_CASES).flatMap(dimensions => [
+  ...dimensions.console, ...dimensions.network, ...dimensions.responsive,
+]));
+
+function competitionCaseActor(scenarioId, dimension, caseId) {
+  const contract = COMPETITION_CASE_EXECUTION_CONTRACTS[scenarioId]?.[caseId];
+  if (!contract || contract.dimension !== dimension) throw new Error(`Missing exact competition execution contract for ${scenarioId}/${dimension}/${caseId}.`);
+  return contract.actor;
+}
+
+function competitionCaseRequest(scenarioId, caseId, state) {
+  const league = FIXTURES.leagues.find(item => item.alias === 'qa-league-a');
+  const tournament = FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a');
+  const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+  if (!league || !tournament || !team) throw new Error('Competition fixture family A is incomplete.');
+  const requestId = `qa-${caseId}-${certificationRunId}`;
+  if (scenarioId === 'leagues-create-edit-clone-delete') {
+    if (caseId === 'league-create') {
+      state.createRequestId = requestId;
+      state.createName = `QA League ${certificationRunId}`;
+      return { pathname: '/api/leagues/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'create', requestId, name: state.createName, sport: 'Basketball' }) } };
+    }
+    if (caseId === 'league-edit') return { pathname: '/api/leagues/lifecycle', init: { method: 'PATCH', body: JSON.stringify({ action: 'edit', requestId, leagueId: state.createdLeagueId, expectedVersion: state.createdVersion, updates: { description: `edited ${certificationRunId}` } }) } };
+    if (caseId === 'league-clone') return { pathname: '/api/leagues/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'clone', requestId, leagueId: state.createdLeagueId, destination: 'league', name: `QA Clone ${certificationRunId}` }) } };
+    if (caseId === 'league-delete') return { pathname: '/api/leagues/lifecycle', init: { method: 'DELETE', body: JSON.stringify({ action: 'delete', requestId, leagues: [{ leagueId: state.createdLeagueId, expectedVersion: state.createdVersion }, { leagueId: state.clonedLeagueId, expectedVersion: state.clonedVersion }] }) } };
+    if (caseId === 'league-duplicate') return { pathname: '/api/leagues/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'clone', requestId, leagueId: league.id, destination: 'league', name: league.name }) } };
+    if (caseId === 'league-quota') return { pathname: '/api/leagues/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'create', requestId, name: `Quota League ${certificationRunId}`, sport: 'Basketball' }) } };
+    if (caseId === 'league-partial-clone') return { pathname: '/api/leagues/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'clone', requestId, leagueId: league.id, destination: 'league', name: `Archived clone ${certificationRunId}` }) } };
+    if (caseId === 'league-foreign-owner') return { pathname: '/api/leagues/lifecycle', init: { method: 'PATCH', body: JSON.stringify({ action: 'edit', requestId, leagueId: league.id, expectedVersion: state.fixtureVersion, updates: { description: 'forged' } }) } };
+    if (caseId === 'league-anonymous-write') return { pathname: '/api/leagues/lifecycle', init: { method: 'PATCH', body: JSON.stringify({ action: 'edit', requestId, leagueId: league.id, expectedVersion: state.fixtureVersion, updates: { description: 'anonymous' } }) } };
+    if (caseId === 'league-reload') return { pathname: `/api/public/portals?kind=league&purpose=spectator&leagueId=${league.id}`, init: { method: 'GET' } };
+    if (caseId === 'league-replay') return { pathname: '/api/leagues/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'create', requestId: state.createRequestId, name: state.createName, sport: 'Basketball' }) } };
+    throw new Error(`No lifecycle request is defined for ${caseId}.`);
+  }
+  if (scenarioId === 'leagues-registration-assignment') {
+    const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const registration = { kind: 'league', action: 'register', leagueId: league.id, protocolId: 'team_config', requestId, formVersion: 1, formHash: state.registrationConfigHash,
+      answers: { teamName: `Applicant ${certificationRunId}`, name: 'QA Coach', email: `competition-${certificationRunId}@example.test`, phone: '5551234567' } };
+    if (caseId === 'league-register') { state.registrationBody = registration; return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify(registration) } }; }
+    if (caseId === 'league-review') return { pathname: '/api/leagues/assignments', init: { method: 'PATCH', body: JSON.stringify({ action: 'assign', requestId, leagueId: league.id, entryId: state.registrationEntryId, teamId: teamC.id, expectedVersion: 0, expectedAssignmentVersion: 0 }) } };
+    if (caseId === 'league-assign') return { pathname: '/api/leagues/assignments', init: { method: 'PATCH', body: JSON.stringify({ action: 'respond', requestId, leagueId: league.id, entryId: state.registrationEntryId, teamId: teamC.id, status: 'accepted', expectedVersion: 1, expectedAssignmentVersion: 1 }) } };
+    if (caseId === 'league-register-duplicate') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...state.registrationBody, requestId, answers: { ...state.registrationBody.answers, teamName: 'Collision Name' } }) } };
+    if (caseId === 'league-register-invalid') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...registration, requestId, answers: { teamName: 'Missing required contact' } }) } };
+    if (caseId === 'league-register-unpublished') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...registration, requestId, protocolId: 'unpublished_config', formHash: state.unpublishedConfigHash, answers: { ...registration.answers, email: `closed-${certificationRunId}@example.test` } }) } };
+    if (caseId === 'league-ledger-private' || caseId === 'league-assignment-reload') return { pathname: `/api/leagues/assignments?teamId=${teamC.id}`, init: { method: 'GET' } };
+    if (caseId === 'league-registrant-assign-deny' || caseId === 'league-assignment-foreign-owner') return { pathname: '/api/leagues/assignments', init: { method: 'PATCH', body: JSON.stringify({ action: 'assign', requestId, leagueId: league.id, entryId: state.registrationEntryId, teamId: team.id, expectedVersion: 2, expectedAssignmentVersion: 2 }) } };
+    throw new Error(`No League registration/assignment request is defined for ${caseId}.`);
+  }
+  if (scenarioId === 'leagues-scorekeeper-spectator') {
+    const scoreBody = { kind: 'league', action: 'score', leagueId: league.id, code: '8274', gameId: state.leagueScoreGameId, requestId, expectedGameVersion: 0, score1: 3, score2: 1 };
+    if (caseId === 'league-score-submit') { state.leagueScoreRequestId = requestId; state.leagueScoreBody = scoreBody; return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify(scoreBody) } }; }
+    if (caseId === 'league-public-score' || caseId === 'league-score-reload') return { pathname: `/api/public/portals?kind=league&purpose=spectator&leagueId=${league.id}`, init: { method: 'GET' } };
+    if (caseId === 'league-score-wrong-pin') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...scoreBody, requestId, gameId: state.leagueConflictGameId, code: 'wrong' }) } };
+    if (caseId === 'league-score-replay') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify(state.leagueScoreBody) } };
+    if (caseId === 'league-score-downstream-conflict') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...scoreBody, requestId, gameId: state.leagueConflictGameId }) } };
+    if (caseId === 'league-score-narrow-scope') return { pathname: `/v1/projects/${PROJECT_ID}/databases/(default)/documents/leagues/${league.id}/private/lifecycle`, init: { method: 'GET' } };
+    if (caseId === 'league-score-outsider-deny') return { pathname: '/api/leagues/scoring', init: { method: 'POST', body: JSON.stringify({ action: 'score', leagueId: league.id, gameId: state.leagueConflictGameId, requestId, expectedGameVersion: 0, score1: 2, score2: 0 }) } };
+    throw new Error(`No League scoring request is defined for ${caseId}.`);
+  }
+  if (scenarioId === 'leagues-schedule-generation-deployment') {
+    const config = { startDate: '2026-10-01', endDate: '2026-10-31', startTime: '09:00', endTime: '17:00', gameLength: '60', breakLength: '15', gamesPerTeam: '1', playDays: [1, 3], selectedFields: ['qa-field'] };
+    if (caseId === 'league-schedule-generate') return { pathname: '/api/leagues/schedule', init: { method: 'POST', body: JSON.stringify({ action: 'configure', requestId, leagueId: league.id, expectedVersion: state.fixtureVersion, config }) } };
+    if (caseId === 'league-schedule-deploy') return { pathname: '/api/leagues/schedule', init: { method: 'POST', body: JSON.stringify({ action: 'replace', requestId, leagueId: league.id, expectedVersion: state.fixtureVersion, games: [{ id: `game-${certificationRunId}`, team1Id: team.id, team2Id: FIXTURES.teams.find(item => item.alias === 'qa-team-c').id, date: '2026-10-05', time: '09:00', location: 'QA Field', resourceId: 'qa-field' }] }) } };
+    if (caseId === 'league-schedule-impossible') return { pathname: '/api/leagues/schedule', init: { method: 'POST', body: JSON.stringify({ action: 'configure', requestId, leagueId: league.id, expectedVersion: state.fixtureVersion, config: { ...config, selectedFields: [] } }) } };
+    if (caseId === 'league-schedule-blackout') return { pathname: '/api/leagues/schedule', init: { method: 'POST', body: JSON.stringify({ action: 'configure', requestId, leagueId: league.id, expectedVersion: state.fixtureVersion, config: { ...config, playDays: [], blackoutDaysOfWeek: [0, 1, 2, 3, 4, 5, 6] } }) } };
+    if (caseId === 'league-schedule-race') return { pathname: '/api/leagues/schedule', init: { method: 'POST', body: JSON.stringify({ action: 'replace', requestId, leagueId: league.id, expectedVersion: Math.max(0, state.fixtureVersion - 1), games: [] }) } };
+    if (caseId === 'league-schedule-foreign-owner' || caseId === 'league-schedule-direct-write') return { pathname: '/api/leagues/schedule', init: { method: 'POST', body: JSON.stringify({ action: 'configure', requestId, leagueId: league.id, expectedVersion: state.fixtureVersion, config }) } };
+    if (caseId === 'league-schedule-reload') return { pathname: `/api/public/portals?kind=league&purpose=spectator&leagueId=${league.id}`, init: { method: 'GET' } };
+    throw new Error(`No League schedule request is defined for ${caseId}.`);
+  }
+  if (scenarioId === 'tournaments-create-configure-replicate-archive') {
+    const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+    const blueprint = {
+      title: `QA Tournament ${certificationRunId}`, isTournament: true, tournamentType: 'round_robin',
+      date: '2028-11-01', endDate: '2028-11-01', gameLength: 60, breakLength: 15, gamesPerTeam: 1,
+      maxDailyGamesPerTeam: 2, selectedFields: [`qa-field-${certificationRunId}`],
+      dailyWindows: [{ date: '2028-11-01', startTime: '09:00', endTime: '17:00' }],
+      tournamentTeamsData: [{ id: team.id, name: team.name }, { id: teamC.id, name: teamC.name }],
+    };
+    if (caseId === 'tournament-create') { state.tournamentCreateRequestId = requestId; state.tournamentBlueprint = blueprint; return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'create', requestId, teamId: team.id, payload: { divisions: [blueprint] } }) } }; }
+    if (caseId === 'tournament-configure') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'configure', requestId, teamId: team.id, eventId: state.createdTournamentId, expectedVersion: state.createdTournamentVersion, payload: { description: `configured ${certificationRunId}` } }) } };
+    if (caseId === 'tournament-replicate') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'replicate', requestId, teamId: team.id, eventId: state.createdTournamentId, expectedVersion: state.createdTournamentVersion, payload: { title: `QA Replica ${certificationRunId}` } }) } };
+    if (caseId === 'tournament-archive') { state.tournamentArchiveRequestId = requestId; state.tournamentArchiveExpectedVersion = state.createdTournamentVersion; return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'archive', requestId, teamId: team.id, eventId: state.createdTournamentId, expectedVersion: state.tournamentArchiveExpectedVersion, payload: {} }) } }; }
+    if (caseId === 'tournament-invalid-format') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'create', requestId, teamId: team.id, payload: { divisions: [{ ...blueprint, title: `Invalid ${certificationRunId}`, tournamentType: 'invalid' }] } }) } };
+    if (caseId === 'tournament-partial-replica') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'replicate', requestId, teamId: team.id, eventId: tournament.id, expectedVersion: state.fixtureVersion, payload: { title: '' } }) } };
+    if (caseId === 'tournament-duplicate') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'create', requestId, teamId: team.id, payload: { divisions: [{ ...blueprint, title: tournament.name }] } }) } };
+    if (caseId === 'tournament-archive-cancel') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'archive', requestId: state.tournamentArchiveRequestId, teamId: team.id, eventId: state.createdTournamentId, expectedVersion: state.tournamentArchiveExpectedVersion, payload: {} }) } };
+    if (caseId === 'tournament-foreign-staff' || caseId === 'tournament-foreign-team') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'configure', requestId, teamId: team.id, eventId: tournament.id, expectedVersion: state.fixtureVersion, payload: { description: 'forged' } }) } };
+    if (caseId === 'tournament-lifecycle-reload') return { pathname: `/api/public/portals?kind=tournament&purpose=spectator&teamId=${team.id}&eventId=${tournament.id}`, init: { method: 'GET' } };
+    if (caseId === 'tournament-lifecycle-replay') return { pathname: '/api/tournaments/lifecycle', init: { method: 'POST', body: JSON.stringify({ action: 'create', requestId: state.tournamentCreateRequestId, teamId: team.id, payload: { divisions: [state.tournamentBlueprint] } }) } };
+    throw new Error(`No Tournament lifecycle request is defined for ${caseId}.`);
+  }
+  if (scenarioId === 'tournaments-schedule-pools-brackets-referees') {
+    const base = { teamId: team.id, eventId: tournament.id, expectedVersion: state.fixtureVersion, expectedScheduleVersion: state.scheduleVersion };
+    if (caseId === 'tournament-schedule-generate') return { pathname: '/api/tournaments/schedule', init: { method: 'POST', body: JSON.stringify({ ...base, action: 'deploy', requestId, games: state.tournamentScheduleGames }) } };
+    if (caseId === 'tournament-pools-bracket') return { pathname: '/api/tournaments/schedule', init: { method: 'POST', body: JSON.stringify({ ...base, action: 'seed-pools', requestId }) } };
+    if (caseId === 'tournament-referee-assign') return { pathname: '/api/tournaments/schedule', init: { method: 'POST', body: JSON.stringify({ ...base, action: 'assign-referee', requestId, gameId: state.refereePrimaryGameId, refereeId: state.refereeId }) } };
+    if (caseId === 'tournament-schedule-impossible') return { pathname: '/api/tournaments/schedule', init: { method: 'POST', body: JSON.stringify({ ...base, action: 'deploy', requestId, games: [] }) } };
+    if (caseId === 'tournament-referee-conflict') return { pathname: '/api/tournaments/schedule', init: { method: 'POST', body: JSON.stringify({ ...base, action: 'assign-referee', requestId, gameId: state.refereeConflictGameId, refereeId: state.refereeId }) } };
+    if (caseId === 'tournament-referee-role-deny' || caseId === 'tournament-schedule-foreign-deny') return { pathname: '/api/tournaments/schedule', init: { method: 'POST', body: JSON.stringify({ ...base, action: 'assign-referee', requestId, gameId: state.refereeConflictGameId, refereeId: state.refereeId }) } };
+    if (caseId === 'tournament-schedule-reload') return { pathname: `/api/public/portals?kind=tournament&purpose=spectator&teamId=${team.id}&eventId=${tournament.id}`, init: { method: 'GET' } };
+    throw new Error(`No Tournament schedule request is defined for ${caseId}.`);
+  }
+  if (scenarioId === 'tournaments-scoring-dispute-public-standings') {
+    const score = { kind: 'tournament', action: 'score', requestId, teamId: team.id, eventId: tournament.id,
+      gameId: state.tournamentScoreGameId, expectedLifecycleVersion: state.fixtureVersion, expectedScheduleVersion: state.scheduleVersion,
+      expectedGameVersion: state.tournamentScoreGameVersion, expectedCredentialVersion: state.credentialVersion, code: 'CUP-2029', score1: 3, score2: 1 };
+    if (caseId === 'tournament-score-submit') { state.tournamentScoreBody = score; return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify(score) } }; }
+    if (caseId === 'tournament-dispute-open') return { pathname: '/api/tournaments/scoring', init: { method: 'POST', body: JSON.stringify({ ...score, action: 'dispute', requestId, code: undefined, notes: 'QA clock review' }) } };
+    if (caseId === 'tournament-dispute-resolve') return { pathname: '/api/tournaments/scoring', init: { method: 'POST', body: JSON.stringify({ ...score, action: 'resolve-dispute', requestId, code: undefined, resolution: 'correct', reason: 'QA video review', correctedScore: { home: 2, away: 4 } }) } };
+    if (caseId === 'tournament-public-standings' || caseId === 'tournament-scoring-reload') return { pathname: `/api/public/portals?kind=tournament&purpose=spectator&teamId=${team.id}&eventId=${tournament.id}`, init: { method: 'GET' } };
+    if (caseId === 'tournament-score-wrong-pin') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...score, requestId, gameId: state.tournamentConflictGameId, code: 'WRONG' }) } };
+    if (caseId === 'tournament-score-replay') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify(state.tournamentScoreBody) } };
+    if (caseId === 'tournament-score-downstream-conflict') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...score, requestId, gameId: state.tournamentConflictGameId, expectedGameVersion: 0 }) } };
+    if (caseId === 'tournament-score-narrow-scope') return { pathname: '/api/public/portals/action', init: { method: 'POST', body: JSON.stringify({ ...score, requestId, gameId: state.tournamentConflictGameId, expectedGameVersion: 0 }) } };
+    if (caseId === 'tournament-score-outsider-deny') return { pathname: '/api/tournaments/scoring', init: { method: 'POST', body: JSON.stringify({ ...score, requestId, gameId: state.tournamentConflictGameId, expectedGameVersion: 0, code: undefined }) } };
+    throw new Error(`No Tournament scoring request is defined for ${caseId}.`);
+  }
+  throw new Error(`No competition request is defined for ${scenarioId}/${caseId}.`);
+}
+
+async function runCompetitionBrowserEnvelope(scenarioId) {
+  const contract = COMPETITION_BROWSER_CONTRACTS[scenarioId];
+  const session = browserSessionName(`ui-${contract.actor}`);
+  cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
+  const result = JSON.parse(cli(session, ['run-code', `async page => {
+    const consoleErrors=[];const failedResponses=[];const observedResponses=[];const tag=${JSON.stringify(`browser-${scenarioId}`)};
+    const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};
+    const onError=error=>consoleErrors.push(error.stack||error.message);
+    page.on('console',onConsole);page.on('pageerror',onError);
+    try{
+      await page.locator('#email').fill(${JSON.stringify(emailForAlias(contract.actor))});await page.locator('#password').fill(${JSON.stringify(password)});
+      await page.getByRole('button',{name:'Sign In'}).click();
+      await page.waitForFunction(expected=>location.pathname===expected,${JSON.stringify(contract.actor.startsWith('qa-league-') ? '/competition' : '/dashboard')},{timeout:20000});
+      const navigation=await page.goto(${JSON.stringify(`${BASE_URL}${contract.path}`)});await page.waitForLoadState('domcontentloaded');
+      if(!navigation)throw Error('Competition navigation returned no main-document response.');
+      const navigationItem={tag,pathname:navigation.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]||'/',method:navigation.request().method(),status:navigation.status(),startedAt:new Date().toISOString(),completedAt:new Date().toISOString()};observedResponses.push(navigationItem);if(navigation.status()>=400)failedResponses.push(navigationItem);
+      const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator('main').first();await main.waitFor({state:'visible',timeout:15000});
+        const control=page.getByText(${contract.control.toString()}, {exact:false}).first();await control.waitFor({state:'visible',timeout:15000});
+        const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);
+        const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=viewport.width+0.5&&box.y+box.height<=viewport.height+0.5);
+        return{viewport,mainBox,controlBox,mainFits:fits(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth)};};
+      return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,observedResponses,url:page.url()};
+    }finally{page.off('console',onConsole);page.off('pageerror',onError);}
+  }`], { sensitive: true }));
+  expectEqual(result.desktop.mainFits && result.desktop.controlFits && result.desktop.scrollWidth <= 1440, true, `Competition ${scenarioId} exact desktop 1440x900 bounds`);
+  expectEqual(result.mobile.mainFits && result.mobile.controlFits && result.mobile.scrollWidth <= 390, true, `Competition ${scenarioId} exact mobile 390x844 bounds`);
+  expectEqual(result.consoleErrors.length, 0, `Competition ${scenarioId} console errors`);
+  expectEqual(result.failedResponses.length, 0, `Competition ${scenarioId} unexpected main-document 4xx/5xx responses`);
+  return { ...result, session };
+}
+
+async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope, state, overlayPaths }) {
+  const contract = COMPETITION_CASE_EXECUTION_CONTRACTS[scenarioId][caseId];
+  const actor = competitionCaseActor(scenarioId, dimension, caseId);
+  if (COMPETITION_BROWSER_CASES.has(caseId)) {
+    const browserContract = COMPETITION_BROWSER_CONTRACTS[scenarioId];
+    const requestedViewport = caseId.endsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+    const observation = JSON.parse(cli(envelope.session, ['run-code', `async page => {
+      const consoleErrors=[];const consolePending=[];const failedResponses=[];const observedResponses=[];const base=${JSON.stringify(BASE_URL)};
+      const onConsole=message=>{if(message.type()==='error'){consoleErrors.push(message.text());consolePending.push(Promise.all(message.args().map(handle=>handle.evaluate(value=>value instanceof Error?{name:value.name,message:value.message,stack:value.stack}:typeof value==='object'?JSON.stringify(value):String(value)))).then(values=>consoleErrors.push(values.join(' '))).catch(()=>{}));}};const onError=error=>consoleErrors.push(error.stack||error.message);
+      const onResponse=response=>{if(!response.url().startsWith(base))return;const item={tag:${JSON.stringify(caseId)},pathname:response.url().slice(base.length).split(/[?#]/,1)[0]||'/',method:response.request().method(),status:response.status(),startedAt:new Date().toISOString(),completedAt:new Date().toISOString()};if(response.request().resourceType()==='document')observedResponses.push(item);if(response.status()>=400)failedResponses.push(item);};
+      page.on('console',onConsole);page.on('pageerror',onError);page.on('response',onResponse);try{await page.setViewportSize(${JSON.stringify(requestedViewport)});${browserContract.path === '/manage-tournaments' ? `await page.evaluate(teamId=>localStorage.setItem('sf_session_team_id',teamId),${JSON.stringify(FIXTURES.teams.find(item => item.alias === 'qa-team-a').id)});` : ''}await page.goto(${JSON.stringify(`${BASE_URL}${browserContract.path}`)},{waitUntil:'domcontentloaded'});const main=page.locator('main').first();try{await main.waitFor({state:'visible',timeout:15000});}catch(error){await Promise.allSettled(consolePending);throw new Error('Competition browser main missing at '+page.url()+'; body='+(await page.locator('body').innerText()).slice(0,500)+'; console='+consoleErrors.join(' | '));}const alertDismiss=page.getByRole('button',{name:/GOT IT/i}).first();if(await alertDismiss.isVisible().catch(()=>false))await alertDismiss.click();const interaction=page.getByRole(${JSON.stringify(browserContract.interactionRole)},{name:${browserContract.interaction.toString()}}).first();await interaction.waitFor({state:'visible',timeout:15000});await interaction.click();const control=page.getByText(${browserContract.control.toString()},{exact:false}).first();await control.waitFor({state:'visible',timeout:15000});await control.scrollIntoViewIfNeeded();const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=${requestedViewport.width + 0.5}&&box.y+box.height<=${requestedViewport.height + 0.5});const fitsWidth=box=>Boolean(box&&box.x>=-0.5&&box.x+box.width<=${requestedViewport.width + 0.5});return{viewport:${JSON.stringify(requestedViewport)},mainBox,controlBox,mainFits:fitsWidth(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth),consoleErrors,failedResponses,observedResponses};}finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('response',onResponse);}
+    }`], { sensitive: true }));
+    await captureBrowserOperationRequests(caseId, actor, observation.observedResponses, caseId);
+    if (dimension === 'console') expectEqual(observation.consoleErrors.length, 0, `Competition ${caseId} captures zero unexpected console errors`);
+    if (dimension === 'network') expectEqual(observation.failedResponses.length, 0, `Competition ${caseId} captures zero unexpected 4xx/5xx responses`);
+    if (dimension === 'responsive') {
+      expectEqual(observation.controlFits, true, `Competition ${caseId} visible control numeric bounds`);
+      expectEqual(observation.scrollWidth <= observation.viewport.width, true, `Competition ${caseId} page horizontal overflow`);
+    }
+    return { actor, operation: `GET ${browserContract.path}`, requests: operationRequestEvidence(caseId) };
+  }
+  const identity = actor === 'qa-public-submitter' ? null : await signIn(actor);
+  if (identity) expectEqual(identity.status, 200, `Competition ${caseId} exact actor authentication`);
+  const league = FIXTURES.leagues.find(item => item.alias === 'qa-league-a');
+  const tournament = FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a');
+  const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+  let archivedSourceBefore = null;
+  let scoringPlanBefore = null;
+  if (caseId === 'league-partial-clone') archivedSourceBefore = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const ref = firestoreAdmin.doc(`leagues/${league.id}`), snapshot = await ref.get(), value = snapshot.data();
+    await ref.set({ ...value, isArchived: true, status: 'archived' });
+    return value;
+  });
+  if (caseId === 'tournament-score-narrow-scope') scoringPlanBefore = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+    const ref = firestoreAdmin.doc(`teams/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}`);
+    const snapshot = await ref.get(), value = snapshot.data();
+    await ref.set({ ...value, planId: 'starter', plan_type: 'starter', isPro: false });
+    return value;
+  });
+  try {
+    const before = await readTenantConsumerDocuments(overlayPaths);
+    const beforeRoots = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => snapshotCompetitionRoots(firestoreAdmin, {
+      leagueIds: FIXTURES.leagues.map(item => item.id), teamIds: FIXTURES.teams.map(item => item.id),
+    }));
+    const directWritePath = `/v1/projects/${PROJECT_ID}/databases/(default)/documents/leagues/${league.id}`;
+    const { pathname, init } = caseId === 'league-schedule-direct-write'
+      ? { pathname: directWritePath, init: { method: 'PATCH' } }
+      : competitionCaseRequest(scenarioId, caseId, state);
+    const expectedRoute = contract.route
+      .replace('{projectId}', PROJECT_ID)
+      .replace('{leagueId}', league.id);
+    expectEqual(init.method, contract.method, `Competition ${caseId} exact method contract`);
+    expectEqual(pathname.split('?')[0], expectedRoute, `Competition ${caseId} exact route contract`);
+    const response = await captureOperationRequests(caseId, actor, async () => {
+      if (caseId !== 'league-schedule-direct-write' && caseId !== 'league-score-narrow-scope') return apiJsonResult(pathname, identity?.body?.idToken || null, init);
+      const startedAt = new Date().toISOString();
+      if (caseId === 'league-score-narrow-scope') {
+        const raw = await fetch(`http://127.0.0.1:8080${pathname}`, { method: 'GET' });
+        const body = await raw.json().catch(() => null);
+        recordCapturedOperationRequest({ pathname, method: 'GET', status: raw.status, startedAt, completedAt: new Date().toISOString() });
+        return { status: raw.status, body };
+      }
+      const result = await patchFirestoreFields({
+        projectId: PROJECT_ID,
+        documentPath: `leagues/${league.id}`,
+        idToken: identity.body.idToken,
+        fields: { schedule: [{ id: `forged-${certificationRunId}` }] },
+      });
+      recordCapturedOperationRequest({ pathname, method: 'PATCH', status: result.status, token: identity.body.idToken, startedAt, completedAt: new Date().toISOString() });
+      return result;
+    });
+    if (response.status >= 500) throw new Error(`Competition ${caseId} server failure ${response.status}: ${String(response.body?.error || 'no error detail')}`);
+    if (!contract.expectedStatuses.includes(response.status)) throw new Error(`Competition ${caseId} unexpected status ${response.status}: ${String(response.body?.error || response.body?.code || 'no error detail')}`);
+    expectEqual(contract.expectedStatuses.includes(response.status), true, `Competition ${caseId} exact response status ${response.status}`);
+    if (caseId === 'league-create' && response.status === 201) { state.createdLeagueId = response.body.leagueId; state.createdVersion = response.body.lifecycleVersion ?? 1; registerDynamicFirestoreRoot(`leagues/${state.createdLeagueId}`, `competition-${caseId}`); }
+    if (caseId === 'league-edit' && response.status === 200) state.createdVersion = response.body.lifecycleVersion ?? state.createdVersion + 1;
+    if (caseId === 'league-clone' && response.status === 201) { state.clonedLeagueId = response.body.leagueId; state.clonedVersion = response.body.lifecycleVersion ?? 1; state.cloneRequestId = `qa-${caseId}-${certificationRunId}`; registerDynamicFirestoreRoot(`leagues/${state.clonedLeagueId}`, `competition-${caseId}`); }
+    if (caseId === 'league-register' && response.status === 200) {
+      state.registrationEntryId = response.body.entryId;
+      registerDynamicFirestoreRoot(`leagues/${league.id}/registrationEntries/${state.registrationEntryId}`, `competition-${caseId}-entry`);
+      const registered = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}/registrationEntries/${state.registrationEntryId}`).get());
+      expectEqual(registered.data()?.status, 'pending', `Competition ${caseId} authoritative registration status`);
+      expectEqual(registered.data()?.request_id, `qa-${caseId}-${certificationRunId}`, `Competition ${caseId} authoritative request ownership`);
+    }
+    if (caseId === 'league-review' && response.status === 200) {
+      const reviewed = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}/registrationEntries/${state.registrationEntryId}`).get());
+      expectEqual(reviewed.data()?.status, 'assigned', `Competition ${caseId} authoritative assignment status`);
+      expectEqual(reviewed.data()?.assigned_team_id, FIXTURES.teams.find(item => item.alias === 'qa-team-c').id, `Competition ${caseId} authoritative assigned squad`);
+    }
+    if (caseId === 'league-assign' && response.status === 200) {
+      const accepted = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}/registrationEntries/${state.registrationEntryId}`).get());
+      expectEqual(accepted.data()?.status, 'accepted', `Competition ${caseId} authoritative accepted status`);
+      expectEqual(accepted.data()?.assignmentVersion, 2, `Competition ${caseId} authoritative assignment version`);
+    }
+    if (caseId === 'league-assignment-reload' && response.status === 200) {
+      const persisted = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}/registrationEntries/${state.registrationEntryId}`).get());
+      expectEqual(persisted.data()?.status, 'accepted', `Competition ${caseId} authoritative accepted registration persists`);
+    }
+    if (scenarioId === 'leagues-schedule-generation-deployment' && response.status === 200 && ['league-schedule-generate', 'league-schedule-deploy'].includes(caseId)) state.fixtureVersion = response.body.lifecycleVersion ?? state.fixtureVersion + 1;
+    if (scenarioId === 'tournaments-schedule-pools-brackets-referees' && response.status === 200 && ['tournament-schedule-generate', 'tournament-pools-bracket', 'tournament-referee-assign'].includes(caseId)) {
+      state.scheduleVersion = response.body.scheduleVersion;
+      const event = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${team.id}/events/${tournament.id}`).get());
+      expectEqual(event.data()?.scheduleVersion, state.scheduleVersion, `Competition ${caseId} authoritative schedule version`);
+      if (caseId === 'tournament-schedule-generate') expectEqual(event.data()?.tournamentGames?.length, state.tournamentScheduleGames.length, `Competition ${caseId} authoritative bracket game count`);
+      if (caseId === 'tournament-pools-bracket') expectEqual(event.data()?.tournamentGames?.some(game => game.stage === 'Knockout' && game.team1Id !== 'tbd'), true, `Competition ${caseId} authoritative pool qualifiers seeded`);
+      if (caseId === 'tournament-referee-assign') expectEqual(event.data()?.tournamentGames?.find(game => game.id === state.refereePrimaryGameId)?.refereeId, state.refereeId, `Competition ${caseId} authoritative referee assignment`);
+    }
+    if (caseId === 'tournament-schedule-reload' && response.status === 200) {
+      const event = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${team.id}/events/${tournament.id}`).get());
+      expectEqual(event.data()?.scheduleVersion, state.scheduleVersion, `Competition ${caseId} authoritative schedule persists`);
+      expectEqual(event.data()?.tournamentGames?.find(game => game.id === state.refereePrimaryGameId)?.refereeId, state.refereeId, `Competition ${caseId} authoritative referee persists`);
+    }
+    if (scenarioId === 'tournaments-scoring-dispute-public-standings' && response.status === 200 && ['tournament-score-submit', 'tournament-dispute-open', 'tournament-dispute-resolve'].includes(caseId)) {
+      state.scheduleVersion = response.body.scheduleVersion;
+      state.credentialVersion = response.body.credentialVersion;
+      state.tournamentScoreGameVersion = response.body.gameVersion;
+      const event = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${team.id}/events/${tournament.id}`).get());
+      const scored = event.data()?.tournamentGames?.find(game => game.id === state.tournamentScoreGameId);
+      expectEqual(event.data()?.scheduleVersion, state.scheduleVersion, `Competition ${caseId} authoritative scoring schedule version`);
+      if (caseId === 'tournament-score-submit') expectEqual(JSON.stringify({ score1: scored?.score1, score2: scored?.score2, complete: scored?.isCompleted }), JSON.stringify({ score1: 3, score2: 1, complete: true }), `Competition ${caseId} authoritative score`);
+      if (caseId === 'tournament-dispute-open') expectEqual(scored?.isDisputed, true, `Competition ${caseId} authoritative dispute state`);
+      if (caseId === 'tournament-dispute-resolve') expectEqual(JSON.stringify({ score1: scored?.score1, score2: scored?.score2, disputed: scored?.isDisputed }), JSON.stringify({ score1: 2, score2: 4, disputed: false }), `Competition ${caseId} authoritative resolution`);
+    }
+    if ((caseId === 'tournament-public-standings' || caseId === 'tournament-scoring-reload') && response.status === 200) {
+      const event = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${team.id}/events/${tournament.id}`).get());
+      expectEqual(event.data()?.scheduleVersion, state.scheduleVersion, `Competition ${caseId} authoritative public score persists`);
+      expectEqual(event.data()?.tournamentGames?.find(game => game.id === state.tournamentScoreGameId)?.score2, 4, `Competition ${caseId} authoritative corrected score persists`);
+    }
+    if (caseId === 'tournament-create' && response.status === 200) {
+      state.competitionCleanupPaths ||= new Set();
+      state.createdTournamentId = response.body.eventId;
+      state.createdTournamentVersion = response.body.lifecycleVersion ?? 1;
+      for (const eventId of response.body.eventIds || [response.body.eventId]) registerDynamicFirestoreRoot(`teams/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}/events/${eventId}`, `competition-${caseId}-${eventId}`);
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        for (const eventId of response.body.eventIds || [response.body.eventId]) {
+          const [codes, audits] = await Promise.all([
+            firestoreAdmin.collection('tournamentRegistrationCodes').where('eventId', '==', eventId).get(),
+            firestoreAdmin.collection('tournamentLifecycleAudits').where('eventIds', 'array-contains', eventId).get(),
+          ]);
+          for (const document of [...codes.docs, ...audits.docs]) if (!state.competitionCleanupPaths.has(document.ref.path)) {
+            state.competitionCleanupPaths.add(document.ref.path);
+            registerDynamicFirestoreRoot(document.ref.path, `competition-${caseId}-${document.ref.path.replaceAll('/', '-')}`);
+          }
+        }
+      });
+    }
+    if (caseId === 'tournament-configure' && response.status === 200) state.createdTournamentVersion = response.body.lifecycleVersion ?? state.createdTournamentVersion + 1;
+    if (caseId === 'tournament-replicate' && response.status === 200) {
+      state.competitionCleanupPaths ||= new Set();
+      for (const eventId of response.body.eventIds || [response.body.eventId]) registerDynamicFirestoreRoot(`teams/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}/events/${eventId}`, `competition-${caseId}-${eventId}`);
+      await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        for (const eventId of response.body.eventIds || [response.body.eventId]) {
+          const [codes, audits] = await Promise.all([
+            firestoreAdmin.collection('tournamentRegistrationCodes').where('eventId', '==', eventId).get(),
+            firestoreAdmin.collection('tournamentLifecycleAudits').where('eventIds', 'array-contains', eventId).get(),
+          ]);
+          for (const document of [...codes.docs, ...audits.docs]) if (!state.competitionCleanupPaths.has(document.ref.path)) {
+            state.competitionCleanupPaths.add(document.ref.path);
+            registerDynamicFirestoreRoot(document.ref.path, `competition-${caseId}-${document.ref.path.replaceAll('/', '-')}`);
+          }
+        }
+      });
+    }
+    if (caseId === 'tournament-archive' && response.status === 200) {
+      state.createdTournamentVersion = response.body.lifecycleVersion ?? state.createdTournamentVersion + 1;
+      const audits = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+        const [plural, singular] = await Promise.all([
+          firestoreAdmin.collection('tournamentLifecycleAudits').where('eventIds', 'array-contains', state.createdTournamentId).get(),
+          firestoreAdmin.collection('tournamentLifecycleAudits').where('eventId', '==', state.createdTournamentId).get(),
+        ]);
+        return [...plural.docs, ...singular.docs];
+      });
+      for (const document of audits) if (!state.competitionCleanupPaths.has(document.ref.path)) {
+        state.competitionCleanupPaths.add(document.ref.path);
+        registerDynamicFirestoreRoot(document.ref.path, `competition-${caseId}-${document.ref.path.replaceAll('/', '-')}`);
+      }
+    }
+    const after = await readTenantConsumerDocuments(overlayPaths);
+    if (COMPETITION_NEGATIVE_OR_DENIAL_CASES.has(caseId)) {
+      const afterRoots = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => snapshotCompetitionRoots(firestoreAdmin, {
+        leagueIds: FIXTURES.leagues.map(item => item.id), teamIds: FIXTURES.teams.map(item => item.id),
+      }));
+      expectEqual(JSON.stringify(after) === JSON.stringify(before), true, `Competition ${caseId} denied request leaves authoritative roots unchanged`);
+      expectEqual(JSON.stringify(afterRoots) === JSON.stringify(beforeRoots), true, `Competition ${caseId} leaves no root, subcollection, operation, projection, booking, assignment, credential, or audit residue`);
+    }
+    return { actor, operation: `${init.method} ${pathname.split('?')[0]}`, requests: operationRequestEvidence(caseId) };
+  } finally {
+    if (archivedSourceBefore) await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}`).set(archivedSourceBefore));
+    if (scoringPlanBefore) await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}`).set(scoringPlanBefore));
+  }
+}
+
+const COMPETITION_CASE_HANDLER_REGISTRY = Object.freeze({
+  'league-create': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'happyPath', caseId: 'league-create' }),
+  'league-edit': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'happyPath', caseId: 'league-edit' }),
+  'league-clone': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'happyPath', caseId: 'league-clone' }),
+  'league-delete': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'happyPath', caseId: 'league-delete' }),
+  'league-duplicate': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'negativePath', caseId: 'league-duplicate' }),
+  'league-quota': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'negativePath', caseId: 'league-quota' }),
+  'league-partial-clone': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'negativePath', caseId: 'league-partial-clone' }),
+  'league-foreign-owner': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'permission', caseId: 'league-foreign-owner' }),
+  'league-anonymous-write': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'permission', caseId: 'league-anonymous-write' }),
+  'league-reload': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'persistence', caseId: 'league-reload' }),
+  'league-replay': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'persistence', caseId: 'league-replay' }),
+  'league-lifecycle-console': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'console', caseId: 'league-lifecycle-console' }),
+  'league-lifecycle-network': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'network', caseId: 'league-lifecycle-network' }),
+  'league-lifecycle-desktop': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'responsive', caseId: 'league-lifecycle-desktop' }),
+  'league-lifecycle-mobile': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-create-edit-clone-delete', dimension: 'responsive', caseId: 'league-lifecycle-mobile' }),
+  'league-schedule-generate': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'happyPath', caseId: 'league-schedule-generate' }),
+  'league-schedule-deploy': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'happyPath', caseId: 'league-schedule-deploy' }),
+  'league-schedule-impossible': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'negativePath', caseId: 'league-schedule-impossible' }),
+  'league-schedule-blackout': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'negativePath', caseId: 'league-schedule-blackout' }),
+  'league-schedule-race': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'negativePath', caseId: 'league-schedule-race' }),
+  'league-schedule-foreign-owner': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'permission', caseId: 'league-schedule-foreign-owner' }),
+  'league-schedule-direct-write': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'permission', caseId: 'league-schedule-direct-write' }),
+  'league-schedule-reload': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'persistence', caseId: 'league-schedule-reload' }),
+  'league-schedule-console': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'console', caseId: 'league-schedule-console' }),
+  'league-schedule-network': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'network', caseId: 'league-schedule-network' }),
+  'league-schedule-desktop': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-schedule-generation-deployment', dimension: 'responsive', caseId: 'league-schedule-desktop' }),
+  'league-register': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'happyPath', caseId: 'league-register' }),
+  'league-review': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'happyPath', caseId: 'league-review' }),
+  'league-assign': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'happyPath', caseId: 'league-assign' }),
+  'league-register-duplicate': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'negativePath', caseId: 'league-register-duplicate' }),
+  'league-register-invalid': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'negativePath', caseId: 'league-register-invalid' }),
+  'league-register-unpublished': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'negativePath', caseId: 'league-register-unpublished' }),
+  'league-ledger-private': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'permission', caseId: 'league-ledger-private' }),
+  'league-registrant-assign-deny': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'permission', caseId: 'league-registrant-assign-deny' }),
+  'league-assignment-foreign-owner': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'permission', caseId: 'league-assignment-foreign-owner' }),
+  'league-assignment-reload': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'persistence', caseId: 'league-assignment-reload' }),
+  'league-assignment-console': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'console', caseId: 'league-assignment-console' }),
+  'league-assignment-network': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'network', caseId: 'league-assignment-network' }),
+  'league-assignment-desktop': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'responsive', caseId: 'league-assignment-desktop' }),
+  'league-assignment-mobile': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-registration-assignment', dimension: 'responsive', caseId: 'league-assignment-mobile' }),
+  'league-score-submit': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'happyPath', caseId: 'league-score-submit' }),
+  'league-public-score': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'happyPath', caseId: 'league-public-score' }),
+  'league-score-wrong-pin': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'negativePath', caseId: 'league-score-wrong-pin' }),
+  'league-score-replay': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'negativePath', caseId: 'league-score-replay' }),
+  'league-score-downstream-conflict': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'negativePath', caseId: 'league-score-downstream-conflict' }),
+  'league-score-narrow-scope': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'permission', caseId: 'league-score-narrow-scope' }),
+  'league-score-outsider-deny': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'permission', caseId: 'league-score-outsider-deny' }),
+  'league-score-reload': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'persistence', caseId: 'league-score-reload' }),
+  'league-score-console': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'console', caseId: 'league-score-console' }),
+  'league-score-network': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'network', caseId: 'league-score-network' }),
+  'league-score-desktop': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'responsive', caseId: 'league-score-desktop' }),
+  'league-score-mobile': context => executeCompetitionCase({ ...context, scenarioId: 'leagues-scorekeeper-spectator', dimension: 'responsive', caseId: 'league-score-mobile' }),
+  'tournament-create': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'happyPath', caseId: 'tournament-create' }),
+  'tournament-configure': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'happyPath', caseId: 'tournament-configure' }),
+  'tournament-replicate': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'happyPath', caseId: 'tournament-replicate' }),
+  'tournament-archive': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'happyPath', caseId: 'tournament-archive' }),
+  'tournament-invalid-format': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'negativePath', caseId: 'tournament-invalid-format' }),
+  'tournament-partial-replica': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'negativePath', caseId: 'tournament-partial-replica' }),
+  'tournament-duplicate': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'negativePath', caseId: 'tournament-duplicate' }),
+  'tournament-archive-cancel': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'negativePath', caseId: 'tournament-archive-cancel' }),
+  'tournament-foreign-staff': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'permission', caseId: 'tournament-foreign-staff' }),
+  'tournament-foreign-team': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'permission', caseId: 'tournament-foreign-team' }),
+  'tournament-lifecycle-reload': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'persistence', caseId: 'tournament-lifecycle-reload' }),
+  'tournament-lifecycle-replay': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'persistence', caseId: 'tournament-lifecycle-replay' }),
+  'tournament-lifecycle-console': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'console', caseId: 'tournament-lifecycle-console' }),
+  'tournament-lifecycle-network': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'network', caseId: 'tournament-lifecycle-network' }),
+  'tournament-lifecycle-desktop': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'responsive', caseId: 'tournament-lifecycle-desktop' }),
+  'tournament-lifecycle-mobile': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-create-configure-replicate-archive', dimension: 'responsive', caseId: 'tournament-lifecycle-mobile' }),
+  'tournament-schedule-generate': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'happyPath', caseId: 'tournament-schedule-generate' }),
+  'tournament-pools-bracket': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'happyPath', caseId: 'tournament-pools-bracket' }),
+  'tournament-referee-assign': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'happyPath', caseId: 'tournament-referee-assign' }),
+  'tournament-schedule-impossible': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'negativePath', caseId: 'tournament-schedule-impossible' }),
+  'tournament-referee-conflict': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'negativePath', caseId: 'tournament-referee-conflict' }),
+  'tournament-referee-role-deny': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'permission', caseId: 'tournament-referee-role-deny' }),
+  'tournament-schedule-foreign-deny': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'permission', caseId: 'tournament-schedule-foreign-deny' }),
+  'tournament-schedule-reload': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'persistence', caseId: 'tournament-schedule-reload' }),
+  'tournament-schedule-console': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'console', caseId: 'tournament-schedule-console' }),
+  'tournament-schedule-network': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'network', caseId: 'tournament-schedule-network' }),
+  'tournament-schedule-desktop': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'responsive', caseId: 'tournament-schedule-desktop' }),
+  'tournament-schedule-mobile': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-schedule-pools-brackets-referees', dimension: 'responsive', caseId: 'tournament-schedule-mobile' }),
+  'tournament-score-submit': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'happyPath', caseId: 'tournament-score-submit' }),
+  'tournament-dispute-open': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'happyPath', caseId: 'tournament-dispute-open' }),
+  'tournament-dispute-resolve': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'happyPath', caseId: 'tournament-dispute-resolve' }),
+  'tournament-public-standings': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'happyPath', caseId: 'tournament-public-standings' }),
+  'tournament-score-wrong-pin': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'negativePath', caseId: 'tournament-score-wrong-pin' }),
+  'tournament-score-replay': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'negativePath', caseId: 'tournament-score-replay' }),
+  'tournament-score-downstream-conflict': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'negativePath', caseId: 'tournament-score-downstream-conflict' }),
+  'tournament-score-narrow-scope': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'permission', caseId: 'tournament-score-narrow-scope' }),
+  'tournament-score-outsider-deny': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'permission', caseId: 'tournament-score-outsider-deny' }),
+  'tournament-scoring-reload': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'persistence', caseId: 'tournament-scoring-reload' }),
+  'tournament-scoring-console': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'console', caseId: 'tournament-scoring-console' }),
+  'tournament-scoring-network': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'network', caseId: 'tournament-scoring-network' }),
+  'tournament-scoring-desktop': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'responsive', caseId: 'tournament-scoring-desktop' }),
+  'tournament-scoring-mobile': context => executeCompetitionCase({ ...context, scenarioId: 'tournaments-scoring-dispute-public-standings', dimension: 'responsive', caseId: 'tournament-scoring-mobile' }),
+});
+
+if (new Set(Object.values(COMPETITION_CASE_HANDLER_REGISTRY)).size !== Object.keys(COMPETITION_CASE_HANDLER_REGISTRY).length) {
+  throw new Error('Competition cases must have distinct executable handler functions.');
+}
+
+async function executeCompetitionScenarioCases(scenarioId) {
+  if (!runBrowser) throw new Error(`Competition scenario ${scenarioId} requires Playwright browser evidence.`);
+  const envelope = await runCompetitionBrowserEnvelope(scenarioId);
+  const league = FIXTURES.leagues.find(item => item.alias === 'qa-league-a');
+  const tournament = FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a');
+  const state = { fixtureVersion: 0, scheduleVersion: 0, createdLeagueId: '', createdVersion: 0, clonedLeagueId: '', clonedVersion: 0, cloneRequestId: '' };
+  const overlayPaths = scenarioId.startsWith('leagues-')
+    ? [`leagues/${league.id}`,
+      ...(scenarioId === 'leagues-scorekeeper-spectator' ? [`leagues/${league.id}/private/lifecycle`] : []),
+      ...(scenarioId === 'leagues-registration-assignment' ? [
+        `leagues/${league.id}/private/lifecycle`, `leagues/${league.id}/registration/team_config`,
+        `leagues/${league.id}/registration/unpublished_config`, `teams/${FIXTURES.teams.find(item => item.alias === 'qa-team-c').id}`,
+      ] : []),
+    ]
+    : [`teams/${tournament.teamId || FIXTURES.teams.find(item => item.alias === tournament.teamAlias)?.id}/events/${tournament.id}`,
+      ...(scenarioId === 'tournaments-scoring-dispute-public-standings' ? [
+        `teams/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}/events/${tournament.id}/private/scoring`,
+        `teams/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}`,
+      ] : []),
+    ];
+  await tenantFixtureMutations.withFirestoreOverlay(overlayPaths, async () => {
+   if (scenarioId === 'leagues-create-edit-clone-delete' || scenarioId === 'leagues-schedule-generation-deployment') await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+     const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+     const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+     await firestoreAdmin.doc(`leagues/${league.id}`).set({
+       tenantId: `profile:${league.creatorId}`, is_active: true,
+       ...(scenarioId === 'leagues-schedule-generation-deployment' ? {
+         teams: {
+           [teamA.id]: { teamName: teamA.name, status: 'accepted', wins: 0, losses: 0, ties: 0, points: 0 },
+           [teamC.id]: { teamName: teamC.name, status: 'accepted', wins: 0, losses: 0, ties: 0, points: 0 },
+         },
+         memberTeamIds: [teamA.id, teamC.id], schedule: [], lifecycleVersion: 0,
+       } : {}),
+     }, { merge: true });
+   });
+   if (scenarioId === 'leagues-scorekeeper-spectator') await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+     const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+     const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+     state.leagueScoreGameId = `score-${certificationRunId}`;
+     state.leagueConflictGameId = `conflict-${certificationRunId}`;
+     state.leagueDownstreamGameId = `downstream-${certificationRunId}`;
+     const game = (id, extra = {}) => ({ id, team1Id: teamA.id, team2Id: teamC.id, team1: teamA.name, team2: teamC.name, date: '2028-11-02', time: '10:00', location: 'QA Field', resourceId: 'qa-field', durationMinutes: 60, gameVersion: 0, score1: 0, score2: 0, ...extra });
+     await firestoreAdmin.doc(`leagues/${league.id}/private/lifecycle`).delete();
+     await firestoreAdmin.doc(`leagues/${league.id}`).set({
+       tenantId: `profile:${league.creatorId}`, is_active: true, lifecycleVersion: 0, scorekeeperPin: '8274', memberTeamIds: [teamA.id, teamC.id],
+       teams: {
+         [teamA.id]: { teamName: teamA.name, status: 'accepted', wins: 0, losses: 0, ties: 0, points: 0 },
+         [teamC.id]: { teamName: teamC.name, status: 'accepted', wins: 0, losses: 0, ties: 0, points: 0 },
+       },
+       schedule: [game(state.leagueScoreGameId), game(state.leagueConflictGameId, { winnerTo: state.leagueDownstreamGameId }), game(state.leagueDownstreamGameId, { isStarted: true, status: 'live' })],
+     }, { merge: true });
+   });
+   if (scenarioId === 'leagues-registration-assignment') await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+     const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+     const teamC = FIXTURES.teams.find(item => item.alias === 'qa-team-c');
+     const baseConfig = {
+       title: 'QA League registration', description: '', is_active: true, type: 'team', form_version: 1,
+       form_schema: [
+         { id: 'teamName', label: 'Team Name', type: 'short_text', required: true },
+         { id: 'name', label: 'Head Coach Name', type: 'short_text', required: true },
+         { id: 'email', label: 'Email Address', type: 'email', required: true },
+       ], registration_cost: '0', offline_payment_instructions: '', currency: 'CAD', waiver_mode: 'none',
+       require_default_waiver: false, default_waiver_text: '', custom_waiver_text: '', team_waivers_content: [], max_registrations: 20,
+     };
+     state.registrationConfigHash = registrationConfigHash(baseConfig);
+     const unpublished = { ...baseConfig, title: 'Closed QA registration', is_active: false };
+     state.unpublishedConfigHash = registrationConfigHash(unpublished);
+     await firestoreAdmin.doc(`leagues/${league.id}`).set({
+       tenantId: `profile:${league.creatorId}`, billingOwnerUserId: league.creatorId, is_active: true,
+       lifecycleVersion: 0, registrationEntryCount: 0, memberTeamIds: [teamA.id], teams: {
+         [teamA.id]: { teamName: teamA.name, status: 'accepted', wins: 0, losses: 0, ties: 0, points: 0 },
+         [teamC.id]: { teamName: teamC.name, status: 'accepted', wins: 0, losses: 0, ties: 0, points: 0 },
+       }, schedule: [],
+     }, { merge: true });
+     await Promise.all([
+       firestoreAdmin.doc(`teams/${teamC.id}`).set({ planId: 'elite_league', plan_type: 'elite_league', isPro: true }, { merge: true }),
+       firestoreAdmin.doc(`leagues/${league.id}/private/lifecycle`).set({ teamContacts: {} }),
+       firestoreAdmin.doc(`leagues/${league.id}/registration/team_config`).set({ ...baseConfig, config_hash: state.registrationConfigHash }),
+       firestoreAdmin.doc(`leagues/${league.id}/registration/unpublished_config`).set({ ...unpublished, config_hash: state.unpublishedConfigHash }),
+     ]);
+   });
+   if (scenarioId === 'tournaments-schedule-pools-brackets-referees') await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+     const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+     const entrants = Array.from({ length: 8 }, (_, index) => ({ id: `qa-pool-team-${index + 1}-${FIXTURES.runId}`, name: `QA Pool Team ${index + 1}` }));
+     const resources = [`qa:field-a-${FIXTURES.runId}`, `qa:field-b-${FIXTURES.runId}`];
+     const generated = generateTournamentSchedule({
+       teams: entrants, fields: resources.map((id, index) => ({ id, name: `QA Field ${index + 1}` })),
+       startDate: '2029-11-01', endDate: '2029-11-03', startTime: '08:00', endTime: '22:00',
+       gameLength: 60, breakLength: 15, gamesPerTeam: 3, maxDailyGamesPerTeam: 12,
+       tournamentType: 'pool_play_knockout', poolCount: 2, advancePerPool: 2,
+     }).map(game => game.stage === 'Pool' ? { ...game, score1: 2, score2: 1, isCompleted: true } : game);
+     const primary = generated[0];
+     const conflict = generated.find(game => game.id !== primary.id && game.date === primary.date && game.time === primary.time);
+     if (!conflict) throw new Error('Competition Tournament fixture requires two concurrent field games for the referee conflict case.');
+     state.fixtureVersion = 2;
+     state.scheduleVersion = 0;
+     state.tournamentScheduleGames = generated;
+     state.refereeId = `qa-referee-${FIXTURES.runId}`;
+     state.refereePrimaryGameId = primary.id;
+     state.refereeConflictGameId = conflict.id;
+     await firestoreAdmin.doc(`teams/${teamA.id}/events/${tournament.id}`).set({
+       id: tournament.id, teamId: teamA.id, title: `QA Pool Tournament ${certificationRunId}`, isTournament: true,
+       isArchived: false, isActive: true, is_active: true, status: 'published', lifecycleVersion: 2, scheduleVersion: 0,
+       tournamentType: 'pool_play_knockout', poolCount: 2, advancePerPool: 2, tournamentTeamsData: entrants,
+       selectedFields: resources, date: '2029-11-01', endDate: '2029-11-03', startTime: '08:00', endTime: '22:00',
+       gameLength: 60, breakLength: 15, gamesPerTeam: 3, maxDailyGamesPerTeam: 12, tournamentGames: [],
+       refereePool: [{ id: state.refereeId, name: 'QA Referee', email: `referee-${FIXTURES.runId}@example.test`, status: 'active' }], fixtureRunId: certificationRunId,
+     });
+   });
+   if (scenarioId === 'tournaments-scoring-dispute-public-standings') await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+     const teamA = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+     state.fixtureVersion = 4;
+     state.scheduleVersion = 6;
+     state.credentialVersion = 0;
+     state.tournamentScoreGameVersion = 0;
+     state.tournamentScoreGameId = `score-${FIXTURES.runId}`;
+     state.tournamentConflictGameId = `conflict-${FIXTURES.runId}`;
+     state.tournamentDownstreamGameId = `downstream-${FIXTURES.runId}`;
+     const game = (id, extra = {}) => ({ id, gameVersion: 0, team1: 'Alpha', team1Id: 'alpha', team2: 'Bravo', team2Id: 'bravo',
+       date: '2029-11-05', time: '10:00 AM', location: 'QA Field', resourceId: `qa-field-${FIXTURES.runId}`,
+       score1: 0, score2: 0, isCompleted: false, stage: 'Main', round: 'Round 1', ...extra });
+     await firestoreAdmin.doc(`teams/${teamA.id}`).set({ planId: 'elite', plan_type: 'elite', isPro: true, isActive: true }, { merge: true });
+     await firestoreAdmin.doc(`teams/${teamA.id}/events/${tournament.id}`).set({
+       id: tournament.id, teamId: teamA.id, title: `QA Scoring Tournament ${certificationRunId}`, isTournament: true,
+       isArchived: false, isActive: true, is_active: true, status: 'published', lifecycleVersion: state.fixtureVersion,
+       scheduleVersion: state.scheduleVersion, credentialVersion: 0, scoringCode: 'CUP-2029', scorekeeperConfigured: false,
+       date: '2029-11-05', endDate: '2029-11-05', location: 'QA Field', sport: 'Basketball',
+       tournamentType: 'single_elimination', tournamentTeamsData: [{ id: 'alpha', name: 'Alpha' }, { id: 'bravo', name: 'Bravo' }],
+       tournamentGames: [game(state.tournamentScoreGameId), game(state.tournamentConflictGameId, { winnerTo: state.tournamentDownstreamGameId, winnerToSlot: 'team1' }), game(state.tournamentDownstreamGameId, { isCompleted: true, score1: 2, score2: 1 })],
+       fixtureRunId: certificationRunId,
+     });
+     await firestoreAdmin.doc(`teams/${teamA.id}/events/${tournament.id}/private/scoring`).delete();
+   });
+   for (const [dimension, caseIds] of Object.entries(COMPETITION_SCENARIO_CASES[scenarioId])) {
+    for (const caseId of caseIds) {
+      const dedicatedHandler = COMPETITION_CASE_HANDLER_REGISTRY[caseId];
+      if (!dedicatedHandler) throw new Error(`Missing dedicated competition handler for ${caseId}.`);
+      const { actor, operation, requests } = await dedicatedHandler({ envelope, state, overlayPaths });
+      recordObservedOperationNamedCase(scenarioId, dimension, caseId,
+        `${caseId} executed through its dedicated competition endpoint and visible browser surface`,
+        [new RegExp(`^Competition ${caseId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `)], {
+          actor, operation, requests,
+          reconciliation: 'case-owned response plus run-owned competition fixture and visible control observation',
+          observer: 'isolated Playwright session, application response, and emulator cleanup registry',
+          timeBound: '15s UI and 20s HTTP deadlines',
+        });
+    }
+   }
+  });
+}
+
+async function runCompetitionLifecycleWorkflowAudit(scenarioId) { await executeCompetitionScenarioCases(scenarioId); }
+async function runCompetitionScheduleWorkflowAudit(scenarioId) { await executeCompetitionScenarioCases(scenarioId); }
+async function runCompetitionAssignmentWorkflowAudit(scenarioId) { await executeCompetitionScenarioCases(scenarioId); }
+async function runCompetitionScoringWorkflowAudit(scenarioId) { await executeCompetitionScenarioCases(scenarioId); }
+
 async function runCertificationOperationsScenarios() {
   const scenarioIds = OPERATIONS_SCENARIO_IDS.filter(id => selectedOperationsScenarios.has(id));
   let sessionBaseline;
@@ -7030,6 +7667,24 @@ async function runCertificationOperationsScenarios() {
       snapshot: () => withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => snapshotScheduleRoots(firestoreAdmin, FIXTURES.teams.map(team => team.id))),
       registerRoot: documentPath => registerDynamicFirestoreRoot(documentPath, `schedule-owned-${documentPath.replaceAll('/', '-')}`),
     });
+    if (COMPETITION_SCENARIO_IDS.includes(scenarioId)) await registerCompetitionDiscovery({
+      registry: activeOperationResourceRegistry,
+      scopeId: scenarioId,
+      runId: certificationRunId,
+      snapshot: () => withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => snapshotCompetitionRoots(firestoreAdmin, {
+        leagueIds: FIXTURES.leagues.map(league => league.id),
+        teamIds: FIXTURES.teams.map(team => team.id),
+      })),
+      inspect: documentPath => withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => (await firestoreAdmin.doc(documentPath).get()).data() || null),
+      registerRoot: documentPath => registerDynamicFirestoreRoot(documentPath, `competition-owned-${documentPath.replaceAll('/', '-')}`),
+    });
+      if (scenarioId === 'leagues-create-edit-clone-delete') { await runCompetitionLifecycleWorkflowAudit(scenarioId); return; }
+      if (scenarioId === 'leagues-schedule-generation-deployment') { await runCompetitionScheduleWorkflowAudit(scenarioId); return; }
+      if (scenarioId === 'leagues-registration-assignment') { await runCompetitionAssignmentWorkflowAudit(scenarioId); return; }
+      if (scenarioId === 'leagues-scorekeeper-spectator') { await runCompetitionScoringWorkflowAudit(scenarioId); return; }
+      if (scenarioId === 'tournaments-create-configure-replicate-archive') { await runCompetitionLifecycleWorkflowAudit(scenarioId); return; }
+      if (scenarioId === 'tournaments-schedule-pools-brackets-referees') { await runCompetitionScheduleWorkflowAudit(scenarioId); return; }
+      if (scenarioId === 'tournaments-scoring-dispute-public-standings') { await runCompetitionScoringWorkflowAudit(scenarioId); return; }
       if (scenarioId === 'chat-channel-message-unread' && runBrowser) {
         await runCommunicationWorkflowAudit();
         for(const [dimension,caseIds] of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId])) for(const caseId of caseIds) {

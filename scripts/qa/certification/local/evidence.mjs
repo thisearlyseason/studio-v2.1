@@ -258,7 +258,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
   for (const caseRecord of result.cases) {
     assertClosedObject(caseRecord, [
       'actorAliases', 'actorAlias', 'targetAlias', 'operation', 'network', 'console', 'responsive',
-      'cleanupRefs', 'execution', 'runtimeTarget', 'caseId', 'dimension', 'role', 'tenantAlias', 'expected', 'observed',
+      'cleanupRefs', 'execution', 'assertions', 'runtimeTarget', 'caseId', 'dimension', 'role', 'tenantAlias', 'expected', 'observed',
       'state', 'startedAt', 'completedAt', 'artifacts', 'artifactEvents', 'type', 'scenarioId', 'runId', 'commit',
       'diagnostic', 'diagnostics', 'originalDiagnostic', 'restorationDiagnostics',
     ], 'Case');
