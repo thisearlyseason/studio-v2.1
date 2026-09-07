@@ -18,6 +18,7 @@ import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 export interface DecodedToken {
   uid: string;
   email?: string;
+  name?: string;
   emailVerified?: boolean;
   role?: string;
   authTime?: number;
@@ -104,6 +105,7 @@ export async function verifyFirebaseToken(
     return {
       uid: decodedToken.uid,
       email: decodedToken.email,
+      name: typeof decodedToken.name === 'string' ? decodedToken.name : undefined,
       emailVerified: decodedToken.email_verified,
       role,
       authTime: decodedToken.auth_time,

@@ -231,10 +231,15 @@ export async function POST(req: NextRequest) {
         joiningLinkedChild,
         requestedPlayerEnrollment,
       });
+      const profileName = String(user.name || user.fullName || '').trim();
+      const authenticatedName = String(auth.name || '').trim();
+      const accountName = user.isBetaTester === true
+        ? authenticatedName || profileName
+        : profileName || authenticatedName;
       const displayName = String(
         existingPlayer.firstName
           ? `${existingPlayer.firstName} ${existingPlayer.lastName || ''}`.trim()
-          : user.name || user.fullName || auth.email?.split('@')[0] || 'Athlete'
+          : accountName || auth.email?.split('@')[0] || 'Athlete'
       );
       const avatar = String(user.avatar || user.avatarUrl || '');
       let waiverAlreadySigned = false;

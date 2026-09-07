@@ -187,10 +187,10 @@ test('adult self enrollment resolves the persisted player identity from the auth
 test('adult self enrollment accepts the canonical player id submitted by the join page', async () => {
   const { db, records } = memoryDb({
     'teams/team-a': { id: 'team-a', name: 'Team A', code: 'TEAMCODE1', isActive: true },
-    'users/adult-1': { id: 'adult-1', role: 'adult_player', fullName: 'Adult One' },
+    'users/adult-1': { id: 'adult-1', role: 'coach', fullName: 'Guest Coach', isBetaTester: true, isDemo: true },
   });
   globalThis.__TASK4_JOIN_DB = db;
-  globalThis.__TASK4_JOIN_AUTH = { uid: 'adult-1', email: 'adult@example.test', role: 'adult_player' };
+  globalThis.__TASK4_JOIN_AUTH = { uid: 'adult-1', email: 'adult@example.test', name: 'Tyler A', role: 'coach' };
   const route = await loadRoute();
   const response = await route.POST(request('/api/teams/join', {
     code: 'TEAMCODE1',
@@ -199,5 +199,8 @@ test('adult self enrollment accepts the canonical player id submitted by the joi
   }));
   assert.equal(response.status, 200);
   assert.equal(records.get('players/p_adult-1').userId, 'adult-1');
+  assert.equal(records.get('players/p_adult-1').firstName, 'Tyler');
+  assert.equal(records.get('players/p_adult-1').lastName, 'A');
   assert.equal(records.get('teams/team-a/members/adult-1').playerId, 'p_adult-1');
+  assert.equal(records.get('teams/team-a/members/adult-1').name, 'Tyler A');
 });
