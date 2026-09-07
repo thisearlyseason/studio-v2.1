@@ -153,13 +153,18 @@ test('all frozen Task 5 waiver case IDs are present exactly once across their sc
 
 test('public registration uses the canonical Firestore rules-denial status without accepting leaked fields', () => {
   const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
-  const start = audit.indexOf("const anonymousLedger=await firestore('portal-ledger-private'");
-  const end = audit.indexOf("check('portal-pii'", start);
-  assert.ok(start >= 0 && end > start, 'public registration privacy probe must exist');
-  const probe = audit.slice(start, end);
-  assert.match(probe, /anonymousLedger\.status,403/);
-  assert.match(probe, /anonymousLedger\.body\?\.error\?\.status,'PERMISSION_DENIED'/);
-  assert.match(probe, /Boolean\(anonymousLedger\.body\?\.fields\),false/);
+  assert.match(audit, /const assertFirestoreDenied=.*result\.status,403[\s\S]*?result\.body\?\.error\?\.status,'PERMISSION_DENIED'[\s\S]*?Boolean\(result\.body\?\.fields\),false/);
+  assert.match(audit, /assertFirestoreDenied\('portal-ledger-private',anonymousLedger,'anonymous Firestore REST read is denied by rules'\)/);
+});
+
+test('tournament registration uses canonical Firestore rules-denial responses for private reads and writes', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  const start = audit.indexOf("const anonymousLedger=await firestore('tourn-ledger-private'");
+  const end = audit.indexOf("check('tourn-persistence'", start);
+  assert.ok(start >= 0 && end > start, 'tournament privacy probes must exist');
+  const probes = audit.slice(start, end);
+  assert.match(probes, /assertFirestoreDenied\('tourn-ledger-private',anonymousLedger/);
+  assert.match(probes, /assertFirestoreDenied\('tourn-anonymous-direct-write',anonymousWrite/);
 });
 
 test('public registration discovers join sessions as exact cleanup roots without mutating in the obligation', () => {
