@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {communicationDb,loadCommunicationRoute} from './helpers/communication-route-harness.mjs';
 import {effectiveLeagueRegistrationConfig,registrationConfigHash} from '../src/lib/registration-policy.ts';
-import {hashLeagueScorekeeperPin} from '../src/lib/server-competition-credential.ts';
+import {hashLeagueScorekeeperPin,hashTournamentScorekeeperCode} from '../src/lib/server-competition-credential.ts';
 
 process.env.COMPETITION_CREDENTIAL_HMAC_SECRET='current-competition-test-secret-at-least-32-bytes';
 process.env.COMPETITION_CREDENTIAL_HMAC_PREVIOUS_SECRETS='previous-competition-test-secret-at-least-32-bytes';
@@ -46,6 +46,24 @@ test('legacy league PIN migrates only on a correct score in the same transaction
     assert.equal('scorekeeperPin' in records.get('leagues/l'),false);assert.match(records.get('leagues/l/private/lifecycle').scorekeeperPinHash,/^hmac-sha256:v1:[a-f0-9]{64}$/);
     assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',requestId:'hmac-score-correct',expectedGameVersion:1,score1:3,score2:1}))).status,200);
   }finally{app.dispose();}
+});
+
+test('tournament scoring verifies private HMAC and migrates a valid legacy code atomically',async()=>{
+  const game={id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b',score1:0,score2:0,isCompleted:false,stage:'Pool'};
+  const root={isTournament:true,teamId:'t',tournamentType:'round_robin',tournamentGames:[game]};
+  const privateSeed={'teams/t':{planId:'elite'},'teams/t/events/e':root,'teams/t/events/e/private/scoring':{scorekeeperCodeHash:hashTournamentScorekeeperCode('t','e','AbC9')}};
+  const first=communicationDb(privateSeed,{serializeTransactions:true}),privateApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',first.db,{});
+  try{
+    assert.equal((await privateApp.route.POST(request({kind:'tournament',action:'score',teamId:'t',eventId:'e',code:'wrong',gameId:'g',score1:2,score2:1}))).status,403);
+    assert.equal(first.records.get('teams/t/events/e').tournamentGames[0].isCompleted,false);
+    assert.equal((await privateApp.route.POST(request({kind:'tournament',action:'score',teamId:'t',eventId:'e',code:'abc9',gameId:'g',score1:2,score2:1}))).status,200);
+  }finally{privateApp.dispose();}
+  const legacy=communicationDb({'teams/t':{planId:'elite'},'teams/t/events/e':{...root,scoringCode:'1357'}},{serializeTransactions:true}),legacyApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',legacy.db,{});
+  try{
+    assert.equal((await legacyApp.route.POST(request({kind:'tournament',action:'verify',teamId:'t',eventId:'e',code:'1357'}))).status,200);
+    assert.equal('scoringCode' in legacy.records.get('teams/t/events/e'),false);
+    assert.match(legacy.records.get('teams/t/events/e/private/scoring').scorekeeperCodeHash,/^hmac-sha256:v1:[a-f0-9]{64}$/);
+  }finally{legacyApp.dispose();}
 });
 
 test('league public entitlement uses the canonical billing owner rather than delegated actor plan',async()=>{

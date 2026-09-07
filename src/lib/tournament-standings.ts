@@ -59,7 +59,7 @@ export function calculateTournamentStandings(
   };
 
   relevantGames.forEach(game => {
-    if (!game.isCompleted) return;
+    if (!game.isCompleted || game.isDisputed) return;
     const team1 = teamKey(game.team1Id, game.team1);
     const team2 = teamKey(game.team2Id, game.team2);
     if (!team1 || !team2) return;
@@ -91,7 +91,7 @@ export function calculateTournamentStandings(
     const tiedIds = new Set(tied.map(team => team.id || team.name));
     const headToHeadPoints = new Map(tied.map(team => [team.id || team.name, 0]));
     relevantGames.forEach(game => {
-      if (!game.isCompleted) return;
+      if (!game.isCompleted || game.isDisputed) return;
       const team1 = teamKey(game.team1Id, game.team1);
       const team2 = teamKey(game.team2Id, game.team2);
       if (!team1 || !team2 || !tiedIds.has(team1) || !tiedIds.has(team2)) return;

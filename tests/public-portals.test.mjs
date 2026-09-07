@@ -80,6 +80,13 @@ test('public tournament payload excludes scoring codes and referee contact detai
   assert.equal('signedAt' in result.teamAgreements.Alpha, false);
 });
 
+test('public tournament advertises a server-private scorekeeper credential without exposing it', () => {
+  const result = publicTournament('event-1', { isTournament: true, teamId: 'team-a', scorekeeperConfigured: true, tournamentGames: [], refereePool: [] });
+  assert.equal(result.requiresCode, true);
+  assert.equal(result.scorekeeperConfigured, true);
+  assert.equal(JSON.stringify(result).includes('scorekeeperCodeHash'), false);
+});
+
 test('referee assignment lookup requires a verified token matching the requested email', async () => {
   const source = await readFile(new URL('../src/app/api/public/portals/route.ts', import.meta.url), 'utf8');
   const refereeLookup = source.slice(

@@ -343,6 +343,8 @@ test('tournament schedules, live mutations, clearing, archiving, and demo cleanu
   assert.match(page, /handleClearSchedule[\s\S]*action: 'clear'/);
   assert.match(page, /expectedScheduleVersion: tournamentScheduleVersion\(event\)/);
   assert.doesNotMatch(page, /updateDoc\([\s\S]{0,180}refereePool:/);
+  assert.match(page, /fetch\('\/api\/tournaments\/credential'/);
+  assert.doesNotMatch(page, /updateDoc\([\s\S]{0,180}scoringCode/);
   assert.match(provider, /action: 'score'/);
   assert.match(provider, /action: 'dispute'/);
   assert.doesNotMatch(

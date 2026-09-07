@@ -15,7 +15,7 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
     'firebase-admin/firestore': `export class FieldPath {constructor(...segments){this.segments=segments;}} export const FieldValue={increment:value=>({__increment:value}),serverTimestamp:()=>({__serverTimestamp:true}),arrayUnion:(...values)=>({__arrayUnion:values}),arrayRemove:(...values)=>({__arrayRemove:values}),delete:()=>({__delete:true})};`,
     'firebase-admin': `export const firestore={FieldValue:{serverTimestamp:()=>({__serverTimestamp:true})}};`,
     '@/lib/server-notification-delivery': `export async function sendNotificationToUsers(input){const db=globalThis[${JSON.stringify(key)}].db;db.notifications.push(structuredClone(input));db.onNotificationSend?.();if(db.notificationSendFailure)throw new Error(db.notificationSendFailure);return db.notificationResult||{fcmSuccessCount:0,fcmFailureCount:0,webPushSuccessCount:0,webPushFailureCount:0};}`,
-    '@/lib/api-auth': `export async function verifyFirebaseToken() { return globalThis[${JSON.stringify(key)}].auth; } export function assertNonAnonymous(auth){return auth;}`,
+    '@/lib/api-auth': `export async function verifyFirebaseToken() { return globalThis[${JSON.stringify(key)}].auth; } export function assertNonAnonymous(auth){return auth?.uid && auth?.isAnonymous !== true ? null : new Response(JSON.stringify({error:'Authentication required.'}),{status:401});}`,
     '@/lib/server-request-guards': `export class RequestBodyError extends Error {} export async function enforceUserRateLimit() { return null; } export async function readJsonBodyWithLimit(req) { return req.json(); }`,
   };
   const result = await build({ entryPoints: [fileURLToPath(new URL(relativePath, import.meta.url))], bundle:true, format:'esm', platform:'node', write:false, logLevel:'silent', plugins:[{ name:'communication-boundaries', setup(bundler) {
@@ -26,7 +26,7 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
   return { route, dispose() { delete globalThis[key]; } };
 }
 
-export function communicationDb(initial,{beforeTransaction,serializeTransactions=false}={}) {
+export function communicationDb(initial,{beforeTransaction,serializeTransactions=false,maxTransactionWrites=Infinity}={}) {
   const records = new Map(Object.entries(initial).map(([path,value])=>[path,structuredClone(value)]));
   const objects = new Map();
   let sequence=0;
@@ -75,6 +75,7 @@ export function communicationDb(initial,{beforeTransaction,serializeTransactions
     if(beforeTransaction) await beforeTransaction({records});
     const pending=[];
     const result=await work({get:ref=>ref.get(),update:(ref,...args)=>pending.push(()=>{if(args[0]?.segments){const value={};value[args[0].segments.join('.')]=args[1];records.set(ref.path,applyUpdate(records.get(ref.path),value));}else records.set(ref.path,applyUpdate(records.get(ref.path),args[0]));}),create:(ref,value)=>pending.push(()=>ref.create(value)),set:(ref,value)=>pending.push(()=>ref.set(value)),delete:ref=>pending.push(()=>ref.delete())});
+    if(pending.length>maxTransactionWrites)throw new Error(`transaction write limit exceeded: ${pending.length}`);
     for(const write of pending) await write(); return result;
   };
   const db={notifications,emails:[],collection:path=>new Query(path),doc:path=>new Ref(path),collectionGroup:path=>new Query(path,[],true),async runTransaction(work) {

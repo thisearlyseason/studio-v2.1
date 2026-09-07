@@ -3219,12 +3219,12 @@ export default function ManageTournamentsPage() {
 }
 
 function ScorekeeperCodeEditor({ event }: { event: any }) {
-  const { db } = useTeam();
+  const auth = useAuth();
   const [code, setCode] = useState((event as any).scoringCode || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!db || !event.teamId) return;
+    if (!event.teamId) return;
     const normalizedCode = code.trim();
     if (normalizedCode.length < 4) {
       toast({ title: 'Code Required', description: 'Use at least 4 characters for scorekeeper access.', variant: 'destructive' });
@@ -3232,8 +3232,10 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
     }
     setSaving(true);
     try {
-      const { doc, updateDoc } = await import('firebase/firestore');
-      await updateDoc(doc(db, 'teams', event.teamId, 'events', event.id), { scoringCode: normalizedCode });
+      const token = await getAuthToken(auth);
+      const response = await fetch('/api/tournaments/credential', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ teamId: event.teamId, eventId: event.id, scoringCode: normalizedCode }) });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.error || 'Tournament credential could not be saved.');
       toast({ title: 'Scorekeeper Code Updated', description: 'Score submissions now require this code.' });
     } catch {
       toast({ title: 'Update Failed', variant: 'destructive' });

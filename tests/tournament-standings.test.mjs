@@ -51,6 +51,12 @@ test('uncompleted games do not affect rankings', () => {
   assert.ok(standings.every(team => team.points === 0 && team.netScore === 0));
 });
 
+test('disputed completed games do not affect standings', () => {
+  const standings = calculateTournamentStandings(teams.slice(0, 2), [{ ...game('g1', 'a', 'b', 9, 0), isDisputed: true }]);
+  assert.equal(standings.find(team => team.id === 'a').points, 0);
+  assert.equal(standings.find(team => team.id === 'b').points, 0);
+});
+
 test('persisted tiebreak winner overrides a tied displayed score', () => {
   const decided = { ...game('g1', 'a', 'b', 2, 2), winnerId: 'a', explicitWinner: 'team1' };
   const standings = calculateTournamentStandings(teams.slice(0, 2), [decided]);

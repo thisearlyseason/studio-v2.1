@@ -85,11 +85,13 @@ test('configure preserves Registration identities and schedules; schedule-sensit
 
 test('archive atomically cancels portal activation and bookings while retaining Registration and audit data', async () => {
   const entry = { form_id: 'form', fee_id: 'fee', waiver_id: 'waiver', responses: { private: 'answer' } };
-  const { db, records } = communicationDb({ ...seed, 'teams/team-a/events/cup': { ...blueprint, teamId: 'team-a', lifecycleVersion: 0, registrationCode: 'CUPCODE' },
+  const clearOperationId = 'competition_1234567890abcdef1234567890abcdef12345678';
+  const { db, records } = communicationDb({ ...seed, 'teams/team-a/events/cup': { ...blueprint, teamId: 'team-a', lifecycleVersion: 0, registrationCode: 'CUPCODE', scheduleClearOperationId: clearOperationId },
     'teams/team-a/events/cup/registration/config': { is_active: true, form_id: 'form', fee_id: 'fee' }, 'teams/team-a/events/cup/registrationEntries/e': entry,
     'tournamentRegistrationCodes/CUPCODE': { teamId: 'team-a', eventId: 'cup' }, 'scheduleBookings/game': { sourceId: 'tournament:team-a:cup' },
     'tournamentRefereeAssignments/official': { teamId: 'team-a', eventId: 'cup', gameId: 'game', refereeKey: 'official@example.test' },
-    'tournamentReferees/official': { teamId: 'team-a', eventId: 'cup', refereeId: 'official', email: 'official@example.test' } });
+    'tournamentReferees/official': { teamId: 'team-a', eventId: 'cup', refereeId: 'official', email: 'official@example.test' },
+    [`competitionOperationProgress/${clearOperationId}`]: { teamId: 'team-a', eventId: 'cup', state: 'clearing' } });
   const body = { action: 'archive', requestId: 'archive-cup-0001', teamId: 'team-a', eventId: 'cup', expectedVersion: 0, payload: {} };
   assert.equal((await call(db, body, 'other')).status, 403);
   assert.equal((await call(db, body, 'staff')).status, 200);
@@ -97,13 +99,16 @@ test('archive atomically cancels portal activation and bookings while retaining 
   assert.deepEqual(records.get('teams/team-a/events/cup/registrationEntries/e'), entry); assert.equal(records.has('scheduleBookings/game'), false); assert.equal(records.has('tournamentRegistrationCodes/CUPCODE'), false);
   assert.equal(records.has('tournamentRefereeAssignments/official'), false);
   assert.equal(records.has('tournamentReferees/official'), false);
+  assert.equal(records.has(`competitionOperationProgress/${clearOperationId}`), false);
+  assert.equal(records.get('teams/team-a/events/cup').scheduleClearOperationId, null);
   assert.equal((await call(db, { ...body, action: 'delete', requestId: 'delete-cup-0001', expectedVersion: 1 })).status, 409);
 });
 
 test('delete empty Tournament replays after removal and rechecks current authority', async () => {
-  const { db, records } = communicationDb({ ...seed, 'teams/team-a/events/cup': { ...blueprint, teamId: 'team-a', lifecycleVersion: 0, tournamentTeamsData: [], tournamentTeams: [] } });
+  const { db, records } = communicationDb({ ...seed, 'teams/team-a/events/cup': { ...blueprint, teamId: 'team-a', lifecycleVersion: 0, tournamentTeamsData: [], tournamentTeams: [] }, 'teams/team-a/events/cup/private/scoring': { scorekeeperCodeHash: 'private' } });
   const body = { action: 'delete', requestId: 'delete-cup-0001', teamId: 'team-a', eventId: 'cup', expectedVersion: 0, payload: {} };
   const a = await call(db, body, 'staff'); assert.equal(a.status, 200); assert.equal(records.has('teams/team-a/events/cup'), false);
+  assert.equal(records.has('teams/team-a/events/cup/private/scoring'), false);
   assert.deepEqual((await call(db, body, 'staff')).body, a.body);
   records.set('teams/team-a/members/staff', { role: 'player', status: 'removed' }); assert.equal((await call(db, body, 'staff')).status, 403);
 });

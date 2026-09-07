@@ -64,6 +64,22 @@
         { "fieldPath": "memberUserIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "sensitiveFieldsMigrated", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "tournamentRefereeAssignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teamId", "order": "ASCENDING" },
+        { "fieldPath": "eventId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tournamentReferees",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "teamId", "order": "ASCENDING" },
+        { "fieldPath": "eventId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

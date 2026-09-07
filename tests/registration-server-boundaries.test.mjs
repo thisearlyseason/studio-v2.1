@@ -88,4 +88,6 @@ test('builders retain server versions and protected ledger writes do not use dir
   assert.doesNotMatch(provider,/addDoc\(collection\(entryParentRef, 'registrationEntries'/);
   assert.match(provider,/api\/public\/portals\/action/);
   assert.doesNotMatch(provider,/registrationEntries', entryId\), \{ payment_received/);
+  assert.match(tournament,/fetch\('\/api\/registrations\/config'/);
+  assert.doesNotMatch(tournament,/updateDoc\(eventRef, \{ scoringCode/);
 });

@@ -41,7 +41,7 @@ Referee contact details are stored in the server-only `tournamentReferees` colle
 - `tests/rules/firestore-rules.test.mjs`
   - Covered the new direct-client denial boundaries.
 
-`src/lib/tournament-standings.ts` required no production change: the existing standings/progression implementation already satisfied the Task 6 pool and tiebreak contract, and its focused tests remained green.
+`src/lib/tournament-standings.ts` now excludes disputed completed results from overall and head-to-head calculations; unresolved pool disputes also block knockout seeding.
 
 ## Fresh GREEN verification
 
@@ -62,9 +62,29 @@ Referee contact details are stored in the server-only `tournamentReferees` colle
 - Tenant ownership is filtered after same-event-ID collection queries, so cleanup cannot delete another team's colliding event records.
 - Exact boundaries use half-open time intervals; back-to-back assignments are permitted while any actual overlap is rejected across events.
 - Replay uses canonical payload hashes; changed payloads under one request ID collide rather than silently replaying.
-- Existing legacy referee contact data is scrubbed from the event projection the next time any Task 6 schedule command touches that tournament. A one-time production data migration for completely untouched legacy tournaments is outside this scoped code task and should be handled as an operational rollout item if such records exist.
+- Existing legacy referee contact data is transactionally migrated before projection scrubbing when a Task 6 command or an authenticated legacy referee portal access touches the Tournament.
 - Task 7 score/dispute mutations intentionally remain on their existing seam for Task 7 rather than being redesigned here.
 
 ## External evidence limits
 
 This report is local code, emulator, and automated-test evidence for the exact working revision. It does not claim staging deployment, provider delivery, worker execution, production data migration, or physical-device evidence. Those remain separate release gates where applicable.
+
+## Review round 1 corrections
+
+Seven review findings were reproduced with focused failing tests and corrected:
+
+1. The authenticated referee portal now resolves the server-only profile and returns only ID, name, and certification. Untouched legacy contacts are migrated transactionally on verified access.
+2. Every Task 6 command migrates bounded legacy contact fields to `tournamentReferees` before publishing the safe root projection, preserving referee assignment/authentication.
+3. Redeploy checks authoritative assignment documents and refuses to orphan or reinterpret assignments hidden by a stale event projection.
+4. Clear is now recoverable and bounded: a durable request-bound marker prevents collisions, bookings and assignments are removed in batches of at most 400 deletes plus one progress write, and the final schedule/version/receipt is committed only after authoritative queries are empty. A 600-document fixture and stable resume/replay are covered.
+5. Advanced Tournament mutations revalidate the current squad Pro allocation in the committing transaction; downgraded squads retain safe clear/archive cleanup.
+6. Both scorekeeper editors now use server-owned private HMAC credentials. Registration config plus credential commit atomically, the standalone editor uses an authenticated server route, public verification/scoring reads the private hash, and correct legacy credentials migrate atomically without retaining the root secret.
+7. Disputed completed pool games do not count in standings and block knockout seeding until resolved.
+
+Additional required seam files are `src/app/api/tournaments/credential/route.ts`, `src/app/api/public/portals/{route,action/route}.ts`, `src/app/api/registrations/config/route.ts`, `src/lib/{server-competition-credential,public-portal-data}.ts`, the Tournament Registration builder, `firestore.indexes.json`, and their focused tests. Two compound equality indexes support bounded tenant/event referee queries.
+
+Final review verification:
+
+- Affected Task 5/6/7, public portal, Registration, standings, and source-boundary suite: **123 passed, 0 failed** with shell `pipefail` enabled.
+- Firestore/Storage rules: **65 passed, 0 failed**.
+- `npm run typecheck`, scoped ESLint `--quiet`, `git diff --check`, and index JSON/content validation: exit 0.

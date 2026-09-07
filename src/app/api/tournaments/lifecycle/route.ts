@@ -198,23 +198,29 @@ export async function POST(request: NextRequest) {
         if (Object.keys(payload).length) fail('Archive and delete do not accept configuration changes.');
         const bookings = await transaction.get(adminDb.collection('scheduleBookings').where('sourceId', '==', `tournament:${teamId}:${eventId}`));
         const calendarBooking = adminDb.collection('scheduleBookings').doc(`team_event_${teamId}_${eventId}`);
+        const scoringCredential = eventRef.collection('private').doc('scoring');
+        const clearProgress = typeof source.scheduleClearOperationId === 'string' && ID.test(source.scheduleClearOperationId)
+          ? adminDb.collection('competitionOperationProgress').doc(source.scheduleClearOperationId)
+          : null;
         const mappings = await transaction.get(adminDb.collection('tournamentRegistrationCodes').where('eventId', '==', eventId));
         const refereeAssignments = await transaction.get(adminDb.collection('tournamentRefereeAssignments').where('eventId', '==', eventId));
         const ownedRefereeAssignments = refereeAssignments.docs.filter(document => document.data().teamId === teamId);
         const refereeProfiles = await transaction.get(adminDb.collection('tournamentReferees').where('eventId', '==', eventId));
         const ownedRefereeProfiles = refereeProfiles.docs.filter(document => document.data().teamId === teamId);
-        if (bookings.size + registration.length + mappings.size + ownedRefereeAssignments.length + ownedRefereeProfiles.length + 4 > WRITE_BUDGET) fail('Tournament exceeds the atomic lifecycle write budget.', 409);
+        if (bookings.size + registration.length + mappings.size + ownedRefereeAssignments.length + ownedRefereeProfiles.length + (clearProgress ? 1 : 0) + 4 > WRITE_BUDGET) fail('Tournament exceeds the atomic lifecycle write budget.', 409);
         if (action === 'delete') {
           const dependencies = await Promise.all(['registrationEntries', 'registrations', 'archived_waivers', 'brackets', 'scores', 'audit', 'scoreAudit', 'disputes', 'rsvpAudit'].map(name => transaction.get(eventRef.collection(name).limit(1))));
           if (registration.length || dependencies.some(snapshot => !snapshot.empty) || hasSchedule(source) || source.registrationCount > 0 || source.registrationEntryCount > 0 || Object.keys(source.teamAgreements || {}).length || Object.keys(source.userRsvps || {}).length || source.archived_waivers?.length) fail('This Tournament has retained Registration or competition history. Archive it instead.', 409);
           transaction.delete(eventRef);
+          transaction.delete(scoringCredential);
         } else {
           for (const config of registration) transaction.update(config.ref, { is_active: false });
-          transaction.update(eventRef, { isArchived: true, lifecycleVersion: version, scheduleArchivedAt: now, scheduleArchivedBy: auth.uid, updatedAt: now });
+          transaction.update(eventRef, { isArchived: true, lifecycleVersion: version, scheduleArchivedAt: now, scheduleArchivedBy: auth.uid, scheduleClearOperationId: null, updatedAt: now });
         }
         for (const booking of bookings.docs) transaction.delete(booking.ref);
         for (const assignment of ownedRefereeAssignments) transaction.delete(assignment.ref);
         for (const profile of ownedRefereeProfiles) transaction.delete(profile.ref);
+        if (clearProgress) transaction.delete(clearProgress);
         transaction.delete(calendarBooking);
         for (const mapping of mappings.docs) if (mapping.data().teamId === teamId) transaction.delete(mapping.ref);
       }

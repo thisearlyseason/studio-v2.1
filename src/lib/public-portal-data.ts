@@ -171,8 +171,8 @@ export function publicTournament(id: string, event: any) {
         status: agreement?.status,
       }];
     })),
-    requiresCode: !!event.scoringCode,
-    scorekeeperConfigured: !!event.scoringCode || id.startsWith('demo_') || String(event.teamId || '').startsWith('demo_'),
+    requiresCode: event.scorekeeperConfigured === true || !!event.scoringCode,
+    scorekeeperConfigured: event.scorekeeperConfigured === true || !!event.scoringCode || id.startsWith('demo_') || String(event.teamId || '').startsWith('demo_'),
     referees: (event.refereePool || []).map((referee: any) => ({
       id: referee.id,
       name: referee.name,

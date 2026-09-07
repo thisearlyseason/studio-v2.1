@@ -302,20 +302,12 @@ export default function TournamentRegistrationAdminPage() {
       setIsSaving(true);
       try {
         const token = await getAuthToken(auth);
-        const { id: _id, config_hash: expectedHash, ...configPayload } = updated;
-        const response = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId, expectedVersion: updated.form_version || 0, expectedHash: expectedHash || '', config: configPayload }) });
+        const { id: _id, config_hash: expectedHash, scoringCode: rawScoringCode, ...configPayload } = updated as LeagueRegistrationConfig & { scoringCode?: string };
+        const scoringCode = typeof rawScoringCode === 'string' ? rawScoringCode.trim() : undefined;
+        const response = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId, expectedVersion: updated.form_version || 0, expectedHash: expectedHash || '', config: configPayload, ...(scoringCode !== undefined ? { scoringCode } : {}) }) });
         const payload = await response.json().catch(() => null);
         if (!response.ok) throw new Error(payload?.error || 'Registration form could not be saved.');
         setLocalConfig({ ...updated, ...payload.config, id: configId });
-        // Scorekeeper credentials belong to the event itself, not the registration form.
-        // Keeping this write here makes the builder and public scorekeeper portal agree.
-        if ((updates as any).scoringCode !== undefined && eventRef) {
-          const scoringCode = String((updates as any).scoringCode).trim();
-          if (scoringCode.length > 0 && scoringCode.length < 4) {
-            throw new Error('Scorekeeper code must be at least 4 characters.');
-          }
-          await updateDoc(eventRef, { scoringCode });
-        }
         // Confirm activation/deactivation explicitly
         if (updates.is_active !== undefined) {
           toast({

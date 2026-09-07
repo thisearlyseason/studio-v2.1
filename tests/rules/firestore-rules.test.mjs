@@ -36,6 +36,8 @@ test('Tournament lifecycle, schedule, referee, and scoring fields are server-onl
   await assertFails(setDoc(doc(owner, 'tournamentRefereeAssignments/forged'), { eventId: 'lifecycle-cup', refereeKey: 'victim@example.test' }));
   await assertFails(getDoc(doc(owner, 'tournamentReferees/private')));
   await assertFails(setDoc(doc(owner, 'tournamentReferees/forged'), { eventId: 'lifecycle-cup', email: 'victim@example.test' }));
+  await assertFails(getDoc(doc(owner, 'teams/team-a/events/lifecycle-cup/private/scoring')));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/events/lifecycle-cup/private/scoring'), { scorekeeperCodeHash: 'forged' }));
 });
 
 test('League member roots, raw spectator projections, score records, and game generation floor are server-only', async () => {

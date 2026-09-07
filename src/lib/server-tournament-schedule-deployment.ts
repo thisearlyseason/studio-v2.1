@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { validateSchedule } from '@/lib/intelligent-scheduler';
 import {
@@ -546,7 +547,7 @@ function assertTournamentVersions(event: RawEvent, expectedVersion: number, expe
   if ((event.lifecycleVersion ?? 0) !== expectedVersion || (event.scheduleVersion ?? 0) !== expectedScheduleVersion) {
     throw new TournamentScheduleDeploymentError('TOURNAMENT_VERSION_CONFLICT', 'The Tournament changed. Refresh before retrying.', 409);
   }
-  if (event.isArchived === true || event.isTournament !== true) {
+  if (event.isArchived === true || event.isTournament !== true || event.is_active === false || event.isActive === false || event.status === 'cancelled') {
     throw new TournamentScheduleDeploymentError('TOURNAMENT_LIFECYCLE_STATE_CONFLICT', 'This Tournament is not active.', 409);
   }
 }
@@ -577,8 +578,8 @@ function seedTournamentPools(event: RawEvent, games: TournamentGame[], now: stri
   }
   const poolGames = games.filter(game => Number.isInteger(game.pool));
   const knockoutGames = games.filter(game => game.stage === 'Knockout');
-  if (!poolGames.length || poolGames.some(game => !game.isCompleted)) {
-    throw new TournamentScheduleDeploymentError('POOL_PLAY_INCOMPLETE', 'Every pool match requires a final score before seeding qualifiers.', 409);
+  if (!poolGames.length || poolGames.some(game => !game.isCompleted || game.isDisputed)) {
+    throw new TournamentScheduleDeploymentError('POOL_PLAY_INCOMPLETE', 'Every pool match requires an undisputed final score before seeding qualifiers.', 409);
   }
   if (knockoutGames.some(game => game.isCompleted || !['tbd', 'bye'].includes(String(game.team1Id)) || !['tbd', 'bye'].includes(String(game.team2Id)))) {
     throw new TournamentScheduleDeploymentError('POOL_RESULTS_LOCKED', 'The knockout bracket has already been seeded or played.', 409);
@@ -614,6 +615,92 @@ function seedTournamentPools(event: RawEvent, games: TournamentGame[], now: stri
   return result;
 }
 
+async function executeRecoverableTournamentClear(
+  input: TournamentScheduleCommandInput,
+  identity: ReturnType<typeof canonicalCompetitionRequest>,
+  teamRef: FirebaseFirestore.DocumentReference,
+  eventRef: FirebaseFirestore.DocumentReference,
+): Promise<TournamentScheduleCommandResult> {
+  const operationRef = adminDb.collection('competitionOperations').doc(identity.operationId);
+  const progressRef = adminDb.collection('competitionOperationProgress').doc(identity.operationId);
+  const assignmentQuery = () => adminDb.collection('tournamentRefereeAssignments').where('teamId', '==', input.teamId).where('eventId', '==', input.eventId).limit(200);
+  const bookingQuery = () => adminDb.collection('scheduleBookings').where('sourceId', '==', tournamentSourceId(input.teamId, input.eventId)).limit(200);
+  return withTournamentScheduleMutationLock(async holder => {
+    const replay = await adminDb.runTransaction(async transaction => {
+      await assertScheduleMutationLock(transaction, holder);
+      await resolveCompetitionAuthority({ transaction, actorUid: input.actor.uid, actorRole: input.actor.role, teamId: input.teamId, domain: 'tournament' });
+      const [eventSnapshot, receipt, progress] = await Promise.all([
+        transaction.get(eventRef), transaction.get(operationRef), transaction.get(progressRef),
+      ]);
+      if (receipt.exists) {
+        const data = receipt.data() || {};
+        if (data.payloadHash !== identity.payloadHash || data.actorUid !== input.actor.uid || data.requestId !== identity.requestId) throw new Error('Request collision.');
+        return data.result as TournamentScheduleCommandResult;
+      }
+      if (!eventSnapshot.exists) throw new TournamentScheduleDeploymentError('TOURNAMENT_NOT_FOUND', 'Tournament not found.', 404);
+      const event = eventSnapshot.data() as RawEvent;
+      if (event.teamId && event.teamId !== input.teamId) throw new TournamentScheduleDeploymentError('TOURNAMENT_TENANT_MISMATCH', 'Tournament tenant mismatch.', 403);
+      assertTournamentVersions(event, input.expectedVersion, input.expectedScheduleVersion);
+      if ((event.tournamentGames || []).some((game: TournamentGame) => game.isCompleted || game.isDisputed)) throw new TournamentScheduleDeploymentError('SCHEDULE_DEPENDENCY_CONFLICT', 'A Tournament with results or disputes cannot be cleared.', 409);
+      const progressData = progress.data() || {};
+      if (progress.exists && (progressData.payloadHash !== identity.payloadHash || progressData.actorUid !== input.actor.uid || progressData.requestId !== identity.requestId)) throw new Error('Request collision.');
+      const marker = event.scheduleClearOperationId;
+      if (marker && marker !== identity.operationId) throw new TournamentScheduleDeploymentError('SCHEDULE_CLEAR_IN_PROGRESS', 'Another schedule clear must finish before this Tournament can change.', 409);
+      if (!progress.exists) transaction.create(progressRef, { requestId: identity.requestId, payloadHash: identity.payloadHash, actorUid: input.actor.uid, teamId: input.teamId, eventId: input.eventId, state: 'clearing', deletedCount: 0, createdAt: new Date().toISOString() });
+      transaction.update(eventRef, { scheduleClearOperationId: identity.operationId });
+      return null;
+    });
+    if (replay) return replay;
+
+    let deletedCount = 0;
+    for (let pass = 0; pass < 10_000; pass++) {
+      const [bookings, assignments] = await Promise.all([bookingQuery().get(), assignmentQuery().get()]);
+      const documents = [...bookings.docs, ...assignments.docs];
+      if (!documents.length) break;
+      const batch = adminDb.batch();
+      for (const document of documents) batch.delete(document.ref);
+      deletedCount += documents.length;
+      batch.set(progressRef, { requestId: identity.requestId, payloadHash: identity.payloadHash, actorUid: input.actor.uid, teamId: input.teamId, eventId: input.eventId, state: 'clearing', deletedCount, updatedAt: new Date().toISOString() });
+      await batch.commit();
+      if (pass === 9_999) throw new TournamentScheduleDeploymentError('SCHEDULE_CLEAR_INCOMPLETE', 'Schedule cleanup did not converge. Retry the same request.', 503);
+    }
+
+    return runCompetitionOperation({
+      actorUid: input.actor.uid,
+      identity,
+      authorizeTransaction: async transaction => {
+        await assertScheduleMutationLock(transaction, holder);
+        await resolveCompetitionAuthority({ transaction, actorUid: input.actor.uid, actorRole: input.actor.role, teamId: input.teamId, domain: 'tournament' });
+      },
+    }, async ({ transaction }) => {
+      const [eventSnapshot, remainingBookings, remainingAssignments] = await Promise.all([
+        transaction.get(eventRef), transaction.get(bookingQuery().limit(1)), transaction.get(assignmentQuery().limit(1)),
+      ]);
+      if (!eventSnapshot.exists) throw new TournamentScheduleDeploymentError('TOURNAMENT_NOT_FOUND', 'Tournament not found.', 404);
+      const event = eventSnapshot.data() as RawEvent;
+      assertTournamentVersions(event, input.expectedVersion, input.expectedScheduleVersion);
+      if (event.scheduleClearOperationId !== identity.operationId || !remainingBookings.empty || !remainingAssignments.empty) throw new TournamentScheduleDeploymentError('SCHEDULE_CLEAR_INCOMPLETE', 'Schedule cleanup is incomplete. Retry the same request.', 503);
+      if ((event.tournamentGames || []).some((game: TournamentGame) => game.isCompleted || game.isDisputed)) throw new TournamentScheduleDeploymentError('SCHEDULE_DEPENDENCY_CONFLICT', 'A Tournament with results or disputes cannot be cleared.', 409);
+      const profiles = await transaction.get(adminDb.collection('tournamentReferees').where('eventId', '==', input.eventId));
+      const ownedProfiles = profiles.docs.filter(document => document.data().teamId === input.teamId);
+      const existingIds = new Set(ownedProfiles.map(document => text(document.data().refereeId, 180)));
+      const pool: RawEvent[] = Array.isArray(event.refereePool) ? event.refereePool : [];
+      if (pool.length > 200) throw new TournamentScheduleDeploymentError('REFEREE_POOL_TOO_LARGE', 'The referee pool exceeds the supported migration limit.', 409);
+      const now = new Date().toISOString();
+      for (const legacy of pool) {
+        const refereeId = text(legacy.id, 180);
+        if (!refereeId || existingIds.has(refereeId) || !refereeKey(legacy)) continue;
+        transaction.set(adminDb.collection('tournamentReferees').doc(`trp_${stableHash(`${input.teamId}:${input.eventId}:${refereeId}`)}`), { ...legacy, id: refereeId, teamId: input.teamId, eventId: input.eventId, refereeId, updatedAt: now });
+      }
+      const nextScheduleVersion = input.expectedScheduleVersion + 1;
+      transaction.update(eventRef, { tournamentGames: [], refereePool: pool.map(publicReferee), scheduleVersion: nextScheduleVersion, scheduleUpdatedAt: now, scheduleUpdatedBy: input.actor.uid, scheduleStatus: 'pending', bracketStatus: 'pending', deploymentStatus: 'undeployed', deploymentError: '', scheduleClearedAt: now, scheduleClearedBy: input.actor.uid, scheduleClearOperationId: FieldValue.delete() });
+      transaction.create(eventRef.collection('scheduleAudits').doc(identity.operationId), { operationId: identity.operationId, requestId: identity.requestId, action: 'clear', actorUid: input.actor.uid, lifecycleVersion: input.expectedVersion, scheduleVersion: nextScheduleVersion, createdAt: now });
+      transaction.delete(progressRef);
+      return { success: true, schedule: [], refereePool: pool.map(publicReferee), scheduleVersion: nextScheduleVersion, lifecycleVersion: input.expectedVersion };
+    });
+  });
+}
+
 export async function executeTournamentScheduleCommand(input: TournamentScheduleCommandInput): Promise<TournamentScheduleCommandResult> {
   if (!ID_PATTERN.test(input.teamId) || !ID_PATTERN.test(input.eventId)) {
     throw new TournamentScheduleDeploymentError('INVALID_TOURNAMENT', 'Invalid tournament identifier.');
@@ -637,6 +724,7 @@ export async function executeTournamentScheduleCommand(input: TournamentSchedule
   });
   const teamRef = adminDb.collection('teams').doc(input.teamId);
   const eventRef = teamRef.collection('events').doc(input.eventId);
+  if (input.action === 'clear') return executeRecoverableTournamentClear(input, identity, teamRef, eventRef);
   return withTournamentScheduleMutationLock(holder => runCompetitionOperation({
     actorUid: input.actor.uid,
     identity,
@@ -656,6 +744,7 @@ export async function executeTournamentScheduleCommand(input: TournamentSchedule
     const event = eventSnapshot.data() as RawEvent;
     if (event.teamId && event.teamId !== input.teamId) throw new TournamentScheduleDeploymentError('TOURNAMENT_TENANT_MISMATCH', 'Tournament tenant mismatch.', 403);
     assertTournamentVersions(event, input.expectedVersion, input.expectedScheduleVersion);
+    if (event.scheduleClearOperationId) throw new TournamentScheduleDeploymentError('SCHEDULE_CLEAR_IN_PROGRESS', 'A schedule clear must finish before this Tournament can change.', 409);
 
     let games: TournamentGame[] = Array.isArray(event.tournamentGames) ? event.tournamentGames.map((game: TournamentGame) => ({ ...game })) : [];
     let pool: RawEvent[] = Array.isArray(event.refereePool) ? event.refereePool.map((item: RawEvent) => ({ ...item })) : [];
@@ -666,6 +755,21 @@ export async function executeTournamentScheduleCommand(input: TournamentSchedule
     const privateRefereeCollection = adminDb.collection('tournamentReferees');
     const refereeProfiles = await transaction.get(privateRefereeCollection.where('eventId', '==', input.eventId));
     const ownedRefereeProfiles = refereeProfiles.docs.filter(document => document.data().teamId === input.teamId);
+    const privateProfilesByReferee = new Map(ownedRefereeProfiles.map(document => [text(document.data().refereeId, 180), document.data()]));
+    let migratedProfileCount = 0;
+    if (pool.length > 200) throw new TournamentScheduleDeploymentError('REFEREE_POOL_TOO_LARGE', 'The referee pool exceeds the supported migration limit.', 409);
+    for (const legacy of pool) {
+      const refereeId = text(legacy.id, 180);
+      if (!refereeId || privateProfilesByReferee.has(refereeId) || !refereeKey(legacy) || (input.action === 'remove-referee' && refereeId === text(input.refereeId, 180))) continue;
+      const profile = { ...legacy, id: refereeId, teamId: input.teamId, eventId: input.eventId, refereeId, updatedAt: now };
+      transaction.set(privateRefereeCollection.doc(`trp_${stableHash(`${input.teamId}:${input.eventId}:${refereeId}`)}`), profile);
+      privateProfilesByReferee.set(refereeId, profile);
+      migratedProfileCount++;
+    }
+    const teamSnapshot = await transaction.get(teamRef);
+    if (event.tournamentType !== 'round_robin' && input.action !== 'clear' && teamSnapshot.data()?.isPro !== true) {
+      throw new TournamentScheduleDeploymentError('ADVANCED_TOURNAMENT_ENTITLEMENT_REQUIRED', 'This squad plan supports basic Round Robin tournaments only.', 403);
+    }
     if (['assign-referee', 'remove-referee'].includes(input.action)) {
       const authoritativeAssignments = new Map<string, RawEvent>(
         ownedAssignments.docs
@@ -689,7 +793,7 @@ export async function executeTournamentScheduleCommand(input: TournamentSchedule
     let conflictingAssignments: FirebaseFirestore.QueryDocumentSnapshot[] = [];
     if (input.action === 'assign-referee' && text(input.refereeId, 180)) {
       const referee = activeReferee(pool, input.refereeId);
-      const profile = ownedRefereeProfiles.find(document => document.data().refereeId === referee.id)?.data() || referee;
+      const profile = privateProfilesByReferee.get(text(referee.id, 180)) || referee;
       const key = refereeKey(profile);
       if (!key) throw new TournamentScheduleDeploymentError('REFEREE_INELIGIBLE', 'This referee profile is incomplete.', 403);
       const target = games.find(game => game.id === text(input.gameId, 180));
@@ -714,7 +818,7 @@ export async function executeTournamentScheduleCommand(input: TournamentSchedule
     }
 
     if (input.action === 'deploy') {
-      if (games.some(game => game.isCompleted || game.isDisputed || game.refereeId)) {
+      if (games.some(game => game.isCompleted || game.isDisputed || game.refereeId) || ownedAssignments.docs.some(document => document.data().teamId === input.teamId)) {
         throw new TournamentScheduleDeploymentError('SCHEDULE_DEPENDENCY_CONFLICT', 'Completed, disputed, or assigned matches must be resolved before redeployment.', 409);
       }
       const prepared = prepareTournamentScheduleForDeployment(event, input.games);
@@ -732,7 +836,7 @@ export async function executeTournamentScheduleCommand(input: TournamentSchedule
         if (data.resourceId === game.resourceId || game.possibleTeamIds.some(id => Array.isArray(data.teamIds) && data.teamIds.includes(id))) conflicts.push(`${game.id} overlaps an existing schedule booking.`);
       }
       if (conflicts.length) throw new TournamentScheduleDeploymentError('EXTERNAL_SCHEDULE_CONFLICT', 'The tournament conflicts with another schedule.', 409, conflicts.slice(0, 25));
-      if (prepared.length + (oldBookings?.size || 0) + 4 > 450) throw new TournamentScheduleDeploymentError('SCHEDULE_TOO_LARGE', 'This schedule exceeds the atomic deployment budget.', 409);
+      if (prepared.length + (oldBookings?.size || 0) + migratedProfileCount + 4 > 450) throw new TournamentScheduleDeploymentError('SCHEDULE_TOO_LARGE', 'This schedule exceeds the atomic deployment budget.', 409);
       games = prepared.map(game => Object.fromEntries(Object.entries(game).filter(([key]) => key !== 'possibleTeamIds')) as TournamentGame);
       for (const document of oldBookings?.docs || []) transaction.delete(document.ref);
       for (const game of prepared) {

@@ -21,6 +21,7 @@ import { getTeamAuthority } from '@/lib/server-team-access';
 import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
 import { effectiveLeagueRegistrationConfig, isCalendarDate, nextRegistrationCount, registrationArchiveMatches, registrationCountFromLegacy, registrationPaymentSnapshot, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
 import { hasStaffRole } from '@/lib/staff-position';
+import { hashTournamentScorekeeperCode, verifyTournamentScorekeeperCode } from '@/lib/server-competition-credential';
 
 const LEGACY_REGISTRATION_SCAN_LIMIT=100001;
 
@@ -43,6 +44,31 @@ function auditData(req: NextRequest, action: string, gameId: string | undefined,
 
 function isSafeId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200 && !value.includes('/');
+}
+
+async function verifiedTournamentEvent(transaction: any, ref: DocumentReference, teamId: string, eventId: string, supplied: unknown, legacyOpen: boolean) {
+  const fresh = await transaction.get(ref);
+  if (!fresh.exists || fresh.data()?.isTournament !== true || fresh.data()?.isArchived === true || fresh.data()?.is_active === false || fresh.data()?.status === 'cancelled') {
+    throw new RegistrationInputError('Tournament portal is inactive.', 404);
+  }
+  const event = fresh.data()!;
+  const privateRef = ref.collection('private').doc('scoring');
+  const credential = await transaction.get(privateRef);
+  const codeValue = typeof supplied === 'string' ? supplied.trim() : '';
+  const storedHash = typeof credential.data()?.scorekeeperCodeHash === 'string' ? credential.data()!.scorekeeperCodeHash : '';
+  if (storedHash) {
+    if (!verifyTournamentScorekeeperCode(teamId, eventId, codeValue, storedHash)) throw new RegistrationInputError('Invalid scorekeeper code.', 403);
+    return event;
+  }
+  const legacyCode = typeof event.scoringCode === 'string' ? event.scoringCode.trim() : '';
+  if (legacyCode) {
+    if (!credentialsMatch(legacyCode, codeValue, false)) throw new RegistrationInputError('Invalid scorekeeper code.', 403);
+    transaction.set(privateRef, { teamId, eventId, scorekeeperCodeHash: hashTournamentScorekeeperCode(teamId, eventId, legacyCode), updatedAt: new Date().toISOString(), migratedFromLegacy: true });
+    transaction.update(ref, { scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() });
+    return event;
+  }
+  if (!legacyOpen) throw new RegistrationInputError('Scorekeeper access is not configured for this tournament.', 409);
+  return event;
 }
 
 function sanitizeRegistrationAnswers(raw: Record<string, unknown>, config: Record<string, any>) {
@@ -700,23 +726,17 @@ export async function POST(req: NextRequest) {
       const legacyOpen = isLegacyOpenPortal(teamId, eventId);
 
       if (action === 'verify') {
-        if (!event.scoringCode && !legacyOpen) {
-          return NextResponse.json({ error: 'Scorekeeper access is not configured for this tournament.' }, { status: 409 });
-        }
-        return credentialsMatch(event.scoringCode, code, legacyOpen)
-          ? NextResponse.json({ success: true })
-          : NextResponse.json({ error: 'Invalid scorekeeper code.' }, { status: 403 });
+        await adminDb.runTransaction(transaction => verifiedTournamentEvent(transaction, ref, teamId, eventId, code, legacyOpen));
+        return NextResponse.json({ success: true });
       }
 
       if (action === 'score') {
-        if (!event.scoringCode && !legacyOpen) return NextResponse.json({ error: 'Scorekeeper access is not configured for this tournament.' }, { status: 409 });
-        if (!credentialsMatch(event.scoringCode, code, legacyOpen)) return NextResponse.json({ error: 'Invalid scorekeeper code.' }, { status: 403 });
         if (!gameId || !validScore(body.score1) || !validScore(body.score2)) {
           return NextResponse.json({ error: 'A valid game and scores from 0 to 999 are required.' }, { status: 400 });
         }
         const result = await withTournamentScheduleMutationLock(() => adminDb.runTransaction(async transaction => {
-          const fresh = await transaction.get(ref);
-          const games = [...(fresh.data()?.tournamentGames || [])];
+          const fresh = await verifiedTournamentEvent(transaction, ref, teamId, eventId, code, legacyOpen);
+          const games = [...(fresh.tournamentGames || [])];
           const index = games.findIndex((game: any) => game.id === gameId);
           if (index < 0) return { valid: false as const, code: 'MATCH_NOT_FOUND', message: 'Match not found.' };
           const validation = validateBracketScoreSubmission(games, gameId, body.score1, body.score2);
@@ -740,13 +760,11 @@ export async function POST(req: NextRequest) {
       }
 
       if (action === 'dispute') {
-        if (!event.scoringCode && !legacyOpen) return NextResponse.json({ error: 'Scorekeeper access is not configured for this tournament.' }, { status: 409 });
-        if (!credentialsMatch(event.scoringCode, code, legacyOpen)) return NextResponse.json({ error: 'Invalid scorekeeper code.' }, { status: 403 });
         const notes = String(body.notes || '').trim().slice(0, 2000);
         if (!gameId || !notes) return NextResponse.json({ error: 'A match and dispute details are required.' }, { status: 400 });
         const result = await adminDb.runTransaction(async transaction => {
-          const fresh = await transaction.get(ref);
-          const games = [...(fresh.data()?.tournamentGames || [])];
+          const fresh = await verifiedTournamentEvent(transaction, ref, teamId, eventId, code, legacyOpen);
+          const games = [...(fresh.tournamentGames || [])];
           const index = games.findIndex((game: any) => game.id === gameId);
           if (index < 0) return false;
           games[index] = { ...games[index], isDisputed: true, disputeNotes: notes, updatedAt: new Date().toISOString() };
