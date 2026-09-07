@@ -1602,7 +1602,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           });
           eventMaps.set(tid, docs);
           flattenAndSet();
-       }, (err) => console.error("Event Sync Error:", err));
+       }, (err) => {
+          if (!firebaseAuth?.currentUser) return;
+          console.error("Event Sync Error:", err);
+       });
 
        const gu = onSnapshot(collection(db, 'teams', tid, 'games'), (snap) => {
           const docs: any[] = [];
@@ -1612,7 +1615,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           });
           gameMaps.set(tid, docs);
           flattenAndSet();
-       }, (err) => console.error("Game Sync Error:", err));
+       }, (err) => {
+          if (!firebaseAuth?.currentUser) return;
+          console.error("Game Sync Error:", err);
+       });
 
        unsubscribers.push(eu, gu);
     });
@@ -1620,7 +1626,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return () => {
        unsubscribers.forEach(fn => fn());
     };
-  }, [db, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
+  }, [db, firebaseAuth, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
 
   const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved && isParent) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved, isParent]);
   const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);

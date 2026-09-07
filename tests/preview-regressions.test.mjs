@@ -889,3 +889,12 @@ test('mobile Super Admin headers and newsletter sections stay inside the viewpor
     /grid w-full grid-cols-1 sm:grid-cols-3 lg:w-auto/,
   );
 });
+
+test('household realtime listeners ignore permission errors after authentication ends', async () => {
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const householdListeners = provider.match(/allTeamIds\.forEach\(tid => \{[\s\S]*?unsubscribers\.push\(eu, gu\);/)?.[0] || '';
+
+  assert.match(householdListeners, /if \(!firebaseAuth\?\.currentUser\) return;/);
+  assert.match(householdListeners, /Event Sync Error:/);
+  assert.match(householdListeners, /Game Sync Error:/);
+});
