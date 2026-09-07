@@ -27,11 +27,18 @@ test('competition request identity is canonical across object key order and boun
   assert.throws(() => canonicalCompetitionRequest({ requestId: 'valid-request', tenantId: 'team-a', kind: 'league.edit', payload: { invalid: undefined } }), /payload/);
 });
 
-test('competition operation returns an exact replay without rerunning the mutation', async () => {
+test('competition payload hashing preserves dangerous own JSON keys without prototype collisions', () => {
+  const base = { requestId: 'prototype-key-0001', tenantId: 'team-a', kind: 'league.edit' };
+  const empty = canonicalCompetitionRequest({ ...base, payload: {} });
+  const dangerous = canonicalCompetitionRequest({ ...base, payload: JSON.parse('{"__proto__":{"admin":true}}') });
+  assert.notEqual(dangerous.payloadHash, empty.payloadHash);
+});
+
+test('durable exact replay returns the stored result without starting a new transaction mutation', async () => {
   const { db, records } = communicationDb({}, { serializeTransactions: true });
   const identity = canonicalCompetitionRequest({ requestId: 'league-create-0001', tenantId: 'team-a', kind: 'league.create', payload: { name: 'Metro' } });
   let mutationCount = 0;
-  const mutate = async transaction => {
+  const mutate = async ({ transaction }) => {
     mutationCount += 1;
     transaction.set(db.collection('leagues').doc('league-a'), { name: 'Metro' });
     return { leagueId: 'league-a', created: true };
@@ -54,4 +61,42 @@ test('competition operation rejects reuse of a request identity with a changed p
     () => runCompetitionOperation({ db, identity: collision, actorUid: 'staff-a' }, async () => ({ accepted: true })),
     /Request collision/,
   );
+});
+
+test('transaction retries commit mutation writes and one durable external-effect intent without promising one callback invocation', async () => {
+  const { db: baseDb, records } = communicationDb({}, { serializeTransactions: true });
+  let injectedRetry = false;
+  const db = {
+    ...baseDb,
+    async runTransaction(work) {
+      if (!injectedRetry) {
+        injectedRetry = true;
+        await work({
+          get: ref => ref.get(),
+          create() {}, set() {}, update() {}, delete() {},
+        });
+      }
+      return baseDb.runTransaction(work);
+    },
+  };
+  const identity = canonicalCompetitionRequest({ requestId: 'retry-proof-0001', tenantId: 'team-a', kind: 'league.create', payload: { name: 'Retry League' } });
+  let callbackInvocations = 0;
+  const result = await runCompetitionOperation({ db, identity, actorUid: 'owner-a' }, async context => {
+    callbackInvocations += 1;
+    context.transaction.set(db.collection('leagues').doc('retry-league'), { name: 'Retry League' });
+    context.queueExternalEffect({ effectId: 'notify-owner', kind: 'notification.send', payload: { userId: 'owner-a' } });
+    return { leagueId: 'retry-league' };
+  });
+  assert.deepEqual(result, { leagueId: 'retry-league' });
+  assert.equal(callbackInvocations, 2);
+  assert.deepEqual(records.get('leagues/retry-league'), { name: 'Retry League' });
+  const effects = [...records].filter(([path]) => path.startsWith('competitionOperationOutbox/'));
+  assert.equal(effects.length, 1);
+  assert.equal(effects[0][1].status, 'pending');
+  assert.deepEqual(records.get(`competitionOperations/${identity.operationId}`).effectIds, ['notify-owner']);
+
+  await runCompetitionOperation({ db, identity, actorUid: 'owner-a' }, async () => {
+    assert.fail('a durable replay must not invoke the transaction mutation callback');
+  });
+  assert.equal(callbackInvocations, 2);
 });

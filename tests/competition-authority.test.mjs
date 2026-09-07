@@ -88,6 +88,14 @@ test('competition authority fails closed for ordinary, removed, cross-tenant, an
   }
 });
 
+test('a recognized free plan does not satisfy canonical competition entitlement', async () => {
+  const { db } = communicationDb({ 'teams/free-plan': { ownerUserId: 'free-owner', planId: 'free' } });
+  await assert.rejects(
+    () => resolveCompetitionAuthority({ db, actorUid: 'free-owner', teamId: 'free-plan' }),
+    /Forbidden/,
+  );
+});
+
 test('competition mutation authority revalidates non-UID membership inside the committing transaction', async () => {
   let demote = false;
   const { db } = communicationDb(authoritySeed, {
@@ -101,4 +109,34 @@ test('competition mutation authority revalidates non-UID membership inside the c
     () => db.runTransaction(transaction => assertCompetitionMutationAuthority({ db, transaction, actorUid: 'coach-a', teamId: 'team-a' })),
     /Forbidden/,
   );
+});
+
+test('competition authority rejects missing and ambiguous League tenant ownership', async () => {
+  const { db } = communicationDb({
+    'teams/team-a': { ownerUserId: 'owner-a', planId: 'elite_league' },
+    'leagues/missing-tenant': { creatorId: 'owner-a' },
+    'leagues/ambiguous-tenant': { creatorId: 'owner-a', tenantId: 'team-a', hostTeamId: 'team-b' },
+  });
+  await assert.rejects(
+    () => resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a', leagueId: 'missing-tenant' }),
+    /Forbidden/,
+  );
+  await assert.rejects(
+    () => resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a', leagueId: 'ambiguous-tenant' }),
+    /Forbidden/,
+  );
+});
+
+test('competition authority requires an explicitly active staff membership status', async () => {
+  const seed = { 'teams/team-a': { ownerUserId: 'owner-a', planId: 'elite_league' } };
+  for (const [actorUid, status] of [['pending-staff', 'pending'], ['inactive-staff', 'inactive'], ['unknown-staff', 'mystery'], ['statusless-staff', undefined]]) {
+    seed[`teams/team-a/members/${actorUid}`] = { userId: actorUid, position: 'Coach', ...(status ? { status } : {}) };
+  }
+  const { db } = communicationDb(seed);
+  for (const actorUid of ['pending-staff', 'inactive-staff', 'unknown-staff', 'statusless-staff']) {
+    await assert.rejects(
+      () => resolveCompetitionAuthority({ db, actorUid, teamId: 'team-a' }),
+      /Forbidden/,
+    );
+  }
 });

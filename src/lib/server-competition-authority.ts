@@ -1,5 +1,6 @@
 import type { DocumentData, DocumentReference, Firestore, Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
+import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { hasStaffRole } from '@/lib/staff-position';
 
 export type CompetitionAuthority = {
@@ -19,19 +20,16 @@ export type CompetitionAuthorityInput = {
   transaction?: Transaction;
 };
 
-const KNOWN_PLAN_IDS = new Set([
-  'free', 'starter', 'starter_squad', 'basic_demo', 'player_demo', 'parent_demo',
-  'team', 'pro', 'squad_pro', 'squad_pro_demo', 'pro_demo', 'coach_demo',
-  'elite', 'elite_teams', 'league', 'league_demo', 'elite_league',
-  'school', 'school_demo', 'schools',
-]);
+export type CompetitionMutationAuthorityInput = Omit<CompetitionAuthorityInput, 'transaction'> & {
+  transaction: Transaction;
+};
 
 function forbidden(): never {
   throw new Error('Forbidden competition mutation.');
 }
 
 function activeMember(data: DocumentData | undefined): boolean {
-  return Boolean(data) && data?.status !== 'removed' && data?.isDeleted !== true;
+  return Boolean(data) && data?.status === 'active' && data?.isDeleted !== true;
 }
 
 function includesActor(value: unknown, actorUid: string): boolean {
@@ -42,15 +40,18 @@ function planIdOf(team: DocumentData): string {
   const planId = [team.planId, team.plan_type, team.subscriptionPlanId]
     .find(value => typeof value === 'string' && value.trim()) as string | undefined;
   const normalized = planId?.trim().toLowerCase() || '';
-  if (!KNOWN_PLAN_IDS.has(normalized)) forbidden();
+  const entitlement = authorizeDashboardRoute('/competition', { role: 'coach', planId: normalized });
+  if (!normalized || !entitlement.allowed) forbidden();
   return normalized;
 }
 
-function explicitLeagueTenant(league: DocumentData): string | null {
-  for (const value of [league.tenantId, league.hostTeamId, league.ownerTeamId, league.teamId]) {
-    if (typeof value === 'string' && value) return value;
-  }
-  return null;
+function explicitLeagueTenant(league: DocumentData): string {
+  const tenants = new Set(
+    [league.tenantId, league.hostTeamId, league.ownerTeamId, league.teamId]
+      .filter((value): value is string => typeof value === 'string' && Boolean(value)),
+  );
+  if (tenants.size !== 1) forbidden();
+  return [...tenants][0];
 }
 
 async function read<T extends DocumentData = DocumentData>(
@@ -85,6 +86,7 @@ function staffRole(data: DocumentData): CompetitionAuthority['role'] {
     : 'staff';
 }
 
+/** Resolve current authority for preflight/read use; writes must use the transaction-bound assertion below. */
 export async function resolveCompetitionAuthority(
   input: CompetitionAuthorityInput,
 ): Promise<CompetitionAuthority> {
@@ -107,7 +109,7 @@ export async function resolveCompetitionAuthority(
     if (!leagueSnapshot.exists) forbidden();
     const league = leagueSnapshot.data() || {};
     const leagueTenant = explicitLeagueTenant(league);
-    if (leagueTenant && leagueTenant !== teamId) forbidden();
+    if (leagueTenant !== teamId) forbidden();
     isOrganizer = league.creatorId === actorUid;
     leagueRefPath = leagueRef.path;
   }
@@ -155,8 +157,9 @@ export async function resolveCompetitionAuthority(
   return { ...base, memberRefPath: hubMember.ref.path, role: staffRole(hubMemberData!) };
 }
 
+/** Re-read authority and competition entitlement inside the caller's committing transaction. */
 export async function assertCompetitionMutationAuthority(
-  input: CompetitionAuthorityInput,
+  input: CompetitionMutationAuthorityInput,
 ): Promise<void> {
   await resolveCompetitionAuthority(input);
 }
