@@ -87,12 +87,16 @@ test('archive atomically cancels portal activation and bookings while retaining 
   const entry = { form_id: 'form', fee_id: 'fee', waiver_id: 'waiver', responses: { private: 'answer' } };
   const { db, records } = communicationDb({ ...seed, 'teams/team-a/events/cup': { ...blueprint, teamId: 'team-a', lifecycleVersion: 0, registrationCode: 'CUPCODE' },
     'teams/team-a/events/cup/registration/config': { is_active: true, form_id: 'form', fee_id: 'fee' }, 'teams/team-a/events/cup/registrationEntries/e': entry,
-    'tournamentRegistrationCodes/CUPCODE': { teamId: 'team-a', eventId: 'cup' }, 'scheduleBookings/game': { sourceId: 'tournament:team-a:cup' } });
+    'tournamentRegistrationCodes/CUPCODE': { teamId: 'team-a', eventId: 'cup' }, 'scheduleBookings/game': { sourceId: 'tournament:team-a:cup' },
+    'tournamentRefereeAssignments/official': { teamId: 'team-a', eventId: 'cup', gameId: 'game', refereeKey: 'official@example.test' },
+    'tournamentReferees/official': { teamId: 'team-a', eventId: 'cup', refereeId: 'official', email: 'official@example.test' } });
   const body = { action: 'archive', requestId: 'archive-cup-0001', teamId: 'team-a', eventId: 'cup', expectedVersion: 0, payload: {} };
   assert.equal((await call(db, body, 'other')).status, 403);
   assert.equal((await call(db, body, 'staff')).status, 200);
   assert.equal(records.get('teams/team-a/events/cup').isArchived, true); assert.equal(records.get('teams/team-a/events/cup/registration/config').is_active, false);
   assert.deepEqual(records.get('teams/team-a/events/cup/registrationEntries/e'), entry); assert.equal(records.has('scheduleBookings/game'), false); assert.equal(records.has('tournamentRegistrationCodes/CUPCODE'), false);
+  assert.equal(records.has('tournamentRefereeAssignments/official'), false);
+  assert.equal(records.has('tournamentReferees/official'), false);
   assert.equal((await call(db, { ...body, action: 'delete', requestId: 'delete-cup-0001', expectedVersion: 1 })).status, 409);
 });
 

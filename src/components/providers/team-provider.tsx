@@ -419,6 +419,7 @@ export type TeamEvent = {
   scheduleStatus?: 'pending' | 'ready' | 'failed';
   deploymentStatus?: 'undeployed' | 'deployed' | 'failed';
   deploymentError?: string;
+  scheduleVersion?: number;
   archived_waivers?: any[];
 };
 

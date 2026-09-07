@@ -57,6 +57,16 @@ test('server preparation preserves stable resources and reserves all possible fi
   assert.ok(prepared.every(game => game.resourceId.startsWith('facility_1:')));
 });
 
+test('server preparation accepts every supported Tournament topology', () => {
+  for (const tournamentType of ['round_robin', 'single_elimination', 'double_elimination', 'pool_play_knockout']) {
+    const overrides = tournamentType === 'pool_play_knockout'
+      ? { tournamentType, gamesPerTeam: 3, poolCount: 2, advancePerPool: 2 }
+      : { tournamentType, gamesPerTeam: 3 };
+    const prepared = prepareTournamentScheduleForDeployment(event(overrides), schedule(overrides));
+    assert.ok(prepared.length > 0, tournamentType);
+  }
+});
+
 test('tournament staff authorization uses only direct server-authoritative staff membership', () => {
   const actor = { uid: 'youth-user', role: 'youth_player' };
   const team = { ownerUserId: 'owner' };
@@ -297,18 +307,14 @@ test('tournament schedule mutations share and preserve the global recovery lock'
     new URL('../src/lib/server-tournament-schedule-deployment.ts', import.meta.url),
     'utf8'
   );
-  assert.match(source, /snapshot\.data\(\)\?\.recoveryRequired === true/);
-  assert.match(source, /holder === holder && snapshot\.data\(\)\?\.recoveryRequired !== true/);
-  assert.match(source, /recoveryRequired: true,[\s\S]*recoveryFailedAt:[\s\S]*recoveryError:/);
-  assert.match(source, /onCompensationFailure: error => markLockRecoveryRequired\(holder, error\)/);
+  assert.match(source, /import \{ assertScheduleMutationLock, withScheduleMutationLock \} from '@\/lib\/server-schedule-deployment'/);
+  assert.match(source, /withTournamentScheduleMutationLock<[\s\S]*return withScheduleMutationLock\(operation\)/);
+  assert.match(source, /await assertScheduleMutationLock\(transaction, holder\)/);
   assert.match(
     source,
     /export async function mutateTournamentSchedule[\s\S]*return withTournamentScheduleMutationLock\(\(\) => mutateTournamentScheduleUnlocked\(input\)\)/
   );
-  assert.match(
-    source,
-    /await acquireLock\(holder\);[\s\S]{0,200}const eventSnapshot = await eventRef\.get\(\)/
-  );
+  assert.doesNotMatch(source, /async function acquireLock|async function releaseLock/);
 });
 
 test('tournament schedules, live mutations, clearing, archiving, and demo cleanup use the server boundary', async () => {
@@ -325,15 +331,18 @@ test('tournament schedules, live mutations, clearing, archiving, and demo cleanu
   assert.match(page, /fetch\('\/api\/tournaments\/schedule'/);
   assert.match(page, /action: 'configure'/);
   assert.match(page, /fetch\('\/api\/tournaments\/lifecycle'/);
-  assert.match(route, /deployTournamentSchedule/);
+  assert.match(route, /executeTournamentScheduleCommand/);
   assert.match(route, /mutateTournamentSchedule/);
-  assert.match(route, /clearTournamentSchedule/);
   assert.match(route, /status: 410/);
   assert.match(route, /tournament-schedule-live-mutation/);
   assert.match(route, /isLiveMutation \? 300 : 30/);
   assert.match(page, /action: 'assign-referee'/);
-  assert.match(page, /action: 'clear-referee'/);
+  assert.match(page, /action: 'add-referee'/);
+  assert.match(page, /action: 'remove-referee'/);
   assert.match(page, /action: 'seed-pools'/);
+  assert.match(page, /handleClearSchedule[\s\S]*action: 'clear'/);
+  assert.match(page, /expectedScheduleVersion: tournamentScheduleVersion\(event\)/);
+  assert.doesNotMatch(page, /updateDoc\([\s\S]{0,180}refereePool:/);
   assert.match(provider, /action: 'score'/);
   assert.match(provider, /action: 'dispute'/);
   assert.doesNotMatch(

@@ -21,7 +21,7 @@ import {
 const projectId = 'demo-the-squad-rules-test';
 let testEnv;
 
-test('Tournament lifecycle is server-only while remaining schedule and scoring client fields stay available', async () => {
+test('Tournament lifecycle, schedule, referee, and scoring fields are server-only', async () => {
   await testEnv.withSecurityRulesDisabled(async context => {
     await setDoc(doc(context.firestore(), 'teams/team-a/events/lifecycle-cup'), { isTournament: true, eventType: 'tournament', title: 'Cup', lifecycleVersion: 1, tournamentGames: [] });
   });
@@ -31,7 +31,11 @@ test('Tournament lifecycle is server-only while remaining schedule and scoring c
     await assertFails(setDoc(ref, changes, { merge: true }));
   }
   await assertFails(deleteDoc(ref));
-  await assertSucceeds(setDoc(ref, { refereePool: [], scoringCode: 'TESTPIN', deploymentStatus: 'failed', deploymentError: 'Example failure' }, { merge: true }));
+  await assertFails(setDoc(ref, { refereePool: [], scoringCode: 'TESTPIN', deploymentStatus: 'failed', deploymentError: 'Example failure' }, { merge: true }));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/events/lifecycle-cup/brackets/forged'), { team1Id: 'alpha', team2Id: 'beta' }));
+  await assertFails(setDoc(doc(owner, 'tournamentRefereeAssignments/forged'), { eventId: 'lifecycle-cup', refereeKey: 'victim@example.test' }));
+  await assertFails(getDoc(doc(owner, 'tournamentReferees/private')));
+  await assertFails(setDoc(doc(owner, 'tournamentReferees/forged'), { eventId: 'lifecycle-cup', email: 'victim@example.test' }));
 });
 
 test('League member roots, raw spectator projections, score records, and game generation floor are server-only', async () => {

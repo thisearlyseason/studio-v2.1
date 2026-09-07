@@ -6,8 +6,7 @@ import {
   RequestBodyError,
 } from '@/lib/server-request-guards';
 import {
-  clearTournamentSchedule,
-  deployTournamentSchedule,
+  executeTournamentScheduleCommand,
   mutateTournamentSchedule,
   TournamentScheduleDeploymentError,
 } from '@/lib/server-tournament-schedule-deployment';
@@ -20,7 +19,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(request, 1_000_000);
-    const liveMutationActions = new Set(['score', 'dispute', 'assign-referee', 'clear-referee']);
+    const allowedFields = new Set(['action', 'requestId', 'teamId', 'eventId', 'expectedVersion', 'expectedScheduleVersion', 'games', 'gameId', 'refereeId', 'referee', 'score1', 'score2', 'explicitWinner', 'pin', 'notes', 'isTeam1']);
+    if (Object.keys(body).some(key => !allowedFields.has(key))) {
+      return NextResponse.json({ error: 'Unsupported Tournament schedule field.' }, { status: 400 });
+    }
+    const liveMutationActions = new Set(['score', 'dispute', 'assign-referee', 'add-referee', 'remove-referee']);
     const isLiveMutation = liveMutationActions.has(String(body.action));
     const limited = await enforceUserRateLimit(
       auth.uid,
@@ -30,11 +33,11 @@ export async function POST(request: NextRequest) {
     );
     if (limited) return limited;
 
-    if (['score', 'dispute', 'assign-referee', 'clear-referee', 'seed-pools'].includes(String(body.action))) {
+    if (['score', 'dispute'].includes(String(body.action))) {
       const schedule = await mutateTournamentSchedule({
         teamId: typeof body.teamId === 'string' ? body.teamId : '',
         eventId: typeof body.eventId === 'string' ? body.eventId : '',
-        action: body.action as 'score' | 'dispute' | 'assign-referee' | 'clear-referee' | 'seed-pools',
+        action: body.action as 'score' | 'dispute',
         actor: { uid: auth.uid, email: auth.email, role: auth.role },
         gameId: body.gameId,
         score1: body.score1,
@@ -46,35 +49,45 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ success: true, schedule });
     }
-    if (body.action === 'clear') {
-      await clearTournamentSchedule({
-        teamId: typeof body.teamId === 'string' ? body.teamId : '',
-        eventId: typeof body.eventId === 'string' ? body.eventId : '',
-        actor: { uid: auth.uid, email: auth.email, role: auth.role },
-      });
-      return NextResponse.json({ success: true, schedule: [] });
-    }
-    const schedule = await deployTournamentSchedule({
+    const action = body.action === undefined || body.action === 'deploy'
+      ? 'deploy'
+      : ['clear', 'add-referee', 'remove-referee', 'assign-referee', 'seed-pools'].includes(String(body.action))
+        ? body.action as 'clear' | 'add-referee' | 'remove-referee' | 'assign-referee' | 'seed-pools'
+        : null;
+    if (!action) return NextResponse.json({ error: 'Invalid Tournament schedule action.' }, { status: 400 });
+    const result = await executeTournamentScheduleCommand({
       teamId: typeof body.teamId === 'string' ? body.teamId : '',
       eventId: typeof body.eventId === 'string' ? body.eventId : '',
+      action,
+      requestId: typeof body.requestId === 'string' ? body.requestId : '',
+      expectedVersion: Number(body.expectedVersion),
+      expectedScheduleVersion: Number(body.expectedScheduleVersion),
       games: body.games,
       actor: { uid: auth.uid, email: auth.email, role: auth.role },
+      gameId: body.gameId,
+      refereeId: body.refereeId,
+      referee: body.referee,
     });
-    return NextResponse.json({ success: true, schedule });
+    return NextResponse.json(result);
   } catch (error) {
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    if (error instanceof TournamentScheduleDeploymentError) {
+    if (error instanceof TournamentScheduleDeploymentError || (error instanceof Error && 'status' in error)) {
+      const deploymentError = error as TournamentScheduleDeploymentError;
       return NextResponse.json(
         {
-          error: error.message,
-          code: error.code,
-          ...(error.conflicts.length > 0 ? { conflicts: error.conflicts } : {}),
+          error: deploymentError.message,
+          code: deploymentError.code,
+          ...(Array.isArray(deploymentError.conflicts) && deploymentError.conflicts.length > 0 ? { conflicts: deploymentError.conflicts } : {}),
         },
-        { status: error.status }
+        { status: deploymentError.status }
       );
     }
+    const message = error instanceof Error ? error.message : '';
+    if (message.startsWith('Forbidden competition')) return NextResponse.json({ error: 'Only current authorized staff can manage this Tournament.' }, { status: 403 });
+    if (message === 'Request collision.') return NextResponse.json({ error: message }, { status: 409 });
+    if (message.startsWith('Invalid competition')) return NextResponse.json({ error: message }, { status: 400 });
     console.error('[tournaments/schedule] Deployment failed:', error);
     return NextResponse.json(
       { error: 'Unable to deploy the tournament schedule.' },

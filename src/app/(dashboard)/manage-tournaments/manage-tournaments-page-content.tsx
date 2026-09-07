@@ -97,31 +97,6 @@ interface TournamentTeam extends TeamIdentity {
   division?: string;
 }
 
-function parseGameMinutes(time: string): number {
-  const cleaned = (time || '0:00').replace(/\s/g, '').toLowerCase();
-  const isPM = cleaned.endsWith('pm');
-  const isAM = cleaned.endsWith('am');
-  const [h, m] = cleaned.replace(/(am|pm)/, '').split(':').map(Number);
-  let hours = isNaN(h) ? 0 : h;
-  if (isPM && hours !== 12) hours += 12;
-  if (isAM && hours === 12) hours = 0;
-  return hours * 60 + (isNaN(m) ? 0 : m);
-}
-
-function findRefereeConflict(
-  refereeId: string,
-  targetGame: TournamentGame,
-  otherGames: TournamentGame[],
-  bufferMinutes = 90
-): TournamentGame | null {
-  const targetMin = parseGameMinutes(targetGame.time);
-  return otherGames.find(g => {
-    if ((g as any).refereeId !== refereeId) return false;
-    if (g.date !== targetGame.date) return false;
-    return Math.abs(parseGameMinutes(g.time) - targetMin) < bufferMinutes;
-  }) ?? null;
-}
-
 function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { facilityId: string, selectedFields: string[], onToggleField: (name: string) => void }) {
   const db = useFirestore();
   const q = useMemoFirebase(() => db ? query(collection(db, 'facilities', facilityId, 'fields'), orderBy('name', 'asc')) : null, [db, facilityId]);
@@ -203,6 +178,7 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
 
 type TournamentLifecycleInput = { action: 'create' | 'configure' | 'replicate' | 'archive' | 'delete'; teamId: string; eventId?: string; expectedVersion?: number; payload: Record<string, unknown> };
 const tournamentVersion = (event: TeamEvent) => (event as TeamEvent & { lifecycleVersion?: number }).lifecycleVersion ?? 0;
+const tournamentScheduleVersion = (event: TeamEvent) => (event as TeamEvent & { scheduleVersion?: number }).scheduleVersion ?? 0;
 function useTournamentLifecycle() {
   const auth = useAuth();
   const pending = useRef(new Map<string, string>());
@@ -221,6 +197,38 @@ function useTournamentLifecycle() {
     if (!response.ok || result.operationState !== 'complete') throw new Error(result.error || 'Tournament operation is incomplete. Retry to recover.');
     pending.current.delete(key);
     return result as { eventId: string; eventIds?: string[]; lifecycleVersion: number };
+  };
+}
+
+type TournamentScheduleInput = {
+  action: 'deploy' | 'clear' | 'add-referee' | 'remove-referee' | 'assign-referee' | 'seed-pools';
+  teamId: string;
+  eventId: string;
+  expectedVersion: number;
+  expectedScheduleVersion: number;
+  games?: TournamentGame[];
+  gameId?: string;
+  refereeId?: string;
+  referee?: Omit<TournamentReferee, 'id'>;
+};
+function useTournamentScheduleMutation() {
+  const auth = useAuth();
+  const pending = useRef(new Map<string, string>());
+  return async (input: TournamentScheduleInput) => {
+    const body = JSON.parse(JSON.stringify(input)) as TournamentScheduleInput;
+    const key = JSON.stringify(body);
+    const requestId = pending.current.get(key) || crypto.randomUUID();
+    pending.current.set(key, requestId);
+    const token = await getAuthToken(auth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/schedule', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ ...body, requestId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Unable to update the Tournament schedule.');
+    pending.current.delete(key);
+    return result as { schedule: TournamentGame[]; refereePool: TournamentReferee[]; scheduleVersion: number; lifecycleVersion: number };
   };
 }
 
@@ -1445,6 +1453,7 @@ function TournamentDetailView({
   const [deploymentError, setDeploymentError] = useState('');
 
   const lifecycle = useTournamentLifecycle();
+  const scheduleMutation = useTournamentScheduleMutation();
   const handleDeleteTournament = async () => {
     if (!activeTeam || isProcessing) return;
     if (!window.confirm(`Delete ${event.title}${event.divisionTitle ? ` - ${event.divisionTitle}` : ''}? Only tournaments without retained registration or competition history can be deleted. Archive this tournament to retain that history.`)) return;
@@ -1565,6 +1574,22 @@ function TournamentDetailView({
     }
   };
 
+  const handleClearSchedule = async () => {
+    if (!activeTeam || isProcessing || !window.confirm('Clear this Tournament schedule? Completed results and disputes cannot be cleared.')) return;
+    setIsProcessing(true);
+    try {
+      await scheduleMutation({
+        action: 'clear', teamId: activeTeam.id, eventId: event.id,
+        expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
+      });
+      toast({ title: 'Schedule Cleared', description: 'The Tournament configuration is ready to edit or regenerate.' });
+    } catch (error) {
+      toast({ title: 'Clear Failed', description: error instanceof Error ? error.message : 'Unable to clear this Tournament schedule.', variant: 'destructive' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleGenerateSchedule = async () => {
     if (!db || !activeTeam) return;
 
@@ -1631,24 +1656,11 @@ function TournamentDetailView({
         return cleaned as TournamentGame;
       });
 
-      const token = await getAuthToken(firebaseAuth);
-      if (!token) throw new Error('Your session has expired. Sign in again.');
-      const response = await fetch('/api/tournaments/schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({
-          teamId: activeTeam.id,
-          eventId: event.id,
-          games: sanitizedGames,
-        }),
+      await scheduleMutation({
+        action: 'deploy', teamId: activeTeam.id, eventId: event.id,
+        expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
+        games: sanitizedGames,
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const detail = Array.isArray(payload.conflicts) && payload.conflicts.length > 0
-          ? ` ${payload.conflicts[0]}`
-          : '';
-        throw new Error(`${payload.error || 'Unable to deploy the tournament schedule.'}${detail}`);
-      }
 
       toast({
         title: "Tournament Deployed",
@@ -1658,13 +1670,6 @@ function TournamentDetailView({
       console.error("[Tournaments] Schedule generation failed:", e);
       const message = e.message || "An error occurred during schedule generation.";
       setDeploymentError(message);
-      try {
-        await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-          bracketStatus: 'failed', scheduleStatus: 'failed', deploymentStatus: 'failed', deploymentError: message,
-        });
-      } catch (statusError) {
-        console.error('[Tournaments] Failed to persist deployment failure state:', statusError);
-      }
       toast({
         title: "Generation Failed",
         description: message,
@@ -1770,18 +1775,18 @@ function TournamentDetailView({
   const [isSavingRef, setIsSavingRef] = useState(false);
 
   const handleAddReferee = async () => {
-    if (!db || !activeTeam || !newRefName.trim() || !newRefEmail.trim()) return;
+    if (!activeTeam || !newRefName.trim() || !newRefEmail.trim()) return;
     setIsSavingRef(true);
-    const referee: TournamentReferee = {
-      id: `ref_${Date.now()}`,
+    const referee: Omit<TournamentReferee, 'id'> = {
       name: newRefName.trim(),
       email: newRefEmail.trim().toLowerCase(),
       phone: newRefPhone.trim() || null,
       certLevel: newRefCert.trim() || null,
     };
     try {
-      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-        refereePool: [...(event.refereePool || []), referee],
+      await scheduleMutation({
+        action: 'add-referee', teamId: activeTeam.id, eventId: event.id,
+        expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event), referee,
       });
       toast({ title: 'Official Added', description: `${referee.name} added to the pool.` });
       setNewRefName(''); setNewRefEmail(''); setNewRefPhone(''); setNewRefCert('');
@@ -1789,56 +1794,23 @@ function TournamentDetailView({
   };
 
   const handleRemoveReferee = async (refId: string) => {
-    if (!db || !activeTeam || !firebaseAuth) return;
-    const token = await getAuthToken(firebaseAuth);
-    if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/tournaments/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'clear-referee', teamId: activeTeam.id, eventId: event.id, refereeId: refId }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Unable to clear referee assignments.');
-    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-      refereePool: (event.refereePool || []).filter((r: TournamentReferee) => r.id !== refId),
+    if (!activeTeam) return;
+    await scheduleMutation({
+      action: 'remove-referee', teamId: activeTeam.id, eventId: event.id,
+      expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event), refereeId: refId,
     });
     toast({ title: 'Official Removed', description: 'Referee and all assignments cleared.' });
   };
 
   const handleAssignReferee = async (gameId: string, referee: TournamentReferee | null) => {
-    if (!db || !activeTeam) return;
+    if (!activeTeam) return;
     const targetGame = (event.tournamentGames || []).find((g: TournamentGame) => g.id === gameId);
     if (!targetGame) return;
-    if (referee) {
-      const conflict = findRefereeConflict(
-        referee.id, targetGame,
-        (event.tournamentGames || []).filter((g: TournamentGame) => g.id !== gameId)
-      );
-      if (conflict) {
-        toast({
-          title: 'Scheduling Conflict',
-          description: `${referee.name} is already assigned to ${conflict.team1} vs ${conflict.team2} within 90 min.`,
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
-    if (!firebaseAuth) return;
-    const token = await getAuthToken(firebaseAuth);
-    if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/tournaments/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({
-        action: 'assign-referee',
-        teamId: activeTeam.id,
-        eventId: event.id,
-        gameId,
-        refereeId: referee?.id || '',
-      }),
+    await scheduleMutation({
+      action: 'assign-referee', teamId: activeTeam.id, eventId: event.id,
+      expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
+      gameId, refereeId: referee?.id || '',
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Unable to update the referee assignment.');
     toast({ title: 'Assignment Updated', description: referee ? `${referee.name} assigned.` : 'Official unassigned.' });
   };
 
@@ -1988,16 +1960,10 @@ function TournamentDetailView({
       return;
     }
 
-    if (!firebaseAuth) return;
-    const token = await getAuthToken(firebaseAuth);
-    if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/tournaments/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'seed-pools', teamId: activeTeam.id, eventId: event.id }),
+    await scheduleMutation({
+      action: 'seed-pools', teamId: activeTeam.id, eventId: event.id,
+      expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Unable to seed the knockout bracket.');
     toast({ title: "Bracket Initialized", description: `${seededSlots} pool qualifier slots were populated from completed standings.` });
   };
 
@@ -2458,14 +2424,11 @@ function TournamentDetailView({
                                 </SelectTrigger>
                                 <SelectContent className="rounded-2xl">
                                   <SelectItem value="unassigned" className="font-black uppercase text-[10px]">— No Official Assigned —</SelectItem>
-                                  {(event.refereePool || []).map((ref: TournamentReferee) => {
-                                    const conflict = findRefereeConflict(ref.id, game, (event.tournamentGames || []).filter((g: TournamentGame) => g.id !== game.id));
-                                    return (
-                                      <SelectItem key={ref.id} value={ref.id} className={cn('font-black uppercase text-[10px]', conflict ? 'text-destructive/70' : '')}>
-                                        {ref.name}{conflict ? ' ⚠ Conflict' : ''}
-                                      </SelectItem>
-                                    );
-                                  })}
+                                  {(event.refereePool || []).map((ref: TournamentReferee) => (
+                                    <SelectItem key={ref.id} value={ref.id} className="font-black uppercase text-[10px]">
+                                      {ref.name}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             ) : game.refereeName ? (
@@ -2688,6 +2651,13 @@ function TournamentDetailView({
              <TabsContent value="itinerary" className="mt-0 space-y-12">
                {(event.tournamentGames || []).length > 0 ? (
                  <>
+                   {isStaff && (
+                     <div className="flex justify-end">
+                       <Button type="button" variant="outline" onClick={handleClearSchedule} disabled={isProcessing} className="rounded-xl border-2 font-black uppercase text-[10px] tracking-widest">
+                         <Trash2 className="mr-2 h-4 w-4" /> Clear Schedule
+                       </Button>
+                     </div>
+                   )}
                    {Object.entries(gamesByDay).map(([date, dayGames]: [string, any]) => (
                      <div key={date} className="space-y-8">
                        <div className="flex items-center gap-4">

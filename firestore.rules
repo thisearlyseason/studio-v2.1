@@ -369,12 +369,6 @@ service cloud.firestore {
           return (
             resource.data.get('isTournament', false) != true && resource.data.get('eventType', '') != 'tournament' &&
             request.resource.data.get('isTournament', false) != true && request.resource.data.get('eventType', '') != 'tournament'
-          ) || (
-            resource.data.get('isTournament', false) == true &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'refereePool', 'scoringCode', 'bracketStatus', 'scheduleStatus',
-              'deploymentStatus', 'deploymentError', 'updatedAt'
-            ])
           );
         }
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
@@ -460,7 +454,7 @@ service cloud.firestore {
 
         match /brackets/{bracketId} {
           allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
-          allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
         }
       }
 
@@ -877,6 +871,14 @@ allow create, update: if false; // Authenticated incident service only.
     }
 
     match /scheduleBookingLocks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /tournamentRefereeAssignments/{assignmentId} {
+      allow read, write: if false;
+    }
+
+    match /tournamentReferees/{refereeId} {
       allow read, write: if false;
     }
 

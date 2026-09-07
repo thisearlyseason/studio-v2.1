@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { adminDb } from '@/lib/firebase-admin';
 import { validateSchedule } from '@/lib/intelligent-scheduler';
 import {
@@ -7,13 +7,14 @@ import {
   recordTournamentScore,
 } from '@/lib/scheduler-utils';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
+import { resolveCompetitionAuthority } from '@/lib/server-competition-authority';
+import { canonicalCompetitionRequest, runCompetitionOperation } from '@/lib/server-competition-operation';
+import { assertScheduleMutationLock, withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 import type { TournamentGame } from '@/components/providers/team-provider';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_GAMES = 1_000;
-const BATCH_SIZE = 350;
-const GLOBAL_LOCK_MS = 5 * 60 * 1_000;
 
 type Actor = { uid: string; email?: string; role?: string };
 type RawEvent = Record<string, any>;
@@ -37,6 +38,28 @@ export type TournamentScheduleMutationInput = {
   pin?: unknown;
   notes?: unknown;
   refereeId?: unknown;
+};
+
+export type TournamentScheduleCommandInput = {
+  teamId: string;
+  eventId: string;
+  action: 'deploy' | 'clear' | 'add-referee' | 'remove-referee' | 'assign-referee' | 'seed-pools';
+  requestId: string;
+  expectedVersion: number;
+  expectedScheduleVersion: number;
+  actor: Actor;
+  games?: unknown;
+  gameId?: unknown;
+  refereeId?: unknown;
+  referee?: unknown;
+};
+
+export type TournamentScheduleCommandResult = {
+  success: true;
+  schedule: TournamentGame[];
+  refereePool: RawEvent[];
+  scheduleVersion: number;
+  lifecycleVersion: number;
 };
 
 export class TournamentScheduleDeploymentError extends Error {
@@ -131,25 +154,6 @@ function bookingId(teamId: string, eventId: string, gameId: string): string {
 
 function tournamentSourceId(teamId: string, eventId: string): string {
   return `tournament:${teamId}:${eventId}`;
-}
-
-function tournamentDefinitionHash(event: RawEvent): string {
-  return stableHash(JSON.stringify({
-    date: event.date,
-    endDate: event.endDate,
-    tournamentType: event.tournamentType,
-    tournamentTeams: event.tournamentTeams,
-    tournamentTeamsData: event.tournamentTeamsData,
-    selectedFields: event.selectedFields,
-    manualVenue: event.manualVenue,
-    gameLength: event.gameLength,
-    breakLength: event.breakLength,
-    gamesPerTeam: event.gamesPerTeam,
-    maxDailyGamesPerTeam: event.maxDailyGamesPerTeam,
-    poolCount: event.poolCount,
-    advancePerPool: event.advancePerPool,
-    dailyWindows: event.dailyWindows,
-  }));
 }
 
 function sanitizeGame(
@@ -377,19 +381,6 @@ function validateInternalConflicts(games: PreparedGame[], maxDailyGamesPerTeam: 
   }
 }
 
-function eventInterval(data: FirebaseFirestore.DocumentData): Interval | null {
-  const date = cleanDate(data.date);
-  const startMinute = parseTime(data.startTime ?? data.time);
-  if (!date || startMinute === null) return null;
-  const explicitEnd = parseTime(data.endTime);
-  const duration = positiveInteger(data.durationMinutes ?? data.gameLength, 60);
-  return {
-    date,
-    startMinute,
-    endMinute: explicitEnd !== null && explicitEnd > startMinute ? explicitEnd : startMinute + duration,
-  };
-}
-
 export function isAuthorizedTeamStaffFromRecords({
   teamId,
   actor,
@@ -431,108 +422,8 @@ async function isAuthorizedTeamStaff(teamId: string, actor: Actor): Promise<bool
   });
 }
 
-async function acquireLock(holder: string): Promise<void> {
-  const ref = adminDb.collection('scheduleBookingLocks').doc('global');
-  const now = Date.now();
-  await adminDb.runTransaction(async transaction => {
-    const snapshot = await transaction.get(ref);
-    if (snapshot.data()?.recoveryRequired === true) {
-      throw new TournamentScheduleDeploymentError(
-        'SCHEDULE_RECOVERY_REQUIRED',
-        'Scheduling is temporarily locked because a previous deployment requires recovery.',
-        503
-      );
-    }
-    if (snapshot.exists && Number(snapshot.data()?.expiresAt || 0) > now && snapshot.data()?.holder !== holder) {
-      throw new TournamentScheduleDeploymentError('SCHEDULE_DEPLOYMENT_BUSY', 'Another schedule is being deployed. Try again shortly.', 409);
-    }
-    transaction.set(ref, { holder, expiresAt: now + GLOBAL_LOCK_MS, updatedAt: now, recoveryRequired: false });
-  });
-}
-
-async function releaseLock(holder: string): Promise<void> {
-  const ref = adminDb.collection('scheduleBookingLocks').doc('global');
-  await adminDb.runTransaction(async transaction => {
-    const snapshot = await transaction.get(ref);
-    if (snapshot.data()?.holder === holder && snapshot.data()?.recoveryRequired !== true) transaction.delete(ref);
-  }).catch(error => console.error('[tournament-schedule] Failed to release lock:', error));
-}
-
-async function markLockRecoveryRequired(holder: string, error: unknown): Promise<void> {
-  const ref = adminDb.collection('scheduleBookingLocks').doc('global');
-  const now = Date.now();
-  await adminDb.runTransaction(async transaction => {
-    const snapshot = await transaction.get(ref);
-    transaction.set(ref, {
-      ...(!snapshot.exists ? { holder } : {}),
-      recoveryRequired: true,
-      recoveryFailedAt: new Date(now).toISOString(),
-      recoveryError: error instanceof Error ? error.message.slice(0, 1_000) : 'Unknown compensation error',
-      expiresAt: now + 24 * 60 * 60 * 1_000,
-      updatedAt: now,
-    }, { merge: true });
-  });
-}
-
-export async function withTournamentScheduleMutationLock<T>(operation: () => Promise<T>): Promise<T> {
-  const holder = randomUUID();
-  await acquireLock(holder);
-  try {
-    return await operation();
-  } finally {
-    await releaseLock(holder);
-  }
-}
-
-async function validateExternalConflicts(teamId: string, eventId: string, games: PreparedGame[]): Promise<void> {
-  const currentSource = tournamentSourceId(teamId, eventId);
-  const dates = games.map(game => game.date).sort();
-  const participantIds = [...new Set(games.flatMap(game => game.possibleTeamIds))];
-  const resourceIds = [...new Set(games.map(game => game.resourceId))];
-  const [bookings, ...teamEventSnapshots] = await Promise.all([
-    adminDb.collection('scheduleBookings').where('date', '>=', dates[0]).where('date', '<=', dates.at(-1)!).get(),
-    ...participantIds.map(id => adminDb.collection('teams').doc(id).collection('events').get()),
-    ...resourceIds.map(resourceId => adminDb.collectionGroup('events').where('resourceId', '==', resourceId).get()),
-  ]);
-  const conflicts: string[] = [];
-  games.forEach(game => {
-    const interval = intervalFor(game);
-    bookings.docs.forEach(document => {
-      const data = document.data();
-      if (data.sourceId === currentSource) return;
-      const other = { date: cleanDate(data.date), startMinute: Number(data.startMinute), endMinute: Number(data.endMinute) };
-      if (!other.date || !Number.isFinite(other.startMinute) || !Number.isFinite(other.endMinute) || !overlaps(interval, other)) return;
-      if (data.resourceId === game.resourceId) conflicts.push(`${game.location} is already booked at ${game.date} ${game.time}.`);
-      const otherTeams = Array.isArray(data.teamIds) ? data.teamIds : [];
-      if (game.possibleTeamIds.some(id => otherTeams.includes(id))) conflicts.push(`A possible participant in ${game.id} is already booked at ${game.date} ${game.time}.`);
-    });
-    teamEventSnapshots.forEach(snapshot => snapshot.docs.forEach(document => {
-      if (document.ref.parent.parent?.id === teamId && document.id === eventId) return;
-      const data = document.data();
-      if (data.sourceId === currentSource) return;
-      const other = eventInterval(data);
-      if (!other || !overlaps(interval, other)) return;
-      const eventTeamId = text(data.teamId, 200) || document.ref.parent.parent?.id || '';
-      if (game.possibleTeamIds.includes(eventTeamId)) conflicts.push(`${eventTeamId} already has ${text(data.title, 160) || 'an event'} at ${game.date} ${game.time}.`);
-      if (text(data.resourceId, 400) === game.resourceId) conflicts.push(`${game.location} already hosts ${text(data.title, 160) || 'an event'} at ${game.date} ${game.time}.`);
-    }));
-  });
-  if (conflicts.length) {
-    throw new TournamentScheduleDeploymentError(
-      'EXTERNAL_SCHEDULE_CONFLICT',
-      'The tournament conflicts with another schedule.',
-      409,
-      [...new Set(conflicts)].slice(0, 25)
-    );
-  }
-}
-
-async function commitOperations(operations: Array<(batch: FirebaseFirestore.WriteBatch) => void>): Promise<void> {
-  for (let index = 0; index < operations.length; index += BATCH_SIZE) {
-    const batch = adminDb.batch();
-    operations.slice(index, index + BATCH_SIZE).forEach(operation => operation(batch));
-    await batch.commit();
-  }
+export async function withTournamentScheduleMutationLock<T>(operation: (holder: string) => Promise<T>): Promise<T> {
+  return withScheduleMutationLock(operation);
 }
 
 export async function executeCompensatedScheduleMutation(input: {
@@ -565,21 +456,6 @@ export async function executeCompensatedScheduleMutation(input: {
     }
     throw error;
   }
-}
-
-function bookingRestoreOperations(
-  previousDocuments: FirebaseFirestore.QueryDocumentSnapshot[],
-  touchedRefs: FirebaseFirestore.DocumentReference[]
-): Array<(batch: FirebaseFirestore.WriteBatch) => void> {
-  const previousByPath = new Map(previousDocuments.map(document => [document.ref.path, document]));
-  const refsByPath = new Map(touchedRefs.map(ref => [ref.path, ref]));
-  previousDocuments.forEach(document => refsByPath.set(document.ref.path, document.ref));
-  return [...refsByPath.values()].map(ref => {
-    const previous = previousByPath.get(ref.path);
-    return previous
-      ? batch => batch.set(ref, previous.data())
-      : batch => batch.delete(ref);
-  });
 }
 
 export function prepareTournamentScheduleForDeployment(
@@ -629,99 +505,305 @@ export function prepareTournamentScheduleForDeployment(
   return games;
 }
 
-export async function deployTournamentSchedule(input: {
-  teamId: string;
-  eventId: string;
-  games: unknown;
-  actor: Actor;
-}): Promise<PreparedGame[]> {
+function refereeKey(referee: RawEvent): string {
+  return text(referee.email, 320).toLowerCase();
+}
+
+function activeReferee(pool: RawEvent[], refereeIdValue: unknown): RawEvent {
+  const refereeId = text(refereeIdValue, 180);
+  const referee = pool.find((candidate: RawEvent) => text(candidate.id, 180) === refereeId);
+  if (!referee) throw new TournamentScheduleDeploymentError('REFEREE_NOT_FOUND', 'Tournament referee not found.', 404);
+  if (referee.status === 'removed' || referee.isDeleted === true) {
+    throw new TournamentScheduleDeploymentError('REFEREE_INELIGIBLE', 'This referee is not eligible for assignment.', 403);
+  }
+  return referee;
+}
+
+function publicReferee(referee: RawEvent): RawEvent {
+  return {
+    id: text(referee.id, 180),
+    name: text(referee.name, 160),
+    certLevel: text(referee.certLevel, 120) || null,
+    status: referee.status === 'removed' ? 'removed' : 'active',
+  };
+}
+
+function refereeInterval(game: TournamentGame, event: RawEvent): Interval {
+  const date = cleanDate(game.date);
+  const startMinute = parseTime(game.time);
+  const durationMinutes = positiveInteger((game as RawEvent).durationMinutes ?? event.gameLength, 60);
+  if (!date || startMinute === null || startMinute + durationMinutes > 24 * 60) {
+    throw new TournamentScheduleDeploymentError('INVALID_GAME_INTERVAL', 'The selected match has an invalid date or time.');
+  }
+  return { date, startMinute, endMinute: startMinute + durationMinutes };
+}
+
+function assertTournamentVersions(event: RawEvent, expectedVersion: number, expectedScheduleVersion: number): void {
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0 ||
+      !Number.isSafeInteger(expectedScheduleVersion) || expectedScheduleVersion < 0) {
+    throw new TournamentScheduleDeploymentError('INVALID_VERSION', 'Current Tournament lifecycle and schedule versions are required.');
+  }
+  if ((event.lifecycleVersion ?? 0) !== expectedVersion || (event.scheduleVersion ?? 0) !== expectedScheduleVersion) {
+    throw new TournamentScheduleDeploymentError('TOURNAMENT_VERSION_CONFLICT', 'The Tournament changed. Refresh before retrying.', 409);
+  }
+  if (event.isArchived === true || event.isTournament !== true) {
+    throw new TournamentScheduleDeploymentError('TOURNAMENT_LIFECYCLE_STATE_CONFLICT', 'This Tournament is not active.', 409);
+  }
+}
+
+function sanitizedReferee(value: unknown, id: string): RawEvent {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TournamentScheduleDeploymentError('INVALID_REFEREE', 'Referee details are required.');
+  }
+  const raw = value as RawEvent;
+  const name = text(raw.name, 160);
+  const email = text(raw.email, 320).toLowerCase();
+  if (!name || !/^\S+@\S+\.\S+$/.test(email)) {
+    throw new TournamentScheduleDeploymentError('INVALID_REFEREE', 'A referee name and valid email are required.');
+  }
+  return {
+    id,
+    name,
+    email,
+    phone: text(raw.phone, 80) || null,
+    certLevel: text(raw.certLevel, 120) || null,
+    status: 'active',
+  };
+}
+
+function seedTournamentPools(event: RawEvent, games: TournamentGame[], now: string): TournamentGame[] {
+  if (event.tournamentType !== 'pool_play_knockout') {
+    throw new TournamentScheduleDeploymentError('POOL_QUALIFICATION_ONLY', 'Only pool-play tournaments can seed qualifiers.');
+  }
+  const poolGames = games.filter(game => Number.isInteger(game.pool));
+  const knockoutGames = games.filter(game => game.stage === 'Knockout');
+  if (!poolGames.length || poolGames.some(game => !game.isCompleted)) {
+    throw new TournamentScheduleDeploymentError('POOL_PLAY_INCOMPLETE', 'Every pool match requires a final score before seeding qualifiers.', 409);
+  }
+  if (knockoutGames.some(game => game.isCompleted || !['tbd', 'bye'].includes(String(game.team1Id)) || !['tbd', 'bye'].includes(String(game.team2Id)))) {
+    throw new TournamentScheduleDeploymentError('POOL_RESULTS_LOCKED', 'The knockout bracket has already been seeded or played.', 409);
+  }
+  const teams = Array.isArray(event.tournamentTeamsData) ? event.tournamentTeamsData : [];
+  const poolIndices = [...new Set(poolGames.map(game => Number(game.pool)))].sort((a, b) => a - b);
+  const advancePerPool = positiveInteger(event.advancePerPool, 2);
+  const qualifiers = new Map<string, RawEvent>();
+  for (const poolIndex of poolIndices) {
+    const standings = calculateTournamentStandings(teams, games, poolIndex);
+    if (standings.length < advancePerPool) {
+      throw new TournamentScheduleDeploymentError('POOL_QUALIFIERS_MISSING', 'A pool does not contain enough eligible qualifiers.', 409);
+    }
+    standings.slice(0, advancePerPool).forEach((team, index) => qualifiers.set(`${String.fromCharCode(65 + poolIndex)}:${index + 1}`, team));
+  }
+  let seededSlots = 0;
+  const result = games.map(game => {
+    if (game.stage !== 'Knockout') return game;
+    const update: RawEvent = {};
+    for (const slot of ['team1', 'team2'] as const) {
+      const match = String(game[slot] || '').match(/Pool ([A-Z])\s*-\s*(\d+)(?:st|nd|rd|th)/i);
+      if (!match) continue;
+      const qualifier = qualifiers.get(`${match[1].toUpperCase()}:${Number(match[2])}`);
+      if (!qualifier) throw new TournamentScheduleDeploymentError('POOL_QUALIFIERS_MISSING', 'A bracket qualifier could not be resolved.', 409);
+      update[slot] = qualifier.name;
+      update[`${slot}Id`] = qualifier.id;
+      update[`${slot}LogoUrl`] = teams.find((candidate: RawEvent) => candidate.id === qualifier.id)?.logoUrl;
+      seededSlots++;
+    }
+    return Object.keys(update).length ? { ...game, ...update, updatedAt: now } : game;
+  });
+  if (!seededSlots) throw new TournamentScheduleDeploymentError('QUALIFIER_PLACEHOLDERS_MISSING', 'No pool qualifier placeholders were found.', 409);
+  return result;
+}
+
+export async function executeTournamentScheduleCommand(input: TournamentScheduleCommandInput): Promise<TournamentScheduleCommandResult> {
   if (!ID_PATTERN.test(input.teamId) || !ID_PATTERN.test(input.eventId)) {
     throw new TournamentScheduleDeploymentError('INVALID_TOURNAMENT', 'Invalid tournament identifier.');
   }
-  if (!await isAuthorizedTeamStaff(input.teamId, input.actor)) {
-    throw new TournamentScheduleDeploymentError('FORBIDDEN', 'Only authorized team staff can deploy this tournament schedule.', 403);
-  }
-  const eventRef = adminDb.collection('teams').doc(input.teamId).collection('events').doc(input.eventId);
-  const holder = randomUUID();
-  await acquireLock(holder);
-  try {
-    const eventSnapshot = await eventRef.get();
-    if (!eventSnapshot.exists || eventSnapshot.data()?.isTournament !== true || eventSnapshot.data()?.isArchived === true) {
-      throw new TournamentScheduleDeploymentError('TOURNAMENT_NOT_FOUND', 'Active tournament not found.', 404);
-    }
+  const payload = {
+    action: input.action,
+    teamId: input.teamId,
+    eventId: input.eventId,
+    expectedVersion: input.expectedVersion,
+    expectedScheduleVersion: input.expectedScheduleVersion,
+    ...(input.games !== undefined ? { games: input.games } : {}),
+    ...(input.gameId !== undefined ? { gameId: input.gameId } : {}),
+    ...(input.refereeId !== undefined ? { refereeId: input.refereeId } : {}),
+    ...(input.referee !== undefined ? { referee: input.referee } : {}),
+  };
+  const identity = canonicalCompetitionRequest({
+    requestId: input.requestId,
+    tenantId: input.teamId,
+    kind: 'tournament-schedule',
+    payload,
+  });
+  const teamRef = adminDb.collection('teams').doc(input.teamId);
+  const eventRef = teamRef.collection('events').doc(input.eventId);
+  return withTournamentScheduleMutationLock(holder => runCompetitionOperation({
+    actorUid: input.actor.uid,
+    identity,
+    authorizeTransaction: async transaction => {
+      await assertScheduleMutationLock(transaction, holder);
+      await resolveCompetitionAuthority({
+        transaction,
+        actorUid: input.actor.uid,
+        actorRole: input.actor.role,
+        teamId: input.teamId,
+        domain: 'tournament',
+      });
+    },
+  }, async ({ transaction }) => {
+    const eventSnapshot = await transaction.get(eventRef);
+    if (!eventSnapshot.exists) throw new TournamentScheduleDeploymentError('TOURNAMENT_NOT_FOUND', 'Tournament not found.', 404);
     const event = eventSnapshot.data() as RawEvent;
-    const expectedDefinitionHash = tournamentDefinitionHash(event);
-    const games = prepareTournamentScheduleForDeployment(event, input.games);
-    await validateExternalConflicts(input.teamId, input.eventId, games);
-    const currentSource = tournamentSourceId(input.teamId, input.eventId);
-    const oldBookings = await adminDb.collection('scheduleBookings').where('sourceId', '==', currentSource).get();
-    const desired = new Set(games.map(game => adminDb.collection('scheduleBookings').doc(bookingId(input.teamId, input.eventId, game.id)).path));
-    const operations: Array<(batch: FirebaseFirestore.WriteBatch) => void> = [];
-    const touchedRefs: FirebaseFirestore.DocumentReference[] = [];
-    oldBookings.docs.forEach(document => {
-      if (!desired.has(document.ref.path)) {
-        touchedRefs.push(document.ref);
-        operations.push(batch => batch.delete(document.ref));
-      }
-    });
+    if (event.teamId && event.teamId !== input.teamId) throw new TournamentScheduleDeploymentError('TOURNAMENT_TENANT_MISMATCH', 'Tournament tenant mismatch.', 403);
+    assertTournamentVersions(event, input.expectedVersion, input.expectedScheduleVersion);
+
+    let games: TournamentGame[] = Array.isArray(event.tournamentGames) ? event.tournamentGames.map((game: TournamentGame) => ({ ...game })) : [];
+    let pool: RawEvent[] = Array.isArray(event.refereePool) ? event.refereePool.map((item: RawEvent) => ({ ...item })) : [];
     const now = new Date().toISOString();
-    games.forEach(game => {
-      const interval = intervalFor(game);
-      const ref = adminDb.collection('scheduleBookings').doc(bookingId(input.teamId, input.eventId, game.id));
-      touchedRefs.push(ref);
-      operations.push(batch => batch.set(ref, {
-        id: ref.id,
-        sourceType: 'tournament',
-        sourceId: currentSource,
-        sourceGameId: game.id,
-        hostTeamId: input.teamId,
-        eventId: input.eventId,
-        teamIds: game.possibleTeamIds,
-        resourceId: game.resourceId,
-        location: game.location,
-        date: game.date,
-        startMinute: interval.startMinute,
-        endMinute: interval.endMinute,
-        startTime: game.time,
-        durationMinutes: game.durationMinutes,
-        isConditional: game.isConditional === true,
-        updatedAt: now,
-      }));
+    const nextScheduleVersion = input.expectedScheduleVersion + 1;
+    const assignmentCollection = adminDb.collection('tournamentRefereeAssignments');
+    const ownedAssignments = await transaction.get(assignmentCollection.where('eventId', '==', input.eventId));
+    const privateRefereeCollection = adminDb.collection('tournamentReferees');
+    const refereeProfiles = await transaction.get(privateRefereeCollection.where('eventId', '==', input.eventId));
+    const ownedRefereeProfiles = refereeProfiles.docs.filter(document => document.data().teamId === input.teamId);
+    if (['assign-referee', 'remove-referee'].includes(input.action)) {
+      const authoritativeAssignments = new Map<string, RawEvent>(
+        ownedAssignments.docs
+          .filter(document => document.data().teamId === input.teamId)
+          .map(document => [document.data().gameId, document.data()]),
+      );
+      games = games.map(game => {
+        const assignment = authoritativeAssignments.get(game.id);
+        return assignment && assignment.refereeId === game.refereeId
+          ? game
+          : { ...game, refereeId: undefined, refereeName: undefined };
+      });
+    }
+    const sourceId = tournamentSourceId(input.teamId, input.eventId);
+    const oldBookings = input.action === 'deploy' || input.action === 'clear'
+      ? await transaction.get(adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId))
+      : null;
+
+    let assignmentRef: FirebaseFirestore.DocumentReference | null = null;
+    let assignmentData: RawEvent | null = null;
+    let conflictingAssignments: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    if (input.action === 'assign-referee' && text(input.refereeId, 180)) {
+      const referee = activeReferee(pool, input.refereeId);
+      const profile = ownedRefereeProfiles.find(document => document.data().refereeId === referee.id)?.data() || referee;
+      const key = refereeKey(profile);
+      if (!key) throw new TournamentScheduleDeploymentError('REFEREE_INELIGIBLE', 'This referee profile is incomplete.', 403);
+      const target = games.find(game => game.id === text(input.gameId, 180));
+      if (!target) throw new TournamentScheduleDeploymentError('GAME_NOT_FOUND', 'Tournament match not found.', 404);
+      const interval = refereeInterval(target, event);
+      const assignments = await transaction.get(assignmentCollection.where('refereeKey', '==', key));
+      conflictingAssignments = assignments.docs.filter(document => {
+        const data = document.data();
+        return !(data.teamId === input.teamId && data.eventId === input.eventId && data.gameId === target.id) &&
+          overlaps(interval, { date: cleanDate(data.date), startMinute: Number(data.startMinute), endMinute: Number(data.endMinute) });
+      });
+      if (conflictingAssignments.length) {
+        throw new TournamentScheduleDeploymentError('REFEREE_CONFLICT', 'The referee is assigned to an overlapping match.', 409);
+      }
+      assignmentRef = assignmentCollection.doc(`tr_${stableHash(`${input.teamId}:${input.eventId}:${target.id}`)}`);
+      assignmentData = {
+        teamId: input.teamId, eventId: input.eventId, gameId: target.id,
+        refereeId: text(referee.id, 180), refereeKey: key, refereeName: text(referee.name, 160),
+        date: interval.date, startMinute: interval.startMinute, endMinute: interval.endMinute,
+        scheduleVersion: nextScheduleVersion, updatedAt: now,
+      };
+    }
+
+    if (input.action === 'deploy') {
+      if (games.some(game => game.isCompleted || game.isDisputed || game.refereeId)) {
+        throw new TournamentScheduleDeploymentError('SCHEDULE_DEPENDENCY_CONFLICT', 'Completed, disputed, or assigned matches must be resolved before redeployment.', 409);
+      }
+      const prepared = prepareTournamentScheduleForDeployment(event, input.games);
+      const dates = [...new Set(prepared.map(game => game.date))];
+      const externalBookings = [] as FirebaseFirestore.QueryDocumentSnapshot[];
+      for (const date of dates) {
+        const snapshot = await transaction.get(adminDb.collection('scheduleBookings').where('date', '==', date));
+        externalBookings.push(...snapshot.docs.filter(document => document.data().sourceId !== sourceId));
+      }
+      const conflicts: string[] = [];
+      for (const game of prepared) for (const document of externalBookings) {
+        const data = document.data();
+        const other = { date: cleanDate(data.date), startMinute: Number(data.startMinute), endMinute: Number(data.endMinute) };
+        if (!other.date || !overlaps(intervalFor(game), other)) continue;
+        if (data.resourceId === game.resourceId || game.possibleTeamIds.some(id => Array.isArray(data.teamIds) && data.teamIds.includes(id))) conflicts.push(`${game.id} overlaps an existing schedule booking.`);
+      }
+      if (conflicts.length) throw new TournamentScheduleDeploymentError('EXTERNAL_SCHEDULE_CONFLICT', 'The tournament conflicts with another schedule.', 409, conflicts.slice(0, 25));
+      if (prepared.length + (oldBookings?.size || 0) + 4 > 450) throw new TournamentScheduleDeploymentError('SCHEDULE_TOO_LARGE', 'This schedule exceeds the atomic deployment budget.', 409);
+      games = prepared.map(game => Object.fromEntries(Object.entries(game).filter(([key]) => key !== 'possibleTeamIds')) as TournamentGame);
+      for (const document of oldBookings?.docs || []) transaction.delete(document.ref);
+      for (const game of prepared) {
+        const interval = intervalFor(game);
+        const ref = adminDb.collection('scheduleBookings').doc(bookingId(input.teamId, input.eventId, game.id));
+        transaction.set(ref, { id: ref.id, sourceType: 'tournament', sourceId, sourceGameId: game.id, hostTeamId: input.teamId, eventId: input.eventId,
+          teamIds: game.possibleTeamIds, resourceId: game.resourceId, location: game.location, date: game.date,
+          startMinute: interval.startMinute, endMinute: interval.endMinute, startTime: game.time, durationMinutes: game.durationMinutes,
+          isConditional: game.isConditional === true, updatedAt: now });
+      }
+    } else if (input.action === 'clear') {
+      if (games.some(game => game.isCompleted || game.isDisputed)) throw new TournamentScheduleDeploymentError('SCHEDULE_DEPENDENCY_CONFLICT', 'A Tournament with results or disputes cannot be cleared.', 409);
+      games = [];
+      for (const document of oldBookings?.docs || []) transaction.delete(document.ref);
+      for (const document of ownedAssignments.docs) if (document.data().teamId === input.teamId) transaction.delete(document.ref);
+    } else if (input.action === 'add-referee') {
+      const added = sanitizedReferee(input.referee, `ref_${identity.operationId.slice(12, 36)}`);
+      if (pool.some(candidate => refereeKey(candidate) === refereeKey(added)) || ownedRefereeProfiles.some(document => refereeKey(document.data()) === refereeKey(added))) {
+        throw new TournamentScheduleDeploymentError('REFEREE_EXISTS', 'This referee is already in the Tournament pool.', 409);
+      }
+      pool.push(publicReferee(added));
+      transaction.create(privateRefereeCollection.doc(`trp_${stableHash(`${input.teamId}:${input.eventId}:${added.id}`)}`), {
+        ...added, teamId: input.teamId, eventId: input.eventId, refereeId: added.id, createdAt: now, updatedAt: now,
+      });
+    } else if (input.action === 'remove-referee') {
+      const removed = activeReferee(pool, input.refereeId);
+      pool = pool.filter(candidate => text(candidate.id, 180) !== text(removed.id, 180));
+      games = games.map(game => game.refereeId === removed.id ? { ...game, refereeId: undefined, refereeName: undefined, updatedAt: now } : game);
+      for (const document of ownedAssignments.docs) if (document.data().teamId === input.teamId && document.data().refereeId === removed.id) transaction.delete(document.ref);
+      for (const document of ownedRefereeProfiles) if (document.data().refereeId === removed.id) transaction.delete(document.ref);
+    } else if (input.action === 'assign-referee') {
+      const gameId = text(input.gameId, 180);
+      const index = games.findIndex(game => game.id === gameId);
+      if (index < 0) throw new TournamentScheduleDeploymentError('GAME_NOT_FOUND', 'Tournament match not found.', 404);
+      const previousAssignment = ownedAssignments.docs.find(document => document.data().teamId === input.teamId && document.data().gameId === gameId);
+      if (previousAssignment) transaction.delete(previousAssignment.ref);
+      if (assignmentData && assignmentRef) {
+        games[index] = { ...games[index], refereeId: assignmentData.refereeId, refereeName: assignmentData.refereeName, updatedAt: now };
+        transaction.set(assignmentRef, assignmentData);
+      } else {
+        games[index] = { ...games[index], refereeId: undefined, refereeName: undefined, updatedAt: now };
+      }
+    } else {
+      games = seedTournamentPools(event, games, now);
+    }
+
+    games = sanitizeTournamentGames(games);
+    // The event document is team-readable. Keep contact details exclusively in
+    // the server-only profile collection and repair legacy projections whenever
+    // any schedule command touches the event.
+    pool = pool.map(publicReferee);
+    transaction.update(eventRef, {
+      tournamentGames: games,
+      refereePool: pool,
+      scheduleVersion: nextScheduleVersion,
+      scheduleUpdatedAt: now,
+      scheduleUpdatedBy: input.actor.uid,
+      ...(input.action === 'deploy' ? { setupStatus: 'complete', scheduleStatus: 'ready', bracketStatus: 'ready', deploymentStatus: 'deployed', deploymentError: '' } : {}),
+      ...(input.action === 'clear' ? { scheduleStatus: 'pending', bracketStatus: 'pending', deploymentStatus: 'undeployed', deploymentError: '', scheduleClearedAt: now, scheduleClearedBy: input.actor.uid } : {}),
     });
-    await executeCompensatedScheduleMutation({
-      mutate: () => commitOperations(operations),
-      publish: async () => {
-        await adminDb.runTransaction(async transaction => {
-          const freshEvent = await transaction.get(eventRef);
-          if (!freshEvent.exists || freshEvent.data()?.isArchived === true ||
-              tournamentDefinitionHash((freshEvent.data() || {}) as RawEvent) !== expectedDefinitionHash) {
-            throw new TournamentScheduleDeploymentError(
-              'TOURNAMENT_CONFIGURATION_CHANGED',
-              'The tournament roster or scheduling configuration changed during publication. Generate the schedule again.',
-              409
-            );
-          }
-          transaction.update(eventRef, {
-            tournamentGames: games.map(game => Object.fromEntries(
-              Object.entries(game).filter(([key]) => key !== 'possibleTeamIds')
-            )),
-            scheduleUpdatedAt: now,
-            scheduleUpdatedBy: input.actor.uid,
-            setupStatus: 'complete',
-            scheduleStatus: 'ready',
-            bracketStatus: 'ready',
-            deploymentStatus: 'deployed',
-            deploymentError: '',
-          });
-        });
-      },
-      compensate: () => commitOperations(bookingRestoreOperations(oldBookings.docs, touchedRefs)),
-      onCompensationFailure: error => markLockRecoveryRequired(holder, error),
+    transaction.create(eventRef.collection('scheduleAudits').doc(identity.operationId), {
+      operationId: identity.operationId,
+      requestId: identity.requestId,
+      action: input.action,
+      actorUid: input.actor.uid,
+      lifecycleVersion: input.expectedVersion,
+      scheduleVersion: nextScheduleVersion,
+      createdAt: now,
     });
-    return games;
-  } finally {
-    await releaseLock(holder);
-  }
+    return { success: true, schedule: games, refereePool: pool, scheduleVersion: nextScheduleVersion, lifecycleVersion: input.expectedVersion };
+  }));
 }
 
 function sanitizeTournamentGames(games: TournamentGame[]): TournamentGame[] {
@@ -868,46 +950,4 @@ async function mutateTournamentScheduleUnlocked(input: TournamentScheduleMutatio
 
 export async function mutateTournamentSchedule(input: TournamentScheduleMutationInput): Promise<TournamentGame[]> {
   return withTournamentScheduleMutationLock(() => mutateTournamentScheduleUnlocked(input));
-}
-
-export async function clearTournamentSchedule(input: {
-  teamId: string;
-  eventId: string;
-  actor: Actor;
-}): Promise<void> {
-  if (!ID_PATTERN.test(input.teamId) || !ID_PATTERN.test(input.eventId)) {
-    throw new TournamentScheduleDeploymentError('INVALID_TOURNAMENT', 'Invalid tournament identifier.');
-  }
-  if (!await isAuthorizedTeamStaff(input.teamId, input.actor)) {
-    throw new TournamentScheduleDeploymentError('FORBIDDEN', 'Only authorized team staff can clear this tournament schedule.', 403);
-  }
-  const eventRef = adminDb.collection('teams').doc(input.teamId).collection('events').doc(input.eventId);
-  const eventSnapshot = await eventRef.get();
-  if (!eventSnapshot.exists || eventSnapshot.data()?.isTournament !== true) {
-    throw new TournamentScheduleDeploymentError('TOURNAMENT_NOT_FOUND', 'Tournament not found.', 404);
-  }
-
-  const holder = randomUUID();
-  await acquireLock(holder);
-  try {
-    const bookings = await adminDb.collection('scheduleBookings')
-      .where('sourceId', '==', tournamentSourceId(input.teamId, input.eventId))
-      .get();
-    await executeCompensatedScheduleMutation({
-      mutate: () => commitOperations(bookings.docs.map(document => batch => batch.delete(document.ref))),
-      publish: async () => { await eventRef.update({
-        tournamentGames: [],
-        scheduleStatus: 'pending',
-        bracketStatus: 'pending',
-        deploymentStatus: 'undeployed',
-        deploymentError: '',
-        scheduleClearedAt: new Date().toISOString(),
-        scheduleClearedBy: input.actor.uid,
-      }); },
-      compensate: () => commitOperations(bookingRestoreOperations(bookings.docs, [])),
-      onCompensationFailure: error => markLockRecoveryRequired(holder, error),
-    });
-  } finally {
-    await releaseLock(holder);
-  }
 }
