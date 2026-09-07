@@ -140,3 +140,81 @@ test('competition authority requires an explicitly active staff membership statu
     );
   }
 });
+
+test('teamless competition authority is derived only from the authenticated actor profile in the transaction', async () => {
+  const { db } = communicationDb({
+    'users/creator-a': { role: 'league_creator', plan_type: 'free', accountStatus: 'active' },
+    'users/ordinary': { role: 'parent', plan_type: 'free', accountStatus: 'active' },
+    'users/removed': { role: 'league_creator', plan_type: 'elite_league', status: 'removed' },
+    'users/disabled': { role: 'league_creator', plan_type: 'elite_league', accountStatus: 'disabled' },
+    'users/deleted': { role: 'league_creator', plan_type: 'elite_league', deletionStatus: 'deleted' },
+    'users/ineligible': { role: 'coach', plan_type: 'free', accountStatus: 'active' },
+  });
+  const authority = await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a' }));
+  assert.deepEqual(authority, {
+    actorUid: 'creator-a', tenantId: 'profile:creator-a', memberRefPath: 'users/creator-a', role: 'league_creator', planId: 'free',
+  });
+  await assert.rejects(() => resolveCompetitionAuthority({ db, actorUid: 'creator-a' }), /Forbidden/);
+  await assert.rejects(
+    () => db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', teamId: 'profile:creator-a' })),
+    /Forbidden/,
+  );
+  for (const input of [
+    { actorUid: 'ordinary' },
+    { actorUid: 'removed' },
+    { actorUid: 'disabled' },
+    { actorUid: 'deleted' },
+    { actorUid: 'ineligible' },
+    { actorUid: 'ordinary', actorRole: 'league_creator' },
+    { actorUid: 'ordinary', profileUid: 'creator-a', actorRole: 'league_creator' },
+  ]) {
+    await assert.rejects(
+      () => db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, ...input })),
+      /Forbidden/,
+    );
+  }
+});
+
+test('legacy tenantless standalone League derives only to its current creator profile', async () => {
+  const { db } = communicationDb({
+    'users/creator-a': { role: 'league_creator', plan_type: 'free', accountStatus: 'active' },
+    'users/creator-b': { role: 'league_creator', plan_type: 'free', accountStatus: 'active' },
+    'leagues/standalone': { creatorId: 'creator-a', memberTeamIds: [] },
+    'leagues/explicit-profile': { creatorId: 'creator-a', tenantId: 'profile:creator-a' },
+    'leagues/invalid-explicit': { creatorId: 'creator-a', tenantId: 42, memberTeamIds: [] },
+  });
+  const authority = await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId: 'standalone' }));
+  assert.equal(authority.tenantId, 'profile:creator-a');
+  const explicit = await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId: 'explicit-profile' }));
+  assert.equal(explicit.tenantId, 'profile:creator-a');
+  await assert.rejects(
+    () => db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId: 'invalid-explicit' })),
+    /Forbidden/,
+  );
+  await assert.rejects(
+    () => db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-b', leagueId: 'standalone' })),
+    /Forbidden/,
+  );
+});
+
+test('legacy tenantless team League derives only from one participant team currently owned by its creator', async () => {
+  const { db } = communicationDb({
+    'teams/creator-team': { ownerUserId: 'creator-a', planId: 'elite_league' },
+    'teams/creator-team-2': { ownerUserId: 'creator-a', planId: 'elite_league' },
+    'teams/foreign-team': { ownerUserId: 'other-owner', planId: 'elite_league' },
+    'leagues/one-team': { creatorId: 'creator-a', memberTeamIds: ['creator-team'] },
+    'leagues/multiple-teams': { creatorId: 'creator-a', memberTeamIds: ['creator-team', 'creator-team-2'] },
+    'leagues/foreign-team': { creatorId: 'creator-a', memberTeamIds: ['foreign-team'] },
+    'leagues/missing-team': { creatorId: 'creator-a', memberTeamIds: ['does-not-exist'] },
+    'leagues/missing-creator': { memberTeamIds: ['creator-team'] },
+  });
+  const authority = await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId: 'one-team' }));
+  assert.equal(authority.tenantId, 'creator-team');
+  assert.equal(authority.role, 'owner');
+  for (const leagueId of ['multiple-teams', 'foreign-team', 'missing-team', 'missing-creator']) {
+    await assert.rejects(
+      () => db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId })),
+      /Forbidden/,
+    );
+  }
+});

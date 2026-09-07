@@ -1,4 +1,5 @@
 import type { DocumentData, DocumentReference, Firestore, Transaction } from 'firebase-admin/firestore';
+import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 import { adminDb } from '@/lib/firebase-admin';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { hasStaffRole } from '@/lib/staff-position';
@@ -14,7 +15,7 @@ export type CompetitionAuthority = {
 export type CompetitionAuthorityInput = {
   actorUid: string;
   actorRole?: string;
-  teamId: string;
+  teamId?: string;
   leagueId?: string;
   db?: Firestore;
   transaction?: Transaction;
@@ -45,13 +46,15 @@ function planIdOf(team: DocumentData): string {
   return normalized;
 }
 
-function explicitLeagueTenant(league: DocumentData): string {
-  const tenants = new Set(
-    [league.tenantId, league.hostTeamId, league.ownerTeamId, league.teamId]
-      .filter((value): value is string => typeof value === 'string' && Boolean(value)),
-  );
-  if (tenants.size !== 1) forbidden();
-  return [...tenants][0];
+function explicitLeagueTenant(league: DocumentData): string | null {
+  const tenants = new Set<string>();
+  for (const value of [league.tenantId, league.hostTeamId, league.ownerTeamId, league.teamId]) {
+    if (value == null || value === '') continue;
+    if (typeof value !== 'string' || !value.trim()) forbidden();
+    tenants.add(value.trim());
+  }
+  if (tenants.size > 1) forbidden();
+  return tenants.size === 1 ? [...tenants][0] : null;
 }
 
 async function read<T extends DocumentData = DocumentData>(
@@ -86,33 +89,92 @@ function staffRole(data: DocumentData): CompetitionAuthority['role'] {
     : 'staff';
 }
 
+async function deriveLegacyLeagueTenant(
+  db: Firestore,
+  league: DocumentData,
+  transaction?: Transaction,
+): Promise<string> {
+  if (!transaction) forbidden();
+  const creatorId = typeof league.creatorId === 'string' ? league.creatorId.trim() : '';
+  if (!creatorId) forbidden();
+  const rawCandidates = league.memberTeamIds;
+  if (rawCandidates != null && !Array.isArray(rawCandidates)) forbidden();
+  const candidates = new Set<string>();
+  for (const candidate of rawCandidates || []) {
+    if (typeof candidate !== 'string' || !candidate.trim()) forbidden();
+    candidates.add(candidate.trim());
+  }
+  if (candidates.size === 0) return `profile:${creatorId}`;
+  if (candidates.size !== 1) forbidden();
+  const teamId = [...candidates][0];
+  const team = await transaction.get(db.collection('teams').doc(teamId));
+  if (!team.exists || team.data()?.ownerUserId !== creatorId) forbidden();
+  return teamId;
+}
+
+async function resolveProfileAuthority(
+  db: Firestore,
+  actorUid: string,
+  tenantId: string,
+  transaction: Transaction | undefined,
+  league?: DocumentData,
+): Promise<CompetitionAuthority> {
+  if (!transaction || tenantId !== `profile:${actorUid}`) forbidden();
+  if (league && league.creatorId !== actorUid) forbidden();
+  const profileRef = db.collection('users').doc(actorUid);
+  const profileSnapshot = await transaction.get(profileRef);
+  if (!profileSnapshot.exists) forbidden();
+  const profile = profileSnapshot.data() || {};
+  if (
+    isAccountAccessBlocked(profile) ||
+    profile.status === 'removed' ||
+    profile.isDeleted === true ||
+    !authorizeDashboardRoute('/competition', profile).allowed
+  ) forbidden();
+  const profileRole = String(profile.role || '').trim().toLowerCase();
+  const role: CompetitionAuthority['role'] = profileRole === 'league_creator'
+    ? 'league_creator'
+    : profileRole === 'coach'
+      ? 'coach'
+      : 'staff';
+  const planId = String(profile.plan_type || profile.planId || profile.activePlanId || 'free').trim().toLowerCase();
+  return { actorUid, tenantId, memberRefPath: profileRef.path, role, planId };
+}
+
 /** Resolve current authority for preflight/read use; writes must use the transaction-bound assertion below. */
 export async function resolveCompetitionAuthority(
   input: CompetitionAuthorityInput,
 ): Promise<CompetitionAuthority> {
   const db = input.db || adminDb;
   const actorUid = String(input.actorUid || '').trim();
-  const teamId = String(input.teamId || '').trim();
-  if (!actorUid || !teamId) forbidden();
+  const requestedTeamId = String(input.teamId || '').trim();
+  if (!actorUid) forbidden();
+  if (requestedTeamId.startsWith('profile:')) forbidden();
 
+  let tenantId = requestedTeamId || `profile:${actorUid}`;
+  let league: DocumentData | undefined;
+  let leagueRefPath: string | null = null;
+  if (input.leagueId) {
+    const leagueRef = db.collection('leagues').doc(input.leagueId);
+    const leagueSnapshot = await read(leagueRef, input.transaction);
+    if (!leagueSnapshot.exists) forbidden();
+    league = leagueSnapshot.data() || {};
+    tenantId = explicitLeagueTenant(league) || await deriveLegacyLeagueTenant(db, league, input.transaction);
+    if (requestedTeamId && tenantId !== requestedTeamId) forbidden();
+    leagueRefPath = leagueRef.path;
+  }
+
+  if (tenantId.startsWith('profile:')) {
+    return resolveProfileAuthority(db, actorUid, tenantId, input.transaction, league);
+  }
+
+  const teamId = tenantId;
   const teamRef = db.collection('teams').doc(teamId);
   const teamSnapshot = await read(teamRef, input.transaction);
   if (!teamSnapshot.exists) forbidden();
   const team = teamSnapshot.data() || {};
   const planId = planIdOf(team);
-
-  let leagueRefPath: string | null = null;
-  let isOrganizer = false;
-  if (input.leagueId) {
-    const leagueRef = db.collection('leagues').doc(input.leagueId);
-    const leagueSnapshot = await read(leagueRef, input.transaction);
-    if (!leagueSnapshot.exists) forbidden();
-    const league = leagueSnapshot.data() || {};
-    const leagueTenant = explicitLeagueTenant(league);
-    if (leagueTenant !== teamId) forbidden();
-    isOrganizer = league.creatorId === actorUid;
-    leagueRefPath = leagueRef.path;
-  }
+  const isOrganizer = Boolean(league && league.creatorId === actorUid);
 
   const base = { actorUid, tenantId: teamId, planId };
   if (input.actorRole === 'superadmin') {
