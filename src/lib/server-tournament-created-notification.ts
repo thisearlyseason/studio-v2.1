@@ -50,10 +50,21 @@ export async function deliverTournamentCreatedNotification(operationId: string):
     const event = payload.event;
     const title = `📅 Event: ${String(event.title)}`;
     const body = `${event.date}${event.startTime ? ` at ${event.startTime}` : ''}${event.location ? ` · ${event.location}` : ''}`;
-    if (claim.data.pushDelivered !== true) {
-      const sent = await sendNotificationToUsers({ recipientUserIds: claim.recipients.map(recipient => recipient.userId), title, body, url: '/dashboard/team' });
-      if (sent.fcmFailureCount || sent.webPushFailureCount) throw new Error('Some Tournament push deliveries failed.');
-      await checkpoint({ pushDelivered: true });
+    if (claim.data.pushAttempted !== true && claim.data.pushDelivered !== true) {
+      // Push is best-effort, at-most-once per effect: persist before dispatch so
+      // partial success or ambiguous provider failure cannot duplicate on replay.
+      // A crash after this checkpoint may skip push; email remains retryable.
+      await checkpoint({ pushAttempted: true, pushAttemptedAt: new Date().toISOString(), pushStatus: 'attempted' });
+      let pushOutcome: Record<string, unknown>;
+      try {
+        const sent = await sendNotificationToUsers({ recipientUserIds: claim.recipients.map(recipient => recipient.userId), title, body, url: '/dashboard/team' });
+        const failed = sent.fcmFailureCount + sent.webPushFailureCount;
+        const succeeded = sent.fcmSuccessCount + sent.webPushSuccessCount;
+        pushOutcome = { pushResult: sent, pushDelivered: failed === 0, pushStatus: failed ? (succeeded ? 'partial' : 'failed') : 'completed' };
+      } catch (error) {
+        pushOutcome = { pushDelivered: false, pushStatus: 'failed', pushError: error instanceof Error ? error.message : 'Tournament push attempt failed.' };
+      }
+      await checkpoint(pushOutcome);
     }
     const completed = new Set<string>(Array.isArray(claim.data.emailDeliveredUserIds) ? claim.data.emailDeliveredUserIds : []);
     const emailRecipients = [...new Map(claim.recipients.filter(recipient => recipient.email).map(recipient => [recipient.email, recipient])).values()];

@@ -251,6 +251,48 @@ test('notification provider failure retains the Tournament and retries only the 
   assert.equal((await call(db, body)).status, 200); assert.equal(db.emails.length, 2);
 });
 
+test('partial push delivery does not block email or repeat successful pushes on email retry', async () => {
+  const { db, records } = communicationDb({ ...seed, 'teams/team-a/members/member': { userId: 'member', status: 'active', email: 'member@example.test' } });
+  const effect = () => [...records.values()].find(value => value.kind === 'tournament-created-notification');
+  db.notificationResult = { fcmSuccessCount: 1, fcmFailureCount: 1, webPushSuccessCount: 1, webPushFailureCount: 1 };
+  db.emailSendFailure = 'retryable email failure';
+  const body = create();
+  assert.equal((await call(db, body)).status, 200);
+  assert.equal(db.emails.length, 1, 'partial push must not prevent independent email attempt');
+  assert.equal(effect().pushStatus, 'partial');
+  assert.deepEqual(effect().pushResult, db.notificationResult);
+  assert.equal(effect().status, 'failed');
+  db.emailSendFailure = '';
+  assert.equal((await call(db, body)).status, 200);
+  assert.equal(db.notifications.length, 1, 'successful push targets must not receive a replay duplicate');
+  assert.equal(db.emails.length, 2);
+  assert.equal(effect().status, 'delivered');
+  assert.equal(effect().pushStatus, 'partial');
+  assert.equal((await call(db, body)).status, 200);
+  assert.equal(db.notifications.length, 1); assert.equal(db.emails.length, 2);
+});
+
+test('throwing push provider records failure but independently delivers email without replaying push', async () => {
+  const { db, records } = communicationDb({ ...seed, 'teams/team-a/members/member': { userId: 'member', status: 'active', email: 'member@example.test' } });
+  db.notificationSendFailure = 'provider unavailable';
+  const body = create();
+  assert.equal((await call(db, body)).status, 200);
+  assert.equal(db.emails.length, 1, 'thrown push failure must not prevent email');
+  const effect = [...records.values()].find(value => value.kind === 'tournament-created-notification');
+  assert.equal(effect.pushStatus, 'failed'); assert.equal(effect.pushError, 'provider unavailable');
+  assert.equal(effect.status, 'delivered');
+  assert.equal((await call(db, body)).status, 200);
+  assert.equal(db.notifications.length, 1); assert.equal(db.emails.length, 1);
+});
+
+test('push attempt is durably checkpointed before calling the provider', async () => {
+  const { db, records } = communicationDb(seed);
+  let attemptedBeforeDispatch = false;
+  db.onNotificationSend = () => { attemptedBeforeDispatch = [...records.values()].find(value => value.kind === 'tournament-created-notification')?.pushAttempted === true; };
+  assert.equal((await call(db, create())).status, 200);
+  assert.equal(attemptedBeforeDispatch, true);
+});
+
 test('demo and outbound-disabled teams retain creation but suppress notification delivery', async () => {
   for (const flag of [{ isDemo: true }, { outboundProvidersEnabled: false }]) {
     const { db, records } = communicationDb({ ...seed, 'teams/team-a': { ...seed['teams/team-a'], ...flag } });
