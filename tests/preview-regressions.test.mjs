@@ -177,7 +177,7 @@ test('demo batches stay below the rules-engine access-call ceiling', async () =>
   assert.match(source, /transientCodes/);
 });
 
-test('demo bootstrap creates the protected league before client blueprint enrichment', async () => {
+test('demo bootstrap creates the protected league and server-enriches its blueprint', async () => {
   const route = await readSource('../src/app/api/demo/seed/route.ts');
   const seeder = await readSource('../src/lib/db-seeder.ts');
 
@@ -188,13 +188,17 @@ test('demo bootstrap creates the protected league before client blueprint enrich
   assert.doesNotMatch(route, /if \(plan\.role !== 'parent'\)/);
   assert.match(seeder, /const activeDemoLeagueId = `demo_league_\$\{userId\.slice\(-4\)\}`/);
   assert.match(seeder, /if \(lDoc\.id !== activeDemoLeagueId\)/);
-  assert.match(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
+  assert.match(seeder, /const persistDemoLeague = async/);
+  assert.match(seeder, /fetch\('\/api\/demo\/seed', \{\s*method: 'PUT'/);
+  assert.match(seeder, /await persistDemoLeague\(leagueId/);
+  assert.doesNotMatch(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 
-test('demo blueprint merges protected team and league roots created by the server', async () => {
+test('demo blueprint merges only protected team roots created by the server', async () => {
   const seeder = await readSource('../src/lib/db-seeder.ts');
 
-  assert.match(seeder, /const isProtectedDemoRoot = \/\^\(teams\|leagues\)/);
+  assert.match(seeder, /const isProtectedDemoRoot = \/\^teams/);
+  assert.doesNotMatch(seeder, /const isProtectedDemoRoot = \/\^\(teams\|leagues\)/);
   assert.match(seeder, /else if \(isProtectedDemoRoot\) \{\s*this\.batch\.set\(ref, data, \{ merge: true \}\)/);
 });
 

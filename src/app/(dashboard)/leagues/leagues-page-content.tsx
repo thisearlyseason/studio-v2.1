@@ -1302,7 +1302,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
 
 function ManualPlayerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const db = useFirestore();
+  const { updateLeague } = useTeam();
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -1326,10 +1326,9 @@ function ManualPlayerDialog({ league, isOpen, onOpenChange }: { league: League, 
         manual: true
       };
 
-      if (!db) return;
-      await updateDoc(doc(db, 'leagues', league.id), {
-        [`individualRecruits.${playerId}`]: newRecruit
-      });
+      await updateLeague(league.id, {
+        individualRecruitUpdate: { recruitId: playerId, recruit: newRecruit },
+      } as any);
 
       onOpenChange(false);
       setForm({ name: '', email: '', phone: '' });
@@ -1486,11 +1485,17 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     setIsProcessing(true);
     try {
       const { addDoc } = await import('firebase/firestore');
-      await updateDoc(doc(db, 'leagues', activeLeague.id), {
-        [`individualRecruits.${playerId}.teamName`]: team.teamName,
-        [`individualRecruits.${playerId}.teamCode`]: team.inviteCode || team.teamCode || team.code || '',
-        [`individualRecruits.${playerId}.status`]: 'assigned'
-      });
+      await updateLeague(activeLeague.id, {
+        individualRecruitUpdate: {
+          recruitId: playerId,
+          recruit: {
+            ...player,
+            teamName: team.teamName,
+            teamCode: team.inviteCode || team.teamCode || team.code || '',
+            status: 'assigned',
+          },
+        },
+      } as any);
 
       const alertRef = collection(db, 'teams', teamId, 'alerts');
       await addDoc(alertRef, {
@@ -1573,6 +1578,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     return query(
       collection(db, 'leagues'),
       where('memberUserIds', 'array-contains', authUser.uid),
+      where('sensitiveFieldsMigrated', '==', true),
       limit(canManageLeagues ? 50 : 20)
     );
   }, [isAuthResolved, db, authUser?.uid, canManageLeagues, isSuperAdmin]);
@@ -1641,13 +1647,29 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     return groups;
   }, [leagues]);
 
-  const activeLeague = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
+  const activeLeagueRoot = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
   const activeLeaguePrivateRef = useMemoFirebase(() => (
-    db && activeLeague && (activeLeague.creatorId === authUser?.uid || isSuperAdmin)
-      ? doc(db, 'leagues', activeLeague.id, 'private', 'lifecycle')
+    db && activeLeagueRoot && (canManageLeagues || isSuperAdmin)
+      ? doc(db, 'leagues', activeLeagueRoot.id, 'private', 'lifecycle')
       : null
-  ), [db, activeLeague?.id, activeLeague?.creatorId, authUser?.uid, isSuperAdmin]);
-  const { data: activeLeaguePrivate } = useDoc<{ contactEmail?: string; contactPhone?: string }>(activeLeaguePrivateRef);
+  ), [db, activeLeagueRoot?.id, canManageLeagues, isSuperAdmin]);
+  const { data: activeLeaguePrivate } = useDoc<{
+    contactEmail?: string;
+    contactPhone?: string;
+    teamContacts?: Record<string, Record<string, unknown>>;
+    individualRecruits?: League['individualRecruits'];
+  }>(activeLeaguePrivateRef);
+  const activeLeague = useMemo(() => {
+    if (!activeLeagueRoot) return undefined;
+    return {
+      ...activeLeagueRoot,
+      teams: Object.fromEntries(Object.entries(activeLeagueRoot.teams || {}).map(([teamId, team]) => [
+        teamId,
+        { ...team, ...(activeLeaguePrivate?.teamContacts?.[teamId] || {}) },
+      ])),
+      individualRecruits: activeLeaguePrivate?.individualRecruits || {},
+    } as League;
+  }, [activeLeagueRoot, activeLeaguePrivate]);
 
   useEffect(() => {
     if (activeLeague && activeLeague.id === selectedLeagueId) setOpeningCloneName('');

@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
+import { hashLeagueScorekeeperPin, verifyLeagueScorekeeperPin } from '../src/lib/server-competition-credential.ts';
 
 const routePath = '../../src/app/api/leagues/lifecycle/route.ts';
+const credentialSecret = 'round-one-test-secret-that-is-at-least-32-bytes';
+process.env.COMPETITION_CREDENTIAL_HMAC_SECRET = credentialSecret;
 const teamSeed = {
   'users/owner-a': { role: 'coach', plan_type: 'elite_league' },
   'users/member-a': { role: 'parent', plan_type: 'elite_league' },
@@ -90,6 +95,57 @@ test('create is replay-safe and serializes duplicate names and the final profile
     assert.equal(league.tenantId, 'profile:creator');
   } finally {
     quotaApp.dispose();
+  }
+});
+
+test('the same request identity with changed payload returns 409 without a second mutation or audit', async () => {
+  const { db, records } = communicationDb(teamSeed, { serializeTransactions: true });
+  const app = await loadCommunicationRoute(routePath, db, { uid: 'owner-a' });
+  try {
+    const first = await app.route.POST(request({
+      action: 'create', requestId: 'create-collision-0001', teamId: 'team-a', name: 'Metro', sport: 'Soccer',
+    }));
+    const collision = await app.route.POST(request({
+      action: 'create', requestId: 'create-collision-0001', teamId: 'team-a', name: 'Changed', sport: 'Soccer',
+    }));
+    assert.equal(first.status, 201);
+    assert.equal(collision.status, 409);
+    assert.equal([...records].filter(([path]) => /^leagues\/[^/]+$/.test(path)).length, 1);
+    assert.equal([...records].filter(([path]) => path.startsWith('leagueLifecycleAudits/')).length, 1);
+  } finally {
+    app.dispose();
+  }
+});
+
+test('delegated staff use tenant-owner quota and owner-created legacy identity records', async () => {
+  const seed = {
+    ...teamSeed,
+    'users/owner-a': { role: 'coach', plan_type: 'league', subscription_status: 'active', team_limit: 2 },
+    'users/staff-a': { role: 'coach', plan_type: 'free' },
+    'teams/team-a/members/staff-a': { userId: 'staff-a', position: 'Assistant Coach', status: 'active' },
+    'leagues/owner-legacy': {
+      id: 'owner-legacy', creatorId: 'owner-a', memberTeamIds: ['team-a'], teams: { 'team-a': {} },
+      lifecycleVersion: 0, name: 'Owner Legacy', sport: 'Soccer', schedule: [],
+    },
+  };
+  const { db, records } = communicationDb(seed, { serializeTransactions: true });
+  const app = await loadCommunicationRoute(routePath, db, { uid: 'staff-a' });
+  try {
+    const duplicate = await app.route.POST(request({
+      action: 'create', requestId: 'staff-duplicate-0001', teamId: 'team-a', name: 'Owner Legacy', sport: 'Soccer',
+    }));
+    assert.equal(duplicate.status, 409);
+    const second = await app.route.POST(request({
+      action: 'create', requestId: 'staff-create-0001', teamId: 'team-a', name: 'Second', sport: 'Soccer',
+    }));
+    const overQuota = await app.route.POST(request({
+      action: 'create', requestId: 'staff-create-0002', teamId: 'team-a', name: 'Third', sport: 'Soccer',
+    }));
+    assert.equal(second.status, 201);
+    assert.equal(overQuota.status, 409);
+    assert.equal([...records].filter(([path, data]) => /^leagues\/[^/]+$/.test(path) && data.tenantId === 'team-a').length, 1);
+  } finally {
+    app.dispose();
   }
 });
 
@@ -212,10 +268,15 @@ test('edit validates topology and dates, preserves schedules, and fails safe at 
   assert.equal(invalidRequest.response.status, 400);
 });
 
-test('sensitive edits move credentials and contacts off the member-readable root', async () => {
+test('sensitive edits move credentials, applicant contacts, and team contacts off the member-readable root', async () => {
   const { db, records } = communicationDb({
     ...teamSeed,
-    'leagues/league-a': { id: 'league-a', creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', sport: 'Soccer', memberUserIds: ['owner-a', 'member-a'], scorekeeperPin: 'legacy', contactEmail: 'old@example.test' },
+    'leagues/league-a': {
+      id: 'league-a', creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', sport: 'Soccer',
+      memberUserIds: ['owner-a', 'member-a'], scorekeeperPin: 'legacy', contactEmail: 'old@example.test',
+      teams: { 'team-a': { teamName: 'Falcons', coachName: 'Coach Private', coachEmail: 'coach@example.test', coachPhone: '555-0110', organizerNotes: 'private', inviteCode: 'SECRET', wins: 2 } },
+      individualRecruits: { 'recruit-a': { name: 'Applicant', email: 'applicant@example.test', phone: '555-0120', guardian_email: 'guardian@example.test', status: 'pending', teamId: null } },
+    },
   });
   const result = await call(db, { uid: 'owner-a' }, {
     action: 'edit', requestId: 'sensitive-edit-0001', leagueId: 'league-a', expectedVersion: 1,
@@ -223,10 +284,51 @@ test('sensitive edits move credentials and contacts off the member-readable root
   }, 'PATCH');
   assert.equal(result.response.status, 200);
   const root = records.get('leagues/league-a');
-  for (const field of ['scorekeeperPin', 'scorekeeperPinHash', 'contactEmail', 'contactPhone']) assert.equal(field in root, false, field);
+  for (const field of ['scorekeeperPin', 'scorekeeperPinHash', 'contactEmail', 'contactPhone', 'individualRecruits']) assert.equal(field in root, false, field);
+  for (const field of ['coachName', 'coachEmail', 'coachPhone', 'organizerNotes', 'inviteCode']) assert.equal(field in root.teams['team-a'], false, field);
+  assert.equal(root.teams['team-a'].teamName, 'Falcons');
+  assert.equal(root.teams['team-a'].wins, 2);
   assert.equal(root.description, 'Public description');
-  assert.equal(records.get('leagues/league-a/private/lifecycle').contactEmail, 'ops@example.test');
-  assert.notEqual(records.get('leagues/league-a/private/lifecycle').scorekeeperPinHash, '8274');
+  const privateData = records.get('leagues/league-a/private/lifecycle');
+  assert.equal(privateData.contactEmail, 'ops@example.test');
+  assert.equal(privateData.teamContacts['team-a'].coachEmail, 'coach@example.test');
+  assert.equal(privateData.individualRecruits['recruit-a'].guardian_email, 'guardian@example.test');
+  const expected = createHmac('sha256', credentialSecret).update('league-scorekeeper:league-a\0' + '8274').digest('hex');
+  assert.equal(privateData.scorekeeperPinHash, `hmac-sha256:v1:${expected}`);
+});
+
+test('scorekeeper HMAC verification accepts active and rotated secrets without plaintext or public hashing', async () => {
+  const { db } = communicationDb(teamSeed);
+  void db;
+  const oldSecret = 'previous-round-secret-that-is-at-least-32-bytes';
+  const stored = hashLeagueScorekeeperPin('league-a', '8274', [oldSecret]);
+  assert.equal(verifyLeagueScorekeeperPin('league-a', '8274', stored, [credentialSecret, oldSecret]), true);
+  assert.equal(verifyLeagueScorekeeperPin('league-a', 'wrong', stored, [credentialSecret, oldSecret]), false);
+  assert.equal(verifyLeagueScorekeeperPin('other-league', '8274', stored, [credentialSecret, oldSecret]), false);
+  assert.equal(stored.includes('8274'), false);
+  assert.throws(() => hashLeagueScorekeeperPin('league-a', '8274', []), /SECRET_MISSING/);
+});
+
+test('anonymous seeded demos edit only through the server lifecycle boundary', async () => {
+  const { db, records } = communicationDb({
+    'users/demo-user': { role: 'coach', plan_type: 'league', subscription_status: 'active', isDemo: true },
+    'leagues/demo-league': {
+      id: 'demo-league', creatorId: 'demo-user', tenantId: 'profile:demo-user', lifecycleVersion: 0,
+      memberUserIds: ['demo-user'], memberTeamIds: [], teams: {}, isDemo: true, demoSeeded: true,
+      demoSessionOwnerId: 'demo-user', name: 'Demo League', sport: 'Soccer', schedule: [],
+    },
+  });
+  const result = await call(db, { uid: 'demo-user', signInProvider: 'anonymous' }, {
+    action: 'edit', requestId: 'demo-edit-0001', leagueId: 'demo-league', expectedVersion: 0,
+    updates: { description: 'Server-owned demo metadata' },
+  }, 'PATCH');
+  assert.equal(result.response.status, 200);
+  assert.equal(records.get('leagues/demo-league').description, 'Server-owned demo metadata');
+  assert.equal(records.get('leagues/demo-league').lifecycleVersion, 1);
+  const denied = await call(db, { uid: 'demo-user', signInProvider: 'anonymous' }, {
+    action: 'archive', requestId: 'demo-archive-0001', leagueId: 'demo-league', expectedVersion: 1,
+  }, 'PATCH');
+  assert.equal(denied.response.status, 403);
 });
 
 test('archive retains the league and immutable audit, while dependent delete is rejected', async () => {
@@ -329,6 +431,44 @@ test('group delete is all-or-nothing when any division has retained dependencies
   assert.equal(records.has('leagues/gold'), false);
   assert.equal(records.has('leagues/silver'), false);
   assert.equal([...records.keys()].filter(path => path.startsWith('leagueLifecycleAudits/')).length, 2);
+});
+
+test('single and group delete retain division trees and access redemptions as explicit dependencies', async () => {
+  const seed = {
+    ...teamSeed,
+    'leagues/gold': { id: 'gold', creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', divisionTitle: 'Gold', sport: 'Soccer', teams: {}, memberTeamIds: [], schedule: [] },
+    'leagues/silver': { id: 'silver', creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', divisionTitle: 'Silver', sport: 'Soccer', teams: {}, memberTeamIds: [], schedule: [] },
+    'leagues/gold/divisions/division-a': { name: 'U12' },
+    'leagues/gold/divisions/division-a/standings/team-a': { wins: 1 },
+    'leagues/silver/accessRedemptions/redemption-a': { userId: 'member-a' },
+  };
+  const { db, records } = communicationDb(seed);
+  const single = await call(db, { uid: 'owner-a' }, {
+    action: 'delete', requestId: 'delete-division-tree-0001', leagueId: 'gold', expectedVersion: 1,
+  }, 'DELETE');
+  assert.equal(single.response.status, 409);
+  assert.equal(records.has('leagues/gold/divisions/division-a/standings/team-a'), true);
+
+  const group = await call(db, { uid: 'owner-a' }, {
+    action: 'delete', requestId: 'delete-retained-group-0001',
+    leagues: [{ leagueId: 'gold', expectedVersion: 1 }, { leagueId: 'silver', expectedVersion: 1 }],
+  }, 'DELETE');
+  assert.equal(group.response.status, 409);
+  assert.equal(records.has('leagues/gold'), true);
+  assert.equal(records.has('leagues/silver/accessRedemptions/redemption-a'), true);
+});
+
+test('organizer callers use private lifecycle data and never write applicant or team contact PII to roots', () => {
+  const provider = readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../src/app/(dashboard)/leagues/leagues-page-content.tsx', import.meta.url), 'utf8');
+  const demoSeeder = readFileSync(new URL('../src/lib/db-seeder.ts', import.meta.url), 'utf8');
+  assert.match(provider, /private.*lifecycle/s);
+  assert.doesNotMatch(provider, /\[`teams\.\$\{teamId\}\.coach(?:Name|Email|Phone)`\]/);
+  assert.doesNotMatch(page, /\[`individualRecruits\.\$\{playerId\}`\]/);
+  assert.match(page, /teamContacts/);
+  assert.match(page, /individualRecruits/);
+  assert.doesNotMatch(demoSeeder, /batch\.set\(doc\(db, 'leagues'/);
+  assert.match(demoSeeder, /method: 'PUT'/);
 });
 
 test('clone is replay-safe, checks collision inside the transaction, and preserves registration config identity', async () => {

@@ -1365,9 +1365,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const getLeagueMembers = useCallback(async (leagueId: string): Promise<Member[]> => {
     if (!db || !leagueId) return [];
     try {
-      const leagueSnap = await getDoc(doc(db, 'leagues', leagueId));
+      const [leagueSnap, privateSnap] = await Promise.all([
+        getDoc(doc(db, 'leagues', leagueId)),
+        getDoc(doc(db, 'leagues', leagueId, 'private', 'lifecycle')),
+      ]);
       if (!leagueSnap.exists()) return [];
-      const leagueData = leagueSnap.data();
+      const leagueRoot = leagueSnap.data();
+      const privateData = privateSnap.exists() ? privateSnap.data() : {};
+      const teamContacts = privateData.teamContacts || {};
+      const leagueData = {
+        ...leagueRoot,
+        teams: Object.fromEntries(Object.entries(leagueRoot.teams || {}).map(([teamId, team]) => [
+          teamId,
+          { ...(team as Record<string, unknown>), ...(teamContacts[teamId] || {}) },
+        ])),
+        individualRecruits: privateData.individualRecruits || {},
+      };
       const teamIds = Object.keys(leagueData.teams || {});
       
       const allMembers: Member[] = [];
@@ -2956,14 +2969,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     try {
       const q = query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains', teamId));
       const snap = await getDocs(q);
-      const updates = snap.docs.map(leagueDoc =>
-        updateDoc(leagueDoc.ref, { [`teams.${teamId}.teamLogoUrl`]: logoUrl })
-      );
+      const updates = snap.docs.map(leagueDoc => updateLeague(leagueDoc.id, {
+        teamUpdate: { teamId, publicFields: { teamLogoUrl: logoUrl }, privateFields: {} },
+      } as any));
       await Promise.all(updates);
     } catch (e) {
       console.warn('[propagateLogoToLeagues] Failed to sync logo to leagues:', e);
     }
-  }, [db]);
+  }, [db, updateLeague]);
 
   const addLeagueGame = useCallback(async (lId: string, game: any) => {
     if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
@@ -3028,26 +3041,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       }));
     }
   }, [db]);
-  const manuallyAddTeamToLeague = useCallback(async (lId: string, n: string, e?: string) => { 
-    if (db) {
-      const tid = `manual_${Date.now()}`;
-      const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      await updateDoc(doc(db, 'leagues', lId), { 
-        [`teams.${tid}`]: { 
-          teamName: n, 
-          coachEmail: e, 
-          wins: 0, 
-          losses: 0, 
-          ties: 0, 
-          points: 0, 
-          status: 'pending',
-          inviteCode: inviteCode,
-          manual: true,
-          createdAt: new Date().toISOString()
-        } 
-      }); 
-    }
-  }, [db]);
+  const manuallyAddTeamToLeague = useCallback(async (lId: string, n: string, e?: string) => {
+    const tid = `manual_${Date.now()}`;
+    await updateLeague(lId, {
+      teamUpdate: {
+        teamId: tid,
+        publicFields: {
+          teamName: n, wins: 0, losses: 0, ties: 0, points: 0,
+          status: 'pending', manual: true, createdAt: new Date().toISOString(),
+        },
+        privateFields: {
+          coachEmail: e || '',
+          inviteCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+        },
+      },
+    } as any);
+  }, [updateLeague]);
   const deleteLeagueInvite = useCallback(async (id: string) => { if (db) await deleteDoc(doc(db, 'leagues', 'global', 'invites', id)); }, [db]);
   const saveLeagueRegistrationConfig = useCallback(async (lId: string, pId: string, u: Partial<LeagueRegistrationConfig>) => {
     if (!db) throw new Error('Registration form storage is unavailable.');
@@ -3131,45 +3140,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [activeTeam?.id, firebaseAuth]);
 
-  const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => { 
-    if (!db) return; 
-    const finalUpdates: any = {};
-    
-    if (updates.origin !== undefined) finalUpdates[`teams.${teamId}.origin`] = updates.origin;
-    if (updates.coachName !== undefined) finalUpdates[`teams.${teamId}.coachName`] = updates.coachName;
-    if (updates.coachEmail !== undefined) finalUpdates[`teams.${teamId}.coachEmail`] = updates.coachEmail;
-    if (updates.coachPhone !== undefined) finalUpdates[`teams.${teamId}.coachPhone`] = updates.coachPhone;
-    if (updates.organizerNotes !== undefined) finalUpdates[`teams.${teamId}.organizerNotes`] = updates.organizerNotes;
-    if (updates.inviteCode !== undefined) finalUpdates[`teams.${teamId}.inviteCode`] = updates.inviteCode.toUpperCase();
-    if (updates.wins !== undefined) finalUpdates[`teams.${teamId}.wins`] = parseInt(updates.wins.toString());
-    if (updates.losses !== undefined) finalUpdates[`teams.${teamId}.losses`] = parseInt(updates.losses.toString());
-    if (updates.ties !== undefined) finalUpdates[`teams.${teamId}.ties`] = parseInt(updates.ties.toString());
-    if (updates.points !== undefined) finalUpdates[`teams.${teamId}.points`] = parseInt(updates.points.toString());
-    
-    if (updates.teamName !== undefined) {
-      finalUpdates[`teams.${teamId}.teamName`] = updates.teamName;
-      
-      // Update schedule to reflect new team name
-      const snap = await getDoc(doc(db, 'leagues', leagueId));
-      if (snap.exists()) {
-        const data = snap.data();
-        const schedule = (data.schedule || []).map((g: any) => {
-          let updated = false;
-          let t1 = g.team1;
-          let t2 = g.team2;
-          
-          if (g.team1Id === teamId) { t1 = updates.teamName; updated = true; }
-          if (g.team2Id === teamId) { t2 = updates.teamName; updated = true; }
-          
-          return updated ? { ...g, team1: t1, team2: t2 } : g;
-        });
-        if (schedule.length > 0) finalUpdates.schedule = schedule;
-      }
-    }
-    
-    await updateDoc(doc(db, 'leagues', leagueId), finalUpdates); 
+  const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => {
+    const publicFields = Object.fromEntries(
+      ['origin', 'teamName', 'wins', 'losses', 'ties', 'points']
+        .filter(key => updates[key] !== undefined)
+        .map(key => [key, ['wins', 'losses', 'ties', 'points'].includes(key) ? parseInt(updates[key].toString()) : updates[key]])
+    );
+    const privateFields = Object.fromEntries(
+      ['coachName', 'coachEmail', 'coachPhone', 'organizerNotes', 'inviteCode']
+        .filter(key => updates[key] !== undefined)
+        .map(key => [key, key === 'inviteCode' ? updates[key].toUpperCase() : updates[key]])
+    );
+    await updateLeague(leagueId, { teamUpdate: { teamId, publicFields, privateFields } } as any);
     toast({ title: "Sync Successful", description: "Team details and tournament fixtures updated." });
-  }, [db]);
+  }, [updateLeague]);
 
   const upgradeChildToLogin = useCallback(async (childId: string) => { if (db) await updateDoc(doc(db, 'players', childId), { hasLogin: true }); }, [db]);
   const registerChild = useCallback(async (first: string, last: string, dob: string, email?: string) => { 

@@ -338,7 +338,9 @@ beforeEach(async () => {
       }),
       setDoc(doc(db, 'leagues', 'league-a'), {
         creatorId: 'owner',
+        tenantId: 'team-a',
         memberUserIds: ['owner', 'member'],
+        sensitiveFieldsMigrated: true,
       }),
       setDoc(doc(db, 'leagues', 'scheduled-league'), {
         creatorId: 'owner',
@@ -568,6 +570,7 @@ test('payment records are server-written and members can read only their own rec
 test('team creation is server-only and tenant reads require membership', async () => {
   const ownerDb = authenticatedDb('owner');
   const memberDb = authenticatedDb('member');
+  const staffDb = authenticatedDb('staff');
   const outsiderDb = authenticatedDb('outsider');
 
   await assertSucceeds(getDoc(doc(ownerDb, 'teams', 'team-a')));
@@ -629,15 +632,43 @@ test('league creation is server-only and legacy invite PII is admin-only', async
 test('league lifecycle roots and sensitive fields are server-owned', async () => {
   const ownerDb = authenticatedDb('owner');
   const memberDb = authenticatedDb('member');
+  const staffDb = authenticatedDb('staff');
+  const outsiderDb = authenticatedDb('outsider');
   const leagueRef = doc(ownerDb, 'leagues', 'league-a');
 
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await Promise.all([
+      setDoc(doc(db, 'leagues', 'league-a', 'private', 'lifecycle'), {
+        teamContacts: { 'team-a': { coachEmail: 'coach@example.test' } },
+        individualRecruits: { 'recruit-a': { email: 'applicant@example.test', phone: '555-0100' } },
+      }),
+      setDoc(doc(db, 'leagues', 'league-a', 'invites', 'invite-a'), { invitedEmail: 'invitee@example.test' }),
+      setDoc(doc(db, 'leagues', 'unsafe-league'), {
+        creatorId: 'owner', memberUserIds: ['owner', 'member'],
+        teams: { 'team-a': { coachEmail: 'coach@example.test' } },
+        individualRecruits: { 'recruit-a': { email: 'applicant@example.test' } },
+      }),
+    ]);
+  });
+
+  await assertSucceeds(getDoc(doc(memberDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'unsafe-league')));
   await assertFails(setDoc(leagueRef, { name: 'Direct metadata bypass' }, { merge: true }));
   await assertFails(setDoc(leagueRef, { scorekeeperPin: '8274' }, { merge: true }));
   await assertFails(setDoc(leagueRef, { contactEmail: 'private@example.test' }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { teams: { 'team-a': { coachEmail: 'private@example.test' } } }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { individualRecruits: { 'recruit-a': { email: 'private@example.test' } } }, { merge: true }));
   await assertFails(deleteDoc(leagueRef));
   await assertSucceeds(setDoc(leagueRef, { finances: { 'team-a': { totalPaid: 25 } } }, { merge: true }));
   await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a', 'private', 'lifecycle'), { scorekeeperPinHash: 'forged' }));
+  await assertSucceeds(getDoc(doc(staffDb, 'leagues', 'league-a', 'private', 'lifecycle')));
   await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a', 'private', 'lifecycle')));
+  await assertSucceeds(getDoc(doc(ownerDb, 'leagues', 'league-a', 'invites', 'invite-a')));
+  await assertSucceeds(getDoc(doc(staffDb, 'leagues', 'league-a', 'invites', 'invite-a')));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a', 'invites', 'invite-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a', 'invites', 'invite-a')));
   await assertFails(setDoc(doc(memberDb, 'leagueLifecycleAudits', 'forged'), { action: 'delete' }));
   await assertFails(getDoc(doc(memberDb, 'leagueLifecycleAudits', 'forged')));
 });
@@ -654,7 +685,7 @@ test('anonymous demo sessions can read only their server-scoped demo teams', asy
   await assertFails(getDoc(doc(otherDemoDb, 'teams', 'demo-team')));
 });
 
-test('anonymous demos can enrich protected server-created shells', async () => {
+test('anonymous demos cannot directly enrich protected server-created league shells', async () => {
   const demoDb = authenticatedDb('demo-user', {
     firebase: { sign_in_provider: 'anonymous' },
   });
@@ -677,13 +708,14 @@ test('anonymous demos can enrich protected server-created shells', async () => {
     ]);
   });
 
-  const batch = writeBatch(demoDb);
-  batch.set(doc(demoDb, 'leagues', 'demo-league'), {
+  await assertFails(setDoc(doc(demoDb, 'leagues', 'demo-league'), {
     creatorId: 'demo-user',
     memberUserIds: ['demo-user'],
     memberTeamIds: ['demo-team'],
     name: 'Demo League',
-  }, { merge: true });
+  }, { merge: true }));
+
+  const batch = writeBatch(demoDb);
   batch.set(doc(demoDb, 'teams', 'demo-team'), {
     name: 'Demo Team',
     ownerUserId: 'fictional-coach',
@@ -1281,6 +1313,7 @@ test('league collection queries cannot discover other organizations', async () =
   await assertSucceeds(getDocs(query(
     collection(memberDb, 'leagues'),
     where('memberUserIds', 'array-contains', 'member'),
+    where('sensitiveFieldsMigrated', '==', true),
   )));
   await assertFails(getDocs(collection(outsiderDb, 'leagues')));
 });

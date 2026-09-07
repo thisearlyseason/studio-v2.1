@@ -50,6 +50,20 @@ test('public league payload excludes private contacts, PINs, finances, and invit
   assert.equal('internalNotes' in result.schedule[0], false);
 });
 
+test('league registration contacts and scorekeeper credentials stay in the protected private projection', async () => {
+  const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  assert.match(source, /collection\('private'\)\.doc\('lifecycle'\)/);
+  assert.match(source, /verifyLeagueScorekeeperPin\(ref\.id, code, privatePinHash\)/);
+  assert.doesNotMatch(source, /credentialsMatch\(league\.scorekeeperPin/);
+  const projectionStart = source.indexOf("      if (kind === 'league') {", source.indexOf('batch.create(entry, entryData)'));
+  const projectionEnd = source.indexOf('      if (signature) {', projectionStart);
+  const projection = source.slice(projectionStart, projectionEnd);
+  assert.match(projection, /teamContacts/);
+  assert.match(projection, /individualRecruits/);
+  const rootTeamUpdate = projection.slice(projection.indexOf('batch.update(parentRef'), projection.indexOf('batch.set(leaguePrivateRef'));
+  assert.doesNotMatch(rootTeamUpdate, /coachEmail|coachPhone|coachName|inviteCode/);
+});
+
 test('public tournament payload excludes scoring codes and referee contact details', () => {
   const result = publicTournament('event-1', {
     isTournament: true, scoringCode: 'SECRET', adminEmails: ['private@example.com'],

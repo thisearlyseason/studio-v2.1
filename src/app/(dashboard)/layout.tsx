@@ -106,7 +106,7 @@ function DemoSeedWrapper({
         const bootstrapPayload = await bootstrapResponse.json();
         if (!bootstrapResponse.ok) throw new Error(bootstrapPayload.error || 'Unable to initialize the demo.');
 
-        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId);
+        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId, false, idToken);
 
         if (primaryId) {
           localStorage.setItem('sf_session_team_id', primaryId);
@@ -239,7 +239,7 @@ function BetaDemoSeeder({
         });
         if (!bootstrap.ok) throw new Error((await bootstrap.json()).error || 'Unable to initialize beta workspace.');
 
-        const primaryId = await seedGuestDemoTeam(db, user.uid, planId, true /* isBetaTester */);
+        const primaryId = await seedGuestDemoTeam(db, user.uid, planId, true /* isBetaTester */, idToken);
         if (primaryId) {
           localStorage.setItem('sf_session_team_id', primaryId);
         }

@@ -46,9 +46,9 @@ class BatchHelper {
     if (this.chunkPaths.length < 20) {
       this.chunkPaths.push(ref.path ?? ref._key?.path?.segments?.join('/') ?? String(ref));
     }
-    // Trusted server code creates demo team and league roots first. Merge client
-    // blueprint data so server-owned session markers are never removed.
-    const isProtectedDemoRoot = /^(teams|leagues)\/[^/]+$/.test(ref.path || '') && data?.isDemo === true;
+    // Trusted server code creates demo team roots first. League blueprints use
+    // persistDemoLeague() so no client batch can mutate a league root directly.
+    const isProtectedDemoRoot = /^teams\/[^/]+$/.test(ref.path || '') && data?.isDemo === true;
     if (opts) {
       this.batch.set(ref, data, opts);
     } else if (isProtectedDemoRoot) {
@@ -539,7 +539,7 @@ const GET_DEMO_DATA = (
  * Ensures a stable, predictable reset for demo users.
  * Pass isBetaTester=true to preserve the user's real name/email (beta accounts use real auth identities).
  */
-export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string, isBetaTester = false) {
+export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string, isBetaTester = false, idToken?: string) {
   const nowObj = new Date();
   const now = nowObj.toISOString();
   const day = (d: number) => new Date(nowObj.getTime() + d * 86400000).toISOString();
@@ -559,6 +559,15 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // league_demo gets facilities/equipment seeded (like a Pro demo) but NO paid Pro team quota
   const isProTier = planId !== 'starter_squad' && planId !== 'free';
   const activeDemoLeagueId = `demo_league_${userId.slice(-4)}`;
+  const persistDemoLeague = async (leagueId: string, league: Record<string, unknown>) => {
+    if (!idToken) throw new Error('Demo session expired. Please start the demo again.');
+    const response = await fetch('/api/demo/seed', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ leagueId, league: clean(league) }),
+    });
+    if (!response.ok) throw new Error((await response.json()).error || 'Unable to initialize the demo league.');
+  };
 
   // --- PRE-FLIGHT CLEANUP ROUTINE ---
   // If the user is running the seeder multiple times, ghost events and overlapping teams pile up.
@@ -715,7 +724,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const tids = [strikerId, lakerId];
 
         // 1. Create a Global League Document
-        batch.set(doc(db, 'leagues', leagueId), clean({
+        await persistDemoLeague(leagueId, {
             id: leagueId,
             name: 'Elite Youth League',
             description: 'The premier circuit for local talent.',
@@ -741,7 +750,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               { id: 'lg7', team1: 'Lakers', team1Id: lakerId, team2: 'Eagles', team2Id: 'eagles_id', date: new Date(nowObj.getTime() + 14 * 86400000).toISOString(), time: '03:00 PM', location: 'Main Arena', status: 'scheduled' }
             ],
             createdAt: now
-        }));
+        });
 
         // 2. Create the Teams (Strikers & Lakers)
         const variants = [
@@ -1077,7 +1086,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const primaryTid = isLeagueDemo ? 'wildcats_id' : `demo_${planId}_${userId.slice(-4)}${teamVariants[0] ? '_' + teamVariants[0].toLowerCase().replace(/\s+/g, '') : ''}`;
         const secondTid = isLeagueDemo ? 'stars_id' : (Object.keys(leagueTeams)[1] || primaryTid);
         
-        batch.set(doc(db, 'leagues', leagueId), clean({
+        await persistDemoLeague(leagueId, {
             id: leagueId,
             name: isSchoolDemo ? 'State Academic Athletic League' : 'Apex Premier Circuit',
             description: 'The premier circuit for top-tier competitive programs.',
@@ -1115,7 +1124,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               { id: 'sched6', team1: 'Elite Squad - Premier Division', team1Id: primaryTid, team2: 'Apex United', team2Id: 'apex_id', date: new Date(nowObj.getTime() + 12 * 86400000).toISOString(), time: '01:00 PM', location: 'State Complex', status: 'scheduled' },
               { id: 'sched7', team1: 'Elite Squad - Championship Division', team1Id: secondTid, team2: 'City Wildcats', team2Id: 'wildcats_id', date: new Date(nowObj.getTime() + 14 * 86400000).toISOString(), time: '03:30 PM', location: 'Main Arena', status: 'scheduled' }
             ]
-        }));
+        });
     }
 
     // ── School Institution (lightweight record — no events, no roster) ────────

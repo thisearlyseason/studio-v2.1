@@ -198,6 +198,15 @@ service cloud.firestore {
         );
     }
 
+    function isLeagueOrganizer(leagueId) {
+      let league = get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+      let tenantId = league.get('tenantId', '');
+      return isSignedIn() && (
+        league.get('creatorId', '') == request.auth.uid ||
+        (tenantId != '' && exists(/databases/$(database)/documents/teams/$(tenantId)) && isTeamStaff(tenantId))
+      );
+    }
+
     // Subscription state is server-managed. Every browser-created team starts
     // free; a trusted server flow activates Pro only after a paid upgrade.
     function requestsPaidTeam() {
@@ -753,7 +762,8 @@ allow create, update: if false; // Authenticated incident service only.
         resource.data.get('creatorId', '') == request.auth.uid ||
         (
           resource.data.get('memberUserIds', []).hasAny([request.auth.uid]) &&
-          !resource.data.keys().hasAny(['scorekeeperPin', 'scorekeeperPinHash', 'contactEmail', 'contactPhone'])
+          resource.data.get('sensitiveFieldsMigrated', false) == true &&
+          !resource.data.keys().hasAny(['scorekeeperPin', 'scorekeeperPinHash', 'contactEmail', 'contactPhone', 'individualRecruits'])
         )
       ));
       // Creation is server-mediated so the account's current plan limit cannot
@@ -772,26 +782,18 @@ allow create, update: if false; // Authenticated incident service only.
           'registrationCost', 'paymentInstructions', 'socialLinks', 'slug',
           'requiredSquads', 'blackoutDaysOfWeek', 'divisions', 'is_active',
           'isArchived', 'scorekeeperPin', 'scorekeeperPinHash', 'memberUserIds',
-          'isDemo', 'demoSessionOwnerId', 'demoSeeded', 'registrationEntryCount'
+          'isDemo', 'demoSessionOwnerId', 'demoSeeded', 'registrationEntryCount',
+          'teams', 'individualRecruits', 'sensitiveFieldsMigrated'
         ]) &&
         (
           request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&
           request.resource.data.get('schedulerConfig', null) == resource.data.get('schedulerConfig', null)
         )
-      ) || (
-        isAnonymousSession() &&
-        resource.data.get('isDemo', false) == true &&
-        resource.data.get('demoSeeded', false) == true &&
-        resource.data.get('demoSessionOwnerId', '') == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'name', 'sport', 'description', 'ages'
-        ])
       );
       allow delete: if false;
 
       match /private/{privateId} {
-        allow read: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
         allow write: if false;
       }
 
@@ -820,7 +822,7 @@ allow create, update: if false; // Authenticated incident service only.
       }
 
       match /invites/{inviteId} {
-        allow read: if isSuperAdmin() || isLeagueMember(leagueId);
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
         allow write: if isSuperAdmin() || (isSignedIn() &&
           get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
       }

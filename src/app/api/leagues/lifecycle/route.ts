@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { FieldValue, type DocumentData, type QueryDocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
 import { accountCreationLimit, normalizeCreationText } from '@/lib/account-creation-policy';
@@ -23,6 +22,7 @@ import {
   resolveLeagueCloneIdentity,
 } from '@/lib/server-league-cloning';
 import { readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
+import { hashLeagueScorekeeperPin } from '@/lib/server-competition-credential';
 
 type LeagueEditableFields = {
   name?: string;
@@ -43,6 +43,15 @@ type LeagueEditableFields = {
   is_active?: boolean;
   isArchived?: false;
   scorekeeperPin?: string;
+  teamUpdate?: {
+    teamId: string;
+    publicFields: DocumentData;
+    privateFields: DocumentData;
+  };
+  individualRecruitUpdate?: {
+    recruitId: string;
+    recruit: DocumentData;
+  };
 };
 
 type LeagueLifecycleRequest =
@@ -61,12 +70,25 @@ export type LeagueLifecycleResult = {
 
 const LEAGUE_ID = /^[A-Za-z0-9_-]{1,200}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const SENSITIVE_ROOT_FIELDS = ['scorekeeperPin', 'scorekeeperPinHash', 'contactEmail', 'contactPhone'] as const;
+const SENSITIVE_ROOT_FIELDS = ['scorekeeperPin', 'scorekeeperPinHash', 'contactEmail', 'contactPhone', 'individualRecruits'] as const;
+const PRIVATE_TEAM_FIELDS = ['coachName', 'coachEmail', 'coachPhone', 'organizerNotes', 'inviteCode'] as const;
 const SCHEDULE_FIELDS = new Set(['startDate', 'endDate', 'blackoutDaysOfWeek', 'divisions']);
 const EDITABLE_FIELDS = new Set([
   'name', 'sport', 'description', 'startDate', 'endDate', 'ages', 'contactEmail', 'contactPhone',
   'registrationCost', 'paymentInstructions', 'socialLinks', 'slug', 'requiredSquads',
   'blackoutDaysOfWeek', 'divisions', 'is_active', 'isArchived', 'scorekeeperPin',
+  'teamUpdate', 'individualRecruitUpdate',
+]);
+
+const TEAM_PUBLIC_EDIT_FIELDS = new Set([
+  'teamName', 'teamLogoUrl', 'teamId', 'origin', 'wins', 'losses', 'ties', 'points',
+  'status', 'signedAt', 'manual', 'createdAt', 'division',
+]);
+const TEAM_PRIVATE_EDIT_FIELDS = new Set<string>(PRIVATE_TEAM_FIELDS);
+const RECRUIT_EDIT_FIELDS = new Set([
+  'name', 'email', 'phone', 'status', 'signedAt', 'manual', 'teamName', 'teamCode',
+  'teamId', 'inviteCode', 'code', 'guardian_name', 'guardian_email', 'guardian_phone',
+  'guardian_relationship',
 ]);
 
 function fail(code: string): never {
@@ -99,6 +121,61 @@ function parseStringArray(value: unknown, field: string, maxItems: number): stri
   const result = value.map(item => text(item, field, 120)!);
   if (new Set(result.map(item => item.toLocaleLowerCase())).size !== result.length) fail(`${field.toUpperCase()}_INVALID`);
   return result;
+}
+
+function plainRecord(value: unknown, code: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail(code);
+  return value as Record<string, unknown>;
+}
+
+function parseTeamUpdate(value: unknown): NonNullable<LeagueEditableFields['teamUpdate']> {
+  const input = plainRecord(value, 'TEAMUPDATE_INVALID');
+  const teamIdValue = leagueId(input.teamId);
+  const publicFields = plainRecord(input.publicFields ?? {}, 'TEAMUPDATE_INVALID');
+  const privateInput = plainRecord(input.privateFields ?? {}, 'TEAMUPDATE_INVALID');
+  if (
+    Object.keys(input).some(key => !['teamId', 'publicFields', 'privateFields'].includes(key)) ||
+    Object.keys(publicFields).some(key => !TEAM_PUBLIC_EDIT_FIELDS.has(key)) ||
+    Object.keys(privateInput).some(key => !TEAM_PRIVATE_EDIT_FIELDS.has(key)) ||
+    (!Object.keys(publicFields).length && !Object.keys(privateInput).length)
+  ) fail('TEAMUPDATE_INVALID');
+  const parsedPublic: DocumentData = {};
+  for (const [key, item] of Object.entries(publicFields)) {
+    if (['wins', 'losses', 'ties', 'points'].includes(key)) {
+      if (!Number.isInteger(item) || Number(item) < 0 || Number(item) > 1_000_000) fail('TEAMUPDATE_INVALID');
+      parsedPublic[key] = Number(item);
+    } else if (key === 'manual') {
+      if (typeof item !== 'boolean') fail('TEAMUPDATE_INVALID');
+      parsedPublic[key] = item;
+    } else {
+      if (item !== null && (typeof item !== 'string' || item.length > 2_000)) fail('TEAMUPDATE_INVALID');
+      parsedPublic[key] = typeof item === 'string' ? item.trim() : item;
+    }
+  }
+  const parsedPrivate = Object.fromEntries(Object.entries(privateInput).map(([key, item]) => {
+    if (item !== null && (typeof item !== 'string' || item.length > 2_000)) fail('TEAMUPDATE_INVALID');
+    return [key, key === 'inviteCode' && typeof item === 'string' ? item.trim().toUpperCase() : typeof item === 'string' ? item.trim() : item];
+  }));
+  return { teamId: teamIdValue, publicFields: parsedPublic, privateFields: parsedPrivate };
+}
+
+function parseIndividualRecruitUpdate(value: unknown): NonNullable<LeagueEditableFields['individualRecruitUpdate']> {
+  const input = plainRecord(value, 'INDIVIDUALRECRUITUPDATE_INVALID');
+  const recruitId = leagueId(input.recruitId);
+  const recruit = plainRecord(input.recruit, 'INDIVIDUALRECRUITUPDATE_INVALID');
+  if (Object.keys(input).some(key => !['recruitId', 'recruit'].includes(key)) || Object.keys(recruit).some(key => !RECRUIT_EDIT_FIELDS.has(key))) {
+    fail('INDIVIDUALRECRUITUPDATE_INVALID');
+  }
+  const parsed = Object.fromEntries(Object.entries(recruit).map(([key, item]) => {
+    if (key === 'manual') {
+      if (typeof item !== 'boolean') fail('INDIVIDUALRECRUITUPDATE_INVALID');
+      return [key, item];
+    }
+    if (item !== null && (typeof item !== 'string' || item.length > 2_000)) fail('INDIVIDUALRECRUITUPDATE_INVALID');
+    return [key, typeof item === 'string' ? item.trim() : item];
+  }));
+  if (typeof parsed.email === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed.email)) fail('INDIVIDUALRECRUITUPDATE_INVALID');
+  return { recruitId, recruit: parsed };
 }
 
 function parseUpdates(value: unknown): LeagueEditableFields {
@@ -156,6 +233,8 @@ function parseUpdates(value: unknown): LeagueEditableFields {
     if (typeof input.scorekeeperPin !== 'string' || input.scorekeeperPin.trim().length < 4 || input.scorekeeperPin.trim().length > 64) fail('SCOREKEEPERPIN_INVALID');
     updates.scorekeeperPin = input.scorekeeperPin.trim();
   }
+  if ('teamUpdate' in input) updates.teamUpdate = parseTeamUpdate(input.teamUpdate);
+  if ('individualRecruitUpdate' in input) updates.individualRecruitUpdate = parseIndividualRecruitUpdate(input.individualRecruitUpdate);
   return updates;
 }
 
@@ -208,7 +287,28 @@ function currentVersion(league: DocumentData): number {
 }
 
 function pinHash(leagueIdValue: string, pin: string): string {
-  return createHash('sha256').update(`${leagueIdValue}\0${pin}`).digest('hex');
+  return hashLeagueScorekeeperPin(leagueIdValue, pin);
+}
+
+function privateTeamContacts(root: DocumentData): DocumentData {
+  const contacts: DocumentData = {};
+  if (!root.teams || typeof root.teams !== 'object' || Array.isArray(root.teams)) return contacts;
+  for (const [teamIdValue, teamValue] of Object.entries(root.teams)) {
+    if (!teamValue || typeof teamValue !== 'object' || Array.isArray(teamValue)) continue;
+    const contact = Object.fromEntries(PRIVATE_TEAM_FIELDS
+      .filter(field => field in teamValue)
+      .map(field => [field, (teamValue as DocumentData)[field]]));
+    if (Object.keys(contact).length) contacts[teamIdValue] = contact;
+  }
+  return contacts;
+}
+
+function memberSafeTeams(root: DocumentData): DocumentData {
+  if (!root.teams || typeof root.teams !== 'object' || Array.isArray(root.teams)) return {};
+  return Object.fromEntries(Object.entries(root.teams).map(([teamIdValue, teamValue]) => {
+    if (!teamValue || typeof teamValue !== 'object' || Array.isArray(teamValue)) return [teamIdValue, teamValue];
+    return [teamIdValue, Object.fromEntries(Object.entries(teamValue).filter(([field]) => !PRIVATE_TEAM_FIELDS.includes(field as typeof PRIVATE_TEAM_FIELDS[number])))];
+  }));
 }
 
 function privateFields(leagueIdValue: string, root: DocumentData, existing: DocumentData, updates: LeagueEditableFields = {}): DocumentData {
@@ -217,9 +317,14 @@ function privateFields(leagueIdValue: string, root: DocumentData, existing: Docu
   const contactPhone = updates.contactPhone ?? root.contactPhone;
   if (typeof contactEmail === 'string') result.contactEmail = contactEmail;
   if (typeof contactPhone === 'string') result.contactPhone = contactPhone;
+  const teamContacts = { ...(existing.teamContacts || {}), ...privateTeamContacts(root) };
+  if (Object.keys(teamContacts).length) result.teamContacts = teamContacts;
+  if (root.individualRecruits && typeof root.individualRecruits === 'object' && !Array.isArray(root.individualRecruits)) {
+    result.individualRecruits = { ...(existing.individualRecruits || {}), ...root.individualRecruits };
+  }
+  if (typeof result.scorekeeperPinHash === 'string' && !result.scorekeeperPinHash.startsWith('hmac-sha256:v1:')) delete result.scorekeeperPinHash;
   if (updates.scorekeeperPin) result.scorekeeperPinHash = pinHash(leagueIdValue, updates.scorekeeperPin);
   else if (typeof root.scorekeeperPin === 'string' && root.scorekeeperPin) result.scorekeeperPinHash = pinHash(leagueIdValue, root.scorekeeperPin);
-  else if (typeof root.scorekeeperPinHash === 'string' && root.scorekeeperPinHash) result.scorekeeperPinHash = root.scorekeeperPinHash;
   return result;
 }
 
@@ -239,6 +344,14 @@ async function preflight(auth: DecodedToken, input: LeagueLifecycleRequest): Pro
       : input.action === 'delete'
         ? input.leagues.map(target => target.leagueId)
         : [input.leagueId];
+    if (auth.signInProvider === 'anonymous') {
+      if (input.action !== 'edit') fail('ANONYMOUS_DEMO_MUTATION_FORBIDDEN');
+      const demo = await transaction.get(adminDb.collection('leagues').doc(input.leagueId));
+      const data = demo.data() || {};
+      if (!demo.exists || data.isDemo !== true || data.demoSeeded !== true || data.demoSessionOwnerId !== auth.uid || data.tenantId !== `profile:${auth.uid}`) {
+        fail('ANONYMOUS_DEMO_MUTATION_FORBIDDEN');
+      }
+    }
     const authorities = await Promise.all(leagueIds.map(id => resolveCompetitionAuthority({
       db: adminDb,
       transaction,
@@ -275,9 +388,17 @@ async function assertCurrentAuthority(
   if (current.tenantId !== expectedTenantId) fail('LEAGUE_TENANT_CONFLICT');
 }
 
-async function existingTenantLeagues(transaction: Transaction, tenantId: string, auth: DecodedToken): Promise<QueryDocumentSnapshot[]> {
+async function tenantOwnerUid(transaction: Transaction, tenantId: string): Promise<string> {
+  if (tenantId.startsWith('profile:')) return tenantId.slice('profile:'.length);
+  const team = await transaction.get(adminDb.collection('teams').doc(tenantId));
+  const ownerUid = team.data()?.ownerUserId;
+  if (!team.exists || typeof ownerUid !== 'string' || !ownerUid.trim()) fail('TENANT_OWNER_MISSING');
+  return ownerUid.trim();
+}
+
+async function existingTenantLeagues(transaction: Transaction, tenantId: string, auth: DecodedToken, ownerUid: string): Promise<QueryDocumentSnapshot[]> {
   const explicit = await transaction.get(adminDb.collection('leagues').where('tenantId', '==', tenantId));
-  const legacy = await transaction.get(adminDb.collection('leagues').where('creatorId', '==', auth.uid));
+  const legacy = await transaction.get(adminDb.collection('leagues').where('creatorId', '==', ownerUid));
   const deterministicLegacy = await Promise.all(legacy.docs
     .filter(doc => !doc.data().tenantId)
     .map(async doc => {
@@ -338,11 +459,12 @@ async function mutateCreate(auth: DecodedToken, input: Extract<LeagueLifecycleRe
   const createdLeagueId = `league_${generated.id}`;
   return runCompetitionOperation({ db: adminDb, actorUid: auth.uid, identity }, async ({ transaction }) => {
     await assertCurrentAuthority(transaction, auth, authority.tenantId, { teamId: input.teamId });
-    const profileRef = adminDb.collection('users').doc(auth.uid);
+    const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
+    const profileRef = adminDb.collection('users').doc(ownerUid);
     const profile = await transaction.get(profileRef);
     if (!profile.exists) fail('OWNER_PROFILE_MISSING');
     const team = input.teamId ? await transaction.get(adminDb.collection('teams').doc(input.teamId)) : null;
-    const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth);
+    const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth, ownerUid);
     assertIdentityAvailable(leagues, input.name, input.divisionTitle || '');
     const nameReservation = adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, input.name, input.divisionTitle || ''));
     if ((await transaction.get(nameReservation)).exists) fail(input.divisionTitle ? 'DIVISION_ALREADY_EXISTS' : 'LEAGUE_ALREADY_EXISTS');
@@ -354,7 +476,7 @@ async function mutateCreate(auth: DecodedToken, input: Extract<LeagueLifecycleRe
     });
     transaction.create(adminDb.collection('leagues').doc(createdLeagueId), {
       id: createdLeagueId, name: input.name, divisionTitle: input.divisionTitle || '', creatorId: auth.uid,
-      tenantId: authority.tenantId, lifecycleVersion: 1, sport: input.sport || team?.data()?.sport || 'General',
+      tenantId: authority.tenantId, lifecycleVersion: 1, sensitiveFieldsMigrated: true, sport: input.sport || team?.data()?.sport || 'General',
       teams: input.teamId ? { [input.teamId]: { teamName: team?.data()?.teamName || team?.data()?.name || 'Team', teamLogoUrl: team?.data()?.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0, status: 'accepted' } } : {},
       memberTeamIds: input.teamId ? [input.teamId] : [], memberUserIds: [auth.uid], memberIndivIds: [],
       finances: {}, inviteCode: createdLeagueId.slice(-6).toUpperCase(), createdAt: now, isArchived: false,
@@ -376,9 +498,10 @@ async function mutateClone(auth: DecodedToken, input: Extract<LeagueLifecycleReq
     if (!sourceSnapshot.exists) fail('LEAGUE_NOT_FOUND');
     const sourcePrivate = await transaction.get(sourceRef.collection('private').doc('lifecycle'));
     const configs = await transaction.get(sourceRef.collection('registration'));
-    const profile = await transaction.get(adminDb.collection('users').doc(auth.uid));
+    const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
+    const profile = await transaction.get(adminDb.collection('users').doc(ownerUid));
     if (!profile.exists) fail('OWNER_PROFILE_MISSING');
-    const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth);
+    const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth, ownerUid);
     const source = { id: sourceSnapshot.id, ...(sourceSnapshot.data() || {}) } as Record<string, unknown> & { id: string; name: string; divisionTitle?: string };
     if (source.isArchived === true) fail('LEAGUE_LIFECYCLE_STATE_CONFLICT');
     const existingLeagues = leagues.map(league => ({ id: league.id, ...league.data() }));
@@ -391,7 +514,7 @@ async function mutateClone(auth: DecodedToken, input: Extract<LeagueLifecycleReq
     transaction.create(nameReservation, {
       tenantId: authority.tenantId, leagueId: clonedLeagueId, nameKey: nameKey(cloneIdentity.name), divisionKey: nameKey(cloneIdentity.divisionTitle), createdAt: now,
     });
-    transaction.create(cloneRef, { ...buildLeagueCloneDocument({ source, leagueId: clonedLeagueId, actorUid: auth.uid, identity: cloneIdentity, now }), tenantId: authority.tenantId, lifecycleVersion: 1 });
+    transaction.create(cloneRef, { ...buildLeagueCloneDocument({ source, leagueId: clonedLeagueId, actorUid: auth.uid, identity: cloneIdentity, now }), tenantId: authority.tenantId, lifecycleVersion: 1, sensitiveFieldsMigrated: true });
     const clonePrivate = buildLeagueClonePrivateDocument({ source: { ...source, ...(sourcePrivate.data() || {}) } });
     if (Object.keys(clonePrivate).length) transaction.set(cloneRef.collection('private').doc('lifecycle'), clonePrivate);
     for (const config of configs.docs) transaction.set(cloneRef.collection('registration').doc(config.id), { ...config.data(), is_active: false });
@@ -405,20 +528,26 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
   return runCompetitionOperation({ db: adminDb, actorUid: auth.uid, identity }, async ({ transaction }) => {
     await assertCurrentAuthority(transaction, auth, authority.tenantId, { leagueId: input.leagueId });
     const rootRef = adminDb.collection('leagues').doc(input.leagueId);
+    const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
     const [snapshot, privateSnapshot, leagues] = await Promise.all([
       transaction.get(rootRef),
       transaction.get(rootRef.collection('private').doc('lifecycle')),
-      existingTenantLeagues(transaction, authority.tenantId, auth),
+      existingTenantLeagues(transaction, authority.tenantId, auth, ownerUid),
     ]);
     if (!snapshot.exists) fail('LEAGUE_NOT_FOUND');
     const league = snapshot.data() || {};
+    if (auth.signInProvider === 'anonymous' && (
+      league.isDemo !== true || league.demoSeeded !== true || league.demoSessionOwnerId !== auth.uid ||
+      league.tenantId !== `profile:${auth.uid}`
+    )) fail('ANONYMOUS_DEMO_MUTATION_FORBIDDEN');
     assertVersion(league, input.expectedVersion);
     const isRestore = Object.keys(input.updates).length === 1 && input.updates.isArchived === false;
     if (league.isArchived === true && !isRestore) fail('LEAGUE_LIFECYCLE_STATE_CONFLICT');
     const nextStart = input.updates.startDate ?? league.startDate;
     const nextEnd = input.updates.endDate ?? league.endDate;
     if (nextStart && nextEnd && nextStart > nextEnd) fail('DATE_RANGE_INVALID');
-    const scheduleChanged = [...SCHEDULE_FIELDS].some(field => field in input.updates && JSON.stringify(input.updates[field as keyof LeagueEditableFields]) !== JSON.stringify(league[field]));
+    const scheduleChanged = [...SCHEDULE_FIELDS].some(field => field in input.updates && JSON.stringify(input.updates[field as keyof LeagueEditableFields]) !== JSON.stringify(league[field])) ||
+      Boolean(input.updates.teamUpdate?.publicFields.teamName && input.updates.teamUpdate.publicFields.teamName !== league.teams?.[input.updates.teamUpdate.teamId]?.teamName);
     const hasScheduleState = (Array.isArray(league.schedule) && league.schedule.length > 0) || (league.schedulerConfig && typeof league.schedulerConfig === 'object');
     if (scheduleChanged && hasScheduleState) fail('SCHEDULE_MUTATION_BOUNDARY_REQUIRED');
     if (input.updates.name) assertIdentityAvailable(leagues, input.updates.name, String(league.divisionTitle || ''), input.leagueId);
@@ -426,10 +555,36 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
       ? adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, input.updates.name, String(league.divisionTitle || '')))
       : null;
     if (renamedReservation && (await transaction.get(renamedReservation)).exists) fail('LEAGUE_ALREADY_EXISTS');
-    const publicUpdates = Object.fromEntries(Object.entries(input.updates).filter(([key]) => !['scorekeeperPin', 'contactEmail', 'contactPhone'].includes(key)));
+    const publicUpdates = Object.fromEntries(Object.entries(input.updates).filter(([key]) => ![
+      'scorekeeperPin', 'contactEmail', 'contactPhone', 'teamUpdate', 'individualRecruitUpdate',
+    ].includes(key)));
     const nextVersion = input.expectedVersion + 1;
-    transaction.update(rootRef, { ...publicUpdates, ...rootSensitiveDeletes(), tenantId: authority.tenantId, lifecycleVersion: nextVersion, updatedAt: new Date().toISOString() });
+    const safeTeams = memberSafeTeams(league);
+    if (input.updates.teamUpdate) {
+      const { teamId: teamIdValue, publicFields: teamPublic } = input.updates.teamUpdate;
+      safeTeams[teamIdValue] = { ...(safeTeams[teamIdValue] || {}), ...teamPublic };
+    }
+    transaction.update(rootRef, {
+      ...publicUpdates,
+      ...rootSensitiveDeletes(),
+      ...((league.teams && typeof league.teams === 'object' && !Array.isArray(league.teams)) || input.updates.teamUpdate ? { teams: safeTeams } : {}),
+      sensitiveFieldsMigrated: true,
+      tenantId: authority.tenantId,
+      lifecycleVersion: nextVersion,
+      updatedAt: new Date().toISOString(),
+    });
     const nextPrivate = privateFields(input.leagueId, league, privateSnapshot.data() || {}, input.updates);
+    if (input.updates.teamUpdate) {
+      const { teamId: teamIdValue, privateFields: teamPrivate } = input.updates.teamUpdate;
+      nextPrivate.teamContacts = {
+        ...(nextPrivate.teamContacts || {}),
+        [teamIdValue]: { ...(nextPrivate.teamContacts?.[teamIdValue] || {}), ...teamPrivate },
+      };
+    }
+    if (input.updates.individualRecruitUpdate) {
+      const { recruitId, recruit } = input.updates.individualRecruitUpdate;
+      nextPrivate.individualRecruits = { ...(nextPrivate.individualRecruits || {}), [recruitId]: recruit };
+    }
     if (Object.keys(nextPrivate).length) transaction.set(rootRef.collection('private').doc('lifecycle'), nextPrivate);
     if (input.updates.name && renamedReservation) {
       transaction.create(renamedReservation, {
@@ -452,7 +607,15 @@ async function mutateArchive(auth: DecodedToken, input: Extract<LeagueLifecycleR
     assertVersion(league, input.expectedVersion);
     if (league.isArchived === true) fail('LEAGUE_LIFECYCLE_STATE_CONFLICT');
     const nextVersion = input.expectedVersion + 1;
-    transaction.update(rootRef, { isArchived: true, tenantId: authority.tenantId, lifecycleVersion: nextVersion, archivedAt: new Date().toISOString(), ...rootSensitiveDeletes() });
+    transaction.update(rootRef, {
+      isArchived: true,
+      tenantId: authority.tenantId,
+      lifecycleVersion: nextVersion,
+      archivedAt: new Date().toISOString(),
+      ...rootSensitiveDeletes(),
+      ...(league.teams && typeof league.teams === 'object' && !Array.isArray(league.teams) ? { teams: memberSafeTeams(league) } : {}),
+      sensitiveFieldsMigrated: true,
+    });
     const nextPrivate = privateFields(input.leagueId, league, privateSnapshot.data() || {});
     if (Object.keys(nextPrivate).length) transaction.set(rootRef.collection('private').doc('lifecycle'), nextPrivate);
     audit(transaction, identity, input, authority.tenantId, auth.uid, input.leagueId);
@@ -470,19 +633,21 @@ async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRe
     )));
     const records = await Promise.all(input.leagues.map(async target => {
       const rootRef = adminDb.collection('leagues').doc(target.leagueId);
-      const [snapshot, registrationEntries, waivers, scores, payments, invites, configs, privateDocs, bookings, events] = await Promise.all([
+      const [snapshot, registrationEntries, waivers, scores, payments, invites, divisions, accessRedemptions, configs, privateDocs, bookings, events] = await Promise.all([
         transaction.get(rootRef),
         transaction.get(rootRef.collection('registrationEntries').limit(1)),
         transaction.get(rootRef.collection('archived_waivers').limit(1)),
         transaction.get(rootRef.collection('scores').limit(1)),
         transaction.get(rootRef.collection('payments').limit(1)),
         transaction.get(rootRef.collection('invites').limit(1)),
+        transaction.get(rootRef.collection('divisions').limit(1)),
+        transaction.get(rootRef.collection('accessRedemptions').limit(1)),
         transaction.get(rootRef.collection('registration')),
         transaction.get(rootRef.collection('private')),
         transaction.get(adminDb.collection('scheduleBookings').where('leagueId', '==', target.leagueId).limit(1)),
         transaction.get(adminDb.collectionGroup('events').where('leagueId', '==', target.leagueId).limit(1)),
       ]);
-      return { target, rootRef, snapshot, registrationEntries, waivers, scores, payments, invites, configs, privateDocs, bookings, events };
+      return { target, rootRef, snapshot, registrationEntries, waivers, scores, payments, invites, divisions, accessRedemptions, configs, privateDocs, bookings, events };
     }));
     for (const record of records) {
       if (!record.snapshot.exists) fail('LEAGUE_NOT_FOUND');
@@ -491,7 +656,7 @@ async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRe
       const hasRootDependencies = (Array.isArray(league.schedule) && league.schedule.length > 0) ||
         (Array.isArray(league.memberTeamIds) && league.memberTeamIds.length > 0) ||
         (league.teams && typeof league.teams === 'object' && Object.keys(league.teams).length > 0);
-      if (hasRootDependencies || !record.registrationEntries.empty || !record.waivers.empty || !record.scores.empty || !record.payments.empty || !record.invites.empty || !record.bookings.empty || !record.events.empty) fail('LEAGUE_HAS_DEPENDENCIES');
+      if (hasRootDependencies || !record.registrationEntries.empty || !record.waivers.empty || !record.scores.empty || !record.payments.empty || !record.invites.empty || !record.divisions.empty || !record.accessRedemptions.empty || !record.bookings.empty || !record.events.empty) fail('LEAGUE_HAS_DEPENDENCIES');
     }
     records.forEach((record, index) => {
       const league = record.snapshot.data() || {};
@@ -510,11 +675,11 @@ async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRe
 async function handle(request: NextRequest): Promise<NextResponse> {
   const authResult = await verifyFirebaseToken(request);
   if (authResult instanceof Response) return authResult as NextResponse;
-  if (authResult.signInProvider === 'anonymous') return NextResponse.json({ error: 'This operation requires a registered account.' }, { status: 403 });
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(request, 12_000);
     const input = parseRequest(body);
     ensureMethod(request.method, input.action);
+    if (authResult.signInProvider === 'anonymous' && input.action !== 'edit') fail('ANONYMOUS_DEMO_MUTATION_FORBIDDEN');
     const authority = await preflight(authResult, input);
     const identity = canonicalCompetitionRequest({ requestId: input.requestId, tenantId: authority.tenantId, kind: `league.${input.action}`, payload: input });
     const result = input.action === 'create'
@@ -530,12 +695,12 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   } catch (error) {
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
     const code = error instanceof Error ? error.message : 'LEAGUE_LIFECYCLE_FAILED';
-    if (code.includes('Forbidden competition mutation')) return NextResponse.json({ error: 'You do not have permission to manage this league.' }, { status: 403 });
+    if (code.includes('Forbidden competition mutation') || code === 'ANONYMOUS_DEMO_MUTATION_FORBIDDEN') return NextResponse.json({ error: 'You do not have permission to manage this league.' }, { status: 403 });
     if (['Request collision.', 'LEAGUE_VERSION_CONFLICT', 'LEAGUE_TENANT_CONFLICT', 'LEAGUE_LIFECYCLE_STATE_CONFLICT', 'LEAGUE_HAS_DEPENDENCIES', 'SCHEDULE_MUTATION_BOUNDARY_REQUIRED', 'DIVISION_ALREADY_EXISTS', 'LEAGUE_ALREADY_EXISTS', 'LEAGUE_LIMIT_REACHED'].includes(code)) {
       return NextResponse.json({ error: code }, { status: 409 });
     }
     if (code === 'LEAGUE_NOT_FOUND') return NextResponse.json({ error: 'League not found.' }, { status: 404 });
-    if (code === 'OWNER_PROFILE_MISSING') return NextResponse.json({ error: 'Account profile is incomplete.' }, { status: 409 });
+    if (code === 'OWNER_PROFILE_MISSING' || code === 'TENANT_OWNER_MISSING') return NextResponse.json({ error: 'Account profile is incomplete.' }, { status: 409 });
     if (code.startsWith('Invalid competition ')) return NextResponse.json({ error: 'One or more request fields are invalid.' }, { status: 400 });
     if (code.endsWith('_INVALID') || code.endsWith('_REQUIRED')) return NextResponse.json({ error: 'One or more league fields are invalid.' }, { status: 400 });
     console.error('[leagues/lifecycle] Failed:', error);

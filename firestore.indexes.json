@@ -56,6 +56,14 @@
         { "fieldPath": "isActive", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "leagues",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberUserIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "sensitiveFieldsMigrated", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

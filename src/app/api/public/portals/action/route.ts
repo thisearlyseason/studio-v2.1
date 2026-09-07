@@ -23,6 +23,7 @@ import { getTeamAuthority } from '@/lib/server-team-access';
 import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
 import { effectiveLeagueRegistrationConfig, isCalendarDate, nextRegistrationCount, registrationArchiveMatches, registrationCountFromLegacy, registrationPaymentSnapshot, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
 import { hasStaffRole } from '@/lib/staff-position';
+import { verifyLeagueScorekeeperPin } from '@/lib/server-competition-credential';
 
 const LEGACY_REGISTRATION_SCAN_LIMIT=100001;
 
@@ -184,7 +185,8 @@ export async function POST(req: NextRequest) {
       })) return NextResponse.json({ error: 'League organizer access required.' }, { status: 403 });
       const recruitId = `recruit_${entryId}`;
       await adminDb.runTransaction(async transaction => {
-        const [freshLeague, entry] = await Promise.all([transaction.get(leagueRef), transaction.get(entryRef)]);
+        const privateRef = leagueRef.collection('private').doc('lifecycle');
+        const [freshLeague, entry, privateSnapshot] = await Promise.all([transaction.get(leagueRef), transaction.get(entryRef), transaction.get(privateRef)]);
         if (!freshLeague.exists || !canDeleteLeagueRegistration({ creatorId: freshLeague.data()?.creatorId, actorUid: auth.uid, actorRole: auth.role })) throw new RegistrationInputError('League organizer access required.', 403);
         if (!entry.exists) return;
         let currentCount=freshLeague.data()?.registrationEntryCount;
@@ -195,6 +197,10 @@ export async function POST(req: NextRequest) {
           [`teams.${recruitId}`]: FieldValue.delete(), [`individualRecruits.${recruitId}`]: FieldValue.delete(),
           memberTeamIds: FieldValue.arrayRemove(recruitId), memberIndivIds: FieldValue.arrayRemove(recruitId),
           registrationEntryCount: Math.max(0,Number(currentCount)-1),
+        });
+        if (privateSnapshot.exists) transaction.update(privateRef, {
+          [`teamContacts.${recruitId}`]: FieldValue.delete(),
+          [`individualRecruits.${recruitId}`]: FieldValue.delete(),
         });
       });
       return NextResponse.json({ success: true });
@@ -531,7 +537,8 @@ export async function POST(req: NextRequest) {
       // response and the league's operational projection in one atomic batch so
       // organizers never receive an entry that is absent from team/player tools.
       const commitResult = await adminDb.runTransaction(async batch => {
-        const [freshConfig, existingEntry, freshParent, freshEntitlement, freshEvent, freshLinkedTeam, freshLinkedMember, existingArchive, freshManualMember] = await Promise.all([
+        const leaguePrivateRef = kind === 'league' ? parentRef.collection('private').doc('lifecycle') : null;
+        const [freshConfig, existingEntry, freshParent, freshEntitlement, freshEvent, freshLinkedTeam, freshLinkedMember, existingArchive, freshManualMember, freshLeaguePrivate] = await Promise.all([
           batch.get(configRef),
           batch.get(entry),
           batch.get(parentRef),
@@ -541,6 +548,7 @@ export async function POST(req: NextRequest) {
           linkedMemberRef ? batch.get(linkedMemberRef) : Promise.resolve(null),
           batch.get(waiverArchiveRef),
           manualMemberRef?batch.get(manualMemberRef):Promise.resolve(null),
+          leaguePrivateRef ? batch.get(leaguePrivateRef) : Promise.resolve(null),
         ]);
         if (!freshParent.exists || !freshConfig.exists || freshConfig.data()?.is_active !== true) {
           return { accepted: false as const, message: 'Registration portal is inactive.', status: 409 };
@@ -603,9 +611,6 @@ export async function POST(req: NextRequest) {
             batch.update(parentRef, {
               [`teams.${recruitId}`]: {
                 teamName,
-                coachName: coachName || 'Recruit Coach',
-                coachEmail: typeof answers.email === 'string' ? answers.email.slice(0, 320) : '',
-                coachPhone: typeof answers.phone === 'string' ? answers.phone.slice(0, 100) : '',
                 teamLogoUrl: typeof answers.teamLogoUrl === 'string' && /^https:\/\//i.test(answers.teamLogoUrl)
                   ? answers.teamLogoUrl.slice(0, 2_000)
                   : '',
@@ -616,9 +621,20 @@ export async function POST(req: NextRequest) {
                 points: 0,
                 status: 'pending',
                 signedAt: signature ? createdAt : null,
-                inviteCode: entry.id.slice(-6).toUpperCase(),
               },
               memberTeamIds: FieldValue.arrayUnion(recruitId),
+            });
+            batch.set(leaguePrivateRef!, {
+              ...(freshLeaguePrivate?.data() || {}),
+              teamContacts: {
+                ...(freshLeaguePrivate?.data()?.teamContacts || {}),
+                [recruitId]: {
+                  coachName: coachName || 'Recruit Coach',
+                  coachEmail: typeof answers.email === 'string' ? answers.email.slice(0, 320) : '',
+                  coachPhone: typeof answers.phone === 'string' ? answers.phone.slice(0, 100) : '',
+                  inviteCode: entry.id.slice(-6).toUpperCase(),
+                },
+              },
             });
           }
         } else if (
@@ -631,8 +647,11 @@ export async function POST(req: NextRequest) {
             ['fullName', 'name'],
             /participant|athlete|player|full name/i,
           ).slice(0, 200) || 'Recruit Athlete';
-          batch.update(parentRef, {
-            [`individualRecruits.${recruitId}`]: {
+          batch.set(leaguePrivateRef!, {
+            ...(freshLeaguePrivate?.data() || {}),
+            individualRecruits: {
+              ...(freshLeaguePrivate?.data()?.individualRecruits || {}),
+              [recruitId]: {
               name: participantName,
               email: typeof answers.email === 'string' ? answers.email.slice(0, 320) : '',
               phone: typeof answers.phone === 'string' ? answers.phone.slice(0, 100) : '',
@@ -642,6 +661,9 @@ export async function POST(req: NextRequest) {
               teamName: typeof answers.team_name === 'string' ? answers.team_name.slice(0, 200) : null,
               teamId: typeof answers.team_id === 'string' ? answers.team_id.slice(0, 200) : null,
             },
+            },
+          });
+          batch.update(parentRef, {
             memberIndivIds: FieldValue.arrayUnion(recruitId),
           });
         }
@@ -814,6 +836,8 @@ export async function POST(req: NextRequest) {
         ref = snap.ref;
       }
       const league = snap.data()!;
+      const privateSnapshot = await ref.collection('private').doc('lifecycle').get();
+      const privatePinHash = String(privateSnapshot.data()?.scorekeeperPinHash || '');
       const creatorId = typeof league.creatorId === 'string' ? league.creatorId : '';
       if (!creatorId) return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       {
@@ -824,8 +848,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'League portal is inactive.' }, { status: 404 });
       }
       const legacyOpen = isLegacyOpenPortal(ref.id);
-      if (!league.scorekeeperPin && !legacyOpen) return NextResponse.json({ error: 'Scorekeeper access is not configured for this league.' }, { status: 409 });
-      if (!credentialsMatch(league.scorekeeperPin, code, legacyOpen)) return NextResponse.json({ error: 'Invalid scorekeeper PIN.' }, { status: 403 });
+      if (!privatePinHash && !legacyOpen) return NextResponse.json({ error: 'Scorekeeper access is not configured for this league.' }, { status: 409 });
+      if (privatePinHash ? !verifyLeagueScorekeeperPin(ref.id, code, privatePinHash) : !credentialsMatch(undefined, code, legacyOpen)) {
+        return NextResponse.json({ error: 'Invalid scorekeeper PIN.' }, { status: 403 });
+      }
       if (action === 'score') {
         if (!gameId || !validScore(body.score1) || !validScore(body.score2)) {
           return NextResponse.json({ error: 'A valid game and scores from 0 to 999 are required.' }, { status: 400 });

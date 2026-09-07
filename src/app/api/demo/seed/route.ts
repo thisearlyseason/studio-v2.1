@@ -4,6 +4,70 @@ import { adminDb } from '@/lib/firebase-admin';
 import * as admin from 'firebase-admin';
 import { DEMO_PLANS, getDemoTeamShells } from '@/lib/demo-plan-config';
 
+const DEMO_LEAGUE_FIELDS = new Set([
+  'name', 'description', 'sport', 'memberTeamIds', 'memberUserIds', 'status', 'teams', 'schedule', 'createdAt',
+]);
+const PRIVATE_TEAM_FIELDS = new Set(['coachName', 'coachEmail', 'coachPhone', 'organizerNotes', 'inviteCode']);
+
+export async function PUT(req: NextRequest) {
+  const auth = await verifyFirebaseToken(req);
+  if (auth instanceof NextResponse) return auth;
+  try {
+    const body = await req.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body) || JSON.stringify(body).length > 250_000) {
+      return NextResponse.json({ error: 'Invalid demo league blueprint.' }, { status: 400 });
+    }
+    const leagueId = `demo_league_${auth.uid.slice(-4)}`;
+    if (body.leagueId !== leagueId || !body.league || typeof body.league !== 'object' || Array.isArray(body.league)) {
+      return NextResponse.json({ error: 'Invalid demo league blueprint.' }, { status: 400 });
+    }
+    const submitted = body.league as Record<string, unknown>;
+    const publicFields = Object.fromEntries(Object.entries(submitted).filter(([key]) => DEMO_LEAGUE_FIELDS.has(key)));
+    const teams = publicFields.teams && typeof publicFields.teams === 'object' && !Array.isArray(publicFields.teams)
+      ? publicFields.teams as Record<string, Record<string, unknown>>
+      : {};
+    const teamContacts: Record<string, Record<string, unknown>> = {};
+    publicFields.teams = Object.fromEntries(Object.entries(teams).map(([teamId, team]) => {
+      if (!team || typeof team !== 'object' || Array.isArray(team)) throw new Error('DEMO_BLUEPRINT_INVALID');
+      const contact = Object.fromEntries(Object.entries(team).filter(([key]) => PRIVATE_TEAM_FIELDS.has(key)));
+      if (Object.keys(contact).length) teamContacts[teamId] = contact;
+      return [teamId, Object.fromEntries(Object.entries(team).filter(([key]) => !PRIVATE_TEAM_FIELDS.has(key)))];
+    }));
+    await adminDb.runTransaction(async transaction => {
+      const leagueRef = adminDb.collection('leagues').doc(leagueId);
+      const privateRef = leagueRef.collection('private').doc('lifecycle');
+      const [league, profile, privateSnapshot] = await Promise.all([
+        transaction.get(leagueRef),
+        transaction.get(adminDb.collection('users').doc(auth.uid)),
+        transaction.get(privateRef),
+      ]);
+      const current = league.data() || {};
+      if (!league.exists || !profile.exists || current.isDemo !== true || current.demoSeeded !== true || current.demoSessionOwnerId !== auth.uid || current.creatorId !== auth.uid) {
+        throw new Error('DEMO_BLUEPRINT_FORBIDDEN');
+      }
+      transaction.update(leagueRef, {
+        ...publicFields,
+        id: leagueId,
+        creatorId: auth.uid,
+        createdBy: auth.uid,
+        tenantId: `profile:${auth.uid}`,
+        sensitiveFieldsMigrated: true,
+        updatedAt: new Date().toISOString(),
+      });
+      if (Object.keys(teamContacts).length) transaction.set(privateRef, {
+        ...(privateSnapshot.data() || {}),
+        teamContacts: { ...(privateSnapshot.data()?.teamContacts || {}), ...teamContacts },
+      });
+    });
+    return NextResponse.json({ ok: true, leagueId });
+  } catch (error: any) {
+    if (error?.message === 'DEMO_BLUEPRINT_FORBIDDEN') return NextResponse.json({ error: 'Demo league access denied.' }, { status: 403 });
+    if (error?.message === 'DEMO_BLUEPRINT_INVALID') return NextResponse.json({ error: 'Invalid demo league blueprint.' }, { status: 400 });
+    console.error('[demo/seed PUT] Error:', error.message);
+    return NextResponse.json({ error: 'Unable to initialize the demo league.' }, { status: 500 });
+  }
+}
+
 /**
  * Creates only protected demo identity and team-shell records. Rich synthetic
  * content is filled afterward by the existing blueprint, scoped to these
@@ -119,6 +183,12 @@ export async function POST(req: NextRequest) {
       id: leagueId,
       creatorId: uid,
       createdBy: uid,
+      tenantId: `profile:${uid}`,
+      lifecycleVersion: 0,
+      sensitiveFieldsMigrated: true,
+      name: plan.role === 'admin' ? 'State Academic Athletic League' : 'Apex Premier Circuit',
+      sport: plan.planType === 'school' ? 'Basketball' : 'Multi-Sport',
+      description: 'The premier circuit for top-tier competitive programs.',
       memberUserIds: [uid],
       memberTeamIds: shells.map((shell) => shell.id),
       isDemo: true,

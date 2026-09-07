@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {communicationDb,loadCommunicationRoute} from './helpers/communication-route-harness.mjs';
 import {effectiveLeagueRegistrationConfig,registrationConfigHash} from '../src/lib/registration-policy.ts';
+import {hashLeagueScorekeeperPin} from '../src/lib/server-competition-credential.ts';
+
+process.env.COMPETITION_CREDENTIAL_HMAC_SECRET='current-competition-test-secret-at-least-32-bytes';
+process.env.COMPETITION_CREDENTIAL_HMAC_PREVIOUS_SECRETS='previous-competition-test-secret-at-least-32-bytes';
 
 const request=(body,url='http://127.0.0.1/api/public/portals/action')=>new Request(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const teamConfig=overrides=>{const value={title:'Tournament form',description:'',is_active:true,type:'team',form_schema:[{id:'teamName',label:'Team Name',type:'short_text',required:true},{id:'name',label:'Head Coach Name',type:'short_text',required:true},{id:'email',label:'Email Address',type:'email',required:true}],form_version:1,registration_cost:'0',offline_payment_instructions:'',currency:'CAD',waiver_mode:'none',require_default_waiver:false,default_waiver_text:'',custom_waiver_text:'',team_waivers_content:[],...overrides};return{...value,config_hash:registrationConfigHash(value)};};
@@ -22,6 +26,16 @@ test('public event final seat is serialized and a missing legacy counter migrate
   }finally{app.dispose();}
 });
 
+test('league scoring verifies the private HMAC with rotation and rejects tampering',async()=>{
+  const previous='previous-competition-test-secret-at-least-32-bytes',league={creatorId:'owner',name:'League',is_active:true,teams:{a:{teamName:'A'},b:{teamName:'B'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
+  const {db}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/private/lifecycle':{scorekeeperPinHash:hashLeagueScorekeeperPin('l','8274',[previous])},'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  try{
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',score1:2,score2:1}))).status,403);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:2,score2:1}))).status,200);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:3,score2:1}))).status,200);
+  }finally{app.dispose();}
+});
+
 test('league fee snapshot is identical from public GET through transactional POST',async()=>{
   const raw=teamConfig({title:'League form'}),league={creatorId:'owner',registrationCost:'40',paymentInstructions:'Pay at desk',registrationEntryCount:0},effective=effectiveLeagueRegistrationConfig(raw,league);
   const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/team_config':raw},{serializeTransactions:true});
@@ -32,6 +46,9 @@ test('league fee snapshot is identical from public GET through transactional POS
     const response=await write.route.POST(request({kind:'league',action:'register',leagueId:'l',protocolId:'team_config',requestId:'league-fee-request-0001',formVersion:effective.form_version,formHash:effective.config_hash,answers:{teamName:'Alpha',name:'Coach',email:'coach@example.test',phone:'5551234567'}}));
     assert.equal(response.status,200);const entry=[...records].find(([path])=>path.startsWith('leagues/l/registrationEntries/'))[1];
     assert.deepEqual(entry.payment,{amount:40,currency:'CAD',mode:'offline',status:'pending',instructions:'Pay at desk'});assert.equal(entry.payment_received,false);
+    const root=records.get('leagues/l'),recruitId=Object.keys(root.teams)[0],privateData=records.get('leagues/l/private/lifecycle');
+    assert.equal('coachEmail' in root.teams[recruitId],false);assert.equal('coachName' in root.teams[recruitId],false);assert.equal('inviteCode' in root.teams[recruitId],false);
+    assert.equal(privateData.teamContacts[recruitId].coachEmail,'coach@example.test');assert.equal(privateData.teamContacts[recruitId].coachPhone,'5551234567');
   }finally{read.dispose();write.dispose();}
 });
 
@@ -43,6 +60,16 @@ test('registration replay repairs a missing immutable waiver receipt from origin
     assert.equal(records.get(archivePath).signedAt,entry.signature_date);records.delete(archivePath);
     const replay=await app.route.POST(request(body));assert.equal(replay.status,200);assert.equal((await replay.json()).replay,true);assert.equal(records.get(archivePath).signedAt,entry.signature_date);
     records.set(archivePath,{...records.get(archivePath),signedAt:'2000-01-01T00:00:00.000Z'});assert.equal((await app.route.POST(request(body))).status,409);
+  }finally{app.dispose();}
+});
+
+test('league player registration stores applicant contact data only in the private projection',async()=>{
+  const raw=teamConfig({title:'Player form',type:'player',form_schema:[{id:'fullName',label:'Athlete Name',type:'short_text',required:true},{id:'email',label:'Email',type:'email',required:true},{id:'phone',label:'Phone',type:'short_text',required:true},{id:'dateOfBirth',label:'Date of Birth',type:'date',required:true}]}),league={creatorId:'owner',registrationEntryCount:0},effective=effectiveLeagueRegistrationConfig(raw,league);
+  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/player_config':raw},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  try{
+    const response=await app.route.POST(request({kind:'league',action:'register',leagueId:'l',protocolId:'player_config',requestId:'private-player-request-01',formVersion:effective.form_version,formHash:effective.config_hash,answers:{fullName:'Applicant',email:'applicant@example.test',phone:'5551234567',dateOfBirth:'2000-01-01'}}));
+    assert.equal(response.status,200);const recruitId=`recruit_${(await response.json()).entryId}`,root=records.get('leagues/l'),privateData=records.get('leagues/l/private/lifecycle');
+    assert.equal(root.individualRecruits,undefined);assert.equal(privateData.individualRecruits[recruitId].email,'applicant@example.test');assert.equal(privateData.individualRecruits[recruitId].phone,'5551234567');
   }finally{app.dispose();}
 });
 
