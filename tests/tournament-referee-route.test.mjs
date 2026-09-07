@@ -98,7 +98,13 @@ test('referee pool add and remove are server-owned, versioned, and replay safe',
 test('authenticated referee portal resolves the server-only profile and returns a safe DTO', async () => {
   const state = communicationDb({
     'teams/team-a': { ...baseTeam, planId: 'elite' },
-    'teams/team-a/events/cup-a': event({ refereePool: [{ id: referee.id, name: referee.name, status: 'active' }] }),
+    'teams/team-a/events/cup-a': event({
+      refereePool: [{ id: referee.id, name: referee.name, status: 'active' }],
+      tournamentGames: [
+        game('game-one', '10:00 AM', { refereeId: referee.id, refereeName: referee.name }),
+        game('game-two', '11:00 AM', { refereeId: 'another-referee', refereeName: 'Another Referee' }),
+      ],
+    }),
     'tournamentReferees/private-riley': { teamId: 'team-a', eventId: 'cup-a', refereeId: referee.id, ...referee, phone: '555-0100' },
   });
   const app = await loadCommunicationRoute('../../src/app/api/public/portals/route.ts', state.db, { uid: 'riley', email: referee.email });
@@ -109,6 +115,7 @@ test('authenticated referee portal resolves the server-only profile and returns 
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.deepEqual(body.data.activeReferee, { id: referee.id, name: referee.name });
+    assert.deepEqual(body.data.tournamentGames.map(candidate => candidate.id), ['game-one']);
     assert.equal(JSON.stringify(body).includes(referee.email), false);
     assert.equal(JSON.stringify(body).includes('555-0100'), false);
   } finally { app.dispose(); }

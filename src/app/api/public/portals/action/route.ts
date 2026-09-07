@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { FieldPath, FieldValue, type DocumentReference, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
-import { credentialsMatch } from '@/lib/score-action-security';
-import { leagueBillingOwnerUserId, permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
+import { isActiveTournamentPortal, leagueBillingOwnerUserId, permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
 import { competitionScoringInput, submitCompetitionScore, openCompetitionDispute, openTournamentDispute, submitTournamentScore, tournamentScoringInput } from '@/lib/server-competition-scoring';
 import { ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
 import {
@@ -32,14 +31,15 @@ function isSafeId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200 && !value.includes('/');
 }
 
-async function verifiedTournamentEvent(transaction: any, ref: DocumentReference, teamId: string, eventId: string, supplied: unknown) {
-  const fresh = await transaction.get(ref);
-  if (!fresh.exists || fresh.data()?.isTournament !== true || fresh.data()?.isArchived === true || fresh.data()?.is_active === false || fresh.data()?.status === 'cancelled') {
+async function verifiedTournamentEvent(transaction: any, teamRef: DocumentReference, ref: DocumentReference, teamId: string, eventId: string, supplied: unknown) {
+  const privateRef = ref.collection('private').doc('scoring');
+  const [team, fresh, credential] = await Promise.all([
+    transaction.get(teamRef), transaction.get(ref), transaction.get(privateRef),
+  ]);
+  if (!team.exists || !fresh.exists || !isActiveTournamentPortal(teamId, team.data() || {}, fresh.data() || {})) {
     throw new RegistrationInputError('Tournament portal is inactive.', 404);
   }
   const event = fresh.data()!;
-  const privateRef = ref.collection('private').doc('scoring');
-  const credential = await transaction.get(privateRef);
   const codeValue = typeof supplied === 'string' ? supplied.trim() : '';
   const storedHash = typeof credential.data()?.scorekeeperCodeHash === 'string' ? credential.data()!.scorekeeperCodeHash : '';
   if (storedHash) {
@@ -48,10 +48,8 @@ async function verifiedTournamentEvent(transaction: any, ref: DocumentReference,
   }
   const legacyCode = typeof event.scoringCode === 'string' ? event.scoringCode.trim() : '';
   if (legacyCode) {
-    if (!credentialsMatch(legacyCode, codeValue, false)) throw new RegistrationInputError('Invalid scorekeeper code.', 403);
-    const credentialVersion = Math.max(Number(event.credentialVersion || 0), Number(credential.data()?.credentialVersion || 0)) + 1;
-    transaction.set(privateRef, { teamId, eventId, scorekeeperCodeHash: hashTournamentScorekeeperCode(teamId, eventId, legacyCode), credentialVersion, updatedAt: new Date().toISOString(), migratedFromLegacy: true });
-    transaction.update(ref, { credentialVersion, scorekeeperConfigured: true, scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() });
+    const legacyHash = hashTournamentScorekeeperCode(teamId, eventId, legacyCode);
+    if (!verifyTournamentScorekeeperCode(teamId, eventId, codeValue, legacyHash)) throw new RegistrationInputError('Invalid scorekeeper code.', 403);
     return event;
   }
   throw new RegistrationInputError('Scorekeeper access is not configured for this tournament.', 409);
@@ -692,9 +690,10 @@ export async function POST(req: NextRequest) {
       const { teamId, eventId } = body;
       if (!isSafeId(teamId) || !isSafeId(eventId)) return NextResponse.json({ error: 'Missing or invalid tournament identifiers.' }, { status: 400 });
       const ref = adminDb.collection('teams').doc(teamId).collection('events').doc(eventId);
+      const teamRef = adminDb.collection('teams').doc(teamId);
       const [snap, teamSnap] = await Promise.all([
         ref.get(),
-        adminDb.collection('teams').doc(teamId).get(),
+        teamRef.get(),
       ]);
       if (!teamSnap.exists) {
         return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
@@ -710,7 +709,7 @@ export async function POST(req: NextRequest) {
       const event = snap.data()!;
       if (event.isArchived === true) return NextResponse.json({ error: 'Tournament portal is inactive.' }, { status: 404 });
       if (action === 'verify') {
-        await adminDb.runTransaction(transaction => verifiedTournamentEvent(transaction, ref, teamId, eventId, code));
+        await adminDb.runTransaction(transaction => verifiedTournamentEvent(transaction, teamRef, ref, teamId, eventId, code));
         return NextResponse.json({ success: true });
       }
 

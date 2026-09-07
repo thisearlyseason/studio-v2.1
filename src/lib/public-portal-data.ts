@@ -232,6 +232,7 @@ export function spectatorTournament(id: string, event: any) {
   const games = (Array.isArray(event.tournamentGames) ? event.tournamentGames : []).map(tournamentPublicGame);
   return {
     id,
+    isTournament: event.isTournament === true,
     teamId: String(event.teamId || ''),
     title: String(event.title || ''),
     sport: String(event.sport || ''),

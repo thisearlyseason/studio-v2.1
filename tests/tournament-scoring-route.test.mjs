@@ -91,12 +91,33 @@ test('commit-time credential, membership, game, schedule, and lock changes fence
     ['../../src/app/api/tournaments/scoring/route.ts', { uid: 'staff', role: 'coach' }, records => { records.get('teams/team-a/members/staff').status = 'removed'; }, 403],
     ['../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, records => { records.get('teams/team-a/events/cup-a').tournamentGames[0].gameVersion = 8; }, 409],
     ['../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, records => { records.get('teams/team-a/events/cup-a').scheduleVersion = 7; }, 409],
+    ['../../src/app/api/public/portals/action/route.ts', { uid: 'owner' }, records => { Object.assign(records.get('teams/team-a'), { planId: 'free', isPro: false }); }, 403],
     ['../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, records => { records.get('scheduleBookingLocks/global').expiresAt = 0; }, 409],
   ]) {
     let count = 0;
     const { app, records } = await setup(path, auth, { beforeTransaction: ({ records }) => { if (++count === 3) mutate(records); } });
     try { assert.equal((await post(app, command())).status, status); assert.equal(auditCount(records), 0); }
     finally { app.dispose(); }
+  }
+});
+
+test('Tournament score transaction rejects tenant and lifecycle mismatches without writes', async () => {
+  for (const eventChange of [{ teamId: 'team-b' }, { isDeleted: true }, { isActive: false }]) {
+    const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, eventChange);
+    try {
+      const before = structuredClone([...records]);
+      assert.notEqual((await post(app, command())).status, 200);
+      assert.deepEqual([...records], before);
+    } finally { app.dispose(); }
+  }
+  for (const teamChange of [{ isDeleted: true }, { isArchived: true }, { isActive: false }]) {
+    const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' });
+    try {
+      Object.assign(records.get('teams/team-a'), teamChange);
+      const before = structuredClone([...records]);
+      assert.notEqual((await post(app, command())).status, 200);
+      assert.deepEqual([...records], before);
+    } finally { app.dispose(); }
   }
 });
 
@@ -126,6 +147,51 @@ test('dispute is completed-only, blocks generic edits and bracket progression, t
   const uncompleted = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' });
   try { assert.equal((await post(uncompleted.app, command({ action: 'dispute', notes: 'No result', requestId: 'bad-dispute-0001' }))).status, 409); }
   finally { uncompleted.app.dispose(); }
+});
+
+test('disputing a seeded pool result is rejected without changing qualifiers or audit state', async () => {
+  const pool = baseGame({ isCompleted: true, score1: 3, score2: 1, stage: 'Pool', round: 'Pool A', pool: 0 });
+  const knockout = baseGame({ id: 'knockout-one', gameVersion: 0, team1: 'Alpha', team1Id: 'alpha', team2: 'Bravo', team2Id: 'bravo', stage: 'Knockout', round: 'Semi-Final' });
+  const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, { tournamentType: 'pool_play_knockout', tournamentGames: [pool, knockout] });
+  try {
+    const before = structuredClone([...records]);
+    const result = await post(app, command({ action: 'dispute', requestId: 'seeded-pool-dispute-1', notes: 'Review pool result' }));
+    assert.equal(result.status, 409);
+    assert.match(result.body.error, /qualifiers.*seeded/i);
+    assert.deepEqual([...records], before);
+  } finally { app.dispose(); }
+});
+
+test('legacy code verification is read-only and fails closed for invalid tenant lifecycle', async () => {
+  for (const [teamChange, eventChange, expectedStatus] of [
+    [{ isActive: false }, {}, 404],
+    [{}, { teamId: 'team-b' }, 404],
+    [{}, { isDeleted: true }, 404],
+    [{}, { isActive: false }, 404],
+  ]) {
+    const { app, records } = await setup();
+    try {
+      records.delete('teams/team-a/events/cup-a/private/scoring');
+      Object.assign(records.get('teams/team-a'), teamChange);
+      Object.assign(records.get('teams/team-a/events/cup-a'), eventChange, { credentialVersion: 0, scoringCode: 'CUP-2026', scorekeeperConfigured: false });
+      const result = await post(app, command({ action: 'verify', requestId: undefined, expectedLifecycleVersion: undefined, expectedScheduleVersion: undefined, expectedGameVersion: undefined, expectedCredentialVersion: undefined, gameId: undefined, score1: undefined, score2: undefined }));
+      assert.equal(result.status, expectedStatus, JSON.stringify(result.body));
+      assert.equal(records.has('teams/team-a/events/cup-a/private/scoring'), false);
+      assert.equal(records.get('teams/team-a/events/cup-a').scoringCode, 'CUP-2026');
+    } finally { app.dispose(); }
+  }
+
+  const { app, records } = await setup();
+  try {
+    records.delete('teams/team-a/events/cup-a/private/scoring');
+    Object.assign(records.get('teams/team-a/events/cup-a'), { credentialVersion: 0, scoringCode: 'CUP-2026', scorekeeperConfigured: false });
+    assert.equal((await post(app, command({ action: 'verify', code: 'WRONG', requestId: undefined, expectedLifecycleVersion: undefined, expectedScheduleVersion: undefined, expectedGameVersion: undefined, expectedCredentialVersion: undefined, gameId: undefined, score1: undefined, score2: undefined }))).status, 403);
+    assert.equal(records.has('teams/team-a/events/cup-a/private/scoring'), false);
+    assert.equal(records.get('teams/team-a/events/cup-a').scoringCode, 'CUP-2026');
+    assert.equal((await post(app, command({ action: 'verify', requestId: undefined, expectedLifecycleVersion: undefined, expectedScheduleVersion: undefined, expectedGameVersion: undefined, expectedCredentialVersion: undefined, gameId: undefined, score1: undefined, score2: undefined }))).status, 200);
+    assert.equal(records.has('teams/team-a/events/cup-a/private/scoring'), false);
+    assert.equal(records.get('teams/team-a/events/cup-a').scoringCode, 'CUP-2026');
+  } finally { app.dispose(); }
 });
 
 test('simultaneous score and dispute has one winner and downstream completed result locks upstream changes', async () => {

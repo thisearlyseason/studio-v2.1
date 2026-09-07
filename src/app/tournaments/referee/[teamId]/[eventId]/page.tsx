@@ -91,11 +91,8 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
   });
   const activeRef = event?.activeReferee || null;
 
-  // Games assigned to this referee
-  const myGames = useMemo(() => {
-    if (!activeRef || !event?.tournamentGames) return [];
-    return event.tournamentGames.filter(g => g.refereeId === activeRef.id);
-  }, [activeRef, event]);
+  // The authenticated referee DTO is already assignment-filtered server-side.
+  const myGames = useMemo(() => activeRef ? event?.tournamentGames || [] : [], [activeRef, event]);
 
   // Group by date
   const gamesByDate = useMemo(() => {

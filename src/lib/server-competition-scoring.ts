@@ -7,7 +7,7 @@ import { resolveCompetitionAuthority } from '@/lib/server-competition-authority'
 import { canonicalCompetitionRequest, runCompetitionOperation } from '@/lib/server-competition-operation';
 import { hashLeagueScorekeeperPin, hashTournamentScorekeeperCode, verifyLeagueScorekeeperPin, verifyTournamentScorekeeperCode } from '@/lib/server-competition-credential';
 import { assertScheduleMutationLock, withScheduleMutationLock, ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
-import { leagueBillingOwnerUserId, scorekeeperLeague } from '@/lib/public-portal-data';
+import { leagueBillingOwnerUserId, permitsLegacyOrPaidPortals, scorekeeperLeague } from '@/lib/public-portal-data';
 import { publicLeagueGameProjection, recalculatePublicLeagueStandings, leagueGameVersionFloor } from '@/lib/public-league-scoring';
 import { scorekeeperTournament } from '@/lib/public-portal-data';
 import { BracketProgressionError, hasCompletedBracketDescendant, recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
@@ -306,6 +306,7 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     const team = teamSnapshot.data() || {};
     const event = eventSnapshot.data() || {};
     if (!isActiveCompetitionTeam(team)) tournamentFail('TOURNAMENT_TENANT_INACTIVE', 'The Tournament squad is inactive.', 403);
+    if (!permitsLegacyOrPaidPortals(team.planId, team.plan_type, team.subscriptionPlanId)) tournamentFail('TOURNAMENT_ENTITLEMENT_REQUIRED', 'This subscription does not include Tournament scoring.', 403);
     if (event.isTournament !== true || event.teamId !== input.teamId || event.isArchived === true || event.isDeleted === true || event.is_active === false || event.isActive === false || event.status === 'cancelled') {
       tournamentFail('TOURNAMENT_INACTIVE', 'Tournament is inactive.', 409);
     }
@@ -367,6 +368,10 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     if (hasCompletedBracketDescendant(games, game.id)) tournamentFail('DOWNSTREAM_COMPLETE', 'A dependent bracket result is already complete.', 409);
     if (action === 'score' && game.isDisputed === true) tournamentFail('DISPUTE_OPEN', 'Resolve the open dispute before changing this score.', 409);
     if (action === 'dispute' && (game.isCompleted !== true || game.isDisputed === true)) tournamentFail('INVALID_DISPUTE', 'Only an undisputed completed result can be disputed.', 409);
+    if (action === 'dispute') {
+      const validation = validateBracketScoreSubmission(games, game.id, Number(game.score1), Number(game.score2));
+      if (!validation.valid && validation.code === 'POOL_RESULTS_LOCKED') tournamentFail(validation.code, validation.message, 409);
+    }
     if (action === 'resolve-dispute' && game.isDisputed !== true) tournamentFail('DISPUTE_NOT_FOUND', 'This match has no open dispute.', 409);
     if (resolution === 'uphold' && (game.isCompleted !== true || !tournamentScore(game.score1) || !tournamentScore(game.score2))) {
       tournamentFail('INVALID_PRIOR_RESULT', 'The disputed result is incomplete and cannot be upheld.', 409);

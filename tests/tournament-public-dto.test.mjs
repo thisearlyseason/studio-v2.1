@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { refereeTournament, scorekeeperTournament, spectatorTournament } from '../src/lib/public-portal-data.ts';
+import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
 
 const sensitive = {
   teamId: 'team-a', title: 'Cup', sport: 'Soccer', isTournament: true, lifecycleVersion: 4, scheduleVersion: 6, credentialVersion: 3,
@@ -20,6 +22,8 @@ test('Tournament spectator and scorekeeper DTOs are distinct allowlists', () => 
   assert.equal(spectatorText.includes('coach@example.test'), false);
   assert.equal(spectatorText.includes('private'), false);
   assert.equal(spectator.tournamentGames[0].gameVersion, undefined);
+  assert.equal(spectator.isTournament, true);
+  assert.equal(scorer.isTournament, true);
   assert.equal(scorer.tournamentGames[0].gameVersion, 7);
   assert.deepEqual([scorer.lifecycleVersion, scorer.scheduleVersion, scorer.credentialVersion], [4, 6, 3]);
   assert.equal(scorer.contactEmail, undefined);
@@ -42,4 +46,43 @@ test('Tournament referee DTO contains only that referee assigned matches and no 
   assert.equal(JSON.stringify(dto).includes('ref@example.test'), false);
   assert.equal(JSON.stringify(dto).includes('SECRET'), false);
   assert.equal(dto.credentialVersion, undefined);
+});
+
+test('Tournament DTOs satisfy the actual spectator, scorekeeper, and referee page contracts', async () => {
+  const spectatorPage = await readFile(new URL('../src/app/tournaments/public/[teamId]/[eventId]/page.tsx', import.meta.url), 'utf8');
+  const scorekeeperPage = await readFile(new URL('../src/app/tournaments/scorekeeper/[teamId]/[eventId]/page.tsx', import.meta.url), 'utf8');
+  const refereePage = await readFile(new URL('../src/app/tournaments/referee/[teamId]/[eventId]/page.tsx', import.meta.url), 'utf8');
+  assert.match(spectatorPage, /!event\.isTournament/);
+  assert.match(scorekeeperPage, /!event\.isTournament/);
+  assert.match(scorekeeperPage, /purpose=scorekeeper/);
+  assert.doesNotMatch(refereePage, /tournamentGames\.filter\(g => g\.refereeId === activeRef\.id\)/);
+});
+
+test('Tournament public portal defaults omitted and unknown purposes to spectator data', async () => {
+  const state = communicationDb({
+    'teams/team-a': { ownerUserId: 'owner', planId: 'elite', isPro: true },
+    'teams/team-a/events/cup-a': sensitive,
+    'teams/team-a/events/cup-a/private/scoring': { scorekeeperCodeHash: 'private-hash', credentialVersion: 3 },
+  });
+  const app = await loadCommunicationRoute('../../src/app/api/public/portals/route.ts', state.db, null);
+  try {
+    for (const suffix of ['', '&purpose=unknown']) {
+      const request = new Request(`http://127.0.0.1/api/public/portals?kind=tournament&teamId=team-a&eventId=cup-a${suffix}`);
+      request.nextUrl = new URL(request.url);
+      const response = await app.route.GET(request);
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(body.data.isTournament, true);
+      assert.equal(body.data.lifecycleVersion, undefined);
+      assert.equal(body.data.scheduleVersion, undefined);
+      assert.equal(body.data.credentialVersion, undefined);
+      assert.equal(body.data.tournamentGames[0].gameVersion, undefined);
+    }
+    const scorerRequest = new Request('http://127.0.0.1/api/public/portals?kind=tournament&teamId=team-a&eventId=cup-a&purpose=scorekeeper');
+    scorerRequest.nextUrl = new URL(scorerRequest.url);
+    const scorer = await app.route.GET(scorerRequest);
+    const scorerBody = await scorer.json();
+    assert.equal(scorer.status, 200);
+    assert.deepEqual([scorerBody.data.lifecycleVersion, scorerBody.data.scheduleVersion, scorerBody.data.credentialVersion], [4, 6, 3]);
+  } finally { app.dispose(); }
 });

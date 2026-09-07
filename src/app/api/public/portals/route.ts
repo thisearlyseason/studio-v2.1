@@ -113,9 +113,9 @@ export async function GET(req: NextRequest) {
       }
       const purpose = req.nextUrl.searchParams.get('purpose');
       const tournamentSource = { ...eventData, scorekeeperConfigured: !!scoringCredential.data()?.scorekeeperCodeHash || !!eventData.scoringCode };
-      let data: any = purpose === 'spectator'
-        ? spectatorTournament(event.id, tournamentSource)
-        : scorekeeperTournament(event.id, tournamentSource);
+      let data: any = purpose === 'scorekeeper'
+        ? scorekeeperTournament(event.id, tournamentSource)
+        : spectatorTournament(event.id, tournamentSource);
       const refereeEmail = req.nextUrl.searchParams.get('refereeEmail')?.trim().toLowerCase();
       if (refereeEmail) {
         const auth = await verifyFirebaseToken(req);
