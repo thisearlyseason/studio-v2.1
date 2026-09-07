@@ -121,6 +121,28 @@ test('Tournament score transaction rejects tenant and lifecycle mismatches witho
   }
 });
 
+test('authenticated Starter owner can score basic round robin while public and advanced scoring remain denied', async () => {
+  const authenticated = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, { tournamentType: 'round_robin' });
+  try {
+    Object.assign(authenticated.records.get('teams/team-a'), { planId: 'starter', isPro: false });
+    assert.equal((await post(authenticated.app, command())).status, 200);
+  } finally { authenticated.app.dispose(); }
+
+  const credential = await setup('../../src/app/api/public/portals/action/route.ts', null, {}, { tournamentType: 'round_robin' });
+  try {
+    Object.assign(credential.records.get('teams/team-a'), { planId: 'starter', isPro: false });
+    assert.equal((await post(credential.app, command())).status, 403);
+    assert.equal(auditCount(credential.records), 0);
+  } finally { credential.app.dispose(); }
+
+  const advanced = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' });
+  try {
+    Object.assign(advanced.records.get('teams/team-a'), { planId: 'starter', isPro: false });
+    assert.equal((await post(advanced.app, command())).status, 403);
+    assert.equal(auditCount(advanced.records), 0);
+  } finally { advanced.app.dispose(); }
+});
+
 test('dispute is completed-only, blocks generic edits and bracket progression, then organizer explicitly resolves with immutable history', async () => {
   const completed = baseGame({ isCompleted: true, score1: 3, score2: 1 });
   const { app, records, db } = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, { tournamentGames: [completed] });

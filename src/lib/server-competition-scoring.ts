@@ -306,7 +306,7 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     const team = teamSnapshot.data() || {};
     const event = eventSnapshot.data() || {};
     if (!isActiveCompetitionTeam(team)) tournamentFail('TOURNAMENT_TENANT_INACTIVE', 'The Tournament squad is inactive.', 403);
-    if (!permitsLegacyOrPaidPortals(team.planId, team.plan_type, team.subscriptionPlanId)) tournamentFail('TOURNAMENT_ENTITLEMENT_REQUIRED', 'This subscription does not include Tournament scoring.', 403);
+    if (!input.actor && !permitsLegacyOrPaidPortals(team.planId, team.plan_type, team.subscriptionPlanId)) tournamentFail('TOURNAMENT_ENTITLEMENT_REQUIRED', 'This subscription does not include Tournament scoring.', 403);
     if (event.isTournament !== true || event.teamId !== input.teamId || event.isArchived === true || event.isDeleted === true || event.is_active === false || event.isActive === false || event.status === 'cancelled') {
       tournamentFail('TOURNAMENT_INACTIVE', 'Tournament is inactive.', 409);
     }
