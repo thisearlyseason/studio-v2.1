@@ -74,7 +74,10 @@ function sanitizeRegistrationAnswers(raw: Record<string, unknown>, config: Recor
     const key=String(field.id||''),value=answers[key],type=String(field.type||'');
     if(value==null||value==='')continue;
     const options=Array.isArray(field.options)?field.options.map(String):[];
-    if(type==='email'&&(typeof value!=='string'||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))throw new RegistrationInputError(`Invalid ${field.label || 'email'}.`);
+    if(type==='email'){
+      if(typeof value!=='string'||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))throw new RegistrationInputError(`Invalid ${field.label || 'email'}.`);
+      answers[key]=value.toLowerCase();
+    }
     if(type==='number'&&(typeof value!=='number'&&!/^[-+]?\d+(\.\d+)?$/.test(String(value))))throw new RegistrationInputError(`Invalid ${field.label || 'number'}.`);
     if(type==='date'&&!isCalendarDate(value))throw new RegistrationInputError(`Invalid ${field.label || 'date'}.`);
     if(['select','dropdown','radio'].includes(type)&&!options.includes(String(value)))throw new RegistrationInputError(`Invalid ${field.label || 'selection'}.`);

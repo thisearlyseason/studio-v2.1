@@ -53,6 +53,25 @@ test('transaction-time owner demotion rejects tournament registration without wr
   try{const response=await app.route.POST(request({kind:'tournament',action:'register',teamId:'a',eventId:'e',protocolId:'team_config',requestId:'demotion-race-0001',formVersion:1,formHash:config.config_hash,answers:{manual_enrollment:true,teamName:'Alpha',name:'Coach',email:'coach@example.test'}}));assert.equal(response.status,403);assert.equal([...records.keys()].some(path=>path.includes('/registrationEntries/')),false);}finally{app.dispose();}
 });
 
+test('tournament replay canonicalizes every configured email field but rejects a genuine payload collision',async()=>{
+  const config=teamConfig({form_schema:[
+    {id:'team_name',label:'Team Name',type:'short_text',required:true},
+    {id:'contact_name',label:'Head Coach Name',type:'short_text',required:true},
+    {id:'contact_email',label:'Email Address',type:'email',required:true},
+  ]});
+  const seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,registrationOpen:true,isArchived:false,tournamentGames:[],tournamentTeams:[],tournamentTeamsData:[],registrationEntryCount:0},'teams/a/events/e/registration/team_config':config};
+  const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const base={kind:'tournament',action:'register',teamId:'a',eventId:'e',protocolId:'team_config',formVersion:1,formHash:config.config_hash,answers:{teamName:'Alpha',name:'Coach',email:'coach@example.test',team_name:'Alpha',contact_name:'Coach',contact_email:'coach@example.test'}};
+  try{
+    assert.equal((await app.route.POST(request({...base,requestId:'email-case-00001'}))).status,200);
+    const replay=await app.route.POST(request({...base,requestId:'email-case-00002',answers:{...base.answers,email:'COACH@EXAMPLE.TEST',contact_email:'COACH@EXAMPLE.TEST'}}));
+    assert.equal(replay.status,200);assert.equal((await replay.json()).replay,true);
+    const collision=await app.route.POST(request({...base,requestId:'email-case-00003',answers:{...base.answers,contact_name:'Different Coach'}}));
+    assert.equal(collision.status,409);
+    assert.equal([...records.keys()].filter(path=>path.startsWith('teams/a/events/e/registrationEntries/')).length,1);
+  }finally{app.dispose();}
+});
+
 test('tournament waiver exact replay preserves signedAt and tampering fails closed',async()=>{
   const config=teamConfig({require_default_waiver:true,default_waiver_text:'Exact terms'}),code='VALIDCODE',seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'}),body={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate:new Date().toISOString().slice(0,10),expectedVersion:1,expectedHash:config.config_hash};
