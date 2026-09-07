@@ -27,24 +27,24 @@ test('public event final seat is serialized and a missing legacy counter migrate
 });
 
 test('league scoring verifies the private HMAC with rotation and rejects tampering',async()=>{
-  const previous='previous-competition-test-secret-at-least-32-bytes',league={creatorId:'owner',name:'League',is_active:true,teams:{a:{teamName:'A'},b:{teamName:'B'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
-  const {db}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/private/lifecycle':{scorekeeperPinHash:hashLeagueScorekeeperPin('l','8274',[previous])},'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const previous='previous-competition-test-secret-at-least-32-bytes',league={creatorId:'owner',tenantId:'host',name:'League',is_active:true,teams:{a:{teamName:'A',status:'accepted'},b:{teamName:'B',status:'accepted'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
+  const {db}=communicationDb({'teams/host':{ownerUserId:'owner',planId:'league'},'users/owner':{role:'coach',plan_type:'league'},'leagues/l':league,'leagues/l/private/lifecycle':{scorekeeperPinHash:hashLeagueScorekeeperPin('l','8274',[previous])},'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   try{
-    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',score1:2,score2:1}))).status,403);
-    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:2,score2:1}))).status,200);
-    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:3,score2:1}))).status,200);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',requestId:'hmac-score-first',expectedGameVersion:0,score1:2,score2:1}))).status,403);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',requestId:'hmac-score-first',expectedGameVersion:0,score1:2,score2:1}))).status,200);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',requestId:'hmac-score-correct',expectedGameVersion:1,score1:3,score2:1}))).status,200);
   }finally{app.dispose();}
 });
 
 test('legacy league PIN migrates only on a correct score in the same transaction',async()=>{
-  const league={creatorId:'owner',billingOwnerUserId:'owner',name:'Legacy League',is_active:true,scorekeeperPin:'8274',teams:{a:{teamName:'A'},b:{teamName:'B'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
-  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const league={creatorId:'owner',tenantId:'host',billingOwnerUserId:'owner',name:'Legacy League',is_active:true,scorekeeperPin:'8274',teams:{a:{teamName:'A',status:'accepted'},b:{teamName:'B',status:'accepted'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
+  const {db,records}=communicationDb({'teams/host':{ownerUserId:'owner',planId:'league'},'users/owner':{role:'coach',plan_type:'league'},'leagues/l':league,'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   try{
-    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',score1:2,score2:1}))).status,403);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',requestId:'hmac-score-first',expectedGameVersion:0,score1:2,score2:1}))).status,403);
     assert.equal(records.get('leagues/l').scorekeeperPin,'8274');assert.equal(records.has('leagues/l/private/lifecycle'),false);
-    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:2,score2:1}))).status,200);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',requestId:'hmac-score-first',expectedGameVersion:0,score1:2,score2:1}))).status,200);
     assert.equal('scorekeeperPin' in records.get('leagues/l'),false);assert.match(records.get('leagues/l/private/lifecycle').scorekeeperPinHash,/^hmac-sha256:v1:[a-f0-9]{64}$/);
-    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:3,score2:1}))).status,200);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',requestId:'hmac-score-correct',expectedGameVersion:1,score1:3,score2:1}))).status,200);
   }finally{app.dispose();}
 });
 

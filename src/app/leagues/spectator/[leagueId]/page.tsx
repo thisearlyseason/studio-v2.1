@@ -1,11 +1,10 @@
 
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { DateRange } from "react-day-picker";
 import { useParams } from 'next/navigation';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { usePublicPortal } from '@/hooks/use-public-portal';
 import { League, TournamentGame } from '@/components/providers/team-provider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,7 +23,6 @@ import { SquadIdentity } from '@/components/SquadIdentity';
 
 export default function PublicLeagueSpectatorHub() {
   const { leagueId } = useParams();
-  const db = useFirestore();
 
   const [teamFilter, setTeamFilter] = useState<string | 'all'>('all');
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -32,10 +30,14 @@ export default function PublicLeagueSpectatorHub() {
     to: addDays(startOfDay(new Date()), 14)
   });
 
-  // This public route reads a server-produced, spectator-safe view. It never
-  // reads the private league document, which can contain registrations and finance data.
-  const leagueRef = useMemoFirebase(() => (db && leagueId) ? doc(db, 'publicLeagueViews', leagueId as string) : null, [db, leagueId]);
-  const { data: league, isLoading } = useDoc<League>(leagueRef);
+  const portalUrl = leagueId ? '/api/public/portals?kind=league&purpose=spectator&leagueId=' + encodeURIComponent(String(leagueId)) : null;
+  const { data: league, isLoading, retry } = usePublicPortal<League>(portalUrl);
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') retry(); };
+    const timer = setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [retry]);
 
   const filteredSchedule = useMemo(() => {
     if (!league?.schedule) return [];

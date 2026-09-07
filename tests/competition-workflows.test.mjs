@@ -2,8 +2,36 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { calculateTournamentStandings } from '../src/lib/tournament-standings.ts';
+import * as leagueScoringClient from '../src/lib/public-league-scoring.ts';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('League resolution controls require a disputed match and current organizer identity', () => {
+  const base = { actorUid: 'owner', creatorId: 'owner', isDisputed: true };
+  assert.equal(leagueScoringClient.canResolveLeagueGame(base), true);
+  assert.equal(leagueScoringClient.canResolveLeagueGame({ ...base, actorUid: 'staff' }), false);
+  assert.equal(leagueScoringClient.canResolveLeagueGame({ ...base, isDisputed: false }), false);
+  assert.equal(leagueScoringClient.canResolveLeagueGame({ ...base, actorUid: 'tenant-owner', tenantId: 'host', ownedTeamId: 'host' }), true);
+});
+
+test('League resolution commands require a reason and preserve the displayed version and outcome', () => {
+  const base = { leagueId: 'league-a', gameId: 'game-a', expectedGameVersion: 7, reason: 'Official record checked', outcome: 'uphold', score1: 50, score2: 20 };
+  assert.throws(() => leagueScoringClient.leagueResolutionCommand({ ...base, reason: ' ' }), /reason/i);
+  assert.deepEqual(leagueScoringClient.leagueResolutionCommand(base), { action: 'resolve-dispute', leagueId: 'league-a', gameId: 'game-a', reason: 'Official record checked', expectedGameVersion: 7, outcome: 'uphold' });
+  assert.deepEqual(leagueScoringClient.leagueResolutionCommand({ ...base, outcome: 'correct', score1: 0, score2: 2 }), { action: 'resolve-dispute', leagueId: 'league-a', gameId: 'game-a', reason: 'Official record checked', expectedGameVersion: 7, outcome: 'correct', score1: 0, score2: 2 });
+});
+
+test('League client retries preserve body and identity after an uncertain response without replacing game version', async () => {
+  const pending = new Map(), bodies = [];
+  const command = { action: 'resolve-dispute', leagueId: 'league-a', gameId: 'game-a', outcome: 'uphold', reason: 'Confirmed', expectedGameVersion: 7 };
+  const send = async body => { bodies.push(structuredClone(body)); if (bodies.length === 1) throw Error('Connection lost after commit'); return Response.json({ success: true }); };
+  await assert.rejects(leagueScoringClient.sendLeagueScoringCommand(pending, command, send), /Connection lost/);
+  await leagueScoringClient.sendLeagueScoringCommand(pending, command, send);
+  assert.deepEqual(bodies[0], bodies[1]);
+  assert.equal(bodies[1].expectedGameVersion, 7);
+  assert.match(bodies[0].requestId, /^league-score-/);
+  assert.equal(pending.size, 0);
+});
 
 test('tournament setup, bracket, schedule, and deployment use explicit persisted states', () => {
   const page = read('src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx');

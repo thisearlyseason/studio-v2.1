@@ -78,6 +78,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { getFacilityFieldName } from '@/lib/facility-rename';
+import { canResolveLeagueGame } from '@/lib/public-league-scoring';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { EventSafetyPanel } from '@/components/safety/event-safety-panel';
 import {
@@ -580,13 +581,20 @@ function LeagueOverview({
   onDeploySchedule?: () => Promise<void>, 
   isDeployingSchedule?: boolean 
 }) {
-  const { isStaff, user, submitLeagueMatchScore, activeTeam, teams } = useTeam();
+  const { isStaff, user, submitLeagueMatchScore, resolveLeagueMatchDispute, activeTeam, teams } = useTeam();
   const canManageLeague = isStaff || user?.role === 'league_creator';
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [teamFilter, setTeamFilter] = useState<string>('all');
   const [editingGame, setEditingGame] = useState<TournamentGame | null>(null);
   const [scoreForm, setScoreForm] = useState({ s1: '', s2: '' });
+  const [resolutionOutcome, setResolutionOutcome] = useState<'uphold' | 'correct'>('uphold');
+  const [resolutionReason, setResolutionReason] = useState('');
+  const [isSavingScore, setIsSavingScore] = useState(false);
+  const canResolve = canResolveLeagueGame({ actorUid: user?.id, actorRole: user?.role, creatorId: league.creatorId, tenantId: league.tenantId,
+    ownedTeamId: activeTeam?.ownerUserId === user?.id ? activeTeam?.id : undefined, isDisputed: editingGame?.isDisputed });
+  useEffect(() => { setResolutionReason(''); setResolutionOutcome('uphold'); }, [editingGame?.id]);
+
 
   // Logo map: activeTeam is the authoritative source (live Firestore doc merge).
   // teamsRaw/teamMemberships docs do NOT contain teamLogoUrl — only activeTeamDoc does.
@@ -649,10 +657,23 @@ function LeagueOverview({
   }, [schedule, teamFilter, dateRange]);
 
   const handleUpdateScore = async () => {
-    if (!editingGame || !scoreForm.s1 || !scoreForm.s2) return;
-    await submitLeagueMatchScore(league.id, editingGame.id, true, parseInt(scoreForm.s1), parseInt(scoreForm.s2));
-    setEditingGame(null);
-    toast({ title: "Result Persisted" });
+    if (!editingGame || isSavingScore) return;
+    if (editingGame.isDisputed && (!canResolve || !resolutionReason.trim())) return;
+    if ((!editingGame.isDisputed || resolutionOutcome === 'correct') && (!scoreForm.s1 || !scoreForm.s2)) return;
+    setIsSavingScore(true);
+    try {
+      if (editingGame.isDisputed) {
+        await resolveLeagueMatchDispute(league.id, editingGame.id, resolutionOutcome, resolutionReason, editingGame.gameVersion ?? 0,
+          Number(scoreForm.s1), Number(scoreForm.s2));
+      } else {
+        await submitLeagueMatchScore(league.id, editingGame.id, true, Number(scoreForm.s1), Number(scoreForm.s2), undefined, editingGame.gameVersion ?? 0);
+      }
+      setEditingGame(null);
+      // The existing authoritative League subscription refreshes schedule and standings.
+      toast({ title: editingGame.isDisputed ? 'Dispute Resolved' : 'Result Persisted' });
+    } catch (error) {
+      toast({ title: 'Result Not Saved', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    } finally { setIsSavingScore(false); }
   };
 
   const getDoubleHeaderLabel = (game: TournamentGame) => {
@@ -1097,19 +1118,29 @@ function LeagueOverview({
                 )}
               </DialogDescription>
             </DialogHeader>
+            {editingGame?.isDisputed && canResolve && <div className="space-y-3">
+              <Label>Resolution</Label>
+              <Select value={resolutionOutcome} onValueChange={value => setResolutionOutcome(value as 'uphold' | 'correct')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="uphold">Uphold recorded result</SelectItem><SelectItem value="correct">Correct result</SelectItem></SelectContent>
+              </Select>
+              <Label htmlFor="league-resolution-reason">Resolution reason</Label>
+              <Textarea id="league-resolution-reason" value={resolutionReason} onChange={event => setResolutionReason(event.target.value)} maxLength={2000} required />
+            </div>}
+            {editingGame?.isDisputed && !canResolve && <p>Only the League organizer can resolve this dispute.</p>}
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-3">
                 <Label className="text-[10px] font-black uppercase opacity-60 ml-1">Home Score</Label>
-                <Input type="number" value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
+                <Input type="number" disabled={editingGame?.isDisputed && resolutionOutcome === 'uphold'} value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
               </div>
               <div className="space-y-3">
                 <Label className="text-[10px] font-black uppercase opacity-60 ml-1">Guest Score</Label>
-                <Input type="number" value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
+                <Input type="number" disabled={editingGame?.isDisputed && resolutionOutcome === 'uphold'} value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
               </div>
             </div>
             <div className="flex gap-4">
               <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-xs" onClick={() => setEditingGame(null)}>Cancel</Button>
-              <Button className="flex-[2] h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleUpdateScore}>Commit Result</Button>
+              <Button className="flex-[2] h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleUpdateScore} disabled={isSavingScore || (!!editingGame?.isDisputed && (!canResolve || !resolutionReason.trim()))}>{editingGame?.isDisputed ? 'Resolve Dispute' : 'Commit Result'}</Button>
             </div>
           </div>
         </DialogContent>
@@ -1581,15 +1612,28 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     );
   }, [isAuthResolved, db, authUser?.uid, canManageLeagues, isSuperAdmin]);
 
-  const memberLeaguesQuery = useMemoFirebase(() => {
-    if (!isAuthResolved || !db || !authUser?.uid || isSuperAdmin) return null;
-    return query(
-      collection(db, 'leagues'),
-      where('memberUserIds', 'array-contains', authUser.uid),
-      where('sensitiveFieldsMigrated', '==', true),
-      limit(canManageLeagues ? 50 : 20)
-    );
-  }, [isAuthResolved, db, authUser?.uid, canManageLeagues, isSuperAdmin]);
+  const [memberLeagues, setMemberLeagues] = useState<League[]>([]);
+  const [memberLeaguesLoading, setMemberLeaguesLoading] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    setMemberLeagues([]);
+    if (!isAuthResolved || !firebaseAuth || !authUser?.uid || !activeTeam?.id || isSuperAdmin) return;
+    const refresh = async () => {
+      setMemberLeaguesLoading(true);
+      try {
+        const token = await getAuthToken(firebaseAuth);
+        const response = await fetch('/api/leagues/scoring?purpose=member&teamId=' + encodeURIComponent(activeTeam.id), {
+          signal: controller.signal, headers: authHeader(token),
+        });
+        const result = await response.json();
+        if (!controller.signal.aborted) setMemberLeagues(response.ok ? result.data : []);
+      } catch { if (!controller.signal.aborted) setMemberLeagues([]); }
+      finally { if (!controller.signal.aborted) setMemberLeaguesLoading(false); }
+    };
+    void refresh();
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 30000);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [isAuthResolved, firebaseAuth, authUser?.uid, activeTeam?.id, isSuperAdmin]);
 
   const tenantLeaguesQuery = useMemoFirebase(() => {
     if (!isAuthResolved || !db || !activeTeam?.id || !canManageLeagues || isSuperAdmin) return null;
@@ -1601,11 +1645,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   }, [isAuthResolved, db, activeTeam?.id, canManageLeagues, isSuperAdmin]);
 
   const { data: ownedLeagues, isLoading: ownedLeaguesLoading } = useCollection<League>(ownedLeaguesQuery);
-  const { data: memberLeagues, isLoading: memberLeaguesLoading } = useCollection<League>(memberLeaguesQuery);
   const { data: tenantLeagues, isLoading: tenantLeaguesLoading } = useCollection<League>(tenantLeaguesQuery);
   const allLeagues = useMemo(() => {
     const merged = new Map<string, League>();
-    [...(ownedLeagues || []), ...(memberLeagues || []), ...(tenantLeagues || [])].forEach(league => merged.set(league.id, league));
+    [...(memberLeagues || []), ...(ownedLeagues || []), ...(tenantLeagues || [])].forEach(league => merged.set(league.id, league));
     const result = Array.from(merged.values());
     // Superadmin sees operational leagues by default; demo seed artifacts stay
     // out of the working list so they cannot be mistaken for real leagues.

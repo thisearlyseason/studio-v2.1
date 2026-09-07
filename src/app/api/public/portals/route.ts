@@ -4,9 +4,12 @@ import {
   permitsLegacyOrPaidPortals,
   leagueBillingOwnerUserId,
   publicLeague,
+  spectatorLeague, scorekeeperLeague,
   publicRegistrationConfig,
   publicTournament,
 } from '@/lib/public-portal-data';
+import { readActiveScoringLeague } from '@/lib/server-competition-scoring';
+import { ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
 import { effectiveLeagueRegistrationConfig, RegistrationInputError } from '@/lib/registration-policy';
 import { enforceUserRateLimit } from '@/lib/server-request-guards';
 import { assertNonAnonymous, verifyFirebaseToken } from '@/lib/api-auth';
@@ -80,16 +83,13 @@ export async function GET(req: NextRequest) {
       if (!isSafeId(identifier)) return NextResponse.json({ error: 'Missing or invalid leagueId.' }, { status: 400 });
       const league = await findLeague(identifier);
       if (!league) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
-      const billingOwnerId = leagueBillingOwnerUserId(league.data() || {});
-      if (billingOwnerId) {
-        const creator = await adminDb.collection('users').doc(billingOwnerId).get();
-        if (!creator.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
-          return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
-        }
-      }
-      const data = publicLeague(league.id, league.data());
-      if (!data.isActive) return NextResponse.json({ error: 'League portal is inactive.' }, { status: 404 });
-      return NextResponse.json({ data });
+      const data = await adminDb.runTransaction(async transaction => {
+        const current = await readActiveScoringLeague(transaction, league.id);
+        if (req.nextUrl.searchParams.get('purpose') === 'spectator') return spectatorLeague(league.id, current);
+        const credential = await transaction.get(league.ref.collection('private').doc('lifecycle'));
+        return scorekeeperLeague(league.id, { ...current, scorekeeperConfigured: !!credential.data()?.scorekeeperPinHash || !!current.scorekeeperPin });
+      });
+      return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
     if (kind === 'tournament') {
@@ -135,6 +135,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid portal kind.' }, { status: 400 });
   } catch (error: any) {
+    if (error instanceof ScheduleDeploymentError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof RegistrationInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('[public/portals] Error:', error.message);
     return NextResponse.json({ error: 'Portal service is temporarily unavailable.' }, { status: 500 });

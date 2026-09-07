@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     if (body.action === 'delete') {
       return NextResponse.json({ error: 'League deletion requires DELETE /api/leagues/lifecycle with a request ID and lifecycle version.' }, { status: 410 });
     }
-    const isLiveMutation = body.action === 'score' || body.action === 'dispute';
+    const isLiveMutation = body.action === 'score' || body.action === 'dispute' || body.action === 'resolve-dispute';
     if (!isLiveMutation && (!Number.isSafeInteger(body.expectedVersion) || Number(body.expectedVersion) < 0)) {
       return NextResponse.json({ error: 'A numeric current League version is required.' }, { status: 400 });
     }
@@ -47,11 +47,14 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ success: true });
     }
-    if (body.action === 'score' || body.action === 'dispute') {
+    if (body.action === 'score' || body.action === 'dispute' || body.action === 'resolve-dispute') {
       const schedule = await mutateLeagueScheduleGame({
         leagueId: typeof body.leagueId === 'string' ? body.leagueId : '',
         gameId: typeof body.gameId === 'string' ? body.gameId : '',
         action: body.action,
+        requestId: String(body.requestId || ''),
+        expectedGameVersion: body.expectedGameVersion as number,
+        reason: body.reason, outcome: body.outcome,
         actor: { uid: auth.uid, role: auth.role },
         score1: body.score1,
         score2: body.score2,

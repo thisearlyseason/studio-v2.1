@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
 import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
+import { leagueResolutionCommand, sendLeagueScoringCommand } from '@/lib/public-league-scoring';
 import {libraryDataUrlBlob} from '@/lib/library-client-upload';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
@@ -732,6 +733,7 @@ export type EquipmentItem = {
 };
 
 export type TournamentGame = {
+  gameVersion?: number;
   id: string;
   team1: string;
   team2: string;
@@ -971,10 +973,11 @@ interface TeamContextType {
   respondToAssignment: (contextId: string, entryId: string, status: 'accepted' | 'declined', versions: { lifecycleVersion: number; assignmentVersion: number }) => Promise<boolean>;
   signPublicTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string, coachName: string) => Promise<boolean>;
   submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => Promise<void>;
-  submitLeagueMatchScore: (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => Promise<void>;
+  submitLeagueMatchScore: (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string, expectedGameVersion?: number) => Promise<void>;
+  resolveLeagueMatchDispute: (leagueId: string, gameId: string, outcome: 'uphold' | 'correct', reason: string, expectedGameVersion: number, score1?: number, score2?: number) => Promise<void>;
   updateLeaguePin: (leagueId: string, pin: string) => Promise<void>;
   disputeMatchScore: (teamId: string, eventId: string, gameId: string, notes: string) => Promise<void>;
-  disputeLeagueMatchScore: (leagueId: string, gameId: string, notes: string) => Promise<void>;
+  disputeLeagueMatchScore: (leagueId: string, gameId: string, notes: string, expectedGameVersion?: number) => Promise<void>;
   manageSubscription: () => Promise<void>;
   resolveQuota: (selectedTeamIds: string[]) => Promise<void>;
   createAlert: (title: string, message: string, audience: TeamAlert['audience'], targetUserId?: string) => Promise<void>;
@@ -3455,18 +3458,24 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!response.ok) throw new Error(payload.error || 'Unable to submit the tournament score.');
   }, [firebaseAuth]);
   
-  const submitLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => {
-    if (!firebaseAuth) return;
+  const pendingLeagueScores = useRef(new Map<string, Record<string, unknown>>());
+  const requestLeagueScore = useCallback(async (input: Record<string, unknown>, expectedGameVersion?: number) => {
+    if (!firebaseAuth) throw new Error('Your session is unavailable.');
+    if (!Number.isSafeInteger(expectedGameVersion)) throw new Error('Refresh the match before scoring.');
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/leagues/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'score', leagueId, gameId, isTeam1, score1, score2, pin }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Unable to submit the league score.');
+    await sendLeagueScoringCommand(pendingLeagueScores.current, { ...input, expectedGameVersion }, body => fetch('/api/leagues/scoring', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify(body),
+    }));
   }, [firebaseAuth]);
+
+  const submitLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string, expectedGameVersion?: number) => {
+    await requestLeagueScore({ action: 'score', leagueId, gameId, score1, score2, pin }, expectedGameVersion);
+  }, [requestLeagueScore]);
+
+  const resolveLeagueMatchDispute = useCallback(async (leagueId: string, gameId: string, outcome: 'uphold' | 'correct', reason: string, expectedGameVersion: number, score1?: number, score2?: number) => {
+    await requestLeagueScore(leagueResolutionCommand({ leagueId, gameId, outcome, reason, expectedGameVersion, score1, score2 }), expectedGameVersion);
+  }, [requestLeagueScore]);
 
   const disputeMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, notes: string) => {
     if (!firebaseAuth) return;
@@ -3480,18 +3489,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Unable to dispute the tournament score.');
   }, [firebaseAuth]);
-  const disputeLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, notes: string) => {
-    if (!firebaseAuth) return;
-    const token = await getAuthToken(firebaseAuth);
-    if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/leagues/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'dispute', leagueId, gameId, notes }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Unable to dispute the league score.');
-  }, [firebaseAuth]);
+  const disputeLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, notes: string, expectedGameVersion?: number) => {
+    await requestLeagueScore({ action: 'dispute', leagueId, gameId, notes }, expectedGameVersion);
+  }, [requestLeagueScore]);
 
   const resolveQuota = useCallback(async (selectedTeamIds: string[]) => {
     if (!firebaseAuth || !userProfile?.id) return;
@@ -3598,7 +3598,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, signUpForFundraising, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
-    signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
+    signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, resolveLeagueMatchDispute, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,
     createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent,
     addPracticeTemplate, updatePracticeTemplate, deletePracticeTemplate,
@@ -3639,7 +3639,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     confirmVolunteerAttendance, addVolunteerOpportunity, updateVolunteerOpportunity, deleteVolunteerOpportunity, publicSignUpForVolunteer, addFundraisingOpportunity, updateFundraisingOpportunity, signUpForFundraising, recordDonation,
     confirmExternalDonation, addIncident, updateIncident, assignManualPlan, removeTeamFromLeague,
     saveLeagueRegistrationConfig, submitRegistrationEntry,
-    signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
+    signPublicTournamentWaiver, submitMatchScore, submitLeagueMatchScore, resolveLeagueMatchDispute, updateLeaguePin, disputeMatchScore, disputeLeagueMatchScore,
     addLeagueGame,
     createAlert, deleteAlert, addDrill, updateDrill, deleteDrill, assignDrillsToEvent, 
     addPracticeTemplate, updatePracticeTemplate, deletePracticeTemplate,

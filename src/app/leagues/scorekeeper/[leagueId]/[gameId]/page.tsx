@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { League, TournamentGame } from '@/components/providers/team-provider';
 import { usePublicPortal } from '@/hooks/use-public-portal';
@@ -22,7 +22,13 @@ import { format, parseISO } from 'date-fns';
 export default function PublicLeagueScorekeeperEntryPage() {
   const { leagueId, gameId } = useParams();
   const router = useRouter();
-  const portalUrl = leagueId ? `/api/public/portals?kind=league&leagueId=${encodeURIComponent(leagueId as string)}` : null;
+  const pendingCommands = useRef(new Map<string, string>());
+  const requestIdFor = (payload: object) => {
+    const key = JSON.stringify(payload);
+    if (!pendingCommands.current.has(key)) pendingCommands.current.set(key, 'public-score-' + crypto.randomUUID());
+    return pendingCommands.current.get(key)!;
+  };
+  const portalUrl = leagueId ? `/api/public/portals?kind=league&purpose=scorekeeper&leagueId=${encodeURIComponent(leagueId as string)}` : null;
   const { data: league, isLoading, error, status, retry } = usePublicPortal<League>(portalUrl);
 
   const game = useMemo(() => {
@@ -51,11 +57,11 @@ export default function PublicLeagueScorekeeperEntryPage() {
   const handleSubmit = async () => {
     if (!selectedTeam || !score1 || !score2 || isSubmitting) return;
     setIsSubmitting(true);
-    const isTeam1 = selectedTeam === game.team1;
     try {
+      const command = { kind: 'league', action: 'score', leagueId, gameId, expectedGameVersion: game.gameVersion ?? 0, score1: Number(score1), score2: Number(score2), code: pin };
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'league', action: 'score', leagueId, gameId, score1: parseInt(score1), score2: parseInt(score2), code: pin, reportedBy: isTeam1 ? game.team1 : game.team2 }),
+        body: JSON.stringify({ ...command, requestId: requestIdFor(command) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Score could not be posted.');
@@ -71,13 +77,14 @@ export default function PublicLeagueScorekeeperEntryPage() {
     if (!disputeNotes.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
+      const command = { kind: 'league', action: 'dispute', leagueId, gameId, expectedGameVersion: game.gameVersion ?? 0, notes: disputeNotes, code: pin };
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'league', action: 'dispute', leagueId, gameId, notes: disputeNotes, code: pin }),
+        body: JSON.stringify({ ...command, requestId: requestIdFor(command) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Dispute could not be filed.');
-      toast({ title: "Dispute Logged", description: "The league organizer has been alerted." });
+      toast({ title: "Dispute Logged", description: "The dispute is available for organizer review." });
       setIsDisputeOpen(false);
       router.push(`/leagues/scorekeeper/${leagueId}`);
     } catch (err) {

@@ -4,6 +4,7 @@ import { adminDb } from '@/lib/firebase-admin';
 import { validateSchedule } from '@/lib/intelligent-scheduler';
 import { resolveCompetitionAuthority } from '@/lib/server-competition-authority';
 import { canonicalCompetitionRequest, runCompetitionOperation } from '@/lib/server-competition-operation';
+import { leagueGameVersionFloor } from '@/lib/public-league-scoring';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const GAME_ID_PATTERN = /^[A-Za-z0-9_-]{1,180}$/;
@@ -22,6 +23,7 @@ type LeagueTeam = {
 };
 
 type LeagueData = {
+  gameVersionFloor?: unknown;
   name?: unknown;
   creatorId?: unknown;
   startDate?: unknown;
@@ -49,6 +51,7 @@ type LeagueData = {
 type RawGame = Record<string, unknown>;
 
 export type NormalizedLeagueGame = {
+  gameVersion: number;
   id: string;
   team1: string;
   team2: string;
@@ -107,7 +110,11 @@ export type LeagueScheduleDeploymentInput = ScheduleRequest & {
 export type LeagueScheduleGameMutationInput = {
   leagueId: string;
   gameId: string;
-  action: 'score' | 'dispute';
+  action: 'score' | 'dispute' | 'resolve-dispute';
+  requestId: string;
+  expectedGameVersion: number;
+  reason?: unknown;
+  outcome?: unknown;
   actor: DeploymentActor;
   score1?: unknown;
   score2?: unknown;
@@ -382,6 +389,7 @@ function normalizeGame(
   const now = new Date().toISOString();
   return withoutUndefined({
     id,
+    gameVersion: preserveState ? Number(raw.gameVersion ?? 0) : leagueGameVersionFloor(league) + 1,
     team1: text(team1.teamName, 160) || text(raw.team1, 160) || 'Team 1',
     team2: text(team2.teamName, 160) || text(raw.team2, 160) || 'Team 2',
     team1Id,
@@ -730,7 +738,7 @@ async function runLeagueScheduleOperation<T>(
     const league = snapshot.data()!;
     assertLeagueScheduleVersion(league, input.expectedVersion);
     const result = await mutate(transaction, league);
-    transaction.update(ref, { tenantId: authority.tenantId, lifecycleVersion: input.expectedVersion + 1 });
+    transaction.update(ref, { tenantId: authority.tenantId, lifecycleVersion: input.expectedVersion + 1, gameVersionFloor: leagueGameVersionFloor(league) });
     return result;
   }));
 }
@@ -921,6 +929,8 @@ export async function deployLeagueSchedule(input: LeagueScheduleDeploymentInput)
           teamEvent(input.leagueId, text(league.name, 160) || 'League', game, teamId, now));
       }
     }
+    // Preserve the generation fence even if these games are later cleared.
+    league.gameVersionFloor = Math.max(leagueGameVersionFloor(league), ...prepared.games.map(game => game.gameVersion));
     const updates: Record<string, unknown> = { schedule: prepared.games, scheduleUpdatedAt: now, scheduleUpdatedBy: input.actor.uid };
     if (input.action === 'replace') activeLeagueTeams(league).forEach((_, teamId) => {
       for (const field of ['wins', 'losses', 'ties', 'points']) updates[`teams.${teamId}.${field}`] = 0;
@@ -930,125 +940,12 @@ export async function deployLeagueSchedule(input: LeagueScheduleDeploymentInput)
   });
 }
 
-async function mutateLeagueScheduleGameUnlocked(input: LeagueScheduleGameMutationInput): Promise<NormalizedLeagueGame[]> {
-  if (!ID_PATTERN.test(input.leagueId) || !GAME_ID_PATTERN.test(input.gameId)) {
-    throw new ScheduleDeploymentError('INVALID_GAME', 'Invalid league match identifier.');
-  }
-  const leagueRef = adminDb.collection('leagues').doc(input.leagueId);
-  const now = new Date().toISOString();
-  const result = await adminDb.runTransaction(async transaction => {
-    const snapshot = await transaction.get(leagueRef);
-    if (!snapshot.exists) throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
-    const league = snapshot.data() as LeagueData;
-    if (input.actor.role !== 'superadmin' && league.creatorId !== input.actor.uid) {
-      throw new ScheduleDeploymentError('FORBIDDEN', 'Only the league organizer can update match results.', 403);
-    }
-    const schedule = Array.isArray(league.schedule)
-      ? (league.schedule as RawGame[]).map((game, index) => normalizeGame(game, input.leagueId, league, 'existing', index))
-      : [];
-    const gameIndex = schedule.findIndex(game => game.id === input.gameId);
-    if (gameIndex < 0) throw new ScheduleDeploymentError('GAME_NOT_FOUND', 'League match not found.', 404);
-
-    if (input.action === 'score') {
-      const score1 = Number(input.score1);
-      const score2 = Number(input.score2);
-      if (!Number.isInteger(score1) || !Number.isInteger(score2) || score1 < 0 || score2 < 0 || score1 > 9_999 || score2 > 9_999) {
-        throw new ScheduleDeploymentError('INVALID_SCORE', 'Scores must be whole numbers between 0 and 9999.');
-      }
-      const scoringPin = text(league.scorekeeperPin, 100);
-      const actorCanBypassPin = input.actor.role === 'admin' || input.actor.role === 'superadmin';
-      if (scoringPin && text(input.pin, 100) !== scoringPin && !actorCanBypassPin) {
-        throw new ScheduleDeploymentError('INVALID_SCOREKEEPER_PIN', 'Invalid scorekeeper verification PIN.', 403);
-      }
-      schedule[gameIndex] = {
-        ...schedule[gameIndex],
-        score1,
-        score2,
-        isCompleted: true,
-        isDisputed: undefined,
-        disputeNotes: undefined,
-        reportedBy: 'League Office',
-        updatedAt: now,
-      };
-    } else {
-      const notes = text(input.notes, 2_000);
-      if (!notes) throw new ScheduleDeploymentError('DISPUTE_NOTES_REQUIRED', 'Dispute notes are required.');
-      schedule[gameIndex] = {
-        ...schedule[gameIndex],
-        isDisputed: true,
-        disputeNotes: notes,
-        updatedAt: now,
-      };
-    }
-
-    const teams = Object.fromEntries(Object.entries(league.teams || {}).map(([teamId, team]) => [teamId, {
-      ...team,
-      wins: 0,
-      losses: 0,
-      ties: 0,
-      points: 0,
-    }]));
-    schedule.forEach(game => {
-      if (!game.isCompleted || game.isExhibition) return;
-      const team1 = teams[game.team1Id];
-      const team2 = teams[game.team2Id];
-      if (!team1 || !team2) return;
-      if (game.score1 > game.score2) {
-        team1.wins = Number(team1.wins || 0) + 1;
-        team1.points = Number(team1.points || 0) + 3;
-        team2.losses = Number(team2.losses || 0) + 1;
-      } else if (game.score2 > game.score1) {
-        team2.wins = Number(team2.wins || 0) + 1;
-        team2.points = Number(team2.points || 0) + 3;
-        team1.losses = Number(team1.losses || 0) + 1;
-      } else {
-        team1.ties = Number(team1.ties || 0) + 1;
-        team1.points = Number(team1.points || 0) + 1;
-        team2.ties = Number(team2.ties || 0) + 1;
-        team2.points = Number(team2.points || 0) + 1;
-      }
-    });
-    transaction.update(leagueRef, {
-      schedule,
-      teams,
-      scheduleUpdatedAt: now,
-      scheduleUpdatedBy: input.actor.uid,
-    });
-    return { schedule, game: schedule[gameIndex], leagueName: text(league.name, 160) || 'League' };
-  });
-
-  if (input.action === 'score') {
-    const game = result.game;
-    const batch = adminDb.batch();
-    const sync = (teamId: string, myScore: number, opponentScore: number, opponent: string, opponentTeamId: string) => {
-      const ref = adminDb.collection('teams').doc(teamId).collection('games').doc(`lg_${game.id}`);
-      batch.set(ref, withoutUndefined({
-        id: ref.id,
-        teamId,
-        opponent,
-        date: game.date,
-        myScore,
-        opponentScore,
-        result: myScore > opponentScore ? 'Win' : myScore < opponentScore ? 'Loss' : 'Tie',
-        location: game.location,
-        notes: `Official result from ${result.leagueName}`,
-        leagueId: input.leagueId,
-        leagueGameId: game.id,
-        matchTeamIds: [teamId, opponentTeamId],
-        updatedAt: now,
-      }));
-    };
-    sync(game.team1Id, game.score1, game.score2, game.team2, game.team2Id);
-    sync(game.team2Id, game.score2, game.score1, game.team1, game.team1Id);
-    await batch.commit();
-  }
-  return result.schedule;
-}
-
-export async function mutateLeagueScheduleGame(
-  input: LeagueScheduleGameMutationInput
-): Promise<NormalizedLeagueGame[]> {
-  return withScheduleMutationLock(() => mutateLeagueScheduleGameUnlocked(input));
+/** Compatibility entry point; Task 4 owns all score/dispute mutations. */
+export async function mutateLeagueScheduleGame(input: LeagueScheduleGameMutationInput) {
+  const { submitCompetitionScore, openCompetitionDispute, resolveCompetitionDispute, competitionScoringInput } = await import('@/lib/server-competition-scoring');
+  const command = competitionScoringInput({ ...input }, input.actor);
+  const service = input.action === 'score' ? submitCompetitionScore : input.action === 'dispute' ? openCompetitionDispute : resolveCompetitionDispute;
+  return (await service(command)).schedule;
 }
 
 export async function removeLeagueTeamMembership(input: LeagueTeamRemovalInput): Promise<void> {

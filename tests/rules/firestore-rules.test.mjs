@@ -21,6 +21,16 @@ import {
 const projectId = 'demo-the-squad-rules-test';
 let testEnv;
 
+test('League member roots, raw spectator projections, score records, and game generation floor are server-only', async () => {
+  const member = authenticatedDb('member');
+  const owner = authenticatedDb('owner');
+  await assertFails(getDoc(doc(member, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), 'publicLeagueViews', 'league-a')));
+  await assertFails(setDoc(doc(owner, 'leagues', 'league-a'), { gameVersionFloor: 0 }, { merge: true }));
+  await assertFails(setDoc(doc(owner, 'leagues', 'league-a', 'scores', 'forged'), { score1: 999 }));
+  await assertSucceeds(getDoc(doc(owner, 'leagues', 'league-a')));
+});
+
 test('feed posts comments receipts and audit cannot bypass authenticated audience service',async()=>{
   await testEnv.withSecurityRulesDisabled(async context=>{
     const db=context.firestore();
@@ -653,7 +663,7 @@ test('league lifecycle roots and sensitive fields are server-owned', async () =>
     ]);
   });
 
-  await assertSucceeds(getDoc(doc(memberDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a')));
   await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a')));
   await assertFails(getDoc(doc(memberDb, 'leagues', 'unsafe-league')));
   await assertFails(setDoc(leagueRef, { name: 'Direct metadata bypass' }, { merge: true }));
@@ -1271,7 +1281,7 @@ test('league applicant ledgers and waiver receipts are organizer-readable but se
   const ownerDb = authenticatedDb('owner');
   await testEnv.withSecurityRulesDisabled(async context=>{const db=context.firestore();await setDoc(doc(db,'leagues','league-a','registration','team_config'),{is_active:false,title:'Private draft'});await setDoc(doc(db,'leagues','league-a','registrationEntries','private-entry'),{answers:{email:'private@example.test'},ownerUserId:'member'});await setDoc(doc(db,'leagues','league-a','archived_waivers','private-receipt'),{signer:'Applicant',waiverText:'Private terms'});});
 
-  await assertSucceeds(getDoc(doc(memberDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a')));
   await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a')));
   await assertFails(getDoc(doc(memberDb,'leagues','league-a','registration','team_config')));
   await assertFails(getDoc(doc(memberDb,'leagues','league-a','registrationEntries','private-entry')));
@@ -1293,7 +1303,7 @@ test('league applicant ledgers and waiver receipts are organizer-readable but se
 test('spectator projections allow direct links but cannot be enumerated', async () => {
   const anonymousDb = testEnv.unauthenticatedContext().firestore();
 
-  await assertSucceeds(getDoc(doc(anonymousDb, 'publicLeagueViews', 'league-a')));
+  await assertFails(getDoc(doc(anonymousDb, 'publicLeagueViews', 'league-a')));
   await assertFails(getDocs(collection(anonymousDb, 'publicLeagueViews')));
 });
 
@@ -1350,7 +1360,7 @@ test('league collection queries cannot discover other organizations', async () =
   const staffDb = authenticatedDb('staff');
   const outsiderDb = authenticatedDb('outsider');
 
-  await assertSucceeds(getDocs(query(
+  await assertFails(getDocs(query(
     collection(memberDb, 'leagues'),
     where('memberUserIds', 'array-contains', 'member'),
     where('sensitiveFieldsMigrated', '==', true),

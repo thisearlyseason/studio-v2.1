@@ -1,3 +1,5 @@
+import { recalculatePublicLeagueStandings } from './public-league-scoring';
+
 const PUBLIC_PLAN_IDS = new Set([
   'team', 'elite', 'league', 'school',
   'pro', 'squad_pro', 'elite_teams', 'elite_league', 'schools',
@@ -89,6 +91,46 @@ export function publicLeague(id: string, league: any) {
     isActive: league.is_active !== false && league.isArchived !== true,
     requiresPin: !!league.scorekeeperPin,
     scorekeeperConfigured: !!league.scorekeeperPin || id.startsWith('demo_'),
+  };
+}
+
+// These DTOs are independent of Registration's deliberately richer publicLeague contract.
+export function spectatorLeague(id: string, league: any) {
+  const standings = recalculatePublicLeagueStandings(league.teams, Array.isArray(league.schedule) ? league.schedule : []);
+  return {
+    id, name: typeof league.name === 'string' ? league.name : '',
+    sport: typeof league.sport === 'string' ? league.sport : '',
+    divisions: Array.isArray(league.divisions) ? league.divisions.filter((value: unknown) => typeof value === 'string') : [],
+    divisionTitle: typeof league.divisionTitle === 'string' ? league.divisionTitle : '',
+    schedule: (Array.isArray(league.schedule) ? league.schedule : []).map((game: any) => ({
+      id: String(game.id || ''), team1: String(game.team1 || ''), team2: String(game.team2 || ''),
+      team1Id: String(game.team1Id || ''), team2Id: String(game.team2Id || ''),
+      date: String(game.date || ''), time: String(game.time || ''), location: String(game.location || ''),
+      score1: Number(game.score1 || 0), score2: Number(game.score2 || 0),
+      isCompleted: game.isCompleted === true, isDisputed: game.isDisputed === true,
+      isExhibition: game.isExhibition === true,
+    })),
+    teams: Object.fromEntries(Object.entries(standings).filter(([, raw]) => ['accepted', 'assigned'].includes((raw as any)?.status)).map(([teamId, raw]) => {
+      const team = raw as any;
+      return [teamId, { teamName: String(team.teamName || ''), teamLogoUrl: String(team.teamLogoUrl || ''), division: String(team.division || ''), status: team.status,
+        wins: Number(team.wins || 0), losses: Number(team.losses || 0), ties: Number(team.ties || 0), points: Number(team.points || 0) }];
+    })),
+    isActive: league.is_active !== false && league.isArchived !== true && league.isDeleted !== true,
+  };
+}
+
+export function scorekeeperLeague(id: string, league: any) {
+  const dto = spectatorLeague(id, league);
+  return { ...dto, requiresPin: true, scorekeeperConfigured: league.scorekeeperConfigured === true || !!league.scorekeeperPin,
+    schedule: dto.schedule.map((game: any, index: number) => ({ ...game, gameVersion: league.schedule[index].gameVersion ?? 0 })) };
+}
+
+export function memberLeague(id: string, league: any) {
+  return { ...scorekeeperLeague(id, league),
+    description: typeof league.description === 'string' ? league.description : '',
+    startDate: typeof league.startDate === 'string' ? league.startDate : '',
+    endDate: typeof league.endDate === 'string' ? league.endDate : '',
+    ages: typeof league.ages === 'string' ? league.ages : '',
   };
 }
 

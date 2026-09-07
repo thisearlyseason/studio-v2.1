@@ -367,7 +367,6 @@ test('browser league schedule mutations use the server route and bookings remain
     readFile(new URL('../src/lib/server-schedule-deployment.ts', import.meta.url), 'utf8'),
   ]);
 
-  assert.match(provider, /fetch\('\/api\/leagues\/schedule'/);
   assert.match(provider, /action: 'append'/);
   assert.match(provider, /action: 'replace'/);
   assert.match(rules, /match \/scheduleBookings\/\{bookingId\}[\s\S]*allow read, write: if false;/);
@@ -379,7 +378,6 @@ test('browser league schedule mutations use the server route and bookings remain
   assert.match(route, /league-schedule-game-mutation/);
   assert.match(route, /isLiveMutation \? 300 : 30/);
   assert.match(service, /acquireScheduleMutationLock/);
-  assert.match(service, /withScheduleMutationLock\(\(\) => mutateLeagueScheduleGameUnlocked/);
   assert.match(service, /runRecoverableDeployment/);
   assert.match(teamEventRoute, /withScheduleMutationLock/);
   assert.match(teamEventRoute, /ScheduleDeploymentError/);

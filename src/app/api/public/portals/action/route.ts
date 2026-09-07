@@ -5,10 +5,8 @@ import { adminDb } from '@/lib/firebase-admin';
 import { recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
 import { credentialsMatch, isLegacyOpenPortal, validScore } from '@/lib/score-action-security';
 import { leagueBillingOwnerUserId, permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
-import {
-  publicLeagueGameProjection,
-  recalculatePublicLeagueStandings,
-} from '@/lib/public-league-scoring';
+import { competitionScoringInput, submitCompetitionScore, openCompetitionDispute } from '@/lib/server-competition-scoring';
+import { ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
 import {
   TournamentScheduleDeploymentError,
   withTournamentScheduleMutationLock,
@@ -23,7 +21,6 @@ import { getTeamAuthority } from '@/lib/server-team-access';
 import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
 import { effectiveLeagueRegistrationConfig, isCalendarDate, nextRegistrationCount, registrationArchiveMatches, registrationCountFromLegacy, registrationPaymentSnapshot, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
 import { hasStaffRole } from '@/lib/staff-position';
-import { hashLeagueScorekeeperPin, verifyLeagueScorekeeperPin } from '@/lib/server-competition-credential';
 
 const LEGACY_REGISTRATION_SCAN_LIMIT=100001;
 
@@ -836,173 +833,22 @@ export async function POST(req: NextRequest) {
         snap = bySlug.docs[0];
         ref = snap.ref;
       }
-      const league = snap.data()!;
-      const creatorId = leagueBillingOwnerUserId(league);
-      if (!creatorId) return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
-      {
-        const creator = await adminDb.collection('users').doc(creatorId).get();
-        if (!creator.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
-      }
-      if (league.is_active === false || league.isArchived === true) {
-        return NextResponse.json({ error: 'League portal is inactive.' }, { status: 404 });
-      }
       if (action === 'score') {
-        if (!gameId || !validScore(body.score1) || !validScore(body.score2)) {
-          return NextResponse.json({ error: 'A valid game and scores from 0 to 999 are required.' }, { status: 400 });
-        }
-        const result = await adminDb.runTransaction(async transaction => {
-          const privateRef = ref.collection('private').doc('lifecycle');
-          const fresh = await transaction.get(ref);
-          const privateSnapshot = await transaction.get(privateRef);
-          const freshLeague = fresh.data() || {};
-          const privateData = privateSnapshot.data() || {};
-          const privatePinHash = String(privateData.scorekeeperPinHash || '');
-          const legacyPin = typeof freshLeague.scorekeeperPin === 'string'
-            ? freshLeague.scorekeeperPin.trim()
-            : '';
-          const legacyOpen = isLegacyOpenPortal(ref.id);
-          if (!privatePinHash && !legacyPin && !legacyOpen) {
-            return {
-              valid: false as const,
-              code: 'CREDENTIAL_NOT_CONFIGURED',
-              message: 'Scorekeeper access is not configured for this league.',
-            };
-          }
-          const credentialIsValid = privatePinHash
-            ? verifyLeagueScorekeeperPin(ref.id, code, privatePinHash)
-            : credentialsMatch(legacyPin, code, legacyOpen);
-          if (!credentialIsValid) {
-            return {
-              valid: false as const,
-              code: 'INVALID_CREDENTIAL',
-              message: 'Invalid scorekeeper PIN.',
-            };
-          }
-          const schedule: Array<Record<string, unknown>> = Array.isArray(freshLeague.schedule)
-            ? freshLeague.schedule.map((game: Record<string, unknown>) => ({ ...game }))
-            : [];
-          const gameIndex = schedule.findIndex((game: Record<string, unknown>) => game.id === gameId);
-          if (gameIndex < 0) {
-            return { valid: false as const, code: 'MATCH_NOT_FOUND', message: 'Match not found.' };
-          }
-          const currentGame = schedule[gameIndex];
-          const team1Id = currentGame.team1Id;
-          const team2Id = currentGame.team2Id;
-          if (!isSafeId(team1Id) || !isSafeId(team2Id) || team1Id === team2Id) {
-            return {
-              valid: false as const,
-              code: 'INVALID_MATCH_TEAMS',
-              message: 'This match does not have two valid team assignments.',
-            };
-          }
-          const updatedAt = new Date().toISOString();
-          const updatedGame: Record<string, unknown> = {
-            ...currentGame,
-            score1: body.score1,
-            score2: body.score2,
-            isCompleted: true,
-            isDisputed: false,
-            disputeNotes: null,
-            reportedBy: body.reportedBy || 'Scorekeeper Portal',
-            updatedAt,
-          };
-          schedule[gameIndex] = updatedGame;
-          const teams = recalculatePublicLeagueStandings(freshLeague.teams, schedule);
-          const leagueName = typeof freshLeague.name === 'string' && freshLeague.name.trim()
-            ? freshLeague.name.trim().slice(0, 160)
-            : 'League';
-          const team1Projection = publicLeagueGameProjection({
-            leagueId: ref.id,
-            leagueName,
-            game: updatedGame,
-            teamId: team1Id,
-            opponentTeamId: team2Id,
-            opponent: typeof updatedGame.team2 === 'string' ? updatedGame.team2 : 'Opponent',
-            myScore: body.score1,
-            opponentScore: body.score2,
-            updatedAt,
-          });
-          const team2Projection = publicLeagueGameProjection({
-            leagueId: ref.id,
-            leagueName,
-            game: updatedGame,
-            teamId: team2Id,
-            opponentTeamId: team1Id,
-            opponent: typeof updatedGame.team1 === 'string' ? updatedGame.team1 : 'Opponent',
-            myScore: body.score2,
-            opponentScore: body.score1,
-            updatedAt,
-          });
-          const team1Ref = adminDb.collection('teams').doc(team1Id).collection('games').doc(String(team1Projection.id));
-          const team2Ref = adminDb.collection('teams').doc(team2Id).collection('games').doc(String(team2Projection.id));
-          transaction.update(ref, {
-            schedule,
-            teams,
-            updatedAt: FieldValue.serverTimestamp(),
-            ...(legacyPin ? {
-              scorekeeperPin: FieldValue.delete(),
-              scorekeeperPinHash: FieldValue.delete(),
-            } : {}),
-          });
-          if (legacyPin) {
-            transaction.set(privateRef, {
-              ...privateData,
-              scorekeeperPinHash: hashLeagueScorekeeperPin(ref.id, legacyPin),
-              updatedAt: FieldValue.serverTimestamp(),
-            });
-          }
-          transaction.set(team1Ref, team1Projection);
-          transaction.set(team2Ref, team2Projection);
-          transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'score', gameId, { score1: body.score1, score2: body.score2 }));
-          return { valid: true as const };
-        });
-        if (!result.valid) {
-          const status = result.code === 'MATCH_NOT_FOUND'
-            ? 404
-            : result.code === 'INVALID_CREDENTIAL'
-              ? 403
-              : 409;
-          return NextResponse.json(
-            { error: result.message, code: result.code },
-            { status },
-          );
-        }
-        return NextResponse.json({ success: true });
+        const result = await submitCompetitionScore(competitionScoringInput({ ...body, leagueId: ref.id }));
+        return NextResponse.json(result);
       }
       if (action === 'dispute') {
-        const notes = String(body.notes || '').trim().slice(0, 2000);
-        if (!gameId || !notes) return NextResponse.json({ error: 'A match and dispute details are required.' }, { status: 400 });
-        const result = await adminDb.runTransaction(async transaction => {
-          const fresh = await transaction.get(ref);
-          const privateSnapshot = await transaction.get(ref.collection('private').doc('lifecycle'));
-          const freshLeague = fresh.data() || {};
-          const privatePinHash = String(privateSnapshot.data()?.scorekeeperPinHash || '');
-          const legacyPin = typeof freshLeague.scorekeeperPin === 'string' ? freshLeague.scorekeeperPin.trim() : '';
-          const legacyOpen = isLegacyOpenPortal(ref.id);
-          if (!privatePinHash && !legacyPin && !legacyOpen) return { valid: false as const, code: 'CREDENTIAL_NOT_CONFIGURED' };
-          const credentialIsValid = privatePinHash
-            ? verifyLeagueScorekeeperPin(ref.id, code, privatePinHash)
-            : credentialsMatch(legacyPin, code, legacyOpen);
-          if (!credentialIsValid) return { valid: false as const, code: 'INVALID_CREDENTIAL' };
-          const schedule = (freshLeague.schedule || []).map((game: any) => game.id === gameId ? {
-            ...game, isDisputed: true, disputeNotes: notes, updatedAt: new Date().toISOString(),
-          } : game);
-          if (!schedule.some((game: any) => game.id === gameId)) return { valid: false as const, code: 'MATCH_NOT_FOUND' };
-          transaction.update(ref, { schedule });
-          transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'dispute', gameId, { notes }));
-          return { valid: true as const };
-        });
-        if (!result.valid) {
-          if (result.code === 'INVALID_CREDENTIAL') return NextResponse.json({ error: 'Invalid scorekeeper PIN.' }, { status: 403 });
-          if (result.code === 'CREDENTIAL_NOT_CONFIGURED') return NextResponse.json({ error: 'Scorekeeper access is not configured for this league.' }, { status: 409 });
-          return NextResponse.json({ error: 'Match not found.' }, { status: 404 });
-        }
-        return NextResponse.json({ success: true });
+        const result = await openCompetitionDispute(competitionScoringInput({ ...body, leagueId: ref.id }));
+        return NextResponse.json(result);
       }
     }
 
     return NextResponse.json({ error: 'Invalid portal action.' }, { status: 400 });
   } catch (error: any) {
+    if (error instanceof ScheduleDeploymentError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    if (error?.message === 'Request collision.') return NextResponse.json({ error: error.message }, { status: 409 });
+    if (error?.message?.startsWith('Forbidden competition')) return NextResponse.json({ error: 'League access denied.' }, { status: 403 });
+    if (error?.message?.startsWith('Invalid competition')) return NextResponse.json({ error: error.message }, { status: 400 });
     if (error instanceof RegistrationInputError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
