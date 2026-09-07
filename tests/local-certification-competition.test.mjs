@@ -94,7 +94,17 @@ function strictCompetitionEvent(scenarioId, caseId, assertionId = `assertion-${c
     execution: {
       actor: contract.actor, runId, requestId: atomicRace ? `${frozenRequestId}-a` : frozenRequestId,
       ...(contract.replayOf ? { replayOf: contract.replayOf } : {}),
-      ...(contract.browser ? { browser: { actor: contract.actor, route: contract.route, selectorId: contract.browser.selectorId, controlId: contract.browser.controlId, session: `session-${caseId}`, viewports: [{ width: 1440, height: 900 }, { width: 390, height: 844 }], consoleCount: 0, networkCount: 0 } } : {}),
+      ...(contract.browser ? { browser: {
+        actor: contract.actor, route: contract.route,
+        selector: contract.browser.selector, role: contract.browser.role, name: contract.browser.name,
+        matchedSelector: contract.browser.selector, matchedRole: contract.browser.role, matchedName: contract.browser.name, matchCount: 1,
+        action: contract.browser.action, actionResult: contract.browser.actionResult,
+        controlSelector: contract.browser.controlSelector, controlRole: contract.browser.controlRole, controlName: contract.browser.controlName,
+        matchedControlSelector: contract.browser.controlSelector, matchedControlRole: contract.browser.controlRole, matchedControlName: contract.browser.controlName, controlMatchCount: 1,
+        expectedViewports: contract.browser.expectedViewports, session: `session-${caseId}`,
+        viewports: contract.browser.expectedViewports.map(viewport => ({ viewport, mainBox: {}, controlBox: {}, mainFits: true, controlFits: true, scrollWidth: viewport.width })),
+        consoleCount: contract.browser.expectedConsoleCount, networkCount: contract.browser.expectedNetworkCount,
+      } } : {}),
       method: contract.method, route: contract.route, expectedStatuses: [...contract.expectedStatuses],
       cleanupReference: 'fixture-cleanup-strict-contract-run',
       cleanupSelectors: contract.cleanupSelectors.map(value => value.replace('{runId}', runId)),
@@ -189,6 +199,49 @@ test('competition browser cases reject missing or mismatched session and selecto
   assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
 });
 
+test('competition browser contracts freeze concrete controls, action results, counts, and exact viewport objects', () => {
+  for (const [scenarioId, contracts] of Object.entries(COMPETITION_CASE_EXECUTION_CONTRACTS)) {
+    for (const [caseId, contract] of Object.entries(contracts)) {
+      if (!contract.browser) continue;
+      assert.equal(typeof contract.browser.selector, 'string', `${scenarioId}/${caseId} selector`);
+      assert.ok(['button', 'tab', 'render'].includes(contract.browser.role), `${scenarioId}/${caseId} role`);
+      assert.equal(typeof contract.browser.name, 'string', `${scenarioId}/${caseId} name`);
+      assert.ok(['click', 'render-only', 'dismiss-confirm'].includes(contract.browser.action), `${scenarioId}/${caseId} action`);
+      assert.equal(typeof contract.browser.actionResult, 'string', `${scenarioId}/${caseId} action result`);
+      assert.equal(typeof contract.browser.controlSelector, 'string', `${scenarioId}/${caseId} control selector`);
+      assert.equal(typeof contract.browser.controlRole, 'string', `${scenarioId}/${caseId} control role`);
+      assert.equal(typeof contract.browser.controlName, 'string', `${scenarioId}/${caseId} control name`);
+      assert.deepEqual(contract.browser.expectedViewports, [{ width: 1440, height: 900 }, { width: 390, height: 844 }]);
+      assert.equal(contract.browser.expectedConsoleCount, contract.dimension === 'network' ? 1 : 0);
+      assert.equal(contract.browser.expectedNetworkCount, contract.dimension === 'network' ? 1 : 0);
+      assert.notEqual(contract.browser.selector, `${caseId}-interaction`);
+      assert.notEqual(contract.browser.controlSelector, `${caseId}-result`);
+    }
+  }
+  const referee = COMPETITION_CASE_EXECUTION_CONTRACTS['tournaments-schedule-pools-brackets-referees']['tournament-schedule-mobile'].browser;
+  assert.deepEqual(
+    { role: referee.role, name: referee.name, action: referee.action, result: referee.actionResult },
+    { role: 'render', name: 'Verified', action: 'render-only', result: 'assigned-referee-portal-rendered' },
+  );
+});
+
+test('competition browser evidence rejects invented selector results, loose viewports, and wrong exact counts', () => {
+  const id = 'tournaments-schedule-pools-brackets-referees';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  const browserCase = cases.find(item => item.caseId === 'tournament-schedule-mobile');
+  browserCase.execution.browser.matchedSelector = 'tournament-schedule-mobile-interaction';
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
+  Object.assign(browserCase.execution.browser, {
+    matchedSelector: browserCase.execution.browser.selector,
+    viewports: [{ viewport: { width: 390, height: 844 }, controlFits: true }],
+  });
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
+  browserCase.execution.browser.viewports = browserCase.execution.browser.expectedViewports.map(viewport => ({ viewport, mainBox: {}, controlBox: {}, mainFits: true, controlFits: true, scrollWidth: viewport.width }));
+  browserCase.execution.browser.consoleCount = 1;
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
+});
+
 test('competition evidence keeps only requests inside the exact frozen transport contract', () => {
   const contract = {
     actor: 'qa-league-owner-a', method: 'PATCH', route: '/v1/projects/demo/databases/(default)/documents/leagues/league-a', expectedStatuses: [403],
@@ -279,7 +332,26 @@ test('runner uses dedicated competition workflows, isolated sessions and numeric
   assert.doesNotMatch(competitionBlock, /makeCompetitionCaseHandler/);
   assert.match(competitionBlock, /contract\.path === '\/manage-tournaments'.*page\.evaluate\(team=>localStorage\.setItem\('sf_session_team_id'/s);
   assert.match(competitionBlock, /QA Scoring Tournament.*date: '2029-11-05'.*endDate: '2029-11-05'/s);
-  assert.match(competitionBlock, /interactionRole: 'tab'.*interactionRole: 'button'.*getByRole\(\$\{JSON\.stringify\(contract\.interactionRole\)\}.*interaction\.click\(\)/s);
+  assert.match(competitionBlock, /const frozen=\$\{JSON\.stringify\(frozenBrowser\)\}/);
+  assert.match(competitionBlock, /exactLocator\(frozen\.role,frozen\.name\)/);
+  assert.match(competitionBlock, /frozen\.action==='render-only'/);
+  assert.doesNotMatch(competitionBlock, /\$\{caseId\}-interaction|\$\{caseId\}-result/);
+});
+
+test('runner preserves raw lifecycle response identity and deeply verifies retained lifecycle fields', async () => {
+  const source = await readFile(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  const lifecycleAssertions = source.slice(source.indexOf("if (caseId === 'league-reload'"), source.indexOf('const after = await readTenantConsumerDocuments', source.indexOf("if (caseId === 'league-reload'")));
+  assert.match(source, /rawText\s*=\s*await response\.text\(\)/);
+  assert.match(source, /rawBodySha256:\s*createHash\('sha256'\)\.update\(rawText\)\.digest\('hex'\)/);
+  assert.match(source, /leagueCreateResponseRawSha256/);
+  assert.match(source, /tournamentCreateResponseRawSha256/);
+  assert.match(source, /tournamentArchiveResponseRawSha256/);
+  assert.match(lifecycleAssertions, /exact retained private lifecycle fields/);
+  assert.match(lifecycleAssertions, /name: retained\.data\(\)\?\.name.*sport: retained\.data\(\)\?\.sport.*description: retained\.data\(\)\?\.description.*version: retained\.data\(\)\?\.lifecycleVersion/s);
+  assert.match(lifecycleAssertions, /exact retained public lifecycle fields/);
+  assert.match(lifecycleAssertions, /exact retained private replica fields and reset state/);
+  assert.match(lifecycleAssertions, /title: retained\.data\(\)\?\.title.*type: retained\.data\(\)\?\.tournamentType.*teams: retained\.data\(\)\?\.tournamentTeamsData.*games: retained\.data\(\)\?\.tournamentGames.*scheduleVersion/s);
+  assert.match(lifecycleAssertions, /exact retained public replica fields and reset state/);
 });
 
 test('competition timeout still finalizes and fails the wrapper truthfully', async () => {

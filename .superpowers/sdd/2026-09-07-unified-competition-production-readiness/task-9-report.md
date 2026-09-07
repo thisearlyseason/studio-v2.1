@@ -40,6 +40,18 @@ Result: **83/83 passed**.
 
 Result: **29/29 passed**.
 
+Round-4 RED/GREEN addressed the three remaining Important review findings. The genuine RED run was **19/22** because browser evidence still used synthetic selector IDs, lifecycle reloads did not freeze every material retained field, and replay compared parsed-object serialization rather than original response bytes. The focused GREEN run is now **22/22**. Browser contracts freeze exact selector/role/name/action/result/control/count/viewport objects; the runtime records the exact matched contract and measured boxes. The assigned referee surface has no actionable control, so its contract is explicitly and truthfully `render-only` against the exact `Verified` assignment state. League and retained Tournament replica reloads now compare exact private/public material fields and reset state. League create replay, Tournament create replay, and Tournament archive replay compare SHA-256 hashes of the original raw HTTP response text while preserving canonical no-duplicate assertions.
+
+Final GREEN (round 4):
+
+`node --test tests/local-certification-competition.test.mjs tests/local-certification-evidence.test.mjs tests/local-certification-operations.test.mjs tests/local-certification-schedule-isolation.test.mjs tests/tournament-scoring-route.test.mjs`
+
+Result: **86/86 passed**.
+
+`npx tsx --test tests/final-certification-fixtures.test.mjs`
+
+Result: **29/29 passed**.
+
 ## Bounded launch smoke
 
 Command shape:
@@ -61,6 +73,12 @@ Fresh round-3 affected-row reruns:
 - `tournaments-create-configure-replicate-archive`: `final-cert-t5-260907-142508-c747`, wrapper exit 0, 16/16 cases, zero run errors, create replay before archive with byte-identical event IDs/response, one root/receipt/audit/canonical mapping set, retained replica reload, idempotent archive replay, mapping/public revocation, and cleanup observed.
 - `tournaments-schedule-pools-brackets-referees`: `final-cert-t5-260907-142633-2e90`, wrapper exit 0, 12/12 cases, zero run errors, isolated `qa-referee` authentication and visible referee route/control, exact browser provenance, assignment persistence, and cleanup observed.
 
+Fresh round-4 affected-row reruns:
+
+- `leagues-create-edit-clone-delete`: `final-cert-t5-260907-151536-a90b`, wrapper exit 0, 15/15 cases, raw-response replay identity, exact edited private/public retained fields, exact unique `Leagues`/`Create League` browser matches and viewport/count measurements, and cleanup observed (`deleted: 308`, `restored: 1`, zero residue).
+- `tournaments-create-configure-replicate-archive`: `final-cert-t5-260907-151638-bcde`, wrapper exit 0, 16/16 cases, raw create/archive replay identity, exact retained replica private/public fields and reset state, exact unique `Modify Series`/`Elite Series Architect` browser matches and viewport/count measurements, and cleanup observed (`deleted: 319`, zero residue).
+- `tournaments-schedule-pools-brackets-referees`: `final-cert-t5-260907-151802-7f97`, wrapper exit 0, 12/12 cases, exact `Launch Hub`/unique `Officials`/unique `Match Assignments` evidence, exact console/network counts and viewport objects, truthful `qa-referee` render-only unique `Verified` proof, and cleanup observed (`deleted: 324`, `restored: 1`, zero residue).
+
 The result envelope remains `BLOCKED_PRECONDITION` because final external/staging adjudication is intentionally reserved for Task 10; both bounded Task 9 wrappers exited successfully with all local dimensions observed.
 
 These are bounded Task 9 launch proofs, not the authoritative combined adjudication owned by Task 10. The runner deliberately states that final matrix PASS is not inferred.
@@ -81,12 +99,15 @@ These are bounded Task 9 launch proofs, not the authoritative combined adjudicat
 12. Added an isolated registered `qa-referee` fixture/session. Organizer assignment remains an organizer action, the referee-facing responsive case authenticates as the referee on the production referee route, and non-referee denial remains separate.
 13. Browser evidence now binds the actual authenticated actor/session, runtime route, row-specific selector/control IDs, viewport measurements, console capture, and network capture to the frozen case. Missing or mismatched provenance is rejected.
 14. Competition discovery now accepts only exact declared run-owned fixture references when a derived document (such as a referee assignment) cannot carry the run ID or operation ID itself; unrelated post-baseline state is still refused.
+15. Synthetic browser selector/control placeholders were replaced with frozen, case-specific accessible selector/role/name/action/result contracts. Runtime evidence records the exact matched values, exact counts, and full `1440x900`/`390x844` measurement objects; validation rejects any mismatch.
+16. The referee page exposes assignment state but no genuine actionable control. Its mobile row now freezes a truthful `render-only` interaction against exact `Verified` content instead of claiming an invented interaction.
+17. Lifecycle replay proof now hashes the original raw HTTP response text, not a reserialized parsed object. League reload and retained Tournament replica reload assert exact material private/public identity, configuration, ownership, version, and reset fields.
 
 ## Final verification
 
 - `command -v npx` — PASS.
 - syntax checks for the runner, operations, evidence, and isolation modules — PASS.
-- focused contract/regression tests — 83/83 PASS.
+- focused contract/regression tests — 86/86 PASS.
 - final fixture/catalog tests — 29/29 PASS.
 - `npm run typecheck` — PASS.
 - scoped ESLint — PASS with zero errors and nine existing warnings in the legacy runner.

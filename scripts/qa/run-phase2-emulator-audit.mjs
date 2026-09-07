@@ -1403,10 +1403,17 @@ async function apiJsonResult(pathname, token, init = {}) {
     }
   }
   if (!response) throw new Error(localTransportDiagnostic(init.method, pathname, lastError));
+  const rawText = await response.text();
   let body = null;
-  try { body = await response.json(); } catch { /* status remains authoritative */ }
+  try { body = rawText ? JSON.parse(rawText) : null; } catch { /* status remains authoritative */ }
   recordTenantRequest({ pathname, method: init.method || 'GET', status: response.status, token, body: init.body, startedAt });
-  return { status: response.status, body, headers: { cacheControl: response.headers.get('cache-control') || '' } };
+  return {
+    status: response.status,
+    body,
+    rawText,
+    rawBodySha256: createHash('sha256').update(rawText).digest('hex'),
+    headers: { cacheControl: response.headers.get('cache-control') || '' },
+  };
 }
 
 // The route-side gate records each request *after authentication* and before
@@ -7206,10 +7213,11 @@ function competitionCaseRequest(scenarioId, caseId, state) {
 
 async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${scenarioId}`, dimension = 'responsive', caseContract = null) {
   const contract = COMPETITION_BROWSER_CONTRACTS[scenarioId];
+  const frozenBrowser = caseContract?.browser;
+  if (!frozenBrowser) throw new Error(`Missing frozen browser contract for ${scenarioId}/${caseId}.`);
   const browserActor = caseContract?.actor || contract.actor;
   const refereePath = `/tournaments/referee/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}/${FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').id}`;
   const browserPath = caseId === 'tournament-schedule-mobile' ? refereePath : contract.path;
-  const browserControl = caseId === 'tournament-schedule-mobile' ? /Verified/i : contract.control;
   const session = browserSessionName(`ui-${browserActor}-${caseId}`);
   cli(session, ['open', `${BASE_URL}/login`, '--browser', 'chrome']);
   if (caseId === 'tournament-archive-cancel') {
@@ -7219,7 +7227,7 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
     } catch (error) { throw new Error(`Tournament archive-cancel authentication/navigation failed: ${error.message}`); }
     let result;
     try {
-      result = JSON.parse(cli(session, ['run-code', `async page=>{const consoleErrors=[];const failedResponses=[];let lifecycleRequests=0;const pathOf=url=>url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0];const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};const onError=error=>consoleErrors.push(error.stack||error.message);const onRequest=request=>{if(request.url().startsWith(${JSON.stringify(BASE_URL)})&&pathOf(request.url())==='/api/tournaments/lifecycle')lifecycleRequests+=1;};const onResponse=response=>{if(response.url().startsWith(${JSON.stringify(BASE_URL)})&&response.status()>=400)failedResponses.push({pathname:pathOf(response.url()),method:response.request().method(),status:response.status()});};page.on('console',onConsole);page.on('pageerror',onError);page.on('request',onRequest);page.on('response',onResponse);try{for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.waitFor({state:'visible',timeout:1200}).then(()=>true).catch(()=>false))break;await alert.getByRole('button',{name:'Got It',exact:true}).click();await alert.waitFor({state:'hidden',timeout:5000});}const tournamentTitle=page.getByText(${JSON.stringify(FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').name)},{exact:true}).first();await tournamentTitle.waitFor({state:'visible',timeout:15000});await tournamentTitle.click();await page.getByRole('button',{name:/Modify Series/i}).click();await page.evaluate(()=>Object.defineProperty(window,'confirm',{configurable:true,value:message=>{window.__qaArchiveConfirmation=String(message);return false;}}));await page.getByRole('button',{name:/Archive Series/i}).click();const archiveConfirmation=await page.evaluate(()=>window.__qaArchiveConfirmation||'');if(!/Archival Protocol/i.test(archiveConfirmation))throw Error('Archive confirmation was not shown and dismissed.');const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator('main').first();const control=page.getByText(/Archive Series/i,{exact:false}).first();await Promise.all([main.waitFor({state:'visible'}),control.waitFor({state:'visible'})]);const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=viewport.width+0.5&&box.y+box.height<=viewport.height+0.5);return{viewport,mainBox,controlBox,mainFits:fits(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth)};};return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,lifecycleRequests,url:page.url()};}finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('request',onRequest);page.off('response',onResponse);}}`], { sensitive: true }));
+      result = JSON.parse(cli(session, ['run-code', `async page=>{const consoleErrors=[];const failedResponses=[];let lifecycleRequests=0;const frozen=${JSON.stringify(frozenBrowser)};const pathOf=url=>url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0];const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};const onError=error=>consoleErrors.push(error.stack||error.message);const onRequest=request=>{if(request.url().startsWith(${JSON.stringify(BASE_URL)})&&pathOf(request.url())==='/api/tournaments/lifecycle')lifecycleRequests+=1;};const onResponse=response=>{if(response.url().startsWith(${JSON.stringify(BASE_URL)})&&response.status()>=400)failedResponses.push({pathname:pathOf(response.url()),method:response.request().method(),status:response.status()});};page.on('console',onConsole);page.on('pageerror',onError);page.on('request',onRequest);page.on('response',onResponse);try{for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.waitFor({state:'visible',timeout:1200}).then(()=>true).catch(()=>false))break;await alert.getByRole('button',{name:'Got It',exact:true}).click();await alert.waitFor({state:'hidden',timeout:5000});}const tournamentTitle=page.getByText(${JSON.stringify(FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').name)},{exact:true}).first();await tournamentTitle.waitFor({state:'visible',timeout:15000});await tournamentTitle.click();await page.getByRole('button',{name:'Modify Series',exact:true}).click();await page.evaluate(()=>Object.defineProperty(window,'confirm',{configurable:true,value:message=>{window.__qaArchiveConfirmation=String(message);return false;}}));const interaction=page.getByRole('button',{name:'Archive Series',exact:true});await interaction.waitFor({state:'visible'});const interactionMatchCount=await interaction.count();await interaction.click();const archiveConfirmation=await page.evaluate(()=>window.__qaArchiveConfirmation||'');if(!/Archival Protocol/i.test(archiveConfirmation))throw Error('Archive confirmation was not shown and dismissed.');const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator('main').first();const control=page.getByRole('button',{name:'Archive Series',exact:true});await Promise.all([main.waitFor({state:'visible'}),control.waitFor({state:'visible'})]);const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=viewport.width+0.5&&box.y+box.height<=viewport.height+0.5);return{viewport,mainBox,controlBox,mainFits:fits(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth)};};return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,lifecycleRequests,url:page.url(),interactionEvidence:{matchedSelector:frozen.selector,matchedRole:'button',matchedName:frozen.name,matchCount:interactionMatchCount,action:'dismiss-confirm',actionResult:'archive-confirmation-dismissed'},controlEvidence:{matchedControlSelector:frozen.controlSelector,matchedControlRole:'button',matchedControlName:frozen.controlName,controlMatchCount:await page.getByRole('button',{name:'Archive Series',exact:true}).count()}};}finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('request',onRequest);page.off('response',onResponse);}}`], { sensitive: true }));
     } catch (error) { throw new Error(`Tournament archive-cancel visible interaction failed: ${error.message}`); }
     expectEqual(result.desktop.controlFits && result.desktop.scrollWidth <= 1440, true, `Competition ${scenarioId} exact desktop 1440x900 bounds`);
     expectEqual(result.mobile.controlFits && result.mobile.scrollWidth <= 390, true, `Competition ${scenarioId} exact mobile 390x844 bounds`);
@@ -7228,7 +7236,8 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
     return { ...result, observedResponses: [{ tag: caseId, ...navigation }], session };
   }
   const result = JSON.parse(cli(session, ['run-code', `async page => {
-    const consoleErrors=[];const failedResponses=[];const observedResponses=[];const tag=${JSON.stringify(caseId)};let lifecycleRequests=0;
+    const consoleErrors=[];const failedResponses=[];const observedResponses=[];const tag=${JSON.stringify(caseId)};const frozen=${JSON.stringify(frozenBrowser)};let lifecycleRequests=0;
+    const exactLocator=(role,name)=>role==='text'||role==='render'?page.getByText(name,{exact:true}):page.getByRole(role,{name,exact:true});
     const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};
     const onError=error=>consoleErrors.push(error.stack||error.message);
     const onRequest=request=>{if(request.url().startsWith(${JSON.stringify(BASE_URL)})&&request.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]==='/api/tournaments/lifecycle')lifecycleRequests+=1;};
@@ -7242,14 +7251,40 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
       const navigation=await page.goto(${JSON.stringify(`${BASE_URL}${browserPath}`)});await page.waitForLoadState('domcontentloaded');
       if(!navigation)throw Error('Competition navigation returned no main-document response.');
       for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.waitFor({state:'visible',timeout:1200}).then(()=>true).catch(()=>false))break;await alert.getByRole('button',{name:'Got It',exact:true}).click();await alert.waitFor({state:'hidden',timeout:5000});}
-      ${caseId === 'tournament-schedule-mobile' ? `await page.getByText(/Assignments|No Assignments Yet/i).first().waitFor({state:'visible',timeout:15000});` : caseId === 'tournament-archive-cancel' ? `const tournamentCard=page.getByText(${JSON.stringify(FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').name)},{exact:false}).first().locator('xpath=ancestor::*[.//button[contains(normalize-space(.),"Launch Hub")]][1]');await tournamentCard.getByRole('button',{name:/Launch Hub/i}).click();await page.getByRole('button',{name:/Modify Series/i}).click();await page.evaluate(()=>Object.defineProperty(window,'confirm',{configurable:true,value:message=>{window.__qaArchiveConfirmation=String(message);return false;}}));await page.getByRole('button',{name:/Archive Series/i}).click();const archiveConfirmation=await page.evaluate(()=>window.__qaArchiveConfirmation||'');if(!/Archival Protocol/i.test(archiveConfirmation))throw Error('Archive confirmation was not shown and dismissed.');` : `const interaction=page.getByRole(${JSON.stringify(contract.interactionRole)},{name:${contract.interaction.toString()}}).first();await interaction.waitFor({state:'visible',timeout:15000});await interaction.click();${contract.selectFixtureLeague ? `const fixtureLeague=page.getByText(${JSON.stringify(FIXTURES.leagues.find(item => item.alias === 'qa-league-a').name)},{exact:true}).first();await fixtureLeague.waitFor({state:'visible',timeout:15000});await fixtureLeague.click();const targetTab=page.getByRole(${JSON.stringify(contract.secondaryInteractionRole)},{name:${contract.secondaryInteraction.toString()}}).first();if(!await targetTab.waitFor({state:'visible',timeout:1200}).then(()=>true).catch(()=>false)){const selectable=page.locator('[class*="cursor-pointer"]').first();await selectable.waitFor({state:'visible',timeout:5000});await selectable.click();}` : ''}${contract.secondaryInteraction ? `const secondaryInteraction=page.getByRole(${JSON.stringify(contract.secondaryInteractionRole)},{name:${contract.secondaryInteraction.toString()}}).first();await secondaryInteraction.waitFor({state:'visible',timeout:15000});await secondaryInteraction.click();` : ''}`}
+      let interaction;
+      if(frozen.action==='render-only'){
+        interaction=exactLocator(frozen.role,frozen.name);
+      }else if(${JSON.stringify(scenarioId.startsWith('leagues-'))}){
+        if(${JSON.stringify(scenarioId !== 'leagues-create-edit-clone-delete')}){
+          await page.getByRole('tab',{name:'Leagues',exact:true}).click();
+          const fixtureLeague=page.getByText(${JSON.stringify(FIXTURES.leagues.find(item => item.alias === 'qa-league-a').name)},{exact:true}).first();
+          await fixtureLeague.waitFor({state:'visible',timeout:15000});await fixtureLeague.click();
+        }
+        interaction=exactLocator(frozen.role,frozen.name);
+      }else if(${JSON.stringify(scenarioId === 'tournaments-schedule-pools-brackets-referees')}){
+        const launchHub=page.getByRole('button',{name:'Launch Hub',exact:true}).first();
+        await launchHub.waitFor({state:'visible',timeout:15000});await launchHub.click();
+        interaction=exactLocator(frozen.role,frozen.name);
+      }else{
+        const tournamentTitle=page.getByText(${JSON.stringify(FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').name)},{exact:true}).first();
+        await tournamentTitle.waitFor({state:'visible',timeout:15000});await tournamentTitle.click();
+        interaction=exactLocator(frozen.role,frozen.name);
+      }
+      await interaction.waitFor({state:'visible',timeout:15000});
+      const interactionMatchCount=await interaction.count();
+      if(interactionMatchCount!==1)throw Error('Exact browser interaction matched '+interactionMatchCount+' elements.');
+      if(frozen.action==='click')await interaction.click();
+      const control=exactLocator(frozen.controlRole,frozen.controlName);await control.waitFor({state:'visible',timeout:15000});
+      if(frozen.actionResult==='standings-tab-selected'&&await control.getAttribute('data-state')!=='active')throw Error('Standings action did not select the exact tab.');
+      const controlMatchCount=await control.count();
+      if(controlMatchCount!==1)throw Error('Exact browser result control matched '+controlMatchCount+' elements.');
       ${dimension === 'network' ? `await page.evaluate(async({route,method,idToken,requestId})=>{await fetch(route,{method,headers:{'Content-Type':'application/json','Authorization':\`Bearer \${idToken}\`},body:JSON.stringify({requestId})});},{route:${JSON.stringify(contract.route)},method:${JSON.stringify(caseContract?.method || 'POST')},idToken:${JSON.stringify(caseContract?.apiToken || '')},requestId:${JSON.stringify(caseContract?.requestId?.replace('{runId}', certificationRunId) || '')}});` : ''}
       const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator(${JSON.stringify(caseId === 'tournament-schedule-mobile' ? 'body' : 'main')}).first();await main.waitFor({state:'visible',timeout:15000});
-        const control=page.getByText(${browserControl.toString()}, {exact:false}).first();await control.waitFor({state:'visible',timeout:15000});await control.scrollIntoViewIfNeeded();
+        const control=exactLocator(frozen.controlRole,frozen.controlName).first();await control.waitFor({state:'visible',timeout:15000});await control.scrollIntoViewIfNeeded();
         const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);
         const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=viewport.width+0.5&&box.y+box.height<=viewport.height+0.5);
         return{viewport,mainBox,controlBox,mainFits:fits(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth)};};
-      return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,observedResponses,lifecycleRequests,url:page.url()};
+      return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,observedResponses,lifecycleRequests,url:page.url(),interactionEvidence:{matchedSelector:frozen.selector,matchedRole:frozen.role,matchedName:frozen.name,matchCount:interactionMatchCount,action:frozen.action,actionResult:frozen.actionResult},controlEvidence:{matchedControlSelector:frozen.controlSelector,matchedControlRole:frozen.controlRole,matchedControlName:frozen.controlName,controlMatchCount}};
     }finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('request',onRequest);page.off('response',onResponse);}
   }`], { sensitive: true }));
   expectEqual(result.desktop.controlFits && result.desktop.scrollWidth <= 1440, true, `Competition ${scenarioId} exact desktop 1440x900 bounds`);
@@ -7301,11 +7336,20 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
       expectEqual(viewportObservation.controlFits, true, `Competition ${caseId} visible control numeric bounds`);
       expectEqual(viewportObservation.scrollWidth <= viewportObservation.viewport.width, true, `Competition ${caseId} page horizontal overflow`);
     }
+    expectEqual(observation.consoleErrors.length, contract.browser.expectedConsoleCount, `Competition ${caseId} exact browser console count`);
+    expectEqual(observation.failedResponses.length, contract.browser.expectedNetworkCount, `Competition ${caseId} exact browser network count`);
+    expectEqual(observation.interactionEvidence?.matchedName, contract.browser.name, `Competition ${caseId} exact matched browser role name`);
+    expectEqual(observation.controlEvidence?.matchedControlName, contract.browser.controlName, `Competition ${caseId} exact matched browser control name`);
     return {
       actor, operation: `GET ${browserContract.path}`, requests: operationRequestEvidence(caseId),
       browser: { actor, route: contract.route.replace('{teamId}', FIXTURES.teams.find(item => item.alias === 'qa-team-a').id).replace('{eventId}', FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').id),
-        selectorId: `${caseId}-interaction`, controlId: `${caseId}-result`, session: caseEnvelope.session,
-        viewports: [observation.desktop.viewport, observation.mobile.viewport], consoleCount: observation.consoleErrors.length, networkCount: observation.failedResponses.length },
+        selector: contract.browser.selector, role: contract.browser.role, name: contract.browser.name,
+        ...observation.interactionEvidence,
+        controlSelector: contract.browser.controlSelector, controlRole: contract.browser.controlRole, controlName: contract.browser.controlName,
+        ...observation.controlEvidence,
+        action: contract.browser.action, actionResult: observation.interactionEvidence?.actionResult,
+        expectedViewports: contract.browser.expectedViewports, session: caseEnvelope.session,
+        viewports: [observation.desktop, observation.mobile], consoleCount: observation.consoleErrors.length, networkCount: observation.failedResponses.length },
     };
     } finally {
       try { run(playwrightCli, [`-s=${caseEnvelope.session}`, '--raw', 'close'], { stdio: 'pipe' }); } catch {}
@@ -7393,6 +7437,7 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
     expectEqual(contract.expectedStatuses.includes(response.status), true, `Competition ${caseId} exact response status ${response.status}`);
     if (caseId === 'league-create' && response.status === 201) {
       state.leagueCreateResponse = response.body;
+      state.leagueCreateResponseRawSha256 = response.rawBodySha256;
       state.createdLeagueId = response.body.leagueId; state.createdVersion = response.body.lifecycleVersion ?? 1; registerDynamicFirestoreRoot(`leagues/${state.createdLeagueId}`, `competition-${caseId}`);
       const created = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${state.createdLeagueId}`).get());
       expectEqual(JSON.stringify({ exists: created.exists, name: created.data()?.name, sport: created.data()?.sport, version: created.data()?.lifecycleVersion, archived: created.data()?.isArchived }), JSON.stringify({ exists: true, name: state.createName, sport: 'Basketball', version: 1, archived: false }), `Competition ${caseId} authoritative created document fields`);
@@ -7456,11 +7501,11 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
     }
     if (caseId === 'league-reload' && response.status === 200) {
       const retained = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${state.createdLeagueId}`).get());
-      expectEqual(JSON.stringify({ id: retained.id, description: retained.data()?.description, version: retained.data()?.lifecycleVersion }), JSON.stringify({ id: state.createdLeagueId, description: `edited ${certificationRunId}`, version: state.createdVersion }), `Competition ${caseId} exact retained private lifecycle state`);
-      expectEqual(response.body?.data?.id, state.createdLeagueId, `Competition ${caseId} exact retained public DTO identity`);
+      expectEqual(JSON.stringify({ id: retained.id, name: retained.data()?.name, sport: retained.data()?.sport, description: retained.data()?.description, version: retained.data()?.lifecycleVersion, archived: retained.data()?.isArchived }), JSON.stringify({ id: state.createdLeagueId, name: state.createName, sport: 'Basketball', description: `edited ${certificationRunId}`, version: state.createdVersion, archived: false }), `Competition ${caseId} exact retained private lifecycle fields`);
+      expectEqual(JSON.stringify({ id: response.body?.data?.id, name: response.body?.data?.name, sport: response.body?.data?.sport, isActive: response.body?.data?.isActive, divisions: response.body?.data?.divisions }), JSON.stringify({ id: state.createdLeagueId, name: state.createName, sport: 'Basketball', isActive: true, divisions: [] }), `Competition ${caseId} exact retained public lifecycle fields`);
     }
     if (caseId === 'league-replay' && response.status === 201) {
-      expectEqual(JSON.stringify(response.body), JSON.stringify(state.leagueCreateResponse), `Competition ${caseId} byte-equivalent original response identity`);
+      expectEqual(response.rawBodySha256, state.leagueCreateResponseRawSha256, `Competition ${caseId} byte-equivalent original response identity`);
       const proof = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => ({
         root: await firestoreAdmin.collection('leagues').where('id', '==', state.createdLeagueId).get(),
         reservations: await firestoreAdmin.collection('leagueLifecycleNames').where('leagueId', '==', state.createdLeagueId).get(),
@@ -7511,6 +7556,7 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
     }
     if (caseId === 'tournament-create' && response.status === 200) {
       state.tournamentCreateResponse = response.body;
+      state.tournamentCreateResponseRawSha256 = response.rawBodySha256;
       state.competitionCleanupPaths ||= new Set();
       state.createdTournamentId = response.body.eventId;
       state.createdTournamentVersion = response.body.lifecycleVersion ?? 1;
@@ -7578,6 +7624,7 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
       }
     }
     if (caseId === 'tournament-archive' && response.status === 200) {
+      state.tournamentArchiveResponseRawSha256 = response.rawBodySha256;
       state.createdTournamentVersion = response.body.lifecycleVersion ?? state.createdTournamentVersion + 1;
       const audits = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
         const [plural, singular] = await Promise.all([
@@ -7595,7 +7642,7 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
       const publicResult = await apiJsonResult(`/api/public/portals?kind=tournament&purpose=spectator&teamId=${team.id}&eventId=${state.createdTournamentId}`, null, { method: 'GET' });
       expectEqual(publicResult.status, 404, `Competition ${caseId} public projection revoked`);
       expectEqual(state.tournamentArchiveReplay?.status, 200, `Competition ${caseId} replay response status`);
-      expectEqual(JSON.stringify(state.tournamentArchiveReplay?.body), JSON.stringify(response.body), `Competition ${caseId} replay byte-equivalent response identity`);
+      expectEqual(state.tournamentArchiveReplay?.rawBodySha256, state.tournamentArchiveResponseRawSha256, `Competition ${caseId} replay byte-equivalent response identity`);
       const archiveProof = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
         const receipts = await firestoreAdmin.collection('competitionOperations').where('requestId', '==', state.tournamentArchiveRequestId).get();
         const audit = receipts.size === 1 ? await firestoreAdmin.doc(`tournamentLifecycleAudits/${receipts.docs[0].id}`).get() : null;
@@ -7606,11 +7653,12 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
     }
     if (caseId === 'tournament-lifecycle-reload' && response.status === 200) {
       const retained = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${team.id}/events/${state.replicaTournamentId}`).get());
-      expectEqual(JSON.stringify({ id: retained.id, archived: retained.data()?.isArchived, version: retained.data()?.lifecycleVersion }), JSON.stringify({ id: state.replicaTournamentId, archived: false, version: 1 }), `Competition ${caseId} exact retained private replica state`);
-      expectEqual(response.body?.data?.id, state.replicaTournamentId, `Competition ${caseId} exact retained public DTO identity`);
+      const expectedReplicaTitle = `QA Replica ${certificationRunId}`;
+      expectEqual(JSON.stringify({ id: retained.id, title: retained.data()?.title, type: retained.data()?.tournamentType, teamId: retained.data()?.teamId, teams: retained.data()?.tournamentTeamsData, games: retained.data()?.tournamentGames, schedule: retained.data()?.schedule, referees: retained.data()?.refereePool, scheduleVersion: Number(retained.data()?.scheduleVersion || 0), archived: retained.data()?.isArchived, version: retained.data()?.lifecycleVersion }), JSON.stringify({ id: state.replicaTournamentId, title: expectedReplicaTitle, type: state.tournamentBlueprint.tournamentType, teamId: team.id, teams: [], games: [], schedule: [], referees: [], scheduleVersion: 0, archived: false, version: 1 }), `Competition ${caseId} exact retained private replica fields and reset state`);
+      expectEqual(JSON.stringify({ id: response.body?.data?.id, title: response.body?.data?.title, type: response.body?.data?.tournamentType, teamId: response.body?.data?.teamId, teams: response.body?.data?.tournamentTeamsData, games: response.body?.data?.tournamentGames, isActive: response.body?.data?.isActive }), JSON.stringify({ id: state.replicaTournamentId, title: expectedReplicaTitle, type: state.tournamentBlueprint.tournamentType, teamId: team.id, teams: [], games: [], isActive: true }), `Competition ${caseId} exact retained public replica fields and reset state`);
     }
     if (caseId === 'tournament-lifecycle-replay' && response.status === 200) {
-      expectEqual(JSON.stringify(response.body), JSON.stringify(state.tournamentCreateResponse), `Competition ${caseId} byte-equivalent original response identity`);
+      expectEqual(response.rawBodySha256, state.tournamentCreateResponseRawSha256, `Competition ${caseId} byte-equivalent original response identity`);
       const proof = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
         const root = await firestoreAdmin.doc(`teams/${team.id}/events/${state.createdTournamentId}`).get();
         const mappings = await firestoreAdmin.collection('tournamentRegistrationCodes').where('eventId', '==', state.createdTournamentId).get();

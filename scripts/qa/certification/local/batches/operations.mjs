@@ -248,6 +248,34 @@ const ASSIGNMENT_CASES = new Set([
 ]);
 const BROWSER_COMPETITION_DIMENSIONS = new Set(['console', 'network', 'responsive']);
 const browserPathForCompetitionScenario = scenarioId => scenarioId.startsWith('tournaments-') ? '/manage-tournaments' : '/competition';
+const COMPETITION_BROWSER_SURFACES = Object.freeze({
+  'leagues-create-edit-clone-delete': Object.freeze({ selector: 'role=tab[name="Leagues"]', role: 'tab', name: 'Leagues', action: 'click', actionResult: 'league-create-control-visible', controlSelector: 'role=button[name="Create League"]', controlRole: 'button', controlName: 'Create League' }),
+  'leagues-schedule-generation-deployment': Object.freeze({ selector: 'fixture-league >> role=button[name="Schedule"]', role: 'button', name: 'Schedule', action: 'click', actionResult: 'league-schedule-panel-visible', controlSelector: 'text="Season Schedule Deployment"', controlRole: 'text', controlName: 'Season Schedule Deployment' }),
+  'leagues-registration-assignment': Object.freeze({ selector: 'fixture-league >> role=button[name="Portals"]', role: 'button', name: 'Portals', action: 'click', actionResult: 'team-registration-panel-visible', controlSelector: 'role=heading[name="Team Registration"]', controlRole: 'heading', controlName: 'Team Registration' }),
+  'leagues-scorekeeper-spectator': Object.freeze({ selector: 'fixture-league >> role=button[name="Portals"]', role: 'button', name: 'Portals', action: 'click', actionResult: 'scorekeeper-hub-panel-visible', controlSelector: 'role=heading[name="Scorekeeper Hub"]', controlRole: 'heading', controlName: 'Scorekeeper Hub' }),
+  'tournaments-create-configure-replicate-archive': Object.freeze({ selector: 'fixture-tournament-hub >> role=button[name="Modify Series"]', role: 'button', name: 'Modify Series', action: 'click', actionResult: 'tournament-edit-dialog-visible', controlSelector: 'role=dialog[name="Elite Series Architect"]', controlRole: 'dialog', controlName: 'Elite Series Architect' }),
+  'tournaments-schedule-pools-brackets-referees': Object.freeze({ selector: 'role=button[name="Launch Hub"][index=0] >> role=tab[name="Officials"]', role: 'tab', name: 'Officials', action: 'click', actionResult: 'match-assignments-panel-visible', controlSelector: 'role=heading[name="Match Assignments"]', controlRole: 'heading', controlName: 'Match Assignments' }),
+  'tournaments-scoring-dispute-public-standings': Object.freeze({ selector: 'fixture-tournament-hub >> role=tab[name="Standings"]', role: 'tab', name: 'Standings', action: 'click', actionResult: 'standings-tab-selected', controlSelector: 'role=tab[name="Standings"][selected=true]', controlRole: 'tab', controlName: 'Standings' }),
+});
+const COMPETITION_BROWSER_VIEWPORTS = Object.freeze([
+  Object.freeze({ width: 1440, height: 900 }),
+  Object.freeze({ width: 390, height: 844 }),
+]);
+function browserContractForCompetitionCase(scenarioId, caseId, dimension, actor, route) {
+  const base = COMPETITION_BROWSER_SURFACES[scenarioId];
+  const surface = caseId === 'tournament-schedule-mobile'
+    ? { selector: 'referee-assignment-render', role: 'render', name: 'Verified', action: 'render-only', actionResult: 'assigned-referee-portal-rendered', controlSelector: 'text="Verified"', controlRole: 'text', controlName: 'Verified' }
+    : caseId === 'tournament-archive-cancel'
+      ? { selector: 'fixture-tournament-hub >> role=button[name="Archive Series"]', role: 'button', name: 'Archive Series', action: 'dismiss-confirm', actionResult: 'archive-confirmation-dismissed', controlSelector: 'role=button[name="Archive Series"]', controlRole: 'button', controlName: 'Archive Series' }
+      : base;
+  return Object.freeze({
+    actor, route,
+    ...surface,
+    expectedViewports: COMPETITION_BROWSER_VIEWPORTS,
+    expectedConsoleCount: dimension === 'network' ? 1 : 0,
+    expectedNetworkCount: dimension === 'network' ? 1 : 0,
+  });
+}
 const routeForCompetitionCase = (base, caseId, scenarioId, dimension) => caseId === 'tournament-schedule-mobile'
   ? '/tournaments/referee/{teamId}/{eventId}'
   : caseId === 'tournament-archive-cancel' || (BROWSER_COMPETITION_DIMENSIONS.has(dimension) && dimension !== 'network')
@@ -326,10 +354,9 @@ export const COMPETITION_CASE_EXECUTION_CONTRACTS = Object.freeze(Object.fromEnt
         responsiveBounds: dimension === 'responsive'
           ? Object.freeze(id.endsWith('mobile') ? [{ width: 390, height: 844 }] : [{ width: 1440, height: 900 }])
           : Object.freeze([]),
-        ...((BROWSER_COMPETITION_DIMENSIONS.has(dimension) || id === 'tournament-archive-cancel') ? { browser: Object.freeze({
-          actor: actorForCompetitionCase(base, id), route: routeForCompetitionCase(base, id, scenarioId, dimension),
-          selectorId: `${id}-interaction`, controlId: `${id}-result`,
-        }) } : {}),
+        ...((BROWSER_COMPETITION_DIMENSIONS.has(dimension) || id === 'tournament-archive-cancel') ? { browser: browserContractForCompetitionCase(
+          scenarioId, id, dimension, actorForCompetitionCase(base, id), routeForCompetitionCase(base, id, scenarioId, dimension),
+        ) } : {}),
       })]),
     )))];
   }),
@@ -438,9 +465,20 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
       }
       if (contract.browser) {
         const browser = item.execution.browser;
-        if (!browser || browser.actor !== contract.browser.actor || browser.route !== item.execution.route || browser.selectorId !== contract.browser.selectorId || browser.controlId !== contract.browser.controlId ||
-            typeof browser.session !== 'string' || !browser.session || !Array.isArray(browser.viewports) || browser.viewports.length !== 2 ||
-            !Number.isInteger(browser.consoleCount) || !Number.isInteger(browser.networkCount)) {
+        const exactMeasurements = Array.isArray(browser?.viewports) && browser.viewports.length === contract.browser.expectedViewports.length && browser.viewports.every((measurement, index) => {
+          const expectedViewport = contract.browser.expectedViewports[index];
+          return measurement && JSON.stringify(measurement.viewport) === JSON.stringify(expectedViewport) &&
+            measurement.mainBox && typeof measurement.mainBox === 'object' && measurement.controlBox && typeof measurement.controlBox === 'object' &&
+            measurement.mainFits === true && measurement.controlFits === true && Number.isFinite(measurement.scrollWidth) && measurement.scrollWidth <= expectedViewport.width;
+        });
+        if (!browser || browser.actor !== contract.browser.actor || browser.route !== item.execution.route ||
+            browser.selector !== contract.browser.selector || browser.role !== contract.browser.role || browser.name !== contract.browser.name ||
+            browser.matchedSelector !== contract.browser.selector || browser.matchedRole !== contract.browser.role || browser.matchedName !== contract.browser.name || browser.matchCount !== 1 ||
+            browser.action !== contract.browser.action || browser.actionResult !== contract.browser.actionResult ||
+            browser.controlSelector !== contract.browser.controlSelector || browser.controlRole !== contract.browser.controlRole || browser.controlName !== contract.browser.controlName ||
+            browser.matchedControlSelector !== contract.browser.controlSelector || browser.matchedControlRole !== contract.browser.controlRole || browser.matchedControlName !== contract.browser.controlName || browser.controlMatchCount !== 1 ||
+            typeof browser.session !== 'string' || !browser.session || !exactMeasurements ||
+            browser.consoleCount !== contract.browser.expectedConsoleCount || browser.networkCount !== contract.browser.expectedNetworkCount) {
           throw new Error(`Competition case ${required} has missing or mismatched browser provenance.`);
         }
       }
