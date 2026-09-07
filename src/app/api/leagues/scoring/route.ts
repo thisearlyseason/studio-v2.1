@@ -3,7 +3,7 @@ import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 import { memberLeague } from '@/lib/public-portal-data';
-import { competitionScoringInput, submitCompetitionScore, openCompetitionDispute, resolveCompetitionDispute, readActiveScoringLeague } from '@/lib/server-competition-scoring';
+import { competitionScoringInput, submitCompetitionScore, openCompetitionDispute, resolveCompetitionDispute, readActiveScoringLeague, isActiveCompetitionTeam } from '@/lib/server-competition-scoring';
 import { ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
 import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       const [team, profile, direct] = await Promise.all([
         transaction.get(teamRef), transaction.get(adminDb.collection('users').doc(auth.uid)), transaction.get(teamRef.collection('members').doc(auth.uid)),
       ]);
-      if (!team.exists || (profile.exists && (isAccountAccessBlocked(profile.data()) || profile.data()?.isDeleted === true))) throw new ScheduleDeploymentError('FORBIDDEN', 'Member access is inactive.', 403);
+      if (!team.exists || !isActiveCompetitionTeam(team.data()) || (profile.exists && (isAccountAccessBlocked(profile.data()) || profile.data()?.isDeleted === true))) throw new ScheduleDeploymentError('FORBIDDEN', 'Member access is inactive.', 403);
       const active = (member: Record<string, unknown> | undefined) => !!member && member.status === 'active' && member.isDeleted !== true && (!member.userId || member.userId === auth.uid);
       let isMember = active(direct.data());
       if (!isMember && team.data()?.ownerUserId !== auth.uid) {

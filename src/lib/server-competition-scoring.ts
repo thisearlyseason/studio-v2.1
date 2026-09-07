@@ -33,6 +33,29 @@ function requiredText(value: unknown): string {
   return value.trim();
 }
 
+/** Legacy teams can omit status, but an explicit inactive lifecycle never grants access. */
+export function isActiveCompetitionTeam(team: Data | undefined): boolean {
+  const status = typeof team?.status === 'string' ? team.status.trim().toLowerCase() : team?.status;
+  return !!team && !isAccountAccessBlocked(team) && team.isDeleted !== true && team.isArchived !== true && team.is_active !== false && team.isActive !== false && (status == null || status === '' || status === 'active');
+}
+
+async function assertLeagueTenantOwner(transaction: Transaction, league: Data, ownerId: string): Promise<void> {
+  const tenants = new Set<string>();
+  for (const value of [league.tenantId, league.hostTeamId, league.ownerTeamId, league.teamId]) {
+    if (value == null || value === '') continue;
+    if (typeof value !== 'string' || !/^[^/\s]{1,200}$/.test(value)) fail('League tenant is invalid.', 403);
+    tenants.add(value);
+  }
+  if (tenants.size !== 1) fail('League tenant is missing or ambiguous.', 403);
+  const [tenantId] = tenants;
+  if (tenantId.startsWith('profile:')) {
+    if (tenantId !== `profile:${ownerId}` || league.creatorId !== ownerId) fail('League profile ownership is inconsistent.', 403);
+    return;
+  }
+  const tenant = await transaction.get(adminDb.collection('teams').doc(tenantId));
+  if (!tenant.exists || !isActiveCompetitionTeam(tenant.data()) || tenant.data()?.ownerUserId !== ownerId) fail('League tenant ownership is inactive or inconsistent.', 403);
+}
+
 /** Every caller reads lifecycle and the canonical billing owner in its transaction. */
 export async function readActiveScoringLeague(transaction: Transaction, leagueId: string): Promise<Data> {
   const snapshot = await transaction.get(adminDb.collection('leagues').doc(leagueId));
@@ -40,7 +63,8 @@ export async function readActiveScoringLeague(transaction: Transaction, leagueId
   const league = snapshot.data()!;
   if (league.isArchived === true || league.is_active === false || league.isDeleted === true) fail('League portal is inactive.', 404);
   const ownerId = leagueBillingOwnerUserId(league);
-  if (!ownerId) fail('League billing owner is unavailable.', 403);
+  if (!ownerId || !/^[^/\s]{1,200}$/.test(ownerId)) fail('League billing owner is unavailable.', 403);
+  await assertLeagueTenantOwner(transaction, league, ownerId);
   const owner = await transaction.get(adminDb.collection('users').doc(ownerId));
   const profile = owner.data();
   if (!owner.exists || isAccountAccessBlocked(profile) || profile?.isDeleted === true || profile?.status === 'removed' || !authorizeDashboardRoute('/competition', profile || null).allowed) fail('The billing owner does not have competition access.', 403);

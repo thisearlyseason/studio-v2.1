@@ -326,3 +326,70 @@ test('spectator DTO excludes legacy disputed results even when stored standings 
     assert.equal(data.schedule[0].isDisputed, true);
   } finally { app.dispose(); }
 });
+
+test('public League reads fail closed on missing, ambiguous, mismatched, and inactive tenant ownership', async () => {
+  for (const mutate of [
+    records => records.delete('teams/host'),
+    records => { delete records.get('leagues/league-a').tenantId; },
+    records => { records.get('leagues/league-a').hostTeamId = 'other-team'; },
+    records => { records.get('leagues/league-a').tenantId = 'profile:someone-else'; },
+    records => { Object.assign(records.get('leagues/league-a'), { tenantId: 'profile:owner', creatorId: 'delegated' }); },
+    records => { records.get('teams/host').ownerUserId = 'new-owner'; },
+    records => { records.get('teams/host').isDeleted = true; },
+    records => { records.get('teams/host').isArchived = true; },
+    records => { records.get('teams/host').is_active = false; },
+    records => { records.get('teams/host').status = 'inactive'; },
+  ]) {
+    const { app, records } = await setup('../../src/app/api/public/portals/route.ts');
+    try {
+      mutate(records);
+      for (const purpose of ['spectator', 'scorekeeper']) {
+        const response = await app.route.GET({ headers: new Headers(), nextUrl: new URL(`http://localhost/api/public/portals?kind=league&purpose=${purpose}&leagueId=league-a`) });
+        assert.equal(response.status, 403);
+        assert.equal((await response.json()).data, undefined);
+      }
+    } finally { app.dispose(); }
+  }
+});
+
+test('shared read validates current tenant transactionally while allowing legitimate delegated creators', async () => {
+  for (const delegated of [false, true]) {
+    let transactionCount = 0;
+    const { app, records } = await setup('../../src/app/api/public/portals/route.ts', undefined, {
+      beforeTransaction: ({ records }) => { if (++transactionCount === 2) records.get('teams/host').ownerUserId = 'new-owner'; },
+    });
+    try {
+      if (delegated) records.get('leagues/league-a').creatorId = 'staff';
+      const get = () => app.route.GET({ headers: new Headers(), nextUrl: new URL('http://localhost/api/public/portals?kind=league&leagueId=league-a') });
+      assert.equal((await get()).status, 200);
+      assert.equal((await get()).status, 403);
+    } finally { app.dispose(); }
+  }
+});
+
+test('member discovery rejects inactive requesting teams for owners and members despite stale active linkage', async () => {
+  for (const uid of ['owner', 'staff']) for (const lifecycle of [{ isDeleted: true }, { isArchived: true }, { is_active: false }, { isActive: false }, { status: 'deleted' }, { status: 'archived' }, { status: 'inactive' }]) {
+    const { app, records } = await setup('../../src/app/api/leagues/scoring/route.ts', { uid });
+    try {
+      const league = records.get('leagues/league-a'); league.memberTeamIds = ['host']; league.teams.host = { status: 'accepted', teamName: 'Host' };
+      Object.assign(records.get('teams/host'), lifecycle);
+      const response = await app.route.GET({ headers: new Headers(), nextUrl: new URL('http://localhost/api/leagues/scoring?purpose=member&teamId=host') });
+      assert.equal(response.status, 403);
+      assert.equal(records.get('teams/host/members/staff').status, 'active');
+    } finally { app.dispose(); }
+  }
+});
+
+test('member discovery excludes foreign stale League ownership while preserving valid participating teams', async () => {
+  const { app, records } = await setup('../../src/app/api/leagues/scoring/route.ts', { uid: 'staff' });
+  try {
+    records.set('teams/participant', { ownerUserId: 'participant-owner', status: 'active' });
+    records.set('teams/participant/members/staff', { userId: 'staff', status: 'active' });
+    const league = records.get('leagues/league-a'); league.memberTeamIds = ['participant']; league.teams.participant = { status: 'accepted', teamName: 'Participant' };
+    const get = () => app.route.GET({ headers: new Headers(), nextUrl: new URL('http://localhost/api/leagues/scoring?purpose=member&teamId=participant') });
+    assert.equal((await (await get()).json()).data.length, 1);
+    records.get('teams/host').ownerUserId = 'foreign-owner';
+    assert.deepEqual((await (await get()).json()).data, []);
+    assert.equal(league.memberUserIds.includes('staff'), true);
+  } finally { app.dispose(); }
+});

@@ -226,7 +226,7 @@ export default function PublicLeagueSpectatorHub() {
                           <div className={cn("flex-1 space-y-4", isPastDay && "opacity-60")}>
                             <div className="flex items-center justify-between gap-4">
                                  <div className="flex items-center gap-3 min-w-0">
-                                   {game.isCompleted && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
+                                   {game.isCompleted && !game.isDisputed && game.score1 > game.score2 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
                                    {logoMap[(game as any).team1Id || game.team1 || ''] ? (
                                      <div className={cn("shrink-0", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
                                        <img src={logoMap[(game as any).team1Id || game.team1 || '']} alt={game.team1} className="w-full h-full object-contain" />
@@ -234,11 +234,11 @@ export default function PublicLeagueSpectatorHub() {
                                    ) : null}
                                    <span className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team1}</span>
                                </div>
-                               <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && game.score1 > game.score2) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score1} />
+                               <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && !game.isDisputed && game.score1 > game.score2) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score1} />
                             </div>
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3 min-w-0">
-                                  {game.isCompleted && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
+                                  {game.isCompleted && !game.isDisputed && game.score2 > game.score1 && <Trophy className="h-4 w-4 text-yellow-500 shrink-0 shadow-lg" />}
                                   {logoMap[(game as any).team2Id || game.team2 || ''] ? (
                                     <div className={cn("shrink-0", isPastDay ? "h-10 w-10" : "h-14 w-14")}>
                                       <img src={logoMap[(game as any).team2Id || game.team2 || '']} alt={game.team2} className="w-full h-full object-contain" />
@@ -246,7 +246,7 @@ export default function PublicLeagueSpectatorHub() {
                                   ) : null}
                                   <span className={cn("font-black uppercase tracking-tight leading-tight", isPastDay ? "text-[10px]" : "text-base sm:text-lg")}>{game.team2}</span>
                                </div>
-                               <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && game.score2 > game.score1) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score2} />
+                               <AnimatedScore className={cn("font-black tracking-tighter tabular-nums", (game.isCompleted && !game.isDisputed && game.score2 > game.score1) ? "text-primary scale-110" : "text-foreground", isPastDay ? "text-sm" : "text-3xl sm:text-4xl")} value={game.score2} />
                             </div>
                           </div>
                           
@@ -255,7 +255,9 @@ export default function PublicLeagueSpectatorHub() {
                               {game.round && <span className="text-[8px] font-black uppercase text-muted-foreground/40 tracking-wider transition-all group-hover:text-primary/40">{game.round}</span>}
                             </div>
                             <div className="flex items-center gap-2">
-                              {game.isCompleted ? (
+                              {game.isDisputed ? (
+                                <span className="text-[8px] font-black uppercase text-amber-700 tracking-[0.2em] px-2 py-0.5 bg-amber-50 rounded-full border border-amber-200">Disputed · Unofficial</span>
+                              ) : game.isCompleted ? (
                                 <span className="text-[8px] font-black uppercase text-primary tracking-[0.2em] px-2 py-0.5 bg-primary/5 rounded-full border border-primary/10">Archive Log</span>
                               ) : (
                                 <div className="flex items-center gap-1.5 animate-in fade-in duration-1000">

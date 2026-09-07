@@ -1,10 +1,56 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { build } from 'esbuild';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { fileURLToPath } from 'node:url';
 import { calculateTournamentStandings } from '../src/lib/tournament-standings.ts';
 import * as leagueScoringClient from '../src/lib/public-league-scoring.ts';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('rendered League spectator distinguishes disputed context from official completed wins', async () => {
+  const key = `spectator_${Date.now()}`;
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const game = { id: 'game-a', date, team1: 'Alpha', team2: 'Beta', score1: 4, score2: 2, isCompleted: true, isDisputed: true };
+  globalThis[key] = { React, league: { id: 'league-a', name: 'League', teams: {}, schedule: [game] } };
+  const components = ['Card', 'CardContent', 'Button', 'Badge', 'AnimatedScore', 'Input', 'Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue', 'Popover', 'PopoverContent', 'PopoverTrigger', 'Calendar', 'SquadIdentity'];
+  const icons = ['Trophy', 'CalendarDays', 'MapPin', 'Clock', 'Loader2', 'AlertCircle', 'List', 'ChevronRight'];
+  const stubs = {
+    react: `const React=globalThis[${JSON.stringify(key)}].React; export default React; export const {useMemo,useState,useEffect}=React;`,
+    'next/navigation': `export const useParams=()=>({leagueId:'league-a'});`,
+    'next/link': `import React from 'react'; export default p=>React.createElement('a',{href:p.href},p.children);`,
+    '@/hooks/use-public-portal': `export const usePublicPortal=()=>({data:globalThis[${JSON.stringify(key)}].league,isLoading:false,retry:()=>{}});`,
+    'lucide-react': `import React from 'react'; ${icons.map(name => `export const ${name}=p=>React.createElement('i',{'data-icon':'${name}',className:p.className});`).join('\n')}`,
+  };
+  try {
+    const result = await build({ entryPoints: [fileURLToPath(new URL('../src/app/leagues/spectator/[leagueId]/page.tsx', import.meta.url))], bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent', jsx: 'transform',
+      plugins: [{ name: 'spectator-render-boundaries', setup(bundler) {
+        bundler.onResolve({ filter: /.*/ }, args => Object.hasOwn(stubs, args.path) || args.path.startsWith('@/components/') ? { path: args.path, namespace: 'boundary' } : null);
+        bundler.onLoad({ filter: /.*/, namespace: 'boundary' }, args => ({ loader: 'js', contents: stubs[args.path] || `import React from 'react'; const UI=p=>React.createElement('div',{className:p.className},p.children ?? p.value); export default UI; ${components.map(name => `export const ${name}=UI;`).join('\n')}` }));
+      } }],
+    });
+    const page = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+    const disputed = renderToStaticMarkup(React.createElement(page.default));
+    assert.match(disputed, /Disputed/);
+    assert.doesNotMatch(disputed, /Archive Log|text-primary scale-110/);
+    assert.equal((disputed.match(/data-icon="Trophy"/g) || []).length, 2); // Header and leaderboard only.
+    assert.match(disputed, />4<.*>2</);
+    game.isDisputed = false;
+    const official = renderToStaticMarkup(React.createElement(page.default));
+    assert.match(official, /Archive Log/);
+    assert.match(official, /text-primary scale-110/);
+    assert.equal((official.match(/data-icon="Trophy"/g) || []).length, 3);
+    assert.doesNotMatch(official, /Disputed/);
+    Object.assign(game, { isDisputed: true, score1: 2, score2: 4 });
+    const disputedAwayLead = renderToStaticMarkup(React.createElement(page.default));
+    assert.match(disputedAwayLead, /Disputed/);
+    assert.doesNotMatch(disputedAwayLead, /Archive Log|text-primary scale-110/);
+    assert.equal((disputedAwayLead.match(/data-icon="Trophy"/g) || []).length, 2);
+  } finally { delete globalThis[key]; }
+});
 
 test('League resolution controls require a disputed match and current organizer identity', () => {
   const base = { actorUid: 'owner', creatorId: 'owner', isDisputed: true };
