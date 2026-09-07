@@ -59,7 +59,8 @@ test('creates the canonical spectator allowlist once and updates only for newer 
   const first = await syncPublicLeagueView('league-a', 100, db);
   const second = await syncPublicLeagueView('league-a', 100, db);
   assert.deepEqual([first.action, second.action], ['written', 'unchanged']);
-  assert.equal(db.writes.length, 1);
+  assert.equal(db.writes.filter(([, path]) => path === 'publicLeagueViews/league-a').length, 1);
+  assert.deepEqual(db.records.get('leaguePublicProjectionState/league-a').data, { sourceVersion: 100 });
   assert.deepEqual(db.records.get('publicLeagueViews/league-a').data, {
     id: 'league-a', name: 'Metro', sport: 'Soccer', divisions: ['Gold'], divisionTitle: 'Gold',
     schedule: [{ id: 'g1', team1: 'Alpha', team2: 'Beta', team1Id: 'a', team2Id: 'b', date: '2026-09-07', time: '10:00', location: 'Field', score1: 2, score2: 1, isCompleted: true, isDisputed: false, isExhibition: false }],
@@ -78,11 +79,15 @@ test('creates the canonical spectator allowlist once and updates only for newer 
 
 test('revokes archived inactive deleted unentitled blocked and inconsistent league projections', async () => {
   const cases = [
-    { league: { isArchived: true } }, { league: { is_active: false } }, { league: { isDeleted: true } },
-    { owner: { plan_type: 'free' } }, { owner: { subscription_status: 'canceled' } },
+    { league: { isArchived: true } }, { league: { is_active: false } }, { league: { isDeleted: true } }, { league: { status: 'inactive' } },
+    { owner: { role: 'coach', plan_type: 'free' } }, { owner: { role: 'coach', plan_type: 'team' } },
+    { owner: { role: 'parent', plan_type: 'league' } },
+    { owner: { subscription_status: 'canceled' } }, { owner: { status: 'inactive' } }, { owner: { isArchived: true } }, { owner: { isDeleted: true } },
     { owner: { accountStatus: 'suspended' } }, { owner: { deletionStatus: 'pending' } },
     { league: { creatorId: '' } }, { league: { billingOwnerUserId: 'other' } },
     { league: { tenantId: '' } }, { team: { ownerUserId: 'other' } }, { team: { isArchived: true } },
+    { team: { status: 'inactive' } }, { team: { isDeleted: true } }, { team: { accountStatus: 'suspended' } },
+    { team: { deletionStatus: 'pending' } }, { team: { planId: 'team' } },
     { leagueVersion: 0 },
   ];
   for (const overrides of cases) {
@@ -90,6 +95,35 @@ test('revokes archived inactive deleted unentitled blocked and inconsistent leag
     assert.equal((await syncPublicLeagueView('league-a', 100, db)).action, 'revoked');
     assert.equal(db.records.has('publicLeagueViews/league-a'), false);
   }
+});
+
+test('a team-owned League preserves a valid delegated creator and uses only the canonical billing owner entitlement', async () => {
+  const db = store({
+    ...activeSeed({ league: { creatorId: 'delegated-staff' } }),
+    'users/delegated-staff': { data: { role: 'coach', plan_type: 'free', subscription_status: 'canceled' }, version: 95 },
+  });
+  assert.equal((await syncPublicLeagueView('league-a', 100, db)).action, 'written');
+});
+
+test('legacy projection without private source metadata is replaced by the canonical DTO even when written later', async () => {
+  const db = store({
+    ...activeSeed(),
+    'publicLeagueViews/league-a': { data: { id: 'league-a', contactEmail: 'legacy-private@example.test' }, version: 5_000 },
+  });
+  assert.equal((await syncPublicLeagueView('league-a', 100, db)).action, 'written');
+  assert.equal(db.records.get('publicLeagueViews/league-a').data.contactEmail, undefined);
+  assert.deepEqual(db.records.get('leaguePublicProjectionState/league-a').data, { sourceVersion: 100 });
+});
+
+test('malformed private source metadata is not trusted as an authoritative revision', async () => {
+  const db = store({
+    ...activeSeed(),
+    'publicLeagueViews/league-a': { data: { id: 'league-a', contactEmail: 'legacy-private@example.test' }, version: 5_000 },
+    'leaguePublicProjectionState/league-a': { data: { sourceVersion: '5000' }, version: 5_001 },
+  });
+  assert.equal((await syncPublicLeagueView('league-a', 100, db)).action, 'written');
+  assert.equal(db.records.get('publicLeagueViews/league-a').data.contactEmail, undefined);
+  assert.deepEqual(db.records.get('leaguePublicProjectionState/league-a').data, { sourceVersion: 100 });
 });
 
 test('supports a canonical profile tenant and revokes when the owner or source is missing', async () => {

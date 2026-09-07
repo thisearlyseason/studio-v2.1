@@ -23,9 +23,7 @@ export type LeagueSpectatorProjection = Record<string, unknown> & {
   isActive: boolean;
 };
 
-const PUBLIC_PLAN_IDS = new Set([
-  "team", "elite", "league", "school", "pro", "squad_pro", "elite_teams", "elite_league", "schools",
-]);
+const LEAGUE_PLAN_IDS = new Set(["league", "elite_league", "school"]);
 const ENTITLED_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
 const BLOCKED_ACCOUNT_STATUSES = new Set(["deleted", "disabled", "pending_deletion", "suspended"]);
 const BLOCKED_DELETION_STATUSES = new Set(["completed", "deleted", "pending", "processing"]);
@@ -45,20 +43,24 @@ function record(value: unknown): Record<string, unknown> {
 function activeRecord(value: Record<string, unknown>): boolean {
   const status = normalized(value.status);
   return value.isArchived !== true && value.isDeleted !== true && value.is_active !== false && value.isActive !== false &&
-    status !== "removed" && status !== "cancelled";
+    (!status || status === "active");
 }
 
 function activeOwner(value: Record<string, unknown>): boolean {
   const plan = normalized(value.plan_type || value.planId || value.activePlanId);
-  return activeRecord(value) && PUBLIC_PLAN_IDS.has(plan) &&
-    ENTITLED_SUBSCRIPTION_STATUSES.has(normalized(value.subscription_status || value.subscriptionStatus)) &&
+  const role = normalized(value.role);
+  const subscriptionStatus = normalized(value.subscription_status || value.subscriptionStatus);
+  const hasCompetitionRole = role === "league_creator" ||
+    ((role === "coach" || role === "admin" || value.isPrimaryClubAuthority === true) && LEAGUE_PLAN_IDS.has(plan));
+  return activeRecord(value) && hasCompetitionRole &&
+    (!subscriptionStatus || ENTITLED_SUBSCRIPTION_STATUSES.has(subscriptionStatus)) &&
     !BLOCKED_ACCOUNT_STATUSES.has(normalized(value.accountStatus)) &&
     !BLOCKED_DELETION_STATUSES.has(normalized(value.deletionStatus));
 }
 
 function activeTenant(value: Record<string, unknown>, ownerId: string): boolean {
   const plan = normalized(value.planId || value.plan_type || value.subscriptionPlanId);
-  return value.ownerUserId === ownerId && activeRecord(value) && PUBLIC_PLAN_IDS.has(plan) &&
+  return value.ownerUserId === ownerId && activeRecord(value) && LEAGUE_PLAN_IDS.has(plan) &&
     !BLOCKED_ACCOUNT_STATUSES.has(normalized(value.accountStatus)) &&
     !BLOCKED_DELETION_STATUSES.has(normalized(value.deletionStatus));
 }
@@ -125,6 +127,11 @@ function sameProjection(left: Record<string, unknown>, right: Record<string, unk
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function sourceVersionOf(snapshot: VersionedRecord): number | undefined {
+  const value = snapshot.data.sourceVersion;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
 /** Deterministically converges the public view against current source and entitlement state. */
 export async function syncPublicLeagueView(
   leagueId: string,
@@ -132,13 +139,19 @@ export async function syncPublicLeagueView(
   store: LeagueProjectionStore,
 ): Promise<LeagueProjectionResult> {
   return store.runTransaction(async transaction => {
-    const [leagueSnapshot, projectionSnapshot] = await Promise.all([
+    const [leagueSnapshot, projectionSnapshot, stateSnapshot] = await Promise.all([
       transaction.read("leagues", leagueId),
       transaction.read("publicLeagueViews", leagueId),
+      transaction.read("leaguePublicProjectionState", leagueId),
     ]);
     const revoke = async (): Promise<LeagueProjectionResult> => {
-      if (!projectionSnapshot.exists) return { action: "unchanged" };
-      await transaction.delete("publicLeagueViews", leagueId);
+      const storedSourceVersion = sourceVersionOf(stateSnapshot);
+      if (expectedVersion !== undefined && storedSourceVersion !== undefined && storedSourceVersion > expectedVersion) {
+        return { action: "unchanged" };
+      }
+      if (!projectionSnapshot.exists && !stateSnapshot.exists) return { action: "unchanged" };
+      if (projectionSnapshot.exists) await transaction.delete("publicLeagueViews", leagueId);
+      if (stateSnapshot.exists) await transaction.delete("leaguePublicProjectionState", leagueId);
       return { action: "revoked" };
     };
     if (!leagueSnapshot.exists) return revoke();
@@ -148,14 +161,14 @@ export async function syncPublicLeagueView(
     const creatorId = text(league.creatorId).trim();
     const ownerId = text(league.billingOwnerUserId).trim();
     const tenantId = text(league.tenantId).trim();
-    if (!creatorId || creatorId !== ownerId || !tenantId || !activeRecord(league)) return revoke();
+    if (!creatorId || !ownerId || !tenantId || !activeRecord(league)) return revoke();
 
     const ownerSnapshot = await transaction.read("users", ownerId);
     if (!ownerSnapshot.exists || !Number.isSafeInteger(ownerSnapshot.version) || ownerSnapshot.version <= 0 || !activeOwner(ownerSnapshot.data)) return revoke();
 
     let tenantVersion = 0;
     if (tenantId.startsWith("profile:")) {
-      if (tenantId !== `profile:${ownerId}`) return revoke();
+      if (creatorId !== ownerId || tenantId !== `profile:${ownerId}`) return revoke();
     } else {
       const tenantSnapshot = await transaction.read("teams", tenantId);
       if (!tenantSnapshot.exists || !Number.isSafeInteger(tenantSnapshot.version) || tenantSnapshot.version <= 0 || !activeTenant(tenantSnapshot.data, ownerId)) return revoke();
@@ -165,11 +178,38 @@ export async function syncPublicLeagueView(
     const sourceVersion = Math.max(leagueSnapshot.version, ownerSnapshot.version, tenantVersion);
     if (expectedVersion !== undefined && (!Number.isSafeInteger(expectedVersion) || expectedVersion <= 0 || expectedVersion > sourceVersion)) return revoke();
     const projection = buildLeagueSpectatorProjection(leagueId, league);
-    if (projectionSnapshot.exists && projectionSnapshot.version > sourceVersion) return { action: "unchanged" };
-    if (projectionSnapshot.exists && sameProjection(projectionSnapshot.data, projection)) return { action: "unchanged" };
+    const storedSourceVersion = sourceVersionOf(stateSnapshot);
+    if (storedSourceVersion !== undefined && storedSourceVersion > sourceVersion) return { action: "unchanged" };
+    if (storedSourceVersion === sourceVersion && projectionSnapshot.exists && sameProjection(projectionSnapshot.data, projection)) {
+      return { action: "unchanged" };
+    }
     await transaction.write("publicLeagueViews", leagueId, projection);
+    await transaction.write("leaguePublicProjectionState", leagueId, { sourceVersion });
     return { action: "written" };
   });
+}
+
+export type LeagueProjectionPage = { ids: string[]; nextCursor?: string };
+
+/** Drains a stable, cursor-paginated query and de-duplicates retry-safe fanout. */
+export async function syncPublicLeagueViewPages(
+  loadPage: (cursor?: string) => Promise<LeagueProjectionPage>,
+  expectedVersion: number | undefined,
+  sync: (leagueId: string, expectedVersion?: number) => Promise<LeagueProjectionResult>,
+): Promise<{ synced: number }> {
+  const seenIds = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const page = await loadPage(cursor);
+    const ids = page.ids.filter(id => id.length > 0 && !seenIds.has(id));
+    ids.forEach(id => seenIds.add(id));
+    await syncPublicLeagueViews(ids, expectedVersion, sync);
+    cursor = page.nextCursor;
+    if (cursor && seenCursors.has(cursor)) throw new Error("League projection pagination cursor repeated.");
+    if (cursor) seenCursors.add(cursor);
+  } while (cursor);
+  return { synced: seenIds.size };
 }
 
 export async function syncPublicLeagueViews(

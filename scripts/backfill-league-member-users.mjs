@@ -1,10 +1,12 @@
 /**
  * Backfills leagues/{leagueId}.memberUserIds from the organizer and existing
- * teams/{teamId}/members records, and creates spectator-safe public views.
- * Run with ADC or FIREBASE_SERVICE_ACCOUNT_JSON. Defaults to dry-run; pass
- * --apply only after reviewing the reported changes.
+ * teams/{teamId}/members records, and repairs spectator-safe public views via
+ * the canonical projection worker. Run through tsx with ADC or
+ * FIREBASE_SERVICE_ACCOUNT_JSON. Defaults to dry-run; pass --apply only after
+ * reviewing the reported changes.
  */
 import admin from 'firebase-admin';
+import { syncPublicLeagueView } from '../functions/src/league-public-projection.ts';
 
 const apply = process.argv.includes('--apply');
 const verbose = process.argv.includes('--verbose');
@@ -37,31 +39,20 @@ async function withQuotaRetry(operation, attempt = 0) {
 
 const leagues = await withQuotaRetry(() => db.collection('leagues').get());
 
-function publicLeagueView(leagueId, data) {
-  const teams = Object.fromEntries(Object.entries(data.teams || {}).map(([teamId, team]) => [teamId, {
-    teamName: team?.teamName || '',
-    teamLogoUrl: team?.teamLogoUrl || '',
-    wins: Number(team?.wins || 0),
-    losses: Number(team?.losses || 0),
-    ties: Number(team?.ties || 0),
-    points: Number(team?.points || 0),
-  }]));
-  const schedule = Array.isArray(data.schedule) ? data.schedule.map(game => ({
-    id: game.id || '', team1: game.team1 || '', team1Id: game.team1Id || '',
-    team2: game.team2 || '', team2Id: game.team2Id || '', date: game.date || '',
-    time: game.time || '', location: game.location || '', status: game.status || 'scheduled',
-    isCompleted: Boolean(game.isCompleted), score1: Number(game.score1 || 0), score2: Number(game.score2 || 0),
-  })) : [];
-  return {
-    id: leagueId,
-    name: data.name || '',
-    sport: data.sport || '',
-    divisionTitle: data.divisionTitle || '',
-    teams,
-    schedule,
-    migratedAt: admin.firestore.FieldValue.serverTimestamp(),
-  };
-}
+const projectionStore = {
+  runTransaction: operation => db.runTransaction(async transaction => operation({
+    read: async (collection, id) => {
+      const snapshot = await transaction.get(db.collection(collection).doc(id));
+      return {
+        exists: snapshot.exists,
+        data: snapshot.data() || {},
+        version: snapshot.updateTime?.toMillis() || 0,
+      };
+    },
+    write: async (collection, id, data) => { transaction.set(db.collection(collection).doc(id), data); },
+    delete: async (collection, id) => { transaction.delete(db.collection(collection).doc(id)); },
+  })),
+};
 
 async function inspectLeague(league) {
   const data = league.data();
@@ -81,22 +72,17 @@ async function inspectLeague(league) {
   const hasMembershipCache = Array.isArray(data.memberUserIds);
   const previous = [...(hasMembershipCache ? data.memberUserIds : [])].sort();
   const needsMembershipUpdate = !hasMembershipCache || JSON.stringify(next) !== JSON.stringify(previous);
-  const publicViewRef = db.collection('publicLeagueViews').doc(league.id);
-  const publicViewExists = verbose
-    ? (await withQuotaRetry(() => publicViewRef.get())).exists
-    : undefined;
-
   if (needsMembershipUpdate) {
     membershipChanges += 1;
     if (verbose) console.log(`${apply ? 'Updating' : 'Would update'} ${league.id}: ${next.length} member users`);
   }
   publicViewWrites += 1;
-  if (verbose) console.log(`${apply ? 'Writing' : 'Would write'} ${publicViewExists ? 'updated' : 'new'} public spectator view for ${league.id}`);
+  if (verbose) console.log(`${apply ? 'Repairing' : 'Would repair'} canonical public spectator view for ${league.id}`);
   if (apply) {
     if (needsMembershipUpdate) {
       await withQuotaRetry(() => league.ref.update({ memberUserIds: next }));
     }
-    await withQuotaRetry(() => publicViewRef.set(publicLeagueView(league.id, data)));
+    await withQuotaRetry(() => syncPublicLeagueView(league.id, undefined, projectionStore));
   }
 }
 
@@ -113,7 +99,7 @@ for (const publicView of publicViews.docs) {
   if (leagueIds.has(publicView.id)) continue;
   stalePublicViewDeletes += 1;
   if (verbose) console.log(`${apply ? 'Deleting' : 'Would delete'} stale spectator view ${publicView.id}`);
-  if (apply) await withQuotaRetry(() => publicView.ref.delete());
+  if (apply) await withQuotaRetry(() => syncPublicLeagueView(publicView.id, undefined, projectionStore));
 }
 
 console.log(`${apply ? 'Updated' : 'Dry run found'} ${membershipChanges} membership records, ${publicViewWrites} spectator projections to write, and ${stalePublicViewDeletes} stale projections to delete.`);

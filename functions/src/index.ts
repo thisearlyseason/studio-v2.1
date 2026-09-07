@@ -20,7 +20,7 @@ import { publicCalendarFeedFailure, redactCalendarFeedPublicResponse } from "./c
 import { runUpcomingEventReminderCore } from "./event-reminder-runner";
 import {
   syncPublicLeagueView as syncPublicLeagueViewCore,
-  syncPublicLeagueViews,
+  syncPublicLeagueViewPages,
   type LeagueProjectionStore,
 } from "./league-public-projection";
 
@@ -123,17 +123,28 @@ function eventVersion(snapshot: admin.firestore.DocumentSnapshot | undefined): n
   return snapshot?.updateTime?.toMillis();
 }
 
-async function leagueIdsForOwner(ownerId: string): Promise<string[]> {
-  const [canonical, legacy] = await Promise.all([
-    db.collection("leagues").where("billingOwnerUserId", "==", ownerId).limit(100).get(),
-    db.collection("leagues").where("creatorId", "==", ownerId).limit(100).get(),
-  ]);
-  return [...new Set([...canonical.docs, ...legacy.docs].map(snapshot => snapshot.id))];
+function leaguePage(field: "billingOwnerUserId" | "creatorId" | "tenantId", value: string) {
+  return async (cursor?: string) => {
+    let query: admin.firestore.Query = db.collection("leagues")
+      .where(field, "==", value)
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(100);
+    if (cursor) query = query.startAfter(cursor);
+    const snapshot = await query.get();
+    return {
+      ids: snapshot.docs.map(document => document.id),
+      nextCursor: snapshot.size === 100 ? snapshot.docs[snapshot.docs.length - 1]?.id : undefined,
+    };
+  };
 }
 
-async function leagueIdsForTenant(teamId: string): Promise<string[]> {
-  const snapshot = await db.collection("leagues").where("tenantId", "==", teamId).limit(100).get();
-  return snapshot.docs.map(document => document.id);
+async function syncLeaguePages(
+  loaders: Array<(cursor?: string) => Promise<{ ids: string[]; nextCursor?: string }>>,
+  expectedVersion: number | undefined,
+): Promise<void> {
+  for (const loadPage of loaders) {
+    await syncPublicLeagueViewPages(loadPage, expectedVersion, syncPublicLeagueView);
+  }
 }
 
 export const onLeagueCreated = onDocumentCreated("leagues/{leagueId}", async (event) => {
@@ -158,23 +169,25 @@ export const onLeagueDeleted = onDocumentDeleted("leagues/{leagueId}", async (ev
 });
 
 export const onLeagueOwnerEntitlementChanged = onDocumentUpdated("users/{userId}", async event => {
-  const ids = await leagueIdsForOwner(event.params.userId);
-  await syncPublicLeagueViews(ids, eventVersion(event.data?.after), syncPublicLeagueView);
+  await syncLeaguePages([
+    leaguePage("billingOwnerUserId", event.params.userId),
+    leaguePage("creatorId", event.params.userId),
+  ], eventVersion(event.data?.after));
 });
 
 export const onLeagueOwnerDeleted = onDocumentDeleted("users/{userId}", async event => {
-  const ids = await leagueIdsForOwner(event.params.userId);
-  await syncPublicLeagueViews(ids, eventVersion(event.data), syncPublicLeagueView);
+  await syncLeaguePages([
+    leaguePage("billingOwnerUserId", event.params.userId),
+    leaguePage("creatorId", event.params.userId),
+  ], eventVersion(event.data));
 });
 
 export const onLeagueTenantEntitlementChanged = onDocumentUpdated("teams/{teamId}", async event => {
-  const ids = await leagueIdsForTenant(event.params.teamId);
-  await syncPublicLeagueViews(ids, eventVersion(event.data?.after), syncPublicLeagueView);
+  await syncLeaguePages([leaguePage("tenantId", event.params.teamId)], eventVersion(event.data?.after));
 });
 
 export const onLeagueTenantDeleted = onDocumentDeleted("teams/{teamId}", async event => {
-  const ids = await leagueIdsForTenant(event.params.teamId);
-  await syncPublicLeagueViews(ids, eventVersion(event.data), syncPublicLeagueView);
+  await syncLeaguePages([leaguePage("tenantId", event.params.teamId)], eventVersion(event.data));
 });
 
 export const onTeamMemberCreated = onDocumentCreated("teams/{teamId}/members/{memberId}", async (event) => {
