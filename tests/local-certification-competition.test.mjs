@@ -97,10 +97,18 @@ function strictCompetitionEvent(scenarioId, caseId, assertionId = `assertion-${c
       ...(contract.browser ? { browser: {
         actor: contract.actor, route: contract.route,
         selector: contract.browser.selector, role: contract.browser.role, name: contract.browser.name,
-        matchedSelector: contract.browser.selector, matchedRole: contract.browser.role, matchedName: contract.browser.name, matchCount: 1,
+        matchedSelector: `observed:${contract.browser.role}:${contract.browser.name}`, matchedRole: contract.browser.role, matchedName: contract.browser.name, observedDomName: contract.browser.name, matchCount: 1,
         action: contract.browser.action, actionResult: contract.browser.actionResult,
         controlSelector: contract.browser.controlSelector, controlRole: contract.browser.controlRole, controlName: contract.browser.controlName,
-        matchedControlSelector: contract.browser.controlSelector, matchedControlRole: contract.browser.controlRole, matchedControlName: contract.browser.controlName, controlMatchCount: 1,
+        matchedControlSelector: `observed:${contract.browser.controlRole}:${contract.browser.controlName}`, matchedControlRole: contract.browser.controlRole, matchedControlName: contract.browser.controlName, observedControlDomName: contract.browser.controlName, controlMatchCount: 1,
+        fixtureIdentity: contract.browser.fixtureAlias ? { alias: contract.browser.fixtureAlias, expectedName: `fixture:${contract.browser.fixtureAlias}`, observedName: `fixture:${contract.browser.fixtureAlias}` } : null,
+        teamIdentity: contract.browser.teamAlias ? { alias: contract.browser.teamAlias, expectedId: `team:${contract.browser.teamAlias}`, observedId: `team:${contract.browser.teamAlias}` } : null,
+        prerequisiteEvidence: (contract.browser.prerequisiteIds || []).map(id => ({
+          id, count: 1, locator: `observed:${id}`,
+          observedName: id === 'fixture-title' || id === 'fixture-card' || id === 'fixture-hub'
+            ? `fixture:${contract.browser.fixtureAlias}`
+            : id === 'league-tab' ? 'League' : id === 'launch-hub' ? 'Launch Hub' : 'Modify Series',
+        })),
         expectedViewports: contract.browser.expectedViewports, session: `session-${caseId}`,
         viewports: contract.browser.expectedViewports.map(viewport => ({ viewport, mainBox: {}, controlBox: {}, mainFits: true, controlFits: true, scrollWidth: viewport.width })),
         consoleCount: contract.browser.expectedConsoleCount, networkCount: contract.browser.expectedNetworkCount,
@@ -223,6 +231,64 @@ test('competition browser contracts freeze concrete controls, action results, co
     { role: referee.role, name: referee.name, action: referee.action, result: referee.actionResult },
     { role: 'render', name: 'Verified', action: 'render-only', result: 'assigned-referee-portal-rendered' },
   );
+  const leagueSchedule = COMPETITION_CASE_EXECUTION_CONTRACTS['leagues-schedule-generation-deployment']['league-schedule-desktop'].browser;
+  assert.deepEqual(
+    { selector: leagueSchedule.controlSelector, role: leagueSchedule.controlRole, name: leagueSchedule.controlName },
+    { selector: 'role=heading[name="Match Command"]', role: 'heading', name: 'Match Command' },
+  );
+});
+
+test('competition browser contracts require exact fixture identity and a uniquely observed prerequisite chain', () => {
+  const expectedPrerequisites = {
+    'leagues-create-edit-clone-delete': [],
+    'leagues-schedule-generation-deployment': ['league-tab', 'fixture-title', 'fixture-card', 'fixture-hub'],
+    'leagues-registration-assignment': ['league-tab', 'fixture-title', 'fixture-card', 'fixture-hub'],
+    'leagues-scorekeeper-spectator': ['league-tab', 'fixture-title', 'fixture-card', 'fixture-hub'],
+    'tournaments-create-configure-replicate-archive': ['fixture-title', 'fixture-card', 'fixture-hub'],
+    'tournaments-schedule-pools-brackets-referees': ['fixture-title', 'fixture-card', 'launch-hub', 'fixture-hub'],
+    'tournaments-scoring-dispute-public-standings': ['fixture-title', 'fixture-card', 'fixture-hub'],
+  };
+  for (const [scenarioId, contracts] of Object.entries(COMPETITION_CASE_EXECUTION_CONTRACTS)) {
+    for (const [caseId, contract] of Object.entries(contracts)) {
+      if (!contract.browser) continue;
+      const expectedAlias = scenarioId === 'leagues-create-edit-clone-delete'
+        ? null
+        : scenarioId.startsWith('leagues-') ? 'qa-league-a' : 'qa-tournament-a';
+      if (caseId === 'tournament-schedule-mobile') {
+        assert.equal(contract.browser.teamAlias, 'qa-team-a', `${scenarioId}/${caseId} team`);
+        assert.equal(contract.browser.fixtureAlias, expectedAlias, `${scenarioId}/${caseId} route fixture`);
+        assert.deepEqual(contract.browser.prerequisiteIds, []);
+      } else if (caseId === 'tournament-archive-cancel') {
+        assert.equal(contract.browser.teamAlias, 'qa-team-a', `${scenarioId}/${caseId} team`);
+        assert.equal(contract.browser.fixtureAlias, expectedAlias, `${scenarioId}/${caseId} fixture`);
+        assert.deepEqual(contract.browser.prerequisiteIds, ['fixture-title', 'fixture-card', 'fixture-hub', 'modify-series']);
+      } else {
+        assert.equal(contract.browser.teamAlias, scenarioId.startsWith('tournaments-') ? 'qa-team-a' : null, `${scenarioId}/${caseId} team`);
+        assert.equal(contract.browser.fixtureAlias, expectedAlias, `${scenarioId}/${caseId} fixture`);
+        assert.deepEqual(contract.browser.prerequisiteIds, expectedPrerequisites[scenarioId]);
+      }
+    }
+  }
+
+  const id = 'tournaments-schedule-pools-brackets-referees';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  const browserCase = cases.find(item => item.caseId === 'tournament-schedule-desktop');
+  browserCase.execution.browser.fixtureIdentity = { alias: 'qa-tournament-a', expectedName: 'QA Tournament A', observedName: 'QA Tournament A' };
+  browserCase.execution.browser.prerequisiteEvidence = [
+    { id: 'fixture-title', count: 1, locator: 'getByRole heading QA Tournament A', observedName: 'QA Tournament A' },
+    { id: 'fixture-card', count: 1, locator: 'fixture card QA Tournament A', observedName: 'QA Tournament A' },
+    { id: 'launch-hub', count: 1, locator: 'getByRole button Launch Hub', observedName: 'Launch Hub' },
+    { id: 'fixture-hub', count: 1, locator: 'getByRole heading QA Tournament A', observedName: 'QA Tournament A' },
+  ];
+  assert.doesNotThrow(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]));
+  browserCase.execution.browser.prerequisiteEvidence[2].count = 2;
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
+
+  const leagueId = 'leagues-schedule-generation-deployment';
+  const leagueCases = Object.values(frozenCaseIds[leagueId]).flat().map(caseId => strictCompetitionEvent(leagueId, caseId));
+  const leagueCleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${leagueId}:strict-contract-run`] };
+  assert.doesNotThrow(() => assertAuthoritativeCompetitionEvents([...leagueCases, leagueCleanup], [leagueId]));
 });
 
 test('competition browser evidence rejects invented selector results, loose viewports, and wrong exact counts', () => {
@@ -239,6 +305,10 @@ test('competition browser evidence rejects invented selector results, loose view
   assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
   browserCase.execution.browser.viewports = browserCase.execution.browser.expectedViewports.map(viewport => ({ viewport, mainBox: {}, controlBox: {}, mainFits: true, controlFits: true, scrollWidth: viewport.width }));
   browserCase.execution.browser.consoleCount = 1;
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
+  browserCase.execution.browser.consoleCount = 0;
+  browserCase.execution.browser.matchedSelector = `observed:${browserCase.execution.browser.role}:${browserCase.execution.browser.name}`;
+  delete browserCase.execution.browser.observedDomName;
   assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
 });
 
@@ -335,6 +405,7 @@ test('runner uses dedicated competition workflows, isolated sessions and numeric
   assert.match(competitionBlock, /const frozen=\$\{JSON\.stringify\(frozenBrowser\)\}/);
   assert.match(competitionBlock, /exactLocator\(frozen\.role,frozen\.name\)/);
   assert.match(competitionBlock, /frozen\.action==='render-only'/);
+  assert.doesNotMatch(competitionBlock, /new URL\(page\.url\(\)\)/);
   assert.doesNotMatch(competitionBlock, /\$\{caseId\}-interaction|\$\{caseId\}-result/);
 });
 

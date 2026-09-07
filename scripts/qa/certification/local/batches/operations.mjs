@@ -250,7 +250,7 @@ const BROWSER_COMPETITION_DIMENSIONS = new Set(['console', 'network', 'responsiv
 const browserPathForCompetitionScenario = scenarioId => scenarioId.startsWith('tournaments-') ? '/manage-tournaments' : '/competition';
 const COMPETITION_BROWSER_SURFACES = Object.freeze({
   'leagues-create-edit-clone-delete': Object.freeze({ selector: 'role=tab[name="Leagues"]', role: 'tab', name: 'Leagues', action: 'click', actionResult: 'league-create-control-visible', controlSelector: 'role=button[name="Create League"]', controlRole: 'button', controlName: 'Create League' }),
-  'leagues-schedule-generation-deployment': Object.freeze({ selector: 'fixture-league >> role=button[name="Schedule"]', role: 'button', name: 'Schedule', action: 'click', actionResult: 'league-schedule-panel-visible', controlSelector: 'text="Season Schedule Deployment"', controlRole: 'text', controlName: 'Season Schedule Deployment' }),
+  'leagues-schedule-generation-deployment': Object.freeze({ selector: 'fixture-league >> role=button[name="Schedule"]', role: 'button', name: 'Schedule', action: 'click', actionResult: 'league-schedule-panel-visible', controlSelector: 'role=heading[name="Match Command"]', controlRole: 'heading', controlName: 'Match Command' }),
   'leagues-registration-assignment': Object.freeze({ selector: 'fixture-league >> role=button[name="Portals"]', role: 'button', name: 'Portals', action: 'click', actionResult: 'team-registration-panel-visible', controlSelector: 'role=heading[name="Team Registration"]', controlRole: 'heading', controlName: 'Team Registration' }),
   'leagues-scorekeeper-spectator': Object.freeze({ selector: 'fixture-league >> role=button[name="Portals"]', role: 'button', name: 'Portals', action: 'click', actionResult: 'scorekeeper-hub-panel-visible', controlSelector: 'role=heading[name="Scorekeeper Hub"]', controlRole: 'heading', controlName: 'Scorekeeper Hub' }),
   'tournaments-create-configure-replicate-archive': Object.freeze({ selector: 'fixture-tournament-hub >> role=button[name="Modify Series"]', role: 'button', name: 'Modify Series', action: 'click', actionResult: 'tournament-edit-dialog-visible', controlSelector: 'role=dialog[name="Elite Series Architect"]', controlRole: 'dialog', controlName: 'Elite Series Architect' }),
@@ -263,13 +263,26 @@ const COMPETITION_BROWSER_VIEWPORTS = Object.freeze([
 ]);
 function browserContractForCompetitionCase(scenarioId, caseId, dimension, actor, route) {
   const base = COMPETITION_BROWSER_SURFACES[scenarioId];
+  const fixtureAlias = scenarioId === 'leagues-create-edit-clone-delete'
+    ? null
+    : scenarioId.startsWith('leagues-') ? 'qa-league-a' : 'qa-tournament-a';
+  const teamAlias = scenarioId.startsWith('tournaments-') ? 'qa-team-a' : null;
+  const prerequisiteIds = caseId === 'tournament-schedule-mobile' || scenarioId === 'leagues-create-edit-clone-delete'
+    ? []
+    : caseId === 'tournament-archive-cancel'
+      ? ['fixture-title', 'fixture-card', 'fixture-hub', 'modify-series']
+      : scenarioId.startsWith('leagues-')
+        ? ['league-tab', 'fixture-title', 'fixture-card', 'fixture-hub']
+        : scenarioId === 'tournaments-schedule-pools-brackets-referees'
+          ? ['fixture-title', 'fixture-card', 'launch-hub', 'fixture-hub']
+          : ['fixture-title', 'fixture-card', 'fixture-hub'];
   const surface = caseId === 'tournament-schedule-mobile'
     ? { selector: 'referee-assignment-render', role: 'render', name: 'Verified', action: 'render-only', actionResult: 'assigned-referee-portal-rendered', controlSelector: 'text="Verified"', controlRole: 'text', controlName: 'Verified' }
     : caseId === 'tournament-archive-cancel'
       ? { selector: 'fixture-tournament-hub >> role=button[name="Archive Series"]', role: 'button', name: 'Archive Series', action: 'dismiss-confirm', actionResult: 'archive-confirmation-dismissed', controlSelector: 'role=button[name="Archive Series"]', controlRole: 'button', controlName: 'Archive Series' }
       : base;
   return Object.freeze({
-    actor, route,
+    actor, route, fixtureAlias, teamAlias, prerequisiteIds: Object.freeze(prerequisiteIds),
     ...surface,
     expectedViewports: COMPETITION_BROWSER_VIEWPORTS,
     expectedConsoleCount: dimension === 'network' ? 1 : 0,
@@ -465,6 +478,28 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
       }
       if (contract.browser) {
         const browser = item.execution.browser;
+        const fixtureIdentity = browser?.fixtureIdentity;
+        const teamIdentity = browser?.teamIdentity;
+        const exactTeamIdentity = contract.browser.teamAlias === null
+          ? teamIdentity === null
+          : teamIdentity?.alias === contract.browser.teamAlias && typeof teamIdentity.expectedId === 'string' &&
+            teamIdentity.expectedId.length > 0 && teamIdentity.observedId === teamIdentity.expectedId;
+        const exactFixtureIdentity = contract.browser.fixtureAlias === null
+          ? fixtureIdentity === null
+          : fixtureIdentity?.alias === contract.browser.fixtureAlias &&
+            typeof fixtureIdentity.expectedName === 'string' && fixtureIdentity.expectedName.length > 0 &&
+            fixtureIdentity.observedName === fixtureIdentity.expectedName;
+        const prerequisiteEvidence = browser?.prerequisiteEvidence;
+        const expectedPrerequisiteName = id => id === 'fixture-title' || id === 'fixture-card' || id === 'fixture-hub'
+          ? fixtureIdentity?.expectedName
+          : id === 'league-tab' ? 'League'
+            : id === 'launch-hub' ? 'Launch Hub'
+              : id === 'modify-series' ? 'Modify Series' : null;
+        const exactPrerequisites = Array.isArray(prerequisiteEvidence) &&
+          prerequisiteEvidence.length === contract.browser.prerequisiteIds.length &&
+          prerequisiteEvidence.every((step, index) => step?.id === contract.browser.prerequisiteIds[index] &&
+            step.count === 1 && typeof step.locator === 'string' && step.locator.length > 0 &&
+            typeof step.observedName === 'string' && step.observedName === expectedPrerequisiteName(step.id));
         const exactMeasurements = Array.isArray(browser?.viewports) && browser.viewports.length === contract.browser.expectedViewports.length && browser.viewports.every((measurement, index) => {
           const expectedViewport = contract.browser.expectedViewports[index];
           return measurement && JSON.stringify(measurement.viewport) === JSON.stringify(expectedViewport) &&
@@ -473,11 +508,11 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
         });
         if (!browser || browser.actor !== contract.browser.actor || browser.route !== item.execution.route ||
             browser.selector !== contract.browser.selector || browser.role !== contract.browser.role || browser.name !== contract.browser.name ||
-            browser.matchedSelector !== contract.browser.selector || browser.matchedRole !== contract.browser.role || browser.matchedName !== contract.browser.name || browser.matchCount !== 1 ||
+            typeof browser.matchedSelector !== 'string' || !browser.matchedSelector.includes(contract.browser.name) || browser.matchedSelector === contract.browser.selector || browser.matchedRole !== contract.browser.role || browser.matchedName !== contract.browser.name || typeof browser.observedDomName !== 'string' || !browser.observedDomName || browser.matchCount !== 1 ||
             browser.action !== contract.browser.action || browser.actionResult !== contract.browser.actionResult ||
             browser.controlSelector !== contract.browser.controlSelector || browser.controlRole !== contract.browser.controlRole || browser.controlName !== contract.browser.controlName ||
-            browser.matchedControlSelector !== contract.browser.controlSelector || browser.matchedControlRole !== contract.browser.controlRole || browser.matchedControlName !== contract.browser.controlName || browser.controlMatchCount !== 1 ||
-            typeof browser.session !== 'string' || !browser.session || !exactMeasurements ||
+            typeof browser.matchedControlSelector !== 'string' || !browser.matchedControlSelector.includes(contract.browser.controlName) || browser.matchedControlSelector === contract.browser.controlSelector || browser.matchedControlRole !== contract.browser.controlRole || browser.matchedControlName !== contract.browser.controlName || typeof browser.observedControlDomName !== 'string' || !browser.observedControlDomName || browser.controlMatchCount !== 1 ||
+            !exactFixtureIdentity || !exactTeamIdentity || !exactPrerequisites || typeof browser.session !== 'string' || !browser.session || !exactMeasurements ||
             browser.consoleCount !== contract.browser.expectedConsoleCount || browser.networkCount !== contract.browser.expectedNetworkCount) {
           throw new Error(`Competition case ${required} has missing or mismatched browser provenance.`);
         }

@@ -52,6 +52,8 @@ Result: **86/86 passed**.
 
 Result: **29/29 passed**.
 
+Round-5 RED/GREEN closed the remaining prerequisite-selection evidence gap. The RED contract proved that copied selector strings and unverified `.first()` selection could not establish which fixture card was acted on. The GREEN contract requires a run-time locator chain with every prerequisite matching exactly once, plus authoritative fixture and active-team identity. It also rejects browser code that depends on the unavailable `URL` global inside the Playwright CLI evaluation context. The final focused contract run is **23/23**.
+
 ## Bounded launch smoke
 
 Command shape:
@@ -79,6 +81,13 @@ Fresh round-4 affected-row reruns:
 - `tournaments-create-configure-replicate-archive`: `final-cert-t5-260907-151638-bcde`, wrapper exit 0, 16/16 cases, raw create/archive replay identity, exact retained replica private/public fields and reset state, exact unique `Modify Series`/`Elite Series Architect` browser matches and viewport/count measurements, and cleanup observed (`deleted: 319`, zero residue).
 - `tournaments-schedule-pools-brackets-referees`: `final-cert-t5-260907-151802-7f97`, wrapper exit 0, 12/12 cases, exact `Launch Hub`/unique `Officials`/unique `Match Assignments` evidence, exact console/network counts and viewport objects, truthful `qa-referee` render-only unique `Verified` proof, and cleanup observed (`deleted: 324`, `restored: 1`, zero residue).
 
+Fresh round-5 affected browser reruns:
+
+- `leagues-schedule-generation-deployment`: `final-cert-t5-260907-153936-616a`, wrapper exit 0, 11/11 cases. The exact League tab, authoritative League title, uniquely scoped fixture card, and fixture hub were observed before the `Schedule` action; the real post-deployment `Match Command` result was unique. Cleanup deleted 306 and restored 1 with zero residue.
+- `tournaments-create-configure-replicate-archive`: `final-cert-t5-260907-154315-df40`, wrapper exit 0, 16/16 cases. The exact authoritative Tournament title/card/hub and archive-cancel `Modify Series` prerequisite were each observed once. Cleanup deleted 319 with zero residue.
+- `tournaments-schedule-pools-brackets-referees`: `final-cert-t5-260907-155602-4683`, wrapper exit 0, 12/12 cases. The authoritative run-mutated Tournament title, uniquely scoped fixture card, card-scoped `Launch Hub`, resulting hub, active Team A identity, desktop/mobile controls, and referee render-only route were all observed. Cleanup deleted 324 and restored 1 with zero residue.
+- `tournaments-scoring-dispute-public-standings`: `final-cert-t5-260907-155713-55c3` wrote all 14 case artifacts, including fresh console/network/desktop/mobile browser cases with exact authoritative title/card/hub and Team A identity. The wrapper then truthfully remained nonzero on the pre-existing non-browser `tournament-score-replay` request-ID contract mismatch; no scoring product or replay-contract change was made in this prerequisite-evidence-only round. Cleanup deleted 310 and restored 3 with zero residue.
+
 The result envelope remains `BLOCKED_PRECONDITION` because final external/staging adjudication is intentionally reserved for Task 10; both bounded Task 9 wrappers exited successfully with all local dimensions observed.
 
 These are bounded Task 9 launch proofs, not the authoritative combined adjudication owned by Task 10. The runner deliberately states that final matrix PASS is not inferred.
@@ -102,12 +111,14 @@ These are bounded Task 9 launch proofs, not the authoritative combined adjudicat
 15. Synthetic browser selector/control placeholders were replaced with frozen, case-specific accessible selector/role/name/action/result contracts. Runtime evidence records the exact matched values, exact counts, and full `1440x900`/`390x844` measurement objects; validation rejects any mismatch.
 16. The referee page exposes assignment state but no genuine actionable control. Its mobile row now freezes a truthful `render-only` interaction against exact `Verified` content instead of claiming an invented interaction.
 17. Lifecycle replay proof now hashes the original raw HTTP response text, not a reserialized parsed object. League reload and retained Tournament replica reload assert exact material private/public identity, configuration, ownership, version, and reset fields.
+18. Browser prerequisite actions no longer choose the first generic match. League selection is scoped through the exact authoritative title and unique card/hub; Tournament selection uses the exact authoritative event title, unique card, card-scoped `Launch Hub` when applicable, resulting hub, active team, and unique `Modify Series` prerequisite for archive cancel. Evidence records every observed locator string, count, and DOM identity in order; validation rejects missing, duplicate, reordered, copied, or mismatched evidence.
+19. Tournament titles changed by schedule/scoring setup are read from the authoritative Firestore fixture immediately before browser navigation, preventing a stale catalog title from being mistaken for the rendered fixture. The referee mobile route extracts its observed fixture ID without relying on the Playwright CLI evaluation context's unavailable `URL` global.
 
 ## Final verification
 
 - `command -v npx` — PASS.
 - syntax checks for the runner, operations, evidence, and isolation modules — PASS.
-- focused contract/regression tests — 86/86 PASS.
+- focused contract/regression tests — 87/87 PASS.
 - final fixture/catalog tests — 29/29 PASS.
 - `npm run typecheck` — PASS.
 - scoped ESLint — PASS with zero errors and nine existing warnings in the legacy runner.

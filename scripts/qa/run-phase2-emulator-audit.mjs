@@ -7216,6 +7216,10 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
   const frozenBrowser = caseContract?.browser;
   if (!frozenBrowser) throw new Error(`Missing frozen browser contract for ${scenarioId}/${caseId}.`);
   const browserActor = caseContract?.actor || contract.actor;
+  const fixtureLeague = FIXTURES.leagues.find(item => item.alias === 'qa-league-a');
+  const fixtureTournament = FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a');
+  const fixtureLeagueName = caseContract?.fixtureName || fixtureLeague.name;
+  const fixtureTournamentName = caseContract?.fixtureName || fixtureTournament.name;
   const refereePath = `/tournaments/referee/${FIXTURES.teams.find(item => item.alias === 'qa-team-a').id}/${FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').id}`;
   const browserPath = caseId === 'tournament-schedule-mobile' ? refereePath : contract.path;
   const session = browserSessionName(`ui-${browserActor}-${caseId}`);
@@ -7227,7 +7231,33 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
     } catch (error) { throw new Error(`Tournament archive-cancel authentication/navigation failed: ${error.message}`); }
     let result;
     try {
-      result = JSON.parse(cli(session, ['run-code', `async page=>{const consoleErrors=[];const failedResponses=[];let lifecycleRequests=0;const frozen=${JSON.stringify(frozenBrowser)};const pathOf=url=>url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0];const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};const onError=error=>consoleErrors.push(error.stack||error.message);const onRequest=request=>{if(request.url().startsWith(${JSON.stringify(BASE_URL)})&&pathOf(request.url())==='/api/tournaments/lifecycle')lifecycleRequests+=1;};const onResponse=response=>{if(response.url().startsWith(${JSON.stringify(BASE_URL)})&&response.status()>=400)failedResponses.push({pathname:pathOf(response.url()),method:response.request().method(),status:response.status()});};page.on('console',onConsole);page.on('pageerror',onError);page.on('request',onRequest);page.on('response',onResponse);try{for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.waitFor({state:'visible',timeout:1200}).then(()=>true).catch(()=>false))break;await alert.getByRole('button',{name:'Got It',exact:true}).click();await alert.waitFor({state:'hidden',timeout:5000});}const tournamentTitle=page.getByText(${JSON.stringify(FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').name)},{exact:true}).first();await tournamentTitle.waitFor({state:'visible',timeout:15000});await tournamentTitle.click();await page.getByRole('button',{name:'Modify Series',exact:true}).click();await page.evaluate(()=>Object.defineProperty(window,'confirm',{configurable:true,value:message=>{window.__qaArchiveConfirmation=String(message);return false;}}));const interaction=page.getByRole('button',{name:'Archive Series',exact:true});await interaction.waitFor({state:'visible'});const interactionMatchCount=await interaction.count();await interaction.click();const archiveConfirmation=await page.evaluate(()=>window.__qaArchiveConfirmation||'');if(!/Archival Protocol/i.test(archiveConfirmation))throw Error('Archive confirmation was not shown and dismissed.');const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator('main').first();const control=page.getByRole('button',{name:'Archive Series',exact:true});await Promise.all([main.waitFor({state:'visible'}),control.waitFor({state:'visible'})]);const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=viewport.width+0.5&&box.y+box.height<=viewport.height+0.5);return{viewport,mainBox,controlBox,mainFits:fits(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth)};};return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,lifecycleRequests,url:page.url(),interactionEvidence:{matchedSelector:frozen.selector,matchedRole:'button',matchedName:frozen.name,matchCount:interactionMatchCount,action:'dismiss-confirm',actionResult:'archive-confirmation-dismissed'},controlEvidence:{matchedControlSelector:frozen.controlSelector,matchedControlRole:'button',matchedControlName:frozen.controlName,controlMatchCount:await page.getByRole('button',{name:'Archive Series',exact:true}).count()}};}finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('request',onRequest);page.off('response',onResponse);}}`], { sensitive: true }));
+      result = JSON.parse(cli(session, ['run-code', `async page=>{
+        const consoleErrors=[];const failedResponses=[];let lifecycleRequests=0;const frozen=${JSON.stringify(frozenBrowser)};const prerequisiteEvidence=[];
+        const normalize=value=>String(value||'').replace(/\\s+/g,' ').trim();
+        const observedName=async locator=>locator.evaluate(element=>{const aria=element.getAttribute('aria-label');const labelledBy=element.getAttribute('aria-labelledby');const labelled=labelledBy&&document.getElementById(labelledBy)?.textContent;return aria||labelled||element.textContent||'';}).then(normalize);
+        const requireUnique=async(id,locator,expectedName,nameLocator=locator)=>{await locator.waitFor({state:'visible',timeout:15000});const count=await locator.count();if(count!==1)throw Error(id+' prerequisite matched '+count+' elements.');const name=await observedName(nameLocator);if(name!==expectedName)throw Error(id+' prerequisite observed '+JSON.stringify(name)+' instead of '+JSON.stringify(expectedName)+'.');const evidence={id,count,locator:locator.toString(),observedName:name};prerequisiteEvidence.push(evidence);return evidence;};
+        const pathOf=url=>url.slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0];const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};const onError=error=>consoleErrors.push(error.stack||error.message);const onRequest=request=>{if(request.url().startsWith(${JSON.stringify(BASE_URL)})&&pathOf(request.url())==='/api/tournaments/lifecycle')lifecycleRequests+=1;};const onResponse=response=>{if(response.url().startsWith(${JSON.stringify(BASE_URL)})&&response.status()>=400)failedResponses.push({pathname:pathOf(response.url()),method:response.request().method(),status:response.status()});};page.on('console',onConsole);page.on('pageerror',onError);page.on('request',onRequest);page.on('response',onResponse);
+        try{
+          for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.waitFor({state:'visible',timeout:1200}).then(()=>true).catch(()=>false))break;await alert.getByRole('button',{name:'Got It',exact:true}).click();await alert.waitFor({state:'hidden',timeout:5000});}
+          const fixtureName=${JSON.stringify(fixtureTournamentName)};
+          const pageTitle=page.getByRole('heading',{name:fixtureName,exact:true});
+          await requireUnique('fixture-title',pageTitle,fixtureName);
+          const fixtureCard=page.locator('div.cursor-pointer').filter({has:pageTitle}).filter({has:page.getByRole('button',{name:'Launch Hub',exact:true})});
+          const scopedTitle=fixtureCard.getByRole('heading',{name:fixtureName,exact:true});
+          await requireUnique('fixture-card',fixtureCard,fixtureName,scopedTitle);
+          await scopedTitle.click();
+          await requireUnique('fixture-hub',page.getByRole('heading',{name:fixtureName,exact:true}),fixtureName);
+          const modifySeries=page.getByRole('button',{name:'Modify Series',exact:true});
+          await requireUnique('modify-series',modifySeries,'Modify Series');await modifySeries.click();
+          await page.evaluate(()=>Object.defineProperty(window,'confirm',{configurable:true,value:message=>{window.__qaArchiveConfirmation=String(message);return false;}}));
+          const interaction=page.getByRole('button',{name:'Archive Series',exact:true});await interaction.waitFor({state:'visible',timeout:15000});const interactionMatchCount=await interaction.count();if(interactionMatchCount!==1)throw Error('Archive interaction matched '+interactionMatchCount+' elements.');const matchedName=await observedName(interaction);if(matchedName!=='Archive Series')throw Error('Archive interaction observed wrong name.');await interaction.click();
+          const archiveConfirmation=await page.evaluate(()=>window.__qaArchiveConfirmation||'');if(!/Archival Protocol/i.test(archiveConfirmation))throw Error('Archive confirmation was not shown and dismissed.');
+          const control=page.getByRole('button',{name:'Archive Series',exact:true});const controlMatchCount=await control.count();if(controlMatchCount!==1)throw Error('Archive result control matched '+controlMatchCount+' elements.');const matchedControlName=await observedName(control);
+          const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator('main');const mainCount=await main.count();if(mainCount!==1)throw Error('Main region matched '+mainCount+' elements.');await Promise.all([main.waitFor({state:'visible'}),control.waitFor({state:'visible'})]);const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=viewport.width+0.5&&box.y+box.height<=viewport.height+0.5);return{viewport,mainBox,controlBox,mainFits:fits(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth)};};
+          const observedTeamId=await page.evaluate(()=>localStorage.getItem('sf_session_team_id')||'');
+          return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,lifecycleRequests,url:page.url(),fixtureIdentity:{alias:frozen.fixtureAlias,expectedName:fixtureName,observedName:prerequisiteEvidence[0].observedName},teamIdentity:{alias:frozen.teamAlias,expectedId:${JSON.stringify(FIXTURES.teams.find(item => item.alias === 'qa-team-a').id)},observedId:observedTeamId},prerequisiteEvidence,interactionEvidence:{matchedSelector:interaction.toString(),matchedRole:'button',matchedName:frozen.name,observedDomName:matchedName,matchCount:interactionMatchCount,action:'dismiss-confirm',actionResult:'archive-confirmation-dismissed'},controlEvidence:{matchedControlSelector:control.toString(),matchedControlRole:'button',matchedControlName:frozen.controlName,observedControlDomName:matchedControlName,controlMatchCount}};
+        }finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('request',onRequest);page.off('response',onResponse);}
+      }`], { sensitive: true }));
     } catch (error) { throw new Error(`Tournament archive-cancel visible interaction failed: ${error.message}`); }
     expectEqual(result.desktop.controlFits && result.desktop.scrollWidth <= 1440, true, `Competition ${scenarioId} exact desktop 1440x900 bounds`);
     expectEqual(result.mobile.controlFits && result.mobile.scrollWidth <= 390, true, `Competition ${scenarioId} exact mobile 390x844 bounds`);
@@ -7238,6 +7268,10 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
   const result = JSON.parse(cli(session, ['run-code', `async page => {
     const consoleErrors=[];const failedResponses=[];const observedResponses=[];const tag=${JSON.stringify(caseId)};const frozen=${JSON.stringify(frozenBrowser)};let lifecycleRequests=0;
     const exactLocator=(role,name)=>role==='text'||role==='render'?page.getByText(name,{exact:true}):page.getByRole(role,{name,exact:true});
+    const normalize=value=>String(value||'').replace(/\s+/g,' ').trim();
+    const observedName=async locator=>locator.evaluate(element=>{const aria=element.getAttribute('aria-label');const labelledBy=element.getAttribute('aria-labelledby');const labelled=labelledBy&&document.getElementById(labelledBy)?.textContent;return aria||labelled||element.textContent||'';}).then(normalize);
+    const prerequisiteEvidence=[];
+    const requireUnique=async(id,locator,expectedName,nameLocator=locator)=>{try{await locator.waitFor({state:'visible',timeout:15000});}catch(error){const diagnostic={id,url:page.url(),teamId:await page.evaluate(()=>localStorage.getItem('sf_session_team_id')||''),headings:await page.locator('h1,h2,h3').allInnerTexts()};throw Error('Unique prerequisite unavailable: '+JSON.stringify(diagnostic)+'; '+error.message);}const count=await locator.count();if(count!==1)throw Error(id+' prerequisite matched '+count+' elements.');const name=await observedName(nameLocator);if(name!==expectedName)throw Error(id+' prerequisite observed '+JSON.stringify(name)+' instead of '+JSON.stringify(expectedName)+'.');const evidence={id,count,locator:locator.toString(),observedName:name};prerequisiteEvidence.push(evidence);return evidence;};
     const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};
     const onError=error=>consoleErrors.push(error.stack||error.message);
     const onRequest=request=>{if(request.url().startsWith(${JSON.stringify(BASE_URL)})&&request.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]==='/api/tournaments/lifecycle')lifecycleRequests+=1;};
@@ -7247,44 +7281,60 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
       await page.locator('#email').fill(${JSON.stringify(emailForAlias(browserActor))});await page.locator('#password').fill(${JSON.stringify(password)});
       await page.getByRole('button',{name:'Sign In'}).click();
       await page.waitForFunction(expected=>location.pathname===expected,${JSON.stringify(browserActor.startsWith('qa-league-') ? '/competition' : '/dashboard')},{timeout:20000});
-      ${contract.path === '/manage-tournaments' ? `await page.evaluate(team=>localStorage.setItem('sf_session_team_id',team),${JSON.stringify(FIXTURES.teams.find(item => item.alias === 'qa-team-a').id)});` : ''}
-      const navigation=await page.goto(${JSON.stringify(`${BASE_URL}${browserPath}`)});await page.waitForLoadState('domcontentloaded');
+      ${contract.path === '/manage-tournaments'
+        ? `await page.goto(${JSON.stringify(`${BASE_URL}${browserPath}`)});await page.waitForLoadState('domcontentloaded');await page.evaluate(team=>localStorage.setItem('sf_session_team_id',team),${JSON.stringify(FIXTURES.teams.find(item => item.alias === 'qa-team-a').id)});const navigation=await page.reload();await page.waitForLoadState('domcontentloaded');`
+        : `const navigation=await page.goto(${JSON.stringify(`${BASE_URL}${browserPath}`)});await page.waitForLoadState('domcontentloaded');`}
       if(!navigation)throw Error('Competition navigation returned no main-document response.');
       for(let attempt=0;attempt<4;attempt++){const alert=page.getByRole('dialog',{name:'High Priority Team Alert'});if(!await alert.waitFor({state:'visible',timeout:1200}).then(()=>true).catch(()=>false))break;await alert.getByRole('button',{name:'Got It',exact:true}).click();await alert.waitFor({state:'hidden',timeout:5000});}
-      let interaction;
+      let interaction;let fixtureIdentity=null;
       if(frozen.action==='render-only'){
         interaction=exactLocator(frozen.role,frozen.name);
+        const observedId=page.url().split(/[?#]/,1)[0].split('/').filter(Boolean).at(-1)||'';
+        fixtureIdentity={alias:frozen.fixtureAlias,expectedName:${JSON.stringify(fixtureTournament.id)},observedName:observedId};
       }else if(${JSON.stringify(scenarioId.startsWith('leagues-'))}){
         if(${JSON.stringify(scenarioId !== 'leagues-create-edit-clone-delete')}){
-          await page.getByRole('tab',{name:'Leagues',exact:true}).click();
-          const fixtureLeague=page.getByText(${JSON.stringify(FIXTURES.leagues.find(item => item.alias === 'qa-league-a').name)},{exact:true}).first();
-          await fixtureLeague.waitFor({state:'visible',timeout:15000});await fixtureLeague.click();
+          const leagueTab=page.getByRole('tab',{name:'Leagues',exact:true});await requireUnique('league-tab',leagueTab,'League');await leagueTab.click();
+          const fixtureName=${JSON.stringify(fixtureLeagueName)};
+          const pageTitle=page.getByRole('heading',{name:fixtureName,exact:true});await requireUnique('fixture-title',pageTitle,fixtureName);
+          const fixtureCard=page.locator('div.cursor-pointer').filter({has:pageTitle}).filter({has:page.getByRole('button',{name:'Select Hub',exact:true})});
+          const scopedTitle=fixtureCard.getByRole('heading',{name:fixtureName,exact:true});await requireUnique('fixture-card',fixtureCard,fixtureName,scopedTitle);await scopedTitle.click();await requireUnique('fixture-hub',page.getByRole('heading',{name:fixtureName,exact:true}),fixtureName);
+          fixtureIdentity={alias:frozen.fixtureAlias,expectedName:fixtureName,observedName:prerequisiteEvidence.find(item=>item.id==='fixture-title').observedName};
         }
         interaction=exactLocator(frozen.role,frozen.name);
       }else if(${JSON.stringify(scenarioId === 'tournaments-schedule-pools-brackets-referees')}){
-        const launchHub=page.getByRole('button',{name:'Launch Hub',exact:true}).first();
-        await launchHub.waitFor({state:'visible',timeout:15000});await launchHub.click();
+        const fixtureName=${JSON.stringify(fixtureTournamentName)};
+        const pageTitle=page.getByRole('heading',{name:fixtureName,exact:true});await requireUnique('fixture-title',pageTitle,fixtureName);
+        const fixtureCard=page.locator('div.cursor-pointer').filter({has:pageTitle}).filter({has:page.getByRole('button',{name:'Launch Hub',exact:true})});
+        const scopedTitle=fixtureCard.getByRole('heading',{name:fixtureName,exact:true});await requireUnique('fixture-card',fixtureCard,fixtureName,scopedTitle);
+        const launchHub=fixtureCard.getByRole('button',{name:'Launch Hub',exact:true});await requireUnique('launch-hub',launchHub,'Launch Hub');await launchHub.click();await requireUnique('fixture-hub',page.getByRole('heading',{name:fixtureName,exact:true}),fixtureName);
+        fixtureIdentity={alias:frozen.fixtureAlias,expectedName:fixtureName,observedName:prerequisiteEvidence.find(item=>item.id==='fixture-title').observedName};
         interaction=exactLocator(frozen.role,frozen.name);
       }else{
-        const tournamentTitle=page.getByText(${JSON.stringify(FIXTURES.tournaments.find(item => item.alias === 'qa-tournament-a').name)},{exact:true}).first();
-        await tournamentTitle.waitFor({state:'visible',timeout:15000});await tournamentTitle.click();
+        const fixtureName=${JSON.stringify(fixtureTournamentName)};
+        const pageTitle=page.getByRole('heading',{name:fixtureName,exact:true});await requireUnique('fixture-title',pageTitle,fixtureName);
+        const fixtureCard=page.locator('div.cursor-pointer').filter({has:pageTitle}).filter({has:page.getByRole('button',{name:'Launch Hub',exact:true})});
+        const scopedTitle=fixtureCard.getByRole('heading',{name:fixtureName,exact:true});await requireUnique('fixture-card',fixtureCard,fixtureName,scopedTitle);await scopedTitle.click();await requireUnique('fixture-hub',page.getByRole('heading',{name:fixtureName,exact:true}),fixtureName);
+        fixtureIdentity={alias:frozen.fixtureAlias,expectedName:fixtureName,observedName:prerequisiteEvidence.find(item=>item.id==='fixture-title').observedName};
         interaction=exactLocator(frozen.role,frozen.name);
       }
       await interaction.waitFor({state:'visible',timeout:15000});
       const interactionMatchCount=await interaction.count();
       if(interactionMatchCount!==1)throw Error('Exact browser interaction matched '+interactionMatchCount+' elements.');
+      const matchedName=await observedName(interaction);
       if(frozen.action==='click')await interaction.click();
       const control=exactLocator(frozen.controlRole,frozen.controlName);await control.waitFor({state:'visible',timeout:15000});
       if(frozen.actionResult==='standings-tab-selected'&&await control.getAttribute('data-state')!=='active')throw Error('Standings action did not select the exact tab.');
       const controlMatchCount=await control.count();
       if(controlMatchCount!==1)throw Error('Exact browser result control matched '+controlMatchCount+' elements.');
+      const matchedControlName=await observedName(control);
       ${dimension === 'network' ? `await page.evaluate(async({route,method,idToken,requestId})=>{await fetch(route,{method,headers:{'Content-Type':'application/json','Authorization':\`Bearer \${idToken}\`},body:JSON.stringify({requestId})});},{route:${JSON.stringify(contract.route)},method:${JSON.stringify(caseContract?.method || 'POST')},idToken:${JSON.stringify(caseContract?.apiToken || '')},requestId:${JSON.stringify(caseContract?.requestId?.replace('{runId}', certificationRunId) || '')}});` : ''}
-      const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator(${JSON.stringify(caseId === 'tournament-schedule-mobile' ? 'body' : 'main')}).first();await main.waitFor({state:'visible',timeout:15000});
-        const control=exactLocator(frozen.controlRole,frozen.controlName).first();await control.waitFor({state:'visible',timeout:15000});await control.scrollIntoViewIfNeeded();
+      const observe=async viewport=>{await page.setViewportSize(viewport);const main=page.locator(${JSON.stringify(caseId === 'tournament-schedule-mobile' ? 'body' : 'main')});const mainCount=await main.count();if(mainCount!==1)throw Error('Main region matched '+mainCount+' elements.');await main.waitFor({state:'visible',timeout:15000});
+        const control=exactLocator(frozen.controlRole,frozen.controlName);const currentControlCount=await control.count();if(currentControlCount!==1)throw Error('Responsive control matched '+currentControlCount+' elements.');await control.waitFor({state:'visible',timeout:15000});await control.scrollIntoViewIfNeeded();
         const [mainBox,controlBox]=await Promise.all([main.boundingBox(),control.boundingBox()]);
         const fits=box=>Boolean(box&&box.x>=-0.5&&box.y>=-0.5&&box.x+box.width<=viewport.width+0.5&&box.y+box.height<=viewport.height+0.5);
         return{viewport,mainBox,controlBox,mainFits:fits(mainBox),controlFits:fits(controlBox),scrollWidth:await page.evaluate(()=>document.documentElement.scrollWidth)};};
-      return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,observedResponses,lifecycleRequests,url:page.url(),interactionEvidence:{matchedSelector:frozen.selector,matchedRole:frozen.role,matchedName:frozen.name,matchCount:interactionMatchCount,action:frozen.action,actionResult:frozen.actionResult},controlEvidence:{matchedControlSelector:frozen.controlSelector,matchedControlRole:frozen.controlRole,matchedControlName:frozen.controlName,controlMatchCount}};
+      const observedTeamId=${contract.path === '/manage-tournaments' ? `await page.evaluate(()=>localStorage.getItem('sf_session_team_id')||'')` : `''`};
+      return{desktop:await observe({width:1440,height:900}),mobile:await observe({width:390,height:844}),consoleErrors,failedResponses,observedResponses,lifecycleRequests,url:page.url(),fixtureIdentity,teamIdentity:frozen.teamAlias?{alias:frozen.teamAlias,expectedId:${JSON.stringify(FIXTURES.teams.find(item => item.alias === 'qa-team-a').id)},observedId:observedTeamId}:null,prerequisiteEvidence,interactionEvidence:{matchedSelector:interaction.toString(),matchedRole:frozen.role,matchedName:frozen.name,observedDomName:matchedName,matchCount:interactionMatchCount,action:frozen.action,actionResult:frozen.actionResult},controlEvidence:{matchedControlSelector:control.toString(),matchedControlRole:frozen.controlRole,matchedControlName:frozen.controlName,observedControlDomName:matchedControlName,controlMatchCount}};
     }finally{page.off('console',onConsole);page.off('pageerror',onError);page.off('request',onRequest);page.off('response',onResponse);}
   }`], { sensitive: true }));
   expectEqual(result.desktop.controlFits && result.desktop.scrollWidth <= 1440, true, `Competition ${scenarioId} exact desktop 1440x900 bounds`);
@@ -7312,7 +7362,17 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
     }) : null;
     const browserApiIdentity = dimension === 'network' ? await signIn(actor) : null;
     if (browserApiIdentity) expectEqual(browserApiIdentity.status, 200, `Competition ${caseId} browser API actor authentication`);
-    const caseEnvelope = await runCompetitionBrowserEnvelope(scenarioId, caseId, dimension, { ...contract, apiToken: browserApiIdentity?.body?.idToken || '' });
+    const browserFixtureName = contract.browser.fixtureAlias ? await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      const fixture = scenarioId.startsWith('leagues-')
+        ? FIXTURES.leagues.find(item => item.alias === contract.browser.fixtureAlias)
+        : FIXTURES.tournaments.find(item => item.alias === contract.browser.fixtureAlias);
+      const team = scenarioId.startsWith('tournaments-') ? FIXTURES.teams.find(item => item.alias === fixture.teamAlias) : null;
+      const snapshot = await firestoreAdmin.doc(scenarioId.startsWith('leagues-') ? `leagues/${fixture.id}` : `teams/${team.id}/events/${fixture.id}`).get();
+      const name = scenarioId.startsWith('leagues-') ? snapshot.data()?.name : snapshot.data()?.title;
+      if (!snapshot.exists || typeof name !== 'string' || !name) throw new Error(`Missing authoritative browser fixture identity for ${scenarioId}/${caseId}.`);
+      return name;
+    }) : null;
+    const caseEnvelope = await runCompetitionBrowserEnvelope(scenarioId, caseId, dimension, { ...contract, fixtureName: browserFixtureName, apiToken: browserApiIdentity?.body?.idToken || '' });
     try {
     const observation = caseEnvelope;
     await captureBrowserOperationRequests(caseId, actor, observation.observedResponses, caseId);
@@ -7347,6 +7407,7 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
         ...observation.interactionEvidence,
         controlSelector: contract.browser.controlSelector, controlRole: contract.browser.controlRole, controlName: contract.browser.controlName,
         ...observation.controlEvidence,
+        fixtureIdentity: observation.fixtureIdentity, teamIdentity: observation.teamIdentity, prerequisiteEvidence: observation.prerequisiteEvidence,
         action: contract.browser.action, actionResult: observation.interactionEvidence?.actionResult,
         expectedViewports: contract.browser.expectedViewports, session: caseEnvelope.session,
         viewports: [observation.desktop, observation.mobile], consoleCount: observation.consoleErrors.length, networkCount: observation.failedResponses.length },
