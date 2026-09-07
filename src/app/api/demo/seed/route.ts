@@ -31,6 +31,49 @@ function ownsDemoTeam(data: Record<string, unknown>, uid: string, planId: string
   return data.isDemo === true && data.demoSessionOwnerId === uid && data.demoPlanId === planId;
 }
 
+function demoFacilityBlueprints(uid: string, namespace: string, planId: string, plan: DemoPlan) {
+  if (['starter_squad', 'free', 'parent_demo', 'player_demo'].includes(planId)) return [];
+  const school = plan.planType === 'school';
+  const elite = ['elite', 'league'].includes(plan.planType);
+  const venues = [{
+    id: `fac_main_${namespace}`,
+    name: school ? 'Springfield High Athletic Complex' : elite ? 'Apex Performance Center' : 'Home Training Center',
+    address: school ? '456 Education Ave, Springfield' : elite ? '789 Tactical Way, Metro City' : '123 Athletic Drive, Downtown',
+    notes: school
+      ? 'Main athletic campus. Parking lot C open for event days. Contact facilities@school.edu for rentals.'
+      : 'Primary training venue. Gate code: 1992#. Concessions open on game days. Coaches arrive 45 min early.',
+    resourcePrefix: 'res',
+    resources: school
+      ? ['Main Gymnasium', 'Field House', 'Outdoor Track', 'Football Field', 'Tennis Courts']
+      : ['Main Arena', 'Practice Field A', 'Practice Field B', 'Weight Room'],
+  }];
+  if (elite || school) venues.push({
+    id: `fac_secondary_${namespace}`,
+    name: school ? 'Memorial Sports Complex' : 'Satellite Training Annex',
+    address: school ? '900 Memorial Blvd, Springfield' : '456 West Campus Ave',
+    notes: 'Secondary training venue. Call ahead for equipment setup.',
+    resourcePrefix: 'res2',
+    resources: school ? ['Court A', 'Court B', 'Wrestling Room'] : ['Turf Field 1', 'Turf Field 2'],
+  });
+  return venues.map(({ resourcePrefix, resources, ...venue }) => ({
+    facility: { ...venue, clubId: uid, isDemo: true, demoSessionOwnerId: uid, demoPlanId: planId },
+    fields: resources.map(name => ({
+      id: `${resourcePrefix}_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${namespace}`,
+      facilityId: venue.id,
+      name,
+      isDemo: true,
+    })),
+  }));
+}
+
+function ownsDemoFacility(data: Record<string, unknown>, uid: string, planId: string) {
+  // Existing browser-seeded demos prove ownership through clubId. Once upgraded,
+  // their additional server ownership markers must also agree.
+  return data.isDemo === true && data.clubId === uid
+    && (data.demoSessionOwnerId === undefined || data.demoSessionOwnerId === uid)
+    && (data.demoPlanId === undefined || data.demoPlanId === planId);
+}
+
 function demoLeagueBlueprint(uid: string, namespace: string, planId: string, plan: DemoPlan) {
   const shells = getDemoTeamShells(uid, planId, plan, namespace).filter(shell => shell.type !== 'school');
   const opponentNames = plan.planType === 'school'
@@ -120,7 +163,7 @@ export async function PUT(req: NextRequest) {
 }
 
 /**
- * Creates only protected demo identity and team-shell records. Rich synthetic
+ * Creates protected demo identity, team shells, and facility blueprints. Rich team
  * content is filled afterward by the existing blueprint, scoped to these
  * server-approved shells through demoSessionOwnerId.
  */
@@ -146,6 +189,7 @@ export async function POST(req: NextRequest) {
     const messageTimestamp = new Date().toISOString();
     const demoNamespace = demoNamespaceForUid(uid);
     const shells = getDemoTeamShells(uid, planId, plan, demoNamespace);
+    const facilities = demoFacilityBlueprints(uid, demoNamespace, planId, plan);
     const leagueId = `demo_league_${demoNamespace}`;
     const isElite = ['elite_teams', 'elite', 'league'].includes(planId);
     const name = plan.role === 'admin' ? 'Guest Admin' : `Guest ${plan.position}`;
@@ -155,11 +199,21 @@ export async function POST(req: NextRequest) {
       const profile = await transaction.get(userRef);
       const league = await transaction.get(leagueRef);
       const shellSnapshots = await Promise.all(shells.map(shell => transaction.get(adminDb.collection('teams').doc(shell.id))));
+      const facilitySnapshots = await Promise.all(facilities.map(({ facility }) => transaction.get(adminDb.collection('facilities').doc(facility.id))));
       const currentProfile = profile.data() || {};
       if (auth.signInProvider !== 'anonymous' && currentProfile.isBetaTester !== true) throw new Error('DEMO_SETUP_FORBIDDEN');
       if (league.exists && !ownsDemoLeague(league.data() || {}, uid, planId)) throw new Error('DEMO_TARGET_OWNERSHIP_CONFLICT');
       if (shellSnapshots.some(snapshot => snapshot.exists && !ownsDemoTeam(snapshot.data() || {}, uid, planId))) {
         throw new Error('DEMO_TARGET_OWNERSHIP_CONFLICT');
+      }
+      if (facilitySnapshots.some(snapshot => snapshot.exists && !ownsDemoFacility(snapshot.data() || {}, uid, planId))) {
+        throw new Error('DEMO_TARGET_OWNERSHIP_CONFLICT');
+      }
+
+      for (const { facility, fields } of facilities) {
+        const facilityRef = adminDb.collection('facilities').doc(facility.id);
+        transaction.set(facilityRef, facility, { merge: true });
+        for (const field of fields) transaction.set(facilityRef.collection('fields').doc(field.id), field);
       }
 
       if (isAnonymousDemo) {

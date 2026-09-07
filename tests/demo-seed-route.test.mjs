@@ -9,6 +9,57 @@ const request = (body, method = 'POST') => new Request('http://127.0.0.1/api/dem
   body: JSON.stringify(body),
 });
 
+test('foreign demo facilities block bootstrap before any victim cleanup or write', async () => {
+  for (const kind of ['main', 'secondary']) {
+    const uid = 'demo-user-alpha-0001';
+    const namespace = 'cf6ee6fe230ff5643bc9104c';
+    const { db, records } = communicationDb({
+      [`facilities/fac_${kind}_${namespace}`]: { clubId: 'attacker', isDemo: true },
+      'scheduleBookings/victim': { leagueId: `demo_league_${namespace}` },
+      'scheduleBookings/victim-team': { hostTeamId: `demo_elite_${namespace}_premierdivision` },
+    });
+    const before = structuredClone([...records]);
+    const app = await loadCommunicationRoute(routePath, db, { uid, signInProvider: 'anonymous' });
+    try {
+      const response = await app.route.POST(request({ planId: 'elite' }));
+      assert.equal(response.status, 403, kind);
+      assert.deepEqual([...records], before, 'no profile, league, team, facility, or booking mutation');
+    } finally {
+      app.dispose();
+    }
+  }
+});
+
+test('demo bootstrap creates facility blueprints under the authenticated full UID and rejects client targets', async () => {
+  const uid = 'demo-user-alpha-0001';
+  const namespace = 'cf6ee6fe230ff5643bc9104c';
+  const { db, records } = communicationDb({});
+  const app = await loadCommunicationRoute(routePath, db, { uid, signInProvider: 'anonymous' });
+  try {
+    assert.equal((await app.route.POST(request({ planId: 'elite', demoNamespace: 'victim', facilityId: 'victim' }))).status, 400);
+    assert.equal(records.size, 0);
+    assert.equal((await app.route.POST(request({ planId: 'elite' }))).status, 200);
+    const main = records.get(`facilities/fac_main_${namespace}`);
+    assert.equal(main?.clubId, uid);
+    assert.equal(main.demoSessionOwnerId, uid);
+    assert.equal(main.demoPlanId, 'elite');
+    assert.equal(main.name, 'Apex Performance Center');
+    assert.equal(records.get(`facilities/fac_main_${namespace}/fields/res_main_arena_${namespace}`)?.name, 'Main Arena');
+    assert.equal(records.get(`facilities/fac_secondary_${namespace}`)?.clubId, uid);
+    assert.equal(records.get(`facilities/fac_secondary_${namespace}/fields/res2_turf_field_1_${namespace}`)?.facilityId, `fac_secondary_${namespace}`);
+    const outsider = await loadCommunicationRoute(routePath, db, { uid: 'demo-user-beta-0001', signInProvider: 'anonymous' });
+    try {
+      assert.equal((await outsider.route.POST(request({ planId: 'elite' }))).status, 200);
+      assert.equal(records.get('facilities/fac_main_c6cd96a0d7b084a5e6c52e76')?.clubId, 'demo-user-beta-0001');
+      assert.deepEqual(records.get(`facilities/fac_main_${namespace}`), main);
+    } finally {
+      outsider.dispose();
+    }
+  } finally {
+    app.dispose();
+  }
+});
+
 test('demo identity uses the full authenticated UID and rejects a foreign deterministic shell before cleanup', async () => {
   const uid = 'demo-user-alpha-0001';
   const namespace = 'cf6ee6fe230ff5643bc9104c';

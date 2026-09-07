@@ -636,11 +636,12 @@ async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRe
     )));
     const records = await Promise.all(input.leagues.map(async target => {
       const rootRef = adminDb.collection('leagues').doc(target.leagueId);
-      const [snapshot, registrationEntries, waivers, scores, payments, invites, divisions, accessRedemptions, configs, privateDocs, bookings, events] = await Promise.all([
+      const [snapshot, registrationEntries, waivers, scores, scoreAudit, payments, invites, divisions, accessRedemptions, configs, privateDocs, bookings, events] = await Promise.all([
         transaction.get(rootRef),
         transaction.get(rootRef.collection('registrationEntries').limit(1)),
         transaction.get(rootRef.collection('archived_waivers').limit(1)),
         transaction.get(rootRef.collection('scores').limit(1)),
+        transaction.get(rootRef.collection('scoreAudit').limit(1)),
         transaction.get(rootRef.collection('payments').limit(1)),
         transaction.get(rootRef.collection('invites').limit(1)),
         transaction.get(rootRef.collection('divisions').limit(1)),
@@ -650,7 +651,7 @@ async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRe
         transaction.get(adminDb.collection('scheduleBookings').where('leagueId', '==', target.leagueId).limit(1)),
         transaction.get(adminDb.collectionGroup('events').where('leagueId', '==', target.leagueId).limit(1)),
       ]);
-      return { target, rootRef, snapshot, registrationEntries, waivers, scores, payments, invites, divisions, accessRedemptions, configs, privateDocs, bookings, events };
+      return { target, rootRef, snapshot, registrationEntries, waivers, scores, scoreAudit, payments, invites, divisions, accessRedemptions, configs, privateDocs, bookings, events };
     }));
     for (const record of records) {
       if (!record.snapshot.exists) fail('LEAGUE_NOT_FOUND');
@@ -659,7 +660,7 @@ async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRe
       const hasRootDependencies = (Array.isArray(league.schedule) && league.schedule.length > 0) ||
         (Array.isArray(league.memberTeamIds) && league.memberTeamIds.length > 0) ||
         (league.teams && typeof league.teams === 'object' && Object.keys(league.teams).length > 0);
-      if (hasRootDependencies || !record.registrationEntries.empty || !record.waivers.empty || !record.scores.empty || !record.payments.empty || !record.invites.empty || !record.divisions.empty || !record.accessRedemptions.empty || !record.bookings.empty || !record.events.empty) fail('LEAGUE_HAS_DEPENDENCIES');
+      if (hasRootDependencies || !record.registrationEntries.empty || !record.waivers.empty || !record.scores.empty || !record.scoreAudit.empty || !record.payments.empty || !record.invites.empty || !record.divisions.empty || !record.accessRedemptions.empty || !record.bookings.empty || !record.events.empty) fail('LEAGUE_HAS_DEPENDENCIES');
     }
     records.forEach((record, index) => {
       const league = record.snapshot.data() || {};

@@ -646,69 +646,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   // Protected profile, plan, staff, and subscription fields are initialized by
   // /api/demo/seed. The browser never writes account authority for any demo.
 
-  // 1.1 Secure Facilities Seeding (All Pro Tiers)
-  if (isProTier && !isParentDemo && !isPlayerDemo) {
-    const facId = `fac_main_${demoNamespace}`;
-    const facName = isSchoolDemo ? 'Springfield High Athletic Complex' : (isEliteDemo ? 'Apex Performance Center' : 'Home Training Center');
-    const facAddress = isSchoolDemo ? '456 Education Ave, Springfield' : (isEliteDemo ? '789 Tactical Way, Metro City' : '123 Athletic Drive, Downtown');
-    batch.set(doc(db, 'facilities', facId), clean({
-      id: facId,
-      name: facName,
-      address: facAddress,
-      clubId: userId,
-      notes: isSchoolDemo
-        ? 'Main athletic campus. Parking lot C open for event days. Contact facilities@school.edu for rentals.'
-        : 'Primary training venue. Gate code: 1992#. Concessions open on game days. Coaches arrive 45 min early.',
-      isDemo: true
-    }));
-    // CRITICAL: Flush the facility doc before writing fields subcollection.
-    // The fields write rule calls get(facilities/{facilityId}) — if the parent doc
-    // is in the same batch, the get() returns null and the write is denied.
-    await batch.flush();
-
-    // Enroll Standard Fields/Courts
-    const fieldResources = isSchoolDemo
-      ? ['Main Gymnasium', 'Field House', 'Outdoor Track', 'Football Field', 'Tennis Courts']
-      : ['Main Arena', 'Practice Field A', 'Practice Field B', 'Weight Room'];
-    fieldResources.forEach(fn => {
-      const fid = `res_${fn.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${demoNamespace}`;
-      batch.set(doc(db, 'facilities', facId, 'fields', fid), clean({
-        id: fid,
-        facilityId: facId,
-        name: fn,
-        isDemo: true
-      }));
-    });
-    await batch.flush();
-
-    // Second facility for elite/school demos
-    if (isEliteDemo || isSchoolDemo) {
-      const fac2Id = `fac_secondary_${demoNamespace}`;
-      batch.set(doc(db, 'facilities', fac2Id), clean({
-        id: fac2Id,
-        name: isSchoolDemo ? 'Memorial Sports Complex' : 'Satellite Training Annex',
-        address: isSchoolDemo ? '900 Memorial Blvd, Springfield' : '456 West Campus Ave',
-        clubId: userId,
-        notes: 'Secondary training venue. Call ahead for equipment setup.',
-        isDemo: true
-      }));
-      // Flush fac2 doc before its fields subcollection
-      await batch.flush();
-      const field2Resources = isSchoolDemo
-        ? ['Court A', 'Court B', 'Wrestling Room']
-        : ['Turf Field 1', 'Turf Field 2'];
-      field2Resources.forEach(fn => {
-        const fid = `res2_${fn.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${demoNamespace}`;
-        batch.set(doc(db, 'facilities', fac2Id, 'fields', fid), clean({
-          id: fid,
-          facilityId: fac2Id,
-          name: fn,
-          isDemo: true
-        }));
-      });
-      await batch.flush();
-    }
-  }
+  // Facility identities, ownership, and field blueprints are initialized by
+  // /api/demo/seed before any browser-side enrichment or cleanup begins.
 
   // NOTE: Plan definitions are written server-side by a superadmin and must NOT be
   // seeded client-side — the Firestore rules restrict /plans/ writes to superadmins

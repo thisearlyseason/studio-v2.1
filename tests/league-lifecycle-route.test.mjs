@@ -464,6 +464,33 @@ test('single and group delete retain division trees and access redemptions as ex
   assert.equal(records.has('leagues/silver/accessRedemptions/redemption-a'), true);
 });
 
+test('single and group delete block scoreAudit history without partial cleanup or root deletion', async () => {
+  const { db, records } = communicationDb({
+    ...teamSeed,
+    'leagues/empty': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Empty', teams: {}, memberTeamIds: [], schedule: [] },
+    'leagues/scored': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Scored', teams: {}, memberTeamIds: [], schedule: [] },
+    'leagues/scored/scoreAudit/game-receipt': { gameId: 'game-a', score1: 3, score2: 1 },
+    'leagues/empty/registration/default': { active: false },
+    'leagues/scored/registration/default': { active: false },
+    'leagues/empty/private/lifecycle': { organizerEmail: 'private@example.test' },
+    'leagues/scored/private/lifecycle': { organizerEmail: 'private@example.test' },
+    'publicLeagueViews/empty': { name: 'Empty' },
+    'publicLeagueViews/scored': { name: 'Scored' },
+  });
+  const before = structuredClone([...records]);
+  const single = await call(db, { uid: 'owner-a' }, {
+    action: 'delete', requestId: 'delete-score-audit-single', leagueId: 'scored', expectedVersion: 1,
+  }, 'DELETE');
+  assert.equal(single.response.status, 409);
+  assert.deepEqual([...records], before);
+  const group = await call(db, { uid: 'owner-a' }, {
+    action: 'delete', requestId: 'delete-score-audit-group',
+    leagues: [{ leagueId: 'empty', expectedVersion: 1 }, { leagueId: 'scored', expectedVersion: 1 }],
+  }, 'DELETE');
+  assert.equal(group.response.status, 409);
+  assert.deepEqual([...records], before);
+});
+
 test('organizer callers use private lifecycle data and never write applicant or team contact PII to roots', () => {
   const provider = readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
   const page = readFileSync(new URL('../src/app/(dashboard)/leagues/leagues-page-content.tsx', import.meta.url), 'utf8');

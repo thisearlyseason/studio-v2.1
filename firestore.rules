@@ -976,6 +976,8 @@ allow create, update: if false; // Authenticated incident service only.
         isSignedIn() && resource.data.clubId == request.auth.uid
       );
       allow create: if isSignedIn() &&
+        !facilityId.matches('fac_(main|secondary)_.*') &&
+        request.resource.data.get('isDemo', false) == false &&
         request.resource.data.clubId == request.auth.uid;
       allow update: if isSuperAdmin() || (
         isSignedIn() &&

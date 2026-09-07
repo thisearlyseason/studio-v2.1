@@ -1298,6 +1298,24 @@ test('facilities and subscriptions remain owner-scoped and server-controlled', a
   }));
 });
 
+test('demo facility namespaces cannot be preclaimed while ordinary facilities remain writable', async () => {
+  const outsiderDb = authenticatedDb('outsider');
+  for (const prefix of ['fac_main_', 'fac_secondary_']) {
+    for (const isDemo of [true, false]) {
+      const facilityId = `${prefix}cf6ee6fe230ff5643bc9104c`;
+      await assertFails(setDoc(doc(outsiderDb, 'facilities', facilityId), {
+        clubId: 'outsider', name: 'Preclaimed victim venue', isDemo,
+      }));
+      await assertFails(setDoc(doc(outsiderDb, 'facilities', facilityId, 'fields', 'preclaimed'), {
+        facilityId, name: 'Preclaimed field',
+      }));
+    }
+  }
+  await assertFails(setDoc(doc(outsiderDb, 'facilities', 'custom-demo'), { clubId: 'outsider', isDemo: true }));
+  await assertSucceeds(setDoc(doc(outsiderDb, 'facilities', 'ordinary-venue'), { clubId: 'outsider', name: 'Training Centre' }));
+  await assertSucceeds(setDoc(doc(outsiderDb, 'facilities', 'ordinary-venue', 'fields', 'court-a'), { facilityId: 'ordinary-venue', name: 'Court A' }));
+});
+
 test('club billing metadata and legacy global alerts are not cross-account readable', async () => {
   const ownerDb = authenticatedDb('owner');
   const outsiderDb = authenticatedDb('outsider');
