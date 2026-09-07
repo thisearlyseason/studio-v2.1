@@ -162,6 +162,16 @@ test('public registration uses the canonical Firestore rules-denial status witho
   assert.match(probe, /Boolean\(anonymousLedger\.body\?\.fields\),false/);
 });
 
+test('public registration discovers join sessions as exact cleanup roots without mutating in the obligation', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  const start = audit.indexOf('async function runPublicRegistrationAudit');
+  const end = audit.indexOf('async function runIncidentWorkflowAudit', start);
+  const registration = audit.slice(start, end);
+  assert.match(registration, /registerScheduleDiscovery\(\{registry:activeOperationResourceRegistry,scopeId:`public-join-sessions-/);
+  assert.match(registration, /registerRoot:documentPath=>registerRoot\(documentPath,'public-join-session-'/);
+  assert.doesNotMatch(registration, /kind:'obligation'[\s\S]*?recursiveDelete\(session\.ref\)/);
+});
+
 test('operations evidence assigns an assertion to only its declared exact case', () => {
   const assertions = [
     { label: 'owner event create persists after reload' },
