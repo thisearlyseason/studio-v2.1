@@ -21,6 +21,72 @@ const fixture = {
 const respond = { action: 'respond', leagueId: 'league-a', entryId: 'entry', teamId: 'squad', status: 'accepted', requestId: 'accept-request-0001', expectedVersion: 1, expectedAssignmentVersion: 1 };
 const request = body => new Request('http://localhost/api/leagues/assignments', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
+for (const uncertainFirst of [false, true]) test(`Team page refreshes remaining same-League assignments only after confirmed success (${uncertainFirst ? 'uncertain retry' : 'ordinary decisions'})`, async () => {
+  const { db, records } = communicationDb({ ...fixture,
+    'leagues/league-a/registrationEntries/second': { ...fixture['leagues/league-a/registrationEntries/entry'], answers: { fullName: 'Second Applicant' } },
+  });
+  const app = await loadCommunicationRoute(routePath, db, { uid: 'staff' });
+  try {
+    const providerSource = await readFile(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
+    const helper = providerSource.match(/  const pendingLeagueMutations[\s\S]*?\n  \}, \[db, firebaseAuth\]\);/)[0];
+    const respondCallback = providerSource.match(/  const respondToAssignment = useCallback[\s\S]*?\n  \}, \[[^\]]+\]\);/)[0];
+    const providerCode = (await transform(`${helper}\n${respondCallback}\nreturn respondToAssignment;`, { loader: 'ts' })).code;
+    const bodies = [];
+    const statuses = [];
+    const activeTeam = { id: 'squad' };
+    let gets = 0;
+    const transport = async (path, init = {}) => {
+      if (init.method === 'PATCH') {
+        bodies.push(JSON.parse(init.body));
+        const result = await app.route.PATCH(request(bodies.at(-1)));
+        statuses.push(result.status);
+        if (uncertainFirst && bodies.length === 1) return Response.json({}, { status: 503 });
+        return result;
+      }
+      gets++;
+      return app.route.GET({ nextUrl: new URL(path, 'http://localhost') });
+    };
+    const respondToAssignment = new Function('useRef', 'useCallback', 'db', 'firebaseAuth', 'activeTeam', 'getDoc', 'doc', 'getAuthToken', 'fetch', 'authHeader', 'toast', providerCode)(
+      current => ({ current }), fn => fn, {}, {}, activeTeam,
+      () => { throw new Error('Displayed versions must not be refreshed before submit'); }, () => {}, async () => 'token', transport, () => ({}), () => {},
+    );
+    const pageSource = await readFile(new URL('../src/app/(dashboard)/team/page.tsx', import.meta.url), 'utf8');
+    const pageBlock = pageSource.slice(pageSource.indexOf('  const [assignments, setAssignments]'), pageSource.indexOf('  const [editForm, setEditForm]'));
+    const pageCode = (await transform(`${pageBlock}\nreturn handleAssignmentResponse;`, { loader: 'ts' })).code;
+    let displayed = [];
+    let cleanup;
+    const handle = new Function('useState', 'useRef', 'useEffect', 'firebaseAuth', 'activeTeam', 'isStaff', 'hasFeature', 'getAuthToken', 'fetch', 'authHeader', 'respondToAssignment', pageCode)(
+      initial => [initial, update => { displayed = typeof update === 'function' ? update(displayed) : update; }],
+      current => ({ current }), effect => { cleanup = effect(); }, {}, activeTeam, true, () => true, async () => 'token', transport, () => ({}), respondToAssignment,
+    );
+    for (let attempts = 0; displayed.length !== 2 && attempts < 100; attempts++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(displayed.length, 2);
+    const first = displayed.find(entry => entry.id === 'entry');
+    await handle(first, 'accepted');
+    assert.equal(statuses[0], 200);
+    if (uncertainFirst) {
+      assert.equal(gets, 1);
+      assert.equal(displayed.length, 2);
+      assert.equal(displayed[0].lifecycleVersion, 1);
+      await handle(first, 'accepted');
+      assert.deepEqual(bodies[1], bodies[0]);
+      assert.equal(statuses[1], 200);
+    }
+    assert.equal(gets, 2, 'confirmed success must reload the authoritative assignment list');
+    assert.equal(displayed.length, 1);
+    assert.equal(displayed[0].id, 'second');
+    assert.equal(displayed[0].lifecycleVersion, 2);
+    assert.equal(displayed[0].assignmentVersion, 1);
+    await handle(displayed[0], 'accepted');
+    assert.equal(statuses.at(-1), 200);
+    assert.equal(bodies.at(-1).expectedVersion, 2);
+    assert.equal(gets, 3);
+    assert.deepEqual(displayed, []);
+    assert.equal(records.get('leagues/league-a/registrationEntries/second').status, 'accepted');
+    cleanup?.();
+  } finally { app.dispose(); }
+});
+
 test('browser retries retain the original identity and displayed staff versions without refreshing them', async () => {
   const source = await readFile(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
   const helper = source.match(/  const pendingLeagueMutations[\s\S]*?\n  \}, \[db, firebaseAuth\]\);/)[0];

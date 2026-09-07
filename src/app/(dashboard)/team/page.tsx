@@ -109,8 +109,10 @@ export default function TeamProfilePage() {
   };
 
   const [assignments, setAssignments] = useState<RegistrationEntry[]>([]);
+  const refreshAssignments = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
+    refreshAssignments.current = async () => {};
     if (!firebaseAuth || !activeTeam?.id || !isStaff || !hasFeature?.('league_registration')) {
       setAssignments([]);
       return;
@@ -131,15 +133,19 @@ export default function TeamProfilePage() {
         if (!cancelled) setAssignments([]);
       }
     };
-    loadAssignments();
-    return () => { cancelled = true; };
+    refreshAssignments.current = loadAssignments;
+    void loadAssignments();
+    return () => { cancelled = true; refreshAssignments.current = async () => {}; };
   }, [activeTeam?.id, firebaseAuth, hasFeature, isStaff]);
 
   const handleAssignmentResponse = async (entry: RegistrationEntry, status: 'accepted' | 'declined') => {
     const updated = await respondToAssignment(entry.league_id, entry.id, status, {
       lifecycleVersion: entry.lifecycleVersion ?? 0, assignmentVersion: entry.assignmentVersion ?? 0,
     });
-    if (updated) setAssignments(current => current.filter(candidate => candidate.id !== entry.id));
+    if (updated) {
+      setAssignments([]);
+      await refreshAssignments.current();
+    }
   };
 
   const [editForm, setEditForm] = useState({
