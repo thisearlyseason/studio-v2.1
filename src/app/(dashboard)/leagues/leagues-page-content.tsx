@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -60,7 +60,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFirestore, useCollection, useDoc, useMemoFirebase, useUser, useAuth } from '@/firebase';
-import { collection, query, orderBy, where, doc, updateDoc, limit } from 'firebase/firestore';
+import { collection, query, orderBy, where, doc, getDoc, updateDoc, limit } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { generateIntelligentLeagueSchedule } from '@/lib/intelligent-scheduler';
@@ -136,6 +136,7 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 }
 
 function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: League, isOpen: boolean, onOpenChange: (o: boolean) => void }) {
+  const pendingConfigurations = useRef(new Map<string, { requestId: string; expectedVersion: number; invalidateExisting: boolean }>());
   const { user: authUser } = useUser();
   const firebaseAuth = useAuth();
   const { db, updateLeagueSchedule, hasFeature, isSchoolMode, submitRegistrationEntry } = useTeam();
@@ -289,6 +290,12 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
       const previousConfig = (league as any).schedulerConfig || {};
       const scheduleDefinitionChanged = JSON.stringify(previousConfig) !== JSON.stringify(serializableConfig) ||
         league.startDate !== config.startDate || league.endDate !== config.endDate;
+      const configurationKey = JSON.stringify([league.id, serializableConfig]);
+      const configurationIdentity = pendingConfigurations.current.get(configurationKey) || {
+        requestId: `league-configure-${crypto.randomUUID()}`, expectedVersion: league.lifecycleVersion ?? 0,
+        invalidateExisting: scheduleDefinitionChanged && (league.schedule || []).length > 0,
+      };
+      pendingConfigurations.current.set(configurationKey, configurationIdentity);
       if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired. Sign in again.');
@@ -297,12 +304,13 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           action: 'configure',
+          ...configurationIdentity,
           leagueId: league.id,
           config: serializableConfig,
-          invalidateExisting: scheduleDefinitionChanged && (league.schedule || []).length > 0,
         }),
       });
       const payload = await response.json().catch(() => ({}));
+      if (response.ok || response.status < 500) pendingConfigurations.current.delete(configurationKey);
       if (!response.ok) throw new Error(payload.error || 'Unable to save the league schedule configuration.');
 
       toast({ 
@@ -1939,21 +1947,32 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     setIsEditLeagueOpen(true);
   };
 
+  const pendingScheduleClears = useRef(new Map<string, { requestId: string; expectedVersion: number }>());
   const clearLeagueScheduleOnServer = useCallback(async (
     leagueId: string,
     mode: 'archive' | 'purge'
   ) => {
     if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+    const clearKey = `${leagueId}:${mode}`;
+    let clearIdentity = pendingScheduleClears.current.get(clearKey);
+    if (!clearIdentity) {
+      if (!db) throw new Error('League data is unavailable.');
+      const league = await getDoc(doc(db, 'leagues', leagueId));
+      if (!league.exists()) throw new Error('League not found.');
+      clearIdentity = { requestId: `league-clear-${crypto.randomUUID()}`, expectedVersion: league.data().lifecycleVersion ?? 0 };
+      pendingScheduleClears.current.set(clearKey, clearIdentity);
+    }
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
     const response = await fetch('/api/leagues/schedule', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'clear', leagueId, mode }),
+      body: JSON.stringify({ action: 'clear', leagueId, ...clearIdentity, mode }),
     });
     const payload = await response.json().catch(() => ({}));
+    if (response.ok || response.status < 500) pendingScheduleClears.current.delete(clearKey);
     if (!response.ok) throw new Error(payload.error || 'Unable to clear the league schedule.');
-  }, [firebaseAuth]);
+  }, [db, firebaseAuth]);
 
   const handleArchiveLeague = async () => {
     if (!activeLeague) return;

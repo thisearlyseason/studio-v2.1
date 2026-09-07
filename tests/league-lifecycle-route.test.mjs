@@ -17,6 +17,48 @@ const teamSeed = {
   'teams/team-b': { ownerUserId: 'owner-b', planId: 'elite_league', leagueIds: {} },
 };
 
+test('editor-shaped metadata with empty optional dates and slug saves without losing a schedule', async () => {
+  const schedule = [{ id: 'game-1', team1Id: 'team-a', team2Id: 'team-b' }];
+  const { db, records } = communicationDb({
+    ...teamSeed,
+    'leagues/fresh': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', sport: 'Soccer', schedule },
+  });
+  const result = await call(db, { uid: 'owner-a' }, {
+    action: 'edit', requestId: 'editor-metadata-empty-0001', leagueId: 'fresh', expectedVersion: 1,
+    updates: {
+      name: 'Metro', sport: 'Soccer', description: 'Updated description', startDate: '', endDate: '', ages: '',
+      contactEmail: '', contactPhone: '', registrationCost: '', paymentInstructions: '',
+      socialLinks: { twitter: '', instagram: '' }, slug: '', requiredSquads: null, blackoutDaysOfWeek: [],
+    },
+  }, 'PATCH');
+  assert.equal(result.response.status, 200, JSON.stringify(result.body));
+  assert.equal(records.get('leagues/fresh').description, 'Updated description');
+  assert.deepEqual(records.get('leagues/fresh').schedule, schedule);
+  assert.equal(records.get('leagues/fresh').startDate, undefined);
+  assert.equal(records.get('leagues/fresh').endDate, undefined);
+  assert.equal(records.get('leagues/fresh').slug, undefined);
+});
+
+test('schedule-defining edit commit failure retains metadata, bookings, events and private Registration', async () => {
+  const { db, records } = communicationDb({ ...teamSeed,
+    'leagues/atomic-edit': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', startDate: '2026-09-01', endDate: '2026-09-30', schedule: [{ id: 'game-1' }] },
+    'scheduleBookings/old': { sourceId: 'league:atomic-edit' },
+    'teams/team-a/events/lg_atomic-edit_game-1': { sourceId: 'league:atomic-edit', leagueId: 'atomic-edit' },
+    'leagues/atomic-edit/registrationEntries/entry': { fee_id: 'fee-1', form_id: 'form-1', waiver_id: 'waiver-1' },
+  });
+  const before = structuredClone([...records]);
+  const original = db.runTransaction.bind(db);
+  db.runTransaction = work => original(async transaction => {
+    let mutated = false;
+    const result = await work({ ...transaction, update(ref, ...args) { if (ref.path === 'leagues/atomic-edit') mutated = true; return transaction.update(ref, ...args); } });
+    if (mutated) throw new Error('Injected lifecycle commit failure');
+    return result;
+  });
+  const result = await call(db, { uid: 'owner-a' }, { action: 'edit', leagueId: 'atomic-edit', requestId: 'atomic-edit-failure-0001', expectedVersion: 1, updates: { startDate: '2026-09-02', description: 'Changed' } }, 'PATCH');
+  assert.equal(result.response.status, 500);
+  assert.deepEqual([...records], before);
+});
+
 test('successful hard delete replays after root removal with current tenant authority and exact identity', async () => {
   for (const profileTenant of [false, true]) {
     const owner = profileTenant ? 'creator' : 'owner-a';
@@ -359,7 +401,7 @@ test('name and quota checks ignore deterministic legacy leagues owned in another
   assert.ok(created);
 });
 
-test('edit validates topology and dates, preserves schedules, and fails safe at the future schedule boundary', async () => {
+test('edit validates topology and dates and invalidates schedule definitions atomically', async () => {
   const seed = {
     ...teamSeed,
     'leagues/league-a': { id: 'league-a', creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 2, name: 'Metro', sport: 'Soccer', startDate: '2026-09-01', endDate: '2026-10-01', schedule: [{ id: 'game-1' }] },
@@ -379,8 +421,9 @@ test('edit validates topology and dates, preserves schedules, and fails safe at 
   const blocked = await call(db, { uid: 'owner-a' }, {
     action: 'edit', requestId: 'schedule-boundary-0001', leagueId: 'league-a', expectedVersion: 2, updates: { startDate: '2026-09-02' },
   }, 'PATCH');
-  assert.equal(blocked.response.status, 409);
-  assert.deepEqual(records.get('leagues/league-a').schedule, [{ id: 'game-1' }]);
+  assert.equal(blocked.response.status, 200);
+  assert.deepEqual(records.get('leagues/league-a').schedule, []);
+  assert.equal(records.get('leagues/league-a').startDate, '2026-09-02');
 
   const configuredRun = communicationDb({
     ...teamSeed,
@@ -393,8 +436,9 @@ test('edit validates topology and dates, preserves schedules, and fails safe at 
   const configuredBlocked = await call(configuredRun.db, { uid: 'owner-a' }, {
     action: 'edit', requestId: 'configured-boundary-0001', leagueId: 'configured', expectedVersion: 2, updates: { endDate: '2026-10-15' },
   }, 'PATCH');
-  assert.equal(configuredBlocked.response.status, 409);
-  assert.equal(configuredRun.records.get('leagues/configured').endDate, '2026-10-01');
+  assert.equal(configuredBlocked.response.status, 200);
+  assert.equal(configuredRun.records.get('leagues/configured').endDate, '2026-10-15');
+  assert.equal(configuredRun.records.get('leagues/configured').schedulerConfig, undefined);
 
   const invalidRequest = await call(db, { uid: 'owner-a' }, {
     action: 'edit', requestId: 'short', leagueId: 'league-a', expectedVersion: 2, updates: { description: 'Invalid request identity' },

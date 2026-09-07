@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { dispatchTeamNotification } from '../src/lib/client-team-notification.ts';
+import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
 
 const readSource = path => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -756,10 +757,10 @@ test('league registration, assignment, and clone projections use trusted server 
   assert.match(publicAction, /memberTeamIds: FieldValue\.arrayUnion\(recruitId\)/);
   assert.match(publicAction, /\[`individualRecruits\.\$\{recruitId\}`\]/);
   assert.match(publicAction, /memberIndivIds: FieldValue\.arrayUnion\(recruitId\)/);
-  assert.match(provider, /fetch\('\/api\/leagues\/assignments'/);
+  assert.match(provider, /requestLeagueMutation\('\/api\/leagues\/assignments'/);
   assert.match(team, /fetch\(`\/api\/leagues\/assignments\?teamId=/);
-  assert.match(assignments, /assigned_team_owner_id: ownerId/);
-  assert.match(assignments, /getTeamAuthority\(teamId, auth\.uid, auth\.role\)/);
+  assert.match(assignments, /assigned_team_owner_id: teamId \? team\.ownerUserId/);
+  assert.match(assignments, /resolveCompetitionAuthority\(\{ transaction/);
   assert.match(registrationAdmin, /inspectingEntry\?\.protocol_id === 'player_config'/);
   assert.match(registrationAdmin, /inspectingEntry\?\.protocol_id === 'individual_config'/);
   assert.match(registrationAdmin, /\{inspectingIndividualEntry && \([\s\S]*Assign to Team/);
@@ -781,12 +782,17 @@ test('league deletion cannot create replacement leagues or partially delete divi
   assert.match(leagues, /Delete League Permanently\?/);
   assert.match(leagues, /void confirmLeagueDeletion\(\)/);
   assert.doesNotMatch(leagues, /window\.confirm\(`Delete/);
-  assert.match(schedule, /const leagues = await adminDb\.getAll\(\.\.\.leagueRefs\)/);
-  assert.match(schedule, /Authorize the complete workspace before mutating any division/);
-  assert.match(schedule, /collectionGroup\('events'\)\.where\('leagueId', '==', leagueId\)/);
-  assert.match(schedule, /Promise\.all\(leagueIds\.map\(purgeLeagueProjectionsForDeletion\)\)/);
-  assert.match(schedule, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);
-  assert.match(schedule, /recursiveDelete\(league\.ref\)/);
+  const { db, records } = communicationDb({ 'leagues/retained': { creatorId: 'owner-a' } });
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner-a' });
+  try {
+    const response = await app.route.POST(new Request('http://localhost/api/leagues/schedule', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', leagueId: 'retained' }),
+    }));
+    assert.equal(response.status, 410);
+    assert.match((await response.json()).error, /DELETE \/api\/leagues\/lifecycle/);
+    assert.deepEqual([...records], [['leagues/retained', { creatorId: 'owner-a' }]]);
+  } finally { app.dispose(); }
   const indexes = await readSource('../firestore.indexes.json');
   assert.match(indexes, /"fieldPath": "sourceId"[\s\S]*"queryScope": "COLLECTION_GROUP"/);
   assert.doesNotMatch(schedule, /collection\('leagues'\)\.add\(/);

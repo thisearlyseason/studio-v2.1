@@ -23,6 +23,7 @@ import {
 } from '@/lib/server-league-cloning';
 import { readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 import { hashLeagueScorekeeperPin } from '@/lib/server-competition-credential';
+import { assertScheduleMutationLock, prepareLeagueProjectionClear, prepareLeagueScheduleClearUpdates, ScheduleDeploymentError, withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 
 type LeagueEditableFields = {
   name?: string;
@@ -193,11 +194,12 @@ function parseUpdates(value: unknown): LeagueEditableFields {
   if (updates.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updates.contactEmail)) fail('CONTACTEMAIL_INVALID');
   for (const key of ['startDate', 'endDate'] as const) {
     if (key in input) {
+      if (typeof input[key] === 'string' && input[key].trim() === '') continue;
       if (typeof input[key] !== 'string' || !validDate(input[key])) fail(`${key.toUpperCase()}_INVALID`);
       updates[key] = input[key];
     }
   }
-  if ('slug' in input) {
+  if ('slug' in input && !(typeof input.slug === 'string' && input.slug.trim() === '')) {
     if (typeof input.slug !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug) || input.slug.length > 120) fail('SLUG_INVALID');
     updates.slug = input.slug;
   }
@@ -547,7 +549,10 @@ async function mutateClone(auth: DecodedToken, input: Extract<LeagueLifecycleReq
 }
 
 async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequest, { action: 'edit' }>, authority: CompetitionAuthority, identity: CompetitionOperationIdentity) {
-  return runCompetitionOperation({ db: adminDb, actorUid: auth.uid, identity }, async ({ transaction }) => {
+  return withScheduleMutationLock(holder => runCompetitionOperation({ db: adminDb, actorUid: auth.uid, identity, authorizeTransaction: async transaction => {
+    await assertScheduleMutationLock(transaction, holder);
+    await assertCurrentAuthority(transaction, auth, authority.tenantId, { leagueId: input.leagueId });
+  } }, async ({ transaction }) => {
     await assertCurrentAuthority(transaction, auth, authority.tenantId, { leagueId: input.leagueId });
     const rootRef = adminDb.collection('leagues').doc(input.leagueId);
     const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
@@ -568,10 +573,10 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
     const nextStart = input.updates.startDate ?? league.startDate;
     const nextEnd = input.updates.endDate ?? league.endDate;
     if (nextStart && nextEnd && nextStart > nextEnd) fail('DATE_RANGE_INVALID');
-    const scheduleChanged = [...SCHEDULE_FIELDS].some(field => field in input.updates && JSON.stringify(input.updates[field as keyof LeagueEditableFields]) !== JSON.stringify(league[field])) ||
+    const scheduleChanged = [...SCHEDULE_FIELDS].some(field => field in input.updates && JSON.stringify(input.updates[field as keyof LeagueEditableFields]) !== JSON.stringify(league[field] ?? (field === 'blackoutDaysOfWeek' || field === 'divisions' ? [] : undefined))) ||
       Boolean(input.updates.teamUpdate?.publicFields.teamName && input.updates.teamUpdate.publicFields.teamName !== league.teams?.[input.updates.teamUpdate.teamId]?.teamName);
     const hasScheduleState = (Array.isArray(league.schedule) && league.schedule.length > 0) || (league.schedulerConfig && typeof league.schedulerConfig === 'object');
-    if (scheduleChanged && hasScheduleState) fail('SCHEDULE_MUTATION_BOUNDARY_REQUIRED');
+    const clearProjections = scheduleChanged && hasScheduleState ? await prepareLeagueProjectionClear(transaction, input.leagueId) : null;
     if (input.updates.name) assertIdentityAvailable(leagues, input.updates.name, String(league.divisionTitle || ''), input.leagueId);
     const renamedReservation = input.updates.name && nameKey(input.updates.name) !== nameKey(league.name)
       ? adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, input.updates.name, String(league.divisionTitle || '')))
@@ -595,8 +600,10 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
       const { teamId: teamIdValue, publicFields: teamPublic } = input.updates.teamUpdate;
       safeTeams[teamIdValue] = { ...(safeTeams[teamIdValue] || {}), ...teamPublic };
     }
+    clearProjections?.();
     transaction.update(rootRef, {
       ...publicUpdates,
+      ...(clearProjections ? { ...prepareLeagueScheduleClearUpdates('clear', auth.uid, new Date().toISOString()), schedulerConfig: FieldValue.delete() } : {}),
       ...rootSensitiveDeletes(),
       ...((league.teams && typeof league.teams === 'object' && !Array.isArray(league.teams)) || input.updates.teamUpdate ? { teams: safeTeams } : {}),
       sensitiveFieldsMigrated: true,
@@ -626,7 +633,7 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
     }
     audit(transaction, identity, input, authority.tenantId, auth.uid, input.leagueId);
     return { action: 'edit' as const, leagueId: input.leagueId, lifecycleVersion: nextVersion };
-  });
+  }));
 }
 
 async function mutateArchive(auth: DecodedToken, input: Extract<LeagueLifecycleRequest, { action: 'archive' }>, authority: CompetitionAuthority, identity: CompetitionOperationIdentity) {
@@ -735,6 +742,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
             : await mutateDelete(authResult, input, authority, identity);
     return NextResponse.json(result, { status: input.action === 'create' || input.action === 'clone' ? 201 : 200 });
   } catch (error) {
+    if (error instanceof ScheduleDeploymentError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
     const code = error instanceof Error ? error.message : 'LEAGUE_LIFECYCLE_FAILED';
     if (code.includes('Forbidden competition mutation') || code === 'ANONYMOUS_DEMO_MUTATION_FORBIDDEN') return NextResponse.json({ error: 'You do not have permission to manage this league.' }, { status: 403 });

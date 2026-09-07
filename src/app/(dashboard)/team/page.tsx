@@ -136,7 +136,9 @@ export default function TeamProfilePage() {
   }, [activeTeam?.id, firebaseAuth, hasFeature, isStaff]);
 
   const handleAssignmentResponse = async (entry: RegistrationEntry, status: 'accepted' | 'declined') => {
-    const updated = await respondToAssignment(entry.league_id, entry.id, status);
+    const updated = await respondToAssignment(entry.league_id, entry.id, status, {
+      lifecycleVersion: entry.lifecycleVersion ?? 0, assignmentVersion: entry.assignmentVersion ?? 0,
+    });
     if (updated) setAssignments(current => current.filter(candidate => candidate.id !== entry.id));
   };
 

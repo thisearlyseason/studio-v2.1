@@ -33,7 +33,8 @@ test('legacy schedule delete cannot purge League history or projections', async 
 
 test('ordinary schedule configure and clear still execute through the existing schedule service', async () => {
   const { db, records } = communicationDb({
-    'leagues/league-a': { creatorId: 'owner', schedule: [] },
+    'users/owner': { role: 'league_creator', plan_type: 'free' },
+    'leagues/league-a': { creatorId: 'owner', tenantId: 'profile:owner', lifecycleVersion: 0, schedule: [] },
     'leagues/league-a/registrationEntries/entry': { answers: { email: 'private@example.test' } },
     'leagues/league-a/scoreAudit/score': { score1: 2 },
   });
@@ -42,7 +43,7 @@ test('ordinary schedule configure and clear still execute through the existing s
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   }));
   try {
-    const configured = await post({ action: 'configure', leagueId: 'league-a', config: {
+    const configured = await post({ action: 'configure', leagueId: 'league-a', requestId: 'configure-ordinary-0001', expectedVersion: 0, config: {
       startDate: '2026-09-01', endDate: '2026-09-30', startTime: '09:00', endTime: '17:00',
       gameLength: '60', breakLength: '15', gamesPerTeam: '4', playDays: [1], selectedFields: ['field-a'],
     } });
@@ -52,7 +53,7 @@ test('ordinary schedule configure and clear still execute through the existing s
     records.set('leagues/league-a', { ...records.get('leagues/league-a'), schedule: [{ id: 'game-a' }] });
     records.set('scheduleBookings/booking', { sourceId: 'league:league-a' });
     records.set('teams/team-a/events/game', { leagueId: 'league-a', sourceId: 'league:league-a' });
-    const cleared = await post({ action: 'clear', leagueId: 'league-a', mode: 'clear' });
+    const cleared = await post({ action: 'clear', leagueId: 'league-a', requestId: 'clear-ordinary-0001', expectedVersion: 1, mode: 'clear' });
     assert.equal(cleared.status, 200);
     assert.deepEqual(records.get('leagues/league-a').schedule, []);
     assert.equal(records.has('scheduleBookings/booking'), false);

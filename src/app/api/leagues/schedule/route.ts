@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   const auth = await verifyFirebaseToken(request);
-  if (auth instanceof NextResponse) return auth;
+  if (auth instanceof Response) return auth;
 
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(request, 1_000_000);
@@ -26,6 +26,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'League deletion requires DELETE /api/leagues/lifecycle with a request ID and lifecycle version.' }, { status: 410 });
     }
     const isLiveMutation = body.action === 'score' || body.action === 'dispute';
+    if (!isLiveMutation && (!Number.isSafeInteger(body.expectedVersion) || Number(body.expectedVersion) < 0)) {
+      return NextResponse.json({ error: 'A numeric current League version is required.' }, { status: 400 });
+    }
     const baseLimit = isLiveMutation ? 300 : 30;
     const limited = await enforceUserRateLimit(
       auth.uid,
@@ -37,9 +40,10 @@ export async function POST(request: NextRequest) {
 
     if (body.action === 'remove-team') {
       await removeLeagueTeamMembership({
+        requestId: String(body.requestId || ''), expectedVersion: Number(body.expectedVersion),
         leagueId: typeof body.leagueId === 'string' ? body.leagueId : '',
         teamId: typeof body.teamId === 'string' ? body.teamId : '',
-        actor: { uid: auth.uid, role: auth.role },
+        actor: { uid: auth.uid, role: auth.role, signInProvider: auth.signInProvider },
       });
       return NextResponse.json({ success: true });
     }
@@ -64,16 +68,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Invalid schedule cleanup mode.' }, { status: 400 });
       }
       await clearLeagueSchedule({
+        requestId: String(body.requestId || ''), expectedVersion: Number(body.expectedVersion),
         leagueId: typeof body.leagueId === 'string' ? body.leagueId : '',
         mode,
-        actor: { uid: auth.uid, role: auth.role },
+        actor: { uid: auth.uid, role: auth.role, signInProvider: auth.signInProvider },
       });
       return NextResponse.json({ success: true, schedule: [] });
     }
     if (body.action === 'configure') {
       await configureLeagueSchedule({
+        requestId: String(body.requestId || ''), expectedVersion: Number(body.expectedVersion),
         leagueId: typeof body.leagueId === 'string' ? body.leagueId : '',
-        actor: { uid: auth.uid, role: auth.role },
+        actor: { uid: auth.uid, role: auth.role, signInProvider: auth.signInProvider },
         config: body.config,
         invalidateExisting: body.invalidateExisting === true,
       });
@@ -85,9 +91,10 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await deployLeagueSchedule({
+      requestId: String(body.requestId || ''), expectedVersion: Number(body.expectedVersion),
       leagueId: typeof body.leagueId === 'string' ? body.leagueId : '',
       action,
-      actor: { uid: auth.uid, role: auth.role },
+      actor: { uid: auth.uid, role: auth.role, signInProvider: auth.signInProvider },
       games: body.games,
       game: body.game,
     });
@@ -98,6 +105,10 @@ export async function POST(request: NextRequest) {
       idempotent: result.idempotent,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.startsWith('Forbidden competition')) return NextResponse.json({ error: 'Only current authorized staff can manage this schedule.' }, { status: 403 });
+    if (message === 'Request collision.') return NextResponse.json({ error: message }, { status: 409 });
+    if (message.startsWith('Invalid competition')) return NextResponse.json({ error: message }, { status: 400 });
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

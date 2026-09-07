@@ -10,6 +10,157 @@ import {
   validateLeagueDeploymentIntegrity,
 } from '../src/lib/server-schedule-deployment.ts';
 import { generateLeagueSchedule } from '../src/lib/scheduler-utils.ts';
+import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
+
+const scheduleFixture = {
+  'users/owner': { role: 'coach', plan_type: 'elite_league' },
+  'teams/host': { ownerUserId: 'owner', planId: 'elite_league' },
+  'teams/alpha': { ownerUserId: 'owner-alpha', leagueIds: { 'league-a': true } },
+  'teams/beta': { ownerUserId: 'owner-beta', leagueIds: { 'league-a': true } },
+  'leagues/league-a': { creatorId: 'owner', tenantId: 'host', lifecycleVersion: 1, name: 'Metro', teams: {
+    alpha: { teamName: 'Alpha', status: 'accepted' }, beta: { teamName: 'Beta', status: 'accepted' },
+  }, schedule: [], memberTeamIds: ['alpha', 'beta'], schedulerConfig: { gameLength: '60', gamesPerTeam: '1', selectedFields: ['field-a'], startDate: '2026-09-01', endDate: '2026-09-30', startTime: '09:00', endTime: '17:00', playDays: [0, 1, 2, 3, 4, 5, 6], breakLength: '15' } },
+  'leagues/league-a/registrationEntries/entry': { fee_id: 'fee-1', form_id: 'form-1', waiver_id: 'waiver-1' },
+};
+const replacement = { action: 'replace', leagueId: 'league-a', requestId: 'deploy-request-0001', expectedVersion: 1, games: [{ id: 'game-a', team1Id: 'alpha', team2Id: 'beta', date: '2026-09-01', time: '09:00', resourceId: 'field-a', location: 'field-a' }] };
+const scheduleRequest = body => new Request('http://localhost/api/leagues/schedule', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+test('schedule request versions must be numeric bounded integers without coercion', async () => {
+  for (const expectedVersion of ['1', null, true, -1, Number.MAX_SAFE_INTEGER + 1]) {
+    const { db, records } = communicationDb(scheduleFixture);
+    const before = structuredClone([...records]);
+    const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+    try {
+      assert.equal((await app.route.POST(scheduleRequest({ ...replacement, expectedVersion }))).status, 400);
+      assert.deepEqual([...records], before);
+    } finally { app.dispose(); }
+  }
+});
+
+test('deploy and append replay preserve exact receipts and one set of bookings and team events', async () => {
+  const { db, records } = communicationDb(scheduleFixture, { serializeTransactions: true });
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+  try {
+    for (const body of [replacement, { action: 'append', leagueId: 'league-a', requestId: 'append-request-0001', expectedVersion: 2, game: { team1Id: 'alpha', team2Id: 'beta', date: '2026-09-02', time: '09:00', resourceId: 'field-a', location: 'field-a', isExhibition: true } }]) {
+      const first = await app.route.POST(scheduleRequest(body));
+      assert.equal(first.status, 200, JSON.stringify(await first.clone().json()));
+      const before = structuredClone([...records]);
+      const replay = await app.route.POST(scheduleRequest(body));
+      assert.equal(replay.status, 200);
+      assert.deepEqual(await replay.json(), await first.json());
+      assert.deepEqual([...records], before);
+      const collision = await app.route.POST(scheduleRequest({ ...body, expectedVersion: 99 }));
+      assert.equal(collision.status, 409);
+    }
+    assert.equal(records.get('leagues/league-a').schedule.length, 2);
+    assert.equal([...records.keys()].filter(path => path.startsWith('scheduleBookings/')).length, 2);
+    assert.equal([...records.keys()].filter(path => path.includes('/events/')).length, 4);
+  } finally { app.dispose(); }
+});
+
+test('competing deployments commit one version and one complete projection', async () => {
+  const { db, records } = communicationDb(scheduleFixture, { serializeTransactions: true });
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+  try {
+    const responses = await Promise.all([app.route.POST(scheduleRequest(replacement)), app.route.POST(scheduleRequest({ ...replacement, requestId: 'deploy-race-0002' }))]);
+    assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+    assert.equal(records.get('leagues/league-a').lifecycleVersion, 2);
+    assert.equal([...records.keys()].filter(path => path.startsWith('scheduleBookings/')).length, 1);
+    assert.equal([...records.keys()].filter(path => path.includes('/events/')).length, 2);
+  } finally { app.dispose(); }
+});
+
+test('clear archive and purge are replay-safe and retain Registration identities', async () => {
+  for (const mode of ['clear', 'archive', 'purge']) {
+    const { db, records } = communicationDb({ ...scheduleFixture,
+      'scheduleBookings/old': { sourceId: 'league:league-a' },
+      'teams/alpha/events/lg_league-a_old': { sourceId: 'league:league-a', leagueId: 'league-a' },
+    });
+    const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+    const body = { action: 'clear', leagueId: 'league-a', requestId: `clear-${mode}-0001`, expectedVersion: 1, mode };
+    try {
+      assert.equal((await app.route.POST(scheduleRequest(body))).status, 200);
+      const before = structuredClone([...records]);
+      assert.equal((await app.route.POST(scheduleRequest(body))).status, 200);
+      assert.deepEqual([...records], before);
+      assert.deepEqual(records.get('leagues/league-a/registrationEntries/entry'), { fee_id: 'fee-1', form_id: 'form-1', waiver_id: 'waiver-1' });
+      assert.equal(records.has('scheduleBookings/old'), false);
+      assert.equal(records.has('teams/alpha/events/lg_league-a_old'), false);
+      if (mode === 'archive') assert.equal(records.get('leagues/league-a').isArchived, true);
+      if (mode === 'purge') {
+        assert.deepEqual(records.get('leagues/league-a').teams, {});
+        assert.deepEqual(records.get('leagues/league-a').memberTeamIds, []);
+        assert.deepEqual(records.get('teams/alpha').leagueIds, {});
+      }
+    } finally { app.dispose(); }
+  }
+});
+
+test('failed schedule commits cannot leave partial bookings, team events or League state', async () => {
+  const { db, records } = communicationDb(scheduleFixture);
+  const original = db.runTransaction.bind(db);
+  db.runTransaction = work => original(async transaction => {
+    let mutated = false;
+    const result = await work({ ...transaction, update(ref, ...args) { if (ref.path === 'leagues/league-a') mutated = true; return transaction.update(ref, ...args); } });
+    if (mutated) throw new Error('Injected atomic commit failure');
+    return result;
+  });
+  const before = structuredClone([...records]);
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+  try {
+    assert.equal((await app.route.POST(scheduleRequest(replacement))).status, 500);
+    assert.deepEqual([...records], before);
+  } finally { app.dispose(); }
+});
+
+test('schedule authority is revalidated in the committing transaction and denies Owner B', async () => {
+  for (const changed of ['demotion', 'plan', 'tenant', 'archive', 'version']) {
+    let count = 0;
+    const { db, records } = communicationDb({ ...scheduleFixture, 'teams/host': { ownerUserId: 'billing-owner', planId: 'elite_league' },
+      'leagues/league-a': { ...scheduleFixture['leagues/league-a'], creatorId: 'billing-owner' },
+      'teams/host/members/owner': { userId: 'owner', position: 'Coach', status: 'active' },
+    }, { beforeTransaction({ records: mutable }) {
+      if (++count !== 3) return;
+      if (changed === 'demotion') mutable.set('teams/host/members/owner', { userId: 'owner', position: 'Player', status: 'active' });
+      if (changed === 'plan') mutable.set('teams/host', { ...mutable.get('teams/host'), planId: 'free' });
+      if (changed === 'tenant') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), tenantId: 'other' });
+      if (changed === 'archive') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), isArchived: true });
+      if (changed === 'version') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), lifecycleVersion: 2 });
+    } });
+    const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+    try {
+      const response = await app.route.POST(scheduleRequest(replacement));
+      assert.ok([403, 409].includes(response.status), `${changed}: ${response.status}`);
+      assert.deepEqual(records.get('leagues/league-a').schedule, []);
+      assert.equal([...records.keys()].filter(path => path.startsWith('scheduleBookings/') || path.includes('/events/')).length, 0);
+    } finally { app.dispose(); }
+  }
+  const { db, records } = communicationDb(scheduleFixture);
+  const before = structuredClone([...records]);
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner-b' });
+  try {
+    assert.equal((await app.route.POST(scheduleRequest(replacement))).status, 403);
+    assert.deepEqual([...records], before);
+  } finally { app.dispose(); }
+});
+
+test('schedule configure rejects a stale lifecycle version without changing League or projections', async () => {
+  const { db, records } = communicationDb({
+    'users/owner': { role: 'coach', plan_type: 'elite_league' },
+    'teams/host': { ownerUserId: 'owner', planId: 'elite_league' },
+    'leagues/league-a': { creatorId: 'owner', tenantId: 'host', lifecycleVersion: 2, schedule: [] },
+  });
+  const before = structuredClone([...records]);
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+  try {
+    const response = await app.route.POST(new Request('http://localhost/api/leagues/schedule', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      action: 'configure', leagueId: 'league-a', requestId: 'configure-stale-0001', expectedVersion: 1,
+      config: { startDate: '2026-09-01', endDate: '2026-09-30', startTime: '09:00', endTime: '17:00', gameLength: '60', breakLength: '15', gamesPerTeam: '1', playDays: [2], selectedFields: ['field-a'] },
+    }) }));
+    assert.equal(response.status, 409);
+    assert.deepEqual([...records], before);
+  } finally { app.dispose(); }
+});
 
 function league(overrides = {}) {
   return {

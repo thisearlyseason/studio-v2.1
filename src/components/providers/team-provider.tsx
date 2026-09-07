@@ -682,6 +682,8 @@ export type LeagueArchiveWaiver = {
 };
 
 export type RegistrationEntry = {
+  lifecycleVersion?: number;
+  assignmentVersion?: number;
   id: string;
   league_id: string;
   protocol_id: string;
@@ -966,7 +968,7 @@ interface TeamContextType {
   submitRegistrationEntry: (targetId: string, protocolId: string, answers: any, version: number, signature?: string, targetType?: 'leagues' | 'teams', eventId?: string) => Promise<string | undefined>;
   assignEntryToTeam: (leagueId: string, entryId: string, teamId: string | null) => Promise<void>;
   toggleRegistrationPaymentStatus: (leagueId: string, entryId: string, paid: boolean) => Promise<void>;
-  respondToAssignment: (contextId: string, entryId: string, status: 'accepted' | 'declined') => Promise<boolean>;
+  respondToAssignment: (contextId: string, entryId: string, status: 'accepted' | 'declined', versions: { lifecycleVersion: number; assignmentVersion: number }) => Promise<boolean>;
   signPublicTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string, coachName: string) => Promise<boolean>;
   submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => Promise<void>;
   submitLeagueMatchScore: (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => Promise<void>;
@@ -2939,26 +2941,38 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return result.leagueId as string;
   }, [firebaseUser, firebaseAuth, db, activeTeam, userProfile]);
   
-  const updateLeague = useCallback(async (leagueId: string, updates: Partial<League>) => { 
-    if (!db || !firebaseAuth) return;
-    const league = await getDoc(doc(db, 'leagues', leagueId));
-    if (!league.exists()) throw new Error('League not found.');
+  const pendingLeagueMutations = useRef(new Map<string, Record<string, unknown>>());
+  const requestLeagueMutation = useCallback(async (path: string, input: Record<string, unknown>, displayed?: { lifecycleVersion: number; assignmentVersion: number }) => {
+    if (!db || !firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+    const key = JSON.stringify([path, input, displayed]);
+    let body = pendingLeagueMutations.current.get(key);
+    if (!body) {
+      const league = displayed ? null : await getDoc(doc(db, 'leagues', String(input.leagueId)));
+      if (!displayed && !league?.exists()) throw new Error('League not found.');
+      const entry = input.action === 'assign' ? await getDoc(doc(db, 'leagues', String(input.leagueId), 'registrationEntries', String(input.entryId))) : null;
+      body = {
+        ...input, requestId: `league-mutation-${crypto.randomUUID()}`,
+        expectedVersion: displayed?.lifecycleVersion ?? league?.data()?.lifecycleVersion ?? 0,
+        ...(displayed || entry ? { expectedAssignmentVersion: displayed?.assignmentVersion ?? entry?.data()?.assignmentVersion ?? 0 } : {}),
+      };
+      pendingLeagueMutations.current.set(key, body);
+    }
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/leagues/lifecycle', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({
-        action: 'edit',
-        requestId: `league-edit-${crypto.randomUUID()}`,
-        leagueId,
-        expectedVersion: league.data().lifecycleVersion ?? 0,
-        updates: clean(updates),
-      }),
+    const response = await fetch(path, {
+      method: path.endsWith('/schedule') ? 'POST' : 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify(body),
     });
+    if (response.ok || response.status < 500) pendingLeagueMutations.current.delete(key);
+    return response;
+  }, [db, firebaseAuth]);
+
+  const updateLeague = useCallback(async (leagueId: string, updates: Partial<League>) => {
+    if (!db || !firebaseAuth) return;
+    const response = await requestLeagueMutation('/api/leagues/lifecycle', { action: 'edit', leagueId, updates: clean(updates) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Unable to update the league.');
-  }, [db, firebaseAuth]);
+  }, [db, firebaseAuth, requestLeagueMutation]);
 
   /**
    * Propagates a newly uploaded team logo URL to all leagues this team is enrolled in.
@@ -2979,15 +2993,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [db, updateLeague]);
 
+
   const addLeagueGame = useCallback(async (lId: string, game: any) => {
     if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/leagues/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'append', leagueId: lId, game }),
-    });
+    const response = await requestLeagueMutation('/api/leagues/schedule', { action: 'append', leagueId: lId, game });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const detail = Array.isArray(payload.conflicts) && payload.conflicts.length > 0
@@ -2995,17 +3006,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         : '';
       throw new Error(`${payload.error || 'Unable to add the league match.'}${detail}`);
     }
-  }, [firebaseAuth]);
+  }, [firebaseAuth, requestLeagueMutation]);
 
   const updateLeagueSchedule = useCallback(async (lId: string, s: any[]) => { 
     if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/leagues/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'replace', leagueId: lId, games: s }),
-    });
+    const response = await requestLeagueMutation('/api/leagues/schedule', { action: 'replace', leagueId: lId, games: s });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const detail = Array.isArray(payload.conflicts) && payload.conflicts.length > 0
@@ -3014,21 +3021,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       throw new Error(`${payload.error || 'Unable to deploy the league schedule.'}${detail}`);
     }
     toast({ title: "Season Synchronized", description: "League matches pushed to all squad itineraries." });
-  }, [firebaseAuth]);
+  }, [firebaseAuth, requestLeagueMutation]);
 
   const removeTeamFromLeague = useCallback(async (lId: string, tId: string) => {
     if (!firebaseAuth) return;
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/leagues/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'remove-team', leagueId: lId, teamId: tId }),
-    });
+    const response = await requestLeagueMutation('/api/leagues/schedule', { action: 'remove-team', leagueId: lId, teamId: tId });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Unable to remove the team from the league.');
     toast({ title: "Squad Excised", description: "Team removed from league standings." });
-  }, [firebaseAuth]);
+  }, [firebaseAuth, requestLeagueMutation]);
 
   const inviteTeamToLeague = useCallback(async (lId: string, lN: string, e: string, tN?: string) => {
     if (db) {
@@ -3094,11 +3097,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     try {
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired. Please sign in again.');
-      const response = await fetch('/api/leagues/assignments', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ action: 'assign', leagueId, entryId, teamId }),
-      });
+      const response = await requestLeagueMutation('/api/leagues/assignments', { action: 'assign', leagueId, entryId, teamId });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to assign this registration.');
     } catch (error) {
@@ -3108,25 +3107,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         variant: 'destructive',
       });
     }
-  }, [firebaseAuth, isStaff, isPrimaryClubAuthority]);
+  }, [firebaseAuth, isStaff, isPrimaryClubAuthority, requestLeagueMutation]);
   const toggleRegistrationPaymentStatus = useCallback(async (leagueId: string, entryId: string, paid: boolean) => { if (!firebaseAuth) return;const token=await getAuthToken(firebaseAuth);const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:'league',action:'update-registration',leagueId,entryId,payment_received:paid})});const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(payload?.error||'Payment status could not be updated.'); }, [firebaseAuth]);
   
-  const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined') => { 
+  const respondToAssignment = useCallback(async (contextId: string, entryId: string, status: 'accepted' | 'declined', versions: { lifecycleVersion: number; assignmentVersion: number }) => {
     if (!activeTeam?.id || !firebaseAuth) return false;
     try {
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired. Please sign in again.');
-      const response = await fetch('/api/leagues/assignments', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({
-          action: 'respond',
-          leagueId: contextId,
-          entryId,
-          teamId: activeTeam.id,
-          status,
-        }),
-      });
+      const response = await requestLeagueMutation('/api/leagues/assignments', { action: 'respond', leagueId: contextId, entryId, teamId: activeTeam.id, status }, versions);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to respond to this assignment.');
       toast({ title: status === 'accepted' ? 'Assignment Accepted' : 'Assignment Declined' });
@@ -3139,7 +3128,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
       return false;
     }
-  }, [activeTeam?.id, firebaseAuth]);
+  }, [activeTeam?.id, firebaseAuth, requestLeagueMutation]);
 
   const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => {
     const publicFields = Object.fromEntries(

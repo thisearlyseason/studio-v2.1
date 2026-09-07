@@ -2,12 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { validateSchedule } from '@/lib/intelligent-scheduler';
+import { resolveCompetitionAuthority } from '@/lib/server-competition-authority';
+import { canonicalCompetitionRequest, runCompetitionOperation } from '@/lib/server-competition-operation';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const GAME_ID_PATTERN = /^[A-Za-z0-9_-]{1,180}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_GAMES = 1_000;
-const BATCH_SIZE = 350;
 const GLOBAL_LOCK_MS = 5 * 60 * 1_000;
 
 type LeagueTeam = {
@@ -90,9 +91,12 @@ export type ExternalScheduleBooking = {
 type DeploymentActor = {
   uid: string;
   role?: string;
+  signInProvider?: string;
 };
 
-export type LeagueScheduleDeploymentInput = {
+type ScheduleRequest = { requestId: string; expectedVersion: number };
+
+export type LeagueScheduleDeploymentInput = ScheduleRequest & {
   leagueId: string;
   action: 'replace' | 'append';
   actor: DeploymentActor;
@@ -113,19 +117,19 @@ export type LeagueScheduleGameMutationInput = {
 
 export type LeagueScheduleClearMode = 'clear' | 'archive' | 'purge';
 
-export type LeagueScheduleClearInput = {
+export type LeagueScheduleClearInput = ScheduleRequest & {
   leagueId: string;
   mode: LeagueScheduleClearMode;
   actor: DeploymentActor;
 };
 
-export type LeagueTeamRemovalInput = {
+export type LeagueTeamRemovalInput = ScheduleRequest & {
   leagueId: string;
   teamId: string;
   actor: DeploymentActor;
 };
 
-export type LeagueScheduleConfigurationInput = {
+export type LeagueScheduleConfigurationInput = ScheduleRequest & {
   leagueId: string;
   actor: DeploymentActor;
   config: unknown;
@@ -665,14 +669,70 @@ export async function releaseScheduleMutationLock(holder: string): Promise<void>
   });
 }
 
-export async function withScheduleMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+export async function withScheduleMutationLock<T>(operation: (holder: string) => Promise<T>): Promise<T> {
   const holder = randomUUID();
   await acquireScheduleMutationLock(holder);
   try {
-    return await operation();
+    return await operation(holder);
   } finally {
     await releaseScheduleMutationLock(holder);
   }
+}
+
+export async function assertScheduleMutationLock(transaction: FirebaseFirestore.Transaction, holder: string): Promise<void> {
+  const lock = await transaction.get(adminDb.collection('scheduleBookingLocks').doc('global'));
+  if (lock.data()?.holder !== holder || Number(lock.data()?.expiresAt || 0) <= Date.now() || lock.data()?.recoveryRequired === true) {
+    throw new ScheduleDeploymentError('SCHEDULE_DEPLOYMENT_BUSY', 'The schedule lock expired. Retry the operation.', 409);
+  }
+}
+
+export function assertLeagueScheduleVersion(league: FirebaseFirestore.DocumentData, expectedVersion: number): void {
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) throw new ScheduleDeploymentError('INVALID_VERSION', 'A current League version is required.');
+  if ((league.lifecycleVersion ?? 0) !== expectedVersion) throw new ScheduleDeploymentError('LEAGUE_VERSION_CONFLICT', 'The League changed. Refresh before retrying.', 409);
+  if (league.isArchived === true) throw new ScheduleDeploymentError('LEAGUE_LIFECYCLE_STATE_CONFLICT', 'This League is archived.', 409);
+}
+
+export async function prepareLeagueProjectionClear(transaction: FirebaseFirestore.Transaction, leagueId: string): Promise<() => void> {
+  const sourceId = `league:${leagueId}`;
+  const [bookings, leagueEvents, sourceEvents] = await Promise.all([
+    transaction.get(adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId)),
+    transaction.get(adminDb.collectionGroup('events').where('leagueId', '==', leagueId)),
+    transaction.get(adminDb.collectionGroup('events').where('sourceId', '==', sourceId)),
+  ]);
+  const documents = new Map(bookings.docs.map(document => [document.ref.path, document.ref]));
+  for (const document of [...leagueEvents.docs, ...sourceEvents.docs]) {
+    if (document.data().sourceId === sourceId || document.id.startsWith(`lg_${leagueId}_`)) documents.set(document.ref.path, document.ref);
+  }
+  return () => { for (const ref of documents.values()) transaction.delete(ref); };
+}
+
+async function runLeagueScheduleOperation<T>(
+  input: ScheduleRequest & { leagueId: string; actor: DeploymentActor },
+  kind: string,
+  payload: unknown,
+  mutate: (transaction: FirebaseFirestore.Transaction, league: FirebaseFirestore.DocumentData) => Promise<T>,
+): Promise<T> {
+  if (!ID_PATTERN.test(input.leagueId)) throw new ScheduleDeploymentError('INVALID_LEAGUE', 'Invalid League.');
+  if (input.actor.signInProvider === 'anonymous') throw new ScheduleDeploymentError('FORBIDDEN', 'Anonymous schedule mutations are forbidden.', 403);
+  const authority = await adminDb.runTransaction(transaction => resolveCompetitionAuthority({ transaction, leagueId: input.leagueId, actorUid: input.actor.uid, actorRole: input.actor.role }));
+  const identity = canonicalCompetitionRequest({ requestId: input.requestId, tenantId: authority.tenantId, kind: `league.schedule.${kind}`, payload });
+  return withScheduleMutationLock(holder => runCompetitionOperation({
+    actorUid: input.actor.uid, identity,
+    authorizeTransaction: async transaction => {
+      await assertScheduleMutationLock(transaction, holder);
+      const current = await resolveCompetitionAuthority({ transaction, leagueId: input.leagueId, actorUid: input.actor.uid, actorRole: input.actor.role });
+      if (current.tenantId !== authority.tenantId) throw new ScheduleDeploymentError('LEAGUE_TENANT_CONFLICT', 'The League tenant changed.', 409);
+    },
+  }, async ({ transaction }) => {
+    const ref = adminDb.collection('leagues').doc(input.leagueId);
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
+    const league = snapshot.data()!;
+    assertLeagueScheduleVersion(league, input.expectedVersion);
+    const result = await mutate(transaction, league);
+    transaction.update(ref, { tenantId: authority.tenantId, lifecycleVersion: input.expectedVersion + 1 });
+    return result;
+  }));
 }
 
 function eventInterval(data: FirebaseFirestore.DocumentData): Interval | null {
@@ -722,13 +782,11 @@ export function findExternalBookingConflicts(
 async function validateExternalConflicts(
   leagueId: string,
   games: NormalizedLeagueGame[],
-  teamEventSnapshots: FirebaseFirestore.QuerySnapshot[]
+  teamEventSnapshots: FirebaseFirestore.QuerySnapshot[],
+  transaction: FirebaseFirestore.Transaction
 ): Promise<void> {
-  const dates = games.map(game => game.date).sort();
-  const bookingSnapshot = await adminDb.collection('scheduleBookings')
-    .where('date', '>=', dates[0])
-    .where('date', '<=', dates[dates.length - 1])
-    .get();
+  const bookings = await Promise.all([...new Set(games.map(game => game.date))].map(date => transaction.get(adminDb.collection('scheduleBookings').where('date', '==', date))));
+  const bookingSnapshot = { docs: bookings.flatMap(snapshot => snapshot.docs) };
   const conflicts = findExternalBookingConflicts(
     leagueId,
     games,
@@ -812,60 +870,6 @@ function teamEvent(
   };
 }
 
-async function commitOperations(
-  operations: Array<(batch: FirebaseFirestore.WriteBatch) => void>
-): Promise<void> {
-  for (let index = 0; index < operations.length; index += BATCH_SIZE) {
-    const batch = adminDb.batch();
-    operations.slice(index, index + BATCH_SIZE).forEach(operation => operation(batch));
-    await batch.commit();
-  }
-}
-
-type ProjectionBackup = {
-  ref: FirebaseFirestore.DocumentReference;
-  data: FirebaseFirestore.DocumentData;
-};
-
-function backupDocuments(
-  documents: FirebaseFirestore.QueryDocumentSnapshot[]
-): ProjectionBackup[] {
-  return documents.map(document => ({ ref: document.ref, data: document.data() }));
-}
-
-async function restoreLeagueProjection(
-  leagueId: string,
-  bookingBackups: ProjectionBackup[],
-  eventBackups: ProjectionBackup[]
-): Promise<void> {
-  const sourceId = `league:${leagueId}`;
-  const [currentBookings, currentLeagueEvents, currentSourceEvents] = await Promise.all([
-    adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId).get(),
-    adminDb.collectionGroup('events').where('leagueId', '==', leagueId).get(),
-    adminDb.collectionGroup('events').where('sourceId', '==', sourceId).get(),
-  ]);
-  const currentEvents = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-  [...currentLeagueEvents.docs, ...currentSourceEvents.docs].forEach(document => {
-    if (document.data().sourceId === sourceId || document.id.startsWith(`lg_${leagueId}_`)) {
-      currentEvents.set(document.ref.path, document);
-    }
-  });
-  await commitOperations([
-    ...currentBookings.docs.map(document =>
-      (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-    ),
-    ...[...currentEvents.values()].map(document =>
-      (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-    ),
-    ...bookingBackups.map(backup =>
-      (batch: FirebaseFirestore.WriteBatch) => batch.set(backup.ref, backup.data)
-    ),
-    ...eventBackups.map(backup =>
-      (batch: FirebaseFirestore.WriteBatch) => batch.set(backup.ref, backup.data)
-    ),
-  ]);
-}
-
 export function prepareLeagueScheduleClearUpdates(
   mode: LeagueScheduleClearMode,
   actorUid: string,
@@ -888,173 +892,42 @@ export async function deployLeagueSchedule(input: LeagueScheduleDeploymentInput)
   appendedGame?: NormalizedLeagueGame;
   idempotent: boolean;
 }> {
-  if (!ID_PATTERN.test(input.leagueId)) {
-    throw new ScheduleDeploymentError('INVALID_LEAGUE', 'Invalid league identifier.');
-  }
-  const leagueRef = adminDb.collection('leagues').doc(input.leagueId);
-  const leagueSnapshot = await leagueRef.get();
-  if (!leagueSnapshot.exists) {
-    throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
-  }
-  const initialLeague = leagueSnapshot.data() as LeagueData;
-  if (input.actor.role !== 'superadmin' && initialLeague.creatorId !== input.actor.uid) {
-    throw new ScheduleDeploymentError(
-      'FORBIDDEN',
-      'Only the league organizer can deploy this schedule.',
-      403
-    );
-  }
-
-  const holder = randomUUID();
-  await acquireScheduleMutationLock(holder);
-  try {
-    const lockedLeagueSnapshot = await leagueRef.get();
-    if (!lockedLeagueSnapshot.exists) {
-      throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
-    }
-    const league = lockedLeagueSnapshot.data() as LeagueData;
-    if (input.actor.role !== 'superadmin' && league.creatorId !== input.actor.uid) {
-      throw new ScheduleDeploymentError(
-        'FORBIDDEN',
-        'Only the league organizer can deploy this schedule.',
-        403
-      );
-    }
-  const prepared = prepareLeagueScheduleForDeployment(
-      input.leagueId,
-      league,
-      input.action,
-      input.games,
-      input.game
-  );
-  if (prepared.idempotent) return prepared;
-
-    if (input.action === 'replace') {
-      validateLeagueDeploymentIntegrity(league, prepared.games);
-    } else {
-      validateLeagueAppendIntegrity(league, prepared.games);
-    }
-
-    const oldSchedule = Array.isArray(league.schedule) ? league.schedule as RawGame[] : [];
-    const relevantTeamIds = new Set<string>([
-      ...prepared.games.flatMap(game => [game.team1Id, game.team2Id]),
-      ...oldSchedule.flatMap(game => [text(game.team1Id, 200), text(game.team2Id, 200)]),
-      ...(Array.isArray(league.memberTeamIds) ? league.memberTeamIds.map(value => text(value, 200)) : []),
-    ].filter(ID_PATTERN.test.bind(ID_PATTERN)));
-    const teamEventSnapshots = await Promise.all(
-      [...relevantTeamIds].map(teamId =>
-        adminDb.collection('teams').doc(teamId).collection('events').get()
-      )
-    );
-    const resourceEventSnapshots = await Promise.all(
-      [...new Set(prepared.games.map(game => game.resourceId))].map(resourceId =>
-        adminDb.collectionGroup('events').where('resourceId', '==', resourceId).get()
-      )
-    );
-    const locationEventSnapshots = await Promise.all(
-      [...new Set(prepared.games.map(game => game.location))].map(location =>
-        adminDb.collectionGroup('events').where('location', '==', location).get()
-      )
-    );
-    await validateExternalConflicts(
-      input.leagueId,
-      prepared.games,
-      [...teamEventSnapshots, ...resourceEventSnapshots, ...locationEventSnapshots]
-    );
-
-    const sourceId = `league:${input.leagueId}`;
-    const [oldBookingSnapshot, staleLeagueEventsSnapshot, staleSourceEventsSnapshot] = await Promise.all([
-      adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId).get(),
-      adminDb.collectionGroup('events').where('leagueId', '==', input.leagueId).get(),
-      adminDb.collectionGroup('events').where('sourceId', '==', sourceId).get(),
+  return runLeagueScheduleOperation(input, input.action, withoutUndefined({ leagueId: input.leagueId, expectedVersion: input.expectedVersion, games: input.games, game: input.game }), async (transaction, league) => {
+    const prepared = prepareLeagueScheduleForDeployment(input.leagueId, league, input.action, input.games, input.game);
+    if (prepared.idempotent) return prepared;
+    if (input.action === 'replace') validateLeagueDeploymentIntegrity(league, prepared.games);
+    else validateLeagueAppendIntegrity(league, prepared.games);
+    const relevantTeams = [...new Set(prepared.games.flatMap(game => [game.team1Id, game.team2Id]))];
+    const snapshots = await Promise.all([
+      ...relevantTeams.map(id => transaction.get(adminDb.collection('teams').doc(id).collection('events'))),
+      ...[...new Set(prepared.games.map(game => game.resourceId))].map(id => transaction.get(adminDb.collectionGroup('events').where('resourceId', '==', id))),
+      ...[...new Set(prepared.games.map(game => game.location))].map(location => transaction.get(adminDb.collectionGroup('events').where('location', '==', location))),
     ]);
-    const previousEventDocuments = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    [...staleLeagueEventsSnapshot.docs, ...staleSourceEventsSnapshot.docs].forEach(document => {
-      if (document.data().sourceId === sourceId || document.id.startsWith(`lg_${input.leagueId}_`)) {
-        previousEventDocuments.set(document.ref.path, document);
-      }
-    });
-    const desiredBookingPaths = new Set(prepared.games.map(game =>
-      adminDb.collection('scheduleBookings').doc(bookingId(input.leagueId, game.id)).path
-    ));
-    const desiredEventPaths = new Set(prepared.games.flatMap(game =>
-      [game.team1Id, game.team2Id].map(teamId =>
-        adminDb.collection('teams').doc(teamId).collection('events')
-          .doc(eventId(input.leagueId, game.id)).path
-      )
-    ));
-    const operations: Array<(batch: FirebaseFirestore.WriteBatch) => void> = [];
-
-    oldBookingSnapshot.docs.forEach(document => {
-      if (!desiredBookingPaths.has(document.ref.path)) {
-        operations.push(batch => batch.delete(document.ref));
-      }
-    });
-    previousEventDocuments.forEach(document => {
-      if (document.id.startsWith(`lg_${input.leagueId}_`) && !desiredEventPaths.has(document.ref.path)) {
-        operations.push(batch => batch.delete(document.ref));
-      }
-    });
-
+    await validateExternalConflicts(input.leagueId, prepared.games, snapshots, transaction);
+    const clear = await prepareLeagueProjectionClear(transaction, input.leagueId);
     const now = new Date().toISOString();
-    const leagueName = text(league.name, 160) || 'League';
-    prepared.games.forEach(game => {
+    clear();
+    for (const game of prepared.games) {
       const interval = intervalForGame(game);
-      const bookingRef = adminDb.collection('scheduleBookings')
-        .doc(bookingId(input.leagueId, game.id));
-      operations.push(batch => batch.set(bookingRef, {
-        id: bookingRef.id,
-        sourceType: 'league',
-        sourceId,
-        sourceGameId: game.id,
-        leagueId: input.leagueId,
-        teamIds: [game.team1Id, game.team2Id],
-        resourceId: game.resourceId,
-        location: game.location,
-        date: game.date,
-        startMinute: interval.startMinute,
-        endMinute: interval.endMinute,
-        startTime: game.time,
-        durationMinutes: game.durationMinutes,
-        updatedAt: now,
-      }));
-      [game.team1Id, game.team2Id].forEach(teamId => {
-        const ref = adminDb.collection('teams').doc(teamId).collection('events')
-          .doc(eventId(input.leagueId, game.id));
-        operations.push(batch => batch.set(
-          ref,
-          teamEvent(input.leagueId, leagueName, game, teamId, now)
-        ));
+      const ref = adminDb.collection('scheduleBookings').doc(bookingId(input.leagueId, game.id));
+      transaction.set(ref, {
+        id: ref.id, sourceType: 'league', sourceId: `league:${input.leagueId}`, sourceGameId: game.id,
+        leagueId: input.leagueId, teamIds: [game.team1Id, game.team2Id], resourceId: game.resourceId,
+        location: game.location, date: game.date, startMinute: interval.startMinute, endMinute: interval.endMinute,
+        startTime: game.time, durationMinutes: game.durationMinutes, updatedAt: now,
       });
-    });
-    const leagueUpdates: Record<string, unknown> = {
-      schedule: prepared.games,
-      scheduleUpdatedAt: now,
-      scheduleUpdatedBy: input.actor.uid,
-    };
-    if (input.action === 'replace') {
-      activeLeagueTeams(league).forEach((_, teamId) => {
-        leagueUpdates[`teams.${teamId}.wins`] = 0;
-        leagueUpdates[`teams.${teamId}.losses`] = 0;
-        leagueUpdates[`teams.${teamId}.ties`] = 0;
-        leagueUpdates[`teams.${teamId}.points`] = 0;
-      });
-    }
-    const bookingBackups = backupDocuments(oldBookingSnapshot.docs);
-    const eventBackups = backupDocuments([...previousEventDocuments.values()]);
-    await runRecoverableDeployment(
-      async () => {
-        await commitOperations(operations);
-        await leagueRef.update(leagueUpdates);
-      },
-      async () => {
-        await restoreLeagueProjection(input.leagueId, bookingBackups, eventBackups);
+      for (const teamId of [game.team1Id, game.team2Id]) {
+        transaction.set(adminDb.collection('teams').doc(teamId).collection('events').doc(eventId(input.leagueId, game.id)),
+          teamEvent(input.leagueId, text(league.name, 160) || 'League', game, teamId, now));
       }
-    );
-    return prepared;
-  } finally {
-    await releaseScheduleMutationLock(holder);
-  }
+    }
+    const updates: Record<string, unknown> = { schedule: prepared.games, scheduleUpdatedAt: now, scheduleUpdatedBy: input.actor.uid };
+    if (input.action === 'replace') activeLeagueTeams(league).forEach((_, teamId) => {
+      for (const field of ['wins', 'losses', 'ties', 'points']) updates[`teams.${teamId}.${field}`] = 0;
+    });
+    transaction.update(adminDb.collection('leagues').doc(input.leagueId), updates);
+    return withoutUndefined(prepared);
+  });
 }
 
 async function mutateLeagueScheduleGameUnlocked(input: LeagueScheduleGameMutationInput): Promise<NormalizedLeagueGame[]> {
@@ -1179,137 +1052,35 @@ export async function mutateLeagueScheduleGame(
 }
 
 export async function removeLeagueTeamMembership(input: LeagueTeamRemovalInput): Promise<void> {
-  if (!ID_PATTERN.test(input.leagueId) || !ID_PATTERN.test(input.teamId)) {
-    throw new ScheduleDeploymentError('INVALID_LEAGUE_TEAM', 'Invalid league or team identifier.');
-  }
-  const leagueRef = adminDb.collection('leagues').doc(input.leagueId);
-  const holder = randomUUID();
-  await acquireScheduleMutationLock(holder);
-  try {
-    const snapshot = await leagueRef.get();
-    if (!snapshot.exists) throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
-    const league = snapshot.data() as LeagueData;
-    if (input.actor.role !== 'superadmin' && league.creatorId !== input.actor.uid) {
-      throw new ScheduleDeploymentError('FORBIDDEN', 'Only the league organizer can remove a team.', 403);
-    }
-
-    const sourceId = `league:${input.leagueId}`;
-    const [bookings, leagueEvents, sourceEvents] = await Promise.all([
-      adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId).get(),
-      adminDb.collectionGroup('events').where('leagueId', '==', input.leagueId).get(),
-      adminDb.collectionGroup('events').where('sourceId', '==', sourceId).get(),
-    ]);
-    const eventDocuments = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    [...leagueEvents.docs, ...sourceEvents.docs].forEach(document => {
-      const data = document.data();
-      if (data.sourceId === sourceId || document.id.startsWith(`lg_${input.leagueId}_`)) {
-        eventDocuments.set(document.ref.path, document);
-      }
+  if (!ID_PATTERN.test(input.teamId)) throw new ScheduleDeploymentError('INVALID_LEAGUE_TEAM', 'Invalid team.');
+  await runLeagueScheduleOperation(input, 'remove-team', { leagueId: input.leagueId, teamId: input.teamId, expectedVersion: input.expectedVersion }, async (transaction, league) => {
+    if (!league.teams?.[input.teamId]) throw new ScheduleDeploymentError('LEAGUE_TEAM_CONFLICT', 'The team is no longer enrolled.', 409);
+    const teamRef = adminDb.collection('teams').doc(input.teamId);
+    const team = await transaction.get(teamRef);
+    const clear = await prepareLeagueProjectionClear(transaction, input.leagueId);
+    clear();
+    transaction.update(adminDb.collection('leagues').doc(input.leagueId), {
+      ...prepareLeagueScheduleClearUpdates('clear', input.actor.uid, new Date().toISOString()),
+      [`teams.${input.teamId}`]: FieldValue.delete(), memberTeamIds: FieldValue.arrayRemove(input.teamId),
     });
-
-    const now = new Date().toISOString();
-    const leagueUpdates = {
-      ...prepareLeagueScheduleClearUpdates('clear', input.actor.uid, now),
-      [`teams.${input.teamId}`]: FieldValue.delete(),
-      memberTeamIds: FieldValue.arrayRemove(input.teamId),
-      rosterUpdatedAt: now,
-      rosterUpdatedBy: input.actor.uid,
-    };
-    const operations: Array<(batch: FirebaseFirestore.WriteBatch) => void> = [
-      ...bookings.docs.map(document =>
-        (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-      ),
-      ...[...eventDocuments.values()].map(document =>
-        (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-      ),
-      batch => batch.update(leagueRef, leagueUpdates),
-    ];
-    if (!input.teamId.startsWith('manual_') && !input.teamId.startsWith('recruit_')) {
-      operations.push(batch => batch.update(adminDb.collection('teams').doc(input.teamId), {
-        [`leagueIds.${input.leagueId}`]: FieldValue.delete(),
-      }));
-    }
-    await commitOperations(operations);
-  } finally {
-    await releaseScheduleMutationLock(holder);
-  }
+    if (team.exists) transaction.update(teamRef, { [`leagueIds.${input.leagueId}`]: FieldValue.delete() });
+    return { success: true };
+  });
 }
 
 export async function clearLeagueSchedule(input: LeagueScheduleClearInput): Promise<void> {
-  if (!ID_PATTERN.test(input.leagueId)) {
-    throw new ScheduleDeploymentError('INVALID_LEAGUE', 'Invalid league identifier.');
-  }
-  if (!['clear', 'archive', 'purge'].includes(input.mode)) {
-    throw new ScheduleDeploymentError('INVALID_CLEAR_MODE', 'Invalid league schedule cleanup mode.');
-  }
-
-  const leagueRef = adminDb.collection('leagues').doc(input.leagueId);
-  const leagueSnapshot = await leagueRef.get();
-  if (!leagueSnapshot.exists) {
-    throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
-  }
-  const initialLeague = leagueSnapshot.data() as LeagueData;
-  if (input.actor.role !== 'superadmin' && initialLeague.creatorId !== input.actor.uid) {
-    throw new ScheduleDeploymentError(
-      'FORBIDDEN',
-      'Only the league organizer can clear this schedule.',
-      403
-    );
-  }
-
-  const holder = randomUUID();
-  await acquireScheduleMutationLock(holder);
-  try {
-    const lockedLeagueSnapshot = await leagueRef.get();
-    if (!lockedLeagueSnapshot.exists) {
-      throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
-    }
-    const league = lockedLeagueSnapshot.data() as LeagueData;
-    if (input.actor.role !== 'superadmin' && league.creatorId !== input.actor.uid) {
-      throw new ScheduleDeploymentError(
-        'FORBIDDEN',
-        'Only the league organizer can clear this schedule.',
-        403
-      );
-    }
-
-    const sourceId = `league:${input.leagueId}`;
-    const [bookings, leagueEvents, sourceEvents] = await Promise.all([
-      adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId).get(),
-      adminDb.collectionGroup('events').where('leagueId', '==', input.leagueId).get(),
-      adminDb.collectionGroup('events').where('sourceId', '==', sourceId).get(),
-    ]);
-    const eventDocuments = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    [...leagueEvents.docs, ...sourceEvents.docs].forEach(document => {
-      const data = document.data();
-      if (data.sourceId === sourceId || document.id.startsWith(`lg_${input.leagueId}_`)) {
-        eventDocuments.set(document.ref.path, document);
-      }
+  if (!['clear', 'archive', 'purge'].includes(input.mode)) throw new ScheduleDeploymentError('INVALID_CLEAR_MODE', 'Invalid cleanup mode.');
+  await runLeagueScheduleOperation(input, 'clear', { leagueId: input.leagueId, mode: input.mode, expectedVersion: input.expectedVersion }, async (transaction, league) => {
+    const teams = input.mode === 'purge' ? await Promise.all(Object.keys(league.teams || {}).map(id => transaction.get(adminDb.collection('teams').doc(id)))) : [];
+    const clear = await prepareLeagueProjectionClear(transaction, input.leagueId);
+    clear();
+    transaction.update(adminDb.collection('leagues').doc(input.leagueId), {
+      ...prepareLeagueScheduleClearUpdates(input.mode, input.actor.uid, new Date().toISOString()),
+      ...(input.mode === 'purge' ? { memberTeamIds: [] } : {}),
     });
-    const deletionOperations = [
-      ...bookings.docs.map(document =>
-        (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-      ),
-      ...[...eventDocuments.values()].map(document =>
-        (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-      ),
-    ];
-
-    const now = new Date().toISOString();
-    const bookingBackups = backupDocuments(bookings.docs);
-    const eventBackups = backupDocuments([...eventDocuments.values()]);
-    await runRecoverableDeployment(
-      async () => {
-        await commitOperations(deletionOperations);
-        await leagueRef.update(prepareLeagueScheduleClearUpdates(input.mode, input.actor.uid, now));
-      },
-      async () => {
-        await restoreLeagueProjection(input.leagueId, bookingBackups, eventBackups);
-      }
-    );
-  } finally {
-    await releaseScheduleMutationLock(holder);
-  }
+    for (const team of teams) if (team.exists) transaction.update(team.ref, { [`leagueIds.${input.leagueId}`]: FieldValue.delete() });
+    return { success: true };
+  });
 }
 
 function normalizeSchedulerConfiguration(value: unknown): Record<string, unknown> {
@@ -1370,77 +1141,21 @@ function normalizeSchedulerConfiguration(value: unknown): Record<string, unknown
 }
 
 export async function configureLeagueSchedule(input: LeagueScheduleConfigurationInput): Promise<void> {
-  if (!ID_PATTERN.test(input.leagueId)) {
-    throw new ScheduleDeploymentError('INVALID_LEAGUE', 'Invalid league identifier.');
-  }
   const schedulerConfig = normalizeSchedulerConfiguration(input.config);
-  await withScheduleMutationLock(async () => {
-    const leagueRef = adminDb.collection('leagues').doc(input.leagueId);
-    const snapshot = await leagueRef.get();
-    if (!snapshot.exists) throw new ScheduleDeploymentError('LEAGUE_NOT_FOUND', 'League not found.', 404);
-    const league = snapshot.data() as LeagueData;
-    if (input.actor.role !== 'superadmin' && league.creatorId !== input.actor.uid) {
-      throw new ScheduleDeploymentError('FORBIDDEN', 'Only the league organizer can configure this schedule.', 403);
+  await runLeagueScheduleOperation(input, 'configure', { leagueId: input.leagueId, expectedVersion: input.expectedVersion, config: schedulerConfig, invalidateExisting: input.invalidateExisting === true }, async (transaction, league) => {
+    if ((league.schedule || []).length > 0 && input.invalidateExisting !== true) {
+      throw new ScheduleDeploymentError('SCHEDULE_CONFIGURATION_CONFLICT', 'Changing scheduler parameters requires explicit invalidation of the published schedule.', 409);
     }
-    const existingSchedule = Array.isArray(league.schedule) ? league.schedule : [];
-    if (existingSchedule.length > 0 && input.invalidateExisting !== true) {
-      throw new ScheduleDeploymentError(
-        'SCHEDULE_CONFIGURATION_CONFLICT',
-        'Changing scheduler parameters requires explicit invalidation of the published schedule.',
-        409
-      );
-    }
-
-    const now = new Date().toISOString();
+    const clear = await prepareLeagueProjectionClear(transaction, input.leagueId);
     const updates: Record<string, unknown> = {
-      schedulerConfig,
-      startDate: schedulerConfig.startDate,
-      endDate: schedulerConfig.endDate,
-      scheduleUpdatedAt: now,
-      scheduleUpdatedBy: input.actor.uid,
+      schedulerConfig, startDate: schedulerConfig.startDate, endDate: schedulerConfig.endDate,
+      ...prepareLeagueScheduleClearUpdates('clear', input.actor.uid, new Date().toISOString()),
     };
-    if (existingSchedule.length === 0) {
-      await leagueRef.update(updates);
-      return;
-    }
-
-    const sourceId = `league:${input.leagueId}`;
-    const [bookings, leagueEvents, sourceEvents] = await Promise.all([
-      adminDb.collection('scheduleBookings').where('sourceId', '==', sourceId).get(),
-      adminDb.collectionGroup('events').where('leagueId', '==', input.leagueId).get(),
-      adminDb.collectionGroup('events').where('sourceId', '==', sourceId).get(),
-    ]);
-    const eventDocuments = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-    [...leagueEvents.docs, ...sourceEvents.docs].forEach(document => {
-      if (document.data().sourceId === sourceId || document.id.startsWith(`lg_${input.leagueId}_`)) {
-        eventDocuments.set(document.ref.path, document);
-      }
-    });
-    const deletionOperations = [
-      ...bookings.docs.map(document =>
-        (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-      ),
-      ...[...eventDocuments.values()].map(document =>
-        (batch: FirebaseFirestore.WriteBatch) => batch.delete(document.ref)
-      ),
-    ];
-    updates.schedule = [];
     activeLeagueTeams(league).forEach((_, teamId) => {
-      updates[`teams.${teamId}.wins`] = 0;
-      updates[`teams.${teamId}.losses`] = 0;
-      updates[`teams.${teamId}.ties`] = 0;
-      updates[`teams.${teamId}.points`] = 0;
+      for (const field of ['wins', 'losses', 'ties', 'points']) updates[`teams.${teamId}.${field}`] = 0;
     });
-    await runRecoverableDeployment(
-      async () => {
-        await commitOperations(deletionOperations);
-        await leagueRef.update(updates);
-      },
-      () => restoreLeagueProjection(
-        input.leagueId,
-        backupDocuments(bookings.docs),
-        backupDocuments([...eventDocuments.values()])
-      )
-    );
+    clear();
+    transaction.update(adminDb.collection('leagues').doc(input.leagueId), updates);
+    return { success: true };
   });
 }
