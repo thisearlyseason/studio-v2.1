@@ -75,6 +75,11 @@ test('elite demo bootstrap server-seeds tournament events for every protected sq
       assert.equal(event?.eventType, 'tournament');
       assert.ok(event?.tournamentTeamsData?.length >= 2);
       assert.ok(event?.tournamentGames?.length >= 1);
+      assert.equal(records.get(`teams/${teamId}/feedPosts/demo_feed_1_${teamId}`)?.isDemo, true);
+      assert.equal(records.get(`teams/${teamId}/incidents/demo_incident_${teamId}`)?.isDemo, true);
+      assert.equal(records.get(`teams/${teamId}/files/demo_file_${teamId}`)?.isDemo, true);
+      assert.equal(records.get(`teams/${teamId}/groupChats/chat1_${teamId}`)?.memberIds?.includes(uid), true);
+      assert.equal(records.get(`teams/${teamId}/members/u3_${teamId}/signatures/demo_waiver_${teamId}`)?.isDemo, true);
     }
   } finally {
     app.dispose();

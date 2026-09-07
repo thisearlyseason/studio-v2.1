@@ -207,6 +207,9 @@ test('demo tournament lifecycle data is server-seeded and never written by the b
   assert.match(route, /collection\('events'\)\.doc\(tournament\.id\)/);
   assert.match(seeder, /filter\(e => e\.isTournament !== true && e\.eventType !== 'tournament'\)/);
   assert.doesNotMatch(seeder, /data\.eventBrackets\.forEach/);
+  for (const protectedWrite of ['data.feed.forEach', 'data.incidents.forEach', 'data.files.forEach', 'data.signatures.forEach', 'data.chats.forEach']) {
+    assert.doesNotMatch(seeder, new RegExp(protectedWrite.replaceAll('.', '\\.')));
+  }
 });
 
 test('demo blueprint merges only protected team roots created by the server', async () => {

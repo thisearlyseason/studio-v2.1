@@ -775,7 +775,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
               }
             }
             data.equipment.forEach(eq => batch.set(doc(db, 'teams', v.id, 'equipment', eq.id), clean(eq)));
-            data.incidents.forEach(inc => batch.set(doc(db, 'teams', v.id, 'incidents', inc.id), clean(inc)));
             data.games.forEach(g => {
                 const matchTeamIds = [v.id, 'mock_opp'].filter(Boolean);
                 batch.set(doc(db, 'teams', v.id, 'games', g.id), clean({ ...g, teamId: v.id, matchTeamIds, createdAt: now }));
@@ -784,14 +783,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             data.drills.forEach(d => batch.set(doc(db, 'teams', v.id, 'drills', d.id), clean(d)));
             data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', v.id, 'practice_templates', pt.id), clean(pt)));
             data.documents.forEach(d => batch.set(doc(db, 'teams', v.id, 'documents', d.id), clean({ ...d, ownerUserId: userId, teamId: v.id })));
-            data.files.forEach(f => batch.set(doc(db, 'teams', v.id, 'files', f.id), clean({ ...f, teamId: v.id })));
             data.alerts.forEach(a => batch.set(doc(db, 'teams', v.id, 'alerts', a.id), clean(a)));
-            data.feed.forEach(p => batch.set(doc(db, 'teams', v.id, 'feedPosts', p.id), clean(p)));
-            data.signatures.forEach(s => s.sigs.forEach(sig => batch.set(doc(db, 'teams', v.id, 'members', sig.userId, 'signatures', sig.documentId), clean(sig))));
-            await batch.flush();
-            data.chats.forEach(c => {
-              batch.set(doc(db, 'teams', v.id, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: v.id, createdAt: c.createdAt }));
-            });
             await batch.flush();
         }
 
@@ -1109,7 +1101,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
           .forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean({ ...e, teamId, isDemo: true })));
         data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean({ ...d, isDemo: true })));
         data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', teamId, 'practice_templates', pt.id), clean({ ...pt, isDemo: true })));
-        data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean({ ...p, isDemo: true })));
         data.documents.forEach(d => batch.set(doc(db, 'teams', teamId, 'documents', d.id), clean({ ...d, ownerUserId: userId, isDemo: true })));
         data.alerts.forEach(a => batch.set(doc(db, 'teams', teamId, 'alerts', a.id), clean({ ...a, isDemo: true })));
         data.volunteers.forEach(v => batch.set(doc(db, 'teams', teamId, 'volunteers', v.id), clean({ ...v, isDemo: true })));
@@ -1125,21 +1116,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         }
 
         data.equipment.forEach(eq => batch.set(doc(db, 'teams', teamId, 'equipment', eq.id), clean({ ...eq, isDemo: true })));
-        data.incidents.forEach(inc => batch.set(doc(db, 'teams', teamId, 'incidents', inc.id), clean({ ...inc, isDemo: true })));
         // Seed game results for Scorekeeping page
         data.games.forEach(g => {
             const matchTeamIds = [teamId, 'mock_opp'].filter(Boolean);
             batch.set(doc(db, 'teams', teamId, 'games', g.id), clean({ ...g, teamId, matchTeamIds, createdAt: now, isDemo: true }));
         });
         await batch.flush();
-        // Seed files for Library
-        data.files.forEach(f => batch.set(doc(db, 'teams', teamId, 'files', f.id), clean({ ...f, teamId, isDemo: true })));
-        // Seed document signatures for Coaches Corner / Files
-        data.signatures.forEach(s => s.sigs.forEach(sig => batch.set(doc(db, 'teams', teamId, 'members', sig.userId, 'signatures', sig.documentId), clean({ ...sig, isDemo: true }))));
-        await batch.flush();
-        data.chats.forEach(c => {
-            batch.set(doc(db, 'teams', teamId, 'groupChats', c.id), clean({ id: c.id, name: c.name, createdBy: c.createdBy, memberIds: c.memberIds, isDeleted: c.isDeleted, teamId: c.teamId, createdAt: c.createdAt, isDemo: true }));
-        });
         await batch.flush();
     }
 

@@ -341,9 +341,70 @@ export async function POST(req: NextRequest) {
 
     for (const shell of shells) {
       const teamRef = adminDb.collection('teams').doc(shell.id);
-      // Chat messages are server-authored in production. Seed the deterministic
-      // demo conversation here so the client blueprint never has to bypass the
-      // protected message-create route.
+      // These collections are server-authored in production. Seed deterministic
+      // demo records here so the browser never has to bypass their protected rules.
+      const demoChats = [
+        { id: `chat1_${shell.id}`, name: 'Squad Main Channel', memberIds: [uid, `u1_${shell.id}`, `u2_${shell.id}`, `u3_${shell.id}`] },
+        { id: `chat2_${shell.id}`, name: 'Coaching Staff', memberIds: [uid, `u1_${shell.id}`, `u2_${shell.id}`] },
+      ];
+      for (const chat of demoChats) {
+        batch.set(teamRef.collection('groupChats').doc(chat.id), {
+          ...chat,
+          createdBy: uid,
+          isDeleted: false,
+          teamId: shell.id,
+          createdAt: messageTimestamp,
+          isDemo: true,
+        }, { merge: true });
+      }
+      batch.set(teamRef.collection('feedPosts').doc(`demo_feed_1_${shell.id}`), {
+        id: `demo_feed_1_${shell.id}`,
+        teamId: shell.id,
+        type: 'user',
+        content: 'Tournament weekend is almost here. Brackets and preparation notes are ready.',
+        author: 'Head Coach',
+        authorId: `u1_${shell.id}`,
+        createdAt: messageTimestamp,
+        likes: [],
+        isDemo: true,
+      });
+      batch.set(teamRef.collection('incidents').doc(`demo_incident_${shell.id}`), {
+        id: `demo_incident_${shell.id}`,
+        teamId: shell.id,
+        title: 'Ankle Sprain - Grade 1',
+        date: messageTimestamp,
+        time: '3:45 PM',
+        location: 'Practice Court B',
+        description: 'Player landed awkwardly after a contested jump. Immediate swelling noted.',
+        emergencyServicesCalled: false,
+        severity: 'minor',
+        treatmentProvided: 'RICE protocol initiated. Follow-up with physio required.',
+        reportedBy: 'Head Coach',
+        followUpRequired: true,
+        isDemo: true,
+      });
+      batch.set(teamRef.collection('files').doc(`demo_file_${shell.id}`), {
+        id: `demo_file_${shell.id}`,
+        teamId: shell.id,
+        name: 'Season Strategy Playbook.pdf',
+        type: 'pdf',
+        size: '2.4 MB',
+        sizeBytes: 2516582,
+        url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+        category: 'Playbook',
+        description: 'Full season tactical overview and formation guides.',
+        date: messageTimestamp,
+        isDemo: true,
+      });
+      batch.set(teamRef.collection('members').doc(`u3_${shell.id}`).collection('signatures').doc(`demo_waiver_${shell.id}`), {
+        id: `demo_waiver_${shell.id}`,
+        documentId: `w1_${shell.id}`,
+        teamId: shell.id,
+        userId: `u3_${shell.id}`,
+        userName: 'Team Player',
+        timestamp: messageTimestamp,
+        isDemo: true,
+      });
       const demoMessages = [
         { chatId: `chat1_${shell.id}`, id: `msg1_${shell.id}`, author: 'Head Coach', authorId: `u1_${shell.id}`, content: 'Ready for the tournament this weekend! Brackets are live.' },
         { chatId: `chat1_${shell.id}`, id: `msg2_${shell.id}`, author: 'Team Player', authorId: `u3_${shell.id}`, content: 'Practiced all morning. See everyone there.' },
