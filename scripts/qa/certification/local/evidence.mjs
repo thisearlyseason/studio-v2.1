@@ -108,6 +108,7 @@ export function makeDimension(state, caseIds = [], note = '') {
 
 function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expectedCommit } = {}) {
   const cleanup = result.cleanup;
+  const exactCompetitionContract = /^(leagues-(create-edit-clone-delete|schedule-generation-deployment|registration-assignment|scorekeeper-spectator)|tournaments-(create-configure-replicate-archive|schedule-pools-brackets-referees|scoring-dispute-public-standings))$/.test(result.scenarioId);
   if (!cleanup || typeof cleanup !== 'object') throw new Error(`${result.scenarioId} requires cleanup metadata.`);
   assertClosedObject(cleanup, ['owner', 'reference', 'selectors', 'counts', 'state', 'proof'], 'Cleanup');
   if (cleanup.owner !== scenario.cleanupOwner) {
@@ -140,7 +141,7 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
       const proofPath = resolveContainedArtifact(artifactRoot, proof);
       const parsed = JSON.parse(readFileSync(proofPath, 'utf8'));
       assertNoProtectedEvidence(parsed, `cleanup artifact ${proof}`);
-      assertClosedObject(parsed, ['runId', 'commit', 'fixtureRunId', 'state', 'counts', 'measured', 'capturedAt'], 'Cleanup artifact');
+      assertClosedObject(parsed, ['runId', 'commit', 'fixtureRunId', 'cleanupId', 'selectors', 'state', 'counts', 'measured', 'capturedAt'], 'Cleanup artifact');
       assertClosedObject(parsed.counts, ['deleted', 'restored', 'retainedAuditRecords'], 'Cleanup artifact count');
       if (parsed.measured !== undefined) {
         assertClosedObject(parsed.measured, ['fixture', 'dynamic'], 'Cleanup measurement');
@@ -165,6 +166,9 @@ function validateCleanup(scenario, result, { artifactRoot, expectedRunId, expect
       }
       if ((expectedRunId && parsed.runId !== expectedRunId) || (expectedCommit && parsed.commit !== expectedCommit)) {
         throw new Error(`${result.scenarioId} cleanup proof run/candidate provenance does not match.`);
+      }
+      if (exactCompetitionContract && (parsed.cleanupId !== cleanup.reference || JSON.stringify(parsed.selectors) !== JSON.stringify(cleanup.selectors))) {
+        throw new Error(`${result.scenarioId} cleanup proof reference/selectors do not match the measured cleanup.`);
       }
       const cleanupCapturedAt = parseTimestamp(parsed.capturedAt, 'cleanup artifact capturedAt');
       if (cleanupCapturedAt < parseTimestamp(result.startedAt, 'result startedAt')) {
@@ -287,9 +291,15 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
     if (!Array.isArray(caseRecord.artifacts)) throw new Error(`${caseRecord.caseId} requires artifacts.`);
     if (caseShape === 'operations' && caseRecord.state === 'OBSERVED') {
       const execution = caseRecord.execution;
-      assertClosedObject(execution, ['actor', 'operation', 'requests', 'reconciliation', 'observer', 'timeBound', 'cleanupReference'], 'Operation execution');
+      const exactCompetitionContract = /^(leagues-(create-edit-clone-delete|schedule-generation-deployment|registration-assignment|scorekeeper-spectator)|tournaments-(create-configure-replicate-archive|schedule-pools-brackets-referees|scoring-dispute-public-standings))$/.test(result.scenarioId);
+      assertClosedObject(execution, ['actor', 'operation', 'requests', 'reconciliation', 'observer', 'timeBound', 'cleanupReference', 'runId', 'requestId', 'postconditionIds', 'cleanupSelectors', 'method', 'route', 'expectedStatuses'], 'Operation execution');
       for (const key of ['actor', 'operation', 'reconciliation', 'observer', 'timeBound', 'cleanupReference']) assertPlainString(execution?.[key], `operation execution ${key}`);
       if (!Array.isArray(execution.requests) || execution.requests.length === 0) throw new Error(`${caseRecord.caseId} requires operation requests.`);
+      if (exactCompetitionContract && (execution.runId !== caseRecord.runId || !Array.isArray(execution.postconditionIds) || !execution.postconditionIds.length ||
+          !Array.isArray(execution.cleanupSelectors) || !execution.cleanupSelectors.length || !Array.isArray(execution.expectedStatuses) || !execution.expectedStatuses.length)) {
+        throw new Error(`${caseRecord.caseId} requires exact run, postcondition, cleanup-selector, and response-status contracts.`);
+      }
+      if (exactCompetitionContract) for (const key of ['requestId', 'method', 'route']) assertPlainString(execution[key], `operation execution ${key}`);
       assertOperationActorAliases(caseRecord.actorAliases, execution);
       for (const request of execution.requests) {
         assertClosedObject(request, ['evidenceId', 'method', 'pathname', 'status', 'actorAlias', 'invocationType', 'invocationId', 'startedAt', 'completedAt'], 'Operation request');
@@ -307,6 +317,9 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
         const requestStartedAt = parseTimestamp(request.startedAt, 'operation request startedAt');
         const requestCompletedAt = parseTimestamp(request.completedAt, 'operation request completedAt');
         if (requestCompletedAt < requestStartedAt) throw new Error(`${caseRecord.caseId} operation request interval is invalid.`);
+        if (exactCompetitionContract && (request.method !== execution.method || request.pathname !== execution.route || !execution.expectedStatuses.includes(request.status))) {
+          throw new Error(`${caseRecord.caseId} request is outside its frozen method, route, or status contract.`);
+        }
       }
       if (execution.cleanupReference !== result.cleanup?.reference) throw new Error(`${caseRecord.caseId} cleanup reference must bind the exact measured cleanup.`);
     }
@@ -510,7 +523,7 @@ function validateResult(scenario, result, { artifactRoot, caseRequirements, expe
           throw new Error(`${caseRecord.caseId} observed artifact requires exact assertions.`);
         }
         for (const assertion of parsed.assertions || []) {
-          assertClosedObject(assertion, ['id', 'label', 'expected', 'observed', 'capturedAt'], 'Assertion');
+          assertClosedObject(assertion, ['id', 'label', 'expected', 'observed', 'capturedAt', 'postconditionId'], 'Assertion');
           if (caseShape === 'operations' || assertion.id !== undefined) assertPlainString(assertion.id, 'artifact assertion id');
           if (caseShape === 'operations') {
             const owner = `${result.scenarioId}:${caseRecord.caseId}`;

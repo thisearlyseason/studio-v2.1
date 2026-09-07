@@ -63,6 +63,10 @@ for (const failFast of [false, true]) {
 
 test('attendance and RSVP cannot reuse an authenticated browser profile name', () => {
   assert.notEqual(operationSessionName('run', 'attendance', 'parent'), operationSessionName('run', 'rsvp', 'parent'));
+  const longA = operationSessionName('final-certification-run-with-long-id', 'tournaments-create-configure-replicate-archive', 'ui-owner-tournament-archive-cancel');
+  const longB = operationSessionName('final-certification-run-with-long-id', 'tournaments-create-configure-replicate-archive', 'ui-owner-tournament-lifecycle-console');
+  assert.ok(longA.length <= 64, 'browser session names must fit the CLI transport path');
+  assert.notEqual(longA, longB, 'shortened case sessions must remain isolated');
 });
 
 test('scenario discovery registers and reconciles newly created events, descendants and bookings without deleting baseline data', async () => {

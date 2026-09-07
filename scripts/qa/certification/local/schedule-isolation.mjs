@@ -17,12 +17,29 @@ export async function runOperationScenarioSequence(ids, { execute, finalize, onE
   for (const id of ids) {
     let failure;
     let timeout;
+    const controller = new AbortController();
+    const execution = Promise.resolve().then(() => execute(id, { signal: controller.signal }));
     try {
       await Promise.race([
-        execute(id),
-        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(`Operation scenario ${id} timed out after ${timeoutMs}ms.`)), timeoutMs); }),
+        execution,
+        new Promise((_, reject) => { timeout = setTimeout(() => {
+          reject(new Error(`Operation scenario ${id} timed out after ${timeoutMs}ms.`));
+          controller.abort(new Error(`Operation scenario ${id} timed out.`));
+        }, timeoutMs); }),
       ]);
-    } catch (error) { failure = error; }
+    } catch (error) {
+      failure = error;
+      if (controller.signal.aborted) {
+        try {
+          await Promise.race([
+            execution,
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`Operation scenario ${id} did not terminate after abort.`)), Math.min(2_000, Math.max(100, timeoutMs * 4)))),
+          ]);
+        } catch (abortError) {
+          if (!String(abortError?.message || '').includes('timed out')) failure = new AggregateError([failure, abortError], 'Operation timeout and abort termination failed.');
+        }
+      }
+    }
     finally { clearTimeout(timeout); }
     try { await finalize(id); } catch (error) {
       failure = failure ? new AggregateError([failure, error], 'Operation and scenario cleanup failed.') : error;
@@ -36,7 +53,12 @@ export async function runOperationScenarioSequence(ids, { execute, finalize, onE
   if (failures.length) throw new AggregateError(failures, `${failures.length} selected operation scenario(s) failed.`);
 }
 
-export function operationSessionName(prefix, scenarioId, label) { return `${prefix}-${scenarioId}-${label}`; }
+export function operationSessionName(prefix, scenarioId, label) {
+  const exact = `${prefix}-${scenarioId}-${label}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+  if (exact.length <= 64) return exact;
+  const digest = createHash('sha256').update(exact).digest('hex').slice(0, 16);
+  return `${String(prefix).slice(0, 20)}-${String(label).slice(0, 20)}-${digest}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+}
 
 export async function registerScheduleDiscovery({ registry, scopeId, snapshot, registerRoot }) {
   const baseline = new Set(await snapshot());
@@ -135,3 +157,4 @@ export async function registerCompetitionDiscovery({ registry, scopeId, runId, s
     },
   });
 }
+import { createHash } from 'node:crypto';

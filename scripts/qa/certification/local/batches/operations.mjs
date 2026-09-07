@@ -196,7 +196,16 @@ const PUBLIC_SCOREKEEPER_CASES = new Set([
   'league-score-submit', 'league-score-wrong-pin', 'league-score-replay', 'league-score-downstream-conflict',
   'tournament-score-submit', 'tournament-score-wrong-pin', 'tournament-score-replay', 'tournament-score-downstream-conflict', 'tournament-score-narrow-scope',
 ]);
+const EXACT_COMPETITION_ACTORS = Object.freeze({
+  'league-score-outsider-deny': 'qa-removed-member',
+  'tournament-referee-role-deny': 'qa-adult-player-a',
+  'tournament-foreign-staff': 'qa-school-delegate',
+  'tournament-foreign-team': 'qa-coach-owner-b',
+  'tournament-schedule-foreign-deny': 'qa-coach-owner-b',
+  'tournament-score-outsider-deny': 'qa-removed-member',
+});
 function actorForCompetitionCase(base, caseId) {
+  if (EXACT_COMPETITION_ACTORS[caseId]) return EXACT_COMPETITION_ACTORS[caseId];
   if (PUBLIC_SCOREKEEPER_CASES.has(caseId)) return 'qa-public-submitter';
   if (PUBLIC_COMPETITION_CASES.has(caseId)) return 'qa-public-submitter';
   if (MEMBER_COMPETITION_CASES.has(caseId)) return 'qa-team-member';
@@ -220,7 +229,11 @@ const ASSIGNMENT_CASES = new Set([
   'league-assignment-foreign-owner', 'league-assignment-reload', 'league-assignment-console',
   'league-assignment-network', 'league-assignment-desktop', 'league-assignment-mobile',
 ]);
-const routeForCompetitionCase = (base, caseId) => PUBLIC_ACTION_CASES.has(caseId)
+const BROWSER_COMPETITION_DIMENSIONS = new Set(['console', 'network', 'responsive']);
+const browserPathForCompetitionScenario = scenarioId => scenarioId.startsWith('tournaments-') ? '/manage-tournaments' : '/competition';
+const routeForCompetitionCase = (base, caseId, scenarioId, dimension) => caseId === 'tournament-archive-cancel' || (BROWSER_COMPETITION_DIMENSIONS.has(dimension) && dimension !== 'network')
+  ? browserPathForCompetitionScenario(scenarioId)
+  : PUBLIC_ACTION_CASES.has(caseId)
   ? '/api/public/portals/action'
   : caseId === 'league-schedule-direct-write'
     ? '/v1/projects/{projectId}/databases/(default)/documents/leagues/{leagueId}'
@@ -231,7 +244,9 @@ const routeForCompetitionCase = (base, caseId) => PUBLIC_ACTION_CASES.has(caseId
     : ASSIGNMENT_CASES.has(caseId)
       ? '/api/leagues/assignments'
       : base.route;
-const methodForCompetitionCase = caseId => DELETE_COMPETITION_CASES.has(caseId)
+const methodForCompetitionCase = (caseId, dimension) => caseId === 'tournament-archive-cancel' || (BROWSER_COMPETITION_DIMENSIONS.has(dimension) && dimension !== 'network')
+  ? 'GET'
+  : DELETE_COMPETITION_CASES.has(caseId)
   ? 'DELETE'
   : caseId === 'league-schedule-direct-write'
     ? 'PATCH'
@@ -245,7 +260,7 @@ const methodForCompetitionCase = caseId => DELETE_COMPETITION_CASES.has(caseId)
 
 const COMPETITION_EXACT_STATUS = Object.freeze({
   'league-create': [201], 'league-clone': [201], 'league-replay': [201],
-  'league-duplicate': [409], 'league-quota': [409], 'league-partial-clone': [409],
+  'league-duplicate': [409], 'league-quota': [409], 'league-partial-clone': [201, 409],
   'league-foreign-owner': [403], 'league-anonymous-write': [401],
   'league-schedule-impossible': [400], 'league-schedule-blackout': [400], 'league-schedule-race': [409],
   'league-schedule-foreign-owner': [403], 'league-schedule-direct-write': [403],
@@ -253,7 +268,7 @@ const COMPETITION_EXACT_STATUS = Object.freeze({
   'league-ledger-private': [403], 'league-registrant-assign-deny': [403], 'league-assignment-foreign-owner': [403],
   'league-score-wrong-pin': [403], 'league-score-replay': [200], 'league-score-downstream-conflict': [409],
   'league-score-narrow-scope': [403], 'league-score-outsider-deny': [403],
-  'tournament-invalid-format': [400], 'tournament-partial-replica': [400], 'tournament-duplicate': [409], 'tournament-archive-cancel': [200],
+  'tournament-invalid-format': [400], 'tournament-partial-replica': [200, 409], 'tournament-duplicate': [409], 'tournament-archive-cancel': [200],
   'tournament-foreign-staff': [403], 'tournament-foreign-team': [403],
   'tournament-schedule-impossible': [409], 'tournament-referee-conflict': [409],
   'tournament-referee-role-deny': [403], 'tournament-schedule-foreign-deny': [403],
@@ -266,15 +281,16 @@ export const COMPETITION_CASE_EXECUTION_CONTRACTS = Object.freeze(Object.fromEnt
     const base = COMPETITION_EXECUTION_BASE[scenarioId];
     return [scenarioId, Object.freeze(Object.fromEntries(Object.entries(COMPETITION_SCENARIO_CASES[scenarioId]).flatMap(([dimension, ids]) =>
       ids.map(id => [id, Object.freeze({
-        caseId: id, dimension, actor: actorForCompetitionCase(base, id), route: routeForCompetitionCase(base, id),
+        caseId: id, dimension, actor: actorForCompetitionCase(base, id), route: routeForCompetitionCase(base, id, scenarioId, dimension),
         handlerId: `competition-case:${id}`,
-        method: methodForCompetitionCase(id),
-        expectedStatuses: Object.freeze(COMPETITION_EXACT_STATUS[id] || [200]),
-        postconditions: Object.freeze([`${id}: exact response status`, `${id}: authoritative before/after state`]),
+        method: methodForCompetitionCase(id, dimension),
+        expectedStatuses: Object.freeze(dimension === 'network' ? [base.route === '/api/leagues/assignments' ? 405 : 400] : COMPETITION_EXACT_STATUS[id] || [200]),
+        postconditions: Object.freeze([
+          `${id}-exact-response-status`,
+          dimension === 'negativePath' || dimension === 'permission' ? `${id}-zero-mutation` : `${id}-authoritative-state`,
+        ]),
         cleanupSelectors: Object.freeze([
-          `competition-root:${base.fixtureFamily}`, 'competition-subcollections:run-owned',
-          'competition-operations:receipts+outboxes+progress', 'competition-projections:public+private',
-          'competition-bookings+assignments+credentials+audits', 'competition-auth+profiles:run-owned',
+          `competition-discovery:${scenarioId}:{runId}`,
         ]),
         requestId: `qa-${id}-{runId}`, assertionId: `assertion-${id}-{sequence}`,
         expectedResult: 'exact case postcondition and explicit HTTP status',
@@ -337,22 +353,51 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
       const matching = cases.filter(item => item.caseId === required);
       if (matching.length !== 1) throw new Error(`Missing competition case ${scenarioId}/${required}.`);
       const item = matching[0];
+      const contract = COMPETITION_CASE_EXECUTION_CONTRACTS[scenarioId][required];
       if (item.state !== 'OBSERVED') throw new Error(`Competition case ${required} was not observed.`);
       if (!Array.isArray(item.assertions) || item.assertions.length === 0) throw new Error(`Competition case ${required} is missing assertion evidence.`);
       if (!Array.isArray(item.execution?.requests) || item.execution.requests.length === 0) throw new Error(`Competition case ${required} is missing request evidence.`);
+      if (item.dimension !== contract.dimension || item.execution.actor !== contract.actor) throw new Error(`Competition case ${required} actor or dimension does not match its frozen contract.`);
+      if (typeof item.execution.runId !== 'string' || item.execution.runId !== item.runId) throw new Error(`Competition case ${required} has mismatched run ownership.`);
+      const expectedRequestId = contract.requestId.replace('{runId}', item.runId);
+      if (item.execution.requestId !== expectedRequestId) throw new Error(`Competition case ${required} has mismatched request ID.`);
+      const expectedSelectors = contract.cleanupSelectors.map(selector => selector.replace('{runId}', item.runId));
+      if (JSON.stringify(item.execution.cleanupSelectors) !== JSON.stringify(expectedSelectors)) throw new Error(`Competition case ${required} has mismatched cleanup selectors.`);
+      if (JSON.stringify(item.execution.postconditionIds) !== JSON.stringify(contract.postconditions)) throw new Error(`Competition case ${required} has mismatched postcondition IDs.`);
       for (const assertion of item.assertions) {
         if (!assertion?.id) throw new Error(`Competition case ${required} is missing assertion ID.`);
         if (assertionOwners.has(assertion.id)) throw new Error(`Duplicate assertion ID ${assertion.id}.`);
         assertionOwners.set(assertion.id, required);
+        if (!new RegExp(`^assertion-${required}-\\d+$`).test(assertion.id) || !contract.postconditions.includes(assertion.postconditionId)) {
+          throw new Error(`Competition case ${required} has an assertion outside its frozen contract.`);
+        }
       }
       for (const request of item.execution.requests) {
         if (!request?.evidenceId) throw new Error(`Competition case ${required} is missing request evidence ID.`);
         if (requestOwners.has(request.evidenceId)) throw new Error(`Duplicate request evidence ID ${request.evidenceId}.`);
         requestOwners.set(request.evidenceId, required);
+        const frozenRuntimeRoute = item.execution.route || contract.route;
+        if (item.execution.method !== contract.method || JSON.stringify(item.execution.expectedStatuses) !== JSON.stringify(contract.expectedStatuses) ||
+            request.actorAlias !== contract.actor || request.method !== contract.method || request.pathname !== frozenRuntimeRoute || !contract.expectedStatuses.includes(request.status)) {
+          throw new Error(`Competition case ${required} has request evidence outside its frozen method, route, actor, or status contract.`);
+        }
       }
     }
   }
-  const cleanup = [...events].reverse().find(item => item?.type === 'cleanup');
+  const runIds = new Set(events.filter(item => item?.type === 'case' && scenarioIds.includes(item.scenarioId)).map(item => item.runId));
+  if (runIds.size !== 1) throw new Error('Competition evidence must have one exact run ID.');
+  const runId = [...runIds][0];
+  const cleanupReferences = new Set(events.filter(item => item?.type === 'case' && scenarioIds.includes(item.scenarioId)).map(item => item.execution?.cleanupReference));
+  if (cleanupReferences.size !== 1) throw new Error('Competition evidence must have one exact cleanup reference.');
+  const cleanupId = [...cleanupReferences][0];
+  const cleanupEvents = events.filter(item => item?.type === 'cleanup');
+  const finalCleanup = cleanupEvents.at(-1);
+  if (!finalCleanup || finalCleanup.runId !== runId || finalCleanup.cleanupId !== cleanupId) {
+    throw new Error('Competition final cleanup evidence belongs to an unrelated run or cleanup reference.');
+  }
+  const matchingCleanup = cleanupEvents.filter(item => item.runId === runId && item.cleanupId === cleanupId);
+  if (matchingCleanup.length !== 1) throw new Error('Competition cleanup evidence does not match the exact run and cleanup reference.');
+  const cleanup = matchingCleanup[0];
   if (!cleanup || cleanup.state !== 'OBSERVED') {
     if (cleanup?.state === 'FAIL' || (Array.isArray(cleanup?.residuals) && cleanup.residuals.length)) {
       throw new Error(`Competition cleanup residue remains: ${(cleanup.residuals || []).join(', ')}.`);
@@ -362,7 +407,21 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
   if (cleanup?.state === 'FAIL' || (Array.isArray(cleanup?.residuals) && cleanup.residuals.length)) {
     throw new Error(`Competition cleanup residue remains: ${(cleanup.residuals || []).join(', ')}.`);
   }
+  const requiredSelectors = new Set(scenarioIds.flatMap(scenarioId =>
+    COMPETITION_CASE_EXECUTION_CONTRACTS[scenarioId][Object.values(COMPETITION_SCENARIO_CASES[scenarioId]).flat()[0]].cleanupSelectors
+      .map(selector => selector.replace('{runId}', runId))));
+  for (const selector of requiredSelectors) if (!cleanup.selectors?.includes(selector)) throw new Error(`Competition cleanup is missing declared selector ${selector}.`);
   return true;
+}
+
+export function selectFrozenCompetitionRequests(requests, contract) {
+  const selected = (requests || []).filter(request =>
+    request?.actorAlias === contract.actor &&
+    request?.method === contract.method &&
+    request?.pathname === contract.route &&
+    contract.expectedStatuses.includes(request?.status));
+  if (selected.length === 0) throw new Error('Competition case is missing exact frozen request evidence.');
+  return selected;
 }
 
 // This registry is intentionally separate from cleanup ownership. Several

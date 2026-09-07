@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
@@ -12,6 +13,7 @@ import {
   LOCAL_OPERATIONS_CASE_REQUIREMENTS,
   assertAuthoritativeCompetitionEvents,
   assertCompetitionCaseContracts,
+  selectFrozenCompetitionRequests,
   handlers,
 } from '../scripts/qa/certification/local/batches/operations.mjs';
 import {
@@ -77,6 +79,23 @@ const frozenCaseIds = Object.freeze({
   },
 });
 
+function strictCompetitionEvent(scenarioId, caseId, assertionId = `assertion-${caseId}-1`) {
+  const contract = COMPETITION_CASE_EXECUTION_CONTRACTS[scenarioId][caseId];
+  const runId = 'strict-contract-run';
+  return {
+    type: 'case', scenarioId, caseId, dimension: contract.dimension, runId, state: 'OBSERVED',
+    assertions: [{ id: assertionId, postconditionId: contract.postconditions[0] }],
+    execution: {
+      actor: contract.actor, runId, requestId: contract.requestId.replace('{runId}', runId),
+      method: contract.method, route: contract.route, expectedStatuses: [...contract.expectedStatuses],
+      cleanupReference: 'fixture-cleanup-strict-contract-run',
+      cleanupSelectors: contract.cleanupSelectors.map(value => value.replace('{runId}', runId)),
+      postconditionIds: [...contract.postconditions],
+      requests: contract.expectedStatuses.map((status, index) => ({ evidenceId: `request-${caseId}-${index + 1}`, actorAlias: contract.actor, method: contract.method, pathname: contract.route, status })),
+    },
+  };
+}
+
 test('the exact seven frozen competition rows are assigned to local operations', () => {
   assert.deepEqual(COMPETITION_SCENARIO_IDS, Object.keys(frozenCaseIds));
   const selected = selectLocalScenarios({ scenarioIds: COMPETITION_SCENARIO_IDS });
@@ -103,7 +122,8 @@ test('every competition row has the exact frozen case map and executable provena
       } else if (caseId === 'league-score-narrow-scope') {
         assert.equal(execution.route, '/v1/projects/{projectId}/databases/(default)/documents/leagues/{leagueId}/private/lifecycle');
         assert.equal(execution.method, 'GET');
-      } else assert.match(execution.route, /^\/api\//);
+      } else if (['console', 'responsive'].includes(dimension) || caseId === 'tournament-archive-cancel') assert.match(execution.route, /^\/(competition|manage-tournaments)$/);
+      else assert.match(execution.route, /^\/api\//);
       assert.match(execution.requestId, /\{runId\}/);
       assert.match(execution.assertionId, /\{sequence\}/);
       assert.equal(execution.networkCapture, true);
@@ -111,7 +131,8 @@ test('every competition row has the exact frozen case map and executable provena
       assert.equal(typeof execution.handlerId, 'string');
       assert.equal(typeof execution.method, 'string');
       assert.ok(Array.isArray(execution.expectedStatuses) && execution.expectedStatuses.length > 0);
-      assert.equal(execution.expectedStatuses.length, 1, `${caseId} must freeze one exact response status`);
+      const concurrentAtomicCase = ['league-partial-clone', 'tournament-partial-replica'].includes(caseId);
+      assert.equal(execution.expectedStatuses.length, concurrentAtomicCase ? 2 : 1, `${caseId} must freeze its exact response status set`);
       assert.ok(Array.isArray(execution.postconditions) && execution.postconditions.length > 0);
       assert.ok(Array.isArray(execution.cleanupSelectors) && execution.cleanupSelectors.length > 0);
       if (dimension === 'responsive') assert.deepEqual(execution.responsiveBounds[0], caseId.endsWith('mobile') ? { width: 390, height: 844 } : { width: 1440, height: 900 });
@@ -129,12 +150,24 @@ test('competition contracts reject missing and duplicate assertion or request ow
   const valid = COMPETITION_SCENARIO_CASES['leagues-create-edit-clone-delete'].happyPath[0];
   assert.throws(() => assertCompetitionCaseContracts({}), /missing competition scenario/i);
   assert.throws(() => assertAuthoritativeCompetitionEvents([
-    { type: 'case', scenarioId: 'leagues-create-edit-clone-delete', caseId: valid, state: 'OBSERVED', assertions: [{ id: 'same' }], execution: { requests: [{ evidenceId: 'req-a' }] } },
-    { type: 'case', scenarioId: 'leagues-create-edit-clone-delete', caseId: 'league-edit', state: 'OBSERVED', assertions: [{ id: 'same' }], execution: { requests: [{ evidenceId: 'req-b' }] } },
+    strictCompetitionEvent('leagues-create-edit-clone-delete', valid, 'assertion-league-create-1'),
+    strictCompetitionEvent('leagues-create-edit-clone-delete', 'league-edit', 'assertion-league-create-1'),
   ], ['leagues-create-edit-clone-delete']), /duplicate assertion/i);
   assert.throws(() => assertAuthoritativeCompetitionEvents([
-    { type: 'case', scenarioId: 'leagues-create-edit-clone-delete', caseId: valid, state: 'OBSERVED', assertions: [], execution: { requests: [{ evidenceId: 'req-a' }] } },
+    { ...strictCompetitionEvent('leagues-create-edit-clone-delete', valid), assertions: [] },
   ], ['leagues-create-edit-clone-delete']), /missing assertion/i);
+});
+
+test('competition evidence keeps only requests inside the exact frozen transport contract', () => {
+  const contract = {
+    actor: 'qa-league-owner-a', method: 'PATCH', route: '/v1/projects/demo/databases/(default)/documents/leagues/league-a', expectedStatuses: [403],
+  };
+  const requests = [
+    { evidenceId: 'helper-alias', actorAlias: contract.actor, method: 'PATCH', pathname: '/firestore/document', status: 403 },
+    { evidenceId: 'exact-route', actorAlias: contract.actor, method: 'PATCH', pathname: contract.route, status: 403 },
+  ];
+  assert.deepEqual(selectFrozenCompetitionRequests(requests, contract), [requests[1]]);
+  assert.throws(() => selectFrozenCompetitionRequests(requests.slice(0, 1), contract), /missing exact frozen request evidence/i);
 });
 
 test('authoritative competition validation fails child, timeout, omission, unobserved, and cleanup residue', () => {
@@ -142,15 +175,23 @@ test('authoritative competition validation fails child, timeout, omission, unobs
   assert.throws(() => assertAuthoritativeCompetitionEvents([], [id]), /missing competition case/i);
   assert.throws(() => assertAuthoritativeCompetitionEvents([{ type: 'scenario-error', scenarioId: id, stage: 'timeout' }], [id]), /timeout|scenario/i);
   const events = Object.values(frozenCaseIds[id]).flat().map((caseId, index) => ({
-    type: 'case', scenarioId: id, caseId, state: index ? 'OBSERVED' : 'NOT_OBSERVED',
-    assertions: [{ id: `assert-${caseId}` }], execution: { requests: [{ evidenceId: `request-${caseId}` }] },
+    ...strictCompetitionEvent(id, caseId), state: index ? 'OBSERVED' : 'NOT_OBSERVED',
   }));
   assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id]), /not observed/i);
   events[0].state = 'OBSERVED';
   assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id]), /cleanup evidence/i);
-  events.push({ type: 'cleanup', cleanupId: 'competition-cleanup', state: 'FAIL', residuals: ['leagues/run-owned'] });
+  events.push({ type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'FAIL', residuals: ['leagues/run-owned'], selectors: [] });
   assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id]), /cleanup residue/i);
   assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id], { childCode: 1 }), /child/i);
+});
+
+test('authoritative competition validation rejects a later unrelated cleanup artifact', () => {
+  const id = 'leagues-create-edit-clone-delete';
+  const events = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const selectors = [`competition-discovery:${id}:strict-contract-run`];
+  events.push({ type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors });
+  events.push({ type: 'cleanup', runId: 'another-run', cleanupId: 'shared-cleanup', state: 'OBSERVED', residuals: [], selectors: [] });
+  assert.throws(() => assertAuthoritativeCompetitionEvents(events, [id]), /unrelated run|cleanup reference/i);
 });
 
 test('runner uses dedicated competition workflows, isolated sessions and numeric responsive bounds', async () => {
@@ -180,23 +221,64 @@ test('runner uses dedicated competition workflows, isolated sessions and numeric
   assert.doesNotMatch(competitionBlock, /return \{ pathname: route/);
   assert.doesNotMatch(competitionBlock, /recordObservedOperationsCase\(/);
   assert.doesNotMatch(competitionBlock, /makeCompetitionCaseHandler/);
-  assert.match(competitionBlock, /browserContract\.path === '\/manage-tournaments'.*sf_session_team_id/s);
+  assert.match(competitionBlock, /contract\.path === '\/manage-tournaments'.*page\.evaluate\(team=>localStorage\.setItem\('sf_session_team_id'/s);
   assert.match(competitionBlock, /QA Scoring Tournament.*date: '2029-11-05'.*endDate: '2029-11-05'/s);
-  assert.match(competitionBlock, /interactionRole: 'tab'.*interactionRole: 'button'.*getByRole\(\$\{JSON\.stringify\(browserContract\.interactionRole\)\}.*interaction\.click\(\)/s);
+  assert.match(competitionBlock, /interactionRole: 'tab'.*interactionRole: 'button'.*getByRole\(\$\{JSON\.stringify\(contract\.interactionRole\)\}.*interaction\.click\(\)/s);
 });
 
 test('competition timeout still finalizes and fails the wrapper truthfully', async () => {
   let finalized = 0;
+  let aborted = 0;
   const reported = [];
   await assert.rejects(() => runOperationScenarioSequence(['competition-timeout'], {
     timeoutMs: 5,
-    execute: () => new Promise(() => {}),
+    execute: (_id, { signal }) => new Promise(resolve => signal.addEventListener('abort', () => {
+      aborted += 1;
+      resolve();
+    }, { once: true })),
     finalize: async () => { finalized += 1; },
     onError: (_id, error) => reported.push(error.message),
     failFast: true,
   }), /selected operation scenario.*failed/i);
   assert.equal(finalized, 1);
+  assert.equal(aborted, 1, 'timeout must propagate cancellation to a hung child');
   assert.match(reported[0], /timed out/i);
+});
+
+test('competition timeout terminates a real hung child before finalization and returns failure', async () => {
+  let child;
+  let finalizedAfterExit = false;
+  let childExited = false;
+  await assert.rejects(() => runOperationScenarioSequence(['competition-hung-child'], {
+    timeoutMs: 75,
+    execute: (_id, { signal }) => new Promise((resolve, reject) => {
+      child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+      child.once('error', reject);
+      signal.addEventListener('abort', () => {
+        child.once('exit', () => { childExited = true; resolve(); });
+        child.kill('SIGKILL');
+      }, { once: true });
+    }),
+    finalize: async () => { finalizedAfterExit = childExited; },
+    onError: () => {},
+    failFast: true,
+  }), /selected operation scenario.*failed/i);
+  assert.equal(childExited, true, 'hung subprocess must be terminated');
+  assert.equal(finalizedAfterExit, true, 'cleanup finalization must follow subprocess termination');
+});
+
+test('competition contracts freeze literal specialized actors and semantic postconditions', () => {
+  const all = Object.values(COMPETITION_CASE_EXECUTION_CONTRACTS).flatMap(value => Object.values(value));
+  assert.equal(COMPETITION_CASE_EXECUTION_CONTRACTS['tournaments-schedule-pools-brackets-referees']['tournament-referee-role-deny'].actor, 'qa-adult-player-a');
+  assert.equal(COMPETITION_CASE_EXECUTION_CONTRACTS['tournaments-create-configure-replicate-archive']['tournament-foreign-staff'].actor, 'qa-school-delegate');
+  assert.equal(COMPETITION_CASE_EXECUTION_CONTRACTS['tournaments-create-configure-replicate-archive']['tournament-foreign-team'].actor, 'qa-coach-owner-b');
+  assert.equal(COMPETITION_CASE_EXECUTION_CONTRACTS['leagues-scorekeeper-spectator']['league-score-outsider-deny'].actor, 'qa-removed-member');
+  for (const contract of all) {
+    assert.ok(contract.postconditions.every(value => /^[a-z0-9][a-z0-9-]+$/.test(value)), `${contract.caseId} has semantic postcondition IDs`);
+    assert.ok(contract.cleanupSelectors.some(value => value.startsWith('competition-discovery:') && value.endsWith(':{runId}')));
+  }
+  assert.deepEqual(COMPETITION_CASE_EXECUTION_CONTRACTS['leagues-create-edit-clone-delete']['league-partial-clone'].expectedStatuses, [201, 409]);
+  assert.deepEqual(COMPETITION_CASE_EXECUTION_CONTRACTS['tournaments-create-configure-replicate-archive']['tournament-partial-replica'].expectedStatuses, [200, 409]);
 });
 
 test('competition discovery removes only run-owned post-baseline residue', async () => {
