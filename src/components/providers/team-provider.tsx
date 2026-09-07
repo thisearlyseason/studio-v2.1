@@ -561,6 +561,8 @@ export type League = {
   id: string;
   name: string;
   creatorId: string;
+  billingOwnerUserId?: string;
+  tenantId?: string;
   sport: string;
   teams?: Record<string, {
     teamName: string;
@@ -627,7 +629,6 @@ export type League = {
   isDemo?: boolean;
   demoSessionOwnerId?: string;
   demoSeeded?: boolean;
-  tenantId?: string;
   lifecycleVersion?: number;
 };
 

@@ -1,68 +1,119 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'node:crypto';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import * as admin from 'firebase-admin';
-import { DEMO_PLANS, getDemoTeamShells } from '@/lib/demo-plan-config';
+import { DEMO_PLANS, demoTeamSlug, getDemoTeamShells, type DemoPlan } from '@/lib/demo-plan-config';
 
-const DEMO_LEAGUE_FIELDS = new Set([
-  'name', 'description', 'sport', 'memberTeamIds', 'memberUserIds', 'status', 'teams', 'schedule', 'createdAt',
-]);
-const PRIVATE_TEAM_FIELDS = new Set(['coachName', 'coachEmail', 'coachPhone', 'organizerNotes', 'inviteCode']);
+function demoNamespaceForUid(uid: string): string {
+  return createHash('sha256').update(`demo-session-v1\0${uid}`).digest('hex').slice(0, 24);
+}
+
+function parsePlanBody(body: unknown): { planId: string; plan: DemoPlan } | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const entries = Object.entries(body);
+  if (entries.length !== 1 || entries[0][0] !== 'planId' || typeof entries[0][1] !== 'string') return null;
+  const plan = DEMO_PLANS[entries[0][1]];
+  return plan ? { planId: entries[0][1], plan } : null;
+}
+
+function ownsDemoLeague(data: Record<string, unknown>, uid: string, planId: string) {
+  return data.isDemo === true
+    && data.demoSeeded === true
+    && data.demoSessionOwnerId === uid
+    && data.creatorId === uid
+    && data.billingOwnerUserId === uid
+    && data.tenantId === `profile:${uid}`
+    && data.demoPlanId === planId;
+}
+
+function ownsDemoTeam(data: Record<string, unknown>, uid: string, planId: string) {
+  return data.isDemo === true && data.demoSessionOwnerId === uid && data.demoPlanId === planId;
+}
+
+function demoLeagueBlueprint(uid: string, namespace: string, planId: string, plan: DemoPlan) {
+  const shells = getDemoTeamShells(uid, planId, plan, namespace).filter(shell => shell.type !== 'school');
+  const opponentNames = plan.planType === 'school'
+    ? ['Riverside High School', 'Lincoln Prep Academy', 'Jefferson Academy', 'Westlake Athletic', 'Central High School', 'Northview Academy']
+    : planId === 'parent_demo' || planId === 'player_demo'
+      ? ['Hawks', 'Tigers', 'Eagles', 'Falcons', 'Wolves', 'Titans']
+      : ['City Wildcats', 'Metro Stars', 'Valley Vipers', 'Coastal Elite', 'Summit United', 'Apex United'];
+  const leagueTeams = shells.map(shell => ({ id: shell.id, name: shell.name }));
+  for (const name of opponentNames) {
+    if (leagueTeams.length >= 6) break;
+    leagueTeams.push({ id: `demo_opponent_${namespace}_${demoTeamSlug(name)}`, name });
+  }
+  const teams = Object.fromEntries(leagueTeams.map((team, index) => [team.id, {
+    teamName: team.name,
+    wins: Math.max(0, 4 - index),
+    losses: index % 4,
+    points: Math.max(0, 12 - (index * 3)),
+  }]));
+  const day = new Date();
+  day.setUTCHours(12, 0, 0, 0);
+  const schedule = Array.from({ length: 6 }, (_, index) => {
+    const team1 = leagueTeams[index % leagueTeams.length];
+    const team2 = leagueTeams[(index + 1 + Math.floor(index / 3)) % leagueTeams.length];
+    return {
+      id: `demo_game_${namespace}_${index + 1}`,
+      team1: team1.name,
+      team1Id: team1.id,
+      team2: team2.name,
+      team2Id: team2.id,
+      date: new Date(day.getTime() + ((index + 1) * 86400000)).toISOString(),
+      time: `${String(10 + (index % 4) * 2).padStart(2, '0')}:00`,
+      location: index % 2 ? 'Court B' : 'Main Arena',
+      status: 'scheduled',
+    };
+  });
+  return {
+    name: plan.planType === 'school' ? 'State Academic Athletic League' : planId === 'parent_demo' || planId === 'player_demo' ? 'Elite Youth League' : 'Apex Premier Circuit',
+    description: 'The premier circuit for top-tier competitive programs.',
+    sport: plan.planType === 'school' ? 'Basketball' : 'Multi-Sport',
+    memberTeamIds: leagueTeams.map(team => team.id),
+    memberUserIds: [uid],
+    status: 'active',
+    teams,
+    schedule,
+  };
+}
 
 export async function PUT(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
   try {
-    const body = await req.json();
-    if (!body || typeof body !== 'object' || Array.isArray(body) || JSON.stringify(body).length > 250_000) {
+    const selected = parsePlanBody(await req.json());
+    if (!selected) {
       return NextResponse.json({ error: 'Invalid demo league blueprint.' }, { status: 400 });
     }
-    const leagueId = `demo_league_${auth.uid.slice(-4)}`;
-    if (body.leagueId !== leagueId || !body.league || typeof body.league !== 'object' || Array.isArray(body.league)) {
-      return NextResponse.json({ error: 'Invalid demo league blueprint.' }, { status: 400 });
-    }
-    const submitted = body.league as Record<string, unknown>;
-    const publicFields = Object.fromEntries(Object.entries(submitted).filter(([key]) => DEMO_LEAGUE_FIELDS.has(key)));
-    const teams = publicFields.teams && typeof publicFields.teams === 'object' && !Array.isArray(publicFields.teams)
-      ? publicFields.teams as Record<string, Record<string, unknown>>
-      : {};
-    const teamContacts: Record<string, Record<string, unknown>> = {};
-    publicFields.teams = Object.fromEntries(Object.entries(teams).map(([teamId, team]) => {
-      if (!team || typeof team !== 'object' || Array.isArray(team)) throw new Error('DEMO_BLUEPRINT_INVALID');
-      const contact = Object.fromEntries(Object.entries(team).filter(([key]) => PRIVATE_TEAM_FIELDS.has(key)));
-      if (Object.keys(contact).length) teamContacts[teamId] = contact;
-      return [teamId, Object.fromEntries(Object.entries(team).filter(([key]) => !PRIVATE_TEAM_FIELDS.has(key)))];
-    }));
+    const { planId, plan } = selected;
+    const namespace = demoNamespaceForUid(auth.uid);
+    const leagueId = `demo_league_${namespace}`;
+    const blueprint = demoLeagueBlueprint(auth.uid, namespace, planId, plan);
     await adminDb.runTransaction(async transaction => {
       const leagueRef = adminDb.collection('leagues').doc(leagueId);
-      const privateRef = leagueRef.collection('private').doc('lifecycle');
-      const [league, profile, privateSnapshot] = await Promise.all([
+      const [league, profile] = await Promise.all([
         transaction.get(leagueRef),
         transaction.get(adminDb.collection('users').doc(auth.uid)),
-        transaction.get(privateRef),
       ]);
       const current = league.data() || {};
-      if (!league.exists || !profile.exists || current.isDemo !== true || current.demoSeeded !== true || current.demoSessionOwnerId !== auth.uid || current.creatorId !== auth.uid) {
+      if (!league.exists || !profile.exists || profile.data()?.demoPlanId !== planId || !ownsDemoLeague(current, auth.uid, planId)) {
         throw new Error('DEMO_BLUEPRINT_FORBIDDEN');
       }
       transaction.update(leagueRef, {
-        ...publicFields,
+        ...blueprint,
         id: leagueId,
         creatorId: auth.uid,
         createdBy: auth.uid,
+        billingOwnerUserId: auth.uid,
         tenantId: `profile:${auth.uid}`,
         sensitiveFieldsMigrated: true,
         updatedAt: new Date().toISOString(),
       });
-      if (Object.keys(teamContacts).length) transaction.set(privateRef, {
-        ...(privateSnapshot.data() || {}),
-        teamContacts: { ...(privateSnapshot.data()?.teamContacts || {}), ...teamContacts },
-      });
     });
-    return NextResponse.json({ ok: true, leagueId });
+    return NextResponse.json({ ok: true, leagueId, demoNamespace: namespace });
   } catch (error: any) {
     if (error?.message === 'DEMO_BLUEPRINT_FORBIDDEN') return NextResponse.json({ error: 'Demo league access denied.' }, { status: 403 });
-    if (error?.message === 'DEMO_BLUEPRINT_INVALID') return NextResponse.json({ error: 'Invalid demo league blueprint.' }, { status: 400 });
     console.error('[demo/seed PUT] Error:', error.message);
     return NextResponse.json({ error: 'Unable to initialize the demo league.' }, { status: 500 });
   }
@@ -78,9 +129,9 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { planId } = await req.json();
-    const plan = typeof planId === 'string' ? DEMO_PLANS[planId] : undefined;
-    if (!plan) return NextResponse.json({ error: 'Invalid demo plan.' }, { status: 400 });
+    const selected = parsePlanBody(await req.json());
+    if (!selected) return NextResponse.json({ error: 'Invalid demo plan.' }, { status: 400 });
+    const { planId, plan } = selected;
 
     const uid = auth.uid;
     const userRef = adminDb.collection('users').doc(uid);
@@ -93,10 +144,90 @@ export async function POST(req: NextRequest) {
 
     const now = admin.firestore.FieldValue.serverTimestamp();
     const messageTimestamp = new Date().toISOString();
-    const shells = getDemoTeamShells(uid, planId, plan);
-    const leagueId = `demo_league_${uid.slice(-4)}`;
+    const demoNamespace = demoNamespaceForUid(uid);
+    const shells = getDemoTeamShells(uid, planId, plan, demoNamespace);
+    const leagueId = `demo_league_${demoNamespace}`;
     const isElite = ['elite_teams', 'elite', 'league'].includes(planId);
     const name = plan.role === 'admin' ? 'Guest Admin' : `Guest ${plan.position}`;
+
+    await adminDb.runTransaction(async transaction => {
+      const leagueRef = adminDb.collection('leagues').doc(leagueId);
+      const profile = await transaction.get(userRef);
+      const league = await transaction.get(leagueRef);
+      const shellSnapshots = await Promise.all(shells.map(shell => transaction.get(adminDb.collection('teams').doc(shell.id))));
+      const currentProfile = profile.data() || {};
+      if (auth.signInProvider !== 'anonymous' && currentProfile.isBetaTester !== true) throw new Error('DEMO_SETUP_FORBIDDEN');
+      if (league.exists && !ownsDemoLeague(league.data() || {}, uid, planId)) throw new Error('DEMO_TARGET_OWNERSHIP_CONFLICT');
+      if (shellSnapshots.some(snapshot => snapshot.exists && !ownsDemoTeam(snapshot.data() || {}, uid, planId))) {
+        throw new Error('DEMO_TARGET_OWNERSHIP_CONFLICT');
+      }
+
+      if (isAnonymousDemo) {
+        transaction.set(userRef, {
+          id: uid,
+          fullName: name,
+          email: `${plan.role}@thesquad.pro`,
+          role: plan.role,
+          plan_type: plan.planType,
+          team_limit: plan.teamLimit,
+          subscription_status: 'active',
+          isDemo: true,
+          isStaff: true,
+          seenAlertIds: [],
+          avatarUrl: `https://picsum.photos/seed/${demoNamespace}/150/150`,
+          clubName: plan.planType === 'school' ? 'Springfield High School' : isElite ? 'Apex Academy' : 'Squad Sports Hub',
+          clubDescription: isElite ? 'Precision performance at a professional scale.' : plan.planType === 'school' ? 'Secondary Athletic Program Command' : '',
+          schoolAdminIds: plan.planType === 'school' ? [uid] : [],
+          isPrimaryClubAuthority: plan.isPro && !['parent', 'adult_player'].includes(plan.role),
+          demoPlanId: planId,
+          demoNamespace,
+          demoInitializedAt: now,
+          createdAt: now,
+        }, { merge: true });
+      } else {
+        transaction.set(userRef, { demoPlanId: planId, demoNamespace, demoInitializedAt: now }, { merge: true });
+      }
+
+      for (const shell of shells) {
+        transaction.set(adminDb.collection('teams').doc(shell.id), {
+          id: shell.id,
+          name: shell.name,
+          teamName: shell.name,
+          ownerUserId: shell.ownerUserId,
+          demoSessionOwnerId: uid,
+          demoPlanId: planId,
+          isDemo: true,
+          isPro: plan.isPro,
+          planId: plan.planType,
+          type: shell.type,
+          sport: plan.planType === 'school' || planId === 'parent_demo' || planId === 'player_demo' ? 'Basketball' : 'Multi-Sport',
+          createdAt: now,
+          updatedAt: now,
+        }, { merge: true });
+      }
+
+      transaction.set(leagueRef, {
+        id: leagueId,
+        creatorId: uid,
+        createdBy: uid,
+        billingOwnerUserId: uid,
+        tenantId: `profile:${uid}`,
+        lifecycleVersion: 0,
+        sensitiveFieldsMigrated: true,
+        name: plan.role === 'admin' ? 'State Academic Athletic League' : 'Apex Premier Circuit',
+        sport: plan.planType === 'school' ? 'Basketball' : 'Multi-Sport',
+        description: 'The premier circuit for top-tier competitive programs.',
+        memberUserIds: [uid],
+        memberTeamIds: shells.map(shell => shell.id),
+        isDemo: true,
+        demoPlanId: planId,
+        demoSessionOwnerId: uid,
+        demoSeeded: true,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      }, { merge: true });
+    });
 
     const bookingSnapshots = await Promise.all([
       ...shells.map(shell =>
@@ -115,45 +246,8 @@ export async function POST(req: NextRequest) {
 
     const batch = adminDb.batch();
 
-    if (isAnonymousDemo) {
-      batch.set(userRef, {
-        id: uid,
-        fullName: name,
-        email: `${plan.role}@thesquad.pro`,
-        role: plan.role,
-        plan_type: plan.planType,
-        team_limit: plan.teamLimit,
-        subscription_status: 'active',
-        isDemo: true,
-        isStaff: true,
-        seenAlertIds: [],
-        avatarUrl: `https://picsum.photos/seed/${uid}/150/150`,
-        clubName: plan.planType === 'school' ? 'Springfield High School' : isElite ? 'Apex Academy' : 'Squad Sports Hub',
-        clubDescription: isElite ? 'Precision performance at a professional scale.' : plan.planType === 'school' ? 'Secondary Athletic Program Command' : '',
-        schoolAdminIds: plan.planType === 'school' ? [uid] : [],
-        isPrimaryClubAuthority: plan.isPro && !['parent', 'adult_player'].includes(plan.role),
-        demoInitializedAt: now,
-        createdAt: now,
-      }, { merge: true });
-    }
-
     for (const shell of shells) {
       const teamRef = adminDb.collection('teams').doc(shell.id);
-      batch.set(teamRef, {
-        id: shell.id,
-        name: shell.name,
-        teamName: shell.name,
-        ownerUserId: shell.ownerUserId,
-        demoSessionOwnerId: uid,
-        isDemo: true,
-        isPro: plan.isPro,
-        planId: plan.planType,
-        type: shell.type,
-        sport: plan.planType === 'school' || planId === 'parent_demo' || planId === 'player_demo' ? 'Basketball' : 'Multi-Sport',
-        createdAt: now,
-        updatedAt: now,
-      }, { merge: true });
-
       // Chat messages are server-authored in production. Seed the deterministic
       // demo conversation here so the client blueprint never has to bypass the
       // protected message-create route.
@@ -176,37 +270,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // League documents are server-created in production. Bootstrap the demo
-    // league here before the client blueprint enriches it, otherwise the
-    // browser's first write is rejected by the creation rule.
-    batch.set(adminDb.collection('leagues').doc(leagueId), {
-      id: leagueId,
-      creatorId: uid,
-      createdBy: uid,
-      tenantId: `profile:${uid}`,
-      lifecycleVersion: 0,
-      sensitiveFieldsMigrated: true,
-      name: plan.role === 'admin' ? 'State Academic Athletic League' : 'Apex Premier Circuit',
-      sport: plan.planType === 'school' ? 'Basketball' : 'Multi-Sport',
-      description: 'The premier circuit for top-tier competitive programs.',
-      memberUserIds: [uid],
-      memberTeamIds: shells.map((shell) => shell.id),
-      isDemo: true,
-      demoSessionOwnerId: uid,
-      demoSeeded: true,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    }, { merge: true });
-
     await batch.commit();
     return NextResponse.json({
       ok: true,
       planId,
+      demoNamespace,
+      leagueId,
       teamIds: shells.map((shell) => shell.id),
       primaryTeamId: shells.find((shell) => shell.type !== 'school')?.id || null,
     });
   } catch (error: any) {
+    if (error?.message === 'DEMO_SETUP_FORBIDDEN') return NextResponse.json({ error: 'Demo setup is not permitted.' }, { status: 403 });
+    if (error?.message === 'DEMO_TARGET_OWNERSHIP_CONFLICT') return NextResponse.json({ error: 'Demo target ownership conflict.' }, { status: 403 });
     console.error('[demo/seed] Error:', error.message);
     return NextResponse.json({ error: 'Unable to initialize the demo environment.' }, { status: 500 });
   }

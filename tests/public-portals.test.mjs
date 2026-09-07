@@ -273,7 +273,7 @@ test('public league scoring creates mirrored official game projections for both 
   assert.equal(beta.notes, 'Official result from Summer League');
 
   const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
-  assert.match(source, /transaction\.update\(ref, \{ schedule, teams,/);
+  assert.match(source, /transaction\.update\(ref, \{\s*schedule,\s*teams,/);
   assert.match(source, /transaction\.set\(team1Ref, team1Projection\)/);
   assert.match(source, /transaction\.set\(team2Ref, team2Projection\)/);
 });

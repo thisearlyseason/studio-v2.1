@@ -143,6 +143,12 @@ test('delegated staff use tenant-owner quota and owner-created legacy identity r
     }));
     assert.equal(second.status, 201);
     assert.equal(overQuota.status, 409);
+    const created = [...records].find(([path, data]) => /^leagues\/[^/]+$/.test(path) && data.tenantId === 'team-a')?.[1];
+    assert.equal(created.creatorId, 'owner-a');
+    assert.equal(created.billingOwnerUserId, 'owner-a');
+    assert.deepEqual(created.memberUserIds.sort(), ['owner-a', 'staff-a']);
+    const audit = [...records].find(([path, data]) => path.startsWith('leagueLifecycleAudits/') && data.leagueId === created.id)?.[1];
+    assert.equal(audit.actorUid, 'staff-a');
     assert.equal([...records].filter(([path, data]) => /^leagues\/[^/]+$/.test(path) && data.tenantId === 'team-a').length, 1);
   } finally {
     app.dispose();
@@ -495,6 +501,7 @@ test('clone is replay-safe, checks collision inside the transaction, and preserv
       id: 'team_config', form_version: 7, form_schema: [{ id: 'email' }], registration_cost: '40', waiver_mode: 'default', is_active: false,
     });
     assert.deepEqual(records.get(`leagues/${cloneId}/private/lifecycle`), { contactEmail: 'ops@example.test' });
+    assert.equal('individualRecruits' in records.get(`leagues/${cloneId}`), false);
     const audit = [...records].find(([path, data]) => path.startsWith('leagueLifecycleAudits/') && data.action === 'clone')?.[1];
     assert.equal(audit.leagueId, cloneId);
     assert.equal([...records.keys()].filter(path => path.startsWith('leagues/') && path.split('/').length === 2).length, 2);

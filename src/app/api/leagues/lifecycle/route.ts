@@ -475,10 +475,10 @@ async function mutateCreate(auth: DecodedToken, input: Extract<LeagueLifecycleRe
       tenantId: authority.tenantId, leagueId: createdLeagueId, nameKey: nameKey(input.name), divisionKey: nameKey(input.divisionTitle || ''), createdAt: now,
     });
     transaction.create(adminDb.collection('leagues').doc(createdLeagueId), {
-      id: createdLeagueId, name: input.name, divisionTitle: input.divisionTitle || '', creatorId: auth.uid,
+      id: createdLeagueId, name: input.name, divisionTitle: input.divisionTitle || '', creatorId: ownerUid, billingOwnerUserId: ownerUid,
       tenantId: authority.tenantId, lifecycleVersion: 1, sensitiveFieldsMigrated: true, sport: input.sport || team?.data()?.sport || 'General',
       teams: input.teamId ? { [input.teamId]: { teamName: team?.data()?.teamName || team?.data()?.name || 'Team', teamLogoUrl: team?.data()?.teamLogoUrl || '', wins: 0, losses: 0, ties: 0, points: 0, status: 'accepted' } } : {},
-      memberTeamIds: input.teamId ? [input.teamId] : [], memberUserIds: [auth.uid], memberIndivIds: [],
+      memberTeamIds: input.teamId ? [input.teamId] : [], memberUserIds: [...new Set([ownerUid, auth.uid])], memberIndivIds: [],
       finances: {}, inviteCode: createdLeagueId.slice(-6).toUpperCase(), createdAt: now, isArchived: false,
       is_active: false, schedule: [], deploymentStatus: 'undeployed',
     });
@@ -514,7 +514,7 @@ async function mutateClone(auth: DecodedToken, input: Extract<LeagueLifecycleReq
     transaction.create(nameReservation, {
       tenantId: authority.tenantId, leagueId: clonedLeagueId, nameKey: nameKey(cloneIdentity.name), divisionKey: nameKey(cloneIdentity.divisionTitle), createdAt: now,
     });
-    transaction.create(cloneRef, { ...buildLeagueCloneDocument({ source, leagueId: clonedLeagueId, actorUid: auth.uid, identity: cloneIdentity, now }), tenantId: authority.tenantId, lifecycleVersion: 1, sensitiveFieldsMigrated: true });
+    transaction.create(cloneRef, { ...buildLeagueCloneDocument({ source, leagueId: clonedLeagueId, actorUid: auth.uid, ownerUid, identity: cloneIdentity, now }), tenantId: authority.tenantId, lifecycleVersion: 1, sensitiveFieldsMigrated: true });
     const clonePrivate = buildLeagueClonePrivateDocument({ source: { ...source, ...(sourcePrivate.data() || {}) } });
     if (Object.keys(clonePrivate).length) transaction.set(cloneRef.collection('private').doc('lifecycle'), clonePrivate);
     for (const config of configs.docs) transaction.set(cloneRef.collection('registration').doc(config.id), { ...config.data(), is_active: false });
@@ -569,6 +569,7 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
       ...rootSensitiveDeletes(),
       ...((league.teams && typeof league.teams === 'object' && !Array.isArray(league.teams)) || input.updates.teamUpdate ? { teams: safeTeams } : {}),
       sensitiveFieldsMigrated: true,
+      billingOwnerUserId: ownerUid,
       tenantId: authority.tenantId,
       lifecycleVersion: nextVersion,
       updatedAt: new Date().toISOString(),
@@ -604,6 +605,7 @@ async function mutateArchive(auth: DecodedToken, input: Extract<LeagueLifecycleR
     const [snapshot, privateSnapshot] = await Promise.all([transaction.get(rootRef), transaction.get(rootRef.collection('private').doc('lifecycle'))]);
     if (!snapshot.exists) fail('LEAGUE_NOT_FOUND');
     const league = snapshot.data() || {};
+    const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
     assertVersion(league, input.expectedVersion);
     if (league.isArchived === true) fail('LEAGUE_LIFECYCLE_STATE_CONFLICT');
     const nextVersion = input.expectedVersion + 1;
@@ -615,6 +617,7 @@ async function mutateArchive(auth: DecodedToken, input: Extract<LeagueLifecycleR
       ...rootSensitiveDeletes(),
       ...(league.teams && typeof league.teams === 'object' && !Array.isArray(league.teams) ? { teams: memberSafeTeams(league) } : {}),
       sensitiveFieldsMigrated: true,
+      billingOwnerUserId: ownerUid,
     });
     const nextPrivate = privateFields(input.leagueId, league, privateSnapshot.data() || {});
     if (Object.keys(nextPrivate).length) transaction.set(rootRef.collection('private').doc('lifecycle'), nextPrivate);

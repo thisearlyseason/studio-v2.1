@@ -539,7 +539,7 @@ const GET_DEMO_DATA = (
  * Ensures a stable, predictable reset for demo users.
  * Pass isBetaTester=true to preserve the user's real name/email (beta accounts use real auth identities).
  */
-export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string, isBetaTester = false, idToken?: string) {
+export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: string, demoNamespace: string, isBetaTester = false, idToken?: string) {
   const nowObj = new Date();
   const now = nowObj.toISOString();
   const day = (d: number) => new Date(nowObj.getTime() + d * 86400000).toISOString();
@@ -558,13 +558,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
   const isSchoolDemo = planId === 'school_demo' || planId === 'school';
   // league_demo gets facilities/equipment seeded (like a Pro demo) but NO paid Pro team quota
   const isProTier = planId !== 'starter_squad' && planId !== 'free';
-  const activeDemoLeagueId = `demo_league_${userId.slice(-4)}`;
-  const persistDemoLeague = async (leagueId: string, league: Record<string, unknown>) => {
+  const activeDemoLeagueId = `demo_league_${demoNamespace}`;
+  const persistDemoLeague = async () => {
     if (!idToken) throw new Error('Demo session expired. Please start the demo again.');
     const response = await fetch('/api/demo/seed', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ leagueId, league: clean(league) }),
+      body: JSON.stringify({ planId }),
     });
     if (!response.ok) throw new Error((await response.json()).error || 'Unable to initialize the demo league.');
   };
@@ -648,7 +648,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
   // 1.1 Secure Facilities Seeding (All Pro Tiers)
   if (isProTier && !isParentDemo && !isPlayerDemo) {
-    const facId = `fac_main_${userId.slice(-4)}`;
+    const facId = `fac_main_${demoNamespace}`;
     const facName = isSchoolDemo ? 'Springfield High Athletic Complex' : (isEliteDemo ? 'Apex Performance Center' : 'Home Training Center');
     const facAddress = isSchoolDemo ? '456 Education Ave, Springfield' : (isEliteDemo ? '789 Tactical Way, Metro City' : '123 Athletic Drive, Downtown');
     batch.set(doc(db, 'facilities', facId), clean({
@@ -671,7 +671,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
       ? ['Main Gymnasium', 'Field House', 'Outdoor Track', 'Football Field', 'Tennis Courts']
       : ['Main Arena', 'Practice Field A', 'Practice Field B', 'Weight Room'];
     fieldResources.forEach(fn => {
-      const fid = `res_${fn.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${userId.slice(-4)}`;
+      const fid = `res_${fn.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${demoNamespace}`;
       batch.set(doc(db, 'facilities', facId, 'fields', fid), clean({
         id: fid,
         facilityId: facId,
@@ -683,7 +683,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     // Second facility for elite/school demos
     if (isEliteDemo || isSchoolDemo) {
-      const fac2Id = `fac_secondary_${userId.slice(-4)}`;
+      const fac2Id = `fac_secondary_${demoNamespace}`;
       batch.set(doc(db, 'facilities', fac2Id), clean({
         id: fac2Id,
         name: isSchoolDemo ? 'Memorial Sports Complex' : 'Satellite Training Annex',
@@ -698,7 +698,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         ? ['Court A', 'Court B', 'Wrestling Room']
         : ['Turf Field 1', 'Turf Field 2'];
       field2Resources.forEach(fn => {
-        const fid = `res2_${fn.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${userId.slice(-4)}`;
+        const fid = `res2_${fn.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${demoNamespace}`;
         batch.set(doc(db, 'facilities', fac2Id, 'fields', fid), clean({
           id: fid,
           facilityId: fac2Id,
@@ -718,39 +718,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     // --- Specialized Parent/Player Demo Data ---
     if (isParentDemo || isPlayerDemo) {
-        const strikerId = `demo_${planId}_${userId.slice(-4)}_strikers`;
-        const lakerId = `demo_${planId}_${userId.slice(-4)}_lakers`;
-        const leagueId = `demo_league_${userId.slice(-4)}`;
+        const strikerId = `demo_${planId}_${demoNamespace}_strikers`;
+        const lakerId = `demo_${planId}_${demoNamespace}_lakers`;
         const tids = [strikerId, lakerId];
 
-        // 1. Create a Global League Document
-        await persistDemoLeague(leagueId, {
-            id: leagueId,
-            name: 'Elite Youth League',
-            description: 'The premier circuit for local talent.',
-            createdBy: userId,
-            creatorId: userId,
-            memberTeamIds: [strikerId, lakerId, 'hawks_id', 'tigers_id', 'eagles_id'],
-            memberUserIds: [userId],
-            isDemo: true,
-            status: 'active',
-            teams: {
-                [strikerId]: { teamName: 'Strikers', coachName: 'Marcus Miller', coachEmail: 'm.miller@example.com', wins: 2, losses: 1, points: 6 },
-                [lakerId]: { teamName: 'Lakers', coachName: 'Sarah Thompson', coachEmail: 's.thompson@example.com', wins: 3, losses: 0, points: 9 },
-                ['hawks_id']: { teamName: 'Hawks', coachName: 'David Chen', coachEmail: 'd.chen@example.com', wins: 1, losses: 2, points: 3 },
-                ['tigers_id']: { teamName: 'Tigers', coachName: 'James Wilson', coachEmail: 'j.wilson@example.com', wins: 0, losses: 3, points: 0 }
-            },
-            schedule: [
-              { id: 'lg1', team1: 'Strikers', team1Id: strikerId, team2: 'Lakers', team2Id: lakerId, date: tomorrow, time: '10:00 AM', location: 'Court A', status: 'scheduled' },
-              { id: 'lg2', team1: 'Strikers', team1Id: strikerId, team2: 'Hawks', team2Id: 'hawks_id', date: later, time: '12:00 PM', location: 'Court B', status: 'scheduled' },
-              { id: 'lg3', team1: 'Lakers', team1Id: lakerId, team2: 'Tigers', team2Id: 'tigers_id', date: later, time: '02:00 PM', location: 'Court A', status: 'scheduled' },
-              { id: 'lg4', team1: 'Strikers', team1Id: strikerId, team2: 'Eagles', team2Id: 'eagles_id', date: new Date(nowObj.getTime() + 5 * 86400000).toISOString(), time: '04:00 PM', location: 'Main Arena', status: 'scheduled' },
-              { id: 'lg5', team1: 'Lakers', team1Id: lakerId, team2: 'Hawks', team2Id: 'hawks_id', date: new Date(nowObj.getTime() + 8 * 86400000).toISOString(), time: '06:00 PM', location: 'Court B', status: 'scheduled' },
-              { id: 'lg6', team1: 'Strikers', team1Id: strikerId, team2: 'Tigers', team2Id: 'tigers_id', date: new Date(nowObj.getTime() + 11 * 86400000).toISOString(), time: '01:00 PM', location: 'Court A', status: 'scheduled' },
-              { id: 'lg7', team1: 'Lakers', team1Id: lakerId, team2: 'Eagles', team2Id: 'eagles_id', date: new Date(nowObj.getTime() + 14 * 86400000).toISOString(), time: '03:00 PM', location: 'Main Arena', status: 'scheduled' }
-            ],
-            createdAt: now
-        });
+        // League content comes exclusively from the server-owned plan blueprint.
+        await persistDemoLeague();
 
         // 2. Create the Teams (Strikers & Lakers)
         const variants = [
@@ -764,7 +737,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             // For player demos, teams are OWNED by a fictional coach, not the player.
             // This prevents proQuotaStatus from firing (player owns 0 teams).
             // For parent demos, same principle — parents observe, they don't own.
-            const fictionalCoachId = `demo_coach_${userId.slice(-8)}`;
+            const fictionalCoachId = `demo_coach_${demoNamespace}`;
             const teamOwner = (isParentDemo || isPlayerDemo) ? fictionalCoachId : userId;
 
             batch.set(doc(db, 'teams', v.id), clean({
@@ -780,7 +753,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                 isDemo: true,
                 demoOwnerUserId: userId,
                 type: 'youth',
-                leagueId: leagueId,
+                leagueId: activeDemoLeagueId,
                 createdAt: now,
                 heroImageUrl: `https://picsum.photos/seed/${v.id}hero/1200/400`,
                 teamLogoUrl: v.logo
@@ -896,7 +869,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         const alexId = `c2_${userId}`;
         const alexDob = new Date(nowObj.getFullYear() - 16, 2, 20).toISOString().split('T')[0]; // 16 years old
-        const alexEmail = `alex.guest_${userId.slice(-4)}@thesquad.pro`;
+        const alexEmail = `alex.guest_${demoNamespace}@thesquad.pro`;
         batch.set(doc(db, 'players', alexId), clean({
             id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId, userId: alexId,
             dateOfBirth: alexDob, isDemo: true,
@@ -918,14 +891,14 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         // Seed household payment records
         const paymentRecords = [
-          { id: `pay1_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Season Registration Fee', amount: 350.00, status: 'paid', date: day(-45), dueDate: day(-60), invoiceNumber: `INV-${userId.slice(-4)}-001`, category: 'Registration' },
-          { id: `pay2_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Team Equipment Package', amount: 125.00, status: 'paid', date: day(-30), dueDate: day(-35), invoiceNumber: `INV-${userId.slice(-4)}-002`, category: 'Equipment' },
-          { id: `pay3_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Spring Tournament Entry', amount: 80.00, status: 'paid', date: day(-15), dueDate: day(-20), invoiceNumber: `INV-${userId.slice(-4)}-003`, category: 'Tournament Entry' },
-          { id: `pay4_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Season Registration Fee', amount: 400.00, status: 'paid', date: day(-40), dueDate: day(-55), invoiceNumber: `INV-${userId.slice(-4)}-004`, category: 'Registration' },
-          { id: `pay5_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Monthly Team Dues — April', amount: 85.00, status: 'paid', date: day(-28), dueDate: day(-28), invoiceNumber: `INV-${userId.slice(-4)}-005`, category: 'Dues' },
-          { id: `pay6_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Monthly Team Dues — May', amount: 85.00, status: 'pending', date: day(-7), dueDate: day(7), invoiceNumber: `INV-${userId.slice(-4)}-006`, category: 'Dues' },
-          { id: `pay7_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Elite Performance Camp', amount: 220.00, status: 'overdue', date: day(-20), dueDate: day(-5), invoiceNumber: `INV-${userId.slice(-4)}-007`, category: 'Tournament Entry' },
-          { id: `pay8_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Pre-Season Medical Screening', amount: 60.00, status: 'pending', date: day(-3), dueDate: day(14), invoiceNumber: `INV-${userId.slice(-4)}-008`, category: 'Medical' },
+          { id: `pay1_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Season Registration Fee', amount: 350.00, status: 'paid', date: day(-45), dueDate: day(-60), invoiceNumber: `INV-${demoNamespace}-001`, category: 'Registration' },
+          { id: `pay2_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Team Equipment Package', amount: 125.00, status: 'paid', date: day(-30), dueDate: day(-35), invoiceNumber: `INV-${demoNamespace}-002`, category: 'Equipment' },
+          { id: `pay3_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Spring Tournament Entry', amount: 80.00, status: 'paid', date: day(-15), dueDate: day(-20), invoiceNumber: `INV-${demoNamespace}-003`, category: 'Tournament Entry' },
+          { id: `pay4_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Season Registration Fee', amount: 400.00, status: 'paid', date: day(-40), dueDate: day(-55), invoiceNumber: `INV-${demoNamespace}-004`, category: 'Registration' },
+          { id: `pay5_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Monthly Team Dues — April', amount: 85.00, status: 'paid', date: day(-28), dueDate: day(-28), invoiceNumber: `INV-${demoNamespace}-005`, category: 'Dues' },
+          { id: `pay6_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Monthly Team Dues — May', amount: 85.00, status: 'pending', date: day(-7), dueDate: day(7), invoiceNumber: `INV-${demoNamespace}-006`, category: 'Dues' },
+          { id: `pay7_${userId}`, childId: juniorId, childName: 'Junior Guest', teamId: strikerId, teamName: 'Strikers', description: 'Elite Performance Camp', amount: 220.00, status: 'overdue', date: day(-20), dueDate: day(-5), invoiceNumber: `INV-${demoNamespace}-007`, category: 'Tournament Entry' },
+          { id: `pay8_${userId}`, childId: alexId, childName: 'Alex Guest', teamId: lakerId, teamName: 'Lakers', description: 'Pre-Season Medical Screening', amount: 60.00, status: 'pending', date: day(-3), dueDate: day(14), invoiceNumber: `INV-${demoNamespace}-008`, category: 'Medical' },
         ];
         paymentRecords.forEach(p => batch.set(doc(db, 'users', userId, 'payments', p.id), clean({ ...p, isDemo: true })));
         await batch.flush();
@@ -1051,85 +1024,14 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     // School/League creator demo: 4 real squads (school/elite) get full data; the institution is separate.
     // For league_creator, they have no teams.
     const teamVariants = isLeagueDemo ? [] : (isEliteDemo ? ['Premier Division', 'Championship Division', 'Development Division'] : (isSchoolDemo ? ['Jr Soccer Club', 'Sr Soccer Club', 'Badminton Club', 'Jr Volleyball Club', 'Sr Volleyball Club'] : ['']));
-    const leagueId = `demo_league_${userId.slice(-4)}`;
-
-    // Create a league for non-parent demos to tie everything together
+    // Create a league for non-parent demos from the server-owned plan blueprint.
     if (!isParentDemo) {
-        const leagueTeams: Record<string, any> = {};
-        const memberTeamIds: string[] = [];
-        
-        // Add the user's actual teams
-        for (let i = 0; i < teamVariants.length; i++) {
-            const v = teamVariants[i];
-            const tId = `demo_${planId}_${userId.slice(-4)}${v ? '_' + v.toLowerCase().replace(/\s+/g, '') : ''}`;
-            const tName = isSchoolDemo ? `Springfield ${v}` : (v ? `Elite Squad - ${v}` : (isProTier ? 'Apex Demo Squad' : 'Grassroots Demo'));
-            leagueTeams[tId] = { teamName: tName, coachName: 'Guest Coach', coachEmail: `coach_${i}@thesquad.pro`, wins: [3, 2, 1, 0][i] || 0, losses: [0, 1, 2, 3][i] || 0, points: [9, 6, 3, 0][i] || 0 };
-            memberTeamIds.push(tId);
-        }
-        
-        // Pad the league with mock opponents so it always has at least 4 teams (or 6 for league demo)
-        const mockOpponents = isSchoolDemo
-          ? ['Riverside High School', 'Lincoln Prep Academy', 'Jefferson Academy', 'Westlake Athletic', 'Central High School', 'Northview Academy']
-          : ['City Wildcats', 'Metro Stars', 'Valley Vipers', 'Coastal Elite', 'Summit United', 'Apex United'];
-        const mockTeamIds = isSchoolDemo
-          ? ['rival_riverside', 'rival_lincoln', 'rival_jefferson', 'rival_westlake', 'rival_central', 'rival_northview']
-          : ['wildcats_id', 'stars_id', 'vipers_id', 'elite_id', 'summit_id', 'apex_id'];
-        let mockIndex = 0;
-        const targetTeamCount = isLeagueDemo ? 6 : 4;
-        while (Object.keys(leagueTeams).length < targetTeamCount) {
-            const mockId = mockTeamIds[mockIndex] || `mock_${mockIndex}_${userId.slice(-4)}`;
-            leagueTeams[mockId] = { teamName: mockOpponents[mockIndex], coachName: `Coach ${mockOpponents[mockIndex]}`, coachEmail: `coach@${mockOpponents[mockIndex].toLowerCase().replace(/\s+/g, '')}.com`, wins: Math.floor(Math.random() * 3), losses: Math.floor(Math.random() * 3), points: Math.floor(Math.random() * 9), teamLogoUrl: `https://picsum.photos/seed/${mockOpponents[mockIndex].replace(/\s+/g, '')}/200/200` };
-            memberTeamIds.push(mockId);
-            mockIndex++;
-        }
-
-        const primaryTid = isLeagueDemo ? 'wildcats_id' : `demo_${planId}_${userId.slice(-4)}${teamVariants[0] ? '_' + teamVariants[0].toLowerCase().replace(/\s+/g, '') : ''}`;
-        const secondTid = isLeagueDemo ? 'stars_id' : (Object.keys(leagueTeams)[1] || primaryTid);
-        
-        await persistDemoLeague(leagueId, {
-            id: leagueId,
-            name: isSchoolDemo ? 'State Academic Athletic League' : 'Apex Premier Circuit',
-            description: 'The premier circuit for top-tier competitive programs.',
-            createdBy: userId,
-            creatorId: userId,
-            memberTeamIds,
-            memberUserIds: [userId],
-            isDemo: true,
-            demoSessionOwnerId: userId,
-            demoSeeded: true,
-            status: 'active',
-            createdAt: now,
-            teams: leagueTeams,
-            schedule: isLeagueDemo ? [
-              { id: 'sched1', team1: 'City Wildcats', team1Id: 'wildcats_id', team2: 'Metro Stars', team2Id: 'stars_id', date: tomorrow, time: '10:00 AM', location: 'Main Arena', status: 'scheduled' },
-              { id: 'sched2', team1: 'Valley Vipers', team1Id: 'vipers_id', team2: 'Coastal Elite', team2Id: 'elite_id', date: tomorrow, time: '12:00 PM', location: 'Court B', status: 'scheduled' },
-              { id: 'sched3', team1: 'Summit United', team1Id: 'summit_id', team2: 'Apex United', team2Id: 'apex_id', date: tomorrow, time: '02:00 PM', location: 'Court C', status: 'scheduled' },
-              { id: 'sched4', team1: 'City Wildcats', team1Id: 'wildcats_id', team2: 'Valley Vipers', team2Id: 'vipers_id', date: later, time: '09:00 AM', location: 'Main Arena', status: 'scheduled' },
-              { id: 'sched5', team1: 'Metro Stars', team1Id: 'stars_id', team2: 'Apex United', team2Id: 'apex_id', date: later, time: '11:00 AM', location: 'Court B', status: 'scheduled' },
-              { id: 'sched6', team1: 'Coastal Elite', team1Id: 'elite_id', team2: 'Summit United', team2Id: 'summit_id', date: later, time: '01:00 PM', location: 'Court C', status: 'scheduled' }
-            ] : isSchoolDemo ? [
-              { id: 'sched1', team1: 'Springfield Jr Soccer Club', team1Id: primaryTid, team2: 'Riverside High School', team2Id: 'rival_riverside', date: tomorrow, time: '10:00 AM', location: 'Main Field', status: 'scheduled' },
-              { id: 'sched2', team1: 'Springfield Sr Soccer Club', team1Id: secondTid, team2: 'Lincoln Prep Academy', team2Id: 'rival_lincoln', date: tomorrow, time: '12:00 PM', location: 'Court B', status: 'scheduled' },
-              { id: 'sched3', team1: 'Springfield Badminton Club', team1Id: `demo_${planId}_${userId.slice(-4)}_badmintonclub`, team2: 'Jefferson Academy', team2Id: 'rival_jefferson', date: later, time: '09:00 AM', location: 'Gymnasium A', status: 'scheduled' },
-              { id: 'sched4', team1: 'Springfield Jr Volleyball Club', team1Id: `demo_${planId}_${userId.slice(-4)}_jrvolleyballclub`, team2: 'Westlake Athletic', team2Id: 'rival_westlake', date: later, time: '11:00 AM', location: 'Gymnasium B', status: 'scheduled' },
-              { id: 'sched5', team1: 'Springfield Sr Volleyball Club', team1Id: `demo_${planId}_${userId.slice(-4)}_srvolleyballclub`, team2: 'Central High School', team2Id: 'rival_central', date: new Date(nowObj.getTime() + 7 * 86400000).toISOString(), time: '02:00 PM', location: 'Court C', status: 'scheduled' },
-              { id: 'sched6', team1: 'Springfield Jr Soccer Club', team1Id: primaryTid, team2: 'Northview Academy', team2Id: 'rival_northview', date: new Date(nowObj.getTime() + 9 * 86400000).toISOString(), time: '04:00 PM', location: 'Main Field', status: 'scheduled' },
-              { id: 'sched7', team1: 'Springfield Sr Soccer Club', team1Id: secondTid, team2: 'Riverside High School', team2Id: 'rival_riverside', date: new Date(nowObj.getTime() + 12 * 86400000).toISOString(), time: '10:00 AM', location: 'Away – Riverside', status: 'scheduled' }
-            ] : [
-              { id: 'sched1', team1: 'Elite Squad - Premier Division', team1Id: primaryTid, team2: 'City Wildcats', team2Id: 'wildcats_id', date: tomorrow, time: '10:00 AM', location: 'Main Arena', status: 'scheduled' },
-              { id: 'sched2', team1: 'Elite Squad - Championship Division', team1Id: secondTid, team2: 'Metro Stars', team2Id: 'stars_id', date: tomorrow, time: '02:00 PM', location: 'Court B', status: 'scheduled' },
-              { id: 'sched3', team1: 'Elite Squad - Premier Division', team1Id: primaryTid, team2: 'Valley Vipers', team2Id: 'vipers_id', date: later, time: '11:00 AM', location: 'State Complex', status: 'scheduled' },
-              { id: 'sched4', team1: 'Elite Squad - Championship Division', team1Id: secondTid, team2: 'Coastal Elite', team2Id: 'elite_id', date: new Date(nowObj.getTime() + 7 * 86400000).toISOString(), time: '09:00 AM', location: 'Main Arena', status: 'scheduled' },
-              { id: 'sched5', team1: 'Elite Squad - Development Division', team1Id: `demo_${planId}_${userId.slice(-4)}_developmentdivision`, team2: 'Summit United', team2Id: 'summit_id', date: new Date(nowObj.getTime() + 9 * 86400000).toISOString(), time: '05:00 PM', location: 'Court C', status: 'scheduled' },
-              { id: 'sched6', team1: 'Elite Squad - Premier Division', team1Id: primaryTid, team2: 'Apex United', team2Id: 'apex_id', date: new Date(nowObj.getTime() + 12 * 86400000).toISOString(), time: '01:00 PM', location: 'State Complex', status: 'scheduled' },
-              { id: 'sched7', team1: 'Elite Squad - Championship Division', team1Id: secondTid, team2: 'City Wildcats', team2Id: 'wildcats_id', date: new Date(nowObj.getTime() + 14 * 86400000).toISOString(), time: '03:30 PM', location: 'Main Arena', status: 'scheduled' }
-            ]
-        });
+        await persistDemoLeague();
     }
 
     // ── School Institution (lightweight record — no events, no roster) ────────
     if (isSchoolDemo) {
-      const instId = `demo_${planId}_${userId.slice(-4)}_institution`;
+      const instId = `demo_${planId}_${demoNamespace}_institution`;
       const instCode = (h => Math.abs(h).toString(36).toUpperCase().padStart(8,'0'))(instId.split('').reduce((h,c)=>(Math.imul(31,h)+c.charCodeAt(0))|0,0));
       batch.set(doc(db, 'teams', instId), clean({
         id: instId,
@@ -1162,11 +1064,12 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     for (let i = 0; i < teamVariants.length; i++) {
         const variant = teamVariants[i];
-        const teamId = `demo_${planId}_${userId.slice(-4)}_${(variant || 'main').toLowerCase().replace(/\s+/g, '')}`;
+        const variantSlug = (variant || 'main').toLowerCase().replace(/\s+/g, '');
+        const teamId = `demo_${planId}_${demoNamespace}_${variantSlug}`;
         const name = isSchoolDemo ? `Springfield ${variant}` : (variant ? `Elite Squad - ${variant}` : (isProTier ? 'Apex Demo Squad' : 'Grassroots Demo'));
         // All school variants are squads — the institution is a separate record created above
         const teamType = isSchoolDemo ? 'school_squad' : 'youth';
-        const schoolId = isSchoolDemo ? `demo_${planId}_${userId.slice(-4)}_institution` : undefined;
+        const schoolId = isSchoolDemo ? `demo_${planId}_${demoNamespace}_institution` : undefined;
         const squadSport = isSchoolDemo ? sportForDemoVariant(variant) : 'Multi-Sport';
 
 
@@ -1177,7 +1080,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             teamName: name, // legacy alias kept for compatibility
             code: uniqueCode, teamCode: uniqueCode, inviteCode: uniqueCode,
             ownerUserId: userId, demoOwnerUserId: userId, isPro: isProTier || isSchoolDemo, planId: plan_type, sport: squadSport,
-            isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? leagueId : undefined,
+            isDemo: true, type: teamType, schoolId, leagueId: !isParentDemo ? activeDemoLeagueId : undefined,
             createdAt: now, heroImageUrl: `https://picsum.photos/seed/${teamId}hero/1200/400`,
             teamLogoUrl: `https://picsum.photos/seed/${teamId}logo/200/200`
         }));
@@ -1307,8 +1210,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
     // Athletic Director sees a pre-populated channel immediately on first login.
     // memberIds + staffMetadata includes every head/assistant coach from all squads.
     if (isSchoolDemo) {
-      const instId = `demo_${planId}_${userId.slice(-4)}_institution`;
-      const hubChatId = `hub_broadcast_${userId.slice(-4)}`;
+      const instId = `demo_${planId}_${demoNamespace}_institution`;
+      const hubChatId = `hub_broadcast_${demoNamespace}`;
       const hubMemberIds: string[] = [userId];
       const staffMeta: Record<string, { name: string; position: string; avatar: string; squadName?: string }> = {
         [userId]: { name: 'Guest Admin', position: 'Athletic Director', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=guest` }
@@ -1316,7 +1219,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
       for (let i = 0; i < teamVariants.length; i++) {
         const variant = teamVariants[i];
-        const tId = `demo_${planId}_${userId.slice(-4)}_${variant.toLowerCase().replace(/\s+/g, '')}`;
+        const tId = `demo_${planId}_${demoNamespace}_${variant.toLowerCase().replace(/\s+/g, '')}`;
         const staff = COACHING_STAFF[i % COACHING_STAFF.length];
         const squadName = `Springfield ${variant}`;
         const u1 = `u1_${tId}`;
@@ -1346,8 +1249,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     // ── Elite Demo: Auto-seed Hub Broadcast Channel ───────────────────────────
     if (isEliteDemo) {
-      const primaryTId = `demo_${planId}_${userId.slice(-4)}_${teamVariants[0].toLowerCase().replace(/\s+/g, '')}`;
-      const hubChatId = `hub_broadcast_elite_${userId.slice(-4)}`;
+      const primaryTId = `demo_${planId}_${demoNamespace}_${teamVariants[0].toLowerCase().replace(/\s+/g, '')}`;
+      const hubChatId = `hub_broadcast_elite_${demoNamespace}`;
       const hubMemberIds: string[] = [userId];
       const staffMeta: Record<string, { name: string; position: string; avatar: string; squadName?: string }> = {
         [userId]: { name: 'Guest Coach', position: 'League Organizer', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=guestcoach` }
@@ -1355,7 +1258,7 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
       for (let i = 0; i < teamVariants.length; i++) {
         const variant = teamVariants[i];
-        const tId = `demo_${planId}_${userId.slice(-4)}_${variant.toLowerCase().replace(/\s+/g, '')}`;
+        const tId = `demo_${planId}_${demoNamespace}_${variant.toLowerCase().replace(/\s+/g, '')}`;
         const staff = COACHING_STAFF[i % COACHING_STAFF.length];
         const squadName = `Elite Squad - ${variant}`;
         const u1 = `u1_${tId}`;
@@ -1384,5 +1287,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
     if (isLeagueDemo) return '';
     const primaryVariant = teamVariants[0] || 'main';
-    return `demo_${planId}_${userId.slice(-4)}_${primaryVariant.toLowerCase().replace(/\s+/g, '')}`;
+    const primarySlug = (primaryVariant || 'main').toLowerCase().replace(/\s+/g, '');
+    return `demo_${planId}_${demoNamespace}_${primarySlug}`;
 }

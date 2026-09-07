@@ -138,10 +138,11 @@ export function buildLeagueCloneDocument(_input: {
   source: CloneSource;
   leagueId: string;
   actorUid: string;
+  ownerUid?: string;
   identity: CloneIdentity;
   now: string;
 }): Record<string, unknown> {
-  const { source, leagueId, actorUid, identity, now } = _input;
+  const { source, leagueId, actorUid, ownerUid = actorUid, identity, now } = _input;
   const configurableFields = [
     'sport',
     'description',
@@ -165,18 +166,18 @@ export function buildLeagueCloneDocument(_input: {
     divisionTitle: identity.divisionTitle,
     ...configuration,
     slug: `${leagueId.slice(-6)}-clone`,
-    creatorId: actorUid,
+    creatorId: ownerUid,
+    billingOwnerUserId: ownerUid,
     createdAt: now,
     isArchived: false,
     is_active: false,
     teams: {},
-    individualRecruits: {},
     schedule: [],
     settingsCopiedFrom: source.id,
     settingsCopiedAt: now,
     deploymentStatus: 'undeployed',
     memberTeamIds: [],
-    memberUserIds: [actorUid],
+    memberUserIds: [...new Set([ownerUid, actorUid])],
     memberIndivIds: [],
   };
 }

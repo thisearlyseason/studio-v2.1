@@ -338,6 +338,7 @@ beforeEach(async () => {
       }),
       setDoc(doc(db, 'leagues', 'league-a'), {
         creatorId: 'owner',
+        billingOwnerUserId: 'owner',
         tenantId: 'team-a',
         memberUserIds: ['owner', 'member'],
         sensitiveFieldsMigrated: true,
@@ -1308,6 +1309,8 @@ test('club billing metadata and legacy global alerts are not cross-account reada
 
 test('league collection queries cannot discover other organizations', async () => {
   const memberDb = authenticatedDb('member');
+  const ownerDb = authenticatedDb('owner');
+  const staffDb = authenticatedDb('staff');
   const outsiderDb = authenticatedDb('outsider');
 
   await assertSucceeds(getDocs(query(
@@ -1315,6 +1318,13 @@ test('league collection queries cannot discover other organizations', async () =
     where('memberUserIds', 'array-contains', 'member'),
     where('sensitiveFieldsMigrated', '==', true),
   )));
+  for (const organizerDb of [ownerDb, staffDb]) {
+    await assertSucceeds(getDocs(query(
+      collection(organizerDb, 'leagues'),
+      where('tenantId', '==', 'team-a'),
+    )));
+  }
+  await assertFails(getDocs(query(collection(memberDb, 'leagues'), where('tenantId', '==', 'team-a'))));
   await assertFails(getDocs(collection(outsiderDb, 'leagues')));
 });
 

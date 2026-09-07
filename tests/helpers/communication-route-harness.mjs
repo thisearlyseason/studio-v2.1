@@ -12,6 +12,7 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
     '@/lib/firebase-admin': `export const adminDb = globalThis[${JSON.stringify(key)}].db; export function getAdminStorageBucketName() {return 'demo-test.appspot.com';}`,
     'firebase-admin/storage': `export function getStorage() {return {bucket:()=>globalThis[${JSON.stringify(key)}].db.bucket};}`,
     'firebase-admin/firestore': `export class FieldPath {constructor(...segments){this.segments=segments;}} export const FieldValue={increment:value=>({__increment:value}),serverTimestamp:()=>({__serverTimestamp:true}),arrayUnion:(...values)=>({__arrayUnion:values}),arrayRemove:(...values)=>({__arrayRemove:values}),delete:()=>({__delete:true})};`,
+    'firebase-admin': `export const firestore={FieldValue:{serverTimestamp:()=>({__serverTimestamp:true})}};`,
     '@/lib/server-notification-delivery': `export async function sendNotificationToUsers(input){globalThis[${JSON.stringify(key)}].db.notifications.push(structuredClone(input));return {fcmSuccessCount:0,fcmFailureCount:0,webPushSuccessCount:0,webPushFailureCount:0};}`,
     '@/lib/api-auth': `export async function verifyFirebaseToken() { return globalThis[${JSON.stringify(key)}].auth; } export function assertNonAnonymous(auth){return auth;}`,
     '@/lib/server-request-guards': `export class RequestBodyError extends Error {} export async function enforceUserRateLimit() { return null; } export async function readJsonBodyWithLimit(req) { return req.json(); }`,

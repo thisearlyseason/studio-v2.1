@@ -18,6 +18,13 @@ export function permitsLegacyOrPaidPortals(...planIds: Array<string | null | und
   return false;
 }
 
+export function leagueBillingOwnerUserId(league: Record<string, unknown>): string {
+  for (const candidate of [league.billingOwnerUserId, league.creatorId]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
+}
+
 export function publicGame(game: any) {
   return {
     id: game.id,

@@ -118,10 +118,13 @@ test('anonymous demo leagues are server-seeded and edited only through lifecycle
   assert.match(lifecycle, /league\.demoSeeded !== true/);
   assert.match(lifecycle, /league\.demoSessionOwnerId !== auth\.uid/);
   assert.match(lifecycle, /league\.tenantId !== `profile:\$\{auth\.uid\}`/);
-  for (const source of [seedRoute, seeder]) {
-    assert.match(source, /demoSessionOwnerId:/);
-    assert.match(source, /demoSeeded: true/);
-  }
+  assert.match(seedRoute, /demoSessionOwnerId:/);
+  assert.match(seedRoute, /demoSeeded: true/);
+  assert.match(seedRoute, /demo-session-v1\\0\$\{uid\}/);
+  assert.match(seedRoute, /DEMO_TARGET_OWNERSHIP_CONFLICT/);
+  assert.match(seeder, /body: JSON\.stringify\(\{ planId \}\)/);
+  assert.doesNotMatch(seeder, /demoSessionOwnerId:/);
+  assert.doesNotMatch(seeder, /demoSeeded: true/);
   assert.match(seedRoute, /export async function PUT/);
   assert.match(seedRoute, /adminDb\.runTransaction/);
   assert.match(seeder, /fetch\('\/api\/demo\/seed', \{\s*method: 'PUT'/);

@@ -198,13 +198,17 @@ service cloud.firestore {
         );
     }
 
-    function isLeagueOrganizer(leagueId) {
-      let league = get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+    function isLeagueOrganizerData(league) {
       let tenantId = league.get('tenantId', '');
       return isSignedIn() && (
         league.get('creatorId', '') == request.auth.uid ||
         (tenantId != '' && exists(/databases/$(database)/documents/teams/$(tenantId)) && isTeamStaff(tenantId))
       );
+    }
+
+    function isLeagueOrganizer(leagueId) {
+      let leaguePath = /databases/$(database)/documents/leagues/$(leagueId);
+      return exists(leaguePath) && isLeagueOrganizerData(get(leaguePath).data);
     }
 
     // Subscription state is server-managed. Every browser-created team starts
@@ -758,7 +762,7 @@ allow create, update: if false; // Authenticated incident service only.
     match /leagues/{leagueId} {
       // Use the document being evaluated so creator-scoped collection queries
       // can be proven by Firestore without a separate get() returning null.
-      allow read: if isSuperAdmin() || (isSignedIn() && (
+      allow read: if isSuperAdmin() || isLeagueOrganizerData(resource.data) || (isSignedIn() && (
         resource.data.get('creatorId', '') == request.auth.uid ||
         (
           resource.data.get('memberUserIds', []).hasAny([request.auth.uid]) &&
@@ -776,7 +780,7 @@ allow create, update: if false; // Authenticated incident service only.
         isSignedIn() &&
         resource.data.creatorId == request.auth.uid &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'id', 'name', 'divisionTitle', 'creatorId', 'tenantId', 'hostTeamId',
+          'id', 'name', 'divisionTitle', 'creatorId', 'billingOwnerUserId', 'tenantId', 'hostTeamId',
           'ownerTeamId', 'teamId', 'lifecycleVersion', 'sport', 'description',
           'startDate', 'endDate', 'ages', 'contactEmail', 'contactPhone',
           'registrationCost', 'paymentInstructions', 'socialLinks', 'slug',
@@ -798,20 +802,17 @@ allow create, update: if false; // Authenticated incident service only.
       }
 
       match /registrationEntries/{entryId} {
-        allow read: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
         allow write: if false;
       }
 
       match /archived_waivers/{waiverId} {
-        allow read: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
         allow write: if false;
       }
 
       match /registration/{configId} {
-        allow read: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
         allow write: if false;
       }
 
@@ -823,8 +824,7 @@ allow create, update: if false; // Authenticated incident service only.
 
       match /invites/{inviteId} {
         allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
-        allow write: if isSuperAdmin() || (isSignedIn() &&
-          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow write: if isSuperAdmin() || isLeagueOrganizer(leagueId);
       }
 
       match /divisions/{divisionId} {

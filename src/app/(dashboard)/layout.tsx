@@ -105,8 +105,9 @@ function DemoSeedWrapper({
         });
         const bootstrapPayload = await bootstrapResponse.json();
         if (!bootstrapResponse.ok) throw new Error(bootstrapPayload.error || 'Unable to initialize the demo.');
+        if (!/^[a-f0-9]{24}$/.test(String(bootstrapPayload.demoNamespace || ''))) throw new Error('Demo identity could not be established.');
 
-        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId, false, idToken);
+        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId, bootstrapPayload.demoNamespace, false, idToken);
 
         if (primaryId) {
           localStorage.setItem('sf_session_team_id', primaryId);
@@ -237,9 +238,11 @@ function BetaDemoSeeder({
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
           body: JSON.stringify({ planId }),
         });
-        if (!bootstrap.ok) throw new Error((await bootstrap.json()).error || 'Unable to initialize beta workspace.');
+        const bootstrapPayload = await bootstrap.json();
+        if (!bootstrap.ok) throw new Error(bootstrapPayload.error || 'Unable to initialize beta workspace.');
+        if (!/^[a-f0-9]{24}$/.test(String(bootstrapPayload.demoNamespace || ''))) throw new Error('Demo identity could not be established.');
 
-        const primaryId = await seedGuestDemoTeam(db, user.uid, planId, true /* isBetaTester */, idToken);
+        const primaryId = await seedGuestDemoTeam(db, user.uid, planId, bootstrapPayload.demoNamespace, true /* isBetaTester */, idToken);
         if (primaryId) {
           localStorage.setItem('sf_session_team_id', primaryId);
         }

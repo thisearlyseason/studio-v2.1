@@ -160,7 +160,7 @@ test('a cloned division copies configuration but resets all operational data', (
   assert.equal('scorekeeperPin' in cloned, false);
   assert.deepEqual(cloned.schedulerConfig, { gamesPerTeam: 12, selectedFields: ['field-1'] });
   assert.deepEqual(cloned.teams, {});
-  assert.deepEqual(cloned.individualRecruits, {});
+  assert.equal('individualRecruits' in cloned, false);
   assert.deepEqual(cloned.schedule, []);
   assert.deepEqual(cloned.memberTeamIds, []);
   assert.deepEqual(cloned.memberUserIds, ['owner-1']);

@@ -4,7 +4,7 @@ import { FieldPath, FieldValue, type DocumentReference, type DocumentSnapshot } 
 import { adminDb } from '@/lib/firebase-admin';
 import { recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
 import { credentialsMatch, isLegacyOpenPortal, validScore } from '@/lib/score-action-security';
-import { permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
+import { leagueBillingOwnerUserId, permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
 import {
   publicLeagueGameProjection,
   recalculatePublicLeagueStandings,
@@ -23,7 +23,7 @@ import { getTeamAuthority } from '@/lib/server-team-access';
 import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
 import { effectiveLeagueRegistrationConfig, isCalendarDate, nextRegistrationCount, registrationArchiveMatches, registrationCountFromLegacy, registrationPaymentSnapshot, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
 import { hasStaffRole } from '@/lib/staff-position';
-import { verifyLeagueScorekeeperPin } from '@/lib/server-competition-credential';
+import { hashLeagueScorekeeperPin, verifyLeagueScorekeeperPin } from '@/lib/server-competition-credential';
 
 const LEGACY_REGISTRATION_SCAN_LIMIT=100001;
 
@@ -272,8 +272,9 @@ export async function POST(req: NextRequest) {
           if (bySlug.empty) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
           leagueSnap = bySlug.docs[0];
         }
-        const creator = leagueSnap.data()?.creatorId
-          ? await adminDb.collection('users').doc(leagueSnap.data()!.creatorId).get()
+        const billingOwnerId = leagueBillingOwnerUserId(leagueSnap.data() || {});
+        const creator = billingOwnerId
+          ? await adminDb.collection('users').doc(billingOwnerId).get()
           : null;
         if (!creator?.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
           return NextResponse.json({ error: 'This subscription does not include public registration.' }, { status: 403 });
@@ -836,9 +837,7 @@ export async function POST(req: NextRequest) {
         ref = snap.ref;
       }
       const league = snap.data()!;
-      const privateSnapshot = await ref.collection('private').doc('lifecycle').get();
-      const privatePinHash = String(privateSnapshot.data()?.scorekeeperPinHash || '');
-      const creatorId = typeof league.creatorId === 'string' ? league.creatorId : '';
+      const creatorId = leagueBillingOwnerUserId(league);
       if (!creatorId) return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       {
         const creator = await adminDb.collection('users').doc(creatorId).get();
@@ -847,18 +846,38 @@ export async function POST(req: NextRequest) {
       if (league.is_active === false || league.isArchived === true) {
         return NextResponse.json({ error: 'League portal is inactive.' }, { status: 404 });
       }
-      const legacyOpen = isLegacyOpenPortal(ref.id);
-      if (!privatePinHash && !legacyOpen) return NextResponse.json({ error: 'Scorekeeper access is not configured for this league.' }, { status: 409 });
-      if (privatePinHash ? !verifyLeagueScorekeeperPin(ref.id, code, privatePinHash) : !credentialsMatch(undefined, code, legacyOpen)) {
-        return NextResponse.json({ error: 'Invalid scorekeeper PIN.' }, { status: 403 });
-      }
       if (action === 'score') {
         if (!gameId || !validScore(body.score1) || !validScore(body.score2)) {
           return NextResponse.json({ error: 'A valid game and scores from 0 to 999 are required.' }, { status: 400 });
         }
         const result = await adminDb.runTransaction(async transaction => {
+          const privateRef = ref.collection('private').doc('lifecycle');
           const fresh = await transaction.get(ref);
+          const privateSnapshot = await transaction.get(privateRef);
           const freshLeague = fresh.data() || {};
+          const privateData = privateSnapshot.data() || {};
+          const privatePinHash = String(privateData.scorekeeperPinHash || '');
+          const legacyPin = typeof freshLeague.scorekeeperPin === 'string'
+            ? freshLeague.scorekeeperPin.trim()
+            : '';
+          const legacyOpen = isLegacyOpenPortal(ref.id);
+          if (!privatePinHash && !legacyPin && !legacyOpen) {
+            return {
+              valid: false as const,
+              code: 'CREDENTIAL_NOT_CONFIGURED',
+              message: 'Scorekeeper access is not configured for this league.',
+            };
+          }
+          const credentialIsValid = privatePinHash
+            ? verifyLeagueScorekeeperPin(ref.id, code, privatePinHash)
+            : credentialsMatch(legacyPin, code, legacyOpen);
+          if (!credentialIsValid) {
+            return {
+              valid: false as const,
+              code: 'INVALID_CREDENTIAL',
+              message: 'Invalid scorekeeper PIN.',
+            };
+          }
           const schedule: Array<Record<string, unknown>> = Array.isArray(freshLeague.schedule)
             ? freshLeague.schedule.map((game: Record<string, unknown>) => ({ ...game }))
             : [];
@@ -916,16 +935,36 @@ export async function POST(req: NextRequest) {
           });
           const team1Ref = adminDb.collection('teams').doc(team1Id).collection('games').doc(String(team1Projection.id));
           const team2Ref = adminDb.collection('teams').doc(team2Id).collection('games').doc(String(team2Projection.id));
-          transaction.update(ref, { schedule, teams, updatedAt: FieldValue.serverTimestamp() });
+          transaction.update(ref, {
+            schedule,
+            teams,
+            updatedAt: FieldValue.serverTimestamp(),
+            ...(legacyPin ? {
+              scorekeeperPin: FieldValue.delete(),
+              scorekeeperPinHash: FieldValue.delete(),
+            } : {}),
+          });
+          if (legacyPin) {
+            transaction.set(privateRef, {
+              ...privateData,
+              scorekeeperPinHash: hashLeagueScorekeeperPin(ref.id, legacyPin),
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
           transaction.set(team1Ref, team1Projection);
           transaction.set(team2Ref, team2Projection);
           transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'score', gameId, { score1: body.score1, score2: body.score2 }));
           return { valid: true as const };
         });
         if (!result.valid) {
+          const status = result.code === 'MATCH_NOT_FOUND'
+            ? 404
+            : result.code === 'INVALID_CREDENTIAL'
+              ? 403
+              : 409;
           return NextResponse.json(
             { error: result.message, code: result.code },
-            { status: result.code === 'MATCH_NOT_FOUND' ? 404 : 409 },
+            { status },
           );
         }
         return NextResponse.json({ success: true });
@@ -935,15 +974,29 @@ export async function POST(req: NextRequest) {
         if (!gameId || !notes) return NextResponse.json({ error: 'A match and dispute details are required.' }, { status: 400 });
         const result = await adminDb.runTransaction(async transaction => {
           const fresh = await transaction.get(ref);
-          const schedule = (fresh.data()?.schedule || []).map((game: any) => game.id === gameId ? {
+          const privateSnapshot = await transaction.get(ref.collection('private').doc('lifecycle'));
+          const freshLeague = fresh.data() || {};
+          const privatePinHash = String(privateSnapshot.data()?.scorekeeperPinHash || '');
+          const legacyPin = typeof freshLeague.scorekeeperPin === 'string' ? freshLeague.scorekeeperPin.trim() : '';
+          const legacyOpen = isLegacyOpenPortal(ref.id);
+          if (!privatePinHash && !legacyPin && !legacyOpen) return { valid: false as const, code: 'CREDENTIAL_NOT_CONFIGURED' };
+          const credentialIsValid = privatePinHash
+            ? verifyLeagueScorekeeperPin(ref.id, code, privatePinHash)
+            : credentialsMatch(legacyPin, code, legacyOpen);
+          if (!credentialIsValid) return { valid: false as const, code: 'INVALID_CREDENTIAL' };
+          const schedule = (freshLeague.schedule || []).map((game: any) => game.id === gameId ? {
             ...game, isDisputed: true, disputeNotes: notes, updatedAt: new Date().toISOString(),
           } : game);
-          if (!schedule.some((game: any) => game.id === gameId)) return false;
+          if (!schedule.some((game: any) => game.id === gameId)) return { valid: false as const, code: 'MATCH_NOT_FOUND' };
           transaction.update(ref, { schedule });
           transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'dispute', gameId, { notes }));
-          return true;
+          return { valid: true as const };
         });
-        if (!result) return NextResponse.json({ error: 'Match not found.' }, { status: 404 });
+        if (!result.valid) {
+          if (result.code === 'INVALID_CREDENTIAL') return NextResponse.json({ error: 'Invalid scorekeeper PIN.' }, { status: 403 });
+          if (result.code === 'CREDENTIAL_NOT_CONFIGURED') return NextResponse.json({ error: 'Scorekeeper access is not configured for this league.' }, { status: 409 });
+          return NextResponse.json({ error: 'Match not found.' }, { status: 404 });
+        }
         return NextResponse.json({ success: true });
       }
     }

@@ -127,7 +127,7 @@ test('tournament and event registration responses are visible at their event-sco
 
   assert.match(publicAction, /entryParentRef = eventRef/);
   assert.match(publicAction, /entryParentRef\.collection\('registrationEntries'\)/);
-  assert.match(provider, /collection\(entryParentRef, 'registrationEntries'\)/);
+  assert.doesNotMatch(provider, /collection\(entryParentRef, 'registrationEntries'\)/);
   assert.match(tournament, /events', eventId as string, 'registrationEntries'/);
   assert.match(tournament, /where\('event_id', '==', eventId as string\)/);
   assert.match(tournament, /else if \(!isConfigLoading\)[\s\S]{0,500}is_active: false/);
@@ -144,7 +144,7 @@ test('tournament and event registration responses are visible at their event-sco
     assert.match(publicTournament, new RegExp(`field\\.type === '${fieldType}'`));
   }
   assert.match(publicTournament, /validateCurrentStep/);
-  assert.match(publicAction, /requiredCore = \['teamName', 'name', 'email'\]/);
+  assert.match(publicAction, /requiredCore = registrationType === 'team'/);
   assert.match(publicAction, /Array\.isArray\(value\) \? value\.length === 0 : value !== true/);
   assert.match(eventDialog, /value="responses"/);
   assert.match(eventDialog, /'registrations'/);
@@ -181,16 +181,20 @@ test('demo bootstrap creates the protected league and server-enriches its bluepr
   const route = await readSource('../src/app/api/demo/seed/route.ts');
   const seeder = await readSource('../src/lib/db-seeder.ts');
 
-  assert.match(route, /demo_league_\$\{uid\.slice\(-4\)\}/);
+  assert.match(route, /demo-session-v1\\0\$\{uid\}/);
+  assert.match(route, /demo_league_\$\{demoNamespace\}/);
+  assert.doesNotMatch(route, /slice\(-4\)/);
   assert.match(route, /adminDb\.collection\('leagues'\)\.doc\(leagueId\)/);
   assert.match(route, /creatorId: uid/);
   assert.match(route, /memberUserIds: \[uid\]/);
   assert.doesNotMatch(route, /if \(plan\.role !== 'parent'\)/);
-  assert.match(seeder, /const activeDemoLeagueId = `demo_league_\$\{userId\.slice\(-4\)\}`/);
+  assert.match(seeder, /const activeDemoLeagueId = `demo_league_\$\{demoNamespace\}`/);
   assert.match(seeder, /if \(lDoc\.id !== activeDemoLeagueId\)/);
   assert.match(seeder, /const persistDemoLeague = async/);
   assert.match(seeder, /fetch\('\/api\/demo\/seed', \{\s*method: 'PUT'/);
-  assert.match(seeder, /await persistDemoLeague\(leagueId/);
+  assert.match(seeder, /await persistDemoLeague\(\)/);
+  assert.doesNotMatch(seeder, /persistDemoLeague\([^)]*,/);
+  assert.doesNotMatch(seeder, /userId\.slice\(-4\)/);
   assert.doesNotMatch(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 
@@ -747,7 +751,7 @@ test('league registration, assignment, and clone projections use trusted server 
   const leagues = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
   const clone = await readSource('../src/app/api/leagues/clone/route.ts');
 
-  assert.match(publicAction, /const batch = adminDb\.batch\(\)/);
+  assert.match(publicAction, /adminDb\.runTransaction/);
   assert.match(publicAction, /\[`teams\.\$\{recruitId\}`\]/);
   assert.match(publicAction, /memberTeamIds: FieldValue\.arrayUnion\(recruitId\)/);
   assert.match(publicAction, /\[`individualRecruits\.\$\{recruitId\}`\]/);
@@ -759,8 +763,8 @@ test('league registration, assignment, and clone projections use trusted server 
   assert.match(registrationAdmin, /inspectingEntry\?\.protocol_id === 'player_config'/);
   assert.match(registrationAdmin, /inspectingEntry\?\.protocol_id === 'individual_config'/);
   assert.match(registrationAdmin, /\{inspectingIndividualEntry && \([\s\S]*Assign to Team/);
-  assert.match(leagues, /fetch\('\/api\/leagues\/clone'/);
-  assert.match(clone, /batch\.create\(destination/);
+  assert.match(leagues, /fetch\('\/api\/leagues\/lifecycle'/);
+  assert.match(clone, /export \{ POST \} from '\.\.\/lifecycle\/route'/);
   assert.match(leagues, /leagueTeams\.length < activeLeague\.requiredSquads/);
   assert.doesNotMatch(leagues, /leagueTeams\.length < leagueTeams\.length/);
 });
@@ -772,8 +776,8 @@ test('league deletion cannot create replacement leagues or partially delete divi
   assert.match(leagues, /where\('creatorId', '==', authUser\.uid\)/);
   assert.match(leagues, /limit\(isSuperAdmin \? 100/);
   assert.doesNotMatch(leagues, /isSuperAdmin\)[\s\S]{0,120}orderBy\('createdAt', 'desc'\), limit\(50\)/);
-  assert.match(leagues, /ids: items\.map\(item => item\.id\)/);
-  assert.match(leagues, /leagueIds: pendingLeagueDeletion\.ids/);
+  assert.match(leagues, /leagues: items\.map\(item => \(\{ leagueId: item\.id, expectedVersion:/);
+  assert.match(leagues, /leagues: pendingLeagueDeletion\.leagues/);
   assert.match(leagues, /Delete League Permanently\?/);
   assert.match(leagues, /void confirmLeagueDeletion\(\)/);
   assert.doesNotMatch(leagues, /window\.confirm\(`Delete/);
@@ -787,6 +791,13 @@ test('league deletion cannot create replacement leagues or partially delete divi
   assert.match(indexes, /"fieldPath": "sourceId"[\s\S]*"queryScope": "COLLECTION_GROUP"/);
   assert.doesNotMatch(schedule, /collection\('leagues'\)\.add\(/);
   assert.doesNotMatch(schedule, /collection\('leagues'\)\.doc\(\)\.create\(/);
+});
+
+test('league delete confirmation describes dependency-free deletion and archive fallback', async () => {
+  const leagues = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
+  assert.match(leagues, /Only dependency-free setup leagues can be permanently deleted/);
+  assert.match(leagues, /archive it instead/);
+  assert.doesNotMatch(leagues, /its teams, registrations, and schedule/);
 });
 
 test('School Hub administrators are invited, claimed, and revoked on the server', async () => {

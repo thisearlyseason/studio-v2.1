@@ -40,26 +40,28 @@ export function sportForDemoVariant(variant: string): string {
   return 'Multi-Sport';
 }
 
-export function getDemoTeamShells(uid: string, planId: string, plan: DemoPlan): DemoTeamShell[] {
-  const suffix = uid.slice(-4);
+export function getDemoTeamShells(uid: string, planId: string, plan: DemoPlan, demoNamespace: string): DemoTeamShell[] {
   const isFamilyDemo = planId === 'parent_demo' || planId === 'player_demo';
-  const ownerUserId = isFamilyDemo ? `demo_coach_${uid.slice(-8)}` : uid;
-  const shells: DemoTeamShell[] = plan.teamVariants.map((variant) => ({
-    id: `demo_${planId}_${suffix}_${demoTeamSlug(variant)}`,
-    name: isFamilyDemo
-      ? variant
-      : plan.planType === 'school'
-        ? `Springfield ${variant}`
-        : variant
-          ? `Elite Squad - ${variant}`
-          : plan.isPro ? 'Apex Demo Squad' : 'Grassroots Demo',
-    ownerUserId,
-    type: plan.planType === 'school' ? 'school_squad' : 'youth',
-  }));
+  const ownerUserId = isFamilyDemo ? `demo_coach_${demoNamespace}` : uid;
+  const shells: DemoTeamShell[] = plan.teamVariants.map((variant) => {
+    const slug = demoTeamSlug(variant);
+    return {
+      id: `demo_${planId}_${demoNamespace}${slug ? `_${slug}` : ''}`,
+      name: isFamilyDemo
+        ? variant
+        : plan.planType === 'school'
+          ? `Springfield ${variant}`
+          : variant
+            ? `Elite Squad - ${variant}`
+            : plan.isPro ? 'Apex Demo Squad' : 'Grassroots Demo',
+      ownerUserId,
+      type: plan.planType === 'school' ? 'school_squad' : 'youth',
+    };
+  });
 
   if (plan.planType === 'school') {
     shells.unshift({
-      id: `demo_${planId}_${suffix}_institution`,
+      id: `demo_${planId}_${demoNamespace}_institution`,
       name: 'Springfield High School',
       ownerUserId: uid,
       type: 'school',

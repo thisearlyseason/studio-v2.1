@@ -1583,18 +1583,28 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     );
   }, [isAuthResolved, db, authUser?.uid, canManageLeagues, isSuperAdmin]);
 
+  const tenantLeaguesQuery = useMemoFirebase(() => {
+    if (!isAuthResolved || !db || !activeTeam?.id || !canManageLeagues || isSuperAdmin) return null;
+    return query(
+      collection(db, 'leagues'),
+      where('tenantId', '==', activeTeam.id),
+      limit(50)
+    );
+  }, [isAuthResolved, db, activeTeam?.id, canManageLeagues, isSuperAdmin]);
+
   const { data: ownedLeagues, isLoading: ownedLeaguesLoading } = useCollection<League>(ownedLeaguesQuery);
   const { data: memberLeagues, isLoading: memberLeaguesLoading } = useCollection<League>(memberLeaguesQuery);
+  const { data: tenantLeagues, isLoading: tenantLeaguesLoading } = useCollection<League>(tenantLeaguesQuery);
   const allLeagues = useMemo(() => {
     const merged = new Map<string, League>();
-    [...(ownedLeagues || []), ...(memberLeagues || [])].forEach(league => merged.set(league.id, league));
+    [...(ownedLeagues || []), ...(memberLeagues || []), ...(tenantLeagues || [])].forEach(league => merged.set(league.id, league));
     const result = Array.from(merged.values());
     // Superadmin sees operational leagues by default; demo seed artifacts stay
     // out of the working list so they cannot be mistaken for real leagues.
     return isSuperAdmin
       ? result.filter(league => league.demoSeeded !== true && !league.id.startsWith('demo_'))
       : result;
-  }, [ownedLeagues, memberLeagues, isSuperAdmin]);
+  }, [ownedLeagues, memberLeagues, tenantLeagues, isSuperAdmin]);
   const leagueCreationLimitReached =
     userProfile?.isDemo === true &&
     userProfile.role === 'league_creator' &&
@@ -1602,7 +1612,13 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       league.creatorId === authUser?.uid && league.demoSeeded !== true
     );
   const canCreateLeague = hasLeagueCreationAccess && !leagueCreationLimitReached;
-  const isLeaguesLoading = ownedLeaguesLoading || memberLeaguesLoading;
+  const isLeaguesLoading = ownedLeaguesLoading || memberLeaguesLoading || tenantLeaguesLoading;
+
+  const canManageLeagueRecord = useCallback((league?: League) => Boolean(league && (
+    isSuperAdmin || (canManageLeagues && (
+      league.creatorId === authUser?.uid || (!!activeTeam?.id && league.tenantId === activeTeam.id)
+    ))
+  )), [isSuperAdmin, canManageLeagues, authUser?.uid, activeTeam?.id]);
 
   useEffect(() => {
     if (!isAuthResolved || !isLeaguesLoading) {
@@ -1649,10 +1665,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
   const activeLeagueRoot = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
   const activeLeaguePrivateRef = useMemoFirebase(() => (
-    db && activeLeagueRoot && (canManageLeagues || isSuperAdmin)
+    db && activeLeagueRoot && canManageLeagueRecord(activeLeagueRoot)
       ? doc(db, 'leagues', activeLeagueRoot.id, 'private', 'lifecycle')
       : null
-  ), [db, activeLeagueRoot?.id, canManageLeagues, isSuperAdmin]);
+  ), [db, activeLeagueRoot, canManageLeagueRecord]);
   const { data: activeLeaguePrivate } = useDoc<{
     contactEmail?: string;
     contactPhone?: string;
@@ -2276,7 +2292,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">
                               {league.sport}
                             </Badge>
-                            {canManageLeagues && (league.creatorId === authUser?.uid || isSuperAdmin) && (
+                            {canManageLeagueRecord(league) && (
                               <Button
                                 aria-label={`Delete ${league.name}`}
                                 variant="ghost"
@@ -2301,7 +2317,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                              <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center shrink-0"><Zap className="h-4 w-4 opacity-40" /></div>
                            </div>
                            <div className="flex gap-2 w-full sm:w-auto">
-                             {canManageLeagues && userProfile?.isDemo !== true && (league.creatorId === authUser?.uid || isSuperAdmin) && (
+                             {userProfile?.isDemo !== true && canManageLeagueRecord(league) && (
                                <Button 
                                  variant="outline" 
                                  size="sm" 
@@ -2353,7 +2369,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">{primaryLeague.sport}</Badge>
-                          {canManageLeagues && (primaryLeague.creatorId === authUser?.uid || isSuperAdmin) && (
+                          {canManageLeagueRecord(primaryLeague) && (
                             <Button aria-label={`Delete entire league ${group.name}`} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-red-500 hover:text-white" onClick={() => handleDeleteLeagueGroup(group.items, group.name)}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -2397,7 +2413,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                       {getLeagueDeploymentLabel(divLeague)}
                                     </Badge>
                                   </div>
-                                  {canManageLeagues && (divLeague.creatorId === authUser?.uid || isSuperAdmin) && (
+                                  {canManageLeagueRecord(divLeague) && (
                                     <Button
                                       aria-label={`Delete ${divLeague.name} ${divisionName}`}
                                       variant="ghost"
@@ -2423,7 +2439,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                               </div>
                               <div className="pt-3 border-t border-black/5 flex items-center justify-between gap-2">
                                 <div className="flex gap-2">
-                                  {canManageLeagues && userProfile?.isDemo !== true && (divLeague.creatorId === authUser?.uid || isSuperAdmin) && (
+                                  {userProfile?.isDemo !== true && canManageLeagueRecord(divLeague) && (
                                     <Button 
                                       variant="outline" 
                                       size="sm" 
@@ -2520,7 +2536,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <div className="flex flex-wrap items-center gap-2 mt-3">
                     <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 h-9 max-w-full overflow-hidden">
                       <LinkIcon className="h-3 w-3 text-white/40 shrink-0" />
-                      {canManageLeagues && (activeLeague.creatorId === authUser?.uid || isSuperAdmin) ? (
+                      {canManageLeagueRecord(activeLeague) ? (
                         <input
                           defaultValue={activeLeague.slug || activeLeague.id}
                           onBlur={async (e) => {
@@ -2552,7 +2568,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </div>
                 </div>
               </div>
-              {canManageLeagues && (activeLeague.creatorId === authUser?.uid || isSuperAdmin) && (
+              {canManageLeagueRecord(activeLeague) && (
                 <div className="flex flex-wrap gap-2 justify-start md:justify-end w-full md:w-auto">
                   <Button 
                     aria-label="Copy public registration link"
@@ -2607,7 +2623,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     onClick={() => setActiveTab('teams')}
                   >
                     Teams
-                    {activeTab === 'teams' && canManageLeagues && activeLeague.creatorId === authUser?.uid && (
+                    {activeTab === 'teams' && canManageLeagueRecord(activeLeague) && (
                       <span 
                         onClick={(e) => { 
                           e.stopPropagation(); 
@@ -2723,7 +2739,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                           </td>
                           <td className="px-4 md:px-10 py-4 md:py-6 text-right">
                             <div className="flex items-center justify-end gap-4">
-                              {canManageLeagues && activeLeague.creatorId === authUser?.uid && (
+                              {canManageLeagueRecord(activeLeague) && (
                                 <div className="flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                                   <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary" onClick={() => handleEditTeam(team)}>
                                     <Edit3 className="h-4 w-4" />
@@ -2757,7 +2773,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 <div className="flex items-center justify-between px-2">
                   <div className="flex items-center gap-3"><Users className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Personnel Hub</h3></div>
                   <div className="flex items-center gap-3">
-                    {canManageLeagues && activeLeague.creatorId === authUser?.uid && (
+                    {canManageLeagueRecord(activeLeague) && (
                       <Button 
                         variant="outline" 
                         onClick={() => setIsManualPlayerOpen(true)}
@@ -2788,7 +2804,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Affiliation: {p.teamName}
                                     </p>
                                   ) : (
-                                    canManageLeagues && activeLeague.creatorId === authUser?.uid && (
+                                    canManageLeagueRecord(activeLeague) && (
                                       <div onClick={(e) => e.stopPropagation()}>
                                         <Select
                                           onValueChange={(tId) => handleAssignPlayerToTeam(id, tId)}
@@ -3524,10 +3540,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
           <AlertDialogHeader>
             <AlertDialogTitle className="text-xl font-black uppercase">Delete League Permanently?</AlertDialogTitle>
             <AlertDialogDescription className="font-medium text-muted-foreground">
-              {pendingLeagueDeletion?.divisionCount && pendingLeagueDeletion.divisionCount > 1
-                ? `This removes "${pendingLeagueDeletion.name}" and all ${pendingLeagueDeletion.divisionCount} divisions, teams, registrations, and schedules.`
-                : `This removes "${pendingLeagueDeletion?.name || 'this league'}", its teams, registrations, and schedule.`}
-              {' '}This cannot be undone.
+              Only dependency-free setup leagues can be permanently deleted. If this league has divisions,
+              registrations, redemptions, teams, or schedule data, archive it instead. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

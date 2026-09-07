@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import {
   permitsLegacyOrPaidPortals,
+  leagueBillingOwnerUserId,
   publicLeague,
   publicRegistrationConfig,
   publicTournament,
@@ -35,7 +36,8 @@ export async function GET(req: NextRequest) {
       if (!isSafeId(identifier) || !isSafeId(protocolId)) return NextResponse.json({ error: 'Missing or invalid league registration identifiers.' }, { status: 400 });
       const league = await findLeague(identifier);
       if (!league) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
-      const creator = league.data()?.creatorId ? await adminDb.collection('users').doc(league.data()!.creatorId).get() : null;
+      const billingOwnerId = leagueBillingOwnerUserId(league.data() || {});
+      const creator = billingOwnerId ? await adminDb.collection('users').doc(billingOwnerId).get() : null;
       if (!creator?.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
@@ -78,9 +80,9 @@ export async function GET(req: NextRequest) {
       if (!isSafeId(identifier)) return NextResponse.json({ error: 'Missing or invalid leagueId.' }, { status: 400 });
       const league = await findLeague(identifier);
       if (!league) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
-      const creatorId = league.data()?.creatorId;
-      if (creatorId) {
-        const creator = await adminDb.collection('users').doc(String(creatorId)).get();
+      const billingOwnerId = leagueBillingOwnerUserId(league.data() || {});
+      if (billingOwnerId) {
+        const creator = await adminDb.collection('users').doc(billingOwnerId).get();
         if (!creator.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
           return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
         }

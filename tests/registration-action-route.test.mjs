@@ -36,6 +36,30 @@ test('league scoring verifies the private HMAC with rotation and rejects tamperi
   }finally{app.dispose();}
 });
 
+test('legacy league PIN migrates only on a correct score in the same transaction',async()=>{
+  const league={creatorId:'owner',billingOwnerUserId:'owner',name:'Legacy League',is_active:true,scorekeeperPin:'8274',teams:{a:{teamName:'A'},b:{teamName:'B'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
+  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  try{
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',score1:2,score2:1}))).status,403);
+    assert.equal(records.get('leagues/l').scorekeeperPin,'8274');assert.equal(records.has('leagues/l/private/lifecycle'),false);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:2,score2:1}))).status,200);
+    assert.equal('scorekeeperPin' in records.get('leagues/l'),false);assert.match(records.get('leagues/l/private/lifecycle').scorekeeperPinHash,/^hmac-sha256:v1:[a-f0-9]{64}$/);
+    assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',score1:3,score2:1}))).status,200);
+  }finally{app.dispose();}
+});
+
+test('league public entitlement uses the canonical billing owner rather than delegated actor plan',async()=>{
+  const config=teamConfig({title:'Delegated league'}),league={creatorId:'staff',billingOwnerUserId:'owner',tenantId:'team-a',registrationEntryCount:0,is_active:true},effective=effectiveLeagueRegistrationConfig(config,league);
+  const {db}=communicationDb({'users/owner':{plan_type:'league'},'users/staff':{plan_type:'free'},'leagues/l':league,'leagues/l/registration/team_config':config},{serializeTransactions:true});
+  const read=await loadCommunicationRoute('../../src/app/api/public/portals/route.ts',db,{}),write=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const get=new Request('http://127.0.0.1/api/public/portals?kind=league-registration&leagueId=l&protocolId=team_config');get.nextUrl=new URL(get.url);
+  try{
+    assert.equal((await read.route.GET(get)).status,200);
+    const response=await write.route.POST(request({kind:'league',action:'register',leagueId:'l',protocolId:'team_config',requestId:'delegated-entitle-0001',formVersion:1,formHash:effective.config_hash,answers:{teamName:'Alpha',name:'Coach',email:'coach@example.test',phone:'5551234567'}}));
+    assert.equal(response.status,200);
+  }finally{read.dispose();write.dispose();}
+});
+
 test('league fee snapshot is identical from public GET through transactional POST',async()=>{
   const raw=teamConfig({title:'League form'}),league={creatorId:'owner',registrationCost:'40',paymentInstructions:'Pay at desk',registrationEntryCount:0},effective=effectiveLeagueRegistrationConfig(raw,league);
   const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/team_config':raw},{serializeTransactions:true});
