@@ -134,7 +134,11 @@ export async function POST(req: NextRequest) {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
     const code = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
     const sessionToken = typeof body.sessionToken === 'string' ? body.sessionToken.trim() : '';
-    const requestedPlayerId = typeof body.playerId === 'string' ? body.playerId : '';
+    const submittedPlayerId = typeof body.playerId === 'string' ? body.playerId : '';
+    // The dashboard represents self-enrollment as p_<authenticated uid>.
+    // Normalize that UI identifier to the server's self path so it is not
+    // mistaken for a guardian attempting to enroll a linked child.
+    const requestedPlayerId = submittedPlayerId === `p_${auth.uid}` ? '' : submittedPlayerId;
     const requestedPlayerEnrollment = body.enrollmentIntent === 'player' || sessionToken.length >= 32;
     const selfPlayers = requestedPlayerId
       ? null

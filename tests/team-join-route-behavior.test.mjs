@@ -183,3 +183,21 @@ test('adult self enrollment resolves the persisted player identity from the auth
   assert.equal(records.has('players/p_adult-1'), false);
   assert.equal(records.get('teams/team-a/members/adult-1').playerId, 'p_existing-adult');
 });
+
+test('adult self enrollment accepts the canonical player id submitted by the join page', async () => {
+  const { db, records } = memoryDb({
+    'teams/team-a': { id: 'team-a', name: 'Team A', code: 'TEAMCODE1', isActive: true },
+    'users/adult-1': { id: 'adult-1', role: 'adult_player', fullName: 'Adult One' },
+  });
+  globalThis.__TASK4_JOIN_DB = db;
+  globalThis.__TASK4_JOIN_AUTH = { uid: 'adult-1', email: 'adult@example.test', role: 'adult_player' };
+  const route = await loadRoute();
+  const response = await route.POST(request('/api/teams/join', {
+    code: 'TEAMCODE1',
+    playerId: 'p_adult-1',
+    enrollmentIntent: 'player',
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(records.get('players/p_adult-1').userId, 'adult-1');
+  assert.equal(records.get('teams/team-a/members/adult-1').playerId, 'p_adult-1');
+});
