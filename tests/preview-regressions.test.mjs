@@ -199,6 +199,16 @@ test('demo bootstrap creates the protected league and server-enriches its bluepr
   assert.doesNotMatch(seeder, /batch\.set\(doc\(db, 'leagues', leagueId\)/);
 });
 
+test('demo tournament lifecycle data is server-seeded and never written by the browser', async () => {
+  const route = await readSource('../src/app/api/demo/seed/route.ts');
+  const seeder = await readSource('../src/lib/db-seeder.ts');
+
+  assert.match(route, /demoTournamentBlueprint/);
+  assert.match(route, /collection\('events'\)\.doc\(tournament\.id\)/);
+  assert.match(seeder, /filter\(e => e\.isTournament !== true && e\.eventType !== 'tournament'\)/);
+  assert.doesNotMatch(seeder, /data\.eventBrackets\.forEach/);
+});
+
 test('demo blueprint merges only protected team roots created by the server', async () => {
   const seeder = await readSource('../src/lib/db-seeder.ts');
 

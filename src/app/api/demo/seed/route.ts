@@ -31,6 +31,45 @@ function ownsDemoTeam(data: Record<string, unknown>, uid: string, planId: string
   return data.isDemo === true && data.demoSessionOwnerId === uid && data.demoPlanId === planId;
 }
 
+function demoTournamentBlueprint(teamId: string, teamName: string, timestamp: string) {
+  const start = new Date();
+  start.setUTCHours(12, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() + 1);
+  const end = new Date(start.getTime() + (2 * 86400000));
+  const teams = [
+    { id: teamId, name: teamName, source: 'demo', complianceStatus: 'verified' },
+    { id: `demo_tournament_thunder_${teamId}`, name: 'Thunder', source: 'demo', complianceStatus: 'verified' },
+    { id: `demo_tournament_storm_${teamId}`, name: 'Storm', source: 'demo', complianceStatus: 'pending' },
+    { id: `demo_tournament_shadows_${teamId}`, name: 'Shadows', source: 'demo', complianceStatus: 'verified' },
+  ];
+  const games = [
+    { id: `demo_tournament_game_1_${teamId}`, team1Id: teams[0].id, team1: teams[0].name, team2Id: teams[1].id, team2: teams[1].name, score1: 5, score2: 2, isCompleted: true, status: 'completed', date: start.toISOString(), time: '10:00', location: 'Main Arena', matchTeamIds: [teams[0].id, teams[1].id] },
+    { id: `demo_tournament_game_2_${teamId}`, team1Id: teams[2].id, team1: teams[2].name, team2Id: teams[3].id, team2: teams[3].name, score1: 4, score2: 6, isCompleted: true, status: 'completed', date: start.toISOString(), time: '12:00', location: 'Court B', matchTeamIds: [teams[2].id, teams[3].id] },
+    { id: `demo_tournament_game_3_${teamId}`, team1Id: teams[0].id, team1: teams[0].name, team2Id: teams[3].id, team2: teams[3].name, score1: 0, score2: 0, isCompleted: false, status: 'scheduled', date: end.toISOString(), time: '14:00', location: 'Main Arena', matchTeamIds: [teams[0].id, teams[3].id] },
+  ];
+  return {
+    id: `tourn_${teamId}`,
+    teamId,
+    title: `${teamName} Championship Tournament`,
+    sport: 'Multi-Sport',
+    eventType: 'tournament',
+    isTournament: true,
+    isDemo: true,
+    date: start.toISOString(),
+    endDate: end.toISOString(),
+    location: 'Apex Performance Center',
+    description: 'A three-day championship event for the live demo workspace.',
+    tournamentTeams: teams.map(team => team.name),
+    tournamentTeamsData: teams,
+    tournamentGames: games,
+    status: 'active',
+    lifecycleVersion: 0,
+    credentialVersion: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 function demoFacilityBlueprints(uid: string, namespace: string, planId: string, plan: DemoPlan) {
   if (['starter_squad', 'free', 'parent_demo', 'player_demo'].includes(planId)) return [];
   const school = plan.planType === 'school';
@@ -321,6 +360,10 @@ export async function POST(req: NextRequest) {
           createdAt: messageTimestamp,
           isDemo: true,
         });
+      }
+      if (isElite && shell.type !== 'school') {
+        const tournament = demoTournamentBlueprint(shell.id, shell.name, messageTimestamp);
+        batch.set(teamRef.collection('events').doc(tournament.id), tournament, { merge: true });
       }
     }
 

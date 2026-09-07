@@ -60,6 +60,27 @@ test('demo bootstrap creates facility blueprints under the authenticated full UI
   }
 });
 
+test('elite demo bootstrap server-seeds tournament events for every protected squad', async () => {
+  const uid = 'demo-user-elite-tournament-0001';
+  const { db, records } = communicationDb({});
+  const app = await loadCommunicationRoute(routePath, db, { uid, signInProvider: 'anonymous' });
+  try {
+    const response = await app.route.POST(request({ planId: 'elite_teams' }));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.teamIds.length, 3);
+    for (const teamId of body.teamIds) {
+      const event = records.get(`teams/${teamId}/events/tourn_${teamId}`);
+      assert.equal(event?.isTournament, true);
+      assert.equal(event?.eventType, 'tournament');
+      assert.ok(event?.tournamentTeamsData?.length >= 2);
+      assert.ok(event?.tournamentGames?.length >= 1);
+    }
+  } finally {
+    app.dispose();
+  }
+});
+
 test('demo identity uses the full authenticated UID and rejects a foreign deterministic shell before cleanup', async () => {
   const uid = 'demo-user-alpha-0001';
   const namespace = 'cf6ee6fe230ff5643bc9104c';

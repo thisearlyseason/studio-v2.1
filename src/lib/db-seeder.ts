@@ -1102,10 +1102,11 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
           batch.set(doc(db, 'players', video.playerId, 'videos', video.videoId), video.data);
         });
 
-        data.events.forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean({ ...e, teamId, isDemo: true })));
-        data.eventBrackets.forEach(eb => {
-            eb.brackets.forEach(b => batch.set(doc(db, 'teams', teamId, 'events', eb.eventId, 'brackets', b.id), clean({ ...b, isDemo: true })));
-        });
+        // Tournament lifecycle state is server-owned. /api/demo/seed creates
+        // the protected demo tournament; the browser enriches ordinary events only.
+        data.events
+          .filter(e => e.isTournament !== true && e.eventType !== 'tournament')
+          .forEach(e => batch.set(doc(db, 'teams', teamId, 'events', e.id), clean({ ...e, teamId, isDemo: true })));
         data.drills.forEach(d => batch.set(doc(db, 'teams', teamId, 'drills', d.id), clean({ ...d, isDemo: true })));
         data.practice_templates.forEach(pt => batch.set(doc(db, 'teams', teamId, 'practice_templates', pt.id), clean({ ...pt, isDemo: true })));
         data.feed.forEach(p => batch.set(doc(db, 'teams', teamId, 'feedPosts', p.id), clean({ ...p, isDemo: true })));
