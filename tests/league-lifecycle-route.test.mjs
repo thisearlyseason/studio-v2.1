@@ -17,6 +17,134 @@ const teamSeed = {
   'teams/team-b': { ownerUserId: 'owner-b', planId: 'elite_league', leagueIds: {} },
 };
 
+test('successful hard delete replays after root removal with current tenant authority and exact identity', async () => {
+  for (const profileTenant of [false, true]) {
+    const owner = profileTenant ? 'creator' : 'owner-a';
+    const actor = profileTenant ? owner : 'staff-a';
+    const tenantId = profileTenant ? 'profile:creator' : 'team-a';
+    const { db, records } = communicationDb({
+      ...teamSeed,
+      'users/creator': { role: 'league_creator', plan_type: 'free' },
+      'users/staff-a': { role: 'coach', plan_type: 'free' },
+      'teams/team-a/members/staff-a': { userId: 'staff-a', position: 'Coach', status: 'active' },
+      'leagues/empty': { creatorId: owner, tenantId, lifecycleVersion: 1, name: 'Empty', teams: {}, schedule: [] },
+    }, { serializeTransactions: true });
+    const body = { action: 'delete', requestId: 'delete-replay-0001', leagueId: 'empty', expectedVersion: 1 };
+    const first = await call(db, { uid: actor }, body, 'DELETE');
+    assert.equal(first.response.status, 200);
+    assert.equal(records.has('leagues/empty'), false);
+    const afterDelete = structuredClone([...records]);
+    const replay = await call(db, { uid: actor }, body, 'DELETE');
+    assert.equal(replay.response.status, 200);
+    assert.deepEqual(replay.body, first.body);
+    assert.deepEqual([...records], afterDelete);
+    const tombstone = records.get('leagueLifecycleTombstones/empty');
+    assert.equal(tombstone.tenantId, tenantId);
+    assert.deepEqual(Object.keys(tombstone).sort(), ['operationId', 'tenantId']);
+    for (const change of [{ expectedVersion: 2 }, { requestId: 'delete-replay-0002' }]) {
+      const denied = await call(db, { uid: actor }, { ...body, ...change }, 'DELETE');
+      assert.equal(denied.response.status, 409);
+      assert.equal(denied.body.deleted, undefined);
+    }
+    for (const auth of [{ uid: 'member-a' }, { uid: 'owner-b' }, ...(profileTenant ? [] : [{ uid: owner }])]) {
+      const denied = await call(db, auth, body, 'DELETE');
+      assert.ok([403, 409].includes(denied.response.status));
+      assert.equal(denied.body.deleted, undefined);
+    }
+    const forgedTenant = await call(db, { uid: 'owner-b' }, { ...body, tenantId: 'team-b' }, 'DELETE');
+    assert.ok([400, 403].includes(forgedTenant.response.status));
+    for (const leagues of [{}, null, 'empty']) {
+      const malformed = await call(db, { uid: actor }, { ...body, leagues }, 'DELETE');
+      assert.equal(malformed.response.status, 400);
+      assert.equal(malformed.body.deleted, undefined);
+    }
+    if (profileTenant) records.set('users/creator', { role: 'parent', status: 'removed' });
+    else records.set('teams/team-a/members/staff-a', { userId: actor, position: 'Player', status: 'active' });
+    const revoked = await call(db, { uid: actor }, body, 'DELETE');
+    assert.equal(revoked.response.status, 403);
+    assert.equal(revoked.body.deleted, undefined);
+  }
+});
+
+test('group hard delete replay is atomic and revalidates demotion inside the replay transaction', async () => {
+  let revoke = false;
+  let transactions = 0;
+  const { db, records } = communicationDb({
+    ...teamSeed,
+    'users/staff-a': { role: 'coach', plan_type: 'free' },
+    'teams/team-a/members/staff-a': { userId: 'staff-a', position: 'Coach', status: 'active' },
+    'leagues/gold': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', divisionTitle: 'Gold' },
+    'leagues/silver': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 2, name: 'Metro', divisionTitle: 'Silver' },
+  }, { serializeTransactions: true, beforeTransaction({ records: mutable }) {
+    if (revoke && ++transactions === 2) mutable.set('teams/team-a/members/staff-a', { userId: 'staff-a', position: 'Player', status: 'active' });
+  } });
+  const body = { action: 'delete', requestId: 'delete-group-replay-0001', leagues: [{ leagueId: 'gold', expectedVersion: 1 }, { leagueId: 'silver', expectedVersion: 2 }] };
+  const app = await loadCommunicationRoute(routePath, db, { uid: 'staff-a' });
+  try {
+    const results = await Promise.all([app.route.DELETE(request(body, 'DELETE')), app.route.DELETE(request(body, 'DELETE'))]);
+    assert.deepEqual(results.map(result => result.status), [200, 200]);
+    const first = await results[0].json();
+    assert.deepEqual(await results[1].json(), first);
+    assert.deepEqual(first.deletedLeagueIds, ['gold', 'silver']);
+    assert.equal([...records.keys()].filter(path => path.startsWith('leagueLifecycleAudits/')).length, 2);
+    assert.equal([...records.keys()].filter(path => path.startsWith('competitionOperations/')).length, 1);
+    const replay = await app.route.DELETE(request(body, 'DELETE'));
+    assert.equal(replay.status, 200);
+    assert.deepEqual(await replay.json(), first);
+    const subset = await app.route.DELETE(request({ ...body, leagues: body.leagues.slice(0, 1) }, 'DELETE'));
+    assert.equal(subset.status, 409);
+    revoke = true;
+    const denied = await app.route.DELETE(request(body, 'DELETE'));
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json()).deleted, undefined);
+  } finally { app.dispose(); }
+});
+
+test('division rename checks billing-owner quota only when normalized group count increases', async () => {
+  const seed = {
+    ...teamSeed,
+    'users/staff-a': { role: 'coach', plan_type: 'league', subscription_status: 'active', team_limit: 100 },
+    'users/owner-a': { role: 'coach', plan_type: 'free' },
+    'teams/team-a/members/staff-a': { userId: 'staff-a', position: 'Coach', status: 'active' },
+    'leagues/gold': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', divisionTitle: 'Gold' },
+    'leagues/silver': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: ' METRO ', divisionTitle: 'Silver' },
+  };
+  const { db, records } = communicationDb(seed);
+  const before = structuredClone([...records]);
+  const denied = await call(db, { uid: 'staff-a' }, { action: 'edit', requestId: 'rename-quota-0001', leagueId: 'gold', expectedVersion: 1, updates: { name: 'Another' } }, 'PATCH');
+  assert.equal(denied.response.status, 409);
+  assert.equal(denied.body.error, 'LEAGUE_LIMIT_REACHED');
+  assert.deepEqual([...records], before);
+  const same = await call(db, { uid: 'staff-a' }, { action: 'edit', requestId: 'rename-case-0001', leagueId: 'gold', expectedVersion: 1, updates: { name: 'metro' } }, 'PATCH');
+  assert.equal(same.response.status, 200);
+
+  // A whole single-division group can be renamed at capacity; merging groups
+  // can reduce an already-over-limit account without requiring an upgrade.
+  for (const extra of [false, true]) {
+    const run = communicationDb({ ...seed, 'leagues/gold': { ...seed['leagues/gold'], name: 'Separate' }, ...(extra ? { 'leagues/other': { ...seed['leagues/silver'], name: 'Third', divisionTitle: 'Bronze' } } : {}) });
+    const result = await call(run.db, { uid: 'staff-a' }, { action: 'edit', requestId: 'rename-no-growth-0001', leagueId: 'gold', expectedVersion: 1, updates: { name: extra ? 'Metro' : 'Renamed' } }, 'PATCH');
+    assert.equal(result.response.status, 200);
+  }
+});
+
+test('concurrent division renames serialize the final group slot and duplicate normalized identity', async () => {
+  for (const duplicate of [false, true]) {
+    const { db, records } = communicationDb({
+      ...teamSeed,
+      'users/owner-a': { role: 'coach', plan_type: 'league', subscription_status: 'active', team_limit: duplicate ? 3 : 2 },
+      ...Object.fromEntries(['gold', 'silver', 'bronze'].map(id => [`leagues/${id}`, { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: duplicate && id === 'silver' ? 'Other' : 'Metro', divisionTitle: duplicate && id !== 'bronze' ? 'Same' : id }])),
+      ...(duplicate ? { 'leagues/other-division': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Other', divisionTitle: 'Another' } } : {}),
+    }, { serializeTransactions: true });
+    const app = await loadCommunicationRoute(routePath, db, { uid: 'owner-a' });
+    try {
+      const results = await Promise.all(['gold', 'silver'].map((id, index) => app.route.PATCH(request({ action: 'edit', requestId: `rename-race-000${index}`, leagueId: id, expectedVersion: 1, updates: { name: duplicate ? (index ? ' NEW ' : 'New') : `New ${index}` } }, 'PATCH'))));
+      assert.deepEqual(results.map(result => result.status).sort(), [200, 409]);
+      assert.equal(new Set([...records].filter(([path]) => /^leagues\/[^/]+$/.test(path)).map(([, data]) => data.name.trim().toLowerCase())).size, duplicate ? 3 : 2);
+      assert.equal([...records.keys()].filter(path => path.startsWith('leagueLifecycleAudits/')).length, 1);
+    } finally { app.dispose(); }
+  }
+});
+
 function request(body, method = 'POST') {
   return new Request('http://127.0.0.1/api/leagues/lifecycle', {
     method,

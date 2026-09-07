@@ -19,6 +19,8 @@ export type CompetitionOperationInput = {
   actorUid: string;
   identity: CompetitionOperationIdentity;
   db?: Firestore;
+  /** Read-only authority check, repeated before receipt lookup on every transaction attempt. */
+  authorizeTransaction?: (transaction: Transaction) => Promise<void>;
 };
 
 export type CompetitionExternalEffect = {
@@ -110,6 +112,7 @@ export async function runCompetitionOperation<T>(
   const db = input.db || adminDb;
   const operationRef = db.collection('competitionOperations').doc(input.identity.operationId);
   return db.runTransaction(async transaction => {
+    await input.authorizeTransaction?.(transaction);
     const existing = await transaction.get(operationRef);
     if (existing.exists) {
       const receipt = existing.data() || {};

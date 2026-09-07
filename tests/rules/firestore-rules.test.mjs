@@ -674,6 +674,25 @@ test('league lifecycle roots and sensitive fields are server-owned', async () =>
   await assertFails(getDoc(doc(memberDb, 'leagueLifecycleAudits', 'forged')));
 });
 
+test('deleted League tombstones and retained operations cannot be read or forged by clients', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'leagueLifecycleTombstones', 'deleted'), { tenantId: 'team-a', operationId: 'operation-a' });
+    await setDoc(doc(db, 'competitionOperations', 'operation-a'), { actorUid: 'owner', result: { deleted: true } });
+  });
+  for (const uid of ['owner', 'staff', 'member', 'outsider']) {
+    const db = authenticatedDb(uid);
+    for (const collectionName of ['leagueLifecycleTombstones', 'competitionOperations']) {
+      const ref = doc(db, collectionName, collectionName === 'leagueLifecycleTombstones' ? 'deleted' : 'operation-a');
+      await assertFails(getDoc(ref));
+      await assertFails(getDocs(query(collection(db, collectionName))));
+      await assertFails(setDoc(ref, { tenantId: 'team-b' }, { merge: true }));
+      await assertFails(deleteDoc(ref));
+      await assertFails(setDoc(doc(db, collectionName, 'forged'), { tenantId: 'team-b', operationId: 'operation-a' }));
+    }
+  }
+});
+
 test('anonymous demo sessions can read only their server-scoped demo teams', async () => {
   const demoDb = authenticatedDb('demo-user', {
     firebase: { sign_in_provider: 'anonymous' },

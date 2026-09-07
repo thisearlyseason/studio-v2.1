@@ -63,6 +63,46 @@ test('competition operation rejects reuse of a request identity with a changed p
   );
 });
 
+test('transaction authority is checked before mutation and receipt replay, including retry attempts', async () => {
+  const { db: baseDb, records } = communicationDb({ 'authority/current': { allowed: true } });
+  let receiptReads = 0;
+  const guardedDb = { ...baseDb, runTransaction: work => baseDb.runTransaction(transaction => work({
+    ...transaction,
+    get(ref) {
+      if (ref.path.startsWith('competitionOperations/')) receiptReads += 1;
+      return transaction.get(ref);
+    },
+  })) };
+  const identity = canonicalCompetitionRequest({ requestId: 'authorized-delete-0001', tenantId: 'team-a', kind: 'league.delete', payload: { leagueId: 'league-a' } });
+  const authorizeTransaction = async transaction => {
+    if (!(await transaction.get(baseDb.doc('authority/current'))).data()?.allowed) throw new Error('Authority revoked');
+  };
+  const mutate = async ({ transaction }) => {
+    transaction.set(baseDb.doc('result/mutation'), { done: true });
+    return { deleted: true };
+  };
+  await runCompetitionOperation({ db: guardedDb, identity, actorUid: 'owner', authorizeTransaction }, mutate);
+  assert.equal(receiptReads, 1);
+  records.set('authority/current', { allowed: false });
+  const before = structuredClone([...records]);
+  await assert.rejects(() => runCompetitionOperation({ db: guardedDb, identity, actorUid: 'owner', authorizeTransaction }, mutate), /Authority revoked/);
+  assert.equal(receiptReads, 1, 'denied replay must not even read its stored receipt');
+  assert.deepEqual([...records], before);
+
+  const freshIdentity = canonicalCompetitionRequest({ requestId: 'authorized-delete-0002', tenantId: 'team-a', kind: 'league.delete', payload: { leagueId: 'league-b' } });
+  await assert.rejects(() => runCompetitionOperation({ db: guardedDb, identity: freshIdentity, actorUid: 'owner', authorizeTransaction }, mutate), /Authority revoked/);
+  assert.equal(receiptReads, 1);
+  assert.deepEqual([...records], before);
+
+  records.set('authority/current', { allowed: true });
+  const retryDb = { ...baseDb, async runTransaction(work) {
+    await work({ get: ref => ref.get(), create() {}, set() {}, update() {}, delete() {} });
+    records.set('authority/current', { allowed: false });
+    return baseDb.runTransaction(work);
+  } };
+  await assert.rejects(() => runCompetitionOperation({ db: retryDb, identity, actorUid: 'owner', authorizeTransaction }, mutate), /Authority revoked/);
+});
+
 test('transaction retries commit mutation writes and one durable external-effect intent without promising one callback invocation', async () => {
   const { db: baseDb, records } = communicationDb({}, { serializeTransactions: true });
   let injectedRetry = false;

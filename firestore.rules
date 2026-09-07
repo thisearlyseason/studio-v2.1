@@ -881,6 +881,10 @@ allow create, update: if false; // Authenticated incident service only.
       allow read, write: if false;
     }
 
+    match /leagueLifecycleTombstones/{leagueId} {
+      allow read, write: if false;
+    }
+
     // ─── Leagues global invites ───────────────────────────────────────────────
     // Legacy location retained as an admin-only migration surface. It contains
     // recipient email addresses and must never be enumerable by other accounts.

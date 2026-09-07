@@ -258,6 +258,9 @@ function parseRequest(body: Record<string, unknown>): LeagueLifecycleRequest {
   if (action === 'edit') return { action, requestId, leagueId: leagueId(body.leagueId), expectedVersion: expectedVersion(body.expectedVersion), updates: parseUpdates(body.updates) };
   if (action === 'archive') return { action, requestId, leagueId: leagueId(body.leagueId), expectedVersion: expectedVersion(body.expectedVersion) };
   if (action === 'delete') {
+    if (Object.keys(body).some(key => !['action', 'requestId', 'leagues', 'leagueId', 'expectedVersion'].includes(key))) fail('LEAGUES_INVALID');
+    if ('leagues' in body && !Array.isArray(body.leagues)) fail('LEAGUES_INVALID');
+    if (Array.isArray(body.leagues) && ('leagueId' in body || 'expectedVersion' in body)) fail('LEAGUES_INVALID');
     const rawTargets = Array.isArray(body.leagues)
       ? body.leagues
       : [{ leagueId: body.leagueId, expectedVersion: body.expectedVersion }];
@@ -265,6 +268,7 @@ function parseRequest(body: Record<string, unknown>): LeagueLifecycleRequest {
     const leagues = rawTargets.map(target => {
       if (!target || typeof target !== 'object' || Array.isArray(target)) fail('LEAGUES_INVALID');
       const record = target as Record<string, unknown>;
+      if (Object.keys(record).some(key => !['leagueId', 'expectedVersion'].includes(key))) fail('LEAGUES_INVALID');
       return { leagueId: leagueId(record.leagueId), expectedVersion: expectedVersion(record.expectedVersion) };
     });
     if (new Set(leagues.map(target => target.leagueId)).size !== leagues.length) fail('LEAGUES_INVALID');
@@ -337,6 +341,20 @@ function ensureMethod(method: string, action: LeagueLifecycleRequest['action']):
   if (method !== expected) fail('METHOD_INVALID');
 }
 
+async function deleteAuthorityScope(transaction: Transaction, auth: DecodedToken, targetId: string, identity?: CompetitionOperationIdentity) {
+  const root = await transaction.get(adminDb.collection('leagues').doc(targetId));
+  if (root.exists) return { scope: { leagueId: targetId }, tenantId: undefined };
+  // Only the server writes this identity when the root and its operation are
+  // committed together. It contains no League data or client-selected tenant.
+  const tombstone = await transaction.get(adminDb.collection('leagueLifecycleTombstones').doc(targetId));
+  const retained = tombstone.data();
+  if (!tombstone.exists || typeof retained?.tenantId !== 'string' || typeof retained.operationId !== 'string') fail('LEAGUE_NOT_FOUND');
+  if (identity && retained.operationId !== identity.operationId) fail('Request collision.');
+  const tenantId: string = retained.tenantId;
+  if (tenantId.startsWith('profile:') && tenantId !== `profile:${auth.uid}`) fail('Forbidden competition mutation.');
+  return { scope: tenantId.startsWith('profile:') ? {} : { teamId: tenantId }, tenantId };
+}
+
 async function preflight(auth: DecodedToken, input: LeagueLifecycleRequest): Promise<CompetitionAuthority> {
   return adminDb.runTransaction(async transaction => {
     const leagueIds = input.action === 'create'
@@ -352,14 +370,18 @@ async function preflight(auth: DecodedToken, input: LeagueLifecycleRequest): Pro
         fail('ANONYMOUS_DEMO_MUTATION_FORBIDDEN');
       }
     }
-    const authorities = await Promise.all(leagueIds.map(id => resolveCompetitionAuthority({
-      db: adminDb,
-      transaction,
-      actorUid: auth.uid,
-      actorRole: auth.role,
-      teamId: input.action === 'create' ? input.teamId : undefined,
-      leagueId: id,
-    })));
+    const authorities = await Promise.all(leagueIds.map(async id => {
+      const retained = input.action === 'delete' ? await deleteAuthorityScope(transaction, auth, id!) : null;
+      const authority = await resolveCompetitionAuthority({
+        db: adminDb,
+        transaction,
+        actorUid: auth.uid,
+        actorRole: auth.role,
+        ...(retained?.scope ?? { teamId: input.action === 'create' ? input.teamId : undefined, leagueId: id }),
+      });
+      if (retained?.tenantId && authority.tenantId !== retained.tenantId) fail('LEAGUE_TENANT_CONFLICT');
+      return authority;
+    }));
     if (authorities.some(candidate => candidate.tenantId !== authorities[0].tenantId)) fail('TENANT_TOPOLOGY_INVALID');
     return authorities[0];
   });
@@ -555,6 +577,15 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
       ? adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, input.updates.name, String(league.divisionTitle || '')))
       : null;
     if (renamedReservation && (await transaction.get(renamedReservation)).exists) fail('LEAGUE_ALREADY_EXISTS');
+    if (renamedReservation && auth.role !== 'superadmin') {
+      const beforeGroups = new Set(leagues.map(candidate => nameKey(candidate.data().name)).filter(Boolean));
+      const afterGroups = new Set(leagues.map(candidate => nameKey(candidate.id === input.leagueId ? input.updates.name : candidate.data().name)).filter(Boolean));
+      if (afterGroups.size > beforeGroups.size) {
+        const profile = await transaction.get(adminDb.collection('users').doc(ownerUid));
+        if (!profile.exists) fail('OWNER_PROFILE_MISSING');
+        if (afterGroups.size > accountCreationLimit(profile.data())) fail('LEAGUE_LIMIT_REACHED');
+      }
+    }
     const publicUpdates = Object.fromEntries(Object.entries(input.updates).filter(([key]) => ![
       'scorekeeperPin', 'contactEmail', 'contactPhone', 'teamUpdate', 'individualRecruitUpdate',
     ].includes(key)));
@@ -627,13 +658,16 @@ async function mutateArchive(auth: DecodedToken, input: Extract<LeagueLifecycleR
 }
 
 async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRequest, { action: 'delete' }>, authority: CompetitionAuthority, identity: CompetitionOperationIdentity) {
-  return runCompetitionOperation({ db: adminDb, actorUid: auth.uid, identity }, async ({ transaction }) => {
-    await Promise.all(input.leagues.map(target => assertCurrentAuthority(
-      transaction,
-      auth,
-      authority.tenantId,
-      { leagueId: target.leagueId },
-    )));
+  return runCompetitionOperation({
+    db: adminDb, actorUid: auth.uid, identity,
+    authorizeTransaction: async transaction => {
+      await Promise.all(input.leagues.map(async target => {
+        const retained = await deleteAuthorityScope(transaction, auth, target.leagueId, identity);
+        if (retained.tenantId && retained.tenantId !== authority.tenantId) fail('LEAGUE_TENANT_CONFLICT');
+        await assertCurrentAuthority(transaction, auth, authority.tenantId, retained.scope);
+      }));
+    },
+  }, async ({ transaction }) => {
     const records = await Promise.all(input.leagues.map(async target => {
       const rootRef = adminDb.collection('leagues').doc(target.leagueId);
       const [snapshot, registrationEntries, waivers, scores, scoreAudit, payments, invites, divisions, accessRedemptions, configs, privateDocs, bookings, events] = await Promise.all([
@@ -669,6 +703,10 @@ async function mutateDelete(auth: DecodedToken, input: Extract<LeagueLifecycleRe
       transaction.delete(adminDb.collection('publicLeagueViews').doc(record.target.leagueId));
       transaction.delete(adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, String(league.name || ''), String(league.divisionTitle || ''))));
       if (!authority.tenantId.startsWith('profile:')) transaction.update(adminDb.collection('teams').doc(authority.tenantId), { [`leagueIds.${record.target.leagueId}`]: FieldValue.delete() });
+      transaction.create(adminDb.collection('leagueLifecycleTombstones').doc(record.target.leagueId), {
+        tenantId: authority.tenantId,
+        operationId: identity.operationId,
+      });
       transaction.delete(record.rootRef);
       deleteAudit(transaction, identity, authority.tenantId, auth.uid, record.target.leagueId, index);
     });
