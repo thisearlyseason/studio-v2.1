@@ -378,6 +378,13 @@ test('member-filtered chat lists declare active-channel indexes for local and sh
   assert.ok(sharedChatIndex.fields.some(field =>
     field.fieldPath === 'isDeleted' && field.order === 'ASCENDING'
   ));
+  assert.ok(indexes.fieldOverrides.some(override =>
+    override.collectionGroup === 'groupChats' &&
+    override.fieldPath === 'memberIds' &&
+    override.indexes?.some(index =>
+      index.arrayConfig === 'CONTAINS' && index.queryScope === 'COLLECTION_GROUP'
+    )
+  ));
 });
 
 test('family signature lookups declare their collection-group indexes', async () => {

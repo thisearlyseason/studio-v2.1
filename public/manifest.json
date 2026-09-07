@@ -2,7 +2,7 @@
   "name": "The Squad",
   "short_name": "The Squad",
   "description": "Unite your team and coordinate like pros with The Squad.",
-  "id": "/",
+  "id": "/schedule-app",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",

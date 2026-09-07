@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Squad Schedule',
+    title: 'The Squad',
   },
   other: {
     'apple-mobile-web-app-capable': 'yes',

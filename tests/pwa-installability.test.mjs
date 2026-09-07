@@ -7,8 +7,9 @@ import sharp from 'sharp';
 
 const source = path => readFile(new URL(path, import.meta.url), 'utf8');
 
-test('root application registers The Squad service worker', async () => {
+test('root application registers The Squad service worker without orphaning legacy Schedule installs', async () => {
   const layout = await source('../src/app/layout.tsx');
+  const scheduleLayout = await source('../src/app/schedule-app/layout.tsx');
   const registration = await source('../src/components/pwa/AppServiceWorkerRegistration.tsx');
   const registrationHelper = await source('../src/lib/service-worker-registration.ts');
   const manifest = JSON.parse(await source('../public/manifest.json'));
@@ -17,8 +18,9 @@ test('root application registers The Squad service worker', async () => {
   assert.match(registrationHelper, /navigator\.serviceWorker\.register\('\/sw\.js', \{[\s\S]*scope: '\/'/);
   assert.equal(manifest.name, 'The Squad');
   assert.equal(manifest.start_url, '/dashboard');
-  assert.equal(manifest.id, '/');
+  assert.equal(manifest.id, '/schedule-app');
   assert.equal(manifest.scope, '/');
+  assert.match(scheduleLayout, /appleWebApp:\s*\{[\s\S]*?title: 'The Squad'/);
 });
 
 test('worker never caches authenticated dashboard HTML', async () => {

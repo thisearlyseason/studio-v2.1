@@ -84,6 +84,20 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "groupChats",
+      "fieldPath": "memberIds",
+      "indexes": [
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
       "collectionGroup": "documents",
       "fieldPath": "ownerUserId",
       "indexes": [
