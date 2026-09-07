@@ -388,6 +388,8 @@ service cloud.firestore {
               request.resource.data.get('durationMinutes', 0) == resource.data.get('durationMinutes', 0)
             )
           ) &&
+          request.resource.data.get('registrationCount', 0) == resource.data.get('registrationCount', 0) &&
+          request.resource.data.get('registrationEntryCount', 0) == resource.data.get('registrationEntryCount', 0) &&
           request.resource.data.get('tournamentGames', []) == resource.data.get('tournamentGames', []) &&
           (resource.data.get('tournamentGames', []).size() == 0 || (
             request.resource.data.get('date', '') == resource.data.get('date', '') &&
@@ -762,6 +764,7 @@ allow create, update: if false; // Authenticated incident service only.
         request.resource.data.get('isDemo', false) == resource.data.get('isDemo', false) &&
         request.resource.data.get('demoSessionOwnerId', '') == resource.data.get('demoSessionOwnerId', '') &&
         request.resource.data.get('demoSeeded', false) == resource.data.get('demoSeeded', false) &&
+        request.resource.data.get('registrationEntryCount', 0) == resource.data.get('registrationEntryCount', 0) &&
         (
           (
             request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&

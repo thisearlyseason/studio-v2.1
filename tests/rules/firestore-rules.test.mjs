@@ -597,6 +597,13 @@ test('event registration contact details are readable only by staff', async () =
   }));
 });
 
+test('registration capacity counters cannot be forged by otherwise authorized clients',async()=>{
+  const staffDb=authenticatedDb('staff'),ownerDb=authenticatedDb('owner');
+  await assertFails(setDoc(doc(staffDb,'teams','team-a','events','event-a'),{registrationCount:999},{merge:true}));
+  await assertFails(setDoc(doc(staffDb,'teams','team-a','events','event-a'),{registrationEntryCount:999},{merge:true}));
+  await assertFails(setDoc(doc(ownerDb,'leagues','league-a'),{registrationEntryCount:999},{merge:true}));
+});
+
 test('legacy tournament responses remain staff-readable and server-only while organizers migrate them', async () => {
   const responsePath = ['teams', 'team-a', 'registrationEntries', 'legacy-response'];
   await assertFails(getDoc(doc(authenticatedDb('member'), ...responsePath)));
