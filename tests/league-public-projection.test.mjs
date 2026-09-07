@@ -138,3 +138,12 @@ test('supports a canonical profile tenant and revokes when the owner or source i
     profile.records.set('publicLeagueViews/league-a', { data: { id: 'league-a' }, version: 110 });
   }
 });
+
+test('an inactive team revokes a newer stored projection even when an older entitlement event is delivered', async () => {
+  const db = store(activeSeed());
+  assert.equal((await syncPublicLeagueView('league-a', 100, db)).action, 'written');
+  db.records.get('teams/team-a').data.status = 'inactive';
+  assert.equal((await syncPublicLeagueView('league-a', 50, db)).action, 'revoked');
+  assert.equal(db.records.has('publicLeagueViews/league-a'), false);
+  assert.equal(db.records.has('leaguePublicProjectionState/league-a'), false);
+});

@@ -145,10 +145,10 @@ export async function syncPublicLeagueView(
       transaction.read("leaguePublicProjectionState", leagueId),
     ]);
     const revoke = async (): Promise<LeagueProjectionResult> => {
-      const storedSourceVersion = sourceVersionOf(stateSnapshot);
-      if (expectedVersion !== undefined && storedSourceVersion !== undefined && storedSourceVersion > expectedVersion) {
-        return { action: "unchanged" };
-      }
+      // Current source/authority state is definitive for revocation. A delayed
+      // delete or downgrade event must not preserve a now-ineligible public
+      // view; a concurrent recreation retries this transaction and follows the
+      // active write path below, where source-version ordering remains enforced.
       if (!projectionSnapshot.exists && !stateSnapshot.exists) return { action: "unchanged" };
       if (projectionSnapshot.exists) await transaction.delete("publicLeagueViews", leagueId);
       if (stateSnapshot.exists) await transaction.delete("leaguePublicProjectionState", leagueId);

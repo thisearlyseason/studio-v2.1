@@ -64,6 +64,59 @@ test('a source delete revokes once while a duplicate retry is harmless', async (
   assert.equal((await syncPublicLeagueView('l', 400, db)).action, 'unchanged');
 });
 
+test('current missing or ineligible authority revokes even when the delivered event version predates projection state', async () => {
+  for (const makeIneligible of [
+    db => db.records.delete('leagues/l'),
+    db => db.records.delete('users/u'),
+    db => db.records.get('users/u').data.accountStatus = 'suspended',
+  ]) {
+    const db = fixture();
+    await syncPublicLeagueView('l', 200, db);
+    makeIneligible(db);
+    assert.equal((await syncPublicLeagueView('l', 100, db)).action, 'revoked');
+    assert.equal(db.records.has('publicLeagueViews/l'), false);
+    assert.equal(db.records.has('leaguePublicProjectionState/l'), false);
+  }
+});
+
+test('transaction retry after concurrent source recreation preserves and refreshes the eligible projection', async () => {
+  const db = fixture();
+  await syncPublicLeagueView('l', 200, db);
+  const recreatedLeague = structuredClone(db.records.get('leagues/l'));
+  recreatedLeague.data.name = 'Recreated during transaction';
+  recreatedLeague.version = 300;
+  db.records.delete('leagues/l');
+  let attempts = 0;
+  const retryingStore = {
+    async runTransaction(operation) {
+      attempts += 1;
+      const snapshot = new Map([...db.records].map(([key, value]) => [key, structuredClone(value)]));
+      const changes = [];
+      const result = await operation({
+        async read(collection, id) {
+          const value = snapshot.get(`${collection}/${id}`);
+          return value ? { exists: true, data: structuredClone(value.data), version: value.version } : { exists: false, data: {}, version: 0 };
+        },
+        async write(collection, id, data) { changes.push(['write', `${collection}/${id}`, structuredClone(data)]); },
+        async delete(collection, id) { changes.push(['delete', `${collection}/${id}`]); },
+      });
+      if (attempts === 1) {
+        db.records.set('leagues/l', recreatedLeague);
+        return this.runTransaction(operation);
+      }
+      for (const [action, path, data] of changes) {
+        if (action === 'delete') db.records.delete(path);
+        else db.records.set(path, { data, version: 1_000 + attempts });
+      }
+      return result;
+    },
+  };
+  assert.equal((await syncPublicLeagueView('l', 100, retryingStore)).action, 'written');
+  assert.equal(attempts, 2);
+  assert.equal(db.records.get('publicLeagueViews/l').data.name, 'Recreated during transaction');
+  assert.deepEqual(db.records.get('leaguePublicProjectionState/l').data, { sourceVersion: 300 });
+});
+
 test('an older source event cannot overwrite a projection written from a newer source revision', async () => {
   const db = fixture();
   await syncPublicLeagueView('l', 200, db);
