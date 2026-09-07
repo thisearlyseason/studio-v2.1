@@ -18,6 +18,11 @@ import {
 import { buildCalendarFeed, CalendarFeedEvent, CalendarFeedTeam } from "./calendar-feed";
 import { publicCalendarFeedFailure, redactCalendarFeedPublicResponse } from "./calendar-feed-public-boundary";
 import { runUpcomingEventReminderCore } from "./event-reminder-runner";
+import {
+  syncPublicLeagueView as syncPublicLeagueViewCore,
+  syncPublicLeagueViews,
+  type LeagueProjectionStore,
+} from "./league-public-projection";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -94,54 +99,47 @@ async function syncLeaguesForTeam(teamId: string): Promise<void> {
   await Promise.all(leagues.docs.map((league) => syncLeagueMemberUsers(league.id)));
 }
 
-/** Publishes only spectator-safe league fields; private league records stay private. */
-async function syncPublicLeagueView(leagueId: string): Promise<void> {
-  const leagueSnap = await db.collection("leagues").doc(leagueId).get();
-  const publicRef = db.collection("publicLeagueViews").doc(leagueId);
-  if (!leagueSnap.exists) {
-    await publicRef.delete();
-    return;
-  }
+const leagueProjectionStore: LeagueProjectionStore = {
+  runTransaction: operation => db.runTransaction(async transaction => operation({
+    read: async (collection, id) => {
+      const snapshot = await transaction.get(db.collection(collection).doc(id));
+      return {
+        exists: snapshot.exists,
+        data: snapshot.data() || {},
+        version: snapshot.updateTime?.toMillis() || 0,
+      };
+    },
+    write: async (collection, id, data) => { transaction.set(db.collection(collection).doc(id), data); },
+    delete: async (collection, id) => { transaction.delete(db.collection(collection).doc(id)); },
+  })),
+};
 
-  const league = leagueSnap.data() || {};
-  const teams = Object.fromEntries(Object.entries(league.teams || {}).map(([teamId, team]: [string, any]) => [teamId, {
-    teamName: team.teamName || "",
-    teamLogoUrl: team.teamLogoUrl || "",
-    wins: Number(team.wins || 0),
-    losses: Number(team.losses || 0),
-    ties: Number(team.ties || 0),
-    points: Number(team.points || 0),
-  }]));
-  const schedule = Array.isArray(league.schedule) ? league.schedule.map((game: any) => ({
-    id: game.id || "",
-    team1: game.team1 || "",
-    team1Id: game.team1Id || "",
-    team2: game.team2 || "",
-    team2Id: game.team2Id || "",
-    date: game.date || "",
-    time: game.time || "",
-    location: game.location || "",
-    status: game.status || "scheduled",
-    isCompleted: Boolean(game.isCompleted),
-    score1: Number(game.score1 || 0),
-    score2: Number(game.score2 || 0),
-  })) : [];
+/** Publishes only the shared spectator DTO and converges retries transactionally. */
+async function syncPublicLeagueView(leagueId: string, expectedVersion?: number) {
+  return syncPublicLeagueViewCore(leagueId, expectedVersion, leagueProjectionStore);
+}
 
-  await publicRef.set({
-    id: leagueId,
-    name: league.name || "",
-    sport: league.sport || "",
-    divisionTitle: league.divisionTitle || "",
-    teams,
-    schedule,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+function eventVersion(snapshot: admin.firestore.DocumentSnapshot | undefined): number | undefined {
+  return snapshot?.updateTime?.toMillis();
+}
+
+async function leagueIdsForOwner(ownerId: string): Promise<string[]> {
+  const [canonical, legacy] = await Promise.all([
+    db.collection("leagues").where("billingOwnerUserId", "==", ownerId).limit(100).get(),
+    db.collection("leagues").where("creatorId", "==", ownerId).limit(100).get(),
+  ]);
+  return [...new Set([...canonical.docs, ...legacy.docs].map(snapshot => snapshot.id))];
+}
+
+async function leagueIdsForTenant(teamId: string): Promise<string[]> {
+  const snapshot = await db.collection("leagues").where("tenantId", "==", teamId).limit(100).get();
+  return snapshot.docs.map(document => document.id);
 }
 
 export const onLeagueCreated = onDocumentCreated("leagues/{leagueId}", async (event) => {
   await Promise.all([
     syncLeagueMemberUsers(event.params.leagueId),
-    syncPublicLeagueView(event.params.leagueId),
+    syncPublicLeagueView(event.params.leagueId, eventVersion(event.data)),
   ]);
 });
 
@@ -149,14 +147,34 @@ export const onLeagueAccessChanged = onDocumentUpdated("leagues/{leagueId}", asy
   const before = event.data?.before.data();
   const after = event.data?.after.data();
   if (!before || !after) return;
-  await syncPublicLeagueView(event.params.leagueId);
+  await syncPublicLeagueView(event.params.leagueId, eventVersion(event.data?.after));
   if (before.creatorId !== after.creatorId || JSON.stringify(before.memberTeamIds || []) !== JSON.stringify(after.memberTeamIds || [])) {
     await syncLeagueMemberUsers(event.params.leagueId);
   }
 });
 
 export const onLeagueDeleted = onDocumentDeleted("leagues/{leagueId}", async (event) => {
-  await db.collection("publicLeagueViews").doc(event.params.leagueId).delete();
+  await syncPublicLeagueView(event.params.leagueId, eventVersion(event.data));
+});
+
+export const onLeagueOwnerEntitlementChanged = onDocumentUpdated("users/{userId}", async event => {
+  const ids = await leagueIdsForOwner(event.params.userId);
+  await syncPublicLeagueViews(ids, eventVersion(event.data?.after), syncPublicLeagueView);
+});
+
+export const onLeagueOwnerDeleted = onDocumentDeleted("users/{userId}", async event => {
+  const ids = await leagueIdsForOwner(event.params.userId);
+  await syncPublicLeagueViews(ids, eventVersion(event.data), syncPublicLeagueView);
+});
+
+export const onLeagueTenantEntitlementChanged = onDocumentUpdated("teams/{teamId}", async event => {
+  const ids = await leagueIdsForTenant(event.params.teamId);
+  await syncPublicLeagueViews(ids, eventVersion(event.data?.after), syncPublicLeagueView);
+});
+
+export const onLeagueTenantDeleted = onDocumentDeleted("teams/{teamId}", async event => {
+  const ids = await leagueIdsForTenant(event.params.teamId);
+  await syncPublicLeagueViews(ids, eventVersion(event.data), syncPublicLeagueView);
 });
 
 export const onTeamMemberCreated = onDocumentCreated("teams/{teamId}/members/{memberId}", async (event) => {
