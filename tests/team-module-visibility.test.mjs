@@ -11,10 +11,10 @@ test('team module policy uses the eight frozen keys and guards every canonical r
   assert.deepEqual(TEAM_MODULE_DEFINITIONS.map(item => item.key), [
     'attendance', 'equipment', 'facilities', 'feed', 'files', 'fundraising', 'practice', 'volunteers',
   ]);
-  for (const module of TEAM_MODULE_DEFINITIONS) {
-    assert.equal(isTeamModuleRouteDisabled(module.route, { [module.key]: false }), true, module.key);
-    assert.equal(isTeamModuleRouteDisabled(module.route, { [module.key]: true }), false, module.key);
-    assert.equal(isTeamModuleRouteDisabled(module.route, undefined), false, module.key);
+  for (const teamModule of TEAM_MODULE_DEFINITIONS) {
+    assert.equal(isTeamModuleRouteDisabled(teamModule.route, { [teamModule.key]: false }), true, teamModule.key);
+    assert.equal(isTeamModuleRouteDisabled(teamModule.route, { [teamModule.key]: true }), false, teamModule.key);
+    assert.equal(isTeamModuleRouteDisabled(teamModule.route, undefined), false, teamModule.key);
   }
 });
 

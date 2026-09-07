@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 test('dynamic registry retries deletion and restoration and returns measured cleanup', async () => {
-  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
-  const registry = module.createResourceRegistry({ maxAttempts: 2 });
+  const registryModule = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = registryModule.createResourceRegistry({ maxAttempts: 2 });
   let deleteAttempts = 0;
   let restoreAttempts = 0;
   let deleted = false;
@@ -45,8 +45,8 @@ test('dynamic registry retries deletion and restoration and returns measured cle
 });
 
 test('dynamic registry attempts every resource and reports residual postconditions', async () => {
-  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
-  const registry = module.createResourceRegistry({ maxAttempts: 2 });
+  const registryModule = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = registryModule.createResourceRegistry({ maxAttempts: 2 });
   let inviteAttempts = 0;
   let demoAttempts = 0;
   registry.register({
@@ -74,8 +74,8 @@ test('dynamic registry attempts every resource and reports residual postconditio
 });
 
 test('dynamic registry is idempotent after successful cleanup', async () => {
-  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
-  const registry = module.createResourceRegistry({ maxAttempts: 2 });
+  const registryModule = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = registryModule.createResourceRegistry({ maxAttempts: 2 });
   let calls = 0;
   registry.register({
     id: 'auth:one', kind: 'deleted',
@@ -89,8 +89,8 @@ test('dynamic registry is idempotent after successful cleanup', async () => {
 });
 
 test('dynamic registry reconciles an already-absent resource without counting a delete', async () => {
-  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
-  const registry = module.createResourceRegistry();
+  const registryModule = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = registryModule.createResourceRegistry();
   registry.register({
     id: 'auth:already-absent', kind: 'deleted',
     async cleanup() { return false; },
@@ -106,8 +106,8 @@ test('dynamic registry reconciles an already-absent resource without counting a 
 });
 
 test('dynamic registry preserves a measured mutation when verification fails transiently', async () => {
-  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
-  const registry = module.createResourceRegistry({ maxAttempts: 2 });
+  const registryModule = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = registryModule.createResourceRegistry({ maxAttempts: 2 });
   let present = true;
   let verificationAttempts = 0;
   registry.register({
@@ -132,8 +132,8 @@ test('dynamic registry preserves a measured mutation when verification fails tra
 });
 
 test('dynamic registry executes exact resources registered by an unmeasured cleanup obligation', async () => {
-  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
-  const registry = module.createResourceRegistry({ maxAttempts: 2 });
+  const registryModule = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const registry = registryModule.createResourceRegistry({ maxAttempts: 2 });
   const calls = [];
   let exactRootPresent = true;
   registry.register({
@@ -166,8 +166,8 @@ test('dynamic registry executes exact resources registered by an unmeasured clea
 });
 
 test('cleanup results merge immediate scenario cleanup with final fallback cleanup', async () => {
-  const module = await import('../scripts/qa/certification/local/resource-registry.mjs');
-  const merged = module.mergeResourceCleanupResults([
+  const registryModule = await import('../scripts/qa/certification/local/resource-registry.mjs');
+  const merged = registryModule.mergeResourceCleanupResults([
     {
       state: 'OBSERVED',
       counts: { deleted: 2, restored: 1, retainedAuditRecords: 0 },
