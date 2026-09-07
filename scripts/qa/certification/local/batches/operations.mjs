@@ -337,7 +337,9 @@ const COMPETITION_EXACT_STATUS = Object.freeze({
 });
 const COMPETITION_REPLAY_OF = Object.freeze({
   'league-replay': 'league-create',
+  'league-score-replay': 'league-score-submit',
   'tournament-lifecycle-replay': 'tournament-create',
+  'tournament-score-replay': 'tournament-score-submit',
 });
 
 export const COMPETITION_CASE_EXECUTION_CONTRACTS = Object.freeze(Object.fromEntries(
@@ -492,7 +494,7 @@ export function assertAuthoritativeCompetitionEvents(events, scenarioIds = COMPE
         const prerequisiteEvidence = browser?.prerequisiteEvidence;
         const expectedPrerequisiteName = id => id === 'fixture-title' || id === 'fixture-card' || id === 'fixture-hub'
           ? fixtureIdentity?.expectedName
-          : id === 'league-tab' ? 'League'
+          : id === 'league-tab' ? 'Leagues'
             : id === 'launch-hub' ? 'Launch Hub'
               : id === 'modify-series' ? 'Modify Series' : null;
         const exactPrerequisites = Array.isArray(prerequisiteEvidence) &&

@@ -309,7 +309,8 @@ test('creation workflows reject incomplete required fields', async () => {
   ]);
 
   assert.match(events, /Activity Incomplete/);
-  assert.match(practice, /Protocol Title Required/);
+  assert.match(practice, /validatePracticeTemplate\(\{ title: newTitle, description: newDesc, drillIds: selectedDrills \}/);
+  assert.match(practice, /title: 'Invalid Protocol'/);
   assert.match(leagues, /disabled=\{isProcessing \|\| !leagueName\.trim\(\)\}/);
   assert.match(tournaments, /Base Configuration Incomplete/);
   assert.match(tournaments, /form\.endDate < form\.startDate/);
@@ -736,10 +737,10 @@ test('team waiver signing is server-mediated for members and guardians', async (
   assert.match(route, /isGuardian = memberData\.parentId === auth\.uid \|\| playerData\.parentId === auth\.uid/);
   assert.match(route, /memberData\.guardianIds/);
   assert.match(route, /playerData\.guardianIds/);
-  assert.match(route, /transaction\.set\(signatureRef/);
+  assert.match(route, /transaction\.create\(signatureRef/);
   assert.match(route, /transaction\.update\(memberRef/);
-  assert.match(route, /transaction\.set\(archiveRef/);
-  assert.match(route, /transaction\.set\(protocolRef/);
+  assert.match(route, /transaction\.create\(archiveRef/);
+  assert.match(route, /transaction\.create\(protocolRef/);
   assert.match(route, /transaction\.update\(documentRef, \{ signatureCount: FieldValue\.increment\(1\) \}\)/);
 });
 

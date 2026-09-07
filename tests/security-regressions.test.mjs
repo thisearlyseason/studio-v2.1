@@ -213,7 +213,8 @@ test('calendar feeds are server-issued and revalidate current squad membership',
   assert.match(functions, /private, no-store, max-age=0/);
   assert.match(functions, /buildCalendarFeed/);
   assert.match(functions, /serverIssued !== true/);
-  assert.match(functions, /Squad Access Revoked/);
+  assert.match(functions, /publicCalendarFeedFailure\("unauthorized"\)/);
+  assert.match(functions, /access\.some\(allowed => !allowed\)/);
   assert.doesNotMatch(functions, /GOOGLE_REDIRECT_URI|connectGoogleCalendar|google\.auth\.OAuth2/);
   for (const fieldPath of ['userId', 'parentId']) {
     assert.ok(indexes.fieldOverrides.some(override =>

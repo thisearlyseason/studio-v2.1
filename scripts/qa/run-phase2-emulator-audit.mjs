@@ -7080,10 +7080,10 @@ const COMPETITION_BROWSER_CONTRACTS = Object.freeze({
 
 const COMPETITION_NEGATIVE_OR_DENIAL_CASES = new Set([
   'league-duplicate', 'league-quota', 'league-foreign-owner', 'league-anonymous-write',
-  'league-schedule-impossible', 'league-schedule-blackout', 'league-schedule-foreign-owner', 'league-schedule-direct-write',
+  'league-schedule-impossible', 'league-schedule-blackout', 'league-schedule-race', 'league-schedule-foreign-owner', 'league-schedule-direct-write',
   'league-register-duplicate', 'league-register-invalid', 'league-register-unpublished', 'league-ledger-private',
   'league-registrant-assign-deny', 'league-assignment-foreign-owner', 'league-score-wrong-pin',
-  'league-score-replay', 'league-score-downstream-conflict', 'league-score-outsider-deny', 'tournament-invalid-format',
+  'league-score-replay', 'league-score-downstream-conflict', 'league-score-narrow-scope', 'league-score-outsider-deny', 'tournament-invalid-format',
   'tournament-duplicate', 'tournament-foreign-staff', 'tournament-foreign-team',
   'tournament-schedule-impossible', 'tournament-referee-conflict', 'tournament-referee-role-deny',
   'tournament-schedule-foreign-deny', 'tournament-score-wrong-pin', 'tournament-score-replay', 'tournament-score-downstream-conflict', 'tournament-score-narrow-scope',
@@ -7268,10 +7268,10 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
   const result = JSON.parse(cli(session, ['run-code', `async page => {
     const consoleErrors=[];const failedResponses=[];const observedResponses=[];const tag=${JSON.stringify(caseId)};const frozen=${JSON.stringify(frozenBrowser)};let lifecycleRequests=0;
     const exactLocator=(role,name)=>role==='text'||role==='render'?page.getByText(name,{exact:true}):page.getByRole(role,{name,exact:true});
-    const normalize=value=>String(value||'').replace(/\s+/g,' ').trim();
-    const observedName=async locator=>locator.evaluate(element=>{const aria=element.getAttribute('aria-label');const labelledBy=element.getAttribute('aria-labelledby');const labelled=labelledBy&&document.getElementById(labelledBy)?.textContent;return aria||labelled||element.textContent||'';}).then(normalize);
+    const normalize=value=>String(value||'').replace(/\\s+/g,' ').trim();
+    const observedName=async locator=>{const snapshot=await locator.ariaSnapshot();const accessible=snapshot.match(/^-[^\"]*\"([^\"]+)\"/m)?.[1];if(accessible)return normalize(accessible);return locator.evaluate(element=>{const aria=element.getAttribute('aria-label');const labelledBy=element.getAttribute('aria-labelledby');const labelled=labelledBy&&document.getElementById(labelledBy)?.textContent;return aria||labelled||element.textContent||'';}).then(normalize);};
     const prerequisiteEvidence=[];
-    const requireUnique=async(id,locator,expectedName,nameLocator=locator)=>{try{await locator.waitFor({state:'visible',timeout:15000});}catch(error){const diagnostic={id,url:page.url(),teamId:await page.evaluate(()=>localStorage.getItem('sf_session_team_id')||''),headings:await page.locator('h1,h2,h3').allInnerTexts()};throw Error('Unique prerequisite unavailable: '+JSON.stringify(diagnostic)+'; '+error.message);}const count=await locator.count();if(count!==1)throw Error(id+' prerequisite matched '+count+' elements.');const name=await observedName(nameLocator);if(name!==expectedName)throw Error(id+' prerequisite observed '+JSON.stringify(name)+' instead of '+JSON.stringify(expectedName)+'.');const evidence={id,count,locator:locator.toString(),observedName:name};prerequisiteEvidence.push(evidence);return evidence;};
+    const requireUnique=async(id,locator,expectedName,nameLocator=locator)=>{try{await locator.waitFor({state:'visible',timeout:15000});}catch(error){const diagnostic={id,url:page.url(),teamId:await page.evaluate(()=>localStorage.getItem('sf_session_team_id')||''),headings:await page.locator('h1,h2,h3').allInnerTexts()};throw Error('Unique prerequisite unavailable: '+JSON.stringify(diagnostic)+'; '+error.message);}const count=await locator.count();if(count!==1)throw Error(id+' prerequisite matched '+count+' elements.');const name=await observedName(nameLocator);if(name!==expectedName){const diagnostic={aria:await nameLocator.ariaSnapshot(),html:await nameLocator.evaluate(element=>element.outerHTML)};throw Error(id+' prerequisite observed '+JSON.stringify(name)+' instead of '+JSON.stringify(expectedName)+'; '+JSON.stringify(diagnostic));}const evidence={id,count,locator:locator.toString(),observedName:name};prerequisiteEvidence.push(evidence);return evidence;};
     const onConsole=message=>{if(message.type()==='error')consoleErrors.push(message.text());};
     const onError=error=>consoleErrors.push(error.stack||error.message);
     const onRequest=request=>{if(request.url().startsWith(${JSON.stringify(BASE_URL)})&&request.url().slice(${JSON.stringify(BASE_URL)}.length).split(/[?#]/,1)[0]==='/api/tournaments/lifecycle')lifecycleRequests+=1;};
@@ -7293,7 +7293,7 @@ async function runCompetitionBrowserEnvelope(scenarioId, caseId = `browser-${sce
         fixtureIdentity={alias:frozen.fixtureAlias,expectedName:${JSON.stringify(fixtureTournament.id)},observedName:observedId};
       }else if(${JSON.stringify(scenarioId.startsWith('leagues-'))}){
         if(${JSON.stringify(scenarioId !== 'leagues-create-edit-clone-delete')}){
-          const leagueTab=page.getByRole('tab',{name:'Leagues',exact:true});await requireUnique('league-tab',leagueTab,'League');await leagueTab.click();
+          const leagueTab=page.getByRole('tab',{name:'Leagues',exact:true});await requireUnique('league-tab',leagueTab,'Leagues');await leagueTab.click();
           const fixtureName=${JSON.stringify(fixtureLeagueName)};
           const pageTitle=page.getByRole('heading',{name:fixtureName,exact:true});await requireUnique('fixture-title',pageTitle,fixtureName);
           const fixtureCard=page.locator('div.cursor-pointer').filter({has:pageTitle}).filter({has:page.getByRole('button',{name:'Select Hub',exact:true})});
@@ -7556,6 +7556,11 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
       const persisted = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}/registrationEntries/${state.registrationEntryId}`).get());
       expectEqual(persisted.data()?.status, 'accepted', `Competition ${caseId} authoritative accepted registration persists`);
     }
+    if (caseId === 'league-score-submit' && response.status === 200) {
+      const scoredLeague = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}`).get());
+      const scoredGame = scoredLeague.data()?.schedule?.find(game => game.id === state.leagueScoreGameId);
+      expectEqual(JSON.stringify({ score1: scoredGame?.score1, score2: scoredGame?.score2, complete: scoredGame?.isCompleted }), JSON.stringify({ score1: 3, score2: 1, complete: true }), `Competition ${caseId} authoritative score`);
+    }
     if ((caseId === 'league-public-score' || caseId === 'league-score-reload') && response.status === 200) {
       const publicGame = response.body?.data?.schedule?.find(game => game.id === state.leagueScoreGameId);
       expectEqual(JSON.stringify({ score1: publicGame?.score1, score2: publicGame?.score2, complete: publicGame?.isCompleted }), JSON.stringify({ score1: 3, score2: 1, complete: true }), `Competition ${caseId} public score DTO values persist`);
@@ -7581,6 +7586,12 @@ async function executeCompetitionCase({ scenarioId, dimension, caseId, envelope,
       expectEqual(scheduled.data()?.lifecycleVersion, state.fixtureVersion, `Competition ${caseId} authoritative League schedule version`);
       if (caseId === 'league-schedule-generate') expectEqual(JSON.stringify(scheduled.data()?.schedulerConfig?.selectedFields || []), JSON.stringify(['qa-field']), `Competition ${caseId} authoritative schedule configuration fields`);
       if (caseId === 'league-schedule-deploy') expectEqual(scheduled.data()?.schedule?.some(game => game.id === `game-${certificationRunId}` && game.resourceId === 'qa-field'), true, `Competition ${caseId} authoritative deployed game`);
+    }
+    if (caseId === 'league-schedule-reload' && response.status === 200) {
+      const scheduled = await withEmulatorAuthAdmin((_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`leagues/${league.id}`).get());
+      expectEqual(scheduled.data()?.lifecycleVersion, state.fixtureVersion, `Competition ${caseId} authoritative schedule version persists`);
+      expectEqual(scheduled.data()?.schedule?.some(game => game.id === `game-${certificationRunId}` && game.resourceId === 'qa-field'), true, `Competition ${caseId} authoritative deployed game persists`);
+      expectEqual(response.body?.data?.schedule?.some(game => game.id === `game-${certificationRunId}`), true, `Competition ${caseId} public schedule DTO preserves deployed game`);
     }
     if (scenarioId === 'tournaments-schedule-pools-brackets-referees' && response.status === 200 && ['tournament-schedule-generate', 'tournament-pools-bracket', 'tournament-referee-assign'].includes(caseId)) {
       state.scheduleVersion = response.body.scheduleVersion;
@@ -8015,6 +8026,7 @@ async function runCertificationOperationsScenarios() {
   let sessionBaseline;
   return runOperationScenarioSequence(scenarioIds, {
     failFast: certificationFailFast,
+    timeoutMs: runBrowser ? 90_000 : 60_000,
     onError: (scenarioId, error) => recordCertificationRunFailure(scenarioId, error, 'operations-runtime'),
     execute: async scenarioId => {
     sessionBaseline = new Set(ownedBrowserSessions);

@@ -107,7 +107,7 @@ function strictCompetitionEvent(scenarioId, caseId, assertionId = `assertion-${c
           id, count: 1, locator: `observed:${id}`,
           observedName: id === 'fixture-title' || id === 'fixture-card' || id === 'fixture-hub'
             ? `fixture:${contract.browser.fixtureAlias}`
-            : id === 'league-tab' ? 'League' : id === 'launch-hub' ? 'Launch Hub' : 'Modify Series',
+            : id === 'league-tab' ? 'Leagues' : id === 'launch-hub' ? 'Launch Hub' : 'Modify Series',
         })),
         expectedViewports: contract.browser.expectedViewports, session: `session-${caseId}`,
         viewports: contract.browser.expectedViewports.map(viewport => ({ viewport, mainBox: {}, controlBox: {}, mainFits: true, controlFits: true, scrollWidth: viewport.width })),
@@ -291,6 +291,29 @@ test('competition browser contracts require exact fixture identity and a uniquel
   assert.doesNotThrow(() => assertAuthoritativeCompetitionEvents([...leagueCases, leagueCleanup], [leagueId]));
 });
 
+test('League browser prerequisite evidence uses the real accessible Leagues tab label', () => {
+  const id = 'leagues-schedule-generation-deployment';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  for (const item of cases.filter(item => item.execution.browser)) {
+    const leagueTab = item.execution.browser.prerequisiteEvidence.find(step => step.id === 'league-tab');
+    leagueTab.observedName = 'Leagues';
+  }
+  assert.doesNotThrow(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]));
+});
+
+test('Tournament score replay freezes the original score request identity', () => {
+  const contracts = COMPETITION_CASE_EXECUTION_CONTRACTS['tournaments-scoring-dispute-public-standings'];
+  assert.equal(contracts['tournament-score-replay'].replayOf, 'tournament-score-submit');
+  assert.equal(contracts['tournament-score-replay'].requestId, contracts['tournament-score-submit'].requestId);
+});
+
+test('League score replay freezes the original score request identity', () => {
+  const contracts = COMPETITION_CASE_EXECUTION_CONTRACTS['leagues-scorekeeper-spectator'];
+  assert.equal(contracts['league-score-replay'].replayOf, 'league-score-submit');
+  assert.equal(contracts['league-score-replay'].requestId, contracts['league-score-submit'].requestId);
+});
+
 test('competition browser evidence rejects invented selector results, loose viewports, and wrong exact counts', () => {
   const id = 'tournaments-schedule-pools-brackets-referees';
   const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
@@ -309,6 +332,15 @@ test('competition browser evidence rejects invented selector results, loose view
   browserCase.execution.browser.consoleCount = 0;
   browserCase.execution.browser.matchedSelector = `observed:${browserCase.execution.browser.role}:${browserCase.execution.browser.name}`;
   delete browserCase.execution.browser.observedDomName;
+  assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
+});
+
+test('competition browser evidence rejects a Shell main region outside the requested viewport', () => {
+  const id = 'leagues-schedule-generation-deployment';
+  const cases = Object.values(frozenCaseIds[id]).flat().map(caseId => strictCompetitionEvent(id, caseId));
+  const cleanup = { type: 'cleanup', runId: 'strict-contract-run', cleanupId: 'fixture-cleanup-strict-contract-run', state: 'OBSERVED', residuals: [], selectors: [`competition-discovery:${id}:strict-contract-run`] };
+  const browserCase = cases.find(item => item.caseId === 'league-schedule-desktop');
+  browserCase.execution.browser.viewports[0].mainFits = false;
   assert.throws(() => assertAuthoritativeCompetitionEvents([...cases, cleanup], [id]), /browser provenance/i);
 });
 
