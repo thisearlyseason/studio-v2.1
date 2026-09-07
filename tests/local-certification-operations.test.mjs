@@ -167,6 +167,12 @@ test('tournament registration uses canonical Firestore rules-denial responses fo
   assert.match(probes, /assertFirestoreDenied\('tourn-anonymous-direct-write',anonymousWrite/);
 });
 
+test('tournament waiver denial is recorded under the exact frozen case ID', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(audit, /check\('tourn-waiver-wrong-child'/);
+  assert.doesNotMatch(audit, /check\('tourn-wrong-child'/);
+});
+
 test('public registration discovers join sessions as exact cleanup roots without mutating in the obligation', () => {
   const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
   const start = audit.indexOf('async function runPublicRegistrationAudit');
