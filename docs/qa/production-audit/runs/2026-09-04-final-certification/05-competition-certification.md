@@ -2,17 +2,17 @@
 
 Date: 2026-09-07
 
-Certified local candidate: `ef6ece2560bdaf7bac91627cb46d5b7fba88fb26`
+Certified local candidate: `c8a71e9043b6652992fdf6b677aead656f26445e`
 
 Scope: the seven frozen League and Tournament rows only.
 
 ## Result
 
-The local emulator/browser portion is complete. The immutable-candidate combined run `final-cert-t5-260907-165345-7ee2` completed with wrapper exit 0: 94/94 exact cases were `OBSERVED`, all declared dimensions were present, `runErrors` was empty, and cleanup deleted 372 records, restored 13 baseline records, and left zero retained audit/residual records. Every browser row captured its exact actor/session, accessible selector and control, `1440x900` and `390x844` bounds, expected console/network observations, request identity where applicable, authoritative state, and case-owned cleanup.
+The local emulator/browser portion is complete. The seven-row combined run `final-cert-t5-260907-165345-7ee2` at parent implementation revision `ef6ece2560bdaf7bac91627cb46d5b7fba88fb26` completed with wrapper exit 0: 94/94 exact cases were `OBSERVED`, all declared dimensions were present, `runErrors` was empty, and cleanup deleted 372 records, restored 13 baseline records, and left zero retained audit/residual records. Every browser row captured its exact actor/session, accessible selector and control, `1440x900` and `390x844` bounds, expected console/network observations, request identity where applicable, authoritative state, and case-owned cleanup. Review repair `c8a71e9043b6652992fdf6b677aead656f26445e` changes only scenario timeout selection and its contracts; the exact affected Registration rows were freshly executed at that revision as recorded below.
 
 The runner correctly leaves all seven matrix outcomes `BLOCKED_PRECONDITION`, not `PASS`, because exact-revision staging execution has not been observed. League scoring additionally requires deployed background projection-trigger convergence. This local result does not prove deployed Functions delivery, an outbound provider, or physical-device push.
 
-Authoritative artifact:
+Seven-row combined artifact:
 
 `output/playwright/2026-09-04-final-certification/task-5/final-cert-t5-260907-165345-7ee2/results.json`
 
@@ -40,14 +40,16 @@ The earlier combined diagnostic `final-cert-t5-260907-163213-8a31` also observed
 4. Desktop competition content overflowed the viewport because the shared Shell flex child could not shrink. `min-w-0` is now present. The focused validator regression rejects `mainFits=false`; League lifecycle/schedule/scoring and Tournament lifecycle/schedule/scoring then proved desktop and mobile numeric bounds.
 5. Chat completed all 14 assertions but exceeded the generic 60-second scenario cap. The real browser flow remained bounded by its 15-second UI and 20-second HTTP limits; only the overall browser scenario cap was raised to 90 seconds. Isolated rerun `final-cert-t5-260907-164348-4013` passed 14/14 with cleanup 302/1/0.
 6. Three pre-existing broad checks asserted obsolete source strings. They now assert the current stricter seams: shared Practice validation, create-only immutable waiver receipt writes, and non-enumerating calendar revocation.
+7. Review found that the 90-second browser cap had been applied to every browser scenario. A genuine RED timeout-selection regression proved both a short non-Chat row and Chat were receiving the same cap. The schedule sequencer now resolves a timeout per scenario: the default remains 60 seconds, and only `chat-channel-message-unread` receives 90 seconds when browser execution is enabled. The focused timeout contract and source-integration contract pass at `c8a71e90`.
 
-Material nonzero diagnostics were retained: `160859-c92f`, `161037-ac53`, and `161143-2a37` exposed the League name normalization; `161304-c432`, `161533-e990`, `161655-ebc8`, and `161745-0210` exposed schedule proof/browser gaps; `162244-1449`, `162411-c4d8`, and `162546-3ef4` exposed scoring proof/replay gaps; `163833-9aad` and `164144-9d22` exposed the Chat scenario timeout. An affected-row selector attempt also exited 1 before execution because `background-league-projections-member-cache` has no assigned local operations handler; its projection seam was covered by focused automated tests instead.
+Material nonzero diagnostics were retained: `160859-c92f`, `161037-ac53`, and `161143-2a37` exposed the League name normalization; `161304-c432`, `161533-e990`, `161655-ebc8`, and `161745-0210` exposed schedule proof/browser gaps; `162244-1449`, `162411-c4d8`, and `162546-3ef4` exposed scoring proof/replay gaps; `163833-9aad` and `164144-9d22` exposed the Chat scenario timeout. The nonzero affected-row attempt `163833-9aad` is superseded for Registration evidence by exact repair-revision run `final-cert-t5-260907-171333-6dc7`: `tournaments-registration-waiver` observed 19/19 cases and `public-portals-squad-event-registration` observed 16/16 cases, with no missing dimensions or run errors, wrapper exit 0, and shared cleanup of 319 deleted / 0 restored / 0 retained-residual records. Its revision-bound artifact is `output/playwright/2026-09-04-final-certification/task-5/final-cert-t5-260907-171333-6dc7/results.json`. An affected-row selector attempt also exited 1 before execution because `background-league-projections-member-cache` has no assigned local operations handler; its projection seam was covered by focused automated tests instead.
 
 ## Affected regressions and engineering gates
 
 - Affected Registration, Facilities, public projection, Push, Practice, waiver, and calendar seams: 142/142 PASS.
 - Chat isolated browser regression: 14/14 PASS.
 - Competition/evidence/operations/schedule/scoring contracts: 91/91 PASS.
+- Review timeout-selection regression and source-integration contract: 2/2 PASS; default 60 seconds and Chat-only 90 seconds proved.
 - Certification fixture contracts: 29/29 PASS.
 - Firestore and Storage rules: 65/65 PASS.
 - TypeScript typecheck: exit 0.
