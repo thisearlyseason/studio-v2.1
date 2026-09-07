@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { communicationDb, loadCommunicationRoute, communicationRequest } from './helpers/communication-route-harness.mjs';
+process.env.RESEND_API_KEY = 're_test_local_only'; // Resend SDK is replaced at the test network boundary.
 
 const seed = {
   'teams/team-a': { ownerUserId: 'owner', planId: 'elite_squad', isPro: true },
@@ -62,7 +63,8 @@ test('bounded multi-division commit failure leaves no events or successful recei
   db.runTransaction = work => original(async tx => { let eventWrites = 0; const result = await work({ ...tx, create(ref, value) { if (ref.path.includes('/events/')) eventWrites++; return tx.create(ref, value); }, set(ref, value) { if (ref.path.includes('/events/')) eventWrites++; return tx.set(ref, value); } }); if (fail && eventWrites > 1) throw Error('Injected atomic commit failure'); return result; });
   const body = create(); body.payload.divisions.push({ ...blueprint, divisionTitle: 'Silver' });
   assert.equal((await call(db, body)).status, 500);
-  assert.equal([...records.keys()].some(path => path.includes('/events/') || path.startsWith('competitionOperations/')), false);
+  assert.equal([...records.keys()].some(path => path.includes('/events/') || path.startsWith('competitionOperations/') || path.startsWith('competitionOperationOutbox/')), false);
+  assert.equal(db.notifications.length, 0); assert.equal(db.emails.length, 0);
   fail = false; const result = await call(db, body);
   assert.equal(result.status, 200); assert.equal(result.body.operationState, 'complete'); assert.equal(result.body.eventIds.length, 2);
 });
@@ -186,4 +188,89 @@ test('archive revalidates actor, tenant and version in its committing transactio
     assert.notEqual(records.get('teams/team-a/events/cup').isArchived, true);
     assert.equal([...records.keys()].some(path => path.startsWith('competitionOperations/')), false);
   }
+});
+
+test('description-only configure of a timed scheduled Tournament ignores its own game bookings', async () => {
+  const event = { ...blueprint, teamId: 'team-a', lifecycleVersion: 1, startTime: '09:00', endTime: '17:00', location: 'Central Fields', tournamentGames: [{ id: 'game', date: '2026-10-01', time: '09:00' }] };
+  const ownedBooking = { sourceId: 'tournament:team-a:cup', teamIds: ['team-a'], location: 'Central Fields', date: '2026-10-01', startMinute: 540, endMinute: 570 };
+  const { db, records } = communicationDb({ ...seed, 'teams/team-a/events/cup': event, 'scheduleBookings/game': ownedBooking });
+  const result = await call(db, { action: 'configure', requestId: 'timed-description-0001', teamId: 'team-a', eventId: 'cup', expectedVersion: 1, payload: { description: 'Updated only' } });
+  assert.equal(result.status, 200);
+  assert.equal(records.get('teams/team-a/events/cup').description, 'Updated only');
+  assert.deepEqual(records.get('teams/team-a/events/cup').tournamentGames, event.tournamentGames);
+  assert.deepEqual(records.get('scheduleBookings/game'), ownedBooking);
+});
+
+for (const [kind, history] of [
+    ['current responses', { 'teams/team-a/events/cup': { ...blueprint, teamId: 'team-a', lifecycleVersion: 1, userRsvps: { member: 'going' } } }],
+    ['immutable audit', { 'teams/team-a/events/cup': { ...blueprint, teamId: 'team-a', lifecycleVersion: 1 }, 'teams/team-a/events/cup/rsvpAudit/receipt': { actorUid: 'member', status: 'going', requestId: 'accepted-rsvp' } }],
+  ]) {
+  test(`Tournament delete preserves RSVP ${kind} and requires archive`, async () => {
+    const { db, records } = communicationDb({ ...seed, ...history });
+    const before = structuredClone([...records]);
+    const input = { action: 'delete', requestId: 'delete-rsvp-cup-0001', teamId: 'team-a', eventId: 'cup', expectedVersion: 1, payload: {} };
+    assert.equal((await call(db, input)).status, 409); assert.deepEqual([...records], before);
+    assert.equal((await call(db, { ...input, action: 'archive', requestId: 'archive-rsvp-cup-0001' })).status, 200);
+    for (const [path, value] of Object.entries(history)) {
+      if (path.endsWith('/cup')) assert.deepEqual(records.get(path).userRsvps, value.userRsvps);
+      else assert.deepEqual(records.get(path), value);
+    }
+  });
+}
+
+test('Tournament creation queues one server-owned push/email effect and replay cannot duplicate it', async () => {
+  const { db, records } = communicationDb({ ...seed,
+    'teams/team-a/members/member': { userId: 'member', position: 'Player', status: 'active', email: 'member@example.test' },
+    'teams/team-a/members/removed': { userId: 'removed', position: 'Player', status: 'removed' },
+  });
+  const body = create(); body.payload.divisions.push({ ...blueprint, divisionTitle: 'Silver' });
+  const first = await call(db, body), replay = await call(db, body);
+  assert.equal(first.status, 200); assert.deepEqual(replay.body, first.body);
+  const effects = [...records.values()].filter(value => value.kind === 'tournament-created-notification');
+  assert.equal(effects.length, 1);
+  assert.equal(db.notifications.length, 1);
+  assert.deepEqual(db.notifications[0].recipientUserIds.sort(), ['member', 'staff']);
+  assert.equal(db.emails.length, 1);
+  assert.deepEqual(db.emails[0].messages[0].to, ['member@example.test']);
+  assert.equal(effects[0].status, 'delivered');
+  assert.deepEqual(effects[0].payload.eventIds, first.body.eventIds);
+  assert.deepEqual(effects[0].payload.channels, ['push', 'email']);
+  assert.equal(effects[0].payload.teamId, 'team-a');
+});
+
+test('notification provider failure retains the Tournament and retries only the failed channel', async () => {
+  const { db, records } = communicationDb({ ...seed, 'teams/team-a/members/member': { userId: 'member', status: 'active', email: 'member@example.test' } });
+  db.emailSendFailure = 'Injected email provider rejection';
+  const body = create();
+  assert.equal((await call(db, body)).status, 200);
+  const effects = () => [...records.values()].filter(value => value.kind === 'tournament-created-notification');
+  assert.equal(effects()[0].status, 'failed'); assert.equal(db.notifications.length, 1);
+  db.emailSendFailure = null;
+  assert.equal((await call(db, body)).status, 200);
+  assert.equal(effects()[0].status, 'delivered'); assert.equal(db.notifications.length, 1); assert.equal(db.emails.length, 2);
+  assert.equal((await call(db, body)).status, 200); assert.equal(db.emails.length, 2);
+});
+
+test('demo and outbound-disabled teams retain creation but suppress notification delivery', async () => {
+  for (const flag of [{ isDemo: true }, { outboundProvidersEnabled: false }]) {
+    const { db, records } = communicationDb({ ...seed, 'teams/team-a': { ...seed['teams/team-a'], ...flag } });
+    assert.equal((await call(db, create())).status, 200); assert.equal(db.notifications.length, 0); assert.equal(db.emails.length, 0);
+    assert.equal([...records.values()].find(value => value.kind === 'tournament-created-notification').status, 'suppressed');
+  }
+});
+
+test('durable notification claim selects current active recipients and concurrent workers do not redispatch', async () => {
+  const { db, records } = communicationDb({ ...seed,
+    'teams/team-a/members/old': { userId: 'old', status: 'removed', email: 'old@example.test' },
+    'teams/team-a/members/current': { userId: 'current', status: 'active', email: 'current@example.test' },
+    'competitionOperationOutbox/effect': { operationId: 'operation', kind: 'tournament-created-notification', status: 'pending', attempts: 0, payload: { teamId: 'team-a', actorUid: 'owner', eventIds: ['cup'], event: { title: 'Cup', date: '2026-10-01' } } },
+  }, { serializeTransactions: true });
+  const app = await loadCommunicationRoute('../../src/lib/server-tournament-created-notification.ts', db, { uid: 'owner' });
+  try {
+    await Promise.all([app.route.deliverTournamentCreatedNotification('operation'), app.route.deliverTournamentCreatedNotification('operation')]);
+    assert.equal(records.get('competitionOperationOutbox/effect').status, 'delivered');
+    assert.equal(records.get('competitionOperationOutbox/effect').attempts, 1);
+    assert.equal(db.notifications.length, 1); assert.deepEqual(db.notifications[0].recipientUserIds.sort(), ['current', 'staff']);
+    assert.equal(db.emails.length, 1); assert.deepEqual(db.emails[0].messages[0].to, ['current@example.test']);
+  } finally { app.dispose(); }
 });

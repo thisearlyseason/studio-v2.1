@@ -8,6 +8,7 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
   globalThis[key] = { db, auth, jsPDF };
   const stubs = {
     'jspdf': `export const jsPDF = globalThis[${JSON.stringify(key)}].jsPDF;`,
+    'resend': `export class Resend { batch = {send: async (messages, options) => {const db=globalThis[${JSON.stringify(key)}].db;db.emails.push(structuredClone({messages, options}));if(db.emailSendFailure)return {error:{message:db.emailSendFailure}};return {data:{data:messages.map((_,i)=>({id:'test-email-'+i}))}};}}; }`,
     'next/server': `export class NextResponse extends Response { static json(body, init={}) { return new NextResponse(JSON.stringify(body), init); } }`,
     '@/lib/firebase-admin': `export const adminDb = globalThis[${JSON.stringify(key)}].db; export function getAdminStorageBucketName() {return 'demo-test.appspot.com';}`,
     'firebase-admin/storage': `export function getStorage() {return {bucket:()=>globalThis[${JSON.stringify(key)}].db.bucket};}`,
@@ -76,7 +77,7 @@ export function communicationDb(initial,{beforeTransaction,serializeTransactions
     const result=await work({get:ref=>ref.get(),update:(ref,...args)=>pending.push(()=>{if(args[0]?.segments){const value={};value[args[0].segments.join('.')]=args[1];records.set(ref.path,applyUpdate(records.get(ref.path),value));}else records.set(ref.path,applyUpdate(records.get(ref.path),args[0]));}),create:(ref,value)=>pending.push(()=>ref.create(value)),set:(ref,value)=>pending.push(()=>ref.set(value)),delete:ref=>pending.push(()=>ref.delete())});
     for(const write of pending) await write(); return result;
   };
-  const db={notifications,collection:path=>new Query(path),doc:path=>new Ref(path),collectionGroup:path=>new Query(path,[],true),async runTransaction(work) {
+  const db={notifications,emails:[],collection:path=>new Query(path),doc:path=>new Ref(path),collectionGroup:path=>new Query(path,[],true),async runTransaction(work) {
     if(!serializeTransactions)return executeTransaction(work);
     const run=transactionTail.then(()=>executeTransaction(work));transactionTail=run.catch(()=>{});return run;
   },batch() {const pending=[];return {delete:ref=>pending.push(()=>ref.delete()),set:(ref,value)=>pending.push(()=>ref.set(value)),async commit(){for(const write of pending)await write();}};}};

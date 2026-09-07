@@ -9,6 +9,7 @@ import { buildTournamentReplicationConfig, buildTournamentReplicationEvent, TOUR
 import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
+import { deliverTournamentCreatedNotification } from '@/lib/server-tournament-created-notification';
 
 export const runtime = 'nodejs';
 const ID = /^[A-Za-z0-9_-]{1,200}$/;
@@ -82,8 +83,8 @@ async function prepareBooking(transaction: Transaction, teamId: string, eventId:
   for (const date of teamEventConflictDates(interval)) {
     const bookings = await transaction.get(adminDb.collection('scheduleBookings').where('date', '==', date));
     for (const booking of bookings.docs) {
-      if (booking.id === bookingId) continue;
       const data = booking.data();
+      if (booking.id === bookingId || data.sourceId === `tournament:${teamId}:${eventId}`) continue;
       if (!teamEventIntervalsOverlap(interval, { date: String(data.date), startMinute: Number(data.startMinute), endMinute: Number(data.endMinute) })) continue;
       if (data.teamIds?.includes(teamId) || (event.resourceId && event.resourceId === data.resourceId) || (event.location && normalized(event.location) === normalized(data.location))) fail('This Tournament conflicts with a team or facility booking.', 409);
     }
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
           if (current.exists) assertAdvancedEntitlement(team, { ...current.data(), ...payload });
         }
       },
-    }, async ({ transaction }) => {
+    }, async ({ transaction, queueExternalEffect }) => {
       const team = (await transaction.get(teamRef)).data() || {};
       const sourceSnapshot = action === 'create' ? null : await transaction.get(eventRef);
       const source = sourceSnapshot?.data() || {};
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
           definitions = [{ ...source, title: payload.title }];
           sourceConfigs = await configs(transaction, eventRef);
         }
-        if (definitions.length * 4 + sourceConfigs.length + 2 > WRITE_BUDGET) fail('Tournament exceeds the atomic lifecycle write budget.');
+        if (definitions.length * 4 + sourceConfigs.length + 3 > WRITE_BUDGET) fail('Tournament exceeds the atomic lifecycle write budget.');
         const existing = await transaction.get(teamRef.collection('events'));
         const names = new Set<string>();
         for (const definition of definitions) {
@@ -173,6 +174,10 @@ export async function POST(request: NextRequest) {
         }
         for (const booking of bookings) if (booking) transaction.create(adminDb.collection('scheduleBookings').doc(String(booking.id)), booking);
         transaction.create(auditRef, { action, actorUid: auth.uid, teamId, eventIds: prepared.map(item => item.id), createdAt: now });
+        if (action === 'create') queueExternalEffect({
+          effectId: 'tournament-created', kind: 'tournament-created-notification',
+          payload: { teamId, actorUid: auth.uid, eventIds: prepared.map(item => item.id), channels: ['push', 'email'], event: { title: definitions[0].title, date: definitions[0].date, startTime: definitions[0].startTime || '', location: definitions[0].location || '' } },
+        });
         return { success: true, operationState: 'complete', eventId: prepared[0].id, eventIds: prepared.map(item => item.id), lifecycleVersion: 1 };
       }
       const registration = await configs(transaction, eventRef);
@@ -196,8 +201,8 @@ export async function POST(request: NextRequest) {
         const mappings = await transaction.get(adminDb.collection('tournamentRegistrationCodes').where('eventId', '==', eventId));
         if (bookings.size + registration.length + mappings.size + 4 > WRITE_BUDGET) fail('Tournament exceeds the atomic lifecycle write budget.', 409);
         if (action === 'delete') {
-          const dependencies = await Promise.all(['registrationEntries', 'registrations', 'archived_waivers', 'brackets', 'scores', 'audit', 'scoreAudit', 'disputes'].map(name => transaction.get(eventRef.collection(name).limit(1))));
-          if (registration.length || dependencies.some(snapshot => !snapshot.empty) || hasSchedule(source) || source.registrationCount > 0 || source.registrationEntryCount > 0 || Object.keys(source.teamAgreements || {}).length || source.archived_waivers?.length) fail('This Tournament has retained Registration or competition history. Archive it instead.', 409);
+          const dependencies = await Promise.all(['registrationEntries', 'registrations', 'archived_waivers', 'brackets', 'scores', 'audit', 'scoreAudit', 'disputes', 'rsvpAudit'].map(name => transaction.get(eventRef.collection(name).limit(1))));
+          if (registration.length || dependencies.some(snapshot => !snapshot.empty) || hasSchedule(source) || source.registrationCount > 0 || source.registrationEntryCount > 0 || Object.keys(source.teamAgreements || {}).length || Object.keys(source.userRsvps || {}).length || source.archived_waivers?.length) fail('This Tournament has retained Registration or competition history. Archive it instead.', 409);
           transaction.delete(eventRef);
         } else {
           for (const config of registration) transaction.update(config.ref, { is_active: false });
@@ -210,7 +215,13 @@ export async function POST(request: NextRequest) {
       transaction.create(auditRef, { action, teamId, eventId, actorUid: auth.uid, lifecycleVersion: version, createdAt: now });
       return { success: true, operationState: 'complete', eventId, lifecycleVersion: version, ...(action === 'delete' ? { deleted: true } : {}) };
     }));
-    return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store' } });
+    // Provider delivery is outside the lifecycle transaction and cannot undo it.
+    let notificationStatus = 'not_requested';
+    if (action === 'create') {
+      try { notificationStatus = await deliverTournamentCreatedNotification(identity.operationId); }
+      catch { notificationStatus = 'failed'; }
+    }
+    return NextResponse.json({ ...result, notificationStatus }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     const status = error instanceof LifecycleError || error instanceof RequestBodyError || error instanceof ScheduleDeploymentError ? error.status : message.startsWith('Forbidden') ? 403 : message === 'Request collision.' ? 409 : message.startsWith('Invalid competition') ? 400 : 500;

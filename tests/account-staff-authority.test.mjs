@@ -26,5 +26,7 @@ test('unsupported root tournament writes are closed while supported tournaments 
 
   assert.match(rules, /match \/tournaments\/\{hubId\}[\s\S]*allow create, update, delete: if isSuperAdmin\(\)/);
   assert.match(tournamentPage, /eventType: 'tournament'/);
-  assert.match(tournamentPage, /return await addEvent\(eventPayload\)/);
+  assert.match(tournamentPage, /fetch\('\/api\/tournaments\/lifecycle'/);
+  assert.match(tournamentPage, /action: 'create', teamId: activeTeam\.id, payload: \{ divisions \}/);
+  assert.doesNotMatch(tournamentPage, /return await addEvent\(eventPayload\)/);
 });
