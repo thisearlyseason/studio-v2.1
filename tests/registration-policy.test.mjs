@@ -8,6 +8,7 @@ import {
   isCalendarDateCurrent,
   isCalendarDate,
   nextRegistrationCount,
+  registrationCountFromLegacy,
   validateRegistrationConfig,
   registrationPaymentSnapshot,
 } from '../src/lib/registration-policy.ts';
@@ -39,6 +40,8 @@ test('legacy league payment fields become one hash-bound effective configuration
   assert.deepEqual(registrationPaymentSnapshot(effective), { amount: 40, currency: 'CAD', mode: 'offline', status: 'pending', instructions: 'E-transfer before opening day' });
   assert.notEqual(effective.config_hash, validateRegistrationConfig(valid).config_hash);
   assert.throws(() => effectiveLeagueRegistrationConfig(validateRegistrationConfig(valid), { registrationCost: '40' }), /instructions/i);
+  const migrated=validateRegistrationConfig({...valid,payment_migrated:true,registration_cost:'0'});
+  assert.deepEqual(registrationPaymentSnapshot(effectiveLeagueRegistrationConfig(migrated,{registrationCost:'40',paymentInstructions:'legacy'})),{amount:0,currency:'CAD',mode:'free',status:'not_required',instructions:null});
 });
 
 test('immutable registration archive matching compares the complete canonical receipt', () => {
@@ -57,6 +60,13 @@ test('calendar dates and atomic registration counters fail closed', () => {
   assert.deepEqual(nextRegistrationCount(0, 1), { accepted: true, count: 1 });
   assert.deepEqual(nextRegistrationCount(1, 1), { accepted: false, count: 1 });
   assert.throws(() => nextRegistrationCount(-1, 2), /counter/i);
+});
+
+test('legacy registration counters migrate exactly and remain bounded', () => {
+  assert.equal(registrationCountFromLegacy(undefined, 7, false), 7);
+  assert.equal(registrationCountFromLegacy(3, 99, true), 3);
+  assert.throws(() => registrationCountFromLegacy(undefined, 100001, true), /migration/i);
+  assert.throws(() => registrationCountFromLegacy(-1, 0, false), /counter/i);
 });
 
 test('registration replay hashes are stable across equivalent answer key ordering', () => {

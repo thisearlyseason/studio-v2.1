@@ -21,8 +21,10 @@ import {
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { getTeamAuthority } from '@/lib/server-team-access';
 import { canDeleteLeagueRegistration } from '@/lib/server-league-registration-authority';
-import { effectiveLeagueRegistrationConfig, isCalendarDate, nextRegistrationCount, registrationArchiveMatches, registrationPaymentSnapshot, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
+import { effectiveLeagueRegistrationConfig, isCalendarDate, nextRegistrationCount, registrationArchiveMatches, registrationCountFromLegacy, registrationPaymentSnapshot, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
 import { hasStaffRole } from '@/lib/staff-position';
+
+const LEGACY_REGISTRATION_SCAN_LIMIT=100001;
 
 function requestFingerprint(req: NextRequest) {
   const address = (req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local').slice(0, 100);
@@ -138,22 +140,30 @@ export async function POST(req: NextRequest) {
           if (!entry.exists) return;
           if (legacy && entry.data()?.event_id !== eventId) throw new RegistrationInputError('Registration not found.', 404);
           if(Array.isArray(freshEvent.data()?.tournamentGames)&&freshEvent.data()!.tournamentGames.length>0)throw new RegistrationInputError('Registration cannot be deleted after the bracket is published.',409);
-          transaction.delete(entryRef);
-          transaction.delete((legacy ? authority.teamRef : eventRef).collection('archived_waivers').doc(`arch_waiver_${entryId}`));
           const marker = `p_${entryId}`;
           const removedProjection=(freshEvent.data()?.tournamentTeamsData||[]).find((teamEntry:any)=>teamEntry.id===marker);
           const remainingTeams=(freshEvent.data()?.tournamentTeamsData||[]).filter((teamEntry:any)=>teamEntry.id!==marker);
           const removedName=String(removedProjection?.name||removedProjection?.teamName||entry.data()?.answers?.teamName||'').trim();
           const sameNameRemains=removedName&&remainingTeams.some((teamEntry:any)=>String(teamEntry.name||teamEntry.teamName||'').trim().toLowerCase()===removedName.toLowerCase());
           const agreement=removedName?freshEvent.data()?.teamAgreements?.[removedName]:null;
-          if(!sameNameRemains&&agreement?.sourceTeamId&&agreement?.waiverHash){
-            const archiveId=`arch_tournament_${createHash('sha256').update(`${eventId}:${agreement.sourceTeamId}:${agreement.waiverHash}`).digest('hex')}`;
-            transaction.delete(authority.teamRef.collection('archived_waivers').doc(archiveId));
+          let tournamentArchiveRef:DocumentReference|null=null;
+          if(!sameNameRemains&&agreement){
+            const expectedArchiveId=`arch_tournament_${createHash('sha256').update(`${eventId}:${agreement.sourceTeamId}:${agreement.waiverHash}`).digest('hex')}`;
+            if(agreement.archiveId!==expectedArchiveId||!agreement.receiptHash)throw new RegistrationInputError('Tournament waiver receipt pointer is invalid.',409);
+            tournamentArchiveRef=authority.teamRef.collection('archived_waivers').doc(agreement.archiveId);
+            const archive=await transaction.get(tournamentArchiveRef),archiveData=archive.data()||{};
+            const {receiptHash,...archiveIdentity}=archiveData;
+            if(!archive.exists||receiptHash!==agreement.receiptHash||registrationPayloadHash(archiveIdentity)!==receiptHash||!registrationArchiveMatches({eventId:archiveData.eventId,teamId:archiveData.teamId,tournamentTeamName:archiveData.tournamentTeamName,sourceTeamId:archiveData.sourceTeamId,waiverHash:archiveData.waiverHash,waiverVersion:archiveData.waiverVersion,configHash:archiveData.configHash},{eventId,teamId,tournamentTeamName:removedName,sourceTeamId:agreement.sourceTeamId,waiverHash:agreement.waiverHash,waiverVersion:agreement.waiverVersion,configHash:agreement.configHash}))throw new RegistrationInputError('Tournament waiver receipt does not match this registration.',409);
           }
+          let currentCount=freshEvent.data()?.registrationEntryCount;
+          if(!legacy&&!Number.isInteger(Number(currentCount))){const entries=await transaction.get(eventRef.collection('registrationEntries').limit(LEGACY_REGISTRATION_SCAN_LIMIT));currentCount=registrationCountFromLegacy(currentCount,entries.size,entries.size===LEGACY_REGISTRATION_SCAN_LIMIT);}
+          transaction.delete(entryRef);
+          transaction.delete((legacy ? authority.teamRef : eventRef).collection('archived_waivers').doc(`arch_waiver_${entryId}`));
+          if(tournamentArchiveRef)transaction.delete(tournamentArchiveRef);
           transaction.update(eventRef, {
             tournamentTeams: [...new Set(remainingTeams.map((teamEntry:any)=>String(teamEntry.name||teamEntry.teamName||'')).filter(Boolean))],
             tournamentTeamsData: remainingTeams,
-            registrationEntryCount: legacy ? Number(freshEvent.data()?.registrationEntryCount||0) : Math.max(0,Number(freshEvent.data()?.registrationEntryCount||0)-1),
+            ...(legacy?{}:{registrationEntryCount:Math.max(0,Number(currentCount)-1)}),
           });
           if(removedName&&!sameNameRemains)transaction.update(eventRef,new FieldPath('teamAgreements',removedName),FieldValue.delete());
         });
@@ -174,12 +184,14 @@ export async function POST(req: NextRequest) {
         const [freshLeague, entry] = await Promise.all([transaction.get(leagueRef), transaction.get(entryRef)]);
         if (!freshLeague.exists || !canDeleteLeagueRegistration({ creatorId: freshLeague.data()?.creatorId, actorUid: auth.uid, actorRole: auth.role })) throw new RegistrationInputError('League organizer access required.', 403);
         if (!entry.exists) return;
+        let currentCount=freshLeague.data()?.registrationEntryCount;
+        if(!Number.isInteger(Number(currentCount))){const entries=await transaction.get(leagueRef.collection('registrationEntries').limit(LEGACY_REGISTRATION_SCAN_LIMIT));currentCount=registrationCountFromLegacy(currentCount,entries.size,entries.size===LEGACY_REGISTRATION_SCAN_LIMIT);}
         transaction.delete(entryRef);
         transaction.delete(leagueRef.collection('archived_waivers').doc(`arch_waiver_${entryId}`));
         transaction.update(leagueRef, {
           [`teams.${recruitId}`]: FieldValue.delete(), [`individualRecruits.${recruitId}`]: FieldValue.delete(),
           memberTeamIds: FieldValue.arrayRemove(recruitId), memberIndivIds: FieldValue.arrayRemove(recruitId),
-          registrationEntryCount: Math.max(0,Number(freshLeague.data()?.registrationEntryCount||0)-1),
+          registrationEntryCount: Math.max(0,Number(currentCount)-1),
         });
       });
       return NextResponse.json({ success: true });
@@ -484,7 +496,7 @@ export async function POST(req: NextRequest) {
           if(!Number.isInteger(Number(rawCapacity))||Number(rawCapacity)<0||Number(rawCapacity)>100000)return {accepted:false as const,code:'INVALID_CAPACITY',message:'Tournament registration configuration is invalid.',status:409};
           const capacity = Number(rawCapacity);
           let currentCount=freshEvent.data()?.registrationEntryCount;
-          if(capacity>0&&!Number.isInteger(Number(currentCount))){const legacy=await transaction.get(entryParentRef.collection('registrationEntries').limit(1));if(!legacy.empty)return {accepted:false as const,code:'COUNTER_MIGRATION_REQUIRED',message:'Registration capacity requires organizer migration.',status:409};currentCount=0;}
+          if(!Number.isInteger(Number(currentCount))){const legacy=await transaction.get(entryParentRef.collection('registrationEntries').limit(LEGACY_REGISTRATION_SCAN_LIMIT));currentCount=registrationCountFromLegacy(currentCount,legacy.size,legacy.size===LEGACY_REGISTRATION_SCAN_LIMIT);}
           const nextCount=nextRegistrationCount(Number(currentCount??0),capacity);
           if(!nextCount.accepted)return { accepted: false as const, code: 'REGISTRATION_FULL', message: 'Tournament registration is at capacity.', status: 409 };
 
@@ -569,7 +581,7 @@ export async function POST(req: NextRequest) {
         if(!Number.isInteger(Number(rawCapacity))||Number(rawCapacity)<0||Number(rawCapacity)>100000)return {accepted:false as const,message:'Registration capacity configuration is invalid.',status:409};
         const capacity = Number(rawCapacity);
         let currentCount=freshScope?.registrationEntryCount;
-        if(capacity>0&&!Number.isInteger(Number(currentCount))){const legacy=await batch.get(entryParentRef.collection('registrationEntries').limit(1));if(!legacy.empty)return {accepted:false as const,message:'Registration capacity requires organizer migration.',status:409};currentCount=0;}
+        if(!Number.isInteger(Number(currentCount))){const legacy=await batch.get(entryParentRef.collection('registrationEntries').limit(LEGACY_REGISTRATION_SCAN_LIMIT));currentCount=registrationCountFromLegacy(currentCount,legacy.size,legacy.size===LEGACY_REGISTRATION_SCAN_LIMIT);}
         const nextCount=nextRegistrationCount(Number(currentCount??0),capacity);
         if(!nextCount.accepted)return { accepted: false as const, message: 'Registration is at capacity.', status: 409 };
         batch.create(entry, entryData);
@@ -769,13 +781,17 @@ export async function POST(req: NextRequest) {
           const archiveId = `arch_tournament_${createHash('sha256').update(`${eventId}:${sourceTeamId}:${waiverHash}`).digest('hex')}`;
           const archiveRef = adminDb.collection('teams').doc(teamId).collection('archived_waivers').doc(archiveId);
           const prior = await transaction.get(archiveRef);
-          const receiptIdentity = {eventId,tournamentTeamName:teamName,signer,signedBy:auth.uid,sourceTeamId,signedDate,title:configData.title||`${freshEvent.data()?.title||'Tournament'} Waiver`,documentId:`registration_team_config_v${configData.form_version}`,waiverText,waiverHash,waiverVersion:configData.form_version,configHash:configData.config_hash,teamId,tournamentId:eventId,type:'Tournament Waiver',status:'verified',immutable:true};
-          const receiptHash=registrationPayloadHash(receiptIdentity);
-          if (prior.exists) return prior.data()?.receiptHash === receiptHash && registrationArchiveMatches(Object.fromEntries(Object.keys(receiptIdentity).map(key=>[key,prior.data()?.[key]])),receiptIdentity)
-            ? { ok: true as const, replay: true }
-            : { ok: false as const, status: 409, error: 'This waiver version was already signed with different details.' };
-          transaction.update(ref, new FieldPath('teamAgreements', teamName), { agreed: true, captainName: signer, signedAt, signedDate, signedBy: auth.uid, sourceTeamId, waiverHash, waiverVersion: configData.form_version });
-          transaction.create(archiveRef, { id: archiveId, ...receiptIdentity, receiptHash, signedAt });
+          const receiptIdentityBase = {id:archiveId,eventId,tournamentTeamName:teamName,signer,signedBy:auth.uid,sourceTeamId,signedDate,title:configData.title||`${freshEvent.data()?.title||'Tournament'} Waiver`,documentId:`registration_team_config_v${configData.form_version}`,waiverText,waiverHash,waiverVersion:configData.form_version,configHash:configData.config_hash,teamId,tournamentId:eventId,type:'Tournament Waiver',status:'verified',immutable:true};
+          if (prior.exists) {
+            const receiptIdentity={...receiptIdentityBase,signedAt:prior.data()?.signedAt};
+            const receiptHash=registrationPayloadHash(receiptIdentity);
+            return prior.data()?.receiptHash === receiptHash && registrationArchiveMatches(Object.fromEntries(Object.keys(receiptIdentity).map(key=>[key,prior.data()?.[key]])),receiptIdentity)
+              ? { ok: true as const, replay: true }
+              : { ok: false as const, status: 409, error: 'This waiver version was already signed with different details.' };
+          }
+          const receiptIdentity={...receiptIdentityBase,signedAt},receiptHash=registrationPayloadHash(receiptIdentity);
+          transaction.update(ref, new FieldPath('teamAgreements', teamName), { agreed: true, captainName: signer, signedAt, signedDate, signedBy: auth.uid, sourceTeamId, waiverHash, waiverVersion: configData.form_version,configHash:configData.config_hash,archiveId,receiptHash });
+          transaction.create(archiveRef, { ...receiptIdentity, receiptHash });
           return { ok: true as const, replay: false };
         });
         if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });

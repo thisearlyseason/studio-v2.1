@@ -21,7 +21,7 @@ export async function POST(req:NextRequest){
     const configRef=parentRef.collection('registration').doc(configId);
     const teamAuthority=targetKind==='tournament'?await getTeamAuthority(targetId,auth.uid,auth.role):null;
     if(targetKind==='tournament'&&!teamAuthority?.isStaff)return fail('Tournament staff access required.',403);
-    const normalized=validateRegistrationConfig({...body.config as Record<string,unknown>,form_version:Math.max(1,expectedVersion+1)});
+    const normalized=validateRegistrationConfig({...body.config as Record<string,unknown>,...(targetKind==='league'?{payment_migrated:true}:{}),form_version:Math.max(1,expectedVersion+1)});
     await adminDb.runTransaction(async transaction=>{
       const [parent,current]=await Promise.all([transaction.get(parentRef),transaction.get(configRef)]);
       if(!parent.exists)throw new RegistrationInputError('Registration target not found.',404);

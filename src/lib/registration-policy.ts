@@ -31,7 +31,7 @@ export function registrationConfigHash(config:Record<string,unknown>) {
 export function validateRegistrationConfig(raw:unknown) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new RegistrationInputError('A registration configuration is required.');
   const input=raw as Record<string,any>;
-  const allowed=new Set(['title','description','is_active','type','form_schema','waiver_mode','selected_team_waivers','team_waivers_content','default_waiver_text','require_default_waiver','custom_waiver_text','confirmation_message','form_version','registration_cost','offline_payment_instructions','currency','require_division_selection','available_divisions']);
+  const allowed=new Set(['title','description','is_active','type','form_schema','waiver_mode','selected_team_waivers','team_waivers_content','default_waiver_text','require_default_waiver','custom_waiver_text','confirmation_message','form_version','registration_cost','offline_payment_instructions','currency','require_division_selection','available_divisions','payment_migrated']);
   if(Object.keys(input).some(key=>!allowed.has(key)))throw new RegistrationInputError('Unsupported registration configuration field.');
   if(!['player','team','waiver'].includes(input.type))throw new RegistrationInputError('Invalid registration type.');
   if(typeof input.is_active!=='boolean')throw new RegistrationInputError('Registration active state is required.');
@@ -54,7 +54,7 @@ export function validateRegistrationConfig(raw:unknown) {
   const result:Record<string,unknown>={title:text(input.title,200,'title',true),description:text(input.description,2000,'description'),is_active:input.is_active,type:input.type,form_schema,form_version,
     waiver_mode:['none','universal','team','mixed'].includes(input.waiver_mode)?input.waiver_mode:'none',require_default_waiver:input.require_default_waiver===true,
     default_waiver_text:text(input.default_waiver_text,50000,'default waiver'),custom_waiver_text:text(input.custom_waiver_text,50000,'custom waiver'),confirmation_message:text(input.confirmation_message,1000,'confirmation'),
-    registration_cost:text(input.registration_cost,20,'registration cost'),offline_payment_instructions:text(input.offline_payment_instructions,2000,'offline payment instructions'),currency:text(input.currency||'CAD',3,'currency',true).toUpperCase(),
+    registration_cost:text(input.registration_cost,20,'registration cost'),offline_payment_instructions:text(input.offline_payment_instructions,2000,'offline payment instructions'),currency:text(input.currency||'CAD',3,'currency',true).toUpperCase(),payment_migrated:input.payment_migrated===true,
     require_division_selection:input.require_division_selection===true,available_divisions:Array.isArray(input.available_divisions)?input.available_divisions.slice(0,100).map((value:unknown)=>text(value,100,'division',true)):[],
     selected_team_waivers:Array.isArray(input.selected_team_waivers)?input.selected_team_waivers.slice(0,100).map((value:unknown)=>text(value,200,'waiver id',true)):[],
     team_waivers_content:Array.isArray(input.team_waivers_content)?input.team_waivers_content.slice(0,20).map((waiver:any)=>({id:text(waiver?.id,200,'waiver id',true),title:text(waiver?.title,200,'waiver title',true),content:text(waiver?.content,50000,'waiver content',true)})):[]};
@@ -75,10 +75,10 @@ export function effectiveLeagueRegistrationConfig(config:Record<string,unknown>,
   const {config_hash:_,...value}=config;
   const nestedCost=String(value.registration_cost??'').trim();
   const legacyCost=String(league.registrationCost??league.registration_cost??'').trim();
-  const registration_cost=nestedCost||legacyCost;
+  const registration_cost=value.payment_migrated===true?nestedCost:(legacyCost||nestedCost);
   const nestedInstructions=String(value.offline_payment_instructions??'').trim();
   const legacyInstructions=String(league.paymentInstructions??league.offline_payment_instructions??'').trim();
-  const result={...value,registration_cost,offline_payment_instructions:nestedInstructions||legacyInstructions};
+  const result={...value,registration_cost,offline_payment_instructions:value.payment_migrated===true?nestedInstructions:(legacyInstructions||nestedInstructions)};
   registrationPaymentSnapshot(result);
   return {...result,config_hash:registrationConfigHash(result)};
 }
@@ -101,4 +101,10 @@ export function nextRegistrationCount(current:unknown, capacity:unknown) {
   if(!Number.isInteger(count)||count<0)throw new RegistrationInputError('Registration counter is invalid.',409);
   if(!Number.isInteger(limit)||limit<0||limit>100000)throw new RegistrationInputError('Registration capacity is invalid.',409);
   return limit>0&&count>=limit?{accepted:false as const,count}:{accepted:true as const,count:count+1};
+}
+
+export function registrationCountFromLegacy(current:unknown, observed:number, truncated:boolean) {
+  if(current!==undefined&&current!==null)return nextRegistrationCount(current,0).count-1;
+  if(!Number.isInteger(observed)||observed<0||truncated)throw new RegistrationInputError('Registration counter migration is invalid.',409);
+  return observed;
 }

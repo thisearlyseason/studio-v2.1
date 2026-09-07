@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
-import { isCalendarDateCurrent, nextRegistrationCount, registrationPayloadHash } from '@/lib/registration-policy';
+import { isCalendarDateCurrent, nextRegistrationCount, registrationCountFromLegacy, registrationPayloadHash, RegistrationInputError } from '@/lib/registration-policy';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -14,6 +14,7 @@ const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FIELD_TYPES = new Set(['short_text', 'long_text', 'checkbox']);
 class EventSchemaError extends Error {}
+const LEGACY_REGISTRATION_SCAN_LIMIT=100001;
 
 function requestKey(req: NextRequest, suffix: string) {
   const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ data: publicEvent(registration.event.id, registration.event.data() || {}) });
   } catch (error) {
     if (error instanceof EventSchemaError) return NextResponse.json({ error: error.message }, { status: 409 });
+    if (error instanceof RegistrationInputError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('[public/event-registration] Read error:', error);
     return NextResponse.json({ error: 'Event registration is temporarily unavailable.' }, { status: 500 });
   }
@@ -157,7 +159,7 @@ export async function POST(req: NextRequest) {
       const rawCapacity=freshData.registrationCapacity??freshData.maxRegistrations??freshData.capacity??0;
       if(!Number.isInteger(Number(rawCapacity))||Number(rawCapacity)<0||Number(rawCapacity)>100000)return 'inactive';
       const capacity=Number(rawCapacity);let currentCount=freshData.registrationCount;
-      if(capacity>0&&!Number.isInteger(Number(currentCount))){const legacy=await transaction.get(registration.eventRef.collection('registrations').limit(1));if(!legacy.empty)return 'counter_migration';currentCount=0;}
+      if(!Number.isInteger(Number(currentCount))){const legacy=await transaction.get(registration.eventRef.collection('registrations').limit(LEGACY_REGISTRATION_SCAN_LIMIT));currentCount=registrationCountFromLegacy(currentCount,legacy.size,legacy.size===LEGACY_REGISTRATION_SCAN_LIMIT);}
       const nextCount=nextRegistrationCount(Number(currentCount??0),capacity);if(!nextCount.accepted)return 'full';
 
       transaction.create(registrationRef, {
@@ -179,7 +181,6 @@ export async function POST(req: NextRequest) {
 
     if (result === 'inactive') return NextResponse.json({ error: 'Event registration is unavailable.' }, { status: 404 });
     if (result === 'full') return NextResponse.json({ error: 'This event is already at capacity.' }, { status: 409 });
-    if (result === 'counter_migration') return NextResponse.json({ error: 'Event registration requires organizer migration.' }, { status: 409 });
     if (result === 'changed') return NextResponse.json({ error: 'Registration form changed. Reload before submitting.' }, { status: 409 });
     if (result === 'collision') return NextResponse.json({ error: 'This registration request was already used with different details.' }, { status: 409 });
     return NextResponse.json({ success: true, alreadyRegistered: result === 'duplicate' });

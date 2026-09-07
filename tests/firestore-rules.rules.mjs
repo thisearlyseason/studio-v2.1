@@ -182,12 +182,12 @@ test('a team creator can still create the team and initial roster in one batch',
   await assertSucceeds(batch.commit());
 });
 
-test('public league entries must use the validated API while league creators retain manual entry', async () => {
+test('public and manual league entries must use the validated server API', async () => {
   await seed('leagues/league-1', { id: 'league-1', creatorId: 'league-owner', name: 'Summer League' });
   const entry = { league_id: 'league-1', answers: { name: 'Applicant' }, status: 'pending' };
   await assertFails(setDoc(doc(anonDb(), 'leagues', 'league-1', 'registrationEntries', 'public-forged'), entry));
   await assertFails(setDoc(doc(userDb('outsider'), 'leagues', 'league-1', 'registrationEntries', 'member-forged'), entry));
-  await assertSucceeds(setDoc(doc(userDb('league-owner'), 'leagues', 'league-1', 'registrationEntries', 'manual'), entry));
+  await assertFails(setDoc(doc(userDb('league-owner'), 'leagues', 'league-1', 'registrationEntries', 'manual'), entry));
 });
 
 async function seedTeamWithMember(uid = 'member-1', memberData = {}) {
@@ -341,7 +341,7 @@ test('legacy tournament responses remain staff-only during migration', async () 
   const path = 'teams/team-1/registrationEntries/legacy-1';
   await assertFails(getDoc(doc(userDb('member-1'), path)));
   await assertSucceeds(getDoc(doc(userDb('staff-1'), path)));
-  await assertSucceeds(updateDoc(doc(userDb('staff-1'), path), { status: 'accepted' }));
+  await assertFails(updateDoc(doc(userDb('staff-1'), path), { status: 'accepted' }));
 });
 
 test('staff-like roles cannot modify facilities owned by another account', async () => {

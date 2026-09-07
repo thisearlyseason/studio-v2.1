@@ -1091,12 +1091,11 @@ allow create, update: if false; // Authenticated incident service only.
     // Incident reads use current team authority, never historical owner fields.
 
     match /{path=**}/registrationEntries/{entryId} {
-      allow read: if isSuperAdmin() || (isSignedIn() && (
-        resource.data.creatorId == request.auth.uid ||
-        resource.data.ownerUserId == request.auth.uid ||
-        resource.data.assigned_team_owner_id == request.auth.uid ||
-        (resource.data.league_id != null && get(/databases/$(database)/documents/leagues/$(resource.data.league_id)).data.creatorId == request.auth.uid)
-      ));
+      // Specific league/team scopes above decide which current organizers may
+      // read applicant PII. A recursive compatibility rule must never grant
+      // access from untrusted owner-like fields embedded in an entry.
+      allow read: if isSuperAdmin();
+      allow write: if false;
     }
 
     // ─── Newsletter signups ───────────────────────────────────────────────────

@@ -11,9 +11,9 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
     'next/server': `export class NextResponse extends Response { static json(body, init={}) { return new NextResponse(JSON.stringify(body), init); } }`,
     '@/lib/firebase-admin': `export const adminDb = globalThis[${JSON.stringify(key)}].db; export function getAdminStorageBucketName() {return 'demo-test.appspot.com';}`,
     'firebase-admin/storage': `export function getStorage() {return {bucket:()=>globalThis[${JSON.stringify(key)}].db.bucket};}`,
-    'firebase-admin/firestore': `export const FieldValue={increment:value=>({__increment:value})};`,
+    'firebase-admin/firestore': `export class FieldPath {constructor(...segments){this.segments=segments;}} export const FieldValue={increment:value=>({__increment:value}),serverTimestamp:()=>({__serverTimestamp:true}),arrayUnion:(...values)=>({__arrayUnion:values}),arrayRemove:(...values)=>({__arrayRemove:values}),delete:()=>({__delete:true})};`,
     '@/lib/server-notification-delivery': `export async function sendNotificationToUsers(input){globalThis[${JSON.stringify(key)}].db.notifications.push(structuredClone(input));return {fcmSuccessCount:0,fcmFailureCount:0,webPushSuccessCount:0,webPushFailureCount:0};}`,
-    '@/lib/api-auth': `export async function verifyFirebaseToken() { return globalThis[${JSON.stringify(key)}].auth; }`,
+    '@/lib/api-auth': `export async function verifyFirebaseToken() { return globalThis[${JSON.stringify(key)}].auth; } export function assertNonAnonymous(auth){return auth;}`,
     '@/lib/server-request-guards': `export class RequestBodyError extends Error {} export async function enforceUserRateLimit() { return null; } export async function readJsonBodyWithLimit(req) { return req.json(); }`,
   };
   const result = await build({ entryPoints: [fileURLToPath(new URL(relativePath, import.meta.url))], bundle:true, format:'esm', platform:'node', write:false, logLevel:'silent', plugins:[{ name:'communication-boundaries', setup(bundler) {
@@ -24,7 +24,7 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
   return { route, dispose() { delete globalThis[key]; } };
 }
 
-export function communicationDb(initial,{beforeTransaction}={}) {
+export function communicationDb(initial,{beforeTransaction,serializeTransactions=false}={}) {
   const records = new Map(Object.entries(initial).map(([path,value])=>[path,structuredClone(value)]));
   const objects = new Map();
   let sequence=0;
@@ -33,7 +33,12 @@ export function communicationDb(initial,{beforeTransaction}={}) {
     for(const [key,item] of Object.entries(value)) {
       const parts=key.split('.');let target=next;
       for(const part of parts.slice(0,-1)) target=target[part] ||= {};
-      const field=parts.at(-1);target[field]=item?.__increment ? Number(target[field]||0)+item.__increment : structuredClone(item);
+      const field=parts.at(-1);
+      if(item?.__delete)delete target[field];
+      else if(item?.__increment)target[field]=Number(target[field]||0)+item.__increment;
+      else if(item?.__arrayUnion)target[field]=[...new Set([...(Array.isArray(target[field])?target[field]:[]),...item.__arrayUnion])];
+      else if(item?.__arrayRemove)target[field]=(Array.isArray(target[field])?target[field]:[]).filter(entry=>!item.__arrayRemove.includes(entry));
+      else target[field]=structuredClone(item);
     }
     return next;
   };
@@ -56,19 +61,23 @@ export function communicationDb(initial,{beforeTransaction}={}) {
       if(!['==','array-contains'].includes(operator)) throw Error('Unsupported test query');
       return new Query(this.path,[...this.filters,[field,operator,value]],this.group);
     }
-    limit() {return this;}
+    limit(max) {const query=new Query(this.path,this.filters,this.group);query.max=max;return query;}
     orderBy() {return this;}
     async get() {
-      const docs=[...records].filter(([path,value])=>(this.group ? path.split('/').at(-2)===this.path : path.startsWith(`${this.path}/`)&&path.split('/').length===this.path.split('/').length+1)&&this.filters.every(([field,operator,want])=>operator==='array-contains'?Array.isArray(value[field])&&value[field].includes(want):value[field]===want)).map(([path])=>snapshot(new Ref(path)));
+      const docs=[...records].filter(([path,value])=>(this.group ? path.split('/').at(-2)===this.path : path.startsWith(`${this.path}/`)&&path.split('/').length===this.path.split('/').length+1)&&this.filters.every(([field,operator,want])=>operator==='array-contains'?Array.isArray(value[field])&&value[field].includes(want):value[field]===want)).slice(0,this.max).map(([path])=>snapshot(new Ref(path)));
       return {docs,size:docs.length,empty:docs.length===0};
     }
   }
-  const notifications=[];
-  const db={notifications,collection:path=>new Query(path),doc:path=>new Ref(path),collectionGroup:path=>new Query(path,[],true),async runTransaction(work) {
+  const notifications=[];let transactionTail=Promise.resolve();
+  const executeTransaction=async work=>{
     if(beforeTransaction) await beforeTransaction({records});
     const pending=[];
-    const result=await work({get:ref=>ref.get(),update:(ref,value)=>pending.push(()=>records.set(ref.path,applyUpdate(records.get(ref.path),value))),create:(ref,value)=>pending.push(()=>ref.create(value)),set:(ref,value)=>pending.push(()=>ref.set(value)),delete:ref=>pending.push(()=>ref.delete())});
+    const result=await work({get:ref=>ref.get(),update:(ref,...args)=>pending.push(()=>{if(args[0]?.segments){const value={};value[args[0].segments.join('.')]=args[1];records.set(ref.path,applyUpdate(records.get(ref.path),value));}else records.set(ref.path,applyUpdate(records.get(ref.path),args[0]));}),create:(ref,value)=>pending.push(()=>ref.create(value)),set:(ref,value)=>pending.push(()=>ref.set(value)),delete:ref=>pending.push(()=>ref.delete())});
     for(const write of pending) await write(); return result;
+  };
+  const db={notifications,collection:path=>new Query(path),doc:path=>new Ref(path),collectionGroup:path=>new Query(path,[],true),async runTransaction(work) {
+    if(!serializeTransactions)return executeTransaction(work);
+    const run=transactionTail.then(()=>executeTransaction(work));transactionTail=run.catch(()=>{});return run;
   },batch() {const pending=[];return {delete:ref=>pending.push(()=>ref.delete()),set:(ref,value)=>pending.push(()=>ref.set(value)),async commit(){for(const write of pending)await write();}};}};
   db.bucket={file:path=>({
     async save(bytes,options) {if(objects.has(path)&&options?.preconditionOpts?.ifGenerationMatch===0) throw Object.assign(Error('precondition'),{code:412});objects.set(path,{bytes:Buffer.from(bytes),metadata:{...options.metadata,size:bytes.length}});},

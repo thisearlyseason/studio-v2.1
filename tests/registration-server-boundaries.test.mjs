@@ -34,6 +34,8 @@ test('tournament waiver is actor squad and immutable version bound in one transa
   assert.match(waiver,/Number\(configData\.form_version\)!==expectedVersion/);
   assert.match(waiver,/receiptHash === receiptHash/);
   assert.match(waiver,/registrationArchiveMatches/);
+  assert.match(waiver,/signedAt/);
+  assert.match(waiver,/receiptHash/);
 });
 
 test('event registration rechecks fresh team event schema and request collision transactionally',async()=>{
@@ -60,6 +62,20 @@ test('registration deletion reconciles entries waiver receipts and roster projec
   assert.match(deletion,/Registration cannot be deleted after the bracket is published/);
   assert.match(deletion,/teamAgreements/);
   assert.match(deletion,/arch_tournament_/);
+  assert.match(deletion,/agreement\.archiveId/);
+  assert.match(deletion,/registrationArchiveMatches/);
+  assert.match(deletion,/receiptHash/);
+  assert.match(deletion,/LEGACY_REGISTRATION_SCAN_LIMIT/);
+});
+
+test('legacy counters are migrated from a bounded exact transaction query before create or delete',async()=>{
+  const event=await readFile(new URL('../src/app/api/public/event-registration/route.ts',import.meta.url),'utf8');
+  const portal=await readFile(new URL('../src/app/api/public/portals/action/route.ts',import.meta.url),'utf8');
+  for(const source of[event,portal]){
+    assert.match(source,/LEGACY_REGISTRATION_SCAN_LIMIT\s*=\s*100001/);
+    assert.match(source,/registrationCountFromLegacy/);
+    assert.match(source,/\.limit\(LEGACY_REGISTRATION_SCAN_LIMIT\)/);
+  }
 });
 
 test('builders retain server versions and protected ledger writes do not use direct client mutation',async()=>{
