@@ -29,6 +29,7 @@ const validEnvironment = {
   NEWSLETTER_UNSUBSCRIBE_SECRET: 'a'.repeat(32),
   CALENDAR_FEED_BASE_URL: 'https://us-central1-production-project.cloudfunctions.net/getCalendarFeed',
   INTERNAL_API_SECRET: 'internal-secret',
+  COMPETITION_CREDENTIAL_HMAC_SECRET: 'c'.repeat(32),
   OWNER_NOTIFICATION_EMAIL: 'owner@example.test',
   FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({ project_id: 'production-project' }),
 };
@@ -77,4 +78,10 @@ test('production environment requires separate web push VAPID configuration', ()
   assert.match(result.stderr, /NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY/);
   assert.match(result.stderr, /WEB_PUSH_VAPID_PRIVATE_KEY/);
   assert.match(result.stderr, /WEB_PUSH_VAPID_SUBJECT/);
+});
+
+test('production environment requires the competition credential HMAC secret', () => {
+  const result = runChecker({ COMPETITION_CREDENTIAL_HMAC_SECRET: '' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /COMPETITION_CREDENTIAL_HMAC_SECRET/);
 });

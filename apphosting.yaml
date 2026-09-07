@@ -115,6 +115,10 @@ env:
     secret: INTERNAL_API_SECRET
     availability:
       - RUNTIME
+  - variable: COMPETITION_CREDENTIAL_HMAC_SECRET
+    secret: COMPETITION_CREDENTIAL_HMAC_SECRET
+    availability:
+      - RUNTIME
   - variable: OWNER_NOTIFICATION_EMAIL
     secret: OWNER_NOTIFICATION_EMAIL
     availability:

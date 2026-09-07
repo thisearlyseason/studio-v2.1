@@ -22,6 +22,7 @@ const required = [
   'NEWSLETTER_UNSUBSCRIBE_SECRET',
   'CALENDAR_FEED_BASE_URL',
   'INTERNAL_API_SECRET',
+  'COMPETITION_CREDENTIAL_HMAC_SECRET',
   'OWNER_NOTIFICATION_EMAIL',
 ];
 
@@ -132,6 +133,11 @@ if (fcmVapidPublicKey && webPushVapidPublicKey && fcmVapidPublicKey === webPushV
 const newsletterUnsubscribeSecret = process.env.NEWSLETTER_UNSUBSCRIBE_SECRET?.trim();
 if (newsletterUnsubscribeSecret && newsletterUnsubscribeSecret.length < 32) {
   invalid.push('NEWSLETTER_UNSUBSCRIBE_SECRET must be at least 32 characters');
+}
+
+const competitionCredentialSecret = process.env.COMPETITION_CREDENTIAL_HMAC_SECRET?.trim();
+if (competitionCredentialSecret && Buffer.byteLength(competitionCredentialSecret, 'utf8') < 32) {
+  invalid.push('COMPETITION_CREDENTIAL_HMAC_SECRET must be at least 32 bytes');
 }
 
 for (const name of required.filter((key) => key.includes('STRIPE_PRICE_'))) {

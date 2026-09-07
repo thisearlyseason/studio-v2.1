@@ -133,6 +133,7 @@ test('staging deployment fails closed when App Hosting is linked to another repo
   assert.match(appHosting, /NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG/);
   assert.match(appHosting, /the-squad-v2-staging/);
   assert.match(appHosting, /NEXT_PUBLIC_APP_URL/);
+  assert.match(appHosting, /variable: COMPETITION_CREDENTIAL_HMAC_SECRET[\s\S]{0,120}secret: COMPETITION_CREDENTIAL_HMAC_SECRET/);
   assert.match(appHosting, /CALENDAR_FEED_BASE_URL/);
   assert.match(appHosting, /the-squad-v2-staging\.cloudfunctions\.net\/getCalendarFeed/);
   assert.match(appHosting, /secret: STRIPE_SECRET_KEY/);
