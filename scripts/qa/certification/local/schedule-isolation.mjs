@@ -15,6 +15,7 @@ export async function selectScheduleTeam(page, { teamId, url }) {
 export async function runOperationScenarioSequence(ids, { execute, finalize, onError, failFast, timeoutMs = 60_000 }) {
   const failures = [];
   for (const id of ids) {
+    const scenarioTimeoutMs = typeof timeoutMs === 'function' ? timeoutMs(id) : timeoutMs;
     let failure;
     let timeout;
     const controller = new AbortController();
@@ -23,9 +24,9 @@ export async function runOperationScenarioSequence(ids, { execute, finalize, onE
       await Promise.race([
         execution,
         new Promise((_, reject) => { timeout = setTimeout(() => {
-          reject(new Error(`Operation scenario ${id} timed out after ${timeoutMs}ms.`));
+          reject(new Error(`Operation scenario ${id} timed out after ${scenarioTimeoutMs}ms.`));
           controller.abort(new Error(`Operation scenario ${id} timed out.`));
-        }, timeoutMs); }),
+        }, scenarioTimeoutMs); }),
       ]);
     } catch (error) {
       failure = error;
@@ -33,7 +34,7 @@ export async function runOperationScenarioSequence(ids, { execute, finalize, onE
         try {
           await Promise.race([
             execution,
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`Operation scenario ${id} did not terminate after abort.`)), Math.min(2_000, Math.max(100, timeoutMs * 4)))),
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`Operation scenario ${id} did not terminate after abort.`)), Math.min(2_000, Math.max(100, scenarioTimeoutMs * 4)))),
           ]);
         } catch (abortError) {
           if (!String(abortError?.message || '').includes('timed out')) failure = new AggregateError([failure, abortError], 'Operation timeout and abort termination failed.');

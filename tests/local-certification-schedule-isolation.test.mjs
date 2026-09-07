@@ -61,6 +61,29 @@ for (const failFast of [false, true]) {
   });
 }
 
+test('operation scenario timeout selection extends only the Chat browser row', async () => {
+  const completed = [];
+  const failures = [];
+  await assert.rejects(() => runOperationScenarioSequence([
+    'tournament-registration-waiver-lifecycle',
+    'chat-channel-message-unread',
+  ], {
+    timeoutMs: scenarioId => scenarioId === 'chat-channel-message-unread' ? 50 : 5,
+    execute: async scenarioId => {
+      await new Promise(resolve => setTimeout(resolve, 15));
+      completed.push(scenarioId);
+    },
+    finalize: async () => {},
+    onError: scenarioId => failures.push(scenarioId),
+    failFast: false,
+  }), /1 selected operation scenario/);
+  assert.deepEqual(failures, ['tournament-registration-waiver-lifecycle']);
+  assert.deepEqual(completed, [
+    'tournament-registration-waiver-lifecycle',
+    'chat-channel-message-unread',
+  ]);
+});
+
 test('attendance and RSVP cannot reuse an authenticated browser profile name', () => {
   assert.notEqual(operationSessionName('run', 'attendance', 'parent'), operationSessionName('run', 'rsvp', 'parent'));
   const longA = operationSessionName('final-certification-run-with-long-id', 'tournaments-create-configure-replicate-archive', 'ui-owner-tournament-archive-cancel');

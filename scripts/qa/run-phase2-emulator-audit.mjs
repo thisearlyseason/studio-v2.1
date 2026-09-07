@@ -8026,7 +8026,7 @@ async function runCertificationOperationsScenarios() {
   let sessionBaseline;
   return runOperationScenarioSequence(scenarioIds, {
     failFast: certificationFailFast,
-    timeoutMs: runBrowser ? 90_000 : 60_000,
+    timeoutMs: scenarioId => runBrowser && scenarioId === 'chat-channel-message-unread' ? 90_000 : 60_000,
     onError: (scenarioId, error) => recordCertificationRunFailure(scenarioId, error, 'operations-runtime'),
     execute: async scenarioId => {
     sessionBaseline = new Set(ownedBrowserSessions);
