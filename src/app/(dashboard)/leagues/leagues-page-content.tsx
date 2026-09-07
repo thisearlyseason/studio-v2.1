@@ -59,7 +59,7 @@ import { LocationAutocomplete } from '@/components/ui/LocationAutocomplete';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFirestore, useCollection, useMemoFirebase, useUser, useAuth } from '@/firebase';
+import { useFirestore, useCollection, useDoc, useMemoFirebase, useUser, useAuth } from '@/firebase';
 import { collection, query, orderBy, where, doc, updateDoc, limit } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -1553,7 +1553,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const [duplicatingLeague, setDuplicatingLeague] = useState<League | null>(null);
   const [openingCloneName, setOpeningCloneName] = useState('');
   const [pendingLeagueDeletion, setPendingLeagueDeletion] = useState<{
-    ids: string[];
+    leagues: Array<{ leagueId: string; expectedVersion: number }>;
     name: string;
     divisionCount: number;
   } | null>(null);
@@ -1642,6 +1642,12 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   }, [leagues]);
 
   const activeLeague = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
+  const activeLeaguePrivateRef = useMemoFirebase(() => (
+    db && activeLeague && (activeLeague.creatorId === authUser?.uid || isSuperAdmin)
+      ? doc(db, 'leagues', activeLeague.id, 'private', 'lifecycle')
+      : null
+  ), [db, activeLeague?.id, activeLeague?.creatorId, authUser?.uid, isSuperAdmin]);
+  const { data: activeLeaguePrivate } = useDoc<{ contactEmail?: string; contactPhone?: string }>(activeLeaguePrivateRef);
 
   useEffect(() => {
     if (activeLeague && activeLeague.id === selectedLeagueId) setOpeningCloneName('');
@@ -1688,7 +1694,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const { data: portalConfigs } = useCollection<any>(portalConfigsQuery);
   const portalEnabled = useCallback((id: string) => portalConfigs?.find(config => config.id === id)?.is_active === true, [portalConfigs]);
 
-  const [leaguePin, setLeaguePin] = useState(activeLeague?.scorekeeperPin || '');
+  const [leaguePin, setLeaguePin] = useState('');
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -1704,8 +1710,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   }, [isCreateOpen, activeTeam?.sport]);
 
   useEffect(() => {
-    if (activeLeague) setLeaguePin(activeLeague.scorekeeperPin || '');
-  }, [selectedLeagueId, activeLeague?.scorekeeperPin]);
+    setLeaguePin('');
+  }, [selectedLeagueId]);
 
   const handleSavePin = async () => {
     if (!activeLeague) return;
@@ -1720,7 +1726,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
   const handleToggleActive = async (val: boolean) => {
     if (!activeLeague) return;
-    await updateDoc(doc(db, 'leagues', activeLeague.id), { is_active: val });
+    await updateLeague(activeLeague.id, { is_active: val });
     toast({ title: val ? "Portal Access Activated" : "Portal Access Deactivated" });
   };
 
@@ -1881,8 +1887,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       startDate: activeLeague.startDate || '',
       endDate: activeLeague.endDate || '',
       ages: activeLeague.ages || '',
-      contactEmail: activeLeague.contactEmail || '',
-      contactPhone: activeLeague.contactPhone || '',
+      contactEmail: activeLeaguePrivate?.contactEmail || activeLeague.contactEmail || '',
+      contactPhone: activeLeaguePrivate?.contactPhone || activeLeague.contactPhone || '',
       registrationCost: activeLeague.registrationCost || '',
       twitter: activeLeague.socialLinks?.twitter || '',
       instagram: activeLeague.socialLinks?.instagram || '',
@@ -1916,7 +1922,21 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     if (!window.confirm(`Are you sure you want to archive ${activeLeague.name}? It will be removed from active dashboards but remain in the Historical Archives.`)) return;
     setIsProcessing(true);
     try {
-      await clearLeagueScheduleOnServer(activeLeague.id, 'archive');
+      if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
+      const token = await getAuthToken(firebaseAuth);
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const response = await fetch('/api/leagues/lifecycle', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          action: 'archive',
+          requestId: `league-archive-${crypto.randomUUID()}`,
+          leagueId: activeLeague.id,
+          expectedVersion: activeLeague.lifecycleVersion ?? 0,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Unable to archive the league.');
       setSelectedLeagueId(null);
       setIsEditLeagueOpen(false);
       toast({ title: "Hub Archived", description: "League moved to historical storage." });
@@ -1931,30 +1951,17 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     }
   };
 
-  const handleArchiveLeagueId = async (leagueId: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to archive ${name}? It will be removed from active dashboards but remain in the Historical Archives.`)) return;
-    setIsProcessing(true);
-    try {
-      await clearLeagueScheduleOnServer(leagueId, 'archive');
-      toast({ title: "Hub Archived", description: "League moved to historical storage." });
-    } catch (error: any) {
-      toast({
-        title: "Archive Failed",
-        description: error?.message || "The league could not be archived.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleDeleteLeagueId = (leagueId: string, name: string) => {
-    setPendingLeagueDeletion({ ids: [leagueId], name, divisionCount: 1 });
+  const handleDeleteLeagueId = (league: League, name: string) => {
+    setPendingLeagueDeletion({
+      leagues: [{ leagueId: league.id, expectedVersion: league.lifecycleVersion ?? 0 }],
+      name,
+      divisionCount: 1,
+    });
   };
 
   const handleDeleteLeagueGroup = (items: League[], name: string) => {
     setPendingLeagueDeletion({
-      ids: items.map(item => item.id),
+      leagues: items.map(item => ({ leagueId: item.id, expectedVersion: item.lifecycleVersion ?? 0 })),
       name,
       divisionCount: items.length,
     });
@@ -1965,13 +1972,17 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     setIsProcessing(true);
     try {
       const token = await getAuthToken(firebaseAuth);
-      const response = await fetch('/api/leagues/schedule', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ action: 'delete', leagueIds: pendingLeagueDeletion.ids }),
+      const response = await fetch('/api/leagues/lifecycle', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          action: 'delete',
+          requestId: `league-delete-${crypto.randomUUID()}`,
+          leagues: pendingLeagueDeletion.leagues,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to delete the league.');
-      if (selectedLeagueId && pendingLeagueDeletion.ids.includes(selectedLeagueId)) {
+      if (selectedLeagueId && pendingLeagueDeletion.leagues.some(league => league.leagueId === selectedLeagueId)) {
         setSelectedLeagueId(null);
       }
       toast({
@@ -1989,7 +2000,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const handleUnarchiveLeague = async (leagueId: string) => {
     setIsProcessing(true);
     try {
-      await updateDoc(doc(db, 'leagues', leagueId), { isArchived: false });
+      await updateLeague(leagueId, { isArchived: false });
       toast({ title: "Hub Restored", description: "League returned to active operations." });
     } finally {
       setIsProcessing(false);
@@ -2021,31 +2032,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     if (!activeLeague || !db) return;
     setIsProcessing(true);
     try {
-      const schedulerConfig = (activeLeague as any).schedulerConfig;
-      const datesChanged = activeLeague.startDate !== editLeagueForm.startDate ||
-        activeLeague.endDate !== editLeagueForm.endDate;
-      if (schedulerConfig && datesChanged) {
-        if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
-        const token = await getAuthToken(firebaseAuth);
-        if (!token) throw new Error('Your session has expired. Sign in again.');
-        const response = await fetch('/api/leagues/schedule', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-          body: JSON.stringify({
-            action: 'configure',
-            leagueId: activeLeague.id,
-            config: {
-              ...schedulerConfig,
-              startDate: editLeagueForm.startDate,
-              endDate: editLeagueForm.endDate,
-            },
-            invalidateExisting: (activeLeague.schedule || []).length > 0,
-          }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || 'Unable to update the season dates.');
-      }
-      await updateDoc(doc(db, 'leagues', activeLeague.id), {
+      await updateLeague(activeLeague.id, {
         name: editLeagueForm.name,
         sport: editLeagueForm.sport,
         description: editLeagueForm.description,
@@ -2077,10 +2064,12 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     try {
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired. Please sign in again.');
-      const response = await fetch('/api/leagues/clone', {
+      const response = await fetch('/api/leagues/lifecycle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
+          action: 'clone',
+          requestId: `league-clone-${crypto.randomUUID()}`,
           leagueId: duplicatingLeague.id,
           destination: cloneDestination,
           name: duplicateTitle.trim(),
@@ -2271,7 +2260,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                 variant="ghost"
                                 size="sm"
                                 className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:bg-red-500 hover:text-white"
-                                onClick={(e) => { e.stopPropagation(); handleDeleteLeagueId(league.id, league.name); }}
+                                onClick={(e) => { e.stopPropagation(); handleDeleteLeagueId(league, league.name); }}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -2394,7 +2383,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                       className="h-7 w-7 p-0 rounded-lg hover:bg-red-500 hover:text-white text-muted-foreground/60 transition-all opacity-0 group-hover/div:opacity-100"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleDeleteLeagueId(divLeague.id, `${divLeague.name} (${divisionName})`);
+                                        handleDeleteLeagueId(divLeague, `${divLeague.name} (${divisionName})`);
                                       }}
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />

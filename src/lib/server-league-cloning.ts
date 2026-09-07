@@ -19,6 +19,18 @@ export type LeagueCloneResult = CloneIdentity & {
   status: 'setup';
 };
 
+export function buildLeagueClonePrivateDocument(_input: {
+  source: Record<string, unknown>;
+}): Record<string, unknown> {
+  return Object.fromEntries(
+    ['contactEmail', 'contactPhone'].flatMap(key =>
+      typeof _input.source[key] === 'string' && _input.source[key]
+        ? [[key, _input.source[key]]]
+        : []
+    )
+  );
+}
+
 export function buildLeagueCloneResult(_input: {
   leagueId: string;
   destination: LeagueCloneDestination;
@@ -136,8 +148,6 @@ export function buildLeagueCloneDocument(_input: {
     'startDate',
     'endDate',
     'ages',
-    'contactEmail',
-    'contactPhone',
     'registrationCost',
     'paymentInstructions',
     'socialLinks',

@@ -614,7 +614,7 @@ export type League = {
   socialLinks?: Record<string, string>;
   registrationCost?: string;
   paymentInstructions?: string;
-  requiredSquads?: number;
+  requiredSquads?: number | null;
   slug?: string;
   blackoutDaysOfWeek?: number[];
   isArchived?: boolean;
@@ -627,6 +627,8 @@ export type League = {
   isDemo?: boolean;
   demoSessionOwnerId?: string;
   demoSeeded?: boolean;
+  tenantId?: string;
+  lifecycleVersion?: number;
 };
 
 export type Facility = {
@@ -2906,10 +2908,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!firebaseUser || !firebaseAuth || !db) return '';
     if (!activeTeam && userProfile?.role !== 'league_creator') return '';
     const token = await getAuthToken(firebaseAuth);
-    const response = await fetch('/api/leagues/create', {
+    const response = await fetch('/api/leagues/lifecycle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify({
+        action: 'create',
+        requestId: `league-create-${crypto.randomUUID()}`,
         name,
         divisionTitle,
         sport: sport || activeTeam?.sport,
@@ -2922,9 +2926,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser, firebaseAuth, db, activeTeam, userProfile]);
   
   const updateLeague = useCallback(async (leagueId: string, updates: Partial<League>) => { 
-    if (!db) return; 
-    await updateDoc(doc(db, 'leagues', leagueId), clean(updates)); 
-  }, [db]);
+    if (!db || !firebaseAuth) return;
+    const league = await getDoc(doc(db, 'leagues', leagueId));
+    if (!league.exists()) throw new Error('League not found.');
+    const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/leagues/lifecycle', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({
+        action: 'edit',
+        requestId: `league-edit-${crypto.randomUUID()}`,
+        leagueId,
+        expectedVersion: league.data().lifecycleVersion ?? 0,
+        updates: clean(updates),
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update the league.');
+  }, [db, firebaseAuth]);
 
   /**
    * Propagates a newly uploaded team logo URL to all leagues this team is enrolled in.
@@ -3543,8 +3563,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const updateLeagueGlobalFees = useCallback(async (leagueId: string, fees: any) => { if (db) await updateDoc(doc(db, 'leagues', leagueId), { globalFees: clean(fees) }); }, [db]);
 
   const updateLeaguePin = useCallback(async (leagueId: string, pin: string) => {
-    if (db) await updateDoc(doc(db, 'leagues', leagueId), { scorekeeperPin: pin });
-  }, [db]);
+    await updateLeague(leagueId, { scorekeeperPin: pin });
+  }, [updateLeague]);
 
 
   const getCalendarFeedUrl = useCallback(async (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[], action: 'create' | 'rotate' | 'revoke' = 'create') => {

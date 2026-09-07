@@ -626,6 +626,22 @@ test('league creation is server-only and legacy invite PII is admin-only', async
   await assertSucceeds(getDoc(doc(ownerDb, 'clubs', 'club-a')));
 });
 
+test('league lifecycle roots and sensitive fields are server-owned', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const memberDb = authenticatedDb('member');
+  const leagueRef = doc(ownerDb, 'leagues', 'league-a');
+
+  await assertFails(setDoc(leagueRef, { name: 'Direct metadata bypass' }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { scorekeeperPin: '8274' }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { contactEmail: 'private@example.test' }, { merge: true }));
+  await assertFails(deleteDoc(leagueRef));
+  await assertSucceeds(setDoc(leagueRef, { finances: { 'team-a': { totalPaid: 25 } } }, { merge: true }));
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a', 'private', 'lifecycle'), { scorekeeperPinHash: 'forged' }));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a', 'private', 'lifecycle')));
+  await assertFails(setDoc(doc(memberDb, 'leagueLifecycleAudits', 'forged'), { action: 'delete' }));
+  await assertFails(getDoc(doc(memberDb, 'leagueLifecycleAudits', 'forged')));
+});
+
 test('anonymous demo sessions can read only their server-scoped demo teams', async () => {
   const demoDb = authenticatedDb('demo-user', {
     firebase: { sign_in_provider: 'anonymous' },
@@ -920,7 +936,7 @@ test('published league and tournament schedules are server-owned', async () => {
   await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a'), {
     schedule: [{ id: 'forged-game', date: '2026-09-01' }],
   }, { merge: true }));
-  await assertSucceeds(setDoc(doc(ownerDb, 'leagues', 'league-a'), {
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a'), {
     name: 'Updated League Name',
   }, { merge: true }));
   await assertFails(setDoc(doc(ownerDb, 'leagues', 'scheduled-league'), {

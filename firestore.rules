@@ -751,43 +751,49 @@ allow create, update: if false; // Authenticated incident service only.
       // can be proven by Firestore without a separate get() returning null.
       allow read: if isSuperAdmin() || (isSignedIn() && (
         resource.data.get('creatorId', '') == request.auth.uid ||
-        resource.data.get('memberUserIds', []).hasAny([request.auth.uid])
+        (
+          resource.data.get('memberUserIds', []).hasAny([request.auth.uid]) &&
+          !resource.data.keys().hasAny(['scorekeeperPin', 'scorekeeperPinHash', 'contactEmail', 'contactPhone'])
+        )
       ));
       // Creation is server-mediated so the account's current plan limit cannot
       // be bypassed with a direct Firestore write.
-      allow create: if isSuperAdmin();
-      // Only organizers may modify league operations. Browser clients cannot
-      // change the access cache; trusted server code is the sole writer.
-      allow update: if isSuperAdmin() || (isSignedIn() &&
+      allow create: if false;
+      // Lifecycle, metadata, authority, and sensitive changes are server-owned.
+      // Existing operational writes remain compatible until their dedicated
+      // schedule/assignment/scoring boundaries migrate them.
+      allow update: if (
+        isSignedIn() &&
         resource.data.creatorId == request.auth.uid &&
-        request.resource.data.get('memberUserIds', []) == resource.data.get('memberUserIds', []) &&
-        request.resource.data.get('isDemo', false) == resource.data.get('isDemo', false) &&
-        request.resource.data.get('demoSessionOwnerId', '') == resource.data.get('demoSessionOwnerId', '') &&
-        request.resource.data.get('demoSeeded', false) == resource.data.get('demoSeeded', false) &&
-        request.resource.data.get('registrationEntryCount', 0) == resource.data.get('registrationEntryCount', 0) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'id', 'name', 'divisionTitle', 'creatorId', 'tenantId', 'hostTeamId',
+          'ownerTeamId', 'teamId', 'lifecycleVersion', 'sport', 'description',
+          'startDate', 'endDate', 'ages', 'contactEmail', 'contactPhone',
+          'registrationCost', 'paymentInstructions', 'socialLinks', 'slug',
+          'requiredSquads', 'blackoutDaysOfWeek', 'divisions', 'is_active',
+          'isArchived', 'scorekeeperPin', 'scorekeeperPinHash', 'memberUserIds',
+          'isDemo', 'demoSessionOwnerId', 'demoSeeded', 'registrationEntryCount'
+        ]) &&
         (
-          (
-            request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&
-            request.resource.data.get('schedulerConfig', null) == resource.data.get('schedulerConfig', null)
-          ) ||
-          (
-            isAnonymousSession() &&
-            resource.data.get('isDemo', false) == true &&
-            resource.data.get('demoSeeded', false) == true &&
-            resource.data.get('demoSessionOwnerId', '') == request.auth.uid
-          )
-        ) &&
-        (
-          resource.data.get('schedulerConfig', null) == null ||
-          (
-            request.resource.data.get('startDate', '') == resource.data.get('startDate', '') &&
-            request.resource.data.get('endDate', '') == resource.data.get('endDate', '')
-          )
+          request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&
+          request.resource.data.get('schedulerConfig', null) == resource.data.get('schedulerConfig', null)
         )
+      ) || (
+        isAnonymousSession() &&
+        resource.data.get('isDemo', false) == true &&
+        resource.data.get('demoSeeded', false) == true &&
+        resource.data.get('demoSessionOwnerId', '') == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'sport', 'description', 'ages'
+        ])
       );
-      allow delete: if isSuperAdmin() || (isSignedIn() &&
-        resource.data.creatorId == request.auth.uid
-      );
+      allow delete: if false;
+
+      match /private/{privateId} {
+        allow read: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow write: if false;
+      }
 
       match /registrationEntries/{entryId} {
         allow read: if isSuperAdmin() || (isSignedIn() &&
@@ -862,6 +868,14 @@ allow create, update: if false; // Authenticated incident service only.
     }
 
     match /scheduleBookingLocks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /leagueLifecycleAudits/{auditId} {
+      allow read, write: if false;
+    }
+
+    match /leagueLifecycleNames/{reservationId} {
       allow read, write: if false;
     }
 

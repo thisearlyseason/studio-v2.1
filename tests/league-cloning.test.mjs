@@ -4,6 +4,7 @@ import {
   assertLeagueCloneCapacity,
   buildLeagueCloneResult,
   buildLeagueCloneDocument,
+  buildLeagueClonePrivateDocument,
   getLeagueCloneSuccessCopy,
   getLeagueDeploymentLabel,
   parseLeagueCloneRequest,
@@ -22,6 +23,7 @@ const sourceDivision = {
   ages: '13-14',
   contactEmail: 'league@example.com',
   contactPhone: '555-0100',
+  scorekeeperPin: '8274',
   registrationCost: '250',
   paymentInstructions: 'Pay online',
   socialLinks: { instagram: '@cityleague' },
@@ -153,6 +155,9 @@ test('a cloned division copies configuration but resets all operational data', (
   assert.equal(cloned.divisionTitle, 'U14 Silver');
   assert.equal(cloned.sport, 'Soccer');
   assert.equal(cloned.description, 'Competitive youth league');
+  assert.equal('contactEmail' in cloned, false);
+  assert.equal('contactPhone' in cloned, false);
+  assert.equal('scorekeeperPin' in cloned, false);
   assert.deepEqual(cloned.schedulerConfig, { gamesPerTeam: 12, selectedFields: ['field-1'] });
   assert.deepEqual(cloned.teams, {});
   assert.deepEqual(cloned.individualRecruits, {});
@@ -166,6 +171,14 @@ test('a cloned division copies configuration but resets all operational data', (
   for (const excluded of ['standings', 'inviteCode', 'privateOperationalField']) {
     assert.equal(excluded in cloned, false, `${excluded} must not be copied`);
   }
+});
+
+test('clone private fields are separated from the member-readable league root', () => {
+  const privateDocument = buildLeagueClonePrivateDocument({ source: sourceDivision });
+  assert.deepEqual(privateDocument, {
+    contactEmail: 'league@example.com',
+    contactPhone: '555-0100',
+  });
 });
 
 test('clone results identify exactly where the new setup was created', () => {
