@@ -210,6 +210,7 @@ test('demo tournament lifecycle data is server-seeded and never written by the b
   for (const protectedWrite of ['data.feed.forEach', 'data.incidents.forEach', 'data.files.forEach', 'data.signatures.forEach', 'data.chats.forEach']) {
     assert.doesNotMatch(seeder, new RegExp(protectedWrite.replaceAll('.', '\\.')));
   }
+  assert.doesNotMatch(seeder, /hub_broadcast/);
 });
 
 test('demo blueprint merges only protected team roots created by the server', async () => {

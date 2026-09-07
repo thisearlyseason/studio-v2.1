@@ -81,6 +81,27 @@ test('elite demo bootstrap server-seeds tournament events for every protected sq
       assert.equal(records.get(`teams/${teamId}/groupChats/chat1_${teamId}`)?.memberIds?.includes(uid), true);
       assert.equal(records.get(`teams/${teamId}/members/u3_${teamId}/signatures/demo_waiver_${teamId}`)?.isDemo, true);
     }
+    const primaryTeamId = body.primaryTeamId;
+    const hub = records.get(`teams/${primaryTeamId}/groupChats/hub_broadcast_elite_${body.demoNamespace}`);
+    assert.equal(hub?.isHubChannel, true);
+    assert.equal(hub?.memberIds?.includes(uid), true);
+  } finally {
+    app.dispose();
+  }
+});
+
+test('school demo bootstrap server-seeds its protected hub broadcast channel', async () => {
+  const uid = 'demo-user-school-hub-0001';
+  const { db, records } = communicationDb({});
+  const app = await loadCommunicationRoute(routePath, db, { uid, signInProvider: 'anonymous' });
+  try {
+    const response = await app.route.POST(request({ planId: 'school_demo' }));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    const institutionId = body.teamIds.find(teamId => teamId.endsWith('_institution'));
+    const hub = records.get(`teams/${institutionId}/groupChats/hub_broadcast_${body.demoNamespace}`);
+    assert.equal(hub?.isHubChannel, true);
+    assert.equal(hub?.memberIds?.includes(uid), true);
   } finally {
     app.dispose();
   }

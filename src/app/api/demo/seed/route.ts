@@ -428,6 +428,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const hubShell = plan.planType === 'school'
+      ? shells.find(shell => shell.type === 'school')
+      : isElite
+        ? shells.find(shell => shell.type !== 'school')
+        : undefined;
+    if (hubShell) {
+      const squadShells = shells.filter(shell => shell.type !== 'school');
+      const hubMemberIds = [
+        uid,
+        ...squadShells.flatMap(shell => [`u1_${shell.id}`, `u2_${shell.id}`]),
+      ];
+      const staffMetadata = Object.fromEntries([
+        [uid, {
+          name: plan.planType === 'school' ? 'Guest Admin' : 'Guest Coach',
+          position: plan.planType === 'school' ? 'Athletic Director' : 'League Organizer',
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${demoNamespace}`,
+        }],
+        ...squadShells.flatMap((shell, index) => ([
+          [`u1_${shell.id}`, { name: `Head Coach ${index + 1}`, position: 'Head Coach', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=head${index + 1}`, squadName: shell.name }],
+          [`u2_${shell.id}`, { name: `Assistant Coach ${index + 1}`, position: 'Assistant Coach', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=assistant${index + 1}`, squadName: shell.name }],
+        ])),
+      ]);
+      const hubChatId = plan.planType === 'school'
+        ? `hub_broadcast_${demoNamespace}`
+        : `hub_broadcast_elite_${demoNamespace}`;
+      batch.set(adminDb.collection('teams').doc(hubShell.id).collection('groupChats').doc(hubChatId), {
+        id: hubChatId,
+        name: plan.planType === 'school'
+          ? 'Springfield High School — Broadcast Channel'
+          : 'Apex Academy — Broadcast Channel',
+        createdBy: uid,
+        memberIds: hubMemberIds,
+        isDeleted: false,
+        teamId: hubShell.id,
+        createdAt: messageTimestamp,
+        isHubChannel: true,
+        hubTeamId: hubShell.id,
+        staffMetadata,
+        isDemo: true,
+      }, { merge: true });
+    }
+
     await batch.commit();
     return NextResponse.json({
       ok: true,
