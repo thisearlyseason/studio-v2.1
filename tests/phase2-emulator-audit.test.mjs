@@ -220,6 +220,9 @@ test('managed operations dispatch keeps each emitted dimension tied to its exact
   const start = source.indexOf('function recordBlockedOperationsCases(');
   const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
   const operationsBlock = source.slice(start, end);
+  const observedCaseStart = operationsBlock.indexOf('function recordObservedOperationsCase(');
+  const observedCaseEnd = operationsBlock.indexOf('// Named frozen schedule cases', observedCaseStart);
+  const observedCaseBlock = operationsBlock.slice(observedCaseStart, observedCaseEnd);
   assert.match(operationsBlock, /function recordBlockedOperationsCases\(scenarioId, reason, dimensions = DIMENSION_NAMES\)/);
   assert.match(operationsBlock, /for \(const caseId of LOCAL_OPERATIONS_CASE_REQUIREMENTS\[scenarioId\]\[dimension\]\)/);
   assert.match(operationsBlock, /This exact frozen schedule case has no fresh case-owned local observation/);
@@ -227,7 +230,8 @@ test('managed operations dispatch keeps each emitted dimension tied to its exact
   assert.match(operationsBlock, /const firstCapturedAt = assertions\.map\(assertion => assertion\.capturedAt\)\.filter\(Boolean\)\.sort\(\)\[0\] \|\| null;/);
   assert.doesNotMatch(operationsBlock, /\{ assertions: \[\.\.\.activeCertificationAssertions\] \}/);
   assert.match(operationsBlock, /for \(const dimension of \['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'\]\)/);
-  assert.doesNotMatch(operationsBlock, /recordBlockedOperationsCases\(scenarioId,[\s\S]*?390x844/);
+  assert.match(observedCaseBlock, /recordBlockedOperationsCases\(scenarioId, `No exact case-owned \$\{dimension\} assertion was observed for this local operation\.`, \[dimension\]\)/);
+  assert.doesNotMatch(observedCaseBlock, /390x844/);
   assert.match(source, /const emptySendDisabled = await page\.getByRole\('button', \{ name: 'Send message' \}\)\.isDisabled\(\)/);
   assert.match(source, /await page\.setViewportSize\(\{ width: 390, height: 844 \}\)/);
   assert.match(source, /page\.waitForResponse\(response => response\.request\(\)\.method\(\) === 'PATCH' && response\.url\(\)\.includes\('\/api\/teams\/chat'\)\)/);
@@ -251,7 +255,7 @@ test('Sports Hub operations dispatch is a dedicated authenticated browser workfl
 
 test('operations browser evidence attributes chat and Sports Hub actions to the actual authenticated fixtures', () => {
   const actorFunction = source.slice(source.indexOf('function certificationActorAliases('), source.indexOf('function tenantCaseAssociations('));
-  assert.match(actorFunction, /'chat-channel-message-unread': \['qa-coach-owner-a', 'qa-team-member'\]/);
+  assert.match(actorFunction, /'chat-channel-message-unread': \['qa-coach-owner-a', 'qa-team-member', 'qa-parent-a', 'qa-adult-player-a', 'qa-removed-member', 'qa-coach-owner-b', 'qa-multi-org'\]/);
   assert.match(actorFunction, /'sports-hub-browse-search-filter-bookmark-preferences': \['qa-team-member', 'qa-coach-owner-a'\]/);
   assert.match(actorFunction, /'calendar-team-family-views-and-filters': \['qa-coach-owner-a'\]/);
   assert.doesNotMatch(actorFunction, /'chat-channel-message-unread': \['catalog-scenario-actor'\]/);
@@ -1489,16 +1493,19 @@ test('emulator audit sweeps remaining role surfaces for rendering and route-poli
 
 test('emulator audit exercises remaining communication CRUD and cross-role persistence', () => {
   assert.match(source, /workflow-communication-only/);
-  assert.match(source, /feed rejects incomplete poll/);
-  assert.match(source, /owner feed post persists after reload/);
-  assert.match(source, /member sees owner feed post/);
-  assert.match(source, /member comment persists for owner/);
-  assert.match(source, /owner poll persists after reload/);
-  assert.match(source, /member poll vote persists after reload/);
-  assert.match(source, /member chat message persists for owner/);
-  assert.match(source, /member chat message increments owner unread state/);
-  assert.match(source, /opening the channel clears only owner unread state/);
-  assert.match(source, /Team B chat content is absent from Team A UI/);
+  assert.match(source, /async function runFeedWorkflowAudit\(\)/);
+  assert.match(source, /async function runPollWorkflowAudit\(\)/);
+  assert.match(source, /async function runCommunicationWorkflowAudit\(\)/);
+  assert.match(source, /expectEqual\(actual,want,`Feed \$\{caseId\}: \$\{detail\}`\)/);
+  assert.match(source, /check\('feed-post-comment',Boolean\(commentId\),true,'member visible comment committed'\)/);
+  assert.match(source, /check\('feed-persistence',[\s\S]*?`\$\{actor\} post and comment survive reload`\)/);
+  assert.match(source, /expectEqual\(actual,want,`Poll \$\{caseId\}: \$\{detail\}`\)/);
+  assert.match(source, /check\('poll-vote',[\s\S]*?'member stable-ID vote persisted'\)/);
+  assert.match(source, /check\('poll-change',[\s\S]*?'both sessions reflect change after reload'\)/);
+  assert.match(source, /Chat chat-sync: recipient reload renders exactly one persisted message/);
+  assert.match(source, /Chat chat-unread: recipient unread is exactly one before open/);
+  assert.match(source, /Chat chat-unread: backend recipient unread clears before reload/);
+  assert.match(source, /Chat chat-team-b: exact tenant-qualified links open only their own marker messages/);
 });
 
 test('emulator audit exercises event CRUD, RSVP persistence, and staff-only controls', () => {

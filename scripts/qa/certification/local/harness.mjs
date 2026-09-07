@@ -127,7 +127,17 @@ export async function closeRegisteredProcessGroups({
   if (groups.some(value => !/^[1-9]\d{0,9}$/.test(value) || Number(value) <= 1 || Number(value) === process.pid)) {
     throw new Error('Service process-group registry contains a non-owned process group.');
   }
-  let pending = groups.map(Number).reverse().filter(pid => isProcessGroupAlive(pid));
+  const processGroupStillExists = pid => {
+    try {
+      return isProcessGroupAlive(pid);
+    } catch (error) {
+      // Darwin can report EPERM for a process group containing only an
+      // unreaped zombie. Keep polling until the group actually disappears.
+      if (error?.code === 'EPERM') return true;
+      throw error;
+    }
+  };
+  let pending = groups.map(Number).reverse().filter(processGroupStillExists);
   for (let attempt = 1; attempt <= maxAttempts && pending.length > 0; attempt += 1) {
     const signal = attempt === maxAttempts ? 'SIGKILL' : 'SIGTERM';
     for (const pid of pending) {
@@ -139,7 +149,7 @@ export async function closeRegisteredProcessGroups({
     }
     const deadline = Date.now() + settleMs;
     do {
-      pending = pending.filter(pid => isProcessGroupAlive(pid));
+      pending = pending.filter(processGroupStillExists);
       if (pending.length === 0 || Date.now() >= deadline) break;
       await new Promise(resolve => setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))));
     } while (pending.length > 0);

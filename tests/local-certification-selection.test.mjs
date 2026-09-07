@@ -64,11 +64,57 @@ const OPERATIONS_IDS = [
   'waivers-team-global-waiver-lifecycle',
   'waivers-parent-player-coach-signature',
   'forms-league-tournament-registration-builder',
+  'tournaments-registration-waiver',
+  'public-portals-squad-event-registration',
   'safety-incident-create-read-export',
   'facilities-facility-field-crud-rename',
   'facilities-availability-booking-delete',
   'equipment-inventory-assignment-return',
   'sports-hub-browse-search-filter-bookmark-preferences',
+  'leagues-create-edit-clone-delete',
+  'leagues-schedule-generation-deployment',
+  'leagues-registration-assignment',
+  'leagues-scorekeeper-spectator',
+  'tournaments-create-configure-replicate-archive',
+  'tournaments-schedule-pools-brackets-referees',
+  'tournaments-scoring-dispute-public-standings',
+];
+
+const OPERATIONS_CATALOG_IDS = [
+  'attendance-practice-event-member-attendance',
+  'events-event-crud-recurrence',
+  'events-rsvp-attendance-details',
+  'calendar-team-family-views-and-filters',
+  'calendar-ics-create-fetch-revoke',
+  'reminders-same-day-fcm-scheduler',
+  'practice-practice-plans-templates',
+  'practice-drill-playbook-crud-search',
+  'practice-film-upload-coach-marks-watch',
+  'feed-post-media-comment-moderation',
+  'chat-channel-message-unread',
+  'polls-create-vote-change-tally',
+  'email-verification-reset-welcome-team-email',
+  'newsletter-subscribe-unsubscribe-admin-compose',
+  'push-device-registration-preferences-target-send',
+  'files-library-crud-download',
+  'files-avatar-branding-player-media-paths',
+  'waivers-team-global-waiver-lifecycle',
+  'waivers-parent-player-coach-signature',
+  'forms-league-tournament-registration-builder',
+  'safety-incident-create-read-export',
+  'leagues-create-edit-clone-delete',
+  'leagues-schedule-generation-deployment',
+  'leagues-registration-assignment',
+  'leagues-scorekeeper-spectator',
+  'tournaments-create-configure-replicate-archive',
+  'tournaments-schedule-pools-brackets-referees',
+  'tournaments-registration-waiver',
+  'tournaments-scoring-dispute-public-standings',
+  'facilities-facility-field-crud-rename',
+  'facilities-availability-booking-delete',
+  'equipment-inventory-assignment-return',
+  'sports-hub-browse-search-filter-bookmark-preferences',
+  'public-portals-squad-event-registration',
 ];
 
 test('identity assignment owns the exact 11 Task 3 scenarios in catalog order', () => {
@@ -90,12 +136,12 @@ test('tenant assignment owns exactly the 16 Task 4 scenarios in frozen catalog o
   assert.ok(Object.isFrozen(SCENARIO_BATCH_ASSIGNMENTS.tenants));
 });
 
-test('operations assignment owns exactly the 25 Task 5 scenarios in frozen catalog order', () => {
+test('operations assignment owns exactly the 34 locally certified scenarios in frozen catalog order', () => {
   assert.deepEqual(LOCAL_BATCH_ORDER, ['identity', 'tenants', 'operations']);
   assert.deepEqual(SCENARIO_BATCH_ASSIGNMENTS.operations, OPERATIONS_IDS);
   const selected = selectLocalScenarios({ batches: ['operations'], catalog: CERTIFICATION_SCENARIOS });
-  assert.deepEqual(selected.map(scenario => scenario.id), OPERATIONS_IDS);
-  assert.equal(new Set(selected.map(scenario => scenario.id)).size, 25);
+  assert.deepEqual(selected.map(scenario => scenario.id), OPERATIONS_CATALOG_IDS);
+  assert.equal(new Set(selected.map(scenario => scenario.id)).size, 34);
   assert.equal(selected.some(scenario => scenario.id === 'sports-hub-rss-refresh-admin-publish'), false);
 });
 

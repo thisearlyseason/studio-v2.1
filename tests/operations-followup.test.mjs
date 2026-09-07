@@ -56,12 +56,17 @@ test('assigned equipment cannot be deleted until it is returned', async () => {
 });
 
 test('competition queries avoid fragile OR filters and isolate tab failures', async () => {
-  const leagues = await readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx');
-  const competition = await readSource('../src/app/(dashboard)/competition/page.tsx');
+  const [leagues, competition, scoring] = await Promise.all([
+    readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx'),
+    readSource('../src/app/(dashboard)/competition/page.tsx'),
+    readSource('../src/app/api/leagues/scoring/route.ts'),
+  ]);
 
   assert.doesNotMatch(leagues, /\bor\(/);
   assert.match(leagues, /ownedLeaguesQuery/);
-  assert.match(leagues, /memberLeaguesQuery/);
+  assert.match(leagues, /fetch\('\/api\/leagues\/scoring\?purpose=member&teamId='/);
+  assert.match(scoring, /where\('memberTeamIds', 'array-contains', teamId\)/);
+  assert.match(scoring, /isActiveCompetitionTeam\(team\.data\(\)\)/);
   assert.match(competition, /CompetitionSectionErrorBoundary/);
   assert.match(competition, /activeTab === 'leagues'/);
 });

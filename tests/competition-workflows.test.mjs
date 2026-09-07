@@ -82,9 +82,9 @@ test('League client retries preserve body and identity after an uncertain respon
 test('tournament setup, bracket, schedule, and deployment use explicit persisted states', () => {
   const page = read('src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx');
   const deployment = read('src/lib/server-tournament-schedule-deployment.ts');
-  assert.match(page, /setupStatus: 'complete'/);
-  assert.match(page, /deploymentStatus: 'undeployed'/);
-  assert.match(page, /deploymentStatus: 'failed'/);
+  assert.match(page, /result\.operationState !== 'complete'/);
+  assert.match(deployment, /setupStatus: 'complete'/);
+  assert.match(deployment, /deploymentStatus: 'undeployed'/);
   assert.match(deployment, /bracketStatus: 'ready'/);
   assert.match(deployment, /scheduleStatus: 'ready'/);
   assert.match(deployment, /deploymentStatus: 'deployed'/);

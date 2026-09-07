@@ -11,9 +11,8 @@ test('legacy public tournament reads enforce plan entitlement and active state',
   ]);
 
   assert.match(legacy, /permitsLegacyOrPaidPortals\(teamData\.planId, teamData\.plan_type, teamData\.subscriptionPlanId\)/);
-  assert.match(legacy, /if \(!tournament\.isActive\)/);
-  assert.match(legacy, /tournamentGames: Array\.isArray\(data\.tournamentGames\)/);
-  assert.match(legacy, /winnerToSlot/);
+  assert.match(legacy, /spectatorTournament\(eventId, \{ \.\.\.data, teamId \}\)/);
+  assert.match(legacy, /isActiveTournamentPortal\(teamId, teamData, data\)/);
   assert.match(canonical, /if \(!publicEvent\.isActive\)/);
   assert.match(canonical, /if \(!team\.exists\)/);
 });

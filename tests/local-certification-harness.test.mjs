@@ -160,6 +160,30 @@ test('outer cleanup terminates every exact registered service process group afte
   assert.deepEqual(signals, [[41002, 'SIGTERM'], [41001, 'SIGTERM']]);
 });
 
+test('outer cleanup waits through a transient inaccessible zombie process group', async () => {
+  const registryPath = path.join(await mkdtemp(path.join(os.tmpdir(), 'cert-process-registry-')), 'groups.txt');
+  await writeFile(registryPath, '41003\n');
+  const signals = [];
+  let observations = 0;
+  await closeRegisteredProcessGroups({
+    registryPath,
+    signalProcessGroup(pid, signal) { signals.push([pid, signal]); },
+    isProcessGroupAlive() {
+      observations += 1;
+      if (observations === 1) return true;
+      if (observations === 2) {
+        const error = new Error('kill EPERM');
+        error.code = 'EPERM';
+        throw error;
+      }
+      return false;
+    },
+    settleMs: 50,
+  });
+  assert.deepEqual(signals, [[41003, 'SIGTERM']]);
+  assert.equal(observations, 3);
+});
+
 test('child failure returns redacted structured output and cleanup remains idempotent', async () => {
   let closeCalls = 0;
   const secret = Buffer.from('0123456789abcdef0123456789abcdef').toString('base64url');
