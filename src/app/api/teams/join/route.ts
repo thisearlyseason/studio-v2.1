@@ -23,7 +23,11 @@ function tokenHash(token: string) {
 }
 
 function teamAcceptsRegistrations(data: FirebaseFirestore.DocumentData) {
-  return data.isArchived !== true && data.isActive !== false && data.rapidJoinEnabled !== false &&
+  return data.isArchived !== true && data.isActive !== false && data.rapidJoinEnabled !== false;
+}
+
+function teamAcceptsPublicRapidJoin(data: FirebaseFirestore.DocumentData) {
+  return teamAcceptsRegistrations(data) &&
     permitsLegacyOrPaidPortals(data.planId, data.plan_type, data.subscriptionPlanId);
 }
 
@@ -60,7 +64,7 @@ export async function GET(req: NextRequest) {
       const validCodes = [teamData.teamCode, teamData.code, teamData.inviteCode]
         .map(value => String(value || '').trim().toUpperCase())
         .filter(Boolean);
-      if (!team.exists || !validCodes.includes(code) || !teamAcceptsRegistrations(teamData)) {
+      if (!team.exists || !validCodes.includes(code) || !teamAcceptsPublicRapidJoin(teamData)) {
         return NextResponse.json({ error: 'This squad invitation is invalid or no longer active.' }, { status: 404 });
       }
 
@@ -159,7 +163,7 @@ export async function POST(req: NextRequest) {
       : await findTeamByCode(code);
     if (!teamSnapshot?.exists) return NextResponse.json({ error: 'Squad invitation not found.' }, { status: 404 });
     const team = teamSnapshot.data() || {};
-    if (!teamAcceptsRegistrations(team)) {
+    if (!teamAcceptsRegistrations(team) || (sessionRef && !teamAcceptsPublicRapidJoin(team))) {
       return NextResponse.json({ error: 'This squad is not accepting new members.' }, { status: 409 });
     }
 
@@ -204,7 +208,8 @@ export async function POST(req: NextRequest) {
         transaction.get(teamSnapshot.ref),
         waiverRef ? transaction.get(waiverRef) : Promise.resolve(null),
       ]);
-      if (!freshTeamSnapshot.exists || !teamAcceptsRegistrations(freshTeamSnapshot.data() || {})) return 'inactive';
+      if (!freshTeamSnapshot.exists || !teamAcceptsRegistrations(freshTeamSnapshot.data() || {}) ||
+          (sessionRef && !teamAcceptsPublicRapidJoin(freshTeamSnapshot.data() || {}))) return 'inactive';
       if (sessionRef) {
         const freshSessionData = freshSession?.data() || {};
         const freshExpiry = typeof freshSessionData.expiresAt?.toMillis === 'function' ? freshSessionData.expiresAt.toMillis() : 0;

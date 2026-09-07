@@ -24,7 +24,7 @@ async function loadRoute() {
     `,
     '@/lib/staff-position': `export function hasStaffRole(data) { return ['Admin','Coach','Head Coach'].includes(data?.position); }`,
     '@/lib/server-team-access': `export async function findActiveTeamMember() { return null; }`,
-    '@/lib/public-portal-data': `export function permitsLegacyOrPaidPortals() { return true; }`,
+    '@/lib/public-portal-data': `export function permitsLegacyOrPaidPortals() { return globalThis.__TASK4_JOIN_PUBLIC_PORTAL_ENTITLED ?? true; }`,
     'firebase-admin/firestore': `
       export const FieldValue = { arrayUnion: (...values) => ({ __arrayUnion: values }), serverTimestamp: () => 'server-time' };
       export const Timestamp = { fromMillis: value => ({ toMillis: () => value, toDate: () => new Date(value) }) };
@@ -106,6 +106,28 @@ test('inactive code-only preview and consumption both fail closed without member
   assert.equal(preview.status, 404);
   assert.equal(consume.status, 409);
   assert.equal([...records.keys()].some(path => path.includes('/members/') || path.includes('/teamMemberships/')), false);
+});
+
+test('authenticated squad-code enrollment does not require a premium public-portal plan', async () => {
+  const { db, records } = memoryDb({
+    'teams/demo_club_team_1': { id: 'demo_club_team_1', name: 'City Central United', teamCode: 'DEMO_C', planId: 'club_custom' },
+    'users/adult-1': { id: 'adult-1', role: 'adult_player', fullName: 'Adult One' },
+  });
+  globalThis.__TASK4_JOIN_DB = db;
+  globalThis.__TASK4_JOIN_AUTH = { uid: 'adult-1', email: 'adult@example.test', role: 'adult_player' };
+  globalThis.__TASK4_JOIN_PUBLIC_PORTAL_ENTITLED = false;
+  const route = await loadRoute();
+  const preview = await route.GET({ nextUrl: new URL('http://127.0.0.1/api/teams/join?code=DEMO_C'), headers: new Headers() });
+  const consume = await route.POST(request('/api/teams/join', { code: 'DEMO_C', enrollmentIntent: 'player' }));
+  const publicRapidJoin = await route.GET({
+    nextUrl: new URL('http://127.0.0.1/api/teams/join?teamId=demo_club_team_1&code=DEMO_C'),
+    headers: new Headers(),
+  });
+  delete globalThis.__TASK4_JOIN_PUBLIC_PORTAL_ENTITLED;
+  assert.equal(preview.status, 200);
+  assert.equal(consume.status, 200);
+  assert.equal(records.get('users/adult-1/teamMemberships/demo_club_team_1').teamId, 'demo_club_team_1');
+  assert.equal(publicRapidJoin.status, 404);
 });
 
 test('guardian child enrollment preserves the accountless child identity', async () => {
