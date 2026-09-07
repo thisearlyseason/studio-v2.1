@@ -62,7 +62,8 @@ test('tournament scoring verifies private HMAC and migrates a valid legacy code 
   try{
     assert.equal((await legacyApp.route.POST(request({kind:'tournament',action:'verify',teamId:'t',eventId:'e',code:'1357'}))).status,200);
     assert.equal('scoringCode' in legacy.records.get('teams/t/events/e'),false);
-    assert.match(legacy.records.get('teams/t/events/e/private/scoring').scorekeeperCodeHash,/^hmac-sha256:v1:[a-f0-9]{64}$/);
+    assert.equal(legacy.records.get('teams/t/events/e').credentialVersion,1);assert.equal(legacy.records.get('teams/t/events/e').scorekeeperConfigured,true);
+    assert.match(legacy.records.get('teams/t/events/e/private/scoring').scorekeeperCodeHash,/^hmac-sha256:v1:[a-f0-9]{64}$/);assert.equal(legacy.records.get('teams/t/events/e/private/scoring').credentialVersion,1);
   }finally{legacyApp.dispose();}
 });
 

@@ -63,8 +63,9 @@ async function verifiedTournamentEvent(transaction: any, ref: DocumentReference,
   const legacyCode = typeof event.scoringCode === 'string' ? event.scoringCode.trim() : '';
   if (legacyCode) {
     if (!credentialsMatch(legacyCode, codeValue, false)) throw new RegistrationInputError('Invalid scorekeeper code.', 403);
-    transaction.set(privateRef, { teamId, eventId, scorekeeperCodeHash: hashTournamentScorekeeperCode(teamId, eventId, legacyCode), updatedAt: new Date().toISOString(), migratedFromLegacy: true });
-    transaction.update(ref, { scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() });
+    const credentialVersion = Math.max(Number(event.credentialVersion || 0), Number(credential.data()?.credentialVersion || 0)) + 1;
+    transaction.set(privateRef, { teamId, eventId, scorekeeperCodeHash: hashTournamentScorekeeperCode(teamId, eventId, legacyCode), credentialVersion, updatedAt: new Date().toISOString(), migratedFromLegacy: true });
+    transaction.update(ref, { credentialVersion, scorekeeperConfigured: true, scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() });
     return event;
   }
   if (!legacyOpen) throw new RegistrationInputError('Scorekeeper access is not configured for this tournament.', 409);

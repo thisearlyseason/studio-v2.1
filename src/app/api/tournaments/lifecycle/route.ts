@@ -115,7 +115,10 @@ export async function POST(request: NextRequest) {
         if (action === 'create') for (const division of Array.isArray(payload.divisions) ? payload.divisions : []) assertAdvancedEntitlement(team, record(division));
         if (action === 'replicate' || action === 'configure') {
           const current = await transaction.get(eventRef);
-          if (current.exists) assertAdvancedEntitlement(team, { ...current.data(), ...payload });
+          if (current.exists) {
+            if (current.data()?.scheduleClearOperationId) fail('A schedule clear is in progress. Finish it before changing this Tournament.', 409);
+            assertAdvancedEntitlement(team, { ...current.data(), ...payload });
+          }
         }
       },
     }, async ({ transaction, queueExternalEffect }) => {
@@ -123,6 +126,7 @@ export async function POST(request: NextRequest) {
       const sourceSnapshot = action === 'create' ? null : await transaction.get(eventRef);
       const source = sourceSnapshot?.data() || {};
       if (action !== 'create') {
+        if ((action === 'configure' || action === 'replicate') && source.scheduleClearOperationId) fail('A schedule clear is in progress. Finish it before changing this Tournament.', 409);
         if (!sourceSnapshot?.exists || source.isTournament !== true) fail('Tournament not found.', 404);
         if (source.teamId && source.teamId !== teamId) fail('Tournament tenant mismatch.', 403);
         if ((source.lifecycleVersion ?? 0) !== body.expectedVersion) fail('Tournament changed. Refresh before retrying.', 409);

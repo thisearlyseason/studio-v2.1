@@ -147,6 +147,17 @@ test('legacy referee contacts migrate before projection scrubbing and remain ass
   } finally { app.dispose(); }
 });
 
+test('legacy referee migration completes every transaction read before queuing writes', async () => {
+  const app = await appFor({
+    'teams/team-a': baseTeam,
+    'teams/team-a/events/cup-a': event({ tournamentGames: [game('game-one', '10:00 AM')] }),
+  }, { enforceReadBeforeWrite: true });
+  try {
+    const result = await post(app, command({ requestId: 'tournament-read-before-write-0001' }));
+    assert.equal(result.status, 200);
+  } finally { app.dispose(); }
+});
+
 test('redeploy consults authoritative referee assignments even when the event projection is stale', async () => {
   const initial = schedulableEvent({ scheduleVersion: 3 });
   const app = await appFor({
@@ -187,7 +198,7 @@ test('near-limit clear removes all authoritative state and replays only after co
     fixtures[`scheduleBookings/b-${index}`] = { sourceId: 'tournament:team-a:cup-a' };
     fixtures[`tournamentRefereeAssignments/a-${index}`] = { teamId: 'team-a', eventId: 'cup-a', gameId: `g-${index}` };
   }
-  const app = await appFor(fixtures, { serializeTransactions: true, maxTransactionWrites: 500 });
+  const app = await appFor(fixtures, { serializeTransactions: true, maxTransactionWrites: 500, enforceReadBeforeWrite: true });
   try {
     const clear = command({ action: 'clear', requestId: 'tournament-near-limit-clear-0001', gameId: undefined, refereeId: undefined });
     const first = await post(app, clear);
@@ -198,7 +209,7 @@ test('near-limit clear removes all authoritative state and replays only after co
   } finally { app.dispose(); }
 });
 
-test('clear rejects a colliding request and resumes the stable in-progress operation', async () => {
+test('clear rejects a changed payload and resumes the stable in-progress operation', async () => {
   const clear = command({ action: 'clear', requestId: 'tournament-resumable-clear-0001', gameId: undefined, refereeId: undefined });
   const payload = { action: clear.action, teamId: clear.teamId, eventId: clear.eventId, expectedVersion: clear.expectedVersion, expectedScheduleVersion: clear.expectedScheduleVersion };
   const identity = canonicalCompetitionRequest({ requestId: clear.requestId, tenantId: clear.teamId, kind: 'tournament-schedule', payload });
@@ -210,11 +221,44 @@ test('clear rejects a colliding request and resumes the stable in-progress opera
     'scheduleBookings/pending': { sourceId: 'tournament:team-a:cup-a' },
   });
   try {
-    assert.equal((await post(app, { ...clear, requestId: 'tournament-colliding-clear-0002' })).status, 409);
+    assert.equal((await post(app, { ...clear, expectedScheduleVersion: 2 })).status, 409);
     const resumed = await post(app, clear);
     assert.equal(resumed.status, 200);
     assert.equal(app.records.has('scheduleBookings/pending'), false);
     assert.equal(app.records.has(`competitionOperationProgress/${identity.operationId}`), false);
+  } finally { app.dispose(); }
+});
+
+test('an authorized replacement actor can finish a stranded clear without duplicate effects', async () => {
+  const original = command({ action: 'clear', requestId: 'tournament-stranded-clear-0001', gameId: undefined, refereeId: undefined });
+  const takeover = { ...original, requestId: 'tournament-stranded-clear-0002' };
+  const payload = ({ requestId: _requestId, ...body }) => ({ action: body.action, teamId: body.teamId, eventId: body.eventId, expectedVersion: body.expectedVersion, expectedScheduleVersion: body.expectedScheduleVersion });
+  const originalIdentity = canonicalCompetitionRequest({ requestId: original.requestId, tenantId: original.teamId, kind: 'tournament-schedule', payload: payload(original) });
+  const takeoverIdentity = canonicalCompetitionRequest({ requestId: takeover.requestId, tenantId: takeover.teamId, kind: 'tournament-schedule', payload: payload(takeover) });
+  const app = await appFor({
+    'teams/team-a': baseTeam,
+    'teams/team-a/events/cup-a': event({ scheduleClearOperationId: originalIdentity.operationId }),
+    [`competitionOperationProgress/${originalIdentity.operationId}`]: {
+      requestId: originalIdentity.requestId, payloadHash: originalIdentity.payloadHash, actorUid: 'demoted-owner',
+      teamId: 'team-a', eventId: 'cup-a', expectedVersion: 2, expectedScheduleVersion: 3, state: 'clearing', deletedCount: 1,
+    },
+    'scheduleBookings/pending': { sourceId: 'tournament:team-a:cup-a' },
+    'tournamentRefereeAssignments/pending': { teamId: 'team-a', eventId: 'cup-a', gameId: 'game-one' },
+  });
+  try {
+    assert.equal((await post(app, { ...takeover, expectedScheduleVersion: 2 })).status, 409);
+    assert.equal((await post(app, { ...takeover, requestId: 'tournament-stranded-clear-0003', games: [] })).status, 409);
+    const finished = await post(app, takeover);
+    assert.equal(finished.status, 200);
+    assert.equal(app.records.has(`competitionOperations/${originalIdentity.operationId}`), true);
+    assert.equal(app.records.has(`competitionOperations/${takeoverIdentity.operationId}`), true);
+    assert.equal([...app.records.keys()].filter(path => path.includes('/scheduleAudits/')).length, 1);
+    assert.equal([...app.records.keys()].some(path => path.startsWith('scheduleBookings/') || path.startsWith('tournamentRefereeAssignments/') || path.startsWith('competitionOperationProgress/')), false);
+    assert.deepEqual((await post(app, takeover)).body, finished.body);
+    app.records.set('teams/team-a', { ...baseTeam, ownerUserId: 'demoted-owner' });
+    const originalApp = await loadCommunicationRoute('../../src/app/api/tournaments/schedule/route.ts', app.db, { uid: 'demoted-owner', role: 'coach' });
+    try { assert.deepEqual((await post(originalApp, original)).body, finished.body); }
+    finally { originalApp.dispose(); }
   } finally { app.dispose(); }
 });
 

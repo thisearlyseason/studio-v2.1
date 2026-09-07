@@ -88,3 +88,28 @@ Final review verification:
 - Affected Task 5/6/7, public portal, Registration, standings, and source-boundary suite: **123 passed, 0 failed** with shell `pipefail` enabled.
 - Firestore/Storage rules: **65 passed, 0 failed**.
 - `npm run typecheck`, scoped ESLint `--quiet`, `git diff --check`, and index JSON/content validation: exit 0.
+
+## Review round 2 corrections
+
+Three remaining Important findings were reproduced and corrected with narrow changes:
+
+1. The transaction harness can now enforce Firestore's reads-before-writes rule. The legacy-referee command genuinely failed with `transaction read after write`; migration is now collected as write intents and queued only after every applicable transaction read.
+2. Recoverable clear now fences configure/replicate lifecycle changes while its durable marker exists. An interrupted clear retains its original identity and can be completed by a different currently authorized actor using the exact same canonical clear payload. Finalization creates replay receipts for the original and takeover requests atomically, emits one audit only, and leaves no booking, assignment, progress, or marker residue. Archive remains the explicit terminal cleanup path for an abandoned clear; delete retains its existing dependency checks.
+3. Tournament scorekeeper credential changes now require a bounded stable request ID plus expected lifecycle and credential versions. The private credential has a monotonic `credentialVersion`, the safe event projection exposes only version/configured state, exact replay and payload collisions use the shared operation receipt, and current staff authority is revalidated before receipt replay. Registration config plus credential rotation share one version-checked transaction and receipt. Both editors preserve the exact serialized request across network/server uncertainty and discard it after success or a definitive client conflict. Legacy public credential migration initializes the same versioned private/root projection.
+
+Genuine RED evidence:
+
+- Read ordering: focused referee route returned **500** because the strengthened harness detected `transaction read after write`.
+- Lifecycle fence: configure during an active clear returned **200 instead of 409**.
+- Clear takeover: a currently authorized replacement actor returned **409 instead of completing**; a changed takeover payload was then shown to complete incorrectly (**200 instead of 409**) before the canonical-hash guard.
+- Credential/version suite: **2 passed / 3 failed** before implementation; Registration returned no credential version, standalone rotation returned no lifecycle/credential versions, and concurrent stale editors both returned 200. The legacy public migration test also lacked a credential version.
+
+Fresh final evidence:
+
+- `node --import tsx --test tests/server-tournament-schedule-deployment.test.mjs tests/tournament-bracket-progression.test.mjs tests/tournament-referee-route.test.mjs tests/tournament-lifecycle-route.test.mjs tests/tournament-replication.test.mjs tests/tournament-scoring-route.test.mjs tests/tournament-standings.test.mjs tests/public-portals.test.mjs tests/registration-config-route.test.mjs tests/registration-action-route.test.mjs` — **122 passed, 0 failed**, exit 0 with shell `pipefail`.
+- `npm run typecheck -- --pretty false` — exit 0.
+- Scoped ESLint `--quiet` over all changed production TypeScript/TSX files — exit 0.
+- `git diff --check` — exit 0.
+- `node -e "JSON.parse(require('fs').readFileSync('firestore.indexes.json','utf8'))"` — exit 0; no index change was required in this review round.
+
+External evidence remains unchanged: these results certify local code and automated behavior, not a deployed staging revision or physical-device/provider delivery.

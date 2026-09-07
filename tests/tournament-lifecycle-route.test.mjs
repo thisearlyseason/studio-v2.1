@@ -83,6 +83,16 @@ test('configure preserves Registration identities and schedules; schedule-sensit
   assert.deepEqual([...records], before);
 });
 
+test('configure is fenced while a recoverable schedule clear is in progress', async () => {
+  const operationId = 'competition_1234567890abcdef1234567890abcdef12345678';
+  const original = { ...blueprint, teamId: 'team-a', lifecycleVersion: 3, scheduleVersion: 4, scheduleClearOperationId: operationId };
+  const { db, records } = communicationDb({ ...seed, 'teams/team-a/events/cup': original });
+  const body = { action: 'configure', requestId: 'configure-during-clear-0001', teamId: 'team-a', eventId: 'cup', expectedVersion: 3, payload: { description: 'Blocked' } };
+  const result = await call(db, body);
+  assert.equal(result.status, 409);
+  assert.deepEqual(records.get('teams/team-a/events/cup'), original);
+});
+
 test('archive atomically cancels portal activation and bookings while retaining Registration and audit data', async () => {
   const entry = { form_id: 'form', fee_id: 'fee', waiver_id: 'waiver', responses: { private: 'answer' } };
   const clearOperationId = 'competition_1234567890abcdef1234567890abcdef12345678';

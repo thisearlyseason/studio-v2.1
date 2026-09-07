@@ -85,6 +85,7 @@ export default function TournamentRegistrationAdminPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [hasSaved, setHasSaved] = useState(false);
   const [isGeneratingRegistrationCode, setIsGeneratingRegistrationCode] = useState(false);
+  const pendingCredentialRequest = useRef<{ key: string; body: string } | null>(null);
   // Multi-form state
   const [formsListMode, setFormsListMode] = useState(true); // start on forms list
   const [allForms, setAllForms] = useState<{ id: string; title: string; is_active: boolean; form_version?: number }[]>([]);
@@ -304,10 +305,28 @@ export default function TournamentRegistrationAdminPage() {
         const token = await getAuthToken(auth);
         const { id: _id, config_hash: expectedHash, scoringCode: rawScoringCode, ...configPayload } = updated as LeagueRegistrationConfig & { scoringCode?: string };
         const scoringCode = typeof rawScoringCode === 'string' ? rawScoringCode.trim() : undefined;
-        const response = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId, expectedVersion: updated.form_version || 0, expectedHash: expectedHash || '', config: configPayload, ...(scoringCode !== undefined ? { scoringCode } : {}) }) });
+        const requestPayload = { targetKind: 'tournament', targetId: teamId, eventId, configId, expectedVersion: updated.form_version || 0, expectedHash: expectedHash || '', config: configPayload, ...(scoringCode !== undefined ? { scoringCode } : {}) };
+        let requestBody = JSON.stringify(requestPayload);
+        if (scoringCode !== undefined) {
+          const requestKey = JSON.stringify({ targetKind: 'tournament', targetId: teamId, eventId, configId, config: configPayload, scoringCode });
+          if (!pendingCredentialRequest.current || pendingCredentialRequest.current.key !== requestKey) {
+            pendingCredentialRequest.current = {
+              key: requestKey,
+              body: JSON.stringify({ ...requestPayload, requestId: crypto.randomUUID(), expectedLifecycleVersion: Number(event?.lifecycleVersion || 0), expectedCredentialVersion: Number(event?.credentialVersion || 0) }),
+            };
+          }
+          requestBody = pendingCredentialRequest.current.body;
+        }
+        const response = await fetch('/api/registrations/config', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: requestBody });
         const payload = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(payload?.error || 'Registration form could not be saved.');
-        setLocalConfig({ ...updated, ...payload.config, id: configId });
+        if (!response.ok) {
+          if (response.status < 500 && pendingCredentialRequest.current?.body === requestBody) pendingCredentialRequest.current = null;
+          throw new Error(payload?.error || 'Registration form could not be saved.');
+        }
+        if (pendingCredentialRequest.current?.body === requestBody) pendingCredentialRequest.current = null;
+        const savedConfig = { ...updated, ...payload.config, id: configId } as LeagueRegistrationConfig & { scoringCode?: string };
+        if (scoringCode !== undefined) delete savedConfig.scoringCode;
+        setLocalConfig(savedConfig);
         // Confirm activation/deactivation explicitly
         if (updates.is_active !== undefined) {
           toast({

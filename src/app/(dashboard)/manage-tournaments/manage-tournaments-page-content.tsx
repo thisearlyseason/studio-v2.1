@@ -3222,6 +3222,7 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
   const auth = useAuth();
   const [code, setCode] = useState((event as any).scoringCode || '');
   const [saving, setSaving] = useState(false);
+  const pendingRequest = useRef<{ key: string; body: string } | null>(null);
 
   const handleSave = async () => {
     if (!event.teamId) return;
@@ -3233,9 +3234,21 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
     setSaving(true);
     try {
       const token = await getAuthToken(auth);
-      const response = await fetch('/api/tournaments/credential', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: JSON.stringify({ teamId: event.teamId, eventId: event.id, scoringCode: normalizedCode }) });
+      const requestKey = JSON.stringify([event.teamId, event.id, normalizedCode]);
+      if (!pendingRequest.current || pendingRequest.current.key !== requestKey) {
+        pendingRequest.current = {
+          key: requestKey,
+          body: JSON.stringify({ requestId: crypto.randomUUID(), teamId: event.teamId, eventId: event.id, scoringCode: normalizedCode, expectedLifecycleVersion: Number(event.lifecycleVersion || 0), expectedCredentialVersion: Number(event.credentialVersion || 0) }),
+        };
+      }
+      const requestBody = pendingRequest.current.body;
+      const response = await fetch('/api/tournaments/credential', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) }, body: requestBody });
       const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(payload?.error || 'Tournament credential could not be saved.');
+      if (!response.ok) {
+        if (response.status < 500 && pendingRequest.current?.body === requestBody) pendingRequest.current = null;
+        throw new Error(payload?.error || 'Tournament credential could not be saved.');
+      }
+      if (pendingRequest.current?.body === requestBody) pendingRequest.current = null;
       toast({ title: 'Scorekeeper Code Updated', description: 'Score submissions now require this code.' });
     } catch {
       toast({ title: 'Update Failed', variant: 'destructive' });

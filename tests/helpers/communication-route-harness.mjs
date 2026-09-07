@@ -26,7 +26,7 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
   return { route, dispose() { delete globalThis[key]; } };
 }
 
-export function communicationDb(initial,{beforeTransaction,serializeTransactions=false,maxTransactionWrites=Infinity}={}) {
+export function communicationDb(initial,{beforeTransaction,serializeTransactions=false,maxTransactionWrites=Infinity,enforceReadBeforeWrite=false}={}) {
   const records = new Map(Object.entries(initial).map(([path,value])=>[path,structuredClone(value)]));
   const objects = new Map();
   let sequence=0;
@@ -73,8 +73,9 @@ export function communicationDb(initial,{beforeTransaction,serializeTransactions
   const notifications=[];let transactionTail=Promise.resolve();
   const executeTransaction=async work=>{
     if(beforeTransaction) await beforeTransaction({records});
-    const pending=[];
-    const result=await work({get:ref=>ref.get(),update:(ref,...args)=>pending.push(()=>{if(args[0]?.segments){const value={};value[args[0].segments.join('.')]=args[1];records.set(ref.path,applyUpdate(records.get(ref.path),value));}else records.set(ref.path,applyUpdate(records.get(ref.path),args[0]));}),create:(ref,value)=>pending.push(()=>ref.create(value)),set:(ref,value)=>pending.push(()=>ref.set(value)),delete:ref=>pending.push(()=>ref.delete())});
+    const pending=[];let writeQueued=false;
+    const queue=write=>{writeQueued=true;pending.push(write);};
+    const result=await work({get:ref=>{if(enforceReadBeforeWrite&&writeQueued)throw new Error('transaction read after write');return ref.get();},update:(ref,...args)=>queue(()=>{if(args[0]?.segments){const value={};value[args[0].segments.join('.')]=args[1];records.set(ref.path,applyUpdate(records.get(ref.path),value));}else records.set(ref.path,applyUpdate(records.get(ref.path),args[0]));}),create:(ref,value)=>queue(()=>ref.create(value)),set:(ref,value)=>queue(()=>ref.set(value)),delete:ref=>queue(()=>ref.delete())});
     if(pending.length>maxTransactionWrites)throw new Error(`transaction write limit exceeded: ${pending.length}`);
     for(const write of pending) await write(); return result;
   };
