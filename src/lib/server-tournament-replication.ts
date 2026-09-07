@@ -1,4 +1,4 @@
-const TOURNAMENT_BLUEPRINT_FIELDS = [
+export const TOURNAMENT_BLUEPRINT_FIELDS = [
   'date',
   'endDate',
   'startTime',
@@ -32,6 +32,15 @@ const TOURNAMENT_BLUEPRINT_FIELDS = [
   'teamWaiverText',
   'venueSettings',
 ] as const;
+
+/** Only accepted form definitions/identities are a reusable blueprint. */
+export function buildTournamentReplicationConfig(source: Record<string, unknown>): Record<string, unknown> {
+  const fields = ['id', 'form_id', 'fee_id', 'waiver_id', 'title', 'description', 'type', 'form_schema', 'form_version', 'config_hash',
+    'waiver_mode', 'selected_team_waivers', 'team_waivers_content', 'default_waiver_text', 'require_default_waiver',
+    'custom_waiver_text', 'confirmation_message', 'registration_cost', 'offline_payment_instructions', 'currency',
+    'require_division_selection', 'available_divisions', 'payment_migrated'];
+  return { ...Object.fromEntries(fields.filter(field => source[field] !== undefined).map(field => [field, source[field]])), is_active: false };
+}
 
 export function buildTournamentReplicationEvent({
   source,
@@ -72,6 +81,9 @@ export function buildTournamentReplicationEvent({
     updatedAt: now,
     isArchived: false,
     isCompleted: false,
+    registrationOpen: false,
+    registrationCount: 0,
+    registrationEntryCount: 0,
     tournamentTeams: [],
     tournamentTeamsData: [],
     tournamentGames: [],

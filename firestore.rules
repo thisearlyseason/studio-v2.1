@@ -365,24 +365,36 @@ service cloud.firestore {
       }
 
       match /events/{eventId} {
+        function tournamentLifecycleUnchanged() {
+          return (
+            resource.data.get('isTournament', false) != true && resource.data.get('eventType', '') != 'tournament' &&
+            request.resource.data.get('isTournament', false) != true && request.resource.data.get('eventType', '') != 'tournament'
+          ) || (
+            resource.data.get('isTournament', false) == true &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'refereePool', 'scoringCode', 'bracketStatus', 'scheduleStatus',
+              'deploymentStatus', 'deploymentError', 'updatedAt'
+            ])
+          );
+        }
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
         // Timed calendar events are server-mediated so schedule reservations and
         // the event document are committed under the same scheduling lock.
-        allow create: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && (
+        allow create: if request.resource.data.get('isTournament', false) != true && request.resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.get('isDemo', false) == true ||
           (
             request.resource.data.get('startTime', '') == '' &&
             request.resource.data.get('time', '') == ''
           )
-        ));
-        allow delete: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+        )));
+        allow delete: if resource.data.get('isTournament', false) != true && resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
           resource.data.get('startTime', '') == '' &&
           resource.data.get('time', '') == '' &&
           resource.data.get('sourceType', '') == ''
-        );
+        ));
         // Published tournament brackets, progression, scores, and assignments
         // are written only by authenticated server actions.
-        allow update: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+        allow update: if tournamentLifecycleUnchanged() && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
           resource.data.get('sourceType', '') == '' &&
           (
             (
@@ -420,7 +432,7 @@ service cloud.firestore {
             request.resource.data.get('advancePerPool', 0) == resource.data.get('advancePerPool', 0) &&
             request.resource.data.get('dailyWindows', []) == resource.data.get('dailyWindows', [])
           ))
-        );
+        ));
 
         // Registration forms and responses contain applicant contact details,
         // so only the squad owner and staff may access them from the client.

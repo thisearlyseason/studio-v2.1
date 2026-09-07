@@ -6,9 +6,7 @@ import {
   RequestBodyError,
 } from '@/lib/server-request-guards';
 import {
-  archiveTournamentSchedule,
   clearTournamentSchedule,
-  deleteTournament,
   deployTournamentSchedule,
   mutateTournamentSchedule,
   TournamentScheduleDeploymentError,
@@ -85,35 +83,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/** Legacy destructive entry point: lifecycle owns identity, version and retention. */
 export async function DELETE(request: NextRequest) {
   const auth = await verifyFirebaseToken(request);
   if (auth instanceof NextResponse) return auth;
-
-  try {
-    const limited = await enforceUserRateLimit(
-      auth.uid,
-      'tournament-schedule-archive',
-      20,
-      60 * 60 * 1_000
-    );
-    if (limited) return limited;
-    const body = await readJsonBodyWithLimit<Record<string, unknown>>(request, 10_000);
-    const input = {
-      teamId: typeof body.teamId === 'string' ? body.teamId : '',
-      eventId: typeof body.eventId === 'string' ? body.eventId : '',
-      actor: { uid: auth.uid, email: auth.email, role: auth.role },
-    };
-    if (body.action === 'delete') await deleteTournament(input);
-    else await archiveTournamentSchedule(input);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    if (error instanceof RequestBodyError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    if (error instanceof TournamentScheduleDeploymentError) {
-      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
-    }
-    console.error('[tournaments/schedule] Archive failed:', error);
-    return NextResponse.json({ error: 'Unable to archive the tournament.' }, { status: 500 });
-  }
+  return NextResponse.json({ error: 'Use /api/tournaments/lifecycle with action, requestId and expectedVersion.' }, { status: 410 });
 }

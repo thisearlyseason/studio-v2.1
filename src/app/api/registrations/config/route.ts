@@ -25,6 +25,7 @@ export async function POST(req:NextRequest){
     await adminDb.runTransaction(async transaction=>{
       const [parent,current]=await Promise.all([transaction.get(parentRef),transaction.get(configRef)]);
       if(!parent.exists)throw new RegistrationInputError('Registration target not found.',404);
+      if(targetKind==='tournament'&&parent.data()?.isArchived===true)throw new RegistrationInputError('Archived Tournament registration cannot be reactivated.',409);
       if(targetKind==='league'&&auth.role!=='superadmin'&&parent.data()?.creatorId!==auth.uid)throw new RegistrationInputError('League organizer access required.',403);
       if(targetKind==='tournament'){
         const team=await transaction.get(adminDb.collection('teams').doc(targetId));

@@ -41,6 +41,17 @@ const authoritySeed = {
   'leagues/league-a': { creatorId: 'organizer-a', tenantId: 'team-a' },
 };
 
+test('Tournament authority uses the existing team management surface without expanding default League authority', async () => {
+  const { db } = communicationDb({ ...authoritySeed, 'teams/team-a': { ownerUserId: 'owner-a', planId: 'starter_squad' } });
+  await assert.rejects(resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a' }), /Forbidden/);
+  for (const actorUid of ['owner-a', 'coach-a', 'staff-a']) {
+    assert.equal((await resolveCompetitionAuthority({ db, actorUid, teamId: 'team-a', domain: 'tournament' })).tenantId, 'team-a');
+  }
+  for (const actorUid of ['member-a', 'removed-a', 'owner-b']) {
+    await assert.rejects(resolveCompetitionAuthority({ db, actorUid, teamId: 'team-a', domain: 'tournament' }), /Forbidden/);
+  }
+});
+
 test('competition authority resolves owner, organizer, canonical staff, and delegated school authority', async () => {
   const { db } = communicationDb(authoritySeed);
   assert.deepEqual(await resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a', leagueId: 'league-a' }), {

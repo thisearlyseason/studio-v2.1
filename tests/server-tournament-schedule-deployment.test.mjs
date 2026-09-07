@@ -323,12 +323,12 @@ test('tournament schedules, live mutations, clearing, archiving, and demo cleanu
     readFile(new URL('../src/app/tournaments/scorekeeper/[teamId]/[eventId]/page.tsx', import.meta.url), 'utf8'),
   ]);
   assert.match(page, /fetch\('\/api\/tournaments\/schedule'/);
-  assert.match(page, /action: 'clear'/);
-  assert.match(page, /method: 'DELETE'/);
+  assert.match(page, /action: 'configure'/);
+  assert.match(page, /fetch\('\/api\/tournaments\/lifecycle'/);
   assert.match(route, /deployTournamentSchedule/);
   assert.match(route, /mutateTournamentSchedule/);
   assert.match(route, /clearTournamentSchedule/);
-  assert.match(route, /archiveTournamentSchedule/);
+  assert.match(route, /status: 410/);
   assert.match(route, /tournament-schedule-live-mutation/);
   assert.match(route, /isLiveMutation \? 300 : 30/);
   assert.match(page, /action: 'assign-referee'/);
@@ -345,18 +345,20 @@ test('tournament schedules, live mutations, clearing, archiving, and demo cleanu
   assert.match(rules, /match \/scheduleBookings\/\{bookingId\}[\s\S]*allow read, write: if false;/);
 });
 
-test('whole-tournament deletion removes nested portal data through the server boundary', async () => {
-  const [server, route, manager] = await Promise.all([
-    readFile(new URL('../src/lib/server-tournament-schedule-deployment.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/app/api/tournaments/schedule/route.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx', import.meta.url), 'utf8'),
-  ]);
-
-  assert.match(server, /export async function deleteTournament/);
-  assert.match(server, /adminDb\.recursiveDelete\(eventRef\)/);
-  assert.match(route, /body\.action === 'delete'/);
-  assert.match(manager, /action: 'delete'/);
-  assert.match(manager, /Delete tournament \$\{event\.title\}/);
+test('legacy destructive schedule requests retain Tournament and Registration history', async () => {
+  const { communicationDb, loadCommunicationRoute, communicationRequest } = await import('./helpers/communication-route-harness.mjs');
+  const { db, records } = communicationDb({
+    'teams/team-a': { ownerUserId: 'owner', planId: 'elite_league' },
+    'teams/team-a/events/cup': { isTournament: true, title: 'Cup' },
+    'teams/team-a/events/cup/registrationEntries/entry': { fee_id: 'fee', form_id: 'form', waiver_id: 'waiver' },
+  });
+  const before = structuredClone([...records]);
+  const app = await loadCommunicationRoute('../../src/app/api/tournaments/schedule/route.ts', db, { uid: 'owner' });
+  try {
+    const result = await app.route.DELETE(communicationRequest({ action: 'delete', teamId: 'team-a', eventId: 'cup' }));
+    assert.equal(result.status, 410);
+    assert.deepEqual([...records], before);
+  } finally { app.dispose(); }
 });
 
 test('superadmins can create tournament event shells without a team membership document', async () => {

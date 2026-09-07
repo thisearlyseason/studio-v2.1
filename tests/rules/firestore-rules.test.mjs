@@ -21,6 +21,19 @@ import {
 const projectId = 'demo-the-squad-rules-test';
 let testEnv;
 
+test('Tournament lifecycle is server-only while remaining schedule and scoring client fields stay available', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'teams/team-a/events/lifecycle-cup'), { isTournament: true, eventType: 'tournament', title: 'Cup', lifecycleVersion: 1, tournamentGames: [] });
+  });
+  const owner = authenticatedDb('owner'), ref = doc(owner, 'teams/team-a/events/lifecycle-cup');
+  await assertFails(setDoc(doc(owner, 'teams/team-a/events/forged-cup'), { isTournament: true, title: 'Forged' }));
+  for (const changes of [{ title: 'Changed' }, { isArchived: true }, { lifecycleVersion: 2 }, { registrationCode: 'FORGED' }, { isTournament: false }, { tournamentTeamsData: [{ id: 'forged', name: 'Forged' }] }]) {
+    await assertFails(setDoc(ref, changes, { merge: true }));
+  }
+  await assertFails(deleteDoc(ref));
+  await assertSucceeds(setDoc(ref, { refereePool: [], scoringCode: 'TESTPIN', deploymentStatus: 'failed', deploymentError: 'Example failure' }, { merge: true }));
+});
+
 test('League member roots, raw spectator projections, score records, and game generation floor are server-only', async () => {
   const member = authenticatedDb('member');
   const owner = authenticatedDb('owner');
@@ -1016,7 +1029,7 @@ test('published league and tournament schedules are server-owned', async () => {
     startTime: '18:00',
     location: 'Main Field',
   }));
-  await assertSucceeds(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'tournament-shell'), {
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'tournament-shell'), {
     title: 'Tournament shell',
     isTournament: true,
     tournamentGames: [],

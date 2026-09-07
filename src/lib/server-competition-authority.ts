@@ -13,6 +13,7 @@ export type CompetitionAuthority = {
 };
 
 export type CompetitionAuthorityInput = {
+  domain?: 'league' | 'tournament';
   actorUid: string;
   actorRole?: string;
   teamId?: string;
@@ -37,11 +38,11 @@ function includesActor(value: unknown, actorUid: string): boolean {
   return Array.isArray(value) && value.includes(actorUid);
 }
 
-function planIdOf(team: DocumentData): string {
+function planIdOf(team: DocumentData, domain: CompetitionAuthorityInput['domain']): string {
   const planId = [team.planId, team.plan_type, team.subscriptionPlanId]
     .find(value => typeof value === 'string' && value.trim()) as string | undefined;
   const normalized = planId?.trim().toLowerCase() || '';
-  const entitlement = authorizeDashboardRoute('/competition', { role: 'coach', planId: normalized });
+  const entitlement = authorizeDashboardRoute(domain === 'tournament' ? '/manage-tournaments' : '/competition', { role: 'coach', planId: normalized });
   if (!normalized || !entitlement.allowed) forbidden();
   return normalized;
 }
@@ -182,7 +183,7 @@ export async function resolveCompetitionAuthority(
   const teamSnapshot = await read(teamRef, input.transaction);
   if (!teamSnapshot.exists) forbidden();
   const team = teamSnapshot.data() || {};
-  const planId = planIdOf(team);
+  const planId = planIdOf(team, input.domain);
   const isOrganizer = Boolean(league && league.creatorId === actorUid);
 
   const base = { actorUid, tenantId: teamId, planId };

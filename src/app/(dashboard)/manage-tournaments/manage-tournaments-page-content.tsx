@@ -201,11 +201,35 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
   };
 };
 
+type TournamentLifecycleInput = { action: 'create' | 'configure' | 'replicate' | 'archive' | 'delete'; teamId: string; eventId?: string; expectedVersion?: number; payload: Record<string, unknown> };
+const tournamentVersion = (event: TeamEvent) => (event as TeamEvent & { lifecycleVersion?: number }).lifecycleVersion ?? 0;
+function useTournamentLifecycle() {
+  const auth = useAuth();
+  const pending = useRef(new Map<string, string>());
+  return async (input: TournamentLifecycleInput) => {
+    const body = JSON.parse(JSON.stringify(input)) as TournamentLifecycleInput;
+    const key = JSON.stringify(body);
+    const requestId = pending.current.get(key) || crypto.randomUUID();
+    pending.current.set(key, requestId);
+    const token = await getAuthToken(auth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/lifecycle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ ...body, requestId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.operationState !== 'complete') throw new Error(result.error || 'Tournament operation is incomplete. Retry to recover.');
+    pending.current.delete(key);
+    return result as { eventId: string; eventIds?: string[]; lifecycleVersion: number };
+  };
+}
+
 function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchive, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, onArchive?: () => void, editEvent?: TeamEvent }) {
-  const { activeTeam, user, hasFeature, isStarter, addEvent } = useTeam();
+  const { activeTeam, user, hasFeature, isStarter } = useTeam();
   const db = useFirestore();
   const firebaseAuth = useAuth();
 
+  const lifecycle = useTournamentLifecycle();
   const [step, setStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeWizardDivision, setActiveWizardDivision] = useState<string>('');
@@ -479,7 +503,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
     }
     setIsProcessing(true);
 
-    const deploySingleEvent = async (divTitle?: string) => {
+    const prepareSingleEvent = (divTitle?: string) => {
       const filteredTeams = divTitle
         ? form.teams.filter(t => t.division === divTitle)
         : form.teams;
@@ -561,77 +585,19 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
         adminEmails: form.adminEmails || [],
         sport: form.sport.trim() || activeTeam?.sport || 'General',
         divisionTitle: divTitle || '',
-        setupStatus: 'complete' as const,
-        bracketStatus: 'pending' as const,
-        scheduleStatus: 'pending' as const,
-        deploymentStatus: 'undeployed' as const,
-        deploymentError: ''
       };
 
-      if (editEvent) {
-        const previousDefinition = {
-          date: editEvent.date ? new Date(editEvent.date).toISOString().split('T')[0] : '',
-          endDate: editEvent.endDate ? new Date(editEvent.endDate).toISOString().split('T')[0] : '',
-          tournamentType: editEvent.tournamentType || 'round_robin',
-          teamIds: (editEvent.tournamentTeamsData || []).map(team => `${team.id}:${team.name}`),
-          gameLength: Number(editEvent.gameLength || 60),
-          breakLength: Number(editEvent.breakLength || 15),
-          gamesPerTeam: Number(editEvent.gamesPerTeam || 3),
-          maxDailyGamesPerTeam: Number(editEvent.maxDailyGamesPerTeam || 3),
-          poolCount: Number((editEvent as any).poolCount || 2),
-          advancePerPool: Number((editEvent as any).advancePerPool || 2),
-          selectedFields: editEvent.selectedFields || [],
-          dailyWindows: editEvent.dailyWindows || [],
-          manualVenue: editEvent.manualVenue || '',
-        };
-        const nextDefinition = {
-          date: form.startDate,
-          endDate: form.endDate || form.startDate,
-          tournamentType: divConfig.tournamentType || 'round_robin',
-          teamIds: filteredTeams.map(team => `${team.id}:${team.name}`),
-          gameLength,
-          breakLength,
-          gamesPerTeam,
-          maxDailyGamesPerTeam,
-          poolCount: Math.max(2, configuredPoolCount || 2),
-          advancePerPool: Math.max(1, configuredAdvancePerPool || 2),
-          selectedFields,
-          dailyWindows: divConfig.dailyWindows || [],
-          manualVenue,
-        };
-        const scheduleDefinitionChanged = JSON.stringify(previousDefinition) !== JSON.stringify(nextDefinition);
-        if (scheduleDefinitionChanged && (editEvent.tournamentGames || []).length > 0) {
-          const token = await getAuthToken(firebaseAuth);
-          if (!token) throw new Error('Your session has expired. Sign in again.');
-          const response = await fetch('/api/tournaments/schedule', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-            body: JSON.stringify({ action: 'clear', teamId: activeTeam!.id, eventId: editEvent.id }),
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(payload.error || 'Unable to invalidate the previous tournament schedule.');
-        }
-        await updateDoc(doc(db, 'teams', activeTeam!.id, 'events', editEvent.id), eventPayload);
-        return true;
-      } else {
-        return await addEvent(eventPayload);
-      }
+      return eventPayload;
     };
-
-    let success = false;
     try {
-      if (editEvent) {
-        success = await deploySingleEvent(form.divisionTitle.trim() || undefined);
-      } else {
-        if (form.stagedDivisions.length > 0) {
-          for (const div of form.stagedDivisions) {
-            success = await deploySingleEvent(div);
-          }
-        } else {
-          success = await deploySingleEvent(form.divisionTitle.trim() || undefined);
-        }
-      }
-
+      if (!activeTeam) throw new Error('Select a squad before saving.');
+      const divisions = (editEvent || !form.stagedDivisions.length)
+        ? [prepareSingleEvent(form.divisionTitle.trim() || undefined)]
+        : form.stagedDivisions.map(prepareSingleEvent);
+      await lifecycle(editEvent
+        ? { action: 'configure', teamId: activeTeam.id, eventId: editEvent.id, expectedVersion: tournamentVersion(editEvent), payload: divisions[0] }
+        : { action: 'create', teamId: activeTeam.id, payload: { divisions } });
+      const success = true;
       if (success) { 
         onOpenChange(false); 
         onComplete(); 
@@ -1411,21 +1377,14 @@ function TournamentEditDialog({ event, isOpen, onOpenChange }: { event: TeamEven
   const { activeTeam, db } = useTeam();
   const firebaseAuth = useAuth();
   const [isSaving, setIsSaving] = useState(false);
+  const lifecycle = useTournamentLifecycle();
 
   const handleArchive = async () => {
     if(!db || !activeTeam) return;
     if(!window.confirm("Authorize Archival Protocol? This series will be moved to historical datastores.")) return;
     setIsSaving(true);
     try {
-      const token = await getAuthToken(firebaseAuth);
-      if (!token) throw new Error('Your session has expired. Sign in again.');
-      const response = await fetch('/api/tournaments/schedule', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ teamId: activeTeam.id, eventId: event.id }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Unable to archive this tournament.');
+      await lifecycle({ action: 'archive', teamId: activeTeam.id, eventId: event.id, expectedVersion: tournamentVersion(event), payload: {} });
       onOpenChange(false);
       window.location.reload(); // Refresh to clear selected state
       toast({ title: "Series Decommissioned", description: "Tournament moved to historical archives." });
@@ -1485,20 +1444,13 @@ function TournamentDetailView({
   const [isProcessing, setIsProcessing] = useState(false);
   const [deploymentError, setDeploymentError] = useState('');
 
+  const lifecycle = useTournamentLifecycle();
   const handleDeleteTournament = async () => {
     if (!activeTeam || isProcessing) return;
-    if (!window.confirm(`Delete ${event.title}${event.divisionTitle ? ` - ${event.divisionTitle}` : ''}? This permanently removes the tournament, schedule, registrations, and portal access.`)) return;
+    if (!window.confirm(`Delete ${event.title}${event.divisionTitle ? ` - ${event.divisionTitle}` : ''}? Only tournaments without retained registration or competition history can be deleted. Archive this tournament to retain that history.`)) return;
     setIsProcessing(true);
     try {
-      const token = await getAuthToken(firebaseAuth);
-      if (!token) throw new Error('Your session has expired. Sign in again.');
-      const response = await fetch('/api/tournaments/schedule', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ action: 'delete', teamId: activeTeam.id, eventId: event.id }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Unable to delete this tournament.');
+      await lifecycle({ action: 'delete', teamId: activeTeam.id, eventId: event.id, expectedVersion: tournamentVersion(event), payload: {} });
       toast({ title: 'Tournament Deleted', description: `${event.title} was permanently removed.` });
       onBack();
     } catch (error) {
@@ -1594,21 +1546,7 @@ function TournamentDetailView({
     };
     const updatedTeams = [...(event.tournamentTeamsData || []), newTeam];
     try {
-      if ((event.tournamentGames || []).length > 0) {
-        const token = await getAuthToken(firebaseAuth);
-        if (!token) throw new Error('Your session has expired. Sign in again.');
-        const response = await fetch('/api/tournaments/schedule', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-          body: JSON.stringify({ action: 'clear', teamId: activeTeam.id, eventId: event.id }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || 'Unable to invalidate the published schedule.');
-      }
-      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-        tournamentTeamsData: updatedTeams,
-        tournamentTeams: updatedTeams.map(t => t.name)
-      });
+      await lifecycle({ action: 'configure', teamId: activeTeam.id, eventId: event.id, expectedVersion: tournamentVersion(event), payload: { tournamentTeamsData: updatedTeams, tournamentTeams: updatedTeams.map(t => t.name) } });
       toast({ title: "Team Added", description: `${name} has been enrolled in this division.` });
     } catch (err: any) {
       toast({ title: "Failed to Add Team", description: err.message, variant: "destructive" });
@@ -1620,21 +1558,7 @@ function TournamentDetailView({
     if (!window.confirm(`Are you sure you want to remove ${teamName} from this tournament division?`)) return;
     const updatedTeams = (event.tournamentTeamsData || []).filter((t: any) => t.id !== teamId);
     try {
-      if ((event.tournamentGames || []).length > 0) {
-        const token = await getAuthToken(firebaseAuth);
-        if (!token) throw new Error('Your session has expired. Sign in again.');
-        const response = await fetch('/api/tournaments/schedule', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-          body: JSON.stringify({ action: 'clear', teamId: activeTeam.id, eventId: event.id }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || 'Unable to invalidate the published schedule.');
-      }
-      await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-        tournamentTeamsData: updatedTeams,
-        tournamentTeams: updatedTeams.map(t => t.name)
-      });
+      await lifecycle({ action: 'configure', teamId: activeTeam.id, eventId: event.id, expectedVersion: tournamentVersion(event), payload: { tournamentTeamsData: updatedTeams, tournamentTeams: updatedTeams.map(t => t.name) } });
       toast({ title: "Team Removed", description: `${teamName} has been removed.` });
     } catch (err: any) {
       toast({ title: "Failed to Remove Team", description: err.message, variant: "destructive" });
@@ -1773,9 +1697,7 @@ function TournamentDetailView({
       }
       
       if (changes > 0) {
-        await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), {
-          tournamentTeamsData: updatedTeamsData
-        });
+        await lifecycle({ action: 'configure', teamId: activeTeam.id, eventId: event.id, expectedVersion: tournamentVersion(event), payload: { tournamentTeamsData: updatedTeamsData } });
         toast({ title: "LOGOS_SYNCED", description: `${changes} team logos have been updated to match their official profiles.` });
       } else {
         toast({ title: "LOGOS_CURRENT", description: "All team logos are already up to date." });
@@ -1792,7 +1714,7 @@ function TournamentDetailView({
     const updated = (event.tournamentTeamsData || []).map((t: any, i: number) =>
       i === logoEditState.idx ? { ...t, logoUrl: logoEditState.url } : t
     );
-    await updateDoc(doc(db, 'teams', activeTeam.id, 'events', event.id), { tournamentTeamsData: updated });
+    await lifecycle({ action: 'configure', teamId: activeTeam.id, eventId: event.id, expectedVersion: tournamentVersion(event), payload: { tournamentTeamsData: updated } });
     toast({ title: 'Logo Updated', description: `Logo set for ${logoEditState.name}.` });
     setLogoEditState(null);
   };
@@ -3028,6 +2950,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
 
   const activeEvent = useMemo(() => rawEvents?.find(e => e.id === selectedEventId), [rawEvents, selectedEventId]);
 
+  const lifecycle = useTournamentLifecycle();
   const handleDuplicateTournament = async () => {
     if (!duplicatingEvent || !duplicateTitle.trim() || !activeTeam || !firebaseAuth) {
       toast({ title: "Replication Error", description: "Authorization or source data missing.", variant: "destructive" });
@@ -3035,21 +2958,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
     }
     setIsProcessing(true);
     try {
-      const token = await getAuthToken(firebaseAuth);
-      const response = await fetch('/api/teams/events/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({
-          action: 'replicate',
-          teamId: activeTeam.id,
-          eventId: duplicatingEvent.id,
-          title: duplicateTitle.trim(),
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || typeof payload.eventId !== 'string') {
-        throw new Error(payload.error || 'Unable to replicate this tournament.');
-      }
+      const payload = await lifecycle({ action: 'replicate', teamId: activeTeam.id, eventId: duplicatingEvent.id, expectedVersion: tournamentVersion(duplicatingEvent), payload: { title: duplicateTitle.trim() } });
 
       setIsDuplicateOpen(false);
       setDuplicateTitle('');

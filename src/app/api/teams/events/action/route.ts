@@ -10,7 +10,6 @@ import {
 } from '@/lib/server-request-guards';
 import { hasStaffRole } from '@/lib/staff-position';
 import { ScheduleDeploymentError, withScheduleMutationLock } from '@/lib/server-schedule-deployment';
-import { buildTournamentReplicationEvent } from '@/lib/server-tournament-replication';
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
 import { buildRecurringEventDates, shiftCalendarDate } from '@/lib/team-event-recurrence';
 import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
@@ -146,6 +145,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid squad or event.' }, { status: 400 });
     }
 
+    const submittedTournament = body.event && typeof body.event === 'object' && ((body.event as Record<string, unknown>).isTournament === true || (body.event as Record<string, unknown>).eventType === 'tournament');
+    if (submittedTournament) return NextResponse.json({ error: 'Use /api/tournaments/lifecycle with requestId and expectedVersion.' }, { status: 410 });
     const access = await teamAccess(teamId, auth.uid, auth.role);
     if (!access?.isMember) return NextResponse.json({ error: 'Squad membership required.' }, { status: 403 });
     const eventRef = needsGeneratedId
@@ -214,9 +215,11 @@ export async function POST(req: NextRequest) {
       const result = await withScheduleMutationLock(async () => {
         const source = await eventRef.get();
         if (!source.exists) return { status: 'missing' as const };
+        if (source.data()?.isTournament === true || source.data()?.eventType === 'tournament') throw new EventMutationError('Use /api/tournaments/lifecycle.', 410);
         const seriesId = typeof source.data()?.recurrenceSeriesId === 'string' ? source.data()?.recurrenceSeriesId : '';
         if (!seriesId) return { status: 'not-series' as const };
         const siblings = await access.teamRef.collection('events').where('recurrenceSeriesId', '==', seriesId).get();
+        if (siblings.docs.some(sibling => sibling.data().isTournament === true || sibling.data().eventType === 'tournament')) throw new EventMutationError('Use /api/tournaments/lifecycle.', 410);
         if (siblings.empty) return { status: 'missing' as const };
         const now = new Date().toISOString();
         const batch = adminDb.batch();
@@ -250,67 +253,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'replicate') {
-      if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
-      const title = typeof body.title === 'string' ? body.title.trim() : '';
-      if (!title || title.length > 200) {
-        return NextResponse.json({ error: 'A valid tournament title is required.' }, { status: 400 });
-      }
-      const result = await withScheduleMutationLock(async () => {
-        const source = await eventRef.get();
-        if (!source.exists || source.data()?.isTournament !== true) return { status: 'missing' as const };
-
-        const directory = adminDb.collection('tournamentRegistrationCodes');
-        let registrationCode = '';
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          const candidate = randomBytes(5).toString('hex').toUpperCase();
-          if (!(await directory.doc(candidate).get()).exists) {
-            registrationCode = candidate;
-            break;
-          }
-        }
-        if (!registrationCode) {
-          throw new EventMutationError('Unable to allocate a unique tournament code. Try again.', 503);
-        }
-
-        const newEventRef = access.teamRef.collection('events').doc();
-        const now = new Date().toISOString();
-        const replicated = buildTournamentReplicationEvent({
-          source: source.data() || {},
-          title,
-          eventId: newEventRef.id,
-          teamId,
-          actorUid: auth.uid,
-          ownerUserId: String(access.teamData.ownerUserId || auth.uid),
-          registrationCode,
-          now,
-        });
-        const interval = await assertEventAvailability(teamId, newEventRef.id, replicated);
-        const bookingRef = adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, newEventRef.id));
-        const sourceConfig = await eventRef.collection('registration').doc('team_config').get();
-        const mapping = { teamId, eventId: newEventRef.id, updatedAt: now };
-        const batch = adminDb.batch();
-        batch.set(newEventRef, replicated);
-        batch.set(directory.doc(newEventRef.id), mapping);
-        batch.set(directory.doc(registrationCode), mapping);
-        if (interval) {
-          const booking = buildTeamEventBooking({
-            bookingId: bookingRef.id,
-            teamId,
-            eventId: newEventRef.id,
-            event: replicated,
-            interval,
-            now,
-          });
-          batch.set(bookingRef, booking);
-        }
-        if (sourceConfig.exists) {
-          batch.set(newEventRef.collection('registration').doc('team_config'), sourceConfig.data() || {});
-        }
-        await batch.commit();
-        return { status: 'created' as const, eventId: newEventRef.id };
-      });
-      if (result.status === 'missing') return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 });
-      return NextResponse.json({ success: true, eventId: result.eventId });
+      return NextResponse.json({ error: 'Use /api/tournaments/lifecycle with requestId and expectedVersion.' }, { status: 410 });
     }
 
     if (action === 'create' || action === 'update' || action === 'delete') {
@@ -320,6 +263,7 @@ export async function POST(req: NextRequest) {
         if (action !== 'create' && !existing.exists) return { status: 'missing' as const };
         if (action === 'create' && existing.exists) return { status: 'conflict' as const };
         const existingData = existing.data() || {};
+        if (existingData.isTournament === true || existingData.eventType === 'tournament') throw new EventMutationError('Use /api/tournaments/lifecycle with requestId and expectedVersion.', 410);
         if (existingData.sourceType === 'league' || existingData.sourceType === 'tournament' ||
             existingData.leagueId || existingData.sourceGameId) {
           return { status: 'managed' as const };
