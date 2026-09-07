@@ -100,9 +100,18 @@ async function deriveLegacyLeagueTenant(
   const rawCandidates = league.memberTeamIds;
   if (rawCandidates != null && !Array.isArray(rawCandidates)) forbidden();
   const candidates = new Set<string>();
-  for (const candidate of rawCandidates || []) {
+  const addCandidate = (candidate: unknown) => {
     if (typeof candidate !== 'string' || !candidate.trim()) forbidden();
     candidates.add(candidate.trim());
+  };
+  for (const candidate of rawCandidates || []) addCandidate(candidate);
+
+  const teams = league.teams;
+  if (teams != null) {
+    if (typeof teams !== 'object' || Array.isArray(teams)) forbidden();
+    const prototype = Object.getPrototypeOf(teams);
+    if (prototype !== Object.prototype && prototype !== null) forbidden();
+    for (const candidate of Object.keys(teams)) addCandidate(candidate);
   }
   if (candidates.size === 0) return `profile:${creatorId}`;
   if (candidates.size !== 1) forbidden();

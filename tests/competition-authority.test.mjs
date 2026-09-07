@@ -218,3 +218,47 @@ test('legacy tenantless team League derives only from one participant team curre
     );
   }
 });
+
+test('legacy tenant resolution includes teams-map keys when memberTeamIds is empty', async () => {
+  const { db } = communicationDb({
+    'teams/creator-team': { ownerUserId: 'creator-a', planId: 'elite_league' },
+    'leagues/teams-map-only': { creatorId: 'creator-a', memberTeamIds: [], teams: { 'creator-team': { status: 'accepted' } } },
+  });
+  const authority = await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId: 'teams-map-only' }));
+  assert.equal(authority.tenantId, 'creator-team');
+});
+
+test('legacy tenant resolution rejects conflicting and malformed participant-team representations', async () => {
+  const { db } = communicationDb({
+    'users/creator-a': { role: 'league_creator', plan_type: 'free', accountStatus: 'active' },
+    'teams/creator-team': { ownerUserId: 'creator-a', planId: 'elite_league' },
+    'teams/creator-team-2': { ownerUserId: 'creator-a', planId: 'elite_league' },
+    'leagues/conflicting-representations': { creatorId: 'creator-a', memberTeamIds: ['creator-team'], teams: { 'creator-team-2': {} } },
+    'leagues/malformed-teams-map': { creatorId: 'creator-a', memberTeamIds: [], teams: 'creator-team' },
+  });
+  for (const leagueId of ['conflicting-representations', 'malformed-teams-map']) {
+    await assert.rejects(
+      () => db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId })),
+      /Forbidden/,
+    );
+  }
+});
+
+test('legacy participant representations normalize duplicate team IDs before tenant resolution', async () => {
+  const { db } = communicationDb({
+    'teams/creator-team': { ownerUserId: 'creator-a', planId: 'elite_league' },
+    'leagues/normalized-duplicates': {
+      creatorId: 'creator-a',
+      teams: { ' creator-team ': { status: 'accepted' }, 'creator-team': { status: 'accepted' } },
+    },
+    'leagues/cross-representation-duplicates': {
+      creatorId: 'creator-a',
+      memberTeamIds: [' creator-team ', 'creator-team'],
+      teams: { 'creator-team': { status: 'accepted' } },
+    },
+  });
+  const authority = await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId: 'normalized-duplicates' }));
+  assert.equal(authority.tenantId, 'creator-team');
+  const crossRepresentation = await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', leagueId: 'cross-representation-duplicates' }));
+  assert.equal(crossRepresentation.tenantId, 'creator-team');
+});
