@@ -151,6 +151,17 @@ test('all frozen Task 5 waiver case IDs are present exactly once across their sc
   }
 });
 
+test('public registration uses the canonical Firestore rules-denial status without accepting leaked fields', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  const start = audit.indexOf("const anonymousLedger=await firestore('portal-ledger-private'");
+  const end = audit.indexOf("check('portal-pii'", start);
+  assert.ok(start >= 0 && end > start, 'public registration privacy probe must exist');
+  const probe = audit.slice(start, end);
+  assert.match(probe, /anonymousLedger\.status,403/);
+  assert.match(probe, /anonymousLedger\.body\?\.error\?\.status,'PERMISSION_DENIED'/);
+  assert.match(probe, /Boolean\(anonymousLedger\.body\?\.fields\),false/);
+});
+
 test('operations evidence assigns an assertion to only its declared exact case', () => {
   const assertions = [
     { label: 'owner event create persists after reload' },
