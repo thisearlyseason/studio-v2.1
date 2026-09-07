@@ -7,7 +7,6 @@ import {
 } from '@/lib/server-request-guards';
 import {
   executeTournamentScheduleCommand,
-  mutateTournamentSchedule,
   TournamentScheduleDeploymentError,
 } from '@/lib/server-tournament-schedule-deployment';
 
@@ -34,20 +33,7 @@ export async function POST(request: NextRequest) {
     if (limited) return limited;
 
     if (['score', 'dispute'].includes(String(body.action))) {
-      const schedule = await mutateTournamentSchedule({
-        teamId: typeof body.teamId === 'string' ? body.teamId : '',
-        eventId: typeof body.eventId === 'string' ? body.eventId : '',
-        action: body.action as 'score' | 'dispute',
-        actor: { uid: auth.uid, email: auth.email, role: auth.role },
-        gameId: body.gameId,
-        score1: body.score1,
-        score2: body.score2,
-        explicitWinner: body.explicitWinner,
-        pin: body.pin,
-        notes: body.notes,
-        refereeId: body.refereeId,
-      });
-      return NextResponse.json({ success: true, schedule });
+      return NextResponse.json({ error: 'Use /api/tournaments/scoring with request and displayed versions.' }, { status: 410 });
     }
     const action = body.action === undefined || body.action === 'deploy'
       ? 'deploy'

@@ -7,7 +7,7 @@ import {
   publicLeague,
   spectatorLeague, scorekeeperLeague,
   publicRegistrationConfig,
-  publicTournament,
+  publicTournament, scorekeeperTournament, spectatorTournament, refereeTournament, isActiveTournamentPortal,
 } from '@/lib/public-portal-data';
 import { readActiveScoringLeague } from '@/lib/server-competition-scoring';
 import { ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
@@ -108,7 +108,14 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       const eventData = event.data()!;
-      const data: any = publicTournament(event.id, { ...eventData, scorekeeperConfigured: !!scoringCredential.data()?.scorekeeperCodeHash || !!eventData.scoringCode });
+      if (!isActiveTournamentPortal(teamId, team.data() || {}, eventData)) {
+        return NextResponse.json({ error: 'Tournament portal is inactive.' }, { status: 404 });
+      }
+      const purpose = req.nextUrl.searchParams.get('purpose');
+      const tournamentSource = { ...eventData, scorekeeperConfigured: !!scoringCredential.data()?.scorekeeperCodeHash || !!eventData.scoringCode };
+      let data: any = purpose === 'spectator'
+        ? spectatorTournament(event.id, tournamentSource)
+        : scorekeeperTournament(event.id, tournamentSource);
       const refereeEmail = req.nextUrl.searchParams.get('refereeEmail')?.trim().toLowerCase();
       if (refereeEmail) {
         const auth = await verifyFirebaseToken(req);
@@ -143,6 +150,7 @@ export async function GET(req: NextRequest) {
           transaction.update(event.ref, { refereePool: pool.map((candidate: any) => ({ id: String(candidate.id || '').slice(0, 180), name: String(candidate.name || '').slice(0, 160), certLevel: typeof candidate.certLevel === 'string' ? candidate.certLevel.slice(0, 120) : null, status: candidate.status === 'removed' ? 'removed' : 'active' })) });
           return profile;
         });
+        data = refereeTournament(event.id, tournamentSource, String(referee?.id || referee?.refereeId || ''));
         data.activeReferee = referee ? {
           id: referee.id,
           name: referee.name,

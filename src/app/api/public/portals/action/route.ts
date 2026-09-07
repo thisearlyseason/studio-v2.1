@@ -2,14 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { FieldPath, FieldValue, type DocumentReference, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
-import { recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
-import { credentialsMatch, isLegacyOpenPortal, validScore } from '@/lib/score-action-security';
+import { credentialsMatch } from '@/lib/score-action-security';
 import { leagueBillingOwnerUserId, permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
-import { competitionScoringInput, submitCompetitionScore, openCompetitionDispute } from '@/lib/server-competition-scoring';
+import { competitionScoringInput, submitCompetitionScore, openCompetitionDispute, openTournamentDispute, submitTournamentScore, tournamentScoringInput } from '@/lib/server-competition-scoring';
 import { ScheduleDeploymentError } from '@/lib/server-schedule-deployment';
 import {
   TournamentScheduleDeploymentError,
-  withTournamentScheduleMutationLock,
 } from '@/lib/server-tournament-schedule-deployment';
 import {
   enforceUserRateLimit,
@@ -30,23 +28,11 @@ function requestFingerprint(req: NextRequest) {
   return createHash('sha256').update(address).digest('hex').slice(0, 32);
 }
 
-function auditData(req: NextRequest, action: string, gameId: string | undefined, extra: Record<string, unknown> = {}) {
-  return {
-    action,
-    gameId: gameId || null,
-    source: 'public-scorekeeper-portal',
-    requestFingerprint: requestFingerprint(req),
-    userAgent: (req.headers.get('user-agent') || '').slice(0, 300),
-    createdAt: new Date().toISOString(),
-    ...extra,
-  };
-}
-
 function isSafeId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200 && !value.includes('/');
 }
 
-async function verifiedTournamentEvent(transaction: any, ref: DocumentReference, teamId: string, eventId: string, supplied: unknown, legacyOpen: boolean) {
+async function verifiedTournamentEvent(transaction: any, ref: DocumentReference, teamId: string, eventId: string, supplied: unknown) {
   const fresh = await transaction.get(ref);
   if (!fresh.exists || fresh.data()?.isTournament !== true || fresh.data()?.isArchived === true || fresh.data()?.is_active === false || fresh.data()?.status === 'cancelled') {
     throw new RegistrationInputError('Tournament portal is inactive.', 404);
@@ -68,8 +54,7 @@ async function verifiedTournamentEvent(transaction: any, ref: DocumentReference,
     transaction.update(ref, { credentialVersion, scorekeeperConfigured: true, scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() });
     return event;
   }
-  if (!legacyOpen) throw new RegistrationInputError('Scorekeeper access is not configured for this tournament.', 409);
-  return event;
+  throw new RegistrationInputError('Scorekeeper access is not configured for this tournament.', 409);
 }
 
 function sanitizeRegistrationAnswers(raw: Record<string, unknown>, config: Record<string, any>) {
@@ -724,57 +709,19 @@ export async function POST(req: NextRequest) {
       if (!snap.exists || !snap.data()?.isTournament) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
       const event = snap.data()!;
       if (event.isArchived === true) return NextResponse.json({ error: 'Tournament portal is inactive.' }, { status: 404 });
-      const legacyOpen = isLegacyOpenPortal(teamId, eventId);
-
       if (action === 'verify') {
-        await adminDb.runTransaction(transaction => verifiedTournamentEvent(transaction, ref, teamId, eventId, code, legacyOpen));
+        await adminDb.runTransaction(transaction => verifiedTournamentEvent(transaction, ref, teamId, eventId, code));
         return NextResponse.json({ success: true });
       }
 
       if (action === 'score') {
-        if (!gameId || !validScore(body.score1) || !validScore(body.score2)) {
-          return NextResponse.json({ error: 'A valid game and scores from 0 to 999 are required.' }, { status: 400 });
-        }
-        const result = await withTournamentScheduleMutationLock(() => adminDb.runTransaction(async transaction => {
-          const fresh = await verifiedTournamentEvent(transaction, ref, teamId, eventId, code, legacyOpen);
-          const games = [...(fresh.tournamentGames || [])];
-          const index = games.findIndex((game: any) => game.id === gameId);
-          if (index < 0) return { valid: false as const, code: 'MATCH_NOT_FOUND', message: 'Match not found.' };
-          const validation = validateBracketScoreSubmission(games, gameId, body.score1, body.score2);
-          if (!validation.valid) return validation;
-          let updatedGames;
-          try {
-            updatedGames = recordTournamentScore(games, gameId, body.score1, body.score2)
-              .map(game => game.id === gameId ? { ...game, updatedAt: new Date().toISOString() } : game);
-          } catch (error: any) {
-            return { valid: false as const, code: error.code || 'INVALID_SCORE', message: error.message || 'Score could not be posted.' };
-          }
-          transaction.update(ref, { tournamentGames: updatedGames });
-          transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'score', gameId, { score1: body.score1, score2: body.score2 }));
-          return { valid: true as const };
-        }));
-        if (!result.valid) {
-          const status = result.code === 'MATCH_NOT_FOUND' ? 404 : result.code === 'INVALID_SCORE' ? 400 : 409;
-          return NextResponse.json({ error: result.message, code: result.code }, { status });
-        }
-        return NextResponse.json({ success: true });
+        const result = await submitTournamentScore(tournamentScoringInput(body));
+        return NextResponse.json(result);
       }
 
       if (action === 'dispute') {
-        const notes = String(body.notes || '').trim().slice(0, 2000);
-        if (!gameId || !notes) return NextResponse.json({ error: 'A match and dispute details are required.' }, { status: 400 });
-        const result = await adminDb.runTransaction(async transaction => {
-          const fresh = await verifiedTournamentEvent(transaction, ref, teamId, eventId, code, legacyOpen);
-          const games = [...(fresh.tournamentGames || [])];
-          const index = games.findIndex((game: any) => game.id === gameId);
-          if (index < 0) return false;
-          games[index] = { ...games[index], isDisputed: true, disputeNotes: notes, updatedAt: new Date().toISOString() };
-          transaction.update(ref, { tournamentGames: games });
-          transaction.set(ref.collection('scoreAudit').doc(), auditData(req, 'dispute', gameId, { notes }));
-          return true;
-        });
-        if (!result) return NextResponse.json({ error: 'Match not found.' }, { status: 404 });
-        return NextResponse.json({ success: true });
+        const result = await openTournamentDispute(tournamentScoringInput(body));
+        return NextResponse.json(result);
       }
 
       if (action === 'waiver') {

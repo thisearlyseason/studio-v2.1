@@ -3,9 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { validateSchedule } from '@/lib/intelligent-scheduler';
 import {
-  BracketProgressionError,
   generateTournamentSchedule,
-  recordTournamentScore,
 } from '@/lib/scheduler-utils';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
 import { resolveCompetitionAuthority } from '@/lib/server-competition-authority';
@@ -25,20 +23,6 @@ type PreparedGame = TournamentGame & {
   location: string;
   durationMinutes: number;
   possibleTeamIds: string[];
-};
-
-export type TournamentScheduleMutationInput = {
-  teamId: string;
-  eventId: string;
-  action: 'score' | 'dispute' | 'assign-referee' | 'clear-referee' | 'seed-pools';
-  actor: Actor;
-  gameId?: unknown;
-  score1?: unknown;
-  score2?: unknown;
-  explicitWinner?: unknown;
-  pin?: unknown;
-  notes?: unknown;
-  refereeId?: unknown;
 };
 
 export type TournamentScheduleCommandInput = {
@@ -408,19 +392,6 @@ export function isAuthorizedTeamStaffFromRecords({
     'Athletic Director', 'Director of Athletics', 'Staff', 'Manager', 'Squad Leader',
     'Coach Guest', 'Team Lead', 'Platform Admin',
   ].includes(text(directMember.position, 80));
-}
-
-async function isAuthorizedTeamStaff(teamId: string, actor: Actor): Promise<boolean> {
-  const [team, directMember] = await Promise.all([
-    adminDb.collection('teams').doc(teamId).get(),
-    adminDb.collection('teams').doc(teamId).collection('members').doc(actor.uid).get(),
-  ]);
-  return isAuthorizedTeamStaffFromRecords({
-    teamId,
-    actor,
-    team: team.exists ? team.data() : null,
-    directMember: directMember.exists ? directMember.data() : null,
-  });
 }
 
 export async function withTournamentScheduleMutationLock<T>(operation: (holder: string) => Promise<T>): Promise<T> {
@@ -949,144 +920,4 @@ function sanitizeTournamentGames(games: TournamentGame[]): TournamentGame[] {
   return games.map(game => Object.fromEntries(
     Object.entries(game).filter(([, value]) => value !== undefined)
   ) as TournamentGame);
-}
-
-async function mutateTournamentScheduleUnlocked(input: TournamentScheduleMutationInput): Promise<TournamentGame[]> {
-  if (!ID_PATTERN.test(input.teamId) || !ID_PATTERN.test(input.eventId)) {
-    throw new TournamentScheduleDeploymentError('INVALID_TOURNAMENT', 'Invalid tournament identifier.');
-  }
-  if (!await isAuthorizedTeamStaff(input.teamId, input.actor)) {
-    throw new TournamentScheduleDeploymentError('FORBIDDEN', 'Only authorized team staff can update this tournament.', 403);
-  }
-  const eventRef = adminDb.collection('teams').doc(input.teamId).collection('events').doc(input.eventId);
-  return adminDb.runTransaction(async transaction => {
-    const snapshot = await transaction.get(eventRef);
-    if (!snapshot.exists || snapshot.data()?.isTournament !== true || snapshot.data()?.isArchived === true) {
-      throw new TournamentScheduleDeploymentError('TOURNAMENT_NOT_FOUND', 'Active tournament not found.', 404);
-    }
-    const event = snapshot.data() as RawEvent;
-    let games = Array.isArray(event.tournamentGames)
-      ? event.tournamentGames.map((game: TournamentGame) => ({ ...game }))
-      : [];
-    const now = new Date().toISOString();
-
-    if (input.action === 'score') {
-      const gameId = text(input.gameId, 180);
-      const gameIndex = games.findIndex(game => game.id === gameId);
-      if (gameIndex < 0) throw new TournamentScheduleDeploymentError('GAME_NOT_FOUND', 'Tournament match not found.', 404);
-      const score1 = Number(input.score1);
-      const score2 = Number(input.score2);
-      if (!Number.isInteger(score1) || !Number.isInteger(score2) || score1 < 0 || score2 < 0 || score1 > 999 || score2 > 999) {
-        throw new TournamentScheduleDeploymentError('INVALID_SCORE', 'Scores must be whole numbers between 0 and 999.');
-      }
-      const scoringCode = text(event.scoringCode, 100);
-      const actorCanBypassPin = input.actor.role === 'admin' || input.actor.role === 'superadmin';
-      if (scoringCode && text(input.pin, 100) !== scoringCode && !actorCanBypassPin) {
-        throw new TournamentScheduleDeploymentError('INVALID_SCOREKEEPER_PIN', 'Invalid scorekeeper code.', 403);
-      }
-      try {
-        const explicitWinner = input.explicitWinner === 'team1' || input.explicitWinner === 'team2'
-          ? input.explicitWinner
-          : undefined;
-        games = recordTournamentScore(games, gameId, score1, score2, explicitWinner)
-          .map(game => game.id === gameId ? { ...game, updatedAt: now } : game);
-      } catch (error) {
-        if (error instanceof BracketProgressionError) {
-          throw new TournamentScheduleDeploymentError(error.code, error.message, 409);
-        }
-        throw error;
-      }
-    } else if (input.action === 'dispute') {
-      const gameId = text(input.gameId, 180);
-      const gameIndex = games.findIndex(game => game.id === gameId);
-      if (gameIndex < 0) throw new TournamentScheduleDeploymentError('GAME_NOT_FOUND', 'Tournament match not found.', 404);
-      const notes = text(input.notes, 2_000);
-      if (!notes) throw new TournamentScheduleDeploymentError('DISPUTE_NOTES_REQUIRED', 'Dispute notes are required.');
-      games[gameIndex] = { ...games[gameIndex], isDisputed: true, disputeNotes: notes, updatedAt: now };
-    } else if (input.action === 'assign-referee') {
-      const gameId = text(input.gameId, 180);
-      const gameIndex = games.findIndex(game => game.id === gameId);
-      if (gameIndex < 0) throw new TournamentScheduleDeploymentError('GAME_NOT_FOUND', 'Tournament match not found.', 404);
-      const refereeId = text(input.refereeId, 180);
-      const referee = (Array.isArray(event.refereePool) ? event.refereePool : [])
-        .find((candidate: RawEvent) => text(candidate.id, 180) === refereeId);
-      if (refereeId && !referee) throw new TournamentScheduleDeploymentError('REFEREE_NOT_FOUND', 'Tournament referee not found.', 404);
-      if (referee) {
-        const target = games[gameIndex];
-        const targetStart = Date.parse(`${cleanDate(target.date)}T00:00:00`) + (parseTime(target.time) || 0) * 60_000;
-        const conflict = games.find((game, index) => {
-          if (index === gameIndex || game.refereeId !== refereeId || cleanDate(game.date) !== cleanDate(target.date)) return false;
-          const gameStart = Date.parse(`${cleanDate(game.date)}T00:00:00`) + (parseTime(game.time) || 0) * 60_000;
-          return Math.abs(gameStart - targetStart) < 90 * 60_000;
-        });
-        if (conflict) {
-          throw new TournamentScheduleDeploymentError('REFEREE_CONFLICT', 'The referee is already assigned to another nearby match.', 409);
-        }
-      }
-      games[gameIndex] = {
-        ...games[gameIndex],
-        refereeId: referee ? text(referee.id, 180) : undefined,
-        refereeName: referee ? text(referee.name, 160) : undefined,
-        updatedAt: now,
-      };
-    } else if (input.action === 'clear-referee') {
-      const refereeId = text(input.refereeId, 180);
-      if (!refereeId) throw new TournamentScheduleDeploymentError('REFEREE_REQUIRED', 'A referee identifier is required.');
-      games = games.map(game => game.refereeId === refereeId
-        ? { ...game, refereeId: undefined, refereeName: undefined, updatedAt: now }
-        : game);
-    } else {
-      if (event.tournamentType !== 'pool_play_knockout') {
-        throw new TournamentScheduleDeploymentError('POOL_QUALIFICATION_ONLY', 'Only pool-play tournaments can seed qualifiers.');
-      }
-      const poolGames = games.filter(game => Number.isInteger(game.pool));
-      if (poolGames.length === 0 || poolGames.some(game => !game.isCompleted)) {
-        throw new TournamentScheduleDeploymentError('POOL_PLAY_INCOMPLETE', 'Every pool match requires a final score before seeding qualifiers.', 409);
-      }
-      const teams = Array.isArray(event.tournamentTeamsData) ? event.tournamentTeamsData : [];
-      const poolIndices = [...new Set(poolGames.map(game => Number(game.pool)))].sort((left, right) => left - right);
-      const advancePerPool = positiveInteger(event.advancePerPool, 2);
-      const qualifiers = new Map<string, { id: string; name: string; logoUrl?: string }>();
-      poolIndices.forEach(poolIndex => {
-        calculateTournamentStandings(teams, games, poolIndex).slice(0, advancePerPool).forEach((team, index) => {
-          qualifiers.set(`${String.fromCharCode(65 + poolIndex)}:${index + 1}`, {
-            id: team.id,
-            name: team.name,
-            logoUrl: teams.find((candidate: RawEvent) => candidate.id === team.id)?.logoUrl,
-          });
-        });
-      });
-      let seededSlots = 0;
-      games = games.map(game => {
-        if (game.stage !== 'Knockout') return game;
-        const update: Partial<TournamentGame> = {};
-        for (const slot of ['team1', 'team2'] as const) {
-          const match = String(game[slot] || '').match(/Pool ([A-Z])\s*-\s*(\d+)(?:st|nd|rd|th)/i);
-          if (!match) continue;
-          const qualifier = qualifiers.get(`${match[1].toUpperCase()}:${Number(match[2])}`);
-          if (!qualifier) continue;
-          update[slot] = qualifier.name;
-          update[`${slot}Id` as 'team1Id' | 'team2Id'] = qualifier.id;
-          update[`${slot}LogoUrl` as 'team1LogoUrl' | 'team2LogoUrl'] = qualifier.logoUrl;
-          seededSlots++;
-        }
-        return Object.keys(update).length > 0 ? { ...game, ...update, updatedAt: now } : game;
-      });
-      if (seededSlots === 0) {
-        throw new TournamentScheduleDeploymentError('QUALIFIER_PLACEHOLDERS_MISSING', 'No pool qualifier placeholders were found.', 409);
-      }
-    }
-
-    games = sanitizeTournamentGames(games);
-    transaction.update(eventRef, {
-      tournamentGames: games,
-      scheduleUpdatedAt: now,
-      scheduleUpdatedBy: input.actor.uid,
-    });
-    return games;
-  });
-}
-
-export async function mutateTournamentSchedule(input: TournamentScheduleMutationInput): Promise<TournamentGame[]> {
-  return withTournamentScheduleMutationLock(() => mutateTournamentScheduleUnlocked(input));
 }

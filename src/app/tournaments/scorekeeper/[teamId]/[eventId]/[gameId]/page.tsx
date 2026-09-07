@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { TeamEvent, TournamentGame } from '@/components/providers/team-provider';
 import { usePublicPortal } from '@/hooks/use-public-portal';
@@ -27,8 +27,8 @@ import {
 export default function PublicScorekeeperEntryPage() {
   const { teamId, eventId, gameId } = useParams();
   const router = useRouter();
-  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
-  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent & { requiresCode?: boolean }>(portalUrl);
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&purpose=scorekeeper&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent & { requiresCode?: boolean; lifecycleVersion?: number; scheduleVersion?: number; credentialVersion?: number }>(portalUrl);
 
   const game = useMemo(() => {
     return event?.tournamentGames?.find(g => g.id === gameId);
@@ -42,6 +42,14 @@ export default function PublicScorekeeperEntryPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
   const [disputeNotes, setDisputeNotes] = useState('');
+  const requestIds = useRef(new Map<string, string>());
+  const requestIdFor = (key: string) => {
+    const prior = requestIds.current.get(key);
+    if (prior) return prior;
+    const created = crypto.randomUUID();
+    requestIds.current.set(key, created);
+    return created;
+  };
 
   // Sync score state once game data loads (useState initial value runs before data arrives)
   React.useEffect(() => {
@@ -111,7 +119,7 @@ export default function PublicScorekeeperEntryPage() {
       const sessionCode = typeof window !== 'undefined' ? sessionStorage.getItem(`scorer_verified_${eventId}`) : null;
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'tournament', action: 'score', teamId, eventId, gameId, score1: parsedScore1, score2: parsedScore2, code: pin || sessionCode || '' }),
+        body: JSON.stringify({ kind: 'tournament', action: 'score', requestId: requestIdFor(`score:${game.id}:${game.gameVersion || 0}:${parsedScore1}:${parsedScore2}:${selectedTeam}`), teamId, eventId, gameId, score1: parsedScore1, score2: parsedScore2, explicitWinner: selectedTeam === game.team1 ? 'team1' : 'team2', code: pin || sessionCode || '', expectedLifecycleVersion: event.lifecycleVersion || 0, expectedScheduleVersion: event.scheduleVersion || 0, expectedGameVersion: game.gameVersion || 0, expectedCredentialVersion: event.credentialVersion || 0 }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Score could not be posted.');
@@ -134,7 +142,7 @@ export default function PublicScorekeeperEntryPage() {
       const sessionCode = typeof window !== 'undefined' ? sessionStorage.getItem(`scorer_verified_${eventId}`) : null;
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'tournament', action: 'dispute', teamId, eventId, gameId, notes: disputeNotes, code: pin || sessionCode || '' }),
+        body: JSON.stringify({ kind: 'tournament', action: 'dispute', requestId: requestIdFor(`dispute:${game.id}:${game.gameVersion || 0}:${disputeNotes.trim()}`), teamId, eventId, gameId, notes: disputeNotes, code: pin || sessionCode || '', expectedLifecycleVersion: event.lifecycleVersion || 0, expectedScheduleVersion: event.scheduleVersion || 0, expectedGameVersion: game.gameVersion || 0, expectedCredentialVersion: event.credentialVersion || 0 }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Dispute could not be filed.');

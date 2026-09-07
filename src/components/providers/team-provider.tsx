@@ -976,11 +976,11 @@ interface TeamContextType {
   toggleRegistrationPaymentStatus: (leagueId: string, entryId: string, paid: boolean) => Promise<void>;
   respondToAssignment: (contextId: string, entryId: string, status: 'accepted' | 'declined', versions: { lifecycleVersion: number; assignmentVersion: number }) => Promise<boolean>;
   signPublicTournamentWaiver: (teamId: string, eventId: string, tournamentTeamName: string, coachName: string) => Promise<boolean>;
-  submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => Promise<void>;
+  submitMatchScore: (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin: string | undefined, versions: { lifecycleVersion: number; scheduleVersion: number; gameVersion: number; credentialVersion: number }) => Promise<void>;
   submitLeagueMatchScore: (leagueId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string, expectedGameVersion?: number) => Promise<void>;
   resolveLeagueMatchDispute: (leagueId: string, gameId: string, outcome: 'uphold' | 'correct', reason: string, expectedGameVersion: number, score1?: number, score2?: number) => Promise<void>;
   updateLeaguePin: (leagueId: string, pin: string) => Promise<void>;
-  disputeMatchScore: (teamId: string, eventId: string, gameId: string, notes: string) => Promise<void>;
+  disputeMatchScore: (teamId: string, eventId: string, gameId: string, notes: string, versions: { lifecycleVersion: number; scheduleVersion: number; gameVersion: number; credentialVersion: number }) => Promise<void>;
   disputeLeagueMatchScore: (leagueId: string, gameId: string, notes: string, expectedGameVersion?: number) => Promise<void>;
   manageSubscription: () => Promise<void>;
   resolveQuota: (selectedTeamIds: string[]) => Promise<void>;
@@ -3449,18 +3449,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [db]);
 
 
-  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin?: string) => {
+  const pendingTournamentScores = useRef(new Map<string, string>());
+  const sendTournamentScore = useCallback(async (input: Record<string, unknown>) => {
     if (!firebaseAuth) return;
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/tournaments/schedule', {
+    const key = JSON.stringify(input);
+    const requestId = pendingTournamentScores.current.get(key) || crypto.randomUUID();
+    pendingTournamentScores.current.set(key, requestId);
+    const response = await fetch('/api/tournaments/scoring', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'score', teamId, eventId, gameId, isTeam1, score1, score2, pin }),
+      body: JSON.stringify({ ...input, requestId }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Unable to submit the tournament score.');
+    pendingTournamentScores.current.delete(key);
   }, [firebaseAuth]);
+
+  const submitMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, isTeam1: boolean, score1: number, score2: number, pin: string | undefined, versions: { lifecycleVersion: number; scheduleVersion: number; gameVersion: number; credentialVersion: number }) => {
+    await sendTournamentScore({ action: 'score', teamId, eventId, gameId, score1, score2, ...versions });
+  }, [sendTournamentScore]);
   
   const pendingLeagueScores = useRef(new Map<string, Record<string, unknown>>());
   const requestLeagueScore = useCallback(async (input: Record<string, unknown>, expectedGameVersion?: number) => {
@@ -3481,18 +3490,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     await requestLeagueScore(leagueResolutionCommand({ leagueId, gameId, outcome, reason, expectedGameVersion, score1, score2 }), expectedGameVersion);
   }, [requestLeagueScore]);
 
-  const disputeMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, notes: string) => {
-    if (!firebaseAuth) return;
-    const token = await getAuthToken(firebaseAuth);
-    if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await fetch('/api/tournaments/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'dispute', teamId, eventId, gameId, notes }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Unable to dispute the tournament score.');
-  }, [firebaseAuth]);
+  const disputeMatchScore = useCallback(async (teamId: string, eventId: string, gameId: string, notes: string, versions: { lifecycleVersion: number; scheduleVersion: number; gameVersion: number; credentialVersion: number }) => {
+    await sendTournamentScore({ action: 'dispute', teamId, eventId, gameId, notes, ...versions });
+  }, [sendTournamentScore]);
   const disputeLeagueMatchScore = useCallback(async (leagueId: string, gameId: string, notes: string, expectedGameVersion?: number) => {
     await requestLeagueScore({ action: 'dispute', leagueId, gameId, notes }, expectedGameVersion);
   }, [requestLeagueScore]);

@@ -32,7 +32,7 @@ export default function PublicScorekeeperHub() {
     }
   }, [sessionKey]);
 
-  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&purpose=scorekeeper&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
   const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent & { requiresCode?: boolean; scorekeeperConfigured?: boolean }>(portalUrl);
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;

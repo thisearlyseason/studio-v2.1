@@ -1,4 +1,5 @@
 import { recalculatePublicLeagueStandings } from './public-league-scoring';
+import { calculateTournamentStandings } from './tournament-standings';
 
 const PUBLIC_PLAN_IDS = new Set([
   'team', 'elite', 'league', 'school',
@@ -18,6 +19,15 @@ export function permitsLegacyOrPaidPortals(...planIds: Array<string | null | und
   // sync. Any paid marker is authoritative when more than one plan field exists.
   if (markers.some(planId => PUBLIC_PLAN_IDS.has(planId))) return true;
   return false;
+}
+
+export function isActiveTournamentPortal(teamId: string, team: any, event: any): boolean {
+  const teamStatus = typeof team?.status === 'string' ? team.status.trim().toLowerCase() : '';
+  const entitled = permitsLegacyOrPaidPortals(team?.planId, team?.plan_type, team?.subscriptionPlanId);
+  const advancedEntitled = event?.tournamentType === 'round_robin' || team?.isPro === true;
+  return Boolean(team && event && entitled && advancedEntitled && event.isTournament === true && event.teamId === teamId &&
+    team.isArchived !== true && team.isDeleted !== true && team.is_active !== false && team.isActive !== false && teamStatus !== 'removed' && teamStatus !== 'cancelled' &&
+    event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled');
 }
 
 export function leagueBillingOwnerUserId(league: Record<string, unknown>): string {
@@ -153,7 +163,7 @@ export function publicTournament(id: string, event: any) {
     registration_cost: event.registration_cost,
     tournamentType: event.tournamentType,
     isTournament: !!event.isTournament,
-    isActive: !!event.isTournament && event.isArchived !== true,
+    isActive: !!event.isTournament && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled',
     tournamentTeams: event.tournamentTeams || [],
     tournamentTeamsData: (event.tournamentTeamsData || []).map((team: any) => ({
       id: team.id,
@@ -179,6 +189,87 @@ export function publicTournament(id: string, event: any) {
       certLevel: referee.certLevel,
     })),
   };
+}
+
+function tournamentPublicGame(game: any) {
+  return {
+    id: String(game.id || ''),
+    team1: String(game.team1 || 'TBD'),
+    team2: String(game.team2 || 'TBD'),
+    team1Id: String(game.team1Id || ''),
+    team2Id: String(game.team2Id || ''),
+    team1LogoUrl: typeof game.team1LogoUrl === 'string' ? game.team1LogoUrl : '',
+    team2LogoUrl: typeof game.team2LogoUrl === 'string' ? game.team2LogoUrl : '',
+    score1: Number(game.score1 || 0),
+    score2: Number(game.score2 || 0),
+    date: String(game.date || ''),
+    time: String(game.time || ''),
+    location: String(game.location || ''),
+    round: String(game.round || ''),
+    stage: String(game.stage || ''),
+    winnerTo: typeof game.winnerTo === 'string' ? game.winnerTo : '',
+    winnerToSlot: game.winnerToSlot === 'team1' || game.winnerToSlot === 'team2' ? game.winnerToSlot : undefined,
+    loserTo: typeof game.loserTo === 'string' ? game.loserTo : '',
+    loserToSlot: game.loserToSlot === 'team1' || game.loserToSlot === 'team2' ? game.loserToSlot : undefined,
+    pool: Number.isInteger(game.pool) ? game.pool : undefined,
+    isCompleted: game.isCompleted === true,
+    isDisputed: game.isDisputed === true,
+    isOfficial: game.isCompleted === true && game.isDisputed !== true,
+    winnerId: typeof game.winnerId === 'string' ? game.winnerId : null,
+    isResetMatch: game.isResetMatch === true,
+    isConditional: game.isConditional === true,
+  };
+}
+
+/** Minimum public Tournament result/bracket projection; Registration intentionally uses publicTournament. */
+export function spectatorTournament(id: string, event: any) {
+  const teams = (Array.isArray(event.tournamentTeamsData) ? event.tournamentTeamsData : []).map((team: any) => ({
+    id: String(team.id || ''),
+    name: String(team.name || team.teamName || ''),
+    logoUrl: String(team.logoUrl || team.teamLogoUrl || ''),
+    division: String(team.division || ''),
+  }));
+  const games = (Array.isArray(event.tournamentGames) ? event.tournamentGames : []).map(tournamentPublicGame);
+  return {
+    id,
+    teamId: String(event.teamId || ''),
+    title: String(event.title || ''),
+    sport: String(event.sport || ''),
+    date: String(event.date || ''),
+    endDate: String(event.endDate || ''),
+    startTime: String(event.startTime || ''),
+    location: String(event.location || ''),
+    division: String(event.division || ''),
+    tournamentType: String(event.tournamentType || ''),
+    tournamentTeamsData: teams,
+    tournamentGames: games,
+    standings: calculateTournamentStandings(teams, games),
+    isActive: event.isTournament === true && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled',
+  };
+}
+
+export function scorekeeperTournament(id: string, event: any) {
+  const dto = spectatorTournament(id, event);
+  const sourceGames = Array.isArray(event.tournamentGames) ? event.tournamentGames : [];
+  return {
+    ...dto,
+    lifecycleVersion: Number(event.lifecycleVersion || 0),
+    scheduleVersion: Number(event.scheduleVersion || 0),
+    credentialVersion: Number(event.credentialVersion || 0),
+    requiresCode: true,
+    scorekeeperConfigured: event.scorekeeperConfigured === true,
+    tournamentGames: dto.tournamentGames.map((game: ReturnType<typeof tournamentPublicGame>, index: number) => ({
+      ...game,
+      gameVersion: Number(sourceGames[index]?.gameVersion || 0),
+    })),
+  };
+}
+
+export function refereeTournament(id: string, event: any, refereeId: string) {
+  const assignedGames = (Array.isArray(event.tournamentGames) ? event.tournamentGames : [])
+    .filter((game: any) => game.refereeId === refereeId);
+  const dto = spectatorTournament(id, { ...event, tournamentGames: assignedGames });
+  return { ...dto, activeRefereeId: refereeId };
 }
 
 export function publicRegistrationConfig(id: string, config: any) {

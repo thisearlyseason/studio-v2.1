@@ -179,6 +179,7 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
 type TournamentLifecycleInput = { action: 'create' | 'configure' | 'replicate' | 'archive' | 'delete'; teamId: string; eventId?: string; expectedVersion?: number; payload: Record<string, unknown> };
 const tournamentVersion = (event: TeamEvent) => (event as TeamEvent & { lifecycleVersion?: number }).lifecycleVersion ?? 0;
 const tournamentScheduleVersion = (event: TeamEvent) => (event as TeamEvent & { scheduleVersion?: number }).scheduleVersion ?? 0;
+const tournamentCredentialVersion = (event: TeamEvent) => (event as TeamEvent & { credentialVersion?: number }).credentialVersion ?? 0;
 function useTournamentLifecycle() {
   const auth = useAuth();
   const pending = useRef(new Map<string, string>());
@@ -229,6 +230,27 @@ function useTournamentScheduleMutation() {
     if (!response.ok) throw new Error(result.error || 'Unable to update the Tournament schedule.');
     pending.current.delete(key);
     return result as { schedule: TournamentGame[]; refereePool: TournamentReferee[]; scheduleVersion: number; lifecycleVersion: number };
+  };
+}
+
+function useTournamentScoringMutation() {
+  const auth = useAuth();
+  const pending = useRef(new Map<string, string>());
+  return async (input: Record<string, unknown>) => {
+    const body = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
+    const key = JSON.stringify(body);
+    const requestId = pending.current.get(key) || crypto.randomUUID();
+    pending.current.set(key, requestId);
+    const token = await getAuthToken(auth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/scoring', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ ...body, requestId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Unable to update the Tournament result.');
+    pending.current.delete(key);
+    return result;
   };
 }
 
@@ -1445,6 +1467,7 @@ function TournamentDetailView({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [scoreDialogOpen, setScoreDialogOpen] = useState(false);
   const [selectedGame, setSelectedGame] = useState<TournamentGame | null>(null);
+  const [resolutionReason, setResolutionReason] = useState('');
   const [celebrationWinner, setCelebrationWinner] = useState<string | null>(null);
   const [logoEditState, setLogoEditState] = useState<{ idx: number; name: string; url: string } | null>(null);
   const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
@@ -1454,6 +1477,23 @@ function TournamentDetailView({
 
   const lifecycle = useTournamentLifecycle();
   const scheduleMutation = useTournamentScheduleMutation();
+  const scoringMutation = useTournamentScoringMutation();
+  const resolveSelectedDispute = async (resolution: 'uphold' | 'void') => {
+    if (!activeTeam || !selectedGame || !resolutionReason.trim()) return;
+    try {
+      await scoringMutation({
+        action: 'resolve-dispute', resolution, reason: resolutionReason.trim(),
+        teamId: activeTeam.id, eventId: event.id, gameId: selectedGame.id,
+        expectedLifecycleVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
+        expectedGameVersion: selectedGame.gameVersion || 0, expectedCredentialVersion: tournamentCredentialVersion(event),
+      });
+      toast({ title: resolution === 'uphold' ? 'Result Upheld' : 'Result Voided', description: 'The dispute was resolved and the bracket was refreshed.' });
+      setScoreDialogOpen(false);
+      setResolutionReason('');
+    } catch (error) {
+      toast({ title: 'Resolution Failed', description: error instanceof Error ? error.message : 'Unable to resolve the dispute.', variant: 'destructive' });
+    }
+  };
   const handleDeleteTournament = async () => {
     if (!activeTeam || isProcessing) return;
     if (!window.confirm(`Delete ${event.title}${event.divisionTitle ? ` - ${event.divisionTitle}` : ''}? Only tournaments without retained registration or competition history can be deleted. Archive this tournament to retain that history.`)) return;
@@ -2121,24 +2161,14 @@ function TournamentDetailView({
               }
 
               try {
-                if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
-                const token = await getAuthToken(firebaseAuth);
-                if (!token) throw new Error('Your session has expired. Sign in again.');
-                const response = await fetch('/api/tournaments/schedule', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-                  body: JSON.stringify({
-                    action: 'score',
-                    teamId: activeTeam.id,
-                    eventId: event.id,
-                    gameId: selectedGame.id,
-                    score1: rawScore1,
-                    score2: rawScore2,
-                    explicitWinner,
-                  }),
+                await scoringMutation({
+                  action: selectedGame.isDisputed ? 'resolve-dispute' : 'score', teamId: activeTeam.id, eventId: event.id, gameId: selectedGame.id,
+                  ...(selectedGame.isDisputed
+                    ? { resolution: 'correct', reason: resolutionReason.trim(), correctedScore: { home: rawScore1, away: rawScore2 } }
+                    : { score1: rawScore1, score2: rawScore2, explicitWinner: explicitWinner === 'team1' || explicitWinner === 'team2' ? explicitWinner : undefined }),
+                  expectedLifecycleVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
+                  expectedGameVersion: selectedGame.gameVersion || 0, expectedCredentialVersion: tournamentCredentialVersion(event),
                 });
-                const payload = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(payload.error || 'Unable to submit the tournament score.');
 
                 // 4. Championship celebration for the ultimate final
                 const rLower = (roundName || selectedGame.round || '').toLowerCase();
@@ -2181,9 +2211,19 @@ function TournamentDetailView({
                     <option value="team2" className="text-emerald-700">{selectedGame.team2} Advances</option>
                  </select>
                </div>
+              {selectedGame.isDisputed && (
+                <div className="space-y-3 rounded-2xl border-2 border-red-100 bg-red-50/50 p-4">
+                  <Label htmlFor="resolutionReason" className="text-[10px] font-black uppercase tracking-widest text-red-700">Required resolution reason</Label>
+                  <Textarea id="resolutionReason" value={resolutionReason} onChange={event => setResolutionReason(event.target.value)} maxLength={2000} required placeholder="Document the evidence reviewed and decision." />
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" disabled={!resolutionReason.trim()} onClick={() => void resolveSelectedDispute('uphold')} className="flex-1 rounded-full font-black uppercase text-[9px]">Uphold Result</Button>
+                    <Button type="button" variant="outline" disabled={!resolutionReason.trim()} onClick={() => void resolveSelectedDispute('void')} className="flex-1 rounded-full font-black uppercase text-[9px]">Void Result</Button>
+                  </div>
+                </div>
+              )}
               <DialogFooter className="gap-3 sm:gap-0">
                  <Button type="button" variant="outline" onClick={() => setScoreDialogOpen(false)} className="rounded-full h-14 px-8 border-2 font-black uppercase tracking-widest text-[10px]">Cancel</Button>
-                 <Button type="submit" className="rounded-full h-14 px-10 font-black uppercase tracking-widest text-[10px] bg-primary text-white">Commit Score</Button>
+                 <Button type="submit" disabled={selectedGame.isDisputed && !resolutionReason.trim()} className="rounded-full h-14 px-10 font-black uppercase tracking-widest text-[10px] bg-primary text-white">{selectedGame.isDisputed ? 'Correct Result' : 'Commit Score'}</Button>
               </DialogFooter>
             </form>
           )}

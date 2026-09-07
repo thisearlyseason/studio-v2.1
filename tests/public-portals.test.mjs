@@ -167,6 +167,7 @@ test('public tournament actions honor every supported team plan marker', async (
 
 test('public tournament scoring shares the deployment lock without changing league scoring', async () => {
   const source = await readFile(new URL('../src/app/api/public/portals/action/route.ts', import.meta.url), 'utf8');
+  const scoringService = await readFile(new URL('../src/lib/server-competition-scoring.ts', import.meta.url), 'utf8');
   const tournamentScoreStart = source.indexOf("      if (action === 'score')", source.indexOf("    if (kind === 'tournament')"));
   const tournamentDisputeStart = source.indexOf("      if (action === 'dispute')", tournamentScoreStart);
   const tournamentScore = source.slice(tournamentScoreStart, tournamentDisputeStart);
@@ -176,7 +177,10 @@ test('public tournament scoring shares the deployment lock without changing leag
   const leagueScore = source.slice(leagueScoreStart, leagueDisputeStart);
 
   assert.ok(tournamentScoreStart >= 0 && tournamentDisputeStart > tournamentScoreStart);
-  assert.match(tournamentScore, /withTournamentScheduleMutationLock\(\(\) => adminDb\.runTransaction/);
+  assert.match(tournamentScore, /submitTournamentScore\(tournamentScoringInput\(body\)\)/);
+  const tournamentServiceStart = scoringService.indexOf('export async function runTournamentScoringCommand');
+  const tournamentService = scoringService.slice(tournamentServiceStart);
+  assert.match(tournamentService, /withTournamentScheduleMutationLock\(holder => runCompetitionOperation/);
   assert.ok(leagueStart >= 0 && leagueDisputeStart > leagueScoreStart);
   assert.doesNotMatch(leagueScore, /withTournamentScheduleMutationLock/);
 });

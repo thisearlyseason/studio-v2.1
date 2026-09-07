@@ -310,10 +310,7 @@ test('tournament schedule mutations share and preserve the global recovery lock'
   assert.match(source, /import \{ assertScheduleMutationLock, withScheduleMutationLock \} from '@\/lib\/server-schedule-deployment'/);
   assert.match(source, /withTournamentScheduleMutationLock<[\s\S]*return withScheduleMutationLock\(operation\)/);
   assert.match(source, /await assertScheduleMutationLock\(transaction, holder\)/);
-  assert.match(
-    source,
-    /export async function mutateTournamentSchedule[\s\S]*return withTournamentScheduleMutationLock\(\(\) => mutateTournamentScheduleUnlocked\(input\)\)/
-  );
+  assert.doesNotMatch(source, /export async function mutateTournamentSchedule/);
   assert.doesNotMatch(source, /async function acquireLock|async function releaseLock/);
 });
 
@@ -332,7 +329,7 @@ test('tournament schedules, live mutations, clearing, archiving, and demo cleanu
   assert.match(page, /action: 'configure'/);
   assert.match(page, /fetch\('\/api\/tournaments\/lifecycle'/);
   assert.match(route, /executeTournamentScheduleCommand/);
-  assert.match(route, /mutateTournamentSchedule/);
+  assert.doesNotMatch(route, /mutateTournamentSchedule/);
   assert.match(route, /status: 410/);
   assert.match(route, /tournament-schedule-live-mutation/);
   assert.match(route, /isLiveMutation \? 300 : 30/);
