@@ -32,3 +32,19 @@ export function canonicalPlanId(planId: string | null | undefined): keyof typeof
 export function getPlanTeamLimit(planId: string | null | undefined): number {
   return PLAN_TEAM_LIMITS[canonicalPlanId(planId)];
 }
+
+export function isStarterExperience({
+  isPro,
+  activeTeamPlanId,
+  accountPlanId,
+  role,
+}: {
+  isPro: boolean;
+  activeTeamPlanId?: string | null;
+  accountPlanId?: string | null;
+  role?: string | null;
+}): boolean {
+  if (isPro) return false;
+  if (role === 'league_creator' && canonicalPlanId(accountPlanId) === 'league') return false;
+  return !activeTeamPlanId || activeTeamPlanId === 'starter_squad' || accountPlanId === 'free' || !accountPlanId;
+}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { hasUnresolvedSubscription } from '../src/lib/checkout-policy.ts';
-import { getPlanTeamLimit } from '../src/lib/plan-catalog.ts';
+import { getPlanTeamLimit, isStarterExperience } from '../src/lib/plan-catalog.ts';
 import { isValidFirestoreDocumentId } from '../src/lib/firestore-document-id.ts';
 import { calculateHouseholdPayments } from '../src/lib/household-payments.ts';
 import { hasStaffRole } from '../src/lib/staff-position.ts';
@@ -32,6 +32,21 @@ test('canonical plans retain one capacity across every administrative surface', 
   assert.doesNotMatch(admin, /newPlan === 'elite' \? 5/);
   assert.match(provider, /\/entitlement/);
   assert.match(homepage, /18 Pro Teams/);
+});
+
+test('a paid league creator without an active team keeps league portal access', () => {
+  assert.equal(isStarterExperience({
+    isPro: false,
+    activeTeamPlanId: null,
+    accountPlanId: 'league',
+    role: 'league_creator',
+  }), false);
+  assert.equal(isStarterExperience({
+    isPro: false,
+    activeTeamPlanId: null,
+    accountPlanId: 'free',
+    role: 'league_creator',
+  }), true);
 });
 
 test('new identities require onboarding before dashboard access', async () => {

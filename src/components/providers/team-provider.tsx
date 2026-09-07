@@ -12,6 +12,7 @@ import { hasStaffRole } from '@/lib/staff-position';
 import { registerPushDevice } from '@/lib/client-push-registration';
 import { normalizeTeamEvent } from '@/lib/team-event-normalization';
 import { dispatchTeamNotification, shouldDispatchTeamOutbound } from '@/lib/client-team-notification';
+import { isStarterExperience } from '@/lib/plan-catalog';
 
 import { 
   collection, 
@@ -1741,9 +1742,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.isPro, isSuperAdmin]);
 
   const isStarter = useMemo(() => {
-    if (isPro) return false;
-    return !activeTeam?.planId || activeTeam?.planId === 'starter_squad' || userProfile?.plan_type === 'free' || !userProfile?.plan_type;
-  }, [activeTeam?.planId, userProfile?.plan_type, isPro]);
+    return isStarterExperience({
+      isPro,
+      activeTeamPlanId: activeTeam?.planId,
+      accountPlanId: userProfile?.plan_type,
+      role: userProfile?.role,
+    });
+  }, [activeTeam?.planId, userProfile?.plan_type, userProfile?.role, isPro]);
 
   const isSchoolMode = useMemo(() => {
     return (
