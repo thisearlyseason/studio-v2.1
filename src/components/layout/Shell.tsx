@@ -631,6 +631,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
       markDemoExitPending();
+      requireDemoExitRetry();
     }
     try {
       // Anonymous demo accounts cannot own notification endpoints. The device
@@ -655,7 +656,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (isDemoLogout) {
         if (logoutCompleted) clearDemoExitPending();
         else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
-        else requireDemoExitRetry();
       }
     }
   };

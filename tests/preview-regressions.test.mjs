@@ -903,10 +903,12 @@ test('mobile Super Admin headers and newsletter sections stay inside the viewpor
 });
 
 test('household realtime listeners ignore permission errors after authentication ends', async () => {
-  const [provider, shell, layout] = await Promise.all([
+  const [provider, shell, layout, collectionHook, firebaseProvider] = await Promise.all([
     readSource('../src/components/providers/team-provider.tsx'),
     readSource('../src/components/layout/Shell.tsx'),
     readSource('../src/app/(dashboard)/layout.tsx'),
+    readSource('../src/firebase/firestore/use-collection.tsx'),
+    readSource('../src/firebase/provider.tsx'),
   ]);
   const householdListeners = provider.match(/allTeamIds\.forEach\(tid => \{[\s\S]*?unsubscribers\.push\(eu, gu\);/)?.[0] || '';
 
@@ -919,13 +921,25 @@ test('household realtime listeners ignore permission errors after authentication
     'demo logout must mark listener teardown before the server revokes the anonymous session',
   );
   assert.ok(
+    shell.indexOf('requireDemoExitRetry()') < shell.indexOf("await fetch('/api/demo/exit'"),
+    'visible demo logout must become a durable retry before cleanup can be interrupted',
+  );
+  assert.ok(
     shell.indexOf('await signOut(auth)') < shell.indexOf('clearDemoExitPending()'),
     'demo logout must retain the teardown marker until the client auth listener is stopped',
   );
   assert.match(shell, /demoCleanupRejectedBeforeMutation = response\.status === 403/);
-  assert.match(shell, /if \(logoutCompleted\) clearDemoExitPending\(\);\s+else if \(demoCleanupRejectedBeforeMutation\) cancelDemoExitPending\(\);\s+else requireDemoExitRetry\(\);/);
+  assert.match(shell, /if \(logoutCompleted\) clearDemoExitPending\(\);\s+else if \(demoCleanupRejectedBeforeMutation\) cancelDemoExitPending\(\);/);
   assert.ok(
     layout.indexOf('markDemoExitPending()') < layout.indexOf("fetch('/api/demo/exit', { method: 'POST', keepalive: true })"),
     'automatic demo expiry must pause live readers before server cleanup',
   );
+  assert.match(collectionHook, /window\.addEventListener\(DEMO_EXIT_EVENT, pauseSnapshot\)/);
+  assert.match(collectionHook, /window\.addEventListener\(DEMO_EXIT_CANCELLED_EVENT, resumeSnapshot\)/);
+  assert.match(collectionHook, /let snapshotPaused = localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);
+  assert.match(collectionHook, /if \(!snapshotPaused\) subscribeSnapshot\(\)/);
+  assert.match(collectionHook, /const pauseSnapshot = \(\) => \{\s+snapshotPaused = true;\s+unsubscribeSnapshot\?\.\(\);\s+unsubscribeSnapshot = null;/);
+  assert.match(collectionHook, /if \(!isMounted \|\| snapshotPaused\) return;/);
+  assert.match(collectionHook, /window\.removeEventListener\(DEMO_EXIT_EVENT, pauseSnapshot\)/);
+  assert.match(firebaseProvider, /if \(localStorage\.getItem\(DEMO_EXIT_RETRY_REQUIRED_KEY\) !== 'true' && sessionStorage\.getItem\(DEMO_START_KEY\)\) \{\s+cancelDemoExitPending\(\);/);
 });

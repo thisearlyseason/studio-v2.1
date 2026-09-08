@@ -174,9 +174,10 @@ test('anonymous demos survive reloads and clean up visible exits and abandoned s
   assert.match(provider, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(provider, /await signOut\(auth\)/);
   assert.match(shell, /const isDemoLogout = hasDemoBanner/);
-  assert.match(shell, /if \(isDemoLogout\) \{\s+markDemoExitPending\(\);\s+\}/);
+  assert.match(shell, /if \(isDemoLogout\) \{\s+markDemoExitPending\(\);\s+requireDemoExitRetry\(\);\s+\}/);
+  assert.ok(shell.indexOf('requireDemoExitRetry()') < shell.indexOf("await fetch('/api/demo/exit'"));
   assert.match(shell, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\);\s+if \(!response\.ok\) \{\s+demoCleanupRejectedBeforeMutation = response\.status === 403;\s+throw new Error\('Demo cleanup failed'\);\s+\}\s+\}/);
-  assert.match(shell, /finally \{\s+if \(isDemoLogout\) \{\s+if \(logoutCompleted\) clearDemoExitPending\(\);\s+else if \(demoCleanupRejectedBeforeMutation\) cancelDemoExitPending\(\);\s+else requireDemoExitRetry\(\);/);
+  assert.match(shell, /finally \{\s+if \(isDemoLogout\) \{\s+if \(logoutCompleted\) clearDemoExitPending\(\);\s+else if \(demoCleanupRejectedBeforeMutation\) cancelDemoExitPending\(\);/);
   assert.ok(shell.indexOf("await fetch('/api/demo/exit'") < shell.indexOf('await clearBrowserSession()'));
   assert.match(cleanup, /user\.providerData\.length > 0/);
   assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);

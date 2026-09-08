@@ -332,6 +332,7 @@ export default function SettingsPage() {
     let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
       markDemoExitPending();
+      requireDemoExitRetry();
     }
     try {
       if (user?.id && !isDemoLogout) {
@@ -354,7 +355,6 @@ export default function SettingsPage() {
       if (isDemoLogout) {
         if (logoutCompleted) clearDemoExitPending();
         else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
-        else requireDemoExitRetry();
       }
     }
   };

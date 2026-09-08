@@ -10,6 +10,7 @@
 import { sendEmailVerification, type Auth, type User } from 'firebase/auth';
 
 export const DEMO_EXIT_PENDING_KEY = 'squad_demo_exit_pending';
+export const DEMO_EXIT_RETRY_REQUIRED_KEY = 'squad_demo_exit_retry_required';
 export const DEMO_EXIT_EVENT = 'squad:demo-exit';
 export const DEMO_EXIT_CANCELLED_EVENT = 'squad:demo-exit-cancelled';
 export const DEMO_START_KEY = 'squad_demo_start_time';
@@ -21,6 +22,7 @@ export function markDemoExitPending(): void {
 
 export function clearDemoExitPending(): void {
   localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+  localStorage.removeItem(DEMO_EXIT_RETRY_REQUIRED_KEY);
 }
 
 export function cancelDemoExitPending(): void {
@@ -29,7 +31,7 @@ export function cancelDemoExitPending(): void {
 }
 
 export function requireDemoExitRetry(): void {
-  sessionStorage.removeItem(DEMO_START_KEY);
+  localStorage.setItem(DEMO_EXIT_RETRY_REQUIRED_KEY, 'true');
 }
 
 /** Gets the current user's Firebase ID token. Returns null if not authenticated. */

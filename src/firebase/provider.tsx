@@ -6,7 +6,7 @@ import { Firestore } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener'
-import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY } from '@/lib/client-auth';
+import { cancelDemoExitPending, clearDemoExitPending, DEMO_EXIT_PENDING_KEY, DEMO_EXIT_RETRY_REQUIRED_KEY, DEMO_START_KEY } from '@/lib/client-auth';
 
 interface FirebaseProviderProps {
   children: ReactNode;
@@ -91,13 +91,13 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       async (firebaseUser) => { // Auth state determined
         console.log("FirebaseProvider: Auth state changed. User:", firebaseUser ? `${firebaseUser.uid} (${firebaseUser.email})` : "Logged out");
         if (firebaseUser?.isAnonymous && localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true') {
-          if (sessionStorage.getItem(DEMO_START_KEY)) {
-            localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+          if (localStorage.getItem(DEMO_EXIT_RETRY_REQUIRED_KEY) !== 'true' && sessionStorage.getItem(DEMO_START_KEY)) {
+            cancelDemoExitPending();
           } else {
             try {
               await fetch('/api/demo/exit', { method: 'POST', keepalive: true }).catch(() => undefined);
               await signOut(auth);
-              localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+              clearDemoExitPending();
             } catch (error) {
               console.error('FirebaseProvider: demo sign-out failed:', error);
             }
@@ -106,7 +106,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           }
         }
         if (firebaseUser && !firebaseUser.isAnonymous) {
-          localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+          clearDemoExitPending();
         }
         if (!firebaseUser) {
           // If we log out, we must ensure any stale demo locks or session pointers are purged

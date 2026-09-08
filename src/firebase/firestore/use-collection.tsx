@@ -12,6 +12,7 @@ import {
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { DEMO_EXIT_CANCELLED_EVENT, DEMO_EXIT_EVENT, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
 
 /** Utility type to add an 'id' field to a given type T. */
 export type WithId<T> = T & { id: string };
@@ -57,6 +58,7 @@ export function useCollection<T = any>(
 
     const auth = getAuth();
     let unsubscribeSnapshot: (() => void) | null = null;
+    let snapshotPaused = localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true';
 
     // 1. Path Extraction for Contextual Errors
     let path: string = '';
@@ -87,10 +89,12 @@ export function useCollection<T = any>(
     setIsLoading(true);
     setError(null);
 
-    unsubscribeSnapshot = onSnapshot(
-      memoizedTargetRefOrQuery,
+    const subscribeSnapshot = () => {
+      if (!isMounted || unsubscribeSnapshot) return;
+      unsubscribeSnapshot = onSnapshot(
+        memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
-        if (!isMounted) return;
+        if (!isMounted || snapshotPaused) return;
         const results: ResultItemType[] = [];
         for (const doc of snapshot.docs) {
           const sourceTeamId = doc.ref.parent.id === 'groupChats'
@@ -107,7 +111,7 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        if (!isMounted) return;
+        if (!isMounted || snapshotPaused) return;
         
         // 1. SDK Internal Assertion Crashes (ca9, b815 and similar)
         // These are SDK bugs that occur during rapid updates or persistence mismatches.
@@ -167,11 +171,27 @@ export function useCollection<T = any>(
         }
         setData(null);
         setIsLoading(false);
-      }
-    );
+        }
+      );
+    };
+    const pauseSnapshot = () => {
+      snapshotPaused = true;
+      unsubscribeSnapshot?.();
+      unsubscribeSnapshot = null;
+    };
+    const resumeSnapshot = () => {
+      snapshotPaused = false;
+      subscribeSnapshot();
+    };
+
+    window.addEventListener(DEMO_EXIT_EVENT, pauseSnapshot);
+    window.addEventListener(DEMO_EXIT_CANCELLED_EVENT, resumeSnapshot);
+    if (!snapshotPaused) subscribeSnapshot();
 
     return () => {
       isMounted = false;
+      window.removeEventListener(DEMO_EXIT_EVENT, pauseSnapshot);
+      window.removeEventListener(DEMO_EXIT_CANCELLED_EVENT, resumeSnapshot);
       try {
         if (unsubscribeSnapshot) unsubscribeSnapshot();
       } catch (e: any) {
