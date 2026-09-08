@@ -79,7 +79,7 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
 import { deletePushDevice, registerPushDevice } from '@/lib/client-push-registration';
-import { clearBrowserSession } from '@/lib/client-auth';
+import { clearBrowserSession, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
 import { isStaffPosition } from '@/lib/staff-position';
 import { canManageActiveTeamModules } from '@/lib/team-settings-authority';
 import {
@@ -327,15 +327,27 @@ export default function SettingsPage() {
   };
 
   const handleLogout = async () => {
+    const isDemoLogout = auth.currentUser?.isAnonymous === true || user?.isDemo === true;
+    if (isDemoLogout) {
+      localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
+    }
     try {
-      if (user?.id) {
+      if (user?.id && !isDemoLogout) {
         await deletePushDevice(user.id);
+      }
+      if (isDemoLogout) {
+        const response = await fetch('/api/demo/exit', { method: 'POST' });
+        if (!response.ok) throw new Error('Demo cleanup failed');
       }
       await clearBrowserSession();
       await signOut(auth);
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
+    } finally {
+      if (isDemoLogout) {
+        localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+      }
     }
   };
 
