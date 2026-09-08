@@ -39,6 +39,16 @@ export function youthInviteCanStartRotation(invite: Record<string, unknown>): bo
   return invite.deliveryStatus !== 'pending';
 }
 
+export function youthInviteCanResumeDelivery(
+  invite: Record<string, unknown>,
+  request: { childId: string; parentId: string; email: string },
+): boolean {
+  return invite.deliveryStatus === 'pending' &&
+    invite.childId === request.childId &&
+    invite.parentId === request.parentId &&
+    invite.email === request.email;
+}
+
 export function canRedeemYouthInvite(player: Record<string, unknown>, token: string): boolean {
   return player.inviteToken === token && player.hasLogin !== true &&
     !(typeof player.userId === 'string' && player.userId);

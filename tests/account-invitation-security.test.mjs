@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   canRedeemYouthInvite,
+  youthInviteCanResumeDelivery,
   youthInviteCanStartRotation,
   youthInviteRollbackPlan,
 } from '../src/lib/youth-invite-rotation.ts';
@@ -110,4 +111,25 @@ test('a pending delivery locks rotation and is never resurrected as rollback sta
   assert.match(revokeSection, /adminDb\.runTransaction/);
   assert.match(route, /deliveryStatus: 'pending'/);
   assert.match(route, /deliveryStatus: 'delivered'/);
+});
+
+test('a same-recipient retry can resume a stranded pending provider delivery', () => {
+  const pending = {
+    deliveryStatus: 'pending',
+    childId: 'child-a',
+    parentId: 'parent-a',
+    email: 'athlete@example.test',
+  };
+  assert.equal(youthInviteCanResumeDelivery(pending, {
+    childId: 'child-a', parentId: 'parent-a', email: 'athlete@example.test',
+  }), true);
+  assert.equal(youthInviteCanResumeDelivery(pending, {
+    childId: 'child-a', parentId: 'parent-a', email: 'other@example.test',
+  }), false);
+});
+
+test('ambiguous provider transport failures retain the resumable token', async () => {
+  const route = await readFile(new URL('../src/app/api/invites/youth/route.ts', import.meta.url), 'utf8');
+  assert.match(route, /delivery status is unknown\. Retry to confirm delivery\./);
+  assert.match(route, /if \(!rotation\.resumed\) \{[\s\S]*?rollbackYouthInviteDelivery/);
 });

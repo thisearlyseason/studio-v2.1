@@ -10,6 +10,7 @@ import {
   canRedeemYouthInvite,
   INVITE_PLAYER_FIELDS,
   youthInviteCanStartRotation,
+  youthInviteCanResumeDelivery,
   youthInviteRollbackPlan,
   type YouthInvitePlayerState,
 } from '@/lib/youth-invite-rotation';
@@ -31,7 +32,7 @@ function cleanChildId(value: unknown): string | null {
 }
 
 function inviteIsUsable(data: Record<string, any>): boolean {
-  if (data.used === true || data.deliveryStatus === 'pending' || typeof data.expiresAt !== 'string') return false;
+  if (data.used === true || typeof data.expiresAt !== 'string') return false;
   const expiry = new Date(data.expiresAt).getTime();
   return Number.isFinite(expiry) && expiry > Date.now();
 }
@@ -58,6 +59,7 @@ async function markYouthInviteDelivered(
       deliveryStatus: 'delivered',
       deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
       previousToken: admin.firestore.FieldValue.delete(),
+      rollbackPlayerState: admin.firestore.FieldValue.delete(),
     });
     if (previousInviteRef) transaction.delete(previousInviteRef);
     return true;
@@ -289,11 +291,11 @@ export async function POST(req: NextRequest) {
     }
 
     const authorizedMemberships = await findAuthorizedMemberships(childId, auth.uid);
-    const token = randomBytes(24).toString('hex');
+    const candidateToken = randomBytes(24).toString('hex');
     const sentAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + INVITE_LIFETIME_MS).toISOString();
-    const inviteRef = adminDb.collection('invites').doc(token);
-    const previousState = await adminDb.runTransaction(async transaction => {
+    const candidateExpiresAt = new Date(Date.now() + INVITE_LIFETIME_MS).toISOString();
+    const candidateInviteRef = adminDb.collection('invites').doc(candidateToken);
+    const rotation = await adminDb.runTransaction(async transaction => {
       const freshPlayerSnapshot = await transaction.get(playerRef);
       const freshPlayer = freshPlayerSnapshot.data() || {};
       if (
@@ -311,16 +313,43 @@ export async function POST(req: NextRequest) {
       const previousInviteRef = previousToken ? adminDb.collection('invites').doc(previousToken) : null;
       const previousInviteSnapshot = previousInviteRef ? await transaction.get(previousInviteRef) : null;
       const previousInviteData = previousInviteSnapshot?.data() || null;
+      if (previousInviteData && !youthInviteCanStartRotation(previousInviteData)) {
+        if (!youthInviteCanResumeDelivery(previousInviteData, {
+          childId,
+          parentId: freshPlayer.parentId,
+          email,
+        })) {
+          throw new RequestBodyError('An invitation delivery is already in progress.', 409);
+        }
+        const retainedToken = typeof previousInviteData.previousToken === 'string' &&
+          TOKEN_PATTERN.test(previousInviteData.previousToken)
+          ? previousInviteData.previousToken
+          : null;
+        const retainedInviteRef = retainedToken ? adminDb.collection('invites').doc(retainedToken) : null;
+        const retainedInviteSnapshot = retainedInviteRef ? await transaction.get(retainedInviteRef) : null;
+        const retainedInviteData = retainedInviteSnapshot?.data() || null;
+        const rollbackPlayerState = previousInviteData.rollbackPlayerState;
+        return {
+          token: previousToken!,
+          expiresAt: previousInviteData.expiresAt as string,
+          inviteRef: previousInviteRef!,
+          previousInviteRef: retainedInviteRef,
+          previousInvite: retainedInviteSnapshot?.exists && retainedInviteData && inviteIsUsable(retainedInviteData)
+            ? retainedInviteData
+            : null,
+          previousPlayer: rollbackPlayerState && typeof rollbackPlayerState === 'object'
+            ? rollbackPlayerState as YouthInvitePlayerState
+            : {},
+          resumed: true,
+        };
+      }
+
       const previousInvite = previousInviteSnapshot?.exists && previousInviteData && inviteIsUsable(previousInviteData)
         ? previousInviteData
         : null;
 
-      if (previousInviteData && !youthInviteCanStartRotation(previousInviteData)) {
-        throw new RequestBodyError('An invitation delivery is already in progress.', 409);
-      }
-
-      transaction.create(inviteRef, {
-        token,
+      transaction.create(candidateInviteRef, {
+        token: candidateToken,
         childId,
         childFirstName: typeof freshPlayer.firstName === 'string' ? freshPlayer.firstName : 'Athlete',
         childLastName: typeof freshPlayer.lastName === 'string' ? freshPlayer.lastName : '',
@@ -328,20 +357,30 @@ export async function POST(req: NextRequest) {
         createdBy: auth.uid,
         email,
         authorizedMemberships,
-        expiresAt,
+        expiresAt: candidateExpiresAt,
         used: false,
         deliveryStatus: 'pending',
         ...(previousInvite ? { previousToken } : {}),
+        rollbackPlayerState: previousPlayer,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       transaction.update(playerRef, {
         pendingInviteEmail: email,
-        inviteToken: token,
+        inviteToken: candidateToken,
         inviteSentAt: sentAt,
-        inviteExpiresAt: expiresAt,
+        inviteExpiresAt: candidateExpiresAt,
       });
-      return { previousInviteRef, previousInvite, previousPlayer };
+      return {
+        token: candidateToken,
+        expiresAt: candidateExpiresAt,
+        inviteRef: candidateInviteRef,
+        previousInviteRef,
+        previousInvite,
+        previousPlayer,
+        resumed: false,
+      };
     });
+    const { token, expiresAt, inviteRef } = rotation;
 
     const childName = [player.firstName, player.lastName]
       .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
@@ -354,24 +393,34 @@ export async function POST(req: NextRequest) {
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.thesquad.pro').replace(/\/$/, '');
     const invitationLink = `${appUrl}/signup/youth?token=${encodeURIComponent(token)}`;
     const invitation = youthInvitationEmail({ childName, guardianName, invitationLink, expiresAt });
+    let deliveryResult;
     try {
-      const { data, error } = await getResend().emails.send({
+      deliveryResult = await getResend().emails.send({
         from: FROM,
         to: [email],
         subject: invitation.subject,
         html: invitation.html,
       });
-      if (error || !data?.id) throw new Error('Resend did not accept the invitation.');
     } catch (deliveryError) {
-      await rollbackYouthInviteDelivery(
-        inviteRef,
-        playerRef,
-        token,
-        previousState.previousInviteRef,
-        previousState.previousInvite,
-        previousState.previousPlayer,
-      );
-      console.error('[invites/youth POST] Email delivery failed:', deliveryError);
+      // A transport exception is ambiguous: the provider may have accepted the
+      // message before the connection failed. Keep the same pending token so a
+      // same-recipient retry can resend/finalize it and an already-delivered
+      // link remains redeemable.
+      console.error('[invites/youth POST] Email delivery status unknown:', deliveryError);
+      throw new RequestBodyError('Invitation delivery status is unknown. Retry to confirm delivery.', 503);
+    }
+    if (deliveryResult.error || !deliveryResult.data?.id) {
+      if (!rotation.resumed) {
+        await rollbackYouthInviteDelivery(
+          inviteRef,
+          playerRef,
+          token,
+          rotation.previousInviteRef,
+          rotation.previousInvite,
+          rotation.previousPlayer,
+        );
+      }
+      console.error('[invites/youth POST] Email delivery rejected:', deliveryResult.error);
       throw new RequestBodyError('Invitation email delivery failed.', 502);
     }
 
@@ -379,7 +428,7 @@ export async function POST(req: NextRequest) {
       inviteRef,
       playerRef,
       token,
-      previousState.previousInviteRef,
+      rotation.previousInviteRef,
     );
     if (!delivered) {
       throw new RequestBodyError('The invitation was revoked before delivery completed.', 409);
@@ -455,6 +504,12 @@ export async function PUT(req: NextRequest) {
       ) {
         throw new Error('Invitation data does not match the child profile.');
       }
+
+      const retainedToken = typeof freshInvite.previousToken === 'string' && TOKEN_PATTERN.test(freshInvite.previousToken)
+        ? freshInvite.previousToken
+        : null;
+      const retainedInviteRef = retainedToken ? adminDb.collection('invites').doc(retainedToken) : null;
+      const retainedInviteSnapshot = retainedInviteRef ? await transaction.get(retainedInviteRef) : null;
 
       const boundMemberships = await Promise.all(authorizedMemberships.map(async binding => {
         const memberRef = adminDb
@@ -554,6 +609,13 @@ export async function PUT(req: NextRequest) {
         );
       }
       transaction.delete(inviteRef);
+      if (
+        retainedInviteRef &&
+        retainedInviteSnapshot?.data()?.childId === freshInvite.childId &&
+        retainedInviteSnapshot?.data()?.parentId === freshInvite.parentId
+      ) {
+        transaction.delete(retainedInviteRef);
+      }
     });
 
     return NextResponse.json({
