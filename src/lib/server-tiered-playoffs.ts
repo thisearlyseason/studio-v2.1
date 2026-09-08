@@ -7,10 +7,11 @@ import { calculateTieredStandings, resolveTieredRanking } from '@/lib/tiered-pla
 import { allocateTieredDivisions, applyTieredSeedOverride, resetTieredSeedOverrides, tieredStandingsFingerprint } from '@/lib/tiered-playoffs/seeding';
 import { generateTieredDivisionBracket, scheduleTieredPlayoffBrackets, validateTieredBrackets } from '@/lib/tiered-playoffs/brackets';
 import { validateTieredPlayoffsConfig, type TieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
+import { buildTieredDivisionDefinitions } from '@/lib/tiered-playoffs/config';
 import { recordTournamentScore } from '@/lib/scheduler-utils';
 
 const ID = /^[A-Za-z0-9_-]{1,200}$/;
-const ACTIONS = new Set(['preview-seeding', 'apply-seed-override', 'reset-seeding', 'lock-seeding', 'reopen-seeding', 'generate-brackets', 'publish-playoffs', 'withdraw-team', 'disqualify-team']);
+const ACTIONS = new Set(['configure-divisions', 'preview-seeding', 'apply-seed-override', 'reset-seeding', 'lock-seeding', 'reopen-seeding', 'generate-brackets', 'publish-playoffs', 'withdraw-team', 'disqualify-team']);
 
 export class TieredPlayoffsCommandError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400) {
@@ -49,7 +50,7 @@ function currentEvent(source: DocumentData, input: TieredPlayoffsCommandInput): 
   }
   const teams = Array.isArray(source.tournamentTeamsData) ? source.tournamentTeamsData : [];
   const eligible = teams.filter((team: DocumentData) => team.eligibleForPlayoffs !== false && !['withdrawn', 'disqualified'].includes(String(team.tieredStatus || '')));
-  const validation = validateTieredPlayoffsConfig(source.tieredPlayoffs, eligible.length);
+  const validation = validateTieredPlayoffsConfig(source.tieredPlayoffs, eligible.length, input.action === 'configure-divisions' ? 'preliminary' : 'playoffs');
   if (!validation.valid) fail('INVALID_TIERED_CONFIGURATION', validation.errors[0] || 'Tiered Playoffs configuration is invalid.');
   return source.tieredPlayoffs as TieredPlayoffsConfig;
 }
@@ -122,7 +123,39 @@ export async function executeTieredPlayoffsCommand(input: TieredPlayoffsCommandI
     let nextTeams: DocumentData[] | null = null;
     let result: Record<string, unknown> = {};
 
-    if (input.action === 'preview-seeding') {
+    if (input.action === 'configure-divisions') {
+      if (Object.keys(input.payload).some(key => !['sizing', 'divisionNames', 'divisionSizes', 'avoidPreliminaryRematches'].includes(key))) {
+        fail('UNSUPPORTED_PAYLOAD', 'Unsupported playoff division field.');
+      }
+      if (config.seeding.status !== 'pending' || config.playoffs.status !== 'pending' || nextGames.some((game: DocumentData) => game.phase === 'playoff')) {
+        fail('PLAYOFF_STATE_CONFLICT', 'Playoff divisions can only be configured before seeding or bracket generation.', 409);
+      }
+      requirePreliminaryResults(source);
+      const sizing = input.payload.sizing;
+      const divisionNames = input.payload.divisionNames;
+      const divisionSizes = input.payload.divisionSizes;
+      if (!['automatic', 'custom'].includes(String(sizing)) || !Array.isArray(divisionNames) || divisionNames.some(name => typeof name !== 'string') ||
+        (divisionSizes !== undefined && (!Array.isArray(divisionSizes) || divisionSizes.some(size => !Number.isInteger(size))))) {
+        fail('INVALID_DIVISION_CONFIGURATION', 'Valid playoff division names and sizing are required.');
+      }
+      try {
+        nextConfig.divisions = {
+          sizing: sizing as 'automatic' | 'custom',
+          definitions: buildTieredDivisionDefinitions({
+            teamCount: eligibleTeams(source).length,
+            sizing: sizing as 'automatic' | 'custom',
+            divisionNames: divisionNames as string[],
+            divisionSizes: divisionSizes as number[] | undefined,
+          }),
+          avoidPreliminaryRematches: input.payload.avoidPreliminaryRematches === true,
+        };
+      } catch (error) {
+        fail('INVALID_DIVISION_CONFIGURATION', error instanceof Error ? error.message : 'Invalid playoff division configuration.');
+      }
+      const validation = validateTieredPlayoffsConfig(nextConfig, eligibleTeams(source).length, 'playoffs');
+      if (!validation.valid) fail('INVALID_DIVISION_CONFIGURATION', validation.errors[0] || 'Invalid playoff division configuration.');
+      result = { divisions: nextConfig.divisions.definitions };
+    } else if (input.action === 'preview-seeding') {
       if (Object.keys(input.payload).length) fail('UNSUPPORTED_PAYLOAD', 'Seeding preview does not accept additional fields.');
       if (config.playoffs.status !== 'pending' || config.seeding.status === 'locked') fail('SEEDING_STATE_CONFLICT', 'Locked or generated playoff placement cannot be recalculated.', 409);
       const preliminary = requirePreliminaryResults(source);

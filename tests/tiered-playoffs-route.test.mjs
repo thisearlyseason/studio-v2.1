@@ -38,6 +38,16 @@ const command = (action, expectedVersion, payload = {}, requestId = `tiered-${ac
   action, requestId, teamId: 'team-a', eventId: 'cup', expectedVersion, expectedScheduleVersion: 1, payload,
 });
 
+function divisionlessSeed(gameChanges = {}) {
+  const value = structuredClone(seed);
+  value['teams/team-a/events/cup'].tieredPlayoffs.divisions = {
+    sizing: 'automatic', definitions: [], avoidPreliminaryRematches: false,
+  };
+  value['teams/team-a/events/cup'].tournamentGames = value['teams/team-a/events/cup'].tournamentGames
+    .map(item => ({ ...item, ...gameChanges }));
+  return value;
+}
+
 async function call(db, body, uid = 'owner') {
   const app = await loadCommunicationRoute('../../src/app/api/tournaments/tiered-playoffs/route.ts', db, { uid });
   try {
@@ -62,6 +72,33 @@ test('organizer previews, locks, generates, and publishes independent Tiered bra
   assert.deepEqual([...new Set(generated.tournamentGames.filter(item => item.phase === 'playoff').map(item => item.playoffDivisionId))].sort(), ['a', 'b']);
   assert.equal((await call(db, command('publish-playoffs', 4))).status, 200);
   assert.equal(records.get('teams/team-a/events/cup').tieredPlayoffs.playoffs.status, 'published');
+});
+
+test('organizer configures playoff divisions only after every preliminary result is complete', async () => {
+  const { db, records } = communicationDb(divisionlessSeed(), { serializeTransactions: true });
+  const result = await call(db, command('configure-divisions', 1, {
+    sizing: 'automatic', divisionNames: ['Championship', 'Consolation'], avoidPreliminaryRematches: true,
+  }));
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  const stored = records.get('teams/team-a/events/cup').tieredPlayoffs;
+  assert.deepEqual(stored.divisions.definitions, [
+    { id: 'tier_1', name: 'Championship', size: 2 },
+    { id: 'tier_2', name: 'Consolation', size: 2 },
+  ]);
+  assert.equal(stored.divisions.avoidPreliminaryRematches, true);
+  assert.equal(stored.seeding.status, 'pending');
+});
+
+test('division configuration is blocked before preliminary completion and rejects incomplete custom sizing', async () => {
+  const incomplete = communicationDb(divisionlessSeed({ isCompleted: false }));
+  assert.equal((await call(incomplete.db, command('configure-divisions', 1, {
+    sizing: 'automatic', divisionNames: ['A', 'B'], avoidPreliminaryRematches: false,
+  }))).status, 409);
+
+  const invalid = communicationDb(divisionlessSeed());
+  assert.equal((await call(invalid.db, command('configure-divisions', 1, {
+    sizing: 'custom', divisionNames: ['A', 'B'], divisionSizes: [2, 1], avoidPreliminaryRematches: false,
+  }))).status, 400);
 });
 
 test('Tiered commands are replay safe and reject non-organizers, cross-tenant IDs, and stale versions', async () => {
