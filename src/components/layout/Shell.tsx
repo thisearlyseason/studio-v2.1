@@ -114,7 +114,7 @@ import { signOut } from 'firebase/auth';
 import { useAuth } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
-import { clearBrowserSession } from '@/lib/client-auth';
+import { clearBrowserSession, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import {
@@ -625,8 +625,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   if (!activeTeam && !user) return null;
 
   const handleLogout = async () => {
+    const isDemoLogout = hasDemoBanner;
+    if (isDemoLogout) {
+      localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
+    }
     try {
-      if (hasDemoBanner) {
+      if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
         if (!response.ok) throw new Error('Demo cleanup failed');
       }
@@ -635,6 +639,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
+    } finally {
+      if (isDemoLogout) {
+        localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+      }
     }
   };
 

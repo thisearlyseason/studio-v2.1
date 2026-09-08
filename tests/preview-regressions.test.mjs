@@ -898,10 +898,22 @@ test('mobile Super Admin headers and newsletter sections stay inside the viewpor
 });
 
 test('household realtime listeners ignore permission errors after authentication ends', async () => {
-  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const [provider, shell] = await Promise.all([
+    readSource('../src/components/providers/team-provider.tsx'),
+    readSource('../src/components/layout/Shell.tsx'),
+  ]);
   const householdListeners = provider.match(/allTeamIds\.forEach\(tid => \{[\s\S]*?unsubscribers\.push\(eu, gu\);/)?.[0] || '';
 
   assert.match(householdListeners, /if \(!firebaseAuth\?\.currentUser\) return;/);
+  assert.match(householdListeners, /localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);
   assert.match(householdListeners, /Event Sync Error:/);
   assert.match(householdListeners, /Game Sync Error:/);
+  assert.ok(
+    shell.indexOf("localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true')") < shell.indexOf("await fetch('/api/demo/exit'"),
+    'demo logout must mark listener teardown before the server revokes the anonymous session',
+  );
+  assert.ok(
+    shell.indexOf('await signOut(auth)') < shell.indexOf('localStorage.removeItem(DEMO_EXIT_PENDING_KEY)'),
+    'demo logout must retain the teardown marker until the client auth listener is stopped',
+  );
 });
