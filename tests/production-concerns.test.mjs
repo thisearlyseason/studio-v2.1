@@ -191,14 +191,15 @@ test('every visible logout unregisters push while the user is still authenticate
     source('../src/lib/client-push-registration.ts'),
   ]);
 
-  for (const logoutSurface of [settings]) {
-    const logout = logoutSurface.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
-    assert.match(logoutSurface, /import \{ deletePushDevice/);
-    assert.match(logout, /if \(user\?\.id\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
-    assert.ok(logout.indexOf('await deletePushDevice(user.id)') < logout.indexOf('await clearBrowserSession()'));
-    assert.ok(logout.indexOf('await deletePushDevice(user.id)') < logout.indexOf('await signOut(auth)'));
-    assert.doesNotMatch(logout, /deletePushDevice\(user\.id\)\.catch/);
-  }
+  const settingsLogout = settings.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.match(settings, /import \{ deletePushDevice/);
+  assert.match(settingsLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true \|\| user\?\.isDemo === true/);
+  assert.match(settingsLogout, /if \(user\?\.id && !isDemoLogout\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
+  assert.match(settingsLogout, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\)/);
+  assert.ok(settingsLogout.indexOf('await deletePushDevice(user.id)') < settingsLogout.indexOf('await clearBrowserSession()'));
+  assert.ok(settingsLogout.indexOf("await fetch('/api/demo/exit'") < settingsLogout.indexOf('await clearBrowserSession()'));
+  assert.ok(settingsLogout.indexOf('await clearBrowserSession()') < settingsLogout.indexOf('await signOut(auth)'));
+  assert.doesNotMatch(settingsLogout, /deletePushDevice\(user\.id\)\.catch/);
   const shellLogout = shell.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   assert.match(shellLogout, /if \(user\?\.id && !isDemoLogout\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
   assert.ok(shellLogout.indexOf('await deletePushDevice(user.id)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
