@@ -235,7 +235,9 @@ test('demo recruiting profiles stay private except for the public scout fixture'
   const source = await readSource('../src/lib/db-seeder.ts');
 
   assert.match(source, /recruitingProfileEnabled: m\.name === 'Alex Rivera'/);
+  assert.match(source, /batch\.set\(doc\(db, 'teams', teamId, 'members', m\.id\), clean\(\{[\s\S]{0,260}recruitingProfileEnabled: m\.name === 'Alex Rivera'/);
   assert.match(source, /status: 'active'/);
+  assert.match(source, /profile: \{[\s\S]{0,500}height: '5 ft 11 in',[\s\S]{0,100}weight: 170/);
   assert.match(source, /batch\.set\(doc\(db, 'players', video\.playerId, 'recruitingProfile', 'profile'\), clean\(video\.profile\)\)/);
   assert.match(source, /batch\.set\(doc\(db, 'players', video\.playerId, 'recruitingProfile', 'metrics'\), clean\(video\.metrics\)\)/);
   assert.match(source, /if \(m\.name === 'Alex Rivera'\)[\s\S]{0,1800}isPublic: true/);

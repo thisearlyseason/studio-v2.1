@@ -969,7 +969,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         // Seed Roster Members & Player Profiles
         data.members.forEach(m => {
-            batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({ ...m, teamId, joinedAt: now, isDemo: true }));
+            batch.set(doc(db, 'teams', teamId, 'members', m.id), clean({
+                ...m,
+                teamId,
+                joinedAt: now,
+                isDemo: true,
+                recruitingProfileEnabled: m.name === 'Alex Rivera',
+            }));
             
             // For youth teams, seed the actual Player Profile for "verified" feeling
             if (teamType === 'youth' || teamType === 'school_squad') {
@@ -1012,6 +1018,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                         school: (m as any).school,
                         teamName: name,
                         photoURL: m.avatar,
+                        height: '5 ft 11 in',
+                        weight: 170,
                         bio: 'Driven student-athlete and team leader pursuing the next competitive opportunity.',
                         isDemo: true,
                         updatedAt: now,
