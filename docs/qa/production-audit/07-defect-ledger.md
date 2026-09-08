@@ -4,6 +4,19 @@
 **Environment:** local development plus isolated Firebase preview  
 **Status:** Phase 2 findings followed up through 2026-09-08. Every recorded implementation defect is repaired and exact-environment verified at its required boundary; BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
+## BUG-057 — Parent demo redirects before rich family seeding completes
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Parent demo — Family Hub initialization |
+| Reproduction | On exact production `d754fb20`, opening Parent Demo consistently reached `/family` with `Managing 0 Players`, zero active teams, and an empty family schedule. `GET /api/family/teams` returned HTTP 200 with `{"teams":[]}`. |
+| Root cause | The server bootstrap changed the profile role to `parent`; the shared layout immediately redirected `/dashboard` to `/family`, destroying the rich client seeder before its parent-specific `PUT /api/demo/seed` and child/team/payment/event writes completed. |
+| Repair | Parent-demo dashboard redirection now defers only while the namespaced seeding lock is active. Registered parents and stale/malformed locks keep the existing redirect behavior. |
+| Automated verification | The regression was written first and failed until the lock parser and redirect decision existed. The focused demo suites passed 24/24, typecheck passed, scoped lint had zero errors, and `git diff --check` passed. Authoritative PR release gate `34221901650` and protected staging deployment `34222353486` passed the full application, Functions, rules, dependency, deployment, and health boundaries. |
+| Hosted verification | Exact staging `studio-build-2026-09-08-015` and production merge `c06d3f2a` each completed both seed boundaries (`POST` and `PUT` HTTP 200), rendered Junior and Alex across two teams with six waivers, $365 outstanding, and distinct schedules, preserved the data after reload, fit 390×844 without overflow, and emitted zero console warnings/errors or application HTTP 4xx/5xx responses. Owned cleanup returned HTTP 204. |
+| Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
+
 ## BUG-056 — Realtime listeners survive anonymous-demo revocation
 
 | Field | Evidence |
