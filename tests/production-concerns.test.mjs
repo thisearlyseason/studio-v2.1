@@ -191,7 +191,7 @@ test('every visible logout unregisters push while the user is still authenticate
     source('../src/lib/client-push-registration.ts'),
   ]);
 
-  for (const logoutSurface of [shell, settings]) {
+  for (const logoutSurface of [settings]) {
     const logout = logoutSurface.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
     assert.match(logoutSurface, /import \{ deletePushDevice/);
     assert.match(logout, /if \(user\?\.id\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
@@ -200,6 +200,7 @@ test('every visible logout unregisters push while the user is still authenticate
     assert.doesNotMatch(logout, /deletePushDevice\(user\.id\)\.catch/);
   }
   const shellLogout = shell.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.match(shellLogout, /if \(user\?\.id && !isDemoLogout\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
   assert.ok(shellLogout.indexOf('await deletePushDevice(user.id)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
   const deletion = pushRegistration.match(/export async function deletePushDevice[\s\S]*?\n\}/)?.[0] || '';
   assert.match(deletion, /await clearLegacyFcmRegistrations\(userId\);/);

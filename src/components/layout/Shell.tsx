@@ -631,7 +631,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
     }
     try {
-      if (user?.id) {
+      // Anonymous demo accounts cannot own notification endpoints. The device
+      // route intentionally rejects them, so let demo cleanup handle logout.
+      if (user?.id && !isDemoLogout) {
         await deletePushDevice(user.id);
       }
       if (isDemoLogout) {
