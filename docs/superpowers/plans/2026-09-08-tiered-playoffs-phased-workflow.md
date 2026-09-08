@@ -407,4 +407,3 @@ Confirm App checks, Functions build, Firebase rules, and Dependency audit are al
 - [ ] **Step 8: Deploy and verify production**
 
 Dispatch `Deploy production infrastructure` for the exact merge SHA with confirmation `studio-6850142148-fe343`. Wait for Vercel production promotion, then require `https://www.thesquad.pro/api/health` to report that exact SHA. Re-run the shortest live organizer smoke and public privacy check against the deployed revision before reporting completion.
-
