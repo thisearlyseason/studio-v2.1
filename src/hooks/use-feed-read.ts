@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useState} from 'react';
 import {useAuth} from '@/firebase';
-import {authHeader,getAuthToken} from '@/lib/client-auth';
+import {authHeader,DEMO_EXIT_CANCELLED_EVENT,DEMO_EXIT_EVENT,getAuthToken} from '@/lib/client-auth';
 import {startFeedRefresh} from '@/lib/feed-refresh';
 
 export function useFeedRead(teamId: string | undefined, postId?: string) {
@@ -22,6 +22,7 @@ export function useFeedRead(teamId: string | undefined, postId?: string) {
       },
       onValue:data=>setState({key,data,error:null,loading:false}),
       onError:error=>setState({key,data:[],error:error instanceof Error ? error.message : 'Feed unavailable.',loading:false}),
+      pauseOn:{target:window,eventName:DEMO_EXIT_EVENT,resumeEventName:DEMO_EXIT_CANCELLED_EVENT},
     });
   },[auth,uid,teamId,postId,key]);
   return state.key === key ? {data:state.data,error:state.error,isLoading:state.loading} : {data:[],error:null,isLoading:true};

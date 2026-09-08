@@ -114,7 +114,7 @@ import { signOut } from 'firebase/auth';
 import { useAuth } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
-import { clearBrowserSession, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
+import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markDemoExitPending, requireDemoExitRetry } from '@/lib/client-auth';
 import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
@@ -627,8 +627,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     const isDemoLogout = hasDemoBanner;
+    let logoutCompleted = false;
+    let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
-      localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
+      markDemoExitPending();
+      requireDemoExitRetry();
     }
     try {
       // Anonymous demo accounts cannot own notification endpoints. The device
@@ -638,16 +641,21 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       }
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
-        if (!response.ok) throw new Error('Demo cleanup failed');
+        if (!response.ok) {
+          demoCleanupRejectedBeforeMutation = response.status === 403;
+          throw new Error('Demo cleanup failed');
+        }
       }
       await clearBrowserSession();
       await signOut(auth);
+      logoutCompleted = true;
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
     } finally {
       if (isDemoLogout) {
-        localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+        if (logoutCompleted) clearDemoExitPending();
+        else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
       }
     }
   };

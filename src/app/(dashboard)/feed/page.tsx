@@ -63,6 +63,7 @@ import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { useFeedRead } from '@/hooks/use-feed-read';
 import { FeedMedia } from '@/components/feed-media';
 import { validateRasterImage, RASTER_IMAGE_ACCEPT } from '@/lib/storage-upload-policy';
+import { deleteFeedPostOptimistically } from '@/lib/feed-delete';
 
 function CommentList({ postId, teamId, isAdmin, currentUserId, onDeleteComment }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string, onDeleteComment: (postId: string, commentId: string) => Promise<void> }) {
   const { data: comments, isLoading } = useFeedRead(teamId,postId);
@@ -140,6 +141,7 @@ export default function FeedPage() {
   const pendingRequestKeys = useRef(new Map<string,string>());
   const [isSending,setIsSending] = useState(false);
   const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
+  const [hiddenPostIds, setHiddenPostIds] = useState<Set<string>>(() => new Set());
   const [isUpdatingHero, setIsUpdatingHero] = useState(false);
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState('');
@@ -216,7 +218,7 @@ export default function FeedPage() {
       body: JSON.stringify({ teamId: activeTeam.id, ...payload, ...(creates ? {idempotencyKey} : {}) }),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || 'Unable to update the squad feed.');
+    if (!response.ok) throw Object.assign(new Error(result.error || 'Unable to update the squad feed.'), { status: response.status });
     pendingRequestKeys.current.delete(requestIdentity);
     return result;
   };
@@ -294,7 +296,16 @@ export default function FeedPage() {
 
   const handleDeletePost = async (postId: string) => {
     try {
-      await runFeedAction({ action: 'delete-post', postId });
+      await deleteFeedPostOptimistically({
+        postId,
+        hide: id => setHiddenPostIds(previous => new Set(previous).add(id)),
+        restore: id => setHiddenPostIds(previous => {
+          const next = new Set(previous);
+          next.delete(id);
+          return next;
+        }),
+        deleteRemote: () => runFeedAction({ action: 'delete-post', postId }),
+      });
     } catch (error) {
       reportFeedError(error);
     }
@@ -406,7 +417,7 @@ export default function FeedPage() {
 
         {/* Feed Posts */}
         <div className="space-y-6 lg:space-y-8">
-          {posts?.map((post) => (
+          {posts?.filter(post => !hiddenPostIds.has(post.id)).map((post) => (
             <Card key={post.id} className={cn("rounded-3xl lg:rounded-2xl border-none shadow-md overflow-hidden ring-1 ring-black/5 group", post.type === 'system' ? 'bg-muted/30 ring-primary/10' : '')}>
               <CardHeader className="flex flex-row items-center gap-4 lg:gap-5 pb-4 pt-6 lg:pt-8 px-6 lg:px-8">
                 <Avatar className="h-10 w-10 lg:h-12 lg:w-12 border-2 border-background shadow-md">
