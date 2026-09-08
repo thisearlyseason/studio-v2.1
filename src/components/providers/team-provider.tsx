@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
-import { clearBrowserSession, getAuthToken, authHeader } from '@/lib/client-auth';
+import { clearBrowserSession, DEMO_EXIT_PENDING_KEY, getAuthToken, authHeader } from '@/lib/client-auth';
 import { leagueResolutionCommand, sendLeagueScoringCommand } from '@/lib/public-league-scoring';
 import {libraryDataUrlBlob} from '@/lib/library-client-upload';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
@@ -1604,6 +1604,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           flattenAndSet();
        }, (err) => {
           if (!firebaseAuth?.currentUser) return;
+          if (firebaseAuth.currentUser.isAnonymous && localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true') return;
           console.error("Event Sync Error:", err);
        });
 
@@ -1617,6 +1618,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           flattenAndSet();
        }, (err) => {
           if (!firebaseAuth?.currentUser) return;
+          if (firebaseAuth.currentUser.isAnonymous && localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true') return;
           console.error("Game Sync Error:", err);
        });
 

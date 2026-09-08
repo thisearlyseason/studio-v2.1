@@ -173,7 +173,10 @@ test('anonymous demos survive reloads and clean up visible exits and abandoned s
   assert.match(provider, /sessionStorage\.getItem\(DEMO_START_KEY\)/);
   assert.match(provider, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(provider, /await signOut\(auth\)/);
-  assert.match(shell, /if \(hasDemoBanner\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\);\s+if \(!response\.ok\) throw new Error\('Demo cleanup failed'\);\s+\}/);
+  assert.match(shell, /const isDemoLogout = hasDemoBanner/);
+  assert.match(shell, /if \(isDemoLogout\) \{\s+localStorage\.setItem\(DEMO_EXIT_PENDING_KEY, 'true'\);\s+\}/);
+  assert.match(shell, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\);\s+if \(!response\.ok\) throw new Error\('Demo cleanup failed'\);\s+\}/);
+  assert.match(shell, /finally \{\s+if \(isDemoLogout\) \{\s+localStorage\.removeItem\(DEMO_EXIT_PENDING_KEY\);/);
   assert.ok(shell.indexOf("await fetch('/api/demo/exit'") < shell.indexOf('await clearBrowserSession()'));
   assert.match(cleanup, /user\.providerData\.length > 0/);
   assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);

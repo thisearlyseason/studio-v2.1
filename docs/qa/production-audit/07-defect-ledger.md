@@ -2,7 +2,55 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-08; forty-four defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-08; every recorded implementation defect is resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-051 — Demo logout emits permission errors while revoking an anonymous workspace
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Demo lifecycle — logout and cleanup |
+| Reproduction | Production Player and Parent demo logout reached `/login`, but household event/game listeners logged `Missing or insufficient permissions` after server cleanup revoked the anonymous identity and before client sign-out completed. |
+| Root cause | The destructive cleanup request ran before client sign-out without marking the expected listener-teardown interval. The listeners therefore treated the deliberate permission loss as an application fault. |
+| Repair | Demo logout now sets the existing teardown marker before cleanup, retains it through awaited client sign-out, removes it in `finally`, and suppresses only anonymous household-listener permission callbacks during that marked interval. |
+| Verification | Regression tests first failed on the missing marker/guards. The focused tests, 1,306-test application suite, typecheck, lint with zero errors, production build, Functions build, and independent code review passed. Final production Playwright rechecks the affected logout path after deployment. |
+| Status | RESOLVED LOCALLY — PRODUCTION RETEST REQUIRED |
+
+## BUG-050 — Youth invitation reports success without delivering the activation email
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Family — enable youth login |
+| Reproduction | The authenticated create route persisted a token and the Family UI displayed a success state, but no outbound provider call existed. The athlete therefore had no activation link. |
+| Root cause | `POST /api/invites/youth` implemented invitation storage only; the success copy incorrectly implied that copying the token manually was the complete workflow. |
+| Repair | The route now sends a branded single-use activation link through Resend using a transactional pending/delivered state machine. Exact retries resume the same pending token, explicit provider rejection restores the predecessor, ambiguous transport failure remains safely resumable, expired pending state rotates cleanly, and redemption accepts only the exact current usable token. Subject data is CR/LF-sanitized. |
+| Verification | Focused invitation regressions and independent review passed. Exact staging run `email-cert-1788840993477` observed delivered verification mail for five account roles, a delivered youth invitation, one successful redemption, reuse denial, session revocation, reset neutrality, signed Resend replay isolation, and zero residue across 25 checked paths. |
+| Status | RESOLVED AND EXACT-STAGING VERIFIED |
+
+## BUG-049 — Checkout idempotency aliases different billing resources
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Billing — checkout, upgrade, add-ons and subscription recovery |
+| Reproduction | Concurrent checkout retries for different customer/subscription resources could reuse the same idempotency identity because resource identity was omitted from the policy key. |
+| Root cause | The checkout idempotency contract scoped plan/cycle/team operations but not the Stripe customer/subscription identity that made the mutation unique. |
+| Repair | Checkout policy and every caller now include the authoritative billing resource identity; exact retries remain idempotent while competing resources return the intended conflict. |
+| Verification | Focused policy regressions passed. Exact staging run `commerce-cert-1788840993485` covered all eight plan/cycle checkouts, negative and cross-user cases, strict same-session 200/409 concurrency, trial, upgrade/add-ons, cancel/reactivate, portal, cancellation revoke, deleted-customer recovery and zero residue. Test-clock run `commerce-cert-clock-1788835545218` proved trialing to past-due to active recovery plus downgrade, interval change and add-on removal. |
+| Status | RESOLVED AND EXACT-STAGING VERIFIED |
+
+## BUG-048 — Scheduled account purge cannot execute its production queries
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Background jobs — account purge and reminder retry |
+| Reproduction | The deployed purge encountered missing collection-group indexes for access redemptions, messages and team memberships, then reached an unexecutable dynamic-UID map query. |
+| Root cause | Local emulator coverage did not require the deployed composite indexes, and purge enumeration modeled arbitrary map keys as a Firestore queryable field. |
+| Repair | Required collection-group indexes were added and each scheduled batch now paginates shared collection-group scans in 500-document pages, retains only documents containing a pending UID key, and fails an affected request before deletion if its scan target fails. |
+| Verification | Focused scheduler tests and Functions build passed; indexes and Functions deployed. Exact run `sched-cert-20260908-0416` proved successful purge, owner protection, reminder failure/retry with attempt count two, anonymous expiry, registered-live exclusion, and zero owned residue across 15 cleanup paths. |
+| Status | RESOLVED AND EXACT-STAGING VERIFIED |
 
 ## BUG-047 — Client demo seed writes server-protected tournament events
 
@@ -37,8 +85,8 @@
 | Reproduction | Actual authenticated Storage emulator writes accepted text-as-JPEG and 5 MiB+1 avatar bytes; an already-issued player token URL stayed anonymous-readable after opt-out. RED logs: `/tmp/task5-media-boundaries-red.log`, `/tmp/task5-media-sdk-emulator2.log`. |
 | Root cause | Direct client writes trusted MIME metadata and a looser image cap; UI stored bearer download URLs; recruiting opt-out did not revoke them. The emulator additionally retains tokens separately from cleared metadata. |
 | Local repair | Server-authorized private media POST/GET/DELETE, real raster decode and 5 MiB limit, bounded 500 MiB streaming with owned pending objects/generation-checked promotion, protected range reads, affected UI integrations and exact legacy-token revocation with stale-URL verification. Direct final-object writes and client flag bypass are blocked. Emulator compatibility is strict loopback/demo-only. |
-| Verification | Policy/authority/route/client/harness tests and 49 Rules tests pass. Real SDK stale-URL regression passes with owned fixture cleanup. Exact browser run `final-cert-t5-260908-002336-78b3` observed every avatar, recruiting-media, privacy, stale-token, byte-limit, responsive, console, network, delete, and cleanup case; it deleted 315 owned records, restored 3 baseline records, and retained zero residue. Exact-revision staging remains open. |
-| Status | RESOLVED LOCALLY AND EXACT-BROWSER VERIFIED — STAGING GATE OPEN |
+| Verification | Policy/authority/route/client/harness tests and 49 Rules tests pass. Real SDK stale-URL regression passes with owned fixture cleanup. Exact browser run `final-cert-t5-260908-002336-78b3` observed every avatar, recruiting-media, privacy, stale-token, byte-limit, responsive, console, network, delete, and cleanup case; it deleted 315 owned records, restored 3 baseline records, and retained zero residue. Exact staging run `storage-cert-1788837335531` then proved private owner CRUD/range bytes, anonymous and cross-tenant denial, signature rejection, public recruiting opt-in, private revocation, tokenless metadata, and zero Auth/Firestore/object residue. |
+| Status | RESOLVED AND EXACT-STAGING VERIFIED |
 
 ## BUG-044 — Library upload stores a data URL without a Storage lifecycle (local repair pending browser verification)
 
@@ -52,8 +100,8 @@
 | Expected behavior | One private object and one metadata document; authorized attachment download with exact bytes; deletion revokes both layers. |
 | Root cause | The UI used FileReader data URLs and direct Firestore writes/deletes, with no private object/upload/download service. Direct staff metadata writes also bypassed object ownership and quota enforcement. |
 | Local repair | Authenticated Library API validates MIME/signature and 10 MiB file limit, transactionally enforces 500 MiB Starter aggregate, owns private objects/metadata and protected no-store attachment downloads, and performs dual-layer deletion. Legacy reads and existing Film/link paths are preserved. |
-| Verification | Focused lifecycle/permission/quota/spoof tests and all 46 Firestore/Storage rules tests pass. Exact browser run `final-cert-t5-260908-002012-5b99` observed upload, private-object persistence, exact download bytes/hash/name, member read-only access, size/signature/tenant/anonymous denial, stale-URL revocation, responsive bounds, console/network health, delete, and zero-residue cleanup. Exact-revision staging remains open. |
-| Status | RESOLVED LOCALLY AND EXACT-BROWSER VERIFIED — STAGING GATE OPEN |
+| Verification | Focused lifecycle/permission/quota/spoof tests and all 46 Firestore/Storage rules tests pass. Exact browser run `final-cert-t5-260908-002012-5b99` observed upload, private-object persistence, exact download bytes/hash/name, member read-only access, size/signature/tenant/anonymous denial, stale-URL revocation, responsive bounds, console/network health, delete, and zero-residue cleanup. Exact staging run `storage-cert-1788837335531` repeated owner upload/delete, member exact-byte download, member write denial, outsider denial, MIME/signature rejection, dual-layer deletion and zero Auth/Firestore/object residue. |
+| Status | RESOLVED AND EXACT-STAGING VERIFIED |
 
 ## BUG-043 — Legacy module flags diverge from canonical tenant controls (resolved)
 
