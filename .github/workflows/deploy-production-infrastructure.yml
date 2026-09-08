@@ -103,5 +103,8 @@ jobs:
           const project = process.env.FIREBASE_PROJECT_ID;
           const url = `https://us-central1-${project}.cloudfunctions.net/getCalendarFeed?token=invalid-readiness-check`;
           const response = await fetch(url);
-          if (response.status !== 404) throw new Error(`Expected non-enumerating HTTP 404, received ${response.status}`);
+          const body = await response.text();
+          if (response.status !== 404 || body !== 'Calendar feed not found.') {
+            throw new Error(`Expected application not-found contract, received HTTP ${response.status}`);
+          }
           NODE
