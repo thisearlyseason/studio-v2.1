@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
 
+test('pending demo youth identity is not falsely bound to a nonexistent login', async () => {
+  const seeder = await import('../src/lib/db-seeder.ts');
+  assert.deepEqual(seeder.pendingDemoYouthIdentity('alex@example.test'), {
+    userId: null,
+    hasLogin: false,
+    pendingInviteEmail: 'alex@example.test',
+  });
+});
+
 const routePath = '../../src/app/api/demo/seed/route.ts';
 const request = (body, method = 'POST') => new Request('http://127.0.0.1/api/demo/seed', {
   method,

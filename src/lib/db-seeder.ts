@@ -534,6 +534,14 @@ const GET_DEMO_DATA = (
   };
 };
 
+export function pendingDemoYouthIdentity(pendingInviteEmail: string) {
+  return {
+    userId: null,
+    hasLogin: false,
+    pendingInviteEmail,
+  };
+}
+
 /**
  * HIGH-SPEED ATOMIC SEEDER
  * Ensures a stable, predictable reset for demo users.
@@ -802,10 +810,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const alexDob = new Date(nowObj.getFullYear() - 16, 2, 20).toISOString().split('T')[0]; // 16 years old
         const alexEmail = `alex.guest_${demoNamespace}@thesquad.pro`;
         batch.set(doc(db, 'players', alexId), clean({
-            id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId, userId: alexId,
+            id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId,
             dateOfBirth: alexDob, isDemo: true,
             demoOwnerUserId: userId,
-            hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
+            ...pendingDemoYouthIdentity(alexEmail), createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
             sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker', primaryTeamId: lakerId, updatedByTeamId: lakerId
         }));
 
