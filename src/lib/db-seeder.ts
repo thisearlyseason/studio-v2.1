@@ -534,11 +534,10 @@ const GET_DEMO_DATA = (
   };
 };
 
-export function pendingDemoYouthIdentity(pendingInviteEmail: string) {
+export function pendingDemoYouthIdentity(pendingInviteEmail?: string) {
   return {
-    userId: null,
     hasLogin: false,
-    pendingInviteEmail,
+    ...(pendingInviteEmail ? { pendingInviteEmail } : {}),
   };
 }
 
@@ -799,10 +798,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const juniorId = `c1_${userId}`;
         const juniorDob = new Date(nowObj.getFullYear() - 9, 5, 15).toISOString().split('T')[0]; // 9 years old
         batch.set(doc(db, 'players', juniorId), clean({
-            id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId, userId: null,
+            id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId,
             dateOfBirth: juniorDob, isDemo: true,
             demoOwnerUserId: userId,
-            hasLogin: false, createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
+            ...pendingDemoYouthIdentity(), createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
             sports: ['Basketball'], primaryPosition: 'Point Guard', primaryTeamId: strikerId, updatedByTeamId: strikerId
         }));
 

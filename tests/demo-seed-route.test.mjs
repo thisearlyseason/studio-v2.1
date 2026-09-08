@@ -4,11 +4,14 @@ import { communicationDb, loadCommunicationRoute } from './helpers/communication
 
 test('pending demo youth identity is not falsely bound to a nonexistent login', async () => {
   const seeder = await import('../src/lib/db-seeder.ts');
+  assert.deepEqual(seeder.pendingDemoYouthIdentity(), {
+    hasLogin: false,
+  });
   assert.deepEqual(seeder.pendingDemoYouthIdentity('alex@example.test'), {
-    userId: null,
     hasLogin: false,
     pendingInviteEmail: 'alex@example.test',
   });
+  assert.equal('userId' in seeder.pendingDemoYouthIdentity('alex@example.test'), false);
 });
 
 const routePath = '../../src/app/api/demo/seed/route.ts';
