@@ -25,6 +25,7 @@ test('event creation shows the server schedule-conflict reason', () => {
 
 test('launch activity keeps mobile actions visible and defers two-column layout to wide screens', () => {
   assert.match(source, /data-testid="launch-activity-form"/);
+  assert.match(source, /sm:max-w-6xl/);
   assert.match(source, /flex flex-col xl:flex-row/);
   assert.match(source, /data-testid="launch-activity-scroll-region"/);
   assert.match(source, /data-testid="launch-activity-actions"/);
