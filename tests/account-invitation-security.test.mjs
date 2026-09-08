@@ -48,4 +48,5 @@ test('youth invitation creation actually delivers the single-use activation link
   assert.match(createSection, /signup\/youth\?token=/);
   assert.match(createSection, /rollbackYouthInviteDelivery/);
   assert.match(templates, /export function youthInvitationEmail/);
+  assert.match(templates, /guardianName\?\.trim\(\)\.replace\(\/\[\\r\\n\]\+\/g, ' '\)/);
 });

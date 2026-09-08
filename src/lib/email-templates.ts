@@ -150,7 +150,7 @@ export function youthInvitationEmail({
   invitationLink: string;
   expiresAt: string;
 }): { subject: string; html: string } {
-  const normalizedGuardianName = guardianName?.trim() || 'Your parent or guardian';
+  const normalizedGuardianName = guardianName?.trim().replace(/[\r\n]+/g, ' ') || 'Your parent or guardian';
   const safeChildName = escapeHtml(childName.trim() || 'Athlete');
   const safeGuardianName = escapeHtml(normalizedGuardianName);
   const expiry = Number.isNaN(Date.parse(expiresAt))
