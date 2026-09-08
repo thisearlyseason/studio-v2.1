@@ -41,6 +41,11 @@ private message bodies, passwords, or provider secrets.
   it, and confirm account A notifications and private cached content never appear.
 - [ ] Register the same recipient on two physical devices, then confirm the intended
   multi-device delivery policy and no duplicate notification on either device.
+- [ ] Create an eligible same-day event in the account timezone and observe the
+  scheduled reminder on the closed device. Confirm exactly one reminder, correct
+  event/team text, and correct tap destination. Repeat the scheduler window and
+  confirm no duplicate; confirm preference-off, removed-member, invalid-time, and
+  no-token recipients receive nothing.
 - [ ] Uninstall/reinstall or clear site data after registration, then confirm stale
   subscriptions are retired and the newly enabled subscription alone receives.
 - [ ] Install an update over an older service-worker version. Confirm the new worker
@@ -65,6 +70,10 @@ private message bodies, passwords, or provider secrets.
 - [ ] Disable Tactical Alerts and confirm no card, sound, badge, or delivery; then
   re-enable and confirm normal delivery resumes.
 - [ ] Confirm sender, removed-member, and other-squad exclusions on the device.
+- [ ] Create an eligible same-day event in the account timezone and observe the
+  scheduled reminder while the installed app is closed. Confirm one reminder and
+  correct tap destination; confirm duplicate-run, preference-off, removed-member,
+  invalid-time, and no-token exclusions physically suppress delivery.
 - [ ] Sign out account A and sign in account B on the same installation. Confirm no
   account A notification or cached private content appears afterward.
 - [ ] Remove/reinstall the home-screen app and confirm stale subscription cleanup,
