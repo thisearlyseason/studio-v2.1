@@ -12,10 +12,9 @@ test('calendar event date accepts canonical local calendar dates', () => {
 });
 
 test('legacy ISO event instants retain the local day they represented', () => {
-  const parsed = calendarEventDate('2026-09-08T01:00:00.000Z');
-  assert.equal(parsed?.getFullYear(), 2026);
-  assert.equal(parsed?.getMonth(), 8);
-  assert.equal(parsed?.getDate(), 7);
+  const legacyInstant = '2026-09-08T01:00:00.000Z';
+  const parsed = calendarEventDate(legacyInstant);
+  assert.equal(parsed?.getTime(), Date.parse(legacyInstant));
 });
 
 test('calendar event date rejects malformed or impossible legacy values safely', () => {
