@@ -199,6 +199,8 @@ test('every visible logout unregisters push while the user is still authenticate
     assert.ok(logout.indexOf('await deletePushDevice(user.id)') < logout.indexOf('await signOut(auth)'));
     assert.doesNotMatch(logout, /deletePushDevice\(user\.id\)\.catch/);
   }
+  const shellLogout = shell.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.ok(shellLogout.indexOf('await deletePushDevice(user.id)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
   const deletion = pushRegistration.match(/export async function deletePushDevice[\s\S]*?\n\}/)?.[0] || '';
   assert.match(deletion, /await clearLegacyFcmRegistrations\(userId\);/);
   assert.doesNotMatch(deletion, /clearLegacyFcmRegistrations\(userId\)\.catch/);

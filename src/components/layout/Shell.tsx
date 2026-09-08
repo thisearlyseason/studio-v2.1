@@ -631,12 +631,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
     }
     try {
+      if (user?.id) {
+        await deletePushDevice(user.id);
+      }
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
         if (!response.ok) throw new Error('Demo cleanup failed');
-      }
-      if (user?.id) {
-        await deletePushDevice(user.id);
       }
       await clearBrowserSession();
       await signOut(auth);
