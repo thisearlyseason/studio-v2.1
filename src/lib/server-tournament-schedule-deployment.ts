@@ -7,6 +7,7 @@ import {
 } from '@/lib/scheduler-utils';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
 import { generateTieredPreliminarySchedule } from '@/lib/tiered-playoffs/schedule';
+import { validateTieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
 import { resolveCompetitionAuthority } from '@/lib/server-competition-authority';
 import { canonicalCompetitionRequest, runCompetitionOperation } from '@/lib/server-competition-operation';
 import { assertScheduleMutationLock, withScheduleMutationLock } from '@/lib/server-schedule-deployment';
@@ -458,6 +459,16 @@ export function prepareTournamentScheduleForDeployment(
     throw new TournamentScheduleDeploymentError('INVALID_SCHEDULE', 'A complete tournament schedule is required.');
   }
   const event = eventValue as RawEvent;
+  if (event.tournamentType === 'tiered_playoffs') {
+    const teamCount = Array.isArray(event.tournamentTeamsData) ? event.tournamentTeamsData.length : 0;
+    const validation = validateTieredPlayoffsConfig(event.tieredPlayoffs, teamCount, 'preliminary');
+    if (!validation.valid) {
+      throw new TournamentScheduleDeploymentError('INVALID_TIERED_CONFIGURATION', validation.errors[0] || 'Tiered Playoffs configuration is invalid.');
+    }
+    if (gamesValue.some(game => game && typeof game === 'object' && !Array.isArray(game) && (game as RawEvent).phase === 'playoff')) {
+      throw new TournamentScheduleDeploymentError('INVALID_TIERED_PHASE', 'Only preliminary games can be deployed before playoff setup.');
+    }
+  }
   const allowedResourceIds = configuredResourceIds(event);
   const configuredDuration = positiveInteger(event.gameLength, 60);
   const maxDailyGamesPerTeam = positiveInteger(event.maxDailyGamesPerTeam, 3);

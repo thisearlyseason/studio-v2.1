@@ -17,7 +17,17 @@ export type TieredPlayoffsSetup = {
   avoidPreliminaryRematches: boolean;
 };
 
-export function buildTieredPlayoffsConfig(input: TieredPlayoffsSetup): TieredPlayoffsConfig {
+export type TieredPlayoffsDraftSetup = Omit<
+  TieredPlayoffsSetup,
+  'teamCount' | 'sizing' | 'divisionNames' | 'divisionSizes'
+>;
+
+export type TieredDivisionSetup = Pick<
+  TieredPlayoffsSetup,
+  'teamCount' | 'sizing' | 'divisionNames' | 'divisionSizes'
+>;
+
+export function buildTieredDivisionDefinitions(input: TieredDivisionSetup) {
   if (!Number.isInteger(input.teamCount) || input.teamCount < 2) throw new Error('Tiered Playoffs requires at least two teams.');
   const names = input.divisionNames.map(name => name.trim()).filter(Boolean);
   if (!names.length || names.length > Math.max(1, Math.floor(input.teamCount / 2)) || new Set(names.map(name => name.toLowerCase())).size !== names.length) {
@@ -34,6 +44,10 @@ export function buildTieredPlayoffsConfig(input: TieredPlayoffsSetup): TieredPla
     const remainder = input.teamCount % names.length;
     sizes = names.map((_, index) => base + (index < remainder ? 1 : 0));
   }
+  return names.map((name, index) => ({ id: `tier_${index + 1}`, name, size: sizes[index] }));
+}
+
+function baseConfig(input: TieredPlayoffsDraftSetup): TieredPlayoffsConfig {
   return {
     schemaVersion: 1,
     preliminary: {
@@ -52,11 +66,28 @@ export function buildTieredPlayoffsConfig(input: TieredPlayoffsSetup): TieredPla
       maximumDifferentialPerGame: input.maximumDifferentialPerGame,
     },
     divisions: {
-      sizing: input.sizing,
-      definitions: names.map((name, index) => ({ id: `tier_${index + 1}`, name, size: sizes[index] })),
+      sizing: 'automatic',
+      definitions: [],
       avoidPreliminaryRematches: input.avoidPreliminaryRematches,
     },
     seeding: { status: 'pending', calculated: [], approved: [], standingsFingerprint: null, lockedAt: null, lockedBy: null },
     playoffs: { bracketFormat: 'single_elimination', status: 'pending', publishedAt: null, publishedBy: null },
+  };
+}
+
+export function buildTieredPlayoffsDraftConfig(input: TieredPlayoffsDraftSetup): TieredPlayoffsConfig {
+  return baseConfig(input);
+}
+
+export function buildTieredPlayoffsConfig(input: TieredPlayoffsSetup): TieredPlayoffsConfig {
+  const definitions = buildTieredDivisionDefinitions(input);
+  const config = baseConfig(input);
+  return {
+    ...config,
+    divisions: {
+      sizing: input.sizing,
+      definitions,
+      avoidPreliminaryRematches: input.avoidPreliminaryRematches,
+    },
   };
 }

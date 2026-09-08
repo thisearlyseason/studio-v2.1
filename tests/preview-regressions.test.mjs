@@ -360,7 +360,8 @@ test('creation workflows reject incomplete required fields', async () => {
   assert.match(tournaments, /At least two squads are required/);
   assert.match(tournaments, /validateRosterMatrix/);
   assert.match(tournaments, /Squad Matrix Incomplete/);
-  assert.match(tournaments, /step === 2 && !validateRosterMatrix\(\)/);
+  assert.match(tournaments, /step === 2 && form\.teams\.length > 0 && !validateRosterMatrix\(\)/);
+  assert.match(tournaments, /!creatingTieredDraft && !validateRosterMatrix\(\)/);
   assert.match(tournaments, /onClick=\{\(\) => handleStepSelection\(s\.num\)\}/);
 });
 

@@ -35,26 +35,28 @@ function editable(value: unknown): DocumentData {
   if (('isTournament' in data && data.isTournament !== true) || ('eventType' in data && data.eventType !== 'tournament')) fail('Tournament kind cannot change.');
   return data;
 }
-function validate(data: DocumentData, allowEmptyRoster = false): void {
+type ValidationOptions = { allowEmptyRoster?: boolean; allowTieredDraft?: boolean };
+function validate(data: DocumentData, options: ValidationOptions = {}): void {
+  const tieredDraft = options.allowTieredDraft === true && data.tournamentType === 'tiered_playoffs' && !hasSchedule(data);
   if (typeof data.title !== 'string' || !data.title.trim() || data.title.length > 200) fail('A Tournament title is required.');
   if (day(data.endDate || data.date) < day(data.date)) fail('Invalid Tournament date range.');
   if (!['round_robin', 'single_elimination', 'double_elimination', 'pool_play_knockout', 'tiered_playoffs'].includes(data.tournamentType)) fail('Invalid Tournament format.');
   for (const [field, minimum, maximum] of [['gameLength', 1, 720], ['breakLength', 0, 720], ['gamesPerTeam', 1, 100], ['maxDailyGamesPerTeam', 1, 100]] as const) {
     if (!Number.isInteger(data[field]) || data[field] < minimum || data[field] > maximum) fail(`Invalid ${field}.`);
   }
-  if (!Array.isArray(data.selectedFields) || !data.selectedFields.length || data.selectedFields.some((field: unknown) => typeof field !== 'string' || !field.trim()) || new Set(data.selectedFields.map(normalized)).size !== data.selectedFields.length) fail('Valid unique field resources are required.');
-  if (!Array.isArray(data.dailyWindows) || !data.dailyWindows.length) fail('Daily Tournament windows are required.');
+  if (!Array.isArray(data.selectedFields) || (!tieredDraft && !data.selectedFields.length) || data.selectedFields.some((field: unknown) => typeof field !== 'string' || !field.trim()) || new Set(data.selectedFields.map(normalized)).size !== data.selectedFields.length) fail('Valid unique field resources are required.');
+  if (!Array.isArray(data.dailyWindows) || (!tieredDraft && !data.dailyWindows.length)) fail('Daily Tournament windows are required.');
   for (const window of data.dailyWindows) {
     if (!window || day(window.date) < day(data.date) || day(window.date) > day(data.endDate || data.date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(window.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(window.endTime) || window.startTime >= window.endTime) fail('Invalid Tournament daily window.');
   }
   const teams = data.tournamentTeamsData;
-  if (!Array.isArray(teams) || teams.length > 64 || (!allowEmptyRoster && teams.length < 2)) fail('A Tournament requires 2–64 teams.');
+  if (!Array.isArray(teams) || teams.length > 64 || (!options.allowEmptyRoster && !tieredDraft && teams.length < 2)) fail('A Tournament requires 2–64 teams.');
   if (teams.some(team => !team || !ID.test(team.id) || typeof team.name !== 'string' || !team.name.trim()) || new Set(teams.map(team => team.id)).size !== teams.length || new Set(teams.map(team => normalized(team.name))).size !== teams.length) fail('Tournament teams require unique identities and names.');
   if (teams.length > 1 && data.tournamentType === 'round_robin' && (teams.length * data.gamesPerTeam) % 2 !== 0) fail('This team count cannot each play the requested number of games.');
   if (teams.length && data.tournamentType === 'double_elimination' && (teams.length & (teams.length - 1)) !== 0) fail('Double elimination requires a power-of-two team count.');
   if (teams.length && data.tournamentType === 'pool_play_knockout' && (!Number.isInteger(data.poolCount) || data.poolCount < 2 || data.poolCount > Math.floor(teams.length / 2) || !Number.isInteger(data.advancePerPool) || data.advancePerPool < 1 || data.advancePerPool > Math.floor(teams.length / data.poolCount))) fail('Invalid Tournament pool topology.');
   if (data.tournamentType === 'tiered_playoffs') {
-    const tieredValidation = validateTieredPlayoffsConfig(data.tieredPlayoffs, teams.length);
+    const tieredValidation = validateTieredPlayoffsConfig(data.tieredPlayoffs, teams.length, tieredDraft ? 'draft' : 'playoffs');
     if (!tieredValidation.valid) fail(tieredValidation.errors[0] || 'Invalid Tiered Playoffs configuration.');
     if ((teams.length * data.gamesPerTeam) % 2 !== 0) fail('This team count cannot each play the requested number of preliminary games.');
   }
@@ -156,7 +158,7 @@ export async function POST(request: NextRequest) {
         const existing = await transaction.get(teamRef.collection('events'));
         const names = new Set<string>();
         for (const definition of definitions) {
-          validate(definition, action === 'replicate'); assertAdvancedEntitlement(team, definition);
+          validate(definition, action === 'replicate' ? { allowEmptyRoster: true } : { allowTieredDraft: true }); assertAdvancedEntitlement(team, definition);
           const name = `${normalized(definition.title)}:${normalized(definition.divisionTitle)}`;
           if (names.has(name) || existing.docs.some(doc => doc.data().isTournament === true && `${normalized(doc.data().title)}:${normalized(doc.data().divisionTitle)}` === name)) fail('A Tournament with this title and division already exists.', 409);
           names.add(name);
@@ -193,7 +195,7 @@ export async function POST(request: NextRequest) {
       const registration = await configs(transaction, eventRef);
       if (action === 'configure') {
         const changes = editable(payload), next = { ...source, ...changes };
-        validate(next, !hasSchedule(source)); assertAdvancedEntitlement(team, next);
+        validate(next, { allowEmptyRoster: !hasSchedule(source), allowTieredDraft: !hasSchedule(source) }); assertAdvancedEntitlement(team, next);
         const changed = Object.keys(changes).filter(key => JSON.stringify(source[key]) !== JSON.stringify(changes[key]));
         if (hasSchedule(source) && changed.some(key => SCHEDULE_FIELDS.has(key) && JSON.stringify(scheduleValue(source, key)) !== JSON.stringify(scheduleValue(next, key)))) fail('Clear the existing schedule through Tournament scheduling before changing its configuration.', 409);
         const entries = await transaction.get(eventRef.collection('registrationEntries').limit(1));

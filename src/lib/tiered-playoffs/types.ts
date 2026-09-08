@@ -71,6 +71,7 @@ export type TieredPlayoffsConfig = {
 };
 
 export type TieredPlayoffsValidation = { valid: boolean; errors: string[] };
+export type TieredValidationStage = 'draft' | 'preliminary' | 'playoffs';
 
 const RANKING_RULES = new Set<TieredRankingRule>([
   'tournament_points',
@@ -92,9 +93,17 @@ const positiveInteger = (value: unknown): value is number =>
 const nonNegativeNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-export function validateTieredPlayoffsConfig(value: unknown, teamCount: number): TieredPlayoffsValidation {
+export function validateTieredPlayoffsConfig(
+  value: unknown,
+  teamCount: number,
+  stage: TieredValidationStage = 'playoffs',
+): TieredPlayoffsValidation {
   const errors: string[] = [];
   if (!isRecord(value)) return { valid: false, errors: ['Tiered Playoffs configuration is required.'] };
+
+  if (stage !== 'draft' && (!Number.isInteger(teamCount) || teamCount < 2)) {
+    errors.push('Tiered Playoffs requires at least two participating teams.');
+  }
 
   if (value.schemaVersion !== 1) errors.push('Tiered Playoffs schema version must be 1.');
 
@@ -125,7 +134,7 @@ export function validateTieredPlayoffsConfig(value: unknown, teamCount: number):
   const divisions = isRecord(value.divisions) ? value.divisions : {};
   if (!['automatic', 'custom'].includes(String(divisions.sizing))) errors.push('Division sizing method is invalid.');
   const definitions = Array.isArray(divisions.definitions) ? divisions.definitions : [];
-  if (!definitions.length) errors.push('At least one playoff division is required.');
+  if (stage === 'playoffs' && !definitions.length) errors.push('At least one playoff division is required.');
   const ids = new Set<string>();
   const names = new Set<string>();
   let totalSize = 0;
@@ -143,7 +152,7 @@ export function validateTieredPlayoffsConfig(value: unknown, teamCount: number):
     ids.add(id);
     names.add(name.toLowerCase());
   }
-  if (positiveInteger(teamCount) && totalSize !== teamCount) errors.push('Playoff division sizes must include every participating team exactly once.');
+  if (stage === 'playoffs' && positiveInteger(teamCount) && totalSize !== teamCount) errors.push('Playoff division sizes must include every participating team exactly once.');
   if (typeof divisions.avoidPreliminaryRematches !== 'boolean') errors.push('Preliminary rematch preference is required.');
 
   const seeding = isRecord(value.seeding) ? value.seeding : {};
