@@ -13,8 +13,8 @@
 | Reproduction | Production Player and Parent demo logout reached `/login`, but household event/game listeners logged `Missing or insufficient permissions` after server cleanup revoked the anonymous identity and before client sign-out completed. |
 | Root cause | The destructive cleanup request ran before client sign-out without marking the expected listener-teardown interval. The listeners therefore treated the deliberate permission loss as an application fault. |
 | Repair | Demo logout now sets the existing teardown marker before cleanup, retains it through awaited client sign-out, removes it in `finally`, and suppresses only anonymous household-listener permission callbacks during that marked interval. |
-| Verification | Regression tests first failed on the missing marker/guards. The focused tests, 1,306-test application suite, typecheck, lint with zero errors, production build, Functions build, and independent code review passed. Final production Playwright rechecks the affected logout path after deployment. |
-| Status | RESOLVED LOCALLY — PRODUCTION RETEST REQUIRED |
+| Verification | Regression tests first failed on the missing marker/guards. The focused tests, 1,306-test application suite, typecheck, lint with zero errors, production build, Functions build, release gate `34188664839`, and independent code review passed. On exact production merge `d9ca82cf`, fresh Playwright launched the Player demo, rendered `Strikers • adult player`, returned HTTP 204 from `/api/demo/exit`, reached `/login`, and recorded zero console errors after the cleanup/sign-out transition. |
+| Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
 
 ## BUG-050 — Youth invitation reports success without delivering the activation email
 
