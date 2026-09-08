@@ -23,6 +23,7 @@ export const TOURNAMENT_BLUEPRINT_FIELDS = [
   'selectedFields',
   'manualVenue',
   'tournamentType',
+  'tieredPlayoffs',
   'adminEmails',
   'sport',
   'division',

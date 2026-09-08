@@ -5,6 +5,7 @@ import {
   generateLeagueSchedule,
   generateTournamentSchedule,
 } from './scheduler-utils';
+import { generateTieredPreliminarySchedule, validateTieredSchedule } from './tiered-playoffs/schedule';
 
 export interface ValidationReport {
   isValid: boolean;
@@ -264,6 +265,16 @@ function validateTournamentCompleteness(
   fieldImbalance: number;
 } {
   const format = config.tournamentType || 'round_robin';
+  if (format === 'tiered_playoffs') {
+    const preliminaryGames = games.filter(game => game.phase !== 'playoff');
+    return validateRoundRobinFairness(
+      preliminaryGames,
+      teams,
+      new Map(teams.map(team => [team.id, config.gamesPerTeam || 1])),
+      conflicts,
+      warnings,
+    );
+  }
   if (format === 'round_robin') {
     const expected = config.gamesPerTeam || teams.length - 1;
     return validateRoundRobinFairness(
@@ -459,6 +470,27 @@ export function validateSchedule(
   config: IntelligentConfig,
   kind: ScheduleKind = config.tournamentType ? 'tournament' : 'league'
 ): ValidationReport {
+  if (kind === 'tournament' && config.tournamentType === 'tiered_playoffs') {
+    const fields = config.fields.map((field, index) => typeof field === 'string'
+      ? { id: field, name: field }
+      : { id: field.id || `resource_${index + 1}`, name: field.name });
+    const validation = validateTieredSchedule(games, {
+      teams: configuredTeams(config),
+      gamesPerTeam: config.gamesPerTeam || 1,
+      fields,
+      dailyWindows: config.dailyWindows || [{ date: config.startDate, startTime: config.startTime, endTime: config.endTime }],
+      gameDurationMinutes: config.gameLength,
+      transitionMinutes: config.breakLength,
+      minimumRestMinutes: config.minRestMinutes ?? config.breakLength,
+      maximumGamesPerTeamPerDay: config.maxDailyGamesPerTeam || 3,
+    });
+    return {
+      isValid: validation.valid,
+      conflicts: validation.conflicts,
+      fairnessScore: validation.valid ? 100 : 0,
+      warnings: [],
+    };
+  }
   const conflicts: string[] = [];
   const warnings: string[] = [];
   const teams = configuredTeams(config);
@@ -601,6 +633,30 @@ export function generateIntelligentTournamentSchedule(config: IntelligentConfig)
   games: TournamentGame[];
   report: ValidationReport;
 } {
+  if (config.tournamentType === 'tiered_playoffs') {
+    const fields = config.fields.map((field, index) => typeof field === 'string'
+      ? { id: field, name: field }
+      : { id: field.id || `resource_${index + 1}`, name: field.name });
+    const result = generateTieredPreliminarySchedule({
+      teams: configuredTeams(config),
+      gamesPerTeam: config.gamesPerTeam || 1,
+      fields,
+      dailyWindows: config.dailyWindows || [{ date: config.startDate, startTime: config.startTime, endTime: config.endTime }],
+      gameDurationMinutes: config.gameLength,
+      transitionMinutes: config.breakLength,
+      minimumRestMinutes: config.minRestMinutes ?? config.breakLength,
+      maximumGamesPerTeamPerDay: config.maxDailyGamesPerTeam || 3,
+    });
+    return {
+      games: result.games,
+      report: {
+        isValid: result.validation.valid,
+        conflicts: result.validation.conflicts,
+        fairnessScore: Math.max(0, 100 - result.health.fieldDistributionSpread * 5 - result.health.startTimeDistributionSpread * 5),
+        warnings: result.health.opponentVariety === 'Good' ? [] : ['Opponent variety is limited by the selected configuration.'],
+      },
+    };
+  }
   let games = generateTournamentSchedule(config);
   let report = validateSchedule(games, config, 'tournament');
   if (!report.isValid) {
