@@ -1,12 +1,24 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import * as accountDeletionPolicy from '../functions/src/account-deletion.ts';
 
 const {
+  filterUserMapDocuments,
   USER_ARRAY_TARGETS,
   USER_DOCUMENT_TARGETS,
   USER_MAP_TARGETS,
 } = accountDeletionPolicy;
+
+test('embedded user-map cleanup selects only documents containing the exact UID key', () => {
+  const docs = [
+    { id: 'exact', data: () => ({ signups: { user_a: { quantity: 2 }, user_ab: { quantity: 4 } } }) },
+    { id: 'similar', data: () => ({ signups: { user_ab: { quantity: 4 } } }) },
+    { id: 'missing', data: () => ({}) },
+  ];
+
+  assert.deepEqual(filterUserMapDocuments(docs, 'signups', 'user_a').map((doc) => doc.id), ['exact']);
+});
 
 test('account purge covers personal profiles, memberships, messages, invites, and calendar data', () => {
   const documentTargets = new Set(
@@ -57,4 +69,23 @@ test('financial audit collections are not silently destroyed by account purge', 
   ]) {
     assert.equal(collections.has(retained), false, retained);
   }
+});
+
+test('every account-purge collection-group query has a deployed single-field index', () => {
+  const config = JSON.parse(fs.readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+  const deployed = new Set((config.fieldOverrides || []).flatMap((override) =>
+    (override.indexes || [])
+      .filter((index) => index.queryScope === 'COLLECTION_GROUP')
+      .map(() => `${override.collectionGroup}:${override.fieldPath}`),
+  ));
+  const required = [
+    ...USER_DOCUMENT_TARGETS
+      .filter((target) => target.scope === 'collectionGroup')
+      .map((target) => `${target.collection}:${target.field}`),
+    ...USER_ARRAY_TARGETS
+      .filter((target) => target.scope === 'collectionGroup')
+      .map((target) => `${target.collection}:${target.field}`),
+  ];
+
+  assert.deepEqual(required.filter((entry) => !deployed.has(entry)).sort(), []);
 });

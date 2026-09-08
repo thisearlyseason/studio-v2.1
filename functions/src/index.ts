@@ -4,6 +4,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import {
+  filterUserMapDocuments,
   USER_ARRAY_TARGETS,
   USER_DOCUMENT_TARGETS,
   USER_MAP_TARGETS,
@@ -537,10 +538,9 @@ export const purgeExpiredDeletionRequests = onSchedule({
 
       for (const target of USER_MAP_TARGETS) {
         const userEntry = new admin.firestore.FieldPath(target.mapField, uid);
-        const snapshot = await db.collectionGroup(target.collectionGroup)
-          .where(userEntry, '!=', null)
-          .get();
-        await Promise.all(snapshot.docs.map(async (document) => {
+        const snapshot = await db.collectionGroup(target.collectionGroup).get();
+        const matchingDocuments = filterUserMapDocuments(snapshot.docs, target.mapField, uid);
+        await Promise.all(matchingDocuments.map(async (document) => {
           const entry = document.data()?.[target.mapField]?.[uid];
           if (target.restoreQuantityField && Number(entry?.quantity) > 0) {
             await document.ref.update(

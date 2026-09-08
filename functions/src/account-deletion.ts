@@ -17,6 +17,27 @@ export type UserMapTarget = {
   restoreQuantityField?: string;
 };
 
+type UserMapDocument = {
+  data(): Record<string, unknown> | undefined;
+};
+
+/**
+ * Firestore cannot define one collection-group index for arbitrary dynamic map
+ * keys such as `signups.{uid}`. Account deletion therefore enumerates the
+ * collection group and selects exact own-property matches before mutating.
+ */
+export function filterUserMapDocuments<T extends UserMapDocument>(
+  documents: T[],
+  mapField: string,
+  userId: string,
+): T[] {
+  return documents.filter((document) => {
+    const candidate = document.data()?.[mapField];
+    return candidate !== null && typeof candidate === "object" &&
+      Object.prototype.hasOwnProperty.call(candidate, userId);
+  });
+}
+
 /**
  * Application records owned by an account and safe to remove after the
  * seven-day retention period. Payment, subscription, Stripe webhook, and
