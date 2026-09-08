@@ -51,8 +51,10 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-020, P1: Assigned equipment cannot be deleted until all assignments have been returned.
 - BUG-021, P1: Hosted anonymous-demo cleanup now validates the configured public origin instead of App Hosting's internal proxy origin.
 - BUG-052, P1: Registered-account logout now awaits removal of the current browser's legacy and Web Push registrations; anonymous demos bypass the registered-only endpoint and complete authoritative cleanup. Exact production is verified; physical registered-account A-to-B isolation remains a coverage requirement.
+- BUG-053, P1: Service-worker activation now deletes every stale cache before claiming clients; exact deployed update verification remains pending.
+- BUG-054, P2: The deterministic Squad Pro Scout fixture now writes the current active profile and metrics schema instead of only the retired legacy flag; exact deployed public rendering remains pending.
 
-Open severity totals: P0 0, P1 0, P2 0, P3 0. All implementation findings are resolved; remaining matrix blockers are unexecuted certification evidence, not known defects.
+Open severity totals: P0 0, P1 1 pending deployment verification, P2 1 pending deployment verification, P3 0. No known implementation defect remains unfixed locally; the two newest repairs still require exact deployed proof.
 
 ## Exact-candidate staging and live-demo follow-up — 2026-09-04
 

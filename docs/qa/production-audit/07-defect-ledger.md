@@ -2,7 +2,31 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-08. BUG-052 is exact-production verified; all implementation defects are resolved and BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-08. BUG-052 is exact-production verified. BUG-053 and BUG-054 are repaired locally and await exact deployment verification; BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-054 — Demo Scout fixture uses retired activation state
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Demo and Recruiting — public Scout profile |
+| Reproduction | Exact production Squad Pro demo created deterministic player Alex Rivera, but `GET /api/public/recruiting/{playerId}` returned HTTP 404. |
+| Root cause | The browser demo seeder set only legacy `players.recruitingProfileEnabled`; the public boundary intentionally requires `players/{id}/recruitingProfile/profile.status` to be `active` or `committed`. No current profile or metrics document was created. |
+| Repair | Alex remains the single public demo prospect and now receives current-schema active profile and metrics documents after the parent player is committed. Every other demo player remains private. |
+| Verification | A regression failed first because no current activation state or profile/metrics writes existed. It now passes; typecheck passes, scoped lint has zero errors, and `git diff --check` passes. Exact deployment, successful public API rendering, allowlist inspection, and demo cleanup remain required. |
+| Status | RESOLVED LOCALLY; EXACT DEPLOYMENT VERIFICATION PENDING |
+
+## BUG-053 — Service worker claims clients before stale-cache deletion completes
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | PWA/offline — update and cache privacy |
+| Reproduction | A controlled service-worker activation held stale-cache deletion pending while `clients.claim()` ran immediately. |
+| Root cause | The activate handler registered cache deletion with `event.waitUntil(...)` but invoked `clients.claim()` outside that promise chain. A new worker could control pages before legacy or corrupt caches were removed. |
+| Repair | Client claiming is chained after all non-current cache deletions resolve. |
+| Verification | The race regression was RED (`claimed` was 1 while deletion was pending) and is GREEN after repair. The focused Push/PWA pack passes, typecheck and scoped lint pass, and real local Chromium removed seeded v8/corrupt caches while retaining v9; an offline `/dashboard` request showed only the public shell and no seeded private marker. Exact deployment/update verification remains required. |
+| Status | RESOLVED LOCALLY; EXACT DEPLOYMENT VERIFICATION PENDING |
 
 ## BUG-052 — Logout can retain the prior account's push endpoint
 
