@@ -35,8 +35,17 @@ export function youthInviteRollbackPlan({
   };
 }
 
-export function youthInviteCanStartRotation(invite: Record<string, unknown>): boolean {
-  return invite.deliveryStatus !== 'pending';
+function youthInviteHasTimeRemaining(invite: Record<string, unknown>, nowMs = Date.now()): boolean {
+  if (typeof invite.expiresAt !== 'string') return false;
+  const expiresAt = new Date(invite.expiresAt).getTime();
+  return Number.isFinite(expiresAt) && expiresAt > nowMs;
+}
+
+export function youthInviteCanStartRotation(
+  invite: Record<string, unknown>,
+  nowMs = Date.now(),
+): boolean {
+  return invite.deliveryStatus !== 'pending' || !youthInviteHasTimeRemaining(invite, nowMs);
 }
 
 export function youthInviteCanResumeDelivery(
@@ -44,6 +53,7 @@ export function youthInviteCanResumeDelivery(
   request: { childId: string; parentId: string; email: string },
 ): boolean {
   return invite.deliveryStatus === 'pending' &&
+    youthInviteHasTimeRemaining(invite) &&
     invite.childId === request.childId &&
     invite.parentId === request.parentId &&
     invite.email === request.email;

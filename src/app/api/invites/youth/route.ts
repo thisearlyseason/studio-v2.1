@@ -348,6 +348,10 @@ export async function POST(req: NextRequest) {
         ? previousInviteData
         : null;
 
+      if (previousInviteRef && previousInviteData && !previousInvite) {
+        transaction.delete(previousInviteRef);
+      }
+
       transaction.create(candidateInviteRef, {
         token: candidateToken,
         childId,

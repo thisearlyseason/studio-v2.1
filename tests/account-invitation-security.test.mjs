@@ -92,7 +92,9 @@ test('only the current invite can redeem a player that still has no login', asyn
 });
 
 test('a pending delivery locks rotation and is never resurrected as rollback state', async () => {
-  assert.equal(youthInviteCanStartRotation({ deliveryStatus: 'pending' }), false);
+  assert.equal(youthInviteCanStartRotation({
+    deliveryStatus: 'pending', expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  }), false);
   assert.equal(youthInviteCanStartRotation({ deliveryStatus: 'delivered' }), true);
   assert.equal(youthInviteCanStartRotation({}), true, 'legacy accepted invitations remain rotatable');
   assert.deepEqual(youthInviteRollbackPlan({
@@ -114,11 +116,13 @@ test('a pending delivery locks rotation and is never resurrected as rollback sta
 });
 
 test('a same-recipient retry can resume a stranded pending provider delivery', () => {
+  const future = new Date(Date.now() + 60_000).toISOString();
   const pending = {
     deliveryStatus: 'pending',
     childId: 'child-a',
     parentId: 'parent-a',
     email: 'athlete@example.test',
+    expiresAt: future,
   };
   assert.equal(youthInviteCanResumeDelivery(pending, {
     childId: 'child-a', parentId: 'parent-a', email: 'athlete@example.test',
@@ -126,6 +130,11 @@ test('a same-recipient retry can resume a stranded pending provider delivery', (
   assert.equal(youthInviteCanResumeDelivery(pending, {
     childId: 'child-a', parentId: 'parent-a', email: 'other@example.test',
   }), false);
+  const expired = { ...pending, expiresAt: new Date(Date.now() - 1).toISOString() };
+  assert.equal(youthInviteCanResumeDelivery(expired, {
+    childId: 'child-a', parentId: 'parent-a', email: 'athlete@example.test',
+  }), false);
+  assert.equal(youthInviteCanStartRotation(expired), true);
 });
 
 test('ambiguous provider transport failures retain the resumable token', async () => {
