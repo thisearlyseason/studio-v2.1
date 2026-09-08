@@ -11,13 +11,13 @@ The matrix contains 88 rows.
 
 | Status | Count |
 |---|---:|
-| PASS | 20 |
+| PASS | 21 |
 | FAIL | 0 |
-| BLOCKED | 67 |
+| BLOCKED | 66 |
 | NOT APPLICABLE | 1 |
 | NOT RUN | 0 |
 
-Completed functional-row coverage is `(PASS + FAIL) / all rows = 20 / 88 = 22.7%`; one rejected feature is explicitly `NOT APPLICABLE`. Fourteen formerly blocked rows were promoted only after exact hosted/provider/background evidence reconciled with their immutable browser and authorization contracts. All remaining rows are explicitly classified BLOCKED rather than left ambiguous.
+Completed functional-row coverage is `(PASS + FAIL) / all rows = 21 / 88 = 23.9%`; one rejected feature is explicitly `NOT APPLICABLE`. Fifteen formerly blocked rows were promoted only after exact hosted/provider/background evidence reconciled with their immutable browser and authorization contracts. All remaining rows are explicitly classified BLOCKED rather than left ambiguous.
 
 ## Tested features and roles
 
@@ -51,10 +51,10 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-020, P1: Assigned equipment cannot be deleted until all assignments have been returned.
 - BUG-021, P1: Hosted anonymous-demo cleanup now validates the configured public origin instead of App Hosting's internal proxy origin.
 - BUG-052, P1: Registered-account logout now awaits removal of the current browser's legacy and Web Push registrations; anonymous demos bypass the registered-only endpoint and complete authoritative cleanup. Exact production is verified; physical registered-account A-to-B isolation remains a coverage requirement.
-- BUG-053, P1: Service-worker activation now deletes every stale cache before claiming clients; exact deployed update verification remains pending.
-- BUG-054, P2: The deterministic Squad Pro Scout fixture now writes the current active profile and metrics schema instead of only the retired legacy flag; exact deployed public rendering remains pending.
+- BUG-053, P1: Service-worker activation now deletes every stale cache before claiming clients; exact production stale-cache and offline-private-data verification passed.
+- BUG-054, P2: The deterministic Squad Pro Scout fixture now writes and exposes the current active public profile/metrics schema; exact production API, allowlist, desktop/mobile rendering, and cleanup verification passed.
 
-Open severity totals: P0 0, P1 1 pending deployment verification, P2 1 pending deployment verification, P3 0. No known implementation defect remains unfixed locally; the two newest repairs still require exact deployed proof.
+Open severity totals: P0 0, P1 0, P2 0, P3 0. No recorded implementation defect remains unresolved. The 66 blocked matrix rows are missing strict workflow, provider, destructive-lifecycle, or physical-device evidence and are not silently converted to passes.
 
 ## Exact-candidate staging and live-demo follow-up — 2026-09-04
 
@@ -186,3 +186,13 @@ The runner inventory also found seven local-owned catalog rows that had never be
 Fresh production Playwright at the final public alias observed the correct title, responsive mobile width with no overflow, manifest and Apple icon discovery, an active root service worker, a secure offline shell that states personal data is not stored, and zero online application console errors. The focused Push/PWA/reminder regression pack passed 54/54 before the logout review.
 
 That review found BUG-052: the Shell logout skipped push teardown and Settings launched it without awaiting completion. Registered paths now await legacy and Web Push removal while the user is still authenticated, before browser-session clearing and Firebase sign-out. The first exact deployment exposed an anonymous-demo 403 because demos cannot own registered notification endpoints; a second test-first repair skips only that inapplicable call while preserving authoritative demo cleanup. Release gate `34192250393` passed, Vercel deployment `dpl_4KWviEUxxuYtFtDSWXe1v7w9t6pM` serves merge `c5d1a97f`, and fresh production Playwright observed `/api/demo/exit` HTTP 204, `/login`, no notification-device rejection, and zero console errors. BUG-052 is exact-production verified. Push/PWA strict rows remain blocked only by physical Android negative/account-switch scenarios and physical iPhone/iPad requirements.
+
+## Final changed-feature production regression — 2026-09-08
+
+Production merge `471853dd681caae283ba2243394fd8ca930c9de0` served the corrected v9 worker. Fresh Chrome seeded a legacy v8 cache containing a private dashboard marker and a separate corrupt private cache, activated the live worker, and observed that both were deleted before client claim while v9 remained. With the browser offline, `/dashboard` rendered the public security shell and neither private marker. This closes BUG-053 without changing the strict physical-device requirements of the PWA row.
+
+Release gate `34195203926` passed type checking, lint, application tests, production build, Functions build, Firebase rules, and production dependency audits for the completed Squad Pro Scout fixture. Production merge `4efd498d2c2f8128de6115d94c04eb5f62050555` then produced a fresh demo whose Alex Rivera roster dialog exposed the public Scout link. Its API returned HTTP 200 with active allowlisted profile, metrics, and public-video data and no DOB, contact, user, owner, or demo-owner identifiers. The page displayed height, weight, and the highlight on desktop and 390×844 mobile with no overflow or console errors. Exact demo cleanup returned HTTP 204. Combined with the immutable 11/11 activation/privacy/media contract, the public Scout projection row is now PASS.
+
+The same walkthrough exposed an incomplete Settings-specific branch of BUG-052: an anonymous demo attempted the registered-device endpoint and refused to exit after HTTP 403. A failing regression was added before the Settings path adopted the same anonymous-demo cleanup ordering as the Shell. Release gate `34196012848` passed, Vercel completed production merge `3b26001e76ae940e84d1e6e4b36135126d3ec894`, and `/api/health` reported that exact revision. Fresh production Playwright then launched a new Squad Pro demo, opened Settings, received HTTP 204 from `/api/demo/exit`, made no `/api/notifications/device` request, reached `/login`, redirected a direct `/dashboard` revisit to expired login, and recorded zero browser errors.
+
+All recorded implementation defects are therefore resolved and exact-boundary verified. The application is deployed and suitable for continued live-demo use, but it is not fully production-certified under this audit's strict standard: 66 rows remain `BLOCKED`, principally for exact hosted multi-role workflows, provider/destructive lifecycle cases, physical Android negative/account-switch cases, and physical iPhone/iPad PWA/push acceptance. No blocked row is represented as a PASS without that evidence.
