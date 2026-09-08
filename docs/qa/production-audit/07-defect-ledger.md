@@ -2,7 +2,31 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-05; forty-two defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-08; forty-four defects are resolved and BUG-011 is retired by product decision. BUG-005 now has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix rather than open as an implementation defect. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+
+## BUG-047 — Client demo seed writes server-protected tournament events
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Demo — protected tournament bootstrap |
+| Reproduction | After BUG-046 allowed both children to persist on staging revision `studio-build-2026-09-08-003`, the Parent Family page rendered but Playwright captured three deterministic Firestore permission errors and two retries. Each first failure began with the client-created `tourn_{teamId}_demo` event; retries then also encountered time-varying existing event updates. |
+| Root cause | The legacy client seeder still attempted to create tournament lifecycle records even though production rules correctly reserve those records for authenticated server actions. The server bootstrap seeded tournaments only for Elite plans, leaving Parent and other demo shells on the forbidden path. |
+| Repair | The authenticated `/api/demo/seed` bootstrap now creates the protected tournament blueprint for every non-institution demo squad. The client-side tournament generator/write was removed; ordinary league games and practices remain client-seeded under the isolated demo-owner rule. |
+| Verification | A red test proved Parent server bootstrap had no tournament, then 9/9 focused demo-route tests passed with a server-owned tournament for both Parent squads and a source boundary excluding the forbidden client write. Type checking passed and scoped lint reported zero errors. On exact SHA `fb0f0ca6bdb1c4307bb58538a3dfcd824aec8558`, staging revision `studio-build-2026-09-08-004`, fresh Parent, Starter, Elite, and School Playwright sessions all completed bootstrap, reached their expected dashboards at 390 or 1440 CSS pixels, showed no Sync Failed/loading state, and reported zero console errors or warnings. |
+| Status | RESOLVED AND EXACT-STAGING VERIFIED |
+
+## BUG-046 — Parent demo youth records use rule-invalid null login identities
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Demo — Parent workspace seed and Family landing |
+| Reproduction | On exact staging revision `studio-build-2026-09-08-002` for application SHA `8b6a3e9237267bbfcc7ad235a0dbed50e29f10c4`, a fresh 390x844 Playwright Parent Demo session reached `/family` but remained on “Building Demo Environment”. The final five-write chunk failed twice with Firestore permission errors for both player records, both team-member projections, and the first household payment. |
+| Root cause | Accountless youth records explicitly stored `userId: null`. Firestore player-create policy intentionally accepts only the authenticated player's UID or an absent/empty `userId`; `null` is neither, so the atomic chunk failed before the family data could exist. |
+| Repair | The shared accountless-youth helper now omits `userId` entirely and includes `pendingInviteEmail` only for an actual pending invitation. Both Junior and Alex use the same safe shape. |
+| Verification | The regression first failed against the null-valued helper, then passed 8/8 focused demo seed tests after the repair; type checking passed. On exact SHA `fb0f0ca6bdb1c4307bb58538a3dfcd824aec8558`, staging revision `studio-build-2026-09-08-004`, a fresh 390x844 Parent session reached `/family`, rendered Junior Guest and Alex Guest with their distinct squads, schedules, waivers, and payment summary, had no loading/Sync Failed state, and produced zero console errors or warnings; the demo seed POST/PUT and all observed application requests returned HTTP 200. |
+| Status | RESOLVED AND EXACT-STAGING VERIFIED |
 
 ## BUG-045 — Media MIME, byte limits and legacy token URLs bypass private delivery (local P1 repair)
 
@@ -13,8 +37,8 @@
 | Reproduction | Actual authenticated Storage emulator writes accepted text-as-JPEG and 5 MiB+1 avatar bytes; an already-issued player token URL stayed anonymous-readable after opt-out. RED logs: `/tmp/task5-media-boundaries-red.log`, `/tmp/task5-media-sdk-emulator2.log`. |
 | Root cause | Direct client writes trusted MIME metadata and a looser image cap; UI stored bearer download URLs; recruiting opt-out did not revoke them. The emulator additionally retains tokens separately from cleared metadata. |
 | Local repair | Server-authorized private media POST/GET/DELETE, real raster decode and 5 MiB limit, bounded 500 MiB streaming with owned pending objects/generation-checked promotion, protected range reads, affected UI integrations and exact legacy-token revocation with stale-URL verification. Direct final-object writes and client flag bypass are blocked. Emulator compatibility is strict loopback/demo-only. |
-| Verification | Policy/authority/route/client/harness tests and 49 Rules tests pass. Real SDK stale-URL regression passes with owned fixture cleanup. Exact isolated browser and affected Film evidence remain pending. |
-| Status | LOCAL P1 REPAIR — EXACT BROWSER, INDEPENDENT REVIEW AND STAGING GATES OPEN |
+| Verification | Policy/authority/route/client/harness tests and 49 Rules tests pass. Real SDK stale-URL regression passes with owned fixture cleanup. Exact browser run `final-cert-t5-260908-002336-78b3` observed every avatar, recruiting-media, privacy, stale-token, byte-limit, responsive, console, network, delete, and cleanup case; it deleted 315 owned records, restored 3 baseline records, and retained zero residue. Exact-revision staging remains open. |
+| Status | RESOLVED LOCALLY AND EXACT-BROWSER VERIFIED — STAGING GATE OPEN |
 
 ## BUG-044 — Library upload stores a data URL without a Storage lifecycle (local repair pending browser verification)
 
@@ -28,8 +52,8 @@
 | Expected behavior | One private object and one metadata document; authorized attachment download with exact bytes; deletion revokes both layers. |
 | Root cause | The UI used FileReader data URLs and direct Firestore writes/deletes, with no private object/upload/download service. Direct staff metadata writes also bypassed object ownership and quota enforcement. |
 | Local repair | Authenticated Library API validates MIME/signature and 10 MiB file limit, transactionally enforces 500 MiB Starter aggregate, owns private objects/metadata and protected no-store attachment downloads, and performs dual-layer deletion. Legacy reads and existing Film/link paths are preserved. |
-| Verification | Focused lifecycle/permission/quota/spoof tests and all 46 Firestore/Storage rules tests pass. Exact repaired-candidate browser verification is pending. |
-| Status | LOCAL REPAIR — EXACT BROWSER AND STAGING GATES OPEN |
+| Verification | Focused lifecycle/permission/quota/spoof tests and all 46 Firestore/Storage rules tests pass. Exact browser run `final-cert-t5-260908-002012-5b99` observed upload, private-object persistence, exact download bytes/hash/name, member read-only access, size/signature/tenant/anonymous denial, stale-URL revocation, responsive bounds, console/network health, delete, and zero-residue cleanup. Exact-revision staging remains open. |
+| Status | RESOLVED LOCALLY AND EXACT-BROWSER VERIFIED — STAGING GATE OPEN |
 
 ## BUG-043 — Legacy module flags diverge from canonical tenant controls (resolved)
 
