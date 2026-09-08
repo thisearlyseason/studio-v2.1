@@ -139,6 +139,8 @@ test('checkout idempotency fingerprints all material checkout choices', () => {
     billingCycle: 'monthly',
     quantity: 1,
     teamId: 'team-1',
+    customerId: 'cus-1',
+    subscriptionId: 'sub-1',
     operationId: 'operation-0000001',
     now: 1_800_000,
   };
@@ -147,6 +149,8 @@ test('checkout idempotency fingerprints all material checkout choices', () => {
   assert.notEqual(buildCheckoutIdempotencyKey({ ...base, route: 'legacy-checkout' }), key);
   assert.notEqual(buildCheckoutIdempotencyKey({ ...base, quantity: 2 }), key);
   assert.notEqual(buildCheckoutIdempotencyKey({ ...base, teamId: 'team-2' }), key);
+  assert.notEqual(buildCheckoutIdempotencyKey({ ...base, customerId: 'cus-2' }), key);
+  assert.notEqual(buildCheckoutIdempotencyKey({ ...base, subscriptionId: 'sub-2' }), key);
   assert.notEqual(
     buildCheckoutIdempotencyKey({ ...base, operationId: 'operation-0000002' }),
     key

@@ -154,6 +154,7 @@ export async function POST(req: NextRequest) {
       priceId,
       billingCycle,
       quantity: extraTeams as number,
+      customerId: stripeCustomerId,
       now: Date.now(),
     });
     let lockClaim = await claimCheckoutLock(userRef, idempotencyKey);

@@ -136,6 +136,8 @@ export async function POST(req: NextRequest) {
       priceId: targetAddonPriceId,
       billingCycle,
       quantity,
+      customerId: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
+      subscriptionId,
       operationId,
       now: Date.now(),
     });
