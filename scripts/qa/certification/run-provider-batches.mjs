@@ -8,7 +8,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
 import { Webhook } from 'svix';
 
-import { assertProviderSafety } from './provider-safety.mjs';
+import { assertProviderSafety, assertProviderTargetSafety } from './provider-safety.mjs';
 
 const EXACT_PROJECT_ID = 'the-squad-v2-staging';
 const EXACT_ORIGIN = 'https://studio--the-squad-v2-staging.us-east4.hosted.app';
@@ -59,6 +59,15 @@ const SECRET_FIELDS = /(?:key|secret|token|authorization|cookie|providerObjectId
 
 export function sanitizeProviderEvidence(value) {
   return Object.fromEntries(Object.entries(value).filter(([key]) => !SECRET_FIELDS.test(key)));
+}
+
+export function providerLedgerCompleted(kind, data) {
+  if (kind === 'resend-email-event') {
+    return data?.eventType === 'email.sent' &&
+      typeof data?.emailId === 'string' && data.emailId.startsWith('email_provider_cert_');
+  }
+  return ['stripe-standard', 'stripe-connect', 'resend-delivery'].includes(kind) &&
+    data?.status === 'completed';
 }
 
 function readSecret(projectId, name) {
@@ -163,6 +172,7 @@ export async function main({
   recipient = process.env.CERTIFICATION_RECIPIENT || '',
   approvedRecipient = process.env.CERTIFICATION_APPROVED_RECIPIENT || '',
 } = {}) {
+  assertProviderTargetSafety({ projectId, origin, recipient, approvedRecipient });
   const stripeKey = readSecret(projectId, 'STRIPE_SECRET_KEY');
   const stripeWebhookSecret = readSecret(projectId, 'STRIPE_WEBHOOK_SECRET');
   const stripeConnectWebhookSecret = readSecret(projectId, 'STRIPE_CONNECT_WEBHOOK_SECRET');
@@ -187,7 +197,10 @@ export async function main({
     for (const probe of plan) {
       for (const documentPath of probe.cleanupPaths) {
         const snapshot = await db.doc(documentPath).get();
-        if (!snapshot.exists || snapshot.data()?.status !== 'completed') {
+        const ledgerKind = probe.kind === 'resend'
+          ? documentPath.startsWith('newsletter_email_events/') ? 'resend-email-event' : 'resend-delivery'
+          : probe.kind;
+        if (!snapshot.exists || !providerLedgerCompleted(ledgerKind, snapshot.data())) {
           throw new Error(`${probe.kind} staging ledger did not reach completed state`);
         }
       }

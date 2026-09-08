@@ -14,6 +14,7 @@ const safe = {
 };
 
 test('provider certification accepts only the isolated staging origin and test-mode providers', () => {
+  assert.equal(safety.assertProviderTargetSafety(safe), true);
   assert.equal(typeof safety.assertProviderSafety, 'function');
   assert.equal(safety.assertProviderSafety(safe), true);
 });
@@ -26,6 +27,11 @@ test('provider certification refuses production, live Stripe, wrong recipient, a
     { ...safe, recipient: 'other@example.test' },
     { ...safe, livemode: true },
   ]) assert.throws(() => safety.assertProviderSafety(input), /refus/i);
+  assert.throws(() => safety.assertProviderTargetSafety({
+    ...safe,
+    projectId: 'production-project',
+    stripeKey: undefined,
+  }), /refus/i);
 });
 
 test('provider probe plan is exact-origin, replay-aware, and owns every staging ledger mutation', () => {
@@ -58,4 +64,15 @@ test('provider evidence sanitizer retains outcomes but removes secret and provid
     status: 200,
     duplicate: true,
   });
+});
+
+test('provider ledger completion recognizes each endpoint authoritative record shape', () => {
+  assert.equal(runner.providerLedgerCompleted('stripe-standard', { status: 'completed' }), true);
+  assert.equal(runner.providerLedgerCompleted('stripe-connect', { status: 'completed' }), true);
+  assert.equal(runner.providerLedgerCompleted('resend-delivery', { status: 'completed' }), true);
+  assert.equal(runner.providerLedgerCompleted('resend-email-event', {
+    eventType: 'email.sent',
+    emailId: 'email_provider_cert_123',
+  }), true);
+  assert.equal(runner.providerLedgerCompleted('resend-email-event', { status: 'completed' }), false);
 });
