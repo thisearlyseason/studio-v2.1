@@ -139,6 +139,42 @@ export function verificationEmail({ name, email, verificationLink }: {
   };
 }
 
+export function youthInvitationEmail({
+  childName,
+  guardianName,
+  invitationLink,
+  expiresAt,
+}: {
+  childName: string;
+  guardianName?: string;
+  invitationLink: string;
+  expiresAt: string;
+}): { subject: string; html: string } {
+  const normalizedGuardianName = guardianName?.trim() || 'Your parent or guardian';
+  const safeChildName = escapeHtml(childName.trim() || 'Athlete');
+  const safeGuardianName = escapeHtml(normalizedGuardianName);
+  const expiry = Number.isNaN(Date.parse(expiresAt))
+    ? 'in 7 days'
+    : new Date(expiresAt).toLocaleDateString('en-CA', { dateStyle: 'medium', timeZone: 'UTC' });
+  return {
+    subject: `${normalizedGuardianName} invited you to ${BRAND_NAME}`,
+    html: layout('Activate Your Athlete Account', `
+      <p style="margin:0 0 10px;font-size:20px;font-weight:900;color:#18181b;">Hi ${safeChildName},</p>
+      <p style="margin:0 0 24px;font-size:15px;color:#52525b;line-height:1.65;">
+        ${safeGuardianName} invited you to activate your athlete account on <strong>${BRAND_NAME}</strong>.
+      </p>
+      <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:16px;padding:18px 20px;margin:0 0 8px;">
+        <p style="margin:0;color:#6d28d9;font-size:11px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;">Single-use invitation</p>
+        <p style="margin:8px 0 0;color:#52525b;font-size:13px;line-height:1.55;">This link expires ${escapeHtml(expiry)} and can activate only the athlete profile named above.</p>
+      </div>
+      ${btn('Activate My Account', invitationLink)}
+      <p style="margin:0;font-size:12px;color:#71717a;text-align:center;line-height:1.6;">
+        If you were not expecting this invitation, you can safely ignore it.
+      </p>
+    `),
+  };
+}
+
 // ── Template 4: New Event / Game Notification ────────────────────────────────
 export function eventNotificationEmail({ recipientName, teamName, eventTitle, eventDate, eventTime, location, eventType }: {
   recipientName: string;

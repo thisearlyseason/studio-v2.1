@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { adminDb, ensureAdminInit } from '@/lib/firebase-admin';
+import { youthInvitationEmail } from '@/lib/email-templates';
+import { getResend } from '@/lib/server-resend-client';
 import {
   enforcePublicRateLimit,
   enforceUserRateLimit,
@@ -13,6 +15,7 @@ import {
 const TOKEN_PATTERN = /^[a-f0-9]{48}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+const FROM = 'The Squad Pro <noreply@thesquad.pro>';
 
 function cleanChildId(value: unknown): string | null {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) return null;
@@ -36,6 +39,30 @@ async function invitationWasConsumed(
     if (Date.now() >= deadline) return false;
     await new Promise(resolve => setTimeout(resolve, 25));
   } while (true);
+}
+
+async function rollbackYouthInviteDelivery(
+  inviteRef: FirebaseFirestore.DocumentReference,
+  playerRef: FirebaseFirestore.DocumentReference,
+  token: string,
+) {
+  await adminDb.runTransaction(async transaction => {
+    const [inviteSnapshot, playerSnapshot] = await Promise.all([
+      transaction.get(inviteRef),
+      transaction.get(playerRef),
+    ]);
+    if (inviteSnapshot.exists && inviteSnapshot.data()?.token === token) {
+      transaction.delete(inviteRef);
+    }
+    if (playerSnapshot.data()?.inviteToken === token) {
+      transaction.update(playerRef, {
+        pendingInviteEmail: admin.firestore.FieldValue.delete(),
+        inviteToken: admin.firestore.FieldValue.delete(),
+        inviteSentAt: admin.firestore.FieldValue.delete(),
+        inviteExpiresAt: admin.firestore.FieldValue.delete(),
+      });
+    }
+  });
 }
 
 type AuthorizedMembershipBinding = {
@@ -216,6 +243,31 @@ export async function POST(req: NextRequest) {
       inviteExpiresAt: expiresAt,
     });
     await batch.commit();
+
+    const childName = [player.firstName, player.lastName]
+      .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+      .join(' ')
+      .trim() || 'Athlete';
+    const guardian = await adminDb.collection('users').doc(auth.uid).get();
+    const guardianName = typeof guardian.data()?.fullName === 'string'
+      ? guardian.data()!.fullName
+      : '';
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.thesquad.pro').replace(/\/$/, '');
+    const invitationLink = `${appUrl}/signup/youth?token=${encodeURIComponent(token)}`;
+    const invitation = youthInvitationEmail({ childName, guardianName, invitationLink, expiresAt });
+    try {
+      const { data, error } = await getResend().emails.send({
+        from: FROM,
+        to: [email],
+        subject: invitation.subject,
+        html: invitation.html,
+      });
+      if (error || !data?.id) throw new Error('Resend did not accept the invitation.');
+    } catch (deliveryError) {
+      await rollbackYouthInviteDelivery(inviteRef, playerRef, token);
+      console.error('[invites/youth POST] Email delivery failed:', deliveryError);
+      throw new RequestBodyError('Invitation email delivery failed.', 502);
+    }
 
     return NextResponse.json({ ok: true, token, expiresAt });
   } catch (error: any) {

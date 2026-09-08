@@ -35,3 +35,17 @@ test('concurrent youth redemption reports a consumed invitation instead of accou
   assert.match(route, /await invitationWasConsumed\(redeemInviteRef\)/);
   assert.match(route, /Invitation not found or expired\./);
 });
+
+test('youth invitation creation actually delivers the single-use activation link', async () => {
+  const [route, templates] = await Promise.all([
+    readFile(new URL('../src/app/api/invites/youth/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/lib/email-templates.ts', import.meta.url), 'utf8'),
+  ]);
+
+  const createSection = route.slice(route.indexOf('export async function POST'), route.indexOf('export async function PUT'));
+  assert.match(createSection, /youthInvitationEmail/);
+  assert.match(createSection, /getResend\(\)\.emails\.send/);
+  assert.match(createSection, /signup\/youth\?token=/);
+  assert.match(createSection, /rollbackYouthInviteDelivery/);
+  assert.match(templates, /export function youthInvitationEmail/);
+});
