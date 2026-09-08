@@ -28,9 +28,9 @@ const standingsConfig = (overrides = {}) => ({
 });
 
 async function load() {
-  const module = await import('../src/lib/tiered-playoffs/standings.ts').catch(() => null);
-  assert.ok(module, 'Tiered standings module must exist');
-  return module;
+  const loaded = await import('../src/lib/tiered-playoffs/standings.ts').catch(() => null);
+  assert.ok(loaded, 'Tiered standings module must exist');
+  return loaded;
 }
 
 test('Tiered standings use configured points and ignore non-official or playoff games', async () => {

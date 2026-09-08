@@ -3,9 +3,9 @@ import test from 'node:test';
 import { recordTournamentScore } from '../src/lib/scheduler-utils.ts';
 
 async function load() {
-  const module = await import('../src/lib/tiered-playoffs/brackets.ts').catch(() => null);
-  assert.ok(module, 'Tiered bracket module must exist');
-  return module;
+  const loaded = await import('../src/lib/tiered-playoffs/brackets.ts').catch(() => null);
+  assert.ok(loaded, 'Tiered bracket module must exist');
+  return loaded;
 }
 
 const placements = count => Array.from({ length: count }, (_, index) => ({
@@ -42,6 +42,53 @@ test('six-team bracket gives Seeds 1 and 2 byes and opens with 3v6 and 4v5', asy
   const semifinals = games.filter(game => game.round === 'Semi-Finals');
   assert.equal(semifinals.some(game => game.divisionSeed1 === 1 || game.divisionSeed2 === 1), true);
   assert.equal(semifinals.some(game => game.divisionSeed1 === 2 || game.divisionSeed2 === 2), true);
+});
+
+test('first-round rematch preference deterministically reassigns only lower seeds when a seed-compatible alternative exists', async () => {
+  const { generateTieredDivisionBracket } = await load();
+  const preliminaryGames = [
+    { team1Id: 'team_1', team2Id: 'team_8' },
+    { team1Id: 'team_2', team2Id: 'team_7' },
+  ];
+  const standard = generateTieredDivisionBracket(
+    { id: 'division_a', name: 'A Division', size: 8 },
+    placements(8),
+  ).filter(game => game.round === 'Quarter-Finals');
+  const adjusted = generateTieredDivisionBracket(
+    { id: 'division_a', name: 'A Division', size: 8 },
+    placements(8),
+    { avoidPreliminaryRematches: true, preliminaryGames },
+  ).filter(game => game.round === 'Quarter-Finals');
+  const pairs = games => games.map(game => [game.divisionSeed1, game.divisionSeed2].sort((a, b) => a - b));
+  assert.deepEqual(pairs(standard), [[1, 8], [4, 5], [2, 7], [3, 6]]);
+  assert.equal(pairs(adjusted).some(([a, b]) => (a === 1 && b === 8) || (a === 2 && b === 7)), false);
+  assert.deepEqual(adjusted.map(game => Math.min(game.divisionSeed1, game.divisionSeed2)).sort((a, b) => a - b), [1, 2, 3, 4]);
+  assert.deepEqual(adjusted.map(game => Math.max(game.divisionSeed1, game.divisionSeed2)).sort((a, b) => a - b), [5, 6, 7, 8]);
+  assert.deepEqual(
+    pairs(generateTieredDivisionBracket(
+      { id: 'division_a', name: 'A Division', size: 8 },
+      placements(8),
+      { avoidPreliminaryRematches: true, preliminaryGames },
+    ).filter(game => game.round === 'Quarter-Finals')),
+    pairs(adjusted),
+  );
+});
+
+test('rematch preference remains bounded for a 32-team division', async () => {
+  const { generateTieredDivisionBracket } = await load();
+  const preliminaryGames = Array.from({ length: 16 }, (_, index) => ({
+    team1Id: `team_${index + 1}`,
+    team2Id: `team_${32 - index}`,
+  }));
+  const games = generateTieredDivisionBracket(
+    { id: 'division_a', name: 'A Division', size: 32 },
+    placements(32),
+    { avoidPreliminaryRematches: true, preliminaryGames },
+  );
+  assert.equal(games.length, 31);
+  assert.equal(games.filter(game => game.round === 'Round of 32').some(game =>
+    preliminaryGames.some(previous => [previous.team1Id, previous.team2Id].includes(game.team1Id) &&
+      [previous.team1Id, previous.team2Id].includes(game.team2Id))), false);
 });
 
 test('winner links advance to one independent division champion', async () => {

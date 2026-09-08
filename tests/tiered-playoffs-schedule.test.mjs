@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 async function load() {
-  const module = await import('../src/lib/tiered-playoffs/schedule.ts').catch(() => null);
-  assert.ok(module, 'Tiered schedule module must exist');
-  return module;
+  const loaded = await import('../src/lib/tiered-playoffs/schedule.ts').catch(() => null);
+  assert.ok(loaded, 'Tiered schedule module must exist');
+  return loaded;
 }
 
 const teams = count => Array.from({ length: count }, (_, index) => ({ id: `team_${index + 1}`, name: `Team ${index + 1}` }));

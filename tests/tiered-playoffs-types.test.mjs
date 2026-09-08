@@ -45,28 +45,28 @@ const validConfig = {
 };
 
 test('Tiered Playoffs configuration accepts a complete versioned 24-team setup', async () => {
-  const module = await import('../src/lib/tiered-playoffs/types.ts').catch(() => null);
-  assert.ok(module, 'Tiered Playoffs configuration module must exist');
-  assert.deepEqual(module.validateTieredPlayoffsConfig(validConfig, 24), { valid: true, errors: [] });
+  const loaded = await import('../src/lib/tiered-playoffs/types.ts').catch(() => null);
+  assert.ok(loaded, 'Tiered Playoffs configuration module must exist');
+  assert.deepEqual(loaded.validateTieredPlayoffsConfig(validConfig, 24), { valid: true, errors: [] });
 });
 
 test('Tiered Playoffs configuration rejects unsafe ranking, division, cap, and schema values', async () => {
-  const module = await import('../src/lib/tiered-playoffs/types.ts').catch(() => null);
-  assert.ok(module, 'Tiered Playoffs configuration module must exist');
+  const loaded = await import('../src/lib/tiered-playoffs/types.ts').catch(() => null);
+  assert.ok(loaded, 'Tiered Playoffs configuration module must exist');
 
   const duplicateRules = structuredClone(validConfig);
   duplicateRules.standings.rankingRules = ['wins', 'wins'];
-  assert.equal(module.validateTieredPlayoffsConfig(duplicateRules, 24).valid, false);
+  assert.equal(loaded.validateTieredPlayoffsConfig(duplicateRules, 24).valid, false);
 
   const invalidSizes = structuredClone(validConfig);
   invalidSizes.divisions.definitions[3].size = 5;
-  assert.equal(module.validateTieredPlayoffsConfig(invalidSizes, 24).valid, false);
+  assert.equal(loaded.validateTieredPlayoffsConfig(invalidSizes, 24).valid, false);
 
   const negativeCap = structuredClone(validConfig);
   negativeCap.standings.maximumDifferentialPerGame = -1;
-  assert.equal(module.validateTieredPlayoffsConfig(negativeCap, 24).valid, false);
+  assert.equal(loaded.validateTieredPlayoffsConfig(negativeCap, 24).valid, false);
 
   const unknownSchema = structuredClone(validConfig);
   unknownSchema.schemaVersion = 2;
-  assert.equal(module.validateTieredPlayoffsConfig(unknownSchema, 24).valid, false);
+  assert.equal(loaded.validateTieredPlayoffsConfig(unknownSchema, 24).valid, false);
 });

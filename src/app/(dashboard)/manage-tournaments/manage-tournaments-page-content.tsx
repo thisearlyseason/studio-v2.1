@@ -772,10 +772,14 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
           <div className="flex-1 flex flex-col overflow-hidden relative">
             <div className="absolute top-10 right-10 opacity-5 pointer-events-none w-64 h-64"><Trophy className="w-full h-full" /></div>
             
-            <ScrollArea showScrollHint scrollHintLabel="More tournament settings" className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0">
-              <div className="max-w-3xl mx-auto space-y-12">
+            <ScrollArea
+              showScrollHint
+              scrollHintLabel="More tournament settings"
+              className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0 [&_[data-radix-scroll-area-viewport]>div]:!block [&_[data-radix-scroll-area-viewport]>div]:!w-full [&_[data-radix-scroll-area-viewport]>div]:!min-w-0"
+            >
+              <div className="max-w-3xl w-full min-w-0 mx-auto space-y-12">
                 {step === 1 && (
-                  <div className="space-y-12 animate-in slide-in-from-right-4 duration-500">
+                  <div className="min-w-0 space-y-12 animate-in slide-in-from-right-4 duration-500">
                     <div>
                       <Badge className="bg-primary/20 text-primary border border-primary/30 uppercase font-black tracking-widest text-[8px] mb-4">Phase 1: Base Configuration</Badge>
                       <h3 className="text-4xl font-black uppercase tracking-tighter mb-2 text-white">Identity & Operations</h3>
@@ -1116,10 +1120,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                       };
 
                       return (
-                        <div className="space-y-8">
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="min-w-0 space-y-8">
+                          <div className="min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-8">
                             {/* Card 1: Format & Chrono Sync */}
-                            <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
+                            <div className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
                               <h4 className="font-black text-sm uppercase tracking-widest text-primary">Format & Chrono Sync</h4>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div className="space-y-2">
@@ -1232,7 +1236,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                                   </>
                                 )}
                                 {activeConfig.tournamentType === 'tiered_playoffs' && (
-                                  <div className="sm:col-span-2 rounded-2xl border border-primary/30 bg-primary/5 p-5 space-y-5" data-testid="tiered-playoffs-setup">
+                                  <div className="min-w-0 sm:col-span-2 rounded-2xl border border-primary/30 bg-primary/5 p-4 sm:p-5 space-y-5" data-testid="tiered-playoffs-setup">
                                     <div>
                                       <p className="text-xs font-black uppercase tracking-widest text-white">Tiered Playoffs</p>
                                       <p className="text-[10px] text-white/50 mt-1">All teams share preliminary standings, then split into independent seeded championship brackets.</p>
@@ -1368,7 +1372,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                           </div>
 
                           {/* Card 3: Daily Operational Windows */}
-                          <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
+                          <div data-testid="daily-operational-windows" className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
                             <div className="flex items-center justify-between">
                               <h4 className="font-black text-sm uppercase tracking-widest text-primary">Daily Operational Windows</h4>
                               {(!activeConfig.dailyWindows || activeConfig.dailyWindows.length === 0) && (
@@ -1386,8 +1390,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                             {activeConfig.dailyWindows && activeConfig.dailyWindows.length > 0 ? (
                               <div className="grid gap-4">
                                 {activeConfig.dailyWindows.map((win, idx) => (
-                                  <div key={win.date} className="bg-white/5 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between border border-white/5 gap-4">
-                                    <div className="flex items-center gap-3">
+                                  <div key={win.date} data-testid="daily-window-row" className="min-w-0 bg-white/5 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between border border-white/5 gap-4">
+                                    <div className="flex min-w-0 items-center gap-3">
                                       <CalendarIcon className="h-4 w-4 text-white/30" />
                                       <span className="font-black uppercase tracking-widest text-xs">
                                         {(() => {
@@ -1400,7 +1404,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                                         })()}
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-3">
+                                    <div data-testid="daily-window-controls" className="flex min-w-0 flex-wrap items-center gap-3">
                                       <Input 
                                         type="time" 
                                         value={win.startTime} 

@@ -17,6 +17,11 @@ export class TieredBracketError extends Error {
 
 type LayerEntry = { placement: TieredSeedPlacement; game?: never } | { game: TournamentGame; placement?: never } | null;
 
+type TieredBracketOptions = {
+  avoidPreliminaryRematches?: boolean;
+  preliminaryGames?: Array<Pick<TournamentGame, 'team1Id' | 'team2Id'>>;
+};
+
 function nextCapacity(count: number) {
   return 2 ** Math.ceil(Math.log2(Math.max(2, count)));
 }
@@ -43,6 +48,89 @@ function slot(entry: Exclude<LayerEntry, null>) {
     divisionSeed: entry.placement.divisionSeed,
   };
   return { name: `Winner of ${entry.game.id}`, id: 'tbd', overallSeed: undefined, divisionSeed: undefined };
+}
+
+function matchupKey(left?: string, right?: string) {
+  return left && right ? [left, right].sort().join(':') : '';
+}
+
+function minimumCostAssignment(costs: number[][]): number[] {
+  const size = costs.length;
+  const rowPotential = Array(size + 1).fill(0);
+  const columnPotential = Array(size + 1).fill(0);
+  const matchedRow = Array(size + 1).fill(0);
+  const previousColumn = Array(size + 1).fill(0);
+  for (let row = 1; row <= size; row++) {
+    matchedRow[0] = row;
+    const minimum = Array(size + 1).fill(Number.POSITIVE_INFINITY);
+    const used = Array(size + 1).fill(false);
+    let column = 0;
+    do {
+      used[column] = true;
+      const activeRow = matchedRow[column];
+      let delta = Number.POSITIVE_INFINITY;
+      let nextColumn = 0;
+      for (let candidate = 1; candidate <= size; candidate++) {
+        if (used[candidate]) continue;
+        const reducedCost = costs[activeRow - 1][candidate - 1] - rowPotential[activeRow] - columnPotential[candidate];
+        if (reducedCost < minimum[candidate]) {
+          minimum[candidate] = reducedCost;
+          previousColumn[candidate] = column;
+        }
+        if (minimum[candidate] < delta) {
+          delta = minimum[candidate];
+          nextColumn = candidate;
+        }
+      }
+      for (let candidate = 0; candidate <= size; candidate++) {
+        if (used[candidate]) {
+          rowPotential[matchedRow[candidate]] += delta;
+          columnPotential[candidate] -= delta;
+        } else {
+          minimum[candidate] -= delta;
+        }
+      }
+      column = nextColumn;
+    } while (matchedRow[column] !== 0);
+    do {
+      const prior = previousColumn[column];
+      matchedRow[column] = matchedRow[prior];
+      column = prior;
+    } while (column !== 0);
+  }
+  const assignment = Array(size).fill(0);
+  for (let column = 1; column <= size; column++) assignment[matchedRow[column] - 1] = column - 1;
+  return assignment;
+}
+
+function applyFirstRoundRematchPreference(layer: LayerEntry[], options: TieredBracketOptions): LayerEntry[] {
+  if (!options.avoidPreliminaryRematches || !options.preliminaryGames?.length) return layer;
+  const priorMatchups = new Set(options.preliminaryGames.map(game => matchupKey(game.team1Id, game.team2Id)).filter(Boolean));
+  const fixed: TieredSeedPlacement[] = [];
+  const opponentSlots: number[] = [];
+  const opponents: TieredSeedPlacement[] = [];
+  for (let index = 0; index < layer.length; index += 2) {
+    const left = layer[index]?.placement;
+    const right = layer[index + 1]?.placement;
+    if (!left || !right) continue;
+    if (left.divisionSeed < right.divisionSeed) {
+      fixed.push(left); opponentSlots.push(index + 1); opponents.push(right);
+    } else {
+      fixed.push(right); opponentSlots.push(index); opponents.push(left);
+    }
+  }
+  if (opponents.length < 2) return layer;
+
+  const maximumMovement = opponents.length * Math.max(...opponents.map(placement => placement.divisionSeed));
+  const rematchPenalty = maximumMovement + 1;
+  const costs = fixed.map((placement, fixedIndex) => opponents.map(opponent =>
+    Number(priorMatchups.has(matchupKey(placement.teamId, opponent.teamId))) * rematchPenalty +
+    Math.abs(opponent.divisionSeed - opponents[fixedIndex].divisionSeed),
+  ));
+  const best = minimumCostAssignment(costs).map(index => opponents[index]);
+  const adjusted = [...layer];
+  opponentSlots.forEach((index, candidateIndex) => { adjusted[index] = { placement: best[candidateIndex] }; });
+  return adjusted;
 }
 
 function populatePossibleTeams(games: TournamentGame[]): TournamentGame[] {
@@ -73,6 +161,7 @@ function populatePossibleTeams(games: TournamentGame[]): TournamentGame[] {
 export function generateTieredDivisionBracket(
   division: TieredDivisionDefinition,
   placements: TieredSeedPlacement[],
+  options: TieredBracketOptions = {},
 ): TournamentGame[] {
   const seeded = [...placements]
     .filter(row => row.divisionId === division.id)
@@ -87,7 +176,10 @@ export function generateTieredDivisionBracket(
   const capacity = nextCapacity(seeded.length);
   const rounds = Math.log2(capacity);
   const bySeed = new Map(seeded.map(row => [row.divisionSeed, row]));
-  let layer: LayerEntry[] = seedOrder(capacity).map(seed => bySeed.has(seed) ? { placement: bySeed.get(seed)! } : null);
+  let layer: LayerEntry[] = applyFirstRoundRematchPreference(
+    seedOrder(capacity).map(seed => bySeed.has(seed) ? { placement: bySeed.get(seed)! } : null),
+    options,
+  );
   const games: TournamentGame[] = [];
 
   for (let roundIndex = 0; layer.length > 1; roundIndex++) {

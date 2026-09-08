@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, CheckCircle2, Shield } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { PortalStatus } from '@/components/public/PortalStatus';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
 import TournamentBracket from '@/components/TournamentBracket';
@@ -54,7 +54,7 @@ export default function PublicSpectatorHub() {
             <p className="text-muted-foreground font-black uppercase tracking-[0.2em] text-xs">Official Spectator Hub</p>
           </div>
           <div className="flex flex-wrap gap-4 pt-2">
-            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><CalendarDays className="h-4 w-4 text-primary" /> {format(new Date(event.date), 'MMM dd, yyyy')}</div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><CalendarDays className="h-4 w-4 text-primary" /> {format(parseISO(String(event.date).split('T')[0]), 'MMM dd, yyyy')}</div>
             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><MapPin className="h-4 w-4 text-primary" /> {event.location}</div>
           </div>
         </header>
@@ -66,7 +66,7 @@ export default function PublicSpectatorHub() {
               <div className="space-y-12">
                 {Object.entries(groupedGames).map(([date, games]: [any, any]) => (
                   <div key={date} className="space-y-6">
-                    <div className="flex items-center gap-4"><Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7">{format(new Date(date), 'EEEE, MMM d')}</Badge><div className="h-px bg-muted flex-1" /></div>
+                    <div className="flex items-center gap-4"><Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7">{format(parseISO(String(date).split('T')[0]), 'EEEE, MMM d')}</Badge><div className="h-px bg-muted flex-1" /></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {games.map((game: any) => (
                         <Card key={game.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5">

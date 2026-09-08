@@ -117,7 +117,7 @@ export async function executeTieredPlayoffsCommand(input: TieredPlayoffsCommandI
     const config = currentEvent(source, input);
     const now = new Date().toISOString();
     const nextVersion = input.expectedVersion + 1;
-    let nextConfig = clean(config);
+    const nextConfig = clean(config);
     let nextGames = clean(Array.isArray(source.tournamentGames) ? source.tournamentGames : []);
     let nextTeams: DocumentData[] | null = null;
     let result: Record<string, unknown> = {};
@@ -177,13 +177,20 @@ export async function executeTieredPlayoffsCommand(input: TieredPlayoffsCommandI
     } else if (input.action === 'generate-brackets') {
       if (Object.keys(input.payload).length) fail('UNSUPPORTED_PAYLOAD', 'Bracket generation does not accept additional fields.');
       if (config.seeding.status !== 'locked' || config.playoffs.status !== 'pending') fail('PLAYOFF_STATE_CONFLICT', 'Lock current playoff seeds before generating brackets.', 409);
-      const unscheduled = config.divisions.definitions.flatMap(division => generateTieredDivisionBracket(division, config.seeding.approved));
+      const preliminary = nextGames.filter((game: DocumentData) => game.phase !== 'playoff');
+      const unscheduled = config.divisions.definitions.flatMap(division => generateTieredDivisionBracket(
+        division,
+        config.seeding.approved,
+        {
+          avoidPreliminaryRematches: config.divisions.avoidPreliminaryRematches,
+          preliminaryGames: preliminary,
+        },
+      ));
       for (const division of config.divisions.definitions) {
         const placements = config.seeding.approved.filter(row => row.divisionId === division.id);
         const validation = validateTieredBrackets(unscheduled.filter(game => game.playoffDivisionId === division.id), placements);
         if (!validation.valid) fail('INVALID_PLAYOFF_BRACKET', validation.conflicts[0] || `Division ${division.name} bracket is invalid.`, 409);
       }
-      const preliminary = nextGames.filter((game: DocumentData) => game.phase !== 'playoff');
       const fields = [...new Map(preliminary
         .filter((game: DocumentData) => typeof game.resourceId === 'string' && game.resourceId && typeof game.location === 'string' && game.location)
         .map((game: DocumentData) => [game.resourceId, { id: game.resourceId, name: game.location }])).values()];
