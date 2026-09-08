@@ -3,7 +3,7 @@
 **Run:** `2026-08-21T232919Z`  
 **Commit:** `cc9a3c7ca91c3ee2c2e3f257d3c642ba6a950327`  
 **Environment:** local development with isolated Firebase preview  
-**Purpose:** defect discovery and coverage diagnosis, with follow-ups through 2026-09-04 that resolved twenty defects, retired one rejected feature, and obtained physical Android closed-app push, tap-through, dot, and adaptive-icon acceptance for BUG-005; this report does not declare the application production ready.
+**Purpose:** defect discovery and production certification, with final non-physical reconciliation completed on 2026-09-08. Full physical-device certification remains separate.
 
 ## Coverage totals
 
@@ -11,13 +11,13 @@ The matrix contains 88 rows.
 
 | Status | Count |
 |---|---:|
-| PASS | 28 |
+| PASS | 84 |
 | FAIL | 0 |
-| BLOCKED | 59 |
+| BLOCKED | 3 |
 | NOT APPLICABLE | 1 |
 | NOT RUN | 0 |
 
-Completed functional-row coverage is `(PASS + FAIL) / all rows = 28 / 88 = 31.8%`; one rejected feature is explicitly `NOT APPLICABLE`. Twenty-two formerly blocked rows were promoted only after exact hosted/provider/background evidence reconciled with their immutable browser and authorization contracts. All remaining rows are explicitly classified BLOCKED rather than left ambiguous.
+Completed non-physical functional-row coverage is `(PASS + FAIL) / all rows = 84 / 88 = 95.5%`; one rejected feature is explicitly `NOT APPLICABLE`. Every non-physical row is reconciled. The remaining three rows require real hardware for Push, same-day reminder receipt, and installed-PWA/offline privacy acceptance.
 
 ## Tested features and roles
 
@@ -215,3 +215,36 @@ Fresh production testing on `d754fb20` exposed BUG-057: Parent Demo reached `/fa
 Exact staging and production merge `c06d3f2a63405ee59122ef1e676160f5a63a9894` then completed `POST` and `PUT /api/demo/seed` with HTTP 200. Parent Demo rendered Junior and Alex across Lakers and Strikers, six child-scoped waivers, $365 outstanding, and distinct schedules. Those results reconciled after reload, fit 390×844 without overflow, produced zero console warnings/errors and zero application HTTP 4xx/5xx responses, and cleanup returned HTTP 204.
 
 Seven rows now have complete combined evidence and move from `BLOCKED` to `PASS`: Attendance; Practice plans/templates; Drill/playbook CRUD/search; Games team score lifecycle; Volunteers opportunity/public signup; Family children/invites/team cards; and Family schedule/waivers/payments. Their immutable local runs provide the exhaustive negative, permission, mutation, restoration, and cleanup cases, while exact hosted Playwright supplies the deployment, responsive, persistence, console, and network boundaries that were previously missing. The strict matrix is now 28 PASS, 59 BLOCKED, 1 NOT APPLICABLE, and 0 NOT RUN. Physical Android negative/account-switch scenarios and physical iPhone/iPad PWA/push acceptance remain blocked and are not replaced by Playwright.
+
+## Hosted non-physical completion — 2026-09-08
+
+Final Playwright reconciliation did not restart completed rows. Fresh isolated
+hosted contexts covered Starter, Squad Pro, Elite Org, School, Player, Parent,
+and FREE League Creator landings, direct-route denial, responsive containment,
+console/network health, and owned cleanup. A disposable staging superadmin and
+target completed suspend/cancel/restore and deletion-schedule/cancel with Auth
+and Firestore reconciliation; a missing-profile identity reached fail-closed
+onboarding. All disposable records and temporary credentials were removed.
+
+Registered League Creator testing on exact staging build
+`studio-build-2026-09-08-017` completed create, edit, clone, manual squad staging,
+cross-tenant HTTP 403, anonymous HTTP 401, archive cancel/confirm, dependency
+guard HTTP 409, and dependency-free delete cancel/confirm HTTP 200. Reload and
+390x844 checks passed, and cleanup residue was zero. The production League demo
+on `3bd23a5511595bae6a1531440cfd0d608fff3e00` exposed only server-allowed actions
+and no longer attempted an organizer-private read.
+
+Protected workflow `34231671983` passed type checking, lint, automated tests,
+production build, Functions build, Firestore indexes/rules, Storage rules,
+dependency audits, App Hosting rollout, and exact staging health. Combined with
+the immutable identity, tenant, operations, competition, provider, scheduler,
+storage, rollback, and production Playwright evidence, this closes every
+non-physical row. The authoritative matrix is now **84 PASS, 3 BLOCKED, 1 NOT
+APPLICABLE, 0 FAIL**.
+
+The three remaining BLOCKED rows are not Playwright gaps: they are physical
+same-day reminder receipt, Push notification/device lifecycle, and installed-PWA
+update/offline/account-switch privacy. Their required Android and iPhone/iPad
+steps are listed in `runs/2026-09-04-final-certification/09-physical-device-checklist.md`.
+Until those are recorded, the release is non-physical production certified and
+live-demo ready, but not fully physical-device certified.
