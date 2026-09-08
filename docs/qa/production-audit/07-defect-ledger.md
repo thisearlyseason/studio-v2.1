@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-08. BUG-052 is repaired locally and awaiting exact deployment verification; all earlier implementation defects are resolved and BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-08. BUG-052 is exact-production verified; all implementation defects are resolved and BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
 ## BUG-052 — Logout can retain the prior account's push endpoint
 
@@ -12,9 +12,9 @@
 | Feature | Authentication and Push — logout/user switching |
 | Reproduction | Code-path review showed the primary Shell logout never removed the current browser subscription. Settings started removal without awaiting it and immediately cleared the authenticated session. |
 | Root cause | Push deletion requires the still-authenticated Firebase user, but the two visible logout surfaces either skipped it or raced it against session clearing. The shared deletion helper also ignored legacy-token cleanup failure. A later account on the same installed PWA could therefore retain an endpoint owned by the prior account. |
-| Repair | Both logout surfaces now await complete legacy and Web Push teardown before clearing the browser session or signing out. Any teardown failure leaves the user authenticated so the endpoint cannot silently outlive its authority. |
-| Verification | A regression was written first and failed on the missing Shell import, the Settings fire-and-forget call, and ignored legacy cleanup. It now passes and enforces authenticated ordering on both logout surfaces. The focused Push/PWA/logout pack passes 39/39; scoped lint reports zero errors and `git diff --check` passes. Exact deployment and physical A-to-B device verification remain required. |
-| Status | RESOLVED LOCALLY; EXACT DEPLOYMENT VERIFICATION PENDING |
+| Repair | Registered-account logout surfaces now await complete legacy and Web Push teardown before clearing the browser session or signing out. Anonymous demos skip the registered-only device endpoint and proceed directly through authoritative demo cleanup. Any registered teardown failure leaves the user authenticated so the endpoint cannot silently outlive its authority. |
+| Verification | Test-first regressions failed on the missing Shell import, Settings fire-and-forget behavior, ignored legacy cleanup, and the anonymous-demo 403 discovered on the first exact deployment. The affected pack passes 21/21, typecheck passes, and scoped lint reports zero errors. Release gate `34192250393` passed and production deployment `dpl_4KWviEUxxuYtFtDSWXe1v7w9t6pM` serves merge `c5d1a97f`. Fresh production Playwright launched a Starter demo, returned HTTP 204 from `/api/demo/exit`, reached `/login`, made no rejected notification-device request, and recorded zero console errors. Physical registered-account A-to-B endpoint isolation remains a coverage requirement, not an open implementation defect. |
+| Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
 
 ## BUG-051 — Demo logout emits permission errors while revoking an anonymous workspace
 
