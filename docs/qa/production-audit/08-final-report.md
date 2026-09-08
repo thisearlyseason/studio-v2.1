@@ -11,13 +11,13 @@ The matrix contains 88 rows.
 
 | Status | Count |
 |---|---:|
-| PASS | 21 |
+| PASS | 28 |
 | FAIL | 0 |
-| BLOCKED | 66 |
+| BLOCKED | 59 |
 | NOT APPLICABLE | 1 |
 | NOT RUN | 0 |
 
-Completed functional-row coverage is `(PASS + FAIL) / all rows = 21 / 88 = 23.9%`; one rejected feature is explicitly `NOT APPLICABLE`. Fifteen formerly blocked rows were promoted only after exact hosted/provider/background evidence reconciled with their immutable browser and authorization contracts. All remaining rows are explicitly classified BLOCKED rather than left ambiguous.
+Completed functional-row coverage is `(PASS + FAIL) / all rows = 28 / 88 = 31.8%`; one rejected feature is explicitly `NOT APPLICABLE`. Twenty-two formerly blocked rows were promoted only after exact hosted/provider/background evidence reconciled with their immutable browser and authorization contracts. All remaining rows are explicitly classified BLOCKED rather than left ambiguous.
 
 ## Tested features and roles
 
@@ -53,8 +53,9 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-052, P1: Registered-account logout now awaits removal of the current browser's legacy and Web Push registrations; anonymous demos bypass the registered-only endpoint and complete authoritative cleanup. Exact production is verified; physical registered-account A-to-B isolation remains a coverage requirement.
 - BUG-053, P1: Service-worker activation now deletes every stale cache before claiming clients; exact production stale-cache and offline-private-data verification passed.
 - BUG-054, P2: The deterministic Squad Pro Scout fixture now writes and exposes the current active public profile/metrics schema; exact production API, allowlist, desktop/mobile rendering, and cleanup verification passed.
+- BUG-057, P1: Parent demo dashboard redirection now waits for its rich family seed; exact staging and production render and persist two children, two teams, waivers, payments, and schedules.
 
-Open severity totals: P0 0, P1 0, P2 0, P3 0. No recorded implementation defect remains unresolved. The 66 blocked matrix rows are missing strict workflow, provider, destructive-lifecycle, or physical-device evidence and are not silently converted to passes.
+Open severity totals: P0 0, P1 0, P2 0, P3 0. No recorded implementation defect remains unresolved. The 59 blocked matrix rows are missing strict workflow, provider, destructive-lifecycle, or physical-device evidence and are not silently converted to passes.
 
 ## Exact-candidate staging and live-demo follow-up — 2026-09-04
 
@@ -206,3 +207,11 @@ The subsequent real logout regression exposed BUG-056: shared Firestore listener
 Protected staging workflow `34210404824` passed the full verification and deployment boundary for `a146e122a6eb32733b587d7f2990079d536fb682`, serving `studio-build-2026-09-08-014`. Fresh staging Playwright proved clean Feed and Settings exits, 403 recovery with resumed HTTP 200 Feed/Firestore reads, and network-failure persistence followed by reload cleanup HTTP 204. PR 53 merged the candidate as `a3312cb74106645b7c77eaeb74b3bed80f0c8973`; release gate `34211938839` passed type checking, lint, application tests, production build, Functions build, Firebase rules, and both production dependency audits. `/api/health` then reported that exact production revision. Fresh production Playwright proved Feed create/comment/delete/reload, Feed logout, and Settings logout with successful cleanup and zero unexpected application console or HTTP errors.
 
 These repairs close the newly discovered defects without changing the strict matrix outcome: the Feed row remains blocked on its untested media/replay/parent-flag/audience/Storage cases, and 66 rows remain `BLOCKED` overall. Physical Android negative/account-switch acceptance and physical iPhone/iPad PWA/push acceptance still cannot be replaced by Playwright emulation. The live demo is release-gate clean and the recorded implementation defects are closed, but full production certification remains evidence-blocked until those remaining rows are executed or explicitly accepted as launch exceptions.
+
+## Parent demo repair and focused row reconciliation — 2026-09-08
+
+Fresh production testing on `d754fb20` exposed BUG-057: Parent Demo reached `/family` with zero children and teams because the parent-role redirect destroyed the rich client seeder before its family writes. The test-first repair defers only that anonymous Parent-demo redirect while its valid one-minute seed lock is active; registered parents and stale or malformed locks retain the prior behavior. Focused tests passed 24/24, typecheck and diff validation passed, authoritative release gate `34221901650` passed, and protected staging workflow `34222353486` deployed exact revision `studio-build-2026-09-08-015` after verifying the application, Functions, rules, indexes, dependencies, and health.
+
+Exact staging and production merge `c06d3f2a63405ee59122ef1e676160f5a63a9894` then completed `POST` and `PUT /api/demo/seed` with HTTP 200. Parent Demo rendered Junior and Alex across Lakers and Strikers, six child-scoped waivers, $365 outstanding, and distinct schedules. Those results reconciled after reload, fit 390×844 without overflow, produced zero console warnings/errors and zero application HTTP 4xx/5xx responses, and cleanup returned HTTP 204.
+
+Seven rows now have complete combined evidence and move from `BLOCKED` to `PASS`: Attendance; Practice plans/templates; Drill/playbook CRUD/search; Games team score lifecycle; Volunteers opportunity/public signup; Family children/invites/team cards; and Family schedule/waivers/payments. Their immutable local runs provide the exhaustive negative, permission, mutation, restoration, and cleanup cases, while exact hosted Playwright supplies the deployment, responsive, persistence, console, and network boundaries that were previously missing. The strict matrix is now 28 PASS, 59 BLOCKED, 1 NOT APPLICABLE, and 0 NOT RUN. Physical Android negative/account-switch scenarios and physical iPhone/iPad PWA/push acceptance remain blocked and are not replaced by Playwright.
