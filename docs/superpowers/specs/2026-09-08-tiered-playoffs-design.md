@@ -1,12 +1,14 @@
 # Tiered Playoffs Design
 
 **Date:** 2026-09-08  
-**Status:** Approved design, pending implementation plan  
+**Status:** Approved; initial implementation complete; phased-workflow amendment approved
 **Scope:** Additive Tournament format for The Squad
 
 ## Objective
 
 Add `Tiered Playoffs` as a new Tournament format. Teams play a configurable preliminary round, receive an overall seed from configurable standings rules, are allocated into independent playoff divisions, and complete a separate single-elimination bracket within each division.
+
+The organizer workflow is deliberately phased. A tournament may be created as a draft with no teams and no playoff divisions. Teams are enrolled before the preliminary schedule is generated. Playoff divisions are configured only after every preliminary game has a final, undisputed result; they are not a creation-time or preliminary-scheduling prerequisite.
 
 The feature must remain sport-agnostic and must not alter the stored meaning or behavior of Round Robin, Pool Play & Playoffs, Single Elimination, or Double Elimination tournaments.
 
@@ -83,6 +85,14 @@ type TieredPlayoffsConfig = {
 };
 ```
 
+During the draft and preliminary phases, `divisions.definitions` is an empty array. The selected sizing method is only a harmless default until playoff setup. Division definitions become required when the organizer begins the playoff-scheduling workflow after preliminary completion. Validation is therefore operation-specific:
+
+- draft creation validates identity and a structurally safe Tiered configuration, while permitting zero teams, absent logistics, and no division definitions;
+- preliminary scheduling validates the enrolled teams, fields, windows, preliminary rules, and capacity, while still permitting no division definitions;
+- seeding preview and playoff scheduling require completed preliminary results plus valid division definitions covering every participating team exactly once.
+
+Existing Tiered records that already contain valid division definitions remain valid and are not rewritten.
+
 `rankingRules` may contain `tournament_points`, `wins`, `win_percentage`, `losses`, `head_to_head`, `differential`, `points_for`, and `points_against`. Duplicate rules are invalid. `manual` is the default final resolution so unresolved statistical ties cannot silently depend on document order. A random draw uses a persisted controlled seed and is audited.
 
 ### Additive game metadata
@@ -110,15 +120,16 @@ Use existing event lifecycle, schedule, credential, and per-game versions. Tiere
 
 Valid phase progression is:
 
-1. draft configuration
-2. preliminary schedule ready
-3. preliminary published/in progress
-4. preliminary complete
-5. seeding review
-6. seeding locked
-7. brackets ready
-8. playoffs published/in progress
-9. tournament complete
+1. draft created, with enrollment open
+2. teams and preliminary logistics configured
+3. preliminary schedule ready
+4. preliminary published/in progress
+5. preliminary complete
+6. playoff divisions configured and seeding review
+7. seeding locked
+8. playoff brackets scheduled and ready
+9. playoffs published/in progress
+10. tournament complete
 
 Commands reject invalid transitions. Changes to a preliminary result while seeding is unlocked recalculate standings. A result change after locking marks placement `stale`; it never silently changes approved seeds or destroys brackets. Structural changes after playoff results exist require an explicit, authorized recovery action and cannot erase completed results.
 
@@ -185,6 +196,8 @@ Missing, unplayed, suspended, disputed, or under-review preliminary games preven
 
 ## Division allocation and seeding
 
+Division allocation is a post-preliminary operation. The organizer cannot configure playoff divisions until every preliminary game is complete and undisputed. At that point the Tournament page exposes one prominent `Schedule Playoffs` action. It opens a focused workflow for division names, automatic or custom sizes, standings-based placement preview, seeding review, bracket generation, and schedule validation. No playoff game is published merely by opening or saving this workflow.
+
 Automatic allocation distributes overall seeds contiguously across divisions. When sizes are uneven, earlier/higher divisions receive one additional team until the remainder is exhausted. The exact result is previewed before confirmation.
 
 Custom sizes must be positive integers, have unique division IDs and names, and sum exactly to the participating playoff-team count. Each team must receive one overall seed, one division, and one division seed.
@@ -223,6 +236,7 @@ For every downstream game, the earliest start equals the latest possible feeder 
 
 Add `/api/tournaments/tiered-playoffs` as a focused server route rather than expanding legacy format semantics. Supported commands are:
 
+- `configure-divisions`
 - `preview-seeding`
 - `apply-seed-override`
 - `reset-seeding`
@@ -245,17 +259,20 @@ Major actions write through existing Tournament audit infrastructure with tourna
 
 Add `Tiered Playoffs` to the existing selector without removing or renaming any option. Only Tiered Playoffs reveals its progressive setup:
 
-1. preliminary rules
-2. dates, windows, resources, and constraints
-3. standings points and ordered tiebreakers
-4. playoff divisions and custom names/sizes
-5. validation and feasibility summary
+1. create the Tournament draft from identity, dates, sport, and preliminary standings rules; teams and playoff divisions are optional and may be absent
+2. add teams through the existing manual, import, and registration paths
+3. configure preliminary fields, windows, and constraints, then generate the preliminary schedule
+4. score every preliminary game; show an explicit progress count and list any incomplete or disputed games
+5. when the preliminary round is complete, show a visually prominent `Preliminary Round Complete` panel with a `Schedule Playoffs` action
+6. configure playoff division names and sizes, review standings and seeds, lock placement, generate the division brackets, validate their times/resources, and publish the playoffs
 
 Focused components will be extracted for Tiered setup, standings configuration, division configuration, seeding review, and playoff operations. Existing tournament screens retain their current presentation.
 
-The organizer summary includes team count, preliminary games per team, required total games, divisions and seed ranges, ranking order, differential cap, bracket type, bye policy, feasibility, conflicts, and fairness metrics.
+The organizer summary always includes team count, preliminary games per team, required total games, ranking order, differential cap, feasibility, conflicts, and fairness metrics. Division seed ranges, bracket type, and bye policy appear only after playoff setup begins.
 
 Actions are available only when valid for the current phase. Destructive or stale operations provide explicit consequences and require existing confirmation patterns.
+
+The System Architect uses the application's light, high-contrast visual language instead of an almost-black workspace: white and soft-gray primary surfaces, black headings, red accents, clear section borders, and readable secondary text. Dark brand sections may remain as accents, but form labels, inputs, validation, navigation state, and primary actions must meet normal contrast expectations. The mobile dialog keeps a single internal scroll region and must not introduce page-level horizontal overflow.
 
 ## Public and mobile experience
 
@@ -281,6 +298,13 @@ All new behavior follows test-driven development. Tests must fail for the intend
 
 ### Pure and integration coverage
 
+- zero-team Tiered draft creation with no playoff divisions
+- adding, importing, and registering teams after draft creation
+- preliminary schedule generation without division definitions
+- operation-specific rejection when preliminary scheduling lacks teams or logistics
+- playoff setup hidden and rejected until every preliminary game is complete and undisputed
+- post-preliminary division configuration, seeding, bracket scheduling, and publication
+- backwards compatibility for already-configured Tiered records
 - preliminary scheduling for 4, 6, 8, 10, 12, 16, 20, 22, 24, and 32 teams
 - 2, 3, 4, and 5 games per team where mathematically feasible
 - exact totals, per-team counts, no self-match, opponent variety, rest, resource and daily limits
@@ -310,7 +334,7 @@ All new behavior follows test-driven development. Tests must fail for the intend
 
 ### Playwright
 
-The complete browser scenario creates and operates a 24-team Tiered Playoffs tournament: configure four preliminary games, multiple fields, standings rules, cap, four six-team divisions, generate/review/publish the preliminary schedule, enter all preliminary scores, verify live standings, preview and lock seeds, generate brackets and byes, schedule and publish playoffs, enter all playoff scores, verify advancement and four champions, and verify final state.
+The complete browser scenario creates a zero-team Tiered Playoffs draft without divisions, adds 24 teams, configures four preliminary games, multiple fields, standings rules, and a differential cap, then generates and publishes the preliminary schedule without playoff definitions. It enters all preliminary scores, verifies that playoff setup remains unavailable until the last valid score, observes the prominent completion state, configures four six-team divisions through `Schedule Playoffs`, previews and locks seeds, generates brackets and byes, schedules and publishes playoffs, enters all playoff scores, verifies advancement and four champions, and verifies final state.
 
 Repeat the critical organizer and public paths at a mobile viewport. Capture console errors, failed API requests, page overflow, permission failures, persistence after refresh, and public unpublished-data exclusion.
 
