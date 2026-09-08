@@ -70,3 +70,43 @@ test('Tiered Playoffs configuration rejects unsafe ranking, division, cap, and s
   unknownSchema.schemaVersion = 2;
   assert.equal(loaded.validateTieredPlayoffsConfig(unknownSchema, 24).valid, false);
 });
+
+test('a Tiered draft permits zero teams and no playoff divisions', async () => {
+  const loaded = await import('../src/lib/tiered-playoffs/types.ts');
+  const draft = structuredClone(validConfig);
+  draft.divisions.definitions = [];
+
+  assert.deepEqual(loaded.validateTieredPlayoffsConfig(draft, 0, 'draft'), { valid: true, errors: [] });
+  assert.equal(loaded.validateTieredPlayoffsConfig(draft, 0, 'playoffs').valid, false);
+});
+
+test('preliminary validation permits empty divisions but requires at least two teams', async () => {
+  const loaded = await import('../src/lib/tiered-playoffs/types.ts');
+  const draft = structuredClone(validConfig);
+  draft.divisions.definitions = [];
+
+  assert.equal(loaded.validateTieredPlayoffsConfig(draft, 2, 'preliminary').valid, true);
+  assert.equal(loaded.validateTieredPlayoffsConfig(draft, 1, 'preliminary').valid, false);
+});
+
+test('draft builder does not invent teams, divisions, seeds, or playoff state', async () => {
+  const { buildTieredPlayoffsDraftConfig } = await import('../src/lib/tiered-playoffs/config.ts');
+  const draft = buildTieredPlayoffsDraftConfig({
+    gamesPerTeam: 4,
+    gameDurationMinutes: 60,
+    transitionMinutes: 15,
+    minimumRestMinutes: 60,
+    maximumGamesPerTeamPerDay: 3,
+    points: { win: 3, tie: 1, loss: 0 },
+    rankingRules: ['tournament_points', 'head_to_head', 'differential'],
+    finalResolution: 'manual',
+    maximumDifferentialPerGame: 7,
+    avoidPreliminaryRematches: true,
+  });
+
+  assert.deepEqual(draft.divisions.definitions, []);
+  assert.deepEqual(draft.seeding.calculated, []);
+  assert.deepEqual(draft.seeding.approved, []);
+  assert.equal(draft.seeding.status, 'pending');
+  assert.equal(draft.playoffs.status, 'pending');
+});
