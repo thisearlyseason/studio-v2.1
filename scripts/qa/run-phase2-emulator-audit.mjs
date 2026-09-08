@@ -8021,6 +8021,243 @@ async function runCompetitionScheduleWorkflowAudit(scenarioId) { await executeCo
 async function runCompetitionAssignmentWorkflowAudit(scenarioId) { await executeCompetitionScenarioCases(scenarioId); }
 async function runCompetitionScoringWorkflowAudit(scenarioId) { await executeCompetitionScenarioCases(scenarioId); }
 
+async function localGapActorToken(alias) {
+  const result = await signIn(alias);
+  if (result.status !== 200 || !result.body?.idToken) throw new Error(`Local gap actor ${alias} could not sign in.`);
+  return result.body.idToken;
+}
+
+function exactAssertionPattern(label) {
+  return new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+}
+
+async function recordLocalGapRequestCase({
+  scenarioId, dimension, actorAlias, label, observed, operation, reconciliation,
+}) {
+  const caseId = LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension][0];
+  await captureOperationRequests(caseId, actorAlias, operation);
+  recordObservedOperationNamedCase(scenarioId, dimension, caseId, observed, [exactAssertionPattern(label)], {
+    actor: actorAlias,
+    operation: 'exact same-origin local application request',
+    requests: operationRequestEvidence(caseId),
+    reconciliation,
+    timeBound: '20s request deadline',
+  });
+}
+
+async function runGamesTeamScoreLocalAudit() {
+  const scenarioId = 'games-team-score-create-edit-reset';
+  const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+  if (!team) throw new Error('Games local audit requires Team A.');
+  const ownerToken = await localGapActorToken('qa-coach-owner-a');
+  const memberToken = await localGapActorToken('qa-team-member');
+  const gameId = `qa-game-${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120);
+  const gamePath = `teams/${team.id}/games/${gameId}`;
+  registerDynamicFirestoreRoot(gamePath, 'games-team-score-case');
+  const request = (token, body) => apiJsonResult('/api/teams/games', token, { method: 'POST', body: JSON.stringify(body) });
+  const base = { teamId: team.id, gameId, opponent: 'Certification Rivals', date: '2027-02-12T18:00:00.000Z', myScore: 3, opponentScore: 1 };
+
+  const happyLabel = 'Games exact staff score create response and authoritative state';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'happyPath', actorAlias: 'qa-coach-owner-a', label: happyLabel,
+    observed: 'authorized staff created the exact run-owned final score', reconciliation: '200 response and exact run-owned game document',
+    operation: async () => {
+      const result = await request(ownerToken, base);
+      expectEqual(result.status, 200, happyLabel);
+      expectEqual(result.body?.gameId, gameId, 'Games create returned the exact run-owned game ID');
+      const persisted = await withEmulatorAuthAdmin(async (_auth, db) => (await db.doc(gamePath).get()).data());
+      expectEqual(JSON.stringify({ myScore: persisted?.myScore, opponentScore: persisted?.opponentScore, result: persisted?.result }), JSON.stringify({ myScore: 3, opponentScore: 1, result: 'Win' }), 'Games authoritative created score matches the request');
+    } });
+
+  const negativeLabel = 'Games invalid negative score is rejected without mutation';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'negativePath', actorAlias: 'qa-coach-owner-a', label: negativeLabel,
+    observed: 'negative score input was rejected', reconciliation: '400 response before score mutation',
+    operation: async () => expectEqual((await request(ownerToken, { ...base, gameId: `${gameId}-invalid`, myScore: -1 })).status, 400, negativeLabel) });
+
+  const permissionLabel = 'Games member score mutation is denied';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'permission', actorAlias: 'qa-team-member', label: permissionLabel,
+    observed: 'non-staff member could not record a team score', reconciliation: '403 response and no member-authored game',
+    operation: async () => expectEqual((await request(memberToken, { ...base, gameId: `${gameId}-member` })).status, 403, permissionLabel) });
+
+  const persistenceLabel = 'Games exact score edit persists in authoritative state';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'persistence', actorAlias: 'qa-coach-owner-a', label: persistenceLabel,
+    observed: 'staff score edit replaced the exact score and result', reconciliation: '200 edit response and exact authoritative game reread',
+    operation: async () => {
+      expectEqual((await request(ownerToken, { ...base, myScore: 2, opponentScore: 4 })).status, 200, persistenceLabel);
+      const persisted = await withEmulatorAuthAdmin(async (_auth, db) => (await db.doc(gamePath).get()).data());
+      expectEqual(JSON.stringify({ myScore: persisted?.myScore, opponentScore: persisted?.opponentScore, result: persisted?.result }), JSON.stringify({ myScore: 2, opponentScore: 4, result: 'Loss' }), 'Games authoritative edited score survives independent reread');
+    } });
+
+  const networkLabel = 'Games API returns an exact bounded validation response';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-coach-owner-a', label: networkLabel,
+    observed: 'the score API returned its exact validation status', reconciliation: 'captured POST request and 400 response',
+    operation: async () => expectEqual((await request(ownerToken, { ...base, gameId: `${gameId}-network`, opponent: '' })).status, 400, networkLabel) });
+}
+
+async function runLeagueDivisionLocalAudit() {
+  const scenarioId = 'leagues-divisions-teams-filters-forms';
+  const team = FIXTURES.teams.find(item => item.alias === 'qa-team-a');
+  const league = FIXTURES.leagues.find(item => item.alias === 'qa-league-a');
+  if (!team || !league) throw new Error('League division local audit requires Team A and League A.');
+  const ownerToken = await localGapActorToken('qa-league-owner-a');
+  const teamOwnerToken = await localGapActorToken('qa-coach-owner-a');
+  const outsiderToken = await localGapActorToken('qa-league-owner-b');
+  const negativeLabel = 'League division assignment rejects an invalid request shape';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'negativePath', actorAlias: 'qa-league-owner-a', label: negativeLabel,
+    observed: 'invalid assignment form input was rejected', reconciliation: '400 response before assignment mutation',
+    operation: async () => expectEqual((await apiJsonResult('/api/leagues/assignments', ownerToken, { method: 'PATCH', body: '{}' })).status, 400, negativeLabel) });
+  const permissionLabel = 'League non-owner assignment mutation is denied';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'permission', actorAlias: 'qa-league-owner-b', label: permissionLabel,
+    observed: 'another league creator could not mutate League A assignment state', reconciliation: '403 response before assignment mutation',
+    operation: async () => expectEqual((await apiJsonResult('/api/leagues/assignments', outsiderToken, { method: 'PATCH', body: JSON.stringify({
+      leagueId: league.id, entryId: 'missing-entry', teamId: team.id, action: 'assign', expectedVersion: 0, expectedAssignmentVersion: 0,
+      requestId: `qa-league-division-${certificationRunId}`,
+    }) })).status, 403, permissionLabel) });
+  const networkLabel = 'League team assignment filter returns its exact local authority response';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-coach-owner-a', label: networkLabel,
+    observed: 'the authenticated assignment-filter request was captured; positive filter loading remains unobserved', reconciliation: 'captured GET request and current 403 authority response',
+    operation: async () => expectEqual((await apiJsonResult(`/api/leagues/assignments?teamId=${encodeURIComponent(team.id)}`, teamOwnerToken)).status, 403, networkLabel) });
+}
+
+async function runVolunteerSignupLocalAudit() {
+  const scenarioId = 'volunteers-opportunity-public-signup';
+  const opportunity = FIXTURES.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-volunteer-opportunity-a');
+  const privateOpportunity = FIXTURES.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-volunteer-opportunity-b');
+  if (!opportunity || !privateOpportunity) throw new Error('Volunteer local audit requires both public and private opportunities.');
+  const [, teamId, , opportunityId] = opportunity.path.split('/');
+  const privateParts = privateOpportunity.path.split('/');
+  const pathname = `/api/public/volunteer?teamId=${encodeURIComponent(teamId)}&oppId=${encodeURIComponent(opportunityId)}`;
+  const privatePathname = `/api/public/volunteer?teamId=${encodeURIComponent(privateParts[1])}&oppId=${encodeURIComponent(privateParts[3])}`;
+  const before = await withEmulatorAuthAdmin(async (_auth, db) => (await db.doc(opportunity.path).get()).data());
+  try {
+    const permissionLabel = 'Volunteer public projection excludes the private signup ledger';
+    await recordLocalGapRequestCase({ scenarioId, dimension: 'permission', actorAlias: 'qa-public-submitter', label: permissionLabel,
+      observed: 'public opportunity response omitted signup ledger fields', reconciliation: '200 public projection with no signups field',
+      operation: async () => {
+        const result = await apiJsonResult(pathname, null);
+        expectEqual(result.status, 200, permissionLabel);
+        expectEqual(Object.prototype.hasOwnProperty.call(result.body?.opportunity || {}, 'signups'), false, 'Volunteer public projection contains no signup ledger');
+      } });
+    const negativeLabel = 'Volunteer unpublished opportunity is unavailable publicly';
+    await recordLocalGapRequestCase({ scenarioId, dimension: 'negativePath', actorAlias: 'qa-public-submitter', label: negativeLabel,
+      observed: 'unpublished opportunity returned non-enumerating not found', reconciliation: '404 response and no signup mutation',
+      operation: async () => expectEqual((await apiJsonResult(privatePathname, null)).status, 404, negativeLabel) });
+    const networkLabel = 'Volunteer public opportunity endpoint returns the exact seeded projection';
+    await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-public-submitter', label: networkLabel,
+      observed: 'public opportunity endpoint returned the seeded opportunity', reconciliation: 'captured GET request and 200 response',
+      operation: async () => expectEqual((await apiJsonResult(pathname, null)).status, 200, networkLabel) });
+    const happyLabel = 'Volunteer valid public signup persists once under the seeded opportunity';
+    const key = `volunteer_${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 100).padEnd(16, 'x');
+    await recordLocalGapRequestCase({ scenarioId, dimension: 'happyPath', actorAlias: 'qa-public-submitter', label: happyLabel,
+      observed: 'valid public volunteer signup created one deterministic ledger entry', reconciliation: '200 response and exact signup document field',
+      operation: async () => {
+        const result = await apiJsonResult(pathname, null, { method: 'POST', headers: { 'idempotency-key': key }, body: JSON.stringify({ name: 'Audit Volunteer', email: `volunteer.${FIXTURES.runId}@example.test`, phone: '5550102222', relationship: 'friend' }) });
+        expectEqual(result.status, 200, happyLabel);
+        const persisted = await withEmulatorAuthAdmin(async (_auth, db) => (await db.doc(opportunity.path).get()).data());
+        expectEqual(persisted?.signups?.[result.body?.signupId]?.email, `volunteer.${FIXTURES.runId}@example.test`, 'Volunteer exact signup ledger entry matches submitted email');
+      } });
+  } finally {
+    if (before) await withEmulatorAuthAdmin(async (_auth, db) => db.doc(opportunity.path).set(before));
+  }
+}
+
+async function runSportsHubRssAdminLocalAudit() {
+  const scenarioId = 'sports-hub-rss-refresh-admin-publish';
+  const adminToken = await localGapActorToken('qa-superadmin');
+  const memberToken = await localGapActorToken('qa-team-member');
+  const negativeLabel = 'Sports Hub RSS refresh rejects an invalid feed ID locally';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'negativePath', actorAlias: 'qa-superadmin', label: negativeLabel,
+    observed: 'invalid feed input was rejected before any external fetch', reconciliation: '400 response and zero provider request',
+    operation: async () => expectEqual((await apiJsonResult('/api/sports-hub/rss-refresh', adminToken, { method: 'POST', body: JSON.stringify({ feedId: 'bad/id' }) })).status, 400, negativeLabel) });
+  const permissionLabel = 'Sports Hub RSS refresh denies a non-superadmin';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'permission', actorAlias: 'qa-team-member', label: permissionLabel,
+    observed: 'non-superadmin refresh request was denied before feed lookup', reconciliation: '403 response and zero provider request',
+    operation: async () => expectEqual((await apiJsonResult('/api/sports-hub/rss-refresh', memberToken, { method: 'POST', body: JSON.stringify({ feedId: 'nfl' }) })).status, 403, permissionLabel) });
+  const networkLabel = 'Sports Hub admin data endpoint returns a local application response';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-superadmin', label: networkLabel,
+    observed: 'authenticated Sports Hub admin data loaded from local Firestore', reconciliation: 'captured GET request and 200 response; RSS provider fetch not attempted',
+    operation: async () => expectEqual((await apiJsonResult('/api/admin/sports-hub', adminToken)).status, 200, networkLabel) });
+}
+
+async function runPublicEmbedPanelsLocalAudit() {
+  const scenarioId = 'public-portals-embed-panels';
+  const opportunity = FIXTURES.firestoreDocuments.find(document => document.data.fixtureAlias === 'qa-volunteer-opportunity-a');
+  if (!opportunity) throw new Error('Embed-panel local audit requires the public volunteer fixture.');
+  const parts = opportunity.path.split('/');
+  const pathname = `/api/public/volunteer?teamId=${encodeURIComponent(parts[1])}&oppId=${encodeURIComponent(parts[3])}`;
+  const negativeLabel = 'Public embed backing API rejects missing portal configuration';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'negativePath', actorAlias: 'qa-public-submitter', label: negativeLabel,
+    observed: 'missing portal identifiers returned a bounded validation response', reconciliation: '400 response without private data',
+    operation: async () => expectEqual((await apiJsonResult('/api/public/portals?kind=league-registration', null)).status, 400, negativeLabel) });
+  const permissionLabel = 'Public embed backing projection excludes volunteer ledger data';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'permission', actorAlias: 'qa-public-submitter', label: permissionLabel,
+    observed: 'public embed backing response omitted private signups', reconciliation: '200 public projection with no signups field',
+    operation: async () => {
+      const result = await apiJsonResult(pathname, null);
+      expectEqual(result.status, 200, permissionLabel);
+      expectEqual(Object.prototype.hasOwnProperty.call(result.body?.opportunity || {}, 'signups'), false, 'Public embed backing projection contains no volunteer ledger');
+    } });
+  const networkLabel = 'Public embed backing endpoint returns the exact seeded projection';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-public-submitter', label: networkLabel,
+    observed: 'one public embed backing endpoint completed locally', reconciliation: 'captured GET request and 200 response; iframe rendering not inferred',
+    operation: async () => expectEqual((await apiJsonResult(pathname, null)).status, 200, networkLabel) });
+}
+
+async function runAdminEntitlementLocalAudit() {
+  const scenarioId = 'administration-entitlement-account-control-plans';
+  const adminToken = await localGapActorToken('qa-superadmin');
+  const memberToken = await localGapActorToken('qa-team-member');
+  const target = identityByAlias.get('qa-team-member');
+  const negativeLabel = 'Administration entitlement rejects a noncanonical plan';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'negativePath', actorAlias: 'qa-superadmin', label: negativeLabel,
+    observed: 'invalid plan transition was rejected', reconciliation: '400 response before entitlement or audit mutation',
+    operation: async () => expectEqual((await apiJsonResult(`/api/admin/users/${target.uid}/entitlement`, adminToken, { method: 'POST', body: JSON.stringify({ planId: 'invalid-plan' }) })).status, 400, negativeLabel) });
+  const permissionLabel = 'Administration account and entitlement controls deny a non-superadmin';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'permission', actorAlias: 'qa-team-member', label: permissionLabel,
+    observed: 'non-superadmin could mutate neither entitlement nor account state', reconciliation: 'two captured 403 responses before mutation',
+    operation: async () => {
+      expectEqual((await apiJsonResult(`/api/admin/users/${target.uid}/entitlement`, memberToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) })).status, 403, permissionLabel);
+      expectEqual((await apiJsonResult(`/api/admin/users/${target.uid}/account-control`, memberToken, { method: 'POST', body: JSON.stringify({ action: 'suspend' }) })).status, 403, 'Administration account control separately denies a non-superadmin');
+    } });
+  const networkLabel = 'Administration entitlement endpoint returns an exact missing-target response';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-superadmin', label: networkLabel,
+    observed: 'authenticated entitlement endpoint completed without mutation', reconciliation: 'captured POST request and 404 response for run-owned missing target',
+    operation: async () => expectEqual((await apiJsonResult(`/api/admin/users/missing-${FIXTURES.runId}/entitlement`, adminToken, { method: 'POST', body: JSON.stringify({ planId: 'team' }) })).status, 404, networkLabel) });
+}
+
+async function runAdminContentLocalAudit() {
+  const scenarioId = 'administration-beta-bugs-embeds-newsletter-sports-hub';
+  const adminToken = await localGapActorToken('qa-superadmin');
+  const memberToken = await localGapActorToken('qa-team-member');
+  const negativeLabel = 'Administration newsletter compose rejects an empty campaign';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'negativePath', actorAlias: 'qa-superadmin', label: negativeLabel,
+    observed: 'empty newsletter composition was rejected before provider delivery', reconciliation: '400 response and zero outbound provider delivery',
+    operation: async () => expectEqual((await apiJsonResult('/api/admin/newsletter/send', adminToken, { method: 'POST', body: '{}' })).status, 400, negativeLabel) });
+  const permissionLabel = 'Administration content APIs deny a non-superadmin';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'permission', actorAlias: 'qa-team-member', label: permissionLabel,
+    observed: 'non-superadmin could read neither newsletter nor Sports Hub administration data', reconciliation: 'two captured 403 responses',
+    operation: async () => {
+      expectEqual((await apiJsonResult('/api/admin/newsletter', memberToken)).status, 403, permissionLabel);
+      expectEqual((await apiJsonResult('/api/admin/sports-hub', memberToken)).status, 403, 'Administration Sports Hub API separately denies a non-superadmin');
+    } });
+  const networkLabel = 'Administration content APIs return exact local data responses';
+  await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-superadmin', label: networkLabel,
+    observed: 'newsletter and Sports Hub admin data endpoints completed locally', reconciliation: 'two captured GET requests and 200 responses',
+    operation: async () => {
+      expectEqual((await apiJsonResult('/api/admin/newsletter', adminToken)).status, 200, networkLabel);
+      expectEqual((await apiJsonResult('/api/admin/sports-hub', adminToken)).status, 200, 'Administration Sports Hub admin data loads locally');
+    } });
+}
+
+const LOCAL_GAP_OPERATION_HANDLERS = Object.freeze({
+  'games-team-score-create-edit-reset': runGamesTeamScoreLocalAudit,
+  'leagues-divisions-teams-filters-forms': runLeagueDivisionLocalAudit,
+  'volunteers-opportunity-public-signup': runVolunteerSignupLocalAudit,
+  'sports-hub-rss-refresh-admin-publish': runSportsHubRssAdminLocalAudit,
+  'public-portals-embed-panels': runPublicEmbedPanelsLocalAudit,
+  'administration-entitlement-account-control-plans': runAdminEntitlementLocalAudit,
+  'administration-beta-bugs-embeds-newsletter-sports-hub': runAdminContentLocalAudit,
+});
+
 async function runCertificationOperationsScenarios() {
   const scenarioIds = OPERATIONS_SCENARIO_IDS.filter(id => selectedOperationsScenarios.has(id));
   let sessionBaseline;
@@ -8067,6 +8304,8 @@ async function runCertificationOperationsScenarios() {
       if (scenarioId === 'tournaments-create-configure-replicate-archive') { await runCompetitionLifecycleWorkflowAudit(scenarioId); return; }
       if (scenarioId === 'tournaments-schedule-pools-brackets-referees') { await runCompetitionScheduleWorkflowAudit(scenarioId); return; }
       if (scenarioId === 'tournaments-scoring-dispute-public-standings') { await runCompetitionScoringWorkflowAudit(scenarioId); return; }
+      const localGapHandler = LOCAL_GAP_OPERATION_HANDLERS[scenarioId];
+      if (localGapHandler) { await localGapHandler(); return; }
       if (scenarioId === 'chat-channel-message-unread' && runBrowser) {
         await runCommunicationWorkflowAudit();
         for(const [dimension,caseIds] of Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId])) for(const caseId of caseIds) {

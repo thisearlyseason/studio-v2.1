@@ -959,7 +959,13 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
 
         const data = GET_DEMO_DATA(teamId, userId, variant, name, i);
         
-        const showcasePlayerVideos: Array<{ playerId: string; videoId: string; data: Record<string, unknown> }> = [];
+        const showcasePlayerVideos: Array<{
+          playerId: string;
+          videoId: string;
+          profile: Record<string, unknown>;
+          metrics: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }> = [];
 
         // Seed Roster Members & Player Profiles
         data.members.forEach(m => {
@@ -996,6 +1002,29 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
                     showcasePlayerVideos.push({
                       playerId: m.playerId,
                       videoId: `vid_${m.id}`,
+                      profile: {
+                        status: 'active',
+                        fullName: m.name,
+                        typeOfSport: squadSport,
+                        primaryPosition: m.position,
+                        graduationYear: (m as any).gradYear,
+                        academicGPA: (m as any).gpa,
+                        school: (m as any).school,
+                        teamName: name,
+                        photoURL: m.avatar,
+                        bio: 'Driven student-athlete and team leader pursuing the next competitive opportunity.',
+                        isDemo: true,
+                        updatedAt: now,
+                        updatedByTeamId: teamId,
+                      },
+                      metrics: {
+                        height: '5 ft 11 in',
+                        weight: 170,
+                        academicGPA: (m as any).gpa,
+                        isDemo: true,
+                        updatedAt: now,
+                        updatedByTeamId: teamId,
+                      },
                       data: {
                         id: `vid_${m.id}`,
                         title: 'Championship Winning Goal',
@@ -1015,6 +1044,8 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         // Player subcollections are authorized from the committed parent player doc.
         await batch.flush();
         showcasePlayerVideos.forEach(video => {
+          batch.set(doc(db, 'players', video.playerId, 'recruitingProfile', 'profile'), clean(video.profile));
+          batch.set(doc(db, 'players', video.playerId, 'recruitingProfile', 'metrics'), clean(video.metrics));
           batch.set(doc(db, 'players', video.playerId, 'videos', video.videoId), video.data);
         });
 
