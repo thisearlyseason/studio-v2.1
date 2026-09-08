@@ -1,6 +1,6 @@
 # Tiered Playoffs phased workflow verification
 
-Candidate commit: `2683557b21512abe0c325c0db8f4debec19955f6`
+Candidate commit: `b55e58de`
 
 ## Verified behavior
 
@@ -14,13 +14,13 @@ Candidate commit: `2683557b21512abe0c325c0db8f4debec19955f6`
 
 ## Automated verification
 
-- `npm test`: 1,423 tests; 1,415 passed, 8 skipped, 0 failed.
+- `npm test`: 1,424 tests; 1,416 passed, 8 skipped, 0 failed.
 - `npm run test:rules`: 66 passed, 0 failed.
 - `npm run typecheck`: passed.
 - `npm run lint -- --quiet`: passed.
 - `npm run build`: passed.
 - `npm --prefix functions run build`: passed.
-- Focused Tiered and tournament tests: 105 passed, 0 failed.
+- Focused Tiered command tests after the final edge-case repair: 9 passed, 0 failed.
 
 ## Playwright verification
 
