@@ -31,6 +31,30 @@ export const DEMO_PLANS: Record<string, DemoPlan> = {
 
 export const demoTeamSlug = (variant: string) => (variant || 'main').toLowerCase().replace(/\s+/g, '');
 
+export function hasActiveDemoSeedLock(value: string | null, now = Date.now()): boolean {
+  if (!value) return false;
+  const separatorIndex = value.lastIndexOf('|');
+  if (separatorIndex <= 0) return false;
+  const timestamp = Number(value.slice(separatorIndex + 1));
+  if (!Number.isFinite(timestamp)) return false;
+  const age = now - timestamp;
+  return age >= 0 && age < 60_000;
+}
+
+export function shouldRedirectParentFromDashboard({
+  isParent,
+  isDemo,
+  seedLock,
+  now = Date.now(),
+}: {
+  isParent: boolean;
+  isDemo: boolean;
+  seedLock: string | null;
+  now?: number;
+}): boolean {
+  return isParent && !(isDemo && hasActiveDemoSeedLock(seedLock, now));
+}
+
 export function sportForDemoVariant(variant: string): string {
   const normalized = variant.trim().toLowerCase();
   if (normalized.includes('soccer')) return 'Soccer';

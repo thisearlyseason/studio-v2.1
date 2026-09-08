@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession, markDemoExitPending } from '@/lib/client-auth';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
+import { shouldRedirectParentFromDashboard } from '@/lib/demo-plan-config';
 
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
@@ -327,7 +328,11 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       if (isSchoolInstitutionMode || isEliteHubMode) {
         // No squad selected — send AD to their institutional hub
         router.replace('/club');
-      } else if (isParent) {
+      } else if (shouldRedirectParentFromDashboard({
+        isParent,
+        isDemo: userProfile?.isDemo === true,
+        seedLock: localStorage.getItem('squad_seeding_lock'),
+      })) {
         router.push('/family');
       } else if (userProfile?.role === 'league_creator') {
         router.push('/competition');
@@ -340,7 +345,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         router.replace('/dashboard');
         return;
     }
-  }, [user, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
+  }, [user, userProfile?.isDemo, userProfile?.role, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
 
   useEffect(() => {
     // Wait for both the profile and team hydration before deciding that the
