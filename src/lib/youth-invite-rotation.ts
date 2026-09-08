@@ -27,11 +27,16 @@ export function youthInviteRollbackPlan({
   previousPlayer: YouthInvitePlayerState;
 }) {
   if (currentToken !== replacementToken) return null;
+  const restorable = previousInvite?.deliveryStatus !== 'pending' ? previousInvite : null;
   return {
     deleteReplacement: true,
-    restorePreviousInvite: previousInvite,
-    restorePlayer: previousPlayer,
+    restorePreviousInvite: restorable,
+    restorePlayer: restorable ? previousPlayer : {},
   };
+}
+
+export function youthInviteCanStartRotation(invite: Record<string, unknown>): boolean {
+  return invite.deliveryStatus !== 'pending';
 }
 
 export function canRedeemYouthInvite(player: Record<string, unknown>, token: string): boolean {

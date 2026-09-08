@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { canRedeemYouthInvite, youthInviteRollbackPlan } from '../src/lib/youth-invite-rotation.ts';
+import {
+  canRedeemYouthInvite,
+  youthInviteCanStartRotation,
+  youthInviteRollbackPlan,
+} from '../src/lib/youth-invite-rotation.ts';
 
 test('league invite redemption rejects anonymous and unverified accounts', async () => {
   const source = await readFile(new URL('../functions/src/index.ts', import.meta.url), 'utf8');
@@ -84,4 +88,26 @@ test('only the current invite can redeem a player that still has no login', asyn
   const createSection = route.slice(route.indexOf('export async function POST'), route.indexOf('export async function PUT'));
   assert.match(createSection, /adminDb\.runTransaction/);
   assert.match(route.slice(route.indexOf('export async function PUT')), /canRedeemYouthInvite\(playerData, token\)/);
+});
+
+test('a pending delivery locks rotation and is never resurrected as rollback state', async () => {
+  assert.equal(youthInviteCanStartRotation({ deliveryStatus: 'pending' }), false);
+  assert.equal(youthInviteCanStartRotation({ deliveryStatus: 'delivered' }), true);
+  assert.equal(youthInviteCanStartRotation({}), true, 'legacy accepted invitations remain rotatable');
+  assert.deepEqual(youthInviteRollbackPlan({
+    currentToken: 'replacement',
+    replacementToken: 'replacement',
+    previousInvite: { token: 'pending', deliveryStatus: 'pending' },
+    previousPlayer: { inviteToken: 'pending' },
+  }), {
+    deleteReplacement: true,
+    restorePreviousInvite: null,
+    restorePlayer: {},
+  });
+
+  const route = await readFile(new URL('../src/app/api/invites/youth/route.ts', import.meta.url), 'utf8');
+  const revokeSection = route.slice(route.indexOf("if (action === 'revoke')"), route.indexOf("const email ="));
+  assert.match(revokeSection, /adminDb\.runTransaction/);
+  assert.match(route, /deliveryStatus: 'pending'/);
+  assert.match(route, /deliveryStatus: 'delivered'/);
 });
