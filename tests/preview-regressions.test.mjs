@@ -235,7 +235,10 @@ test('demo recruiting profiles stay private except for the public scout fixture'
   const source = await readSource('../src/lib/db-seeder.ts');
 
   assert.match(source, /recruitingProfileEnabled: m\.name === 'Alex Rivera'/);
-  assert.match(source, /if \(m\.name === 'Alex Rivera'\)[\s\S]{0,700}isPublic: true/);
+  assert.match(source, /status: 'active'/);
+  assert.match(source, /batch\.set\(doc\(db, 'players', video\.playerId, 'recruitingProfile', 'profile'\), clean\(video\.profile\)\)/);
+  assert.match(source, /batch\.set\(doc\(db, 'players', video\.playerId, 'recruitingProfile', 'metrics'\), clean\(video\.metrics\)\)/);
+  assert.match(source, /if \(m\.name === 'Alex Rivera'\)[\s\S]{0,1800}isPublic: true/);
 });
 
 test('local Firebase client and Admin SDK honor the isolated preview project', async () => {

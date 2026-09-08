@@ -234,6 +234,43 @@ test('Chat push deep link is qualified by both team and channel identity',async(
   } finally {loaded.dispose();}
 });
 
+test('Chat push targeting excludes the sender, removed members, and members from the wrong team',async()=>{
+  const seed={
+    'teams/team-a':{ownerUserId:'owner-a'},
+    'teams/team-a/members/active':{userId:'active',position:'Player',status:'active'},
+    'teams/team-a/members/removed':{userId:'removed',position:'Player',status:'removed'},
+    'teams/team-b/members/wrong-team':{userId:'wrong-team',position:'Player',status:'active'},
+    'teams/team-a/groupChats/channel':{memberIds:['owner-a','active','active','removed','wrong-team']},
+  };
+  const {db,records,notifications}=communicationDb(seed);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/message/route.ts',db,{uid:'owner-a'});
+  try {
+    const response=await loaded.route.POST(communicationRequest({teamId:'team-a',chatId:'channel',type:'text',content:'Exact audience',requestId:'exact-audience'}));
+    assert.equal(response.status,200);
+    assert.equal(notifications.length,1);
+    assert.deepEqual(notifications[0].recipientUserIds,['active']);
+    assert.deepEqual(records.get('teams/team-a/groupChats/channel').unreadBy,{'owner-a':0,active:1});
+  } finally {loaded.dispose();}
+});
+
+test('authenticated notify rejects a removed or wrong-team recipient before provider delivery',async()=>{
+  const seed={
+    'teams/team-a':{ownerUserId:'owner-a'},
+    'teams/team-a/members/active':{userId:'active',position:'Player',status:'active'},
+    'teams/team-a/members/removed':{userId:'removed',position:'Player',status:'removed'},
+    'teams/team-b/members/wrong-team':{userId:'wrong-team',position:'Player',status:'active'},
+  };
+  for(const recipientUserIds of [['active','removed'],['wrong-team']]) {
+    const {db,notifications}=communicationDb(seed);
+    const loaded=await loadCommunicationRoute('../../src/app/api/notify/route.ts',db,{uid:'owner-a'});
+    try {
+      const response=await loaded.route.POST(communicationRequest({teamId:'team-a',recipientUserIds,title:'Update',body:'Body'}));
+      assert.equal(response.status,403);
+      assert.deepEqual(notifications,[]);
+    } finally {loaded.dispose();}
+  }
+});
+
 test('Chat create revalidates recipient and module state inside its write transaction',async()=>{
   const {db,records}=communicationDb(base,{beforeTransaction:({records})=>{
     records.set('teams/team-a/members/voter',{...records.get('teams/team-a/members/voter'),status:'removed'});
