@@ -107,6 +107,26 @@ test('Tiered preliminary deployment does not require playoff divisions', () => {
   assert.ok(prepared.every(game => game.phase === 'preliminary'));
 });
 
+test('Tiered preliminary deployment rejects malformed configuration and playoff-phase submissions', () => {
+  const dailyWindows = [{ date: '2026-09-01', startTime: '08:00', endTime: '20:00' }];
+  const tieredPlayoffs = buildTieredPlayoffsDraftConfig({
+    gamesPerTeam: 2, gameDurationMinutes: 30, transitionMinutes: 5, minimumRestMinutes: 5,
+    maximumGamesPerTeamPerDay: 2, points: { win: 3, tie: 1, loss: 0 },
+    rankingRules: ['tournament_points'], finalResolution: 'manual', maximumDifferentialPerGame: null,
+    avoidPreliminaryRematches: false,
+  });
+  const tieredEvent = event({ tournamentType: 'tiered_playoffs', tieredPlayoffs, gamesPerTeam: 2, gameLength: 30, breakLength: 5, maxDailyGamesPerTeam: 2, dailyWindows });
+  const games = generateTieredPreliminarySchedule({ teams, fields, dailyWindows, gamesPerTeam: 2, gameDurationMinutes: 30, transitionMinutes: 5, minimumRestMinutes: 5, maximumGamesPerTeamPerDay: 2 }).games;
+  assert.throws(
+    () => prepareTournamentScheduleForDeployment({ ...tieredEvent, tieredPlayoffs: { ...tieredPlayoffs, schemaVersion: 99 } }, games),
+    error => error instanceof TournamentScheduleDeploymentError && error.code === 'INVALID_TIERED_CONFIGURATION'
+  );
+  assert.throws(
+    () => prepareTournamentScheduleForDeployment(tieredEvent, games.map((item, index) => index === 0 ? { ...item, phase: 'playoff' } : item)),
+    error => error instanceof TournamentScheduleDeploymentError && error.code === 'INVALID_TIERED_PHASE'
+  );
+});
+
 test('tournament staff authorization uses only direct server-authoritative staff membership', () => {
   const actor = { uid: 'youth-user', role: 'youth_player' };
   const team = { ownerUserId: 'owner' };
