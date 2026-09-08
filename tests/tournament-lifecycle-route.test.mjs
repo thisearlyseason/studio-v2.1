@@ -13,6 +13,14 @@ const blueprint = { title: 'Cup', date: '2026-10-01', endDate: '2026-10-01', eve
   gameLength: 30, breakLength: 5, gamesPerTeam: 1, maxDailyGamesPerTeam: 2, selectedFields: ['Field A'],
   dailyWindows: [{ date: '2026-10-01', startTime: '09:00', endTime: '17:00' }], divisionTitle: 'Gold',
 };
+const tieredDraftConfig = {
+  schemaVersion: 1,
+  preliminary: { gamesPerTeam: 4, gameDurationMinutes: 30, transitionMinutes: 5, minimumRestMinutes: 5, maximumGamesPerTeamPerDay: 2, schedulingMethod: 'automatic' },
+  standings: { pointsEnabled: true, points: { win: 3, tie: 1, loss: 0 }, rankingRules: ['tournament_points', 'head_to_head', 'differential'], finalResolution: 'manual', maximumDifferentialPerGame: null },
+  divisions: { sizing: 'automatic', definitions: [], avoidPreliminaryRematches: true },
+  seeding: { status: 'pending', calculated: [], approved: [], standingsFingerprint: null, lockedAt: null, lockedBy: null },
+  playoffs: { bracketFormat: 'single_elimination', status: 'pending', publishedAt: null, publishedBy: null },
+};
 const create = (changes = {}) => ({ action: 'create', requestId: 'create-cup-0001', teamId: 'team-a', payload: { divisions: [{ ...blueprint, ...changes }] } });
 async function call(db, body, uid = 'owner', routePath) {
   const app = await loadCommunicationRoute(routePath || '../../src/app/api/tournaments/lifecycle/route.ts', db, { uid });
@@ -31,6 +39,31 @@ test('Starter cannot create an advanced Tournament format', async () => {
 test('advanced formats require the current squad Pro allocation even with a paid-looking plan label', async () => {
   const { db } = communicationDb({ ...seed, 'teams/team-a': { ownerUserId: 'owner', planId: 'elite_squad', isPro: false } });
   assert.equal((await call(db, create({ tournamentType: 'single_elimination' }))).status, 403);
+});
+
+test('Tiered Playoffs can be created as an empty draft before teams, fields, windows, or divisions exist', async () => {
+  const { db, records } = communicationDb(seed);
+  const result = await call(db, create({
+    tournamentType: 'tiered_playoffs',
+    tournamentTeamsData: [], tournamentTeams: [], selectedFields: [], dailyWindows: [],
+    gamesPerTeam: 4, tieredPlayoffs: tieredDraftConfig,
+  }));
+  assert.equal(result.status, 200);
+  const event = records.get(`teams/team-a/events/${result.body.eventId}`);
+  assert.deepEqual(event.tournamentTeamsData, []);
+  assert.deepEqual(event.tournamentTeams, []);
+  assert.deepEqual(event.selectedFields, []);
+  assert.deepEqual(event.dailyWindows, []);
+  assert.deepEqual(event.tieredPlayoffs.divisions.definitions, []);
+});
+
+test('empty drafts remain forbidden for other formats and Tiered Playoffs still requires Pro', async () => {
+  const empty = { tournamentTeamsData: [], tournamentTeams: [], selectedFields: [], dailyWindows: [] };
+  const standard = communicationDb(seed);
+  assert.equal((await call(standard.db, create(empty))).status, 400);
+
+  const starter = communicationDb({ ...seed, 'teams/team-a': { ownerUserId: 'owner', planId: 'starter_squad', isPro: false } });
+  assert.equal((await call(starter.db, create({ ...empty, tournamentType: 'tiered_playoffs', gamesPerTeam: 4, tieredPlayoffs: tieredDraftConfig }))).status, 403);
 });
 
 test('create replay has deterministic divisions and a payload collision cannot append events', async () => {
