@@ -1,6 +1,6 @@
 # Tiered Playoffs phased workflow verification
 
-Candidate commit: `b55e58de`
+Candidate commit: `38127927`
 
 ## Verified behavior
 
@@ -20,6 +20,7 @@ Candidate commit: `b55e58de`
 - `npm run lint -- --quiet`: passed.
 - `npm run build`: passed.
 - `npm --prefix functions run build`: passed.
+- `npm audit --omit=dev --audit-level=high`: passed with 0 production vulnerabilities after patching Next.js to 15.5.25 and Sharp to 0.35.4.
 - Focused Tiered command tests after the final edge-case repair: 9 passed, 0 failed.
 
 ## Playwright verification
