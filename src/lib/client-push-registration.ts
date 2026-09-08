@@ -117,11 +117,25 @@ export async function deleteWebPushSubscription(userId: string): Promise<void> {
   const subscription = await registration?.pushManager.getSubscription();
   if (!subscription) return;
 
-  await updateWebPushSubscription(userId, subscription.toJSON(), 'DELETE');
-  await subscription.unsubscribe();
+  try {
+    await updateWebPushSubscription(userId, subscription.toJSON(), 'DELETE');
+  } finally {
+    // Even if the server is temporarily unreachable, invalidate this browser's
+    // endpoint so the signed-out device cannot receive future Web Push.
+    await subscription.unsubscribe();
+  }
 }
 
 export async function deletePushDevice(userId: string): Promise<void> {
-  await clearLegacyFcmRegistrations(userId);
-  await deleteWebPushSubscription(userId);
+  const currentUser = getAuth(getApp()).currentUser;
+  if (!currentUser || currentUser.uid !== userId) {
+    throw new Error('A signed-in account is required.');
+  }
+
+  const failures: unknown[] = [];
+  await clearLegacyFcmRegistrations(userId).catch(error => failures.push(error));
+  await deleteWebPushSubscription(userId).catch(error => failures.push(error));
+  if (failures.length > 0) {
+    console.warn('[Web Push] Device cleanup was partially unavailable; sign-out will continue.');
+  }
 }

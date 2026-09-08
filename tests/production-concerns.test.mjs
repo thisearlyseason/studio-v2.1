@@ -200,13 +200,14 @@ test('every visible logout unregisters push while the user is still authenticate
   assert.ok(settingsLogout.indexOf('await deletePushDevice(user.id)') < settingsLogout.indexOf('await clearBrowserSession()'));
   assert.ok(settingsLogout.indexOf("await fetch('/api/demo/exit'") < settingsLogout.indexOf('await clearBrowserSession()'));
   assert.ok(settingsLogout.indexOf('await clearBrowserSession()') < settingsLogout.indexOf('await signOut(auth)'));
-  assert.doesNotMatch(settingsLogout, /deletePushDevice\(user\.id\)\.catch/);
   const shellLogout = shell.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   assert.match(shellLogout, /if \(user\?\.id && !isDemoLogout\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
   assert.ok(shellLogout.indexOf('await deletePushDevice(user.id)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
   const deletion = pushRegistration.match(/export async function deletePushDevice[\s\S]*?\n\}/)?.[0] || '';
-  assert.match(deletion, /await clearLegacyFcmRegistrations\(userId\);/);
-  assert.doesNotMatch(deletion, /clearLegacyFcmRegistrations\(userId\)\.catch/);
+  assert.match(deletion, /currentUser\.uid !== userId/);
+  assert.match(deletion, /await clearLegacyFcmRegistrations\(userId\)\.catch/);
+  assert.match(deletion, /await deleteWebPushSubscription\(userId\)\.catch/);
+  assert.match(pushRegistration, /try \{\s+await updateWebPushSubscription[\s\S]*?finally \{[\s\S]*?await subscription\.unsubscribe\(\)/);
 });
 
 test('demo launch creates its protected profile before entering dashboard routes', async () => {
