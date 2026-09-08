@@ -190,6 +190,7 @@ export async function POST(req: NextRequest) {
       billingCycle,
       quantity: extraTeamQty as number,
       teamId: targetTeamId,
+      customerId: stripeCustomerId,
       now: Date.now(),
     });
     let lockClaim = await claimCheckoutLock(userRef, idempotencyKey);

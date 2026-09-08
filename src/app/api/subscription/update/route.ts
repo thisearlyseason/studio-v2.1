@@ -140,6 +140,8 @@ export async function POST(req: NextRequest) {
       priceId: newPriceId,
       billingCycle,
       quantity: addonItem?.quantity || 0,
+      customerId: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
+      subscriptionId,
       operationId,
       now: Date.now(),
     });

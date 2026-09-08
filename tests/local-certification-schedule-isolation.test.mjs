@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFixtureMutations } from '../scripts/qa/certification/local/fixture-mutations.mjs';
 import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots } from '../scripts/qa/certification/local/schedule-isolation.mjs';
+import * as scheduleIsolation from '../scripts/qa/certification/local/schedule-isolation.mjs';
 import { createResourceRegistry } from '../scripts/qa/certification/local/resource-registry.mjs';
 
 for (const fails of [false, true]) {
@@ -82,6 +83,16 @@ test('operation scenario timeout selection extends only the Chat browser row', a
     'tournament-registration-waiver-lifecycle',
     'chat-channel-message-unread',
   ]);
+});
+
+test('long-running browser media workflows have explicit bounded lifecycle caps', () => {
+  assert.equal(typeof scheduleIsolation.operationScenarioTimeoutMs, 'function');
+  assert.equal(scheduleIsolation.operationScenarioTimeoutMs(false, 'practice-film-upload-coach-marks-watch'), 60_000);
+  assert.equal(scheduleIsolation.operationScenarioTimeoutMs(true, 'ordinary-operation-row'), 60_000);
+  assert.equal(scheduleIsolation.operationScenarioTimeoutMs(true, 'chat-channel-message-unread'), 90_000);
+  assert.equal(scheduleIsolation.operationScenarioTimeoutMs(true, 'practice-film-upload-coach-marks-watch'), 120_000);
+  assert.equal(scheduleIsolation.operationScenarioTimeoutMs(true, 'files-library-crud-download'), 120_000);
+  assert.equal(scheduleIsolation.operationScenarioTimeoutMs(true, 'files-avatar-branding-player-media-paths'), 120_000);
 });
 
 test('attendance and RSVP cannot reuse an authenticated browser profile name', () => {

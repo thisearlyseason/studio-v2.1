@@ -37,5 +37,8 @@ jobs:
           if (missing.length) throw new Error(`Missing production Functions: ${missing.join(', ')}`);
           const url = `https://us-central1-${process.env.FIREBASE_PROJECT_ID}.cloudfunctions.net/getCalendarFeed?token=invalid-health-check`;
           const response = await fetch(url);
-          if (response.status !== 400) throw new Error(`Function invocation failed with HTTP ${response.status}; verify Firebase billing and runtime health.`);
+          const body = await response.text();
+          if (response.status !== 404 || body !== 'Calendar feed not found.') {
+            throw new Error(`Function invocation failed with HTTP ${response.status}; verify Firebase billing and runtime health.`);
+          }
           NODE

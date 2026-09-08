@@ -534,6 +534,13 @@ const GET_DEMO_DATA = (
   };
 };
 
+export function pendingDemoYouthIdentity(pendingInviteEmail?: string) {
+  return {
+    hasLogin: false,
+    ...(pendingInviteEmail ? { pendingInviteEmail } : {}),
+  };
+}
+
 /**
  * HIGH-SPEED ATOMIC SEEDER
  * Ensures a stable, predictable reset for demo users.
@@ -791,10 +798,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const juniorId = `c1_${userId}`;
         const juniorDob = new Date(nowObj.getFullYear() - 9, 5, 15).toISOString().split('T')[0]; // 9 years old
         batch.set(doc(db, 'players', juniorId), clean({
-            id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId, userId: null,
+            id: juniorId, firstName: 'Junior', lastName: 'Guest', isMinor: true, parentId: userId,
             dateOfBirth: juniorDob, isDemo: true,
             demoOwnerUserId: userId,
-            hasLogin: false, createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
+            ...pendingDemoYouthIdentity(), createdAt: now, joinedTeamIds: [strikerId], ageGroup: 'U10', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=junior',
             sports: ['Basketball'], primaryPosition: 'Point Guard', primaryTeamId: strikerId, updatedByTeamId: strikerId
         }));
 
@@ -802,10 +809,10 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         const alexDob = new Date(nowObj.getFullYear() - 16, 2, 20).toISOString().split('T')[0]; // 16 years old
         const alexEmail = `alex.guest_${demoNamespace}@thesquad.pro`;
         batch.set(doc(db, 'players', alexId), clean({
-            id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId, userId: alexId,
+            id: alexId, firstName: 'Alex', lastName: 'Guest', isMinor: true, parentId: userId,
             dateOfBirth: alexDob, isDemo: true,
             demoOwnerUserId: userId,
-            hasLogin: true, pendingInviteEmail: alexEmail, createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
+            ...pendingDemoYouthIdentity(alexEmail), createdAt: now, joinedTeamIds: [lakerId], ageGroup: 'U17', avatar: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=alex',
             sports: ['Basketball', 'Soccer', 'Cross Country'], primaryPosition: 'Striker', primaryTeamId: lakerId, updatedByTeamId: lakerId
         }));
 
@@ -837,21 +844,9 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
         for (const tid of tids) {
             const isJunior = tid === strikerId;
             
-            // Stagger timelines: Junior gets Early Tournament & Late League. Alex gets Early League & Late Tournament.
-            const tournOffset = isJunior ? 1 : 11; // Junior starts Day 1, Alex starts Day 11
+            // Stagger league timelines between the two children.
             const lgOffset = isJunior ? 7 : 1;     // Junior starts League Day 7, Alex starts League Day 1
             const pracOffset = isJunior ? 4 : 4;   // Practices start day 4
-
-            // Use YYYY-MM-DD strings (not full ISO) so parseLocalDate in the scheduler
-            // treats them as local midnight — prevents UTC offset shifting matches 1 day early.
-            const tournStartDate = new Date(nowObj.getTime() + tournOffset * 86400000);
-            const tournEndDate = new Date(nowObj.getTime() + (tournOffset + 2) * 86400000);
-            const pad = (n: number) => String(n).padStart(2, '0');
-            const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-            const tournStart = tournStartDate.toISOString(); // Keep ISO for event metadata display
-            const tournEnd = tournEndDate.toISOString();
-            const tournStartStr = toDateStr(tournStartDate); // Clean date for scheduler engine
-            const tournEndStr = toDateStr(tournEndDate);
 
             // Sync the league games into team events for immediate visibility
             // IDs are scoped to tid to prevent Strikers/Lakers overwriting each other
@@ -865,77 +860,6 @@ export async function seedGuestDemoTeam(db: Firestore, userId: string, planId: s
             leagueGames.forEach(lg => {
               batch.set(doc(db, 'teams', tid, 'events', lg.id), clean(lg));
             });
-
-            // Multi-day Tournament (3 Days)
-            const tournamentId = `tourn_${tid}_demo`;
-            const tournamentTeamsData = [
-              { id: strikerId, name: 'Strikers', coach: 'Mike Strike', email: 'mike@strikers.com', source: 'manual', complianceStatus: 'verified' },
-              { id: lakerId, name: 'Lakers', coach: 'Jim Lake', email: 'jim@lakers.com', source: 'manual', complianceStatus: 'verified' },
-              { id: 'tt_2', name: 'Hawks', coach: 'Sarah Hawk', email: 'sarah@hawks.com', source: 'manual', complianceStatus: 'pending' },
-              { id: 'tt_3', name: 'Tigers', coach: 'Leo Tiger', email: 'leo@tigers.com', source: 'manual', complianceStatus: 'verified' },
-              { id: 'tt_4', name: 'Eagles', coach: 'Jane Eagle', email: 'jane@eagles.com', source: 'manual', complianceStatus: 'verified' },
-              { id: 'tt_5', name: 'Panthers', coach: 'Tim Panther', email: 'tim@panthers.com', source: 'manual', complianceStatus: 'verified' },
-              { id: 'tt_6', name: 'Cougars', coach: 'Chris Coug', email: 'chris@cougars.com', source: 'manual', complianceStatus: 'verified' },
-              { id: 'tt_7', name: 'Bears', coach: 'Bear Brown', email: 'bear@bears.com', source: 'manual', complianceStatus: 'verified' }
-            ];
-            const tournamentGames = generateTournamentSchedule({
-              teams: tournamentTeamsData,
-              fields: ['Arena 1', 'Main Field'],
-              startDate: tournStartStr,   // YYYY-MM-DD — no UTC shift
-              endDate: tournEndStr,
-              startTime: '08:00',
-              endTime: '20:00',
-              gameLength: 60,
-              breakLength: 15,
-              tournamentType: isJunior ? 'double_elimination' : 'pool_play_knockout',
-              gamesPerTeam: 3
-            }).map(g => ({
-              ...g,
-              matchTeamIds: [g.team1Id, g.team2Id].filter(Boolean)
-            }));
-
-            const demoRefereePool = [
-              { id: `ref_1_${tid}`, name: 'Marcus Webb', email: 'marcus.webb@officials.org', phone: '555-0141', certLevel: 'National', notes: 'Head referee. Available all 3 days.' },
-              { id: `ref_2_${tid}`, name: 'Dana Holloway', email: 'd.holloway@officials.org', phone: '555-0182', certLevel: 'State', notes: 'Experienced center ref. Day 1 & 2 only.' },
-              { id: `ref_3_${tid}`, name: 'Jordan Park', email: 'j.park@officials.org', phone: '555-0233', certLevel: 'Regional', notes: 'Line judge specialist.' },
-              { id: `ref_4_${tid}`, name: 'Sam Torres', email: 's.torres@officials.org', phone: '555-0274', certLevel: 'State', notes: 'Certified in DE formats.' },
-              { id: `ref_5_${tid}`, name: 'Casey Nguyen', email: 'c.nguyen@officials.org', phone: '555-0315', certLevel: 'Regional', notes: 'Covering Day 3 finals.' }
-            ];
-            // Assign refs to first 4 games (typically completed in demo)
-            const demoRefAssignments: Record<number, { refereeId: string; refereeName: string }> = {
-              0: { refereeId: `ref_1_${tid}`, refereeName: 'Marcus Webb' },
-              1: { refereeId: `ref_2_${tid}`, refereeName: 'Dana Holloway' },
-              2: { refereeId: `ref_3_${tid}`, refereeName: 'Jordan Park' },
-              3: { refereeId: `ref_4_${tid}`, refereeName: 'Sam Torres' },
-            };
-            const enrichedTournamentGames = tournamentGames.map((g: any, idx: number) => ({
-              ...g,
-              ...(demoRefAssignments[idx] || {}),
-              matchTeamIds: [g.team1Id, g.team2Id].filter(Boolean)
-            }));
-
-            batch.set(doc(db, 'teams', tid, 'events', tournamentId), clean({
-              id: tournamentId,
-              teamId: tid,
-              title: isJunior ? 'City Championship Tournament' : 'Lakers Spring Showcase',
-              eventType: 'tournament',
-              isTournament: true,
-              date: tournStart,
-              endDate: tournEnd,
-              location: 'Premier Sports Park',
-              description: 'The final 3-day showdown for the regional title.',
-              tournamentTeams: tournamentTeamsData.map((t: any) => t.name),
-              tournamentTeamsData: tournamentTeamsData,
-              tournamentGames: enrichedTournamentGames,
-              refereePool: demoRefereePool,
-              teamAgreements: {
-                'Strikers': { signedAt: yesterday, signatureCount: 15, captainName: 'Coach Strikers' },
-                'Lakers': { signedAt: day2, signatureCount: 12, captainName: 'Coach Lakers' },
-                'Hawks': { signedAt: day3, signatureCount: 14, captainName: 'Coach Hawks' },
-                'Tigers': { signedAt: yesterday, signatureCount: 11, captainName: 'Coach Tigers' }
-              },
-              status: 'active'
-            }));
 
             // Regular practices
             const practices = [

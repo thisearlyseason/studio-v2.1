@@ -59,6 +59,8 @@ export function buildCheckoutIdempotencyKey(input: {
   billingCycle: 'monthly' | 'annual';
   quantity: number;
   teamId?: string | null;
+  customerId?: string | null;
+  subscriptionId?: string | null;
   operationId?: string | null;
   now: number;
 }): string {
@@ -72,6 +74,8 @@ export function buildCheckoutIdempotencyKey(input: {
       input.billingCycle,
       String(input.quantity),
       input.teamId || '',
+      input.customerId || '',
+      input.subscriptionId || '',
       input.operationId || '',
       retryScope,
     ].join(':'))

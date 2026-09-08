@@ -422,7 +422,7 @@ export async function POST(req: NextRequest) {
           isDemo: true,
         });
       }
-      if (isElite && shell.type !== 'school') {
+      if (shell.type !== 'school') {
         const tournament = demoTournamentBlueprint(shell.id, shell.name, messageTimestamp);
         batch.set(teamRef.collection('events').doc(tournament.id), tournament, { merge: true });
       }

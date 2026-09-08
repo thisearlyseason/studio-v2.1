@@ -42,7 +42,7 @@ import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUplo
 import {createIncidentBrowserObserver,validateIncidentDownload} from './certification/local/incident-browser.mjs';
 import {createMediaBrowserObserver,generatedMp4Body,parseMediaBrowserEnvelope} from './certification/local/media-browser.mjs';
 import {beforeImageMatches} from './certification/local/document-restoration.mjs';
-import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots, registerCompetitionDiscovery, snapshotCompetitionRoots } from './certification/local/schedule-isolation.mjs';
+import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationScenarioTimeoutMs, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots, registerCompetitionDiscovery, snapshotCompetitionRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
   patchFirestoreFields as patchFirestoreFieldsRequest,
@@ -8026,7 +8026,7 @@ async function runCertificationOperationsScenarios() {
   let sessionBaseline;
   return runOperationScenarioSequence(scenarioIds, {
     failFast: certificationFailFast,
-    timeoutMs: scenarioId => runBrowser && scenarioId === 'chat-channel-message-unread' ? 90_000 : 60_000,
+    timeoutMs: scenarioId => operationScenarioTimeoutMs(runBrowser, scenarioId),
     onError: (scenarioId, error) => recordCertificationRunFailure(scenarioId, error, 'operations-runtime'),
     execute: async scenarioId => {
     sessionBaseline = new Set(ownedBrowserSessions);

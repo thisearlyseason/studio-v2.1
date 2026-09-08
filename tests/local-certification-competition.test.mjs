@@ -422,7 +422,7 @@ test('runner uses dedicated competition workflows, isolated sessions and numeric
   assert.match(source, /COMPETITION_CASE_HANDLER_REGISTRY/);
   assert.match(source, /COMPETITION_CREDENTIAL_HMAC_SECRET:/);
   assert.match(source, /withFirestoreOverlay/);
-  assert.match(source, /timeoutMs: scenarioId => runBrowser && scenarioId === 'chat-channel-message-unread' \? 90_000 : 60_000/);
+  assert.match(source, /timeoutMs: scenarioId => operationScenarioTimeoutMs\(runBrowser, scenarioId\)/);
   assert.doesNotMatch(source, /timeoutMs: runBrowser \? 90_000 : 60_000/);
   const competitionBlock = source.slice(
     source.indexOf('const COMPETITION_BROWSER_CONTRACTS'),

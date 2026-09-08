@@ -681,9 +681,9 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
               <div className="w-20 h-20 hero-gradient rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl animate-in zoom-in-50 duration-500">
                 <Check className="h-10 w-10 text-white" />
               </div>
-              <DialogTitle className="text-3xl font-bold tracking-tight text-slate-900">Invite Ready!</DialogTitle>
+              <DialogTitle className="text-3xl font-bold tracking-tight text-slate-900">Invitation Sent!</DialogTitle>
               <DialogDescription className="text-slate-500 text-lg leading-relaxed">
-                Copy the link below and share it with your athlete to enable their independent login.
+                We emailed the activation link to your athlete. You can also copy and share it below.
               </DialogDescription>
             </div>
 

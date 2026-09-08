@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
+
+test('pending demo youth identity is not falsely bound to a nonexistent login', async () => {
+  const seeder = await import('../src/lib/db-seeder.ts');
+  assert.deepEqual(seeder.pendingDemoYouthIdentity(), {
+    hasLogin: false,
+  });
+  assert.deepEqual(seeder.pendingDemoYouthIdentity('alex@example.test'), {
+    hasLogin: false,
+    pendingInviteEmail: 'alex@example.test',
+  });
+  assert.equal('userId' in seeder.pendingDemoYouthIdentity('alex@example.test'), false);
+});
 
 const routePath = '../../src/app/api/demo/seed/route.ts';
 const request = (body, method = 'POST') => new Request('http://127.0.0.1/api/demo/seed', {
@@ -85,6 +98,27 @@ test('elite demo bootstrap server-seeds tournament events for every protected sq
     const hub = records.get(`teams/${primaryTeamId}/groupChats/hub_broadcast_elite_${body.demoNamespace}`);
     assert.equal(hub?.isHubChannel, true);
     assert.equal(hub?.memberIds?.includes(uid), true);
+  } finally {
+    app.dispose();
+  }
+});
+
+test('parent demo bootstrap server-seeds protected tournaments and leaves no client tournament write', async () => {
+  const uid = 'demo-user-parent-tournament-0001';
+  const { db, records } = communicationDb({});
+  const app = await loadCommunicationRoute(routePath, db, { uid, signInProvider: 'anonymous' });
+  try {
+    const response = await app.route.POST(request({ planId: 'parent_demo' }));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.teamIds.length, 2);
+    for (const teamId of body.teamIds) {
+      const event = records.get(`teams/${teamId}/events/tourn_${teamId}`);
+      assert.equal(event?.isTournament, true);
+      assert.equal(event?.eventType, 'tournament');
+    }
+    const clientSeeder = await readFile(new URL('../src/lib/db-seeder.ts', import.meta.url), 'utf8');
+    assert.doesNotMatch(clientSeeder, /batch\.set\(doc\(db, 'teams', tid, 'events', tournamentId\)/);
   } finally {
     app.dispose();
   }
