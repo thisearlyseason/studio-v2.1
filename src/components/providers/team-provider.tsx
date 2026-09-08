@@ -784,6 +784,7 @@ export type TournamentGame = {
   divisionSeed2?: number;
   isBye?: boolean;
   possibleTeamIds?: string[];
+  scheduledStartMs?: number;
   /** Assigned official */
   refereeId?: string;
   refereeName?: string;
