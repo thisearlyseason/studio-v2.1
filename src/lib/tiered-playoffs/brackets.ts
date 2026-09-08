@@ -197,12 +197,21 @@ type PlayoffAvailability = {
   gameDurationMinutes: number;
   minimumRestMinutes: number;
   transitionMinutes: number;
+  occupiedGames?: TournamentGame[];
 };
 
 function minute(value: string): number {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value);
+  const match = /^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i.exec(String(value || '').trim());
   if (!match) return -1;
-  return Number(match[1]) * 60 + Number(match[2]);
+  let hour = Number(match[1]);
+  const minuteValue = Number(match[2]);
+  if (minuteValue > 59) return -1;
+  if (match[3]) {
+    if (hour < 1 || hour > 12) return -1;
+    if (match[3].toUpperCase() === 'PM' && hour !== 12) hour += 12;
+    if (match[3].toUpperCase() === 'AM' && hour === 12) hour = 0;
+  } else if (hour > 23) return -1;
+  return hour * 60 + minuteValue;
 }
 
 function render(value: number) {
@@ -226,6 +235,15 @@ export function scheduleTieredPlayoffBrackets(games: TournamentGame[], availabil
   }).sort((left, right) => left.start - right.start || left.field.id.localeCompare(right.field.id));
   const scheduled = new Map<string, TournamentGame & { scheduledStartMs: number }>();
   const result: Array<TournamentGame & { scheduledStartMs: number }> = [];
+  const occupied = (availability.occupiedGames || []).flatMap(game => {
+    const parsed = minute(game.time);
+    if (parsed < 0 || !game.date) return [];
+    return [{
+      start: at(game.date, parsed),
+      resourceId: game.resourceId || '',
+      possibleTeamIds: (game.possibleTeamIds?.length ? game.possibleTeamIds : [game.team1Id, game.team2Id]).filter((id): id is string => Boolean(id && id !== 'tbd')),
+    }];
+  });
   const usedResource = new Set<string>();
   const feederGap = (availability.gameDurationMinutes + availability.minimumRestMinutes + availability.transitionMinutes) * 60_000;
   const participantGap = (availability.gameDurationMinutes + availability.minimumRestMinutes) * 60_000;
@@ -236,6 +254,8 @@ export function scheduleTieredPlayoffBrackets(games: TournamentGame[], availabil
     const possible = new Set(game.possibleTeamIds || []);
     const slot = slots.find(candidate => {
       if (candidate.start < earliest || usedResource.has(`${candidate.start}:${candidate.field.id}`)) return false;
+      if (occupied.some(previous => previous.resourceId === candidate.field.id && previous.start === candidate.start)) return false;
+      if (occupied.some(previous => previous.possibleTeamIds.some(teamId => possible.has(teamId)) && Math.abs(candidate.start - previous.start) < participantGap)) return false;
       return result.every(previous => {
         if (!previous.possibleTeamIds?.some(teamId => possible.has(teamId))) return true;
         return Math.abs(candidate.start - previous.scheduledStartMs) >= participantGap;

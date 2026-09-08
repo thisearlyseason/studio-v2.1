@@ -28,6 +28,7 @@ const seed = {
   'teams/team-a/events/cup': {
     teamId: 'team-a', isTournament: true, tournamentType: 'tiered_playoffs', isArchived: false,
     lifecycleVersion: 1, scheduleVersion: 1, tournamentTeamsData: teams,
+    dailyWindows: [{ date: '2026-09-11', startTime: '08:00', endTime: '18:00' }],
     tournamentGames: [game('g1', 't1', 't2', 4, 0), game('g2', 't2', 't3', 3, 0), game('g3', 't3', 't4', 2, 0), game('g4', 't4', 't1', 1, 0)],
     tieredPlayoffs,
   },
@@ -57,6 +58,7 @@ test('organizer previews, locks, generates, and publishes independent Tiered bra
   assert.equal((await call(db, command('generate-brackets', 3))).status, 200);
   const generated = records.get('teams/team-a/events/cup');
   assert.equal(generated.tournamentGames.filter(item => item.phase === 'playoff').length, 2);
+  assert.equal(generated.tournamentGames.filter(item => item.phase === 'playoff').every(item => item.date === '2026-09-11' && item.time && item.resourceId), true);
   assert.deepEqual([...new Set(generated.tournamentGames.filter(item => item.phase === 'playoff').map(item => item.playoffDivisionId))].sort(), ['a', 'b']);
   assert.equal((await call(db, command('publish-playoffs', 4))).status, 200);
   assert.equal(records.get('teams/team-a/events/cup').tieredPlayoffs.playoffs.status, 'published');
@@ -83,4 +85,33 @@ test('missing or disputed preliminary results block seeding without partial stat
     assert.equal((await call(db, command('preview-seeding', 1))).status, 409);
     assert.deepEqual([...records], before);
   }
+});
+
+test('pre-seeding withdrawal preserves history, excludes the team, and recalculates a valid field', async () => {
+  const { db, records } = communicationDb(seed, { serializeTransactions: true });
+  const removed = await call(db, command('withdraw-team', 1, { teamId: 't1', reason: 'Unable to attend' }));
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  const stored = records.get('teams/team-a/events/cup');
+  assert.equal(stored.tournamentTeamsData.find(team => team.id === 't1').tieredStatus, 'withdrawn');
+  assert.equal(stored.tournamentGames.length, 4, 'historical preliminary games must remain');
+  assert.equal(stored.tieredPlayoffs.divisions.definitions.reduce((sum, division) => sum + division.size, 0), 3);
+  const preview = await call(db, command('preview-seeding', 2, {}, 'tiered-preview-after-withdrawal'));
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.equal(preview.body.approved.some(row => row.teamId === 't1'), false);
+});
+
+test('post-generation disqualification forfeits only playable matches without deleting bracket history', async () => {
+  const { db, records } = communicationDb(seed, { serializeTransactions: true });
+  assert.equal((await call(db, command('preview-seeding', 1))).status, 200);
+  assert.equal((await call(db, command('lock-seeding', 2))).status, 200);
+  assert.equal((await call(db, command('generate-brackets', 3))).status, 200);
+  const before = records.get('teams/team-a/events/cup').tournamentGames.map(game => game.id);
+  const response = await call(db, command('disqualify-team', 4, { teamId: 't1', reason: 'Eligibility ruling' }));
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const stored = records.get('teams/team-a/events/cup');
+  assert.deepEqual(stored.tournamentGames.map(game => game.id), before);
+  assert.equal(stored.tournamentTeamsData.find(team => team.id === 't1').tieredStatus, 'disqualified');
+  const affected = stored.tournamentGames.find(game => game.phase === 'playoff' && (game.team1Id === 't1' || game.team2Id === 't1'));
+  assert.equal(affected.isCompleted, true);
+  assert.notEqual(affected.winnerId, 't1');
 });

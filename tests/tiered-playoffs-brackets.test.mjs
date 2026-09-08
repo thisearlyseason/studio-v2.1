@@ -76,6 +76,25 @@ test('playoff scheduling waits for every feeder completion plus rest and transit
   }
 });
 
+test('playoff scheduling avoids occupied preliminary resources and team rest windows', async () => {
+  const { generateTieredDivisionBracket, scheduleTieredPlayoffBrackets } = await load();
+  const bracket = generateTieredDivisionBracket({ id: 'division_a', name: 'A Division', size: 4 }, placements(4));
+  const scheduled = scheduleTieredPlayoffBrackets(bracket, {
+    fields: [{ id: 'field_1', name: 'Field 1' }, { id: 'field_2', name: 'Field 2' }],
+    dailyWindows: [{ date: '2026-09-12', startTime: '08:00', endTime: '22:00' }],
+    gameDurationMinutes: 60,
+    minimumRestMinutes: 60,
+    transitionMinutes: 15,
+    occupiedGames: [{
+      id: 'prelim', team1Id: 'team_1', team2Id: 'team_2', team1: 'Team 1', team2: 'Team 2',
+      score1: 2, score2: 1, date: '2026-09-12', time: '8:00 AM', location: 'Field 1', resourceId: 'field_1',
+      phase: 'preliminary', isCompleted: true,
+    }],
+  });
+  assert.equal(scheduled.some(game => game.resourceId === 'field_1' && game.time === '8:00 AM'), false);
+  assert.equal(scheduled.some(game => game.time === '8:00 AM' && game.possibleTeamIds.some(id => id === 'team_1' || id === 'team_2')), false);
+});
+
 test('duplicate placements and broken dependency topology fail validation', async () => {
   const { generateTieredDivisionBracket, validateTieredBrackets } = await load();
   const seeded = placements(4);

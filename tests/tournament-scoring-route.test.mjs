@@ -68,6 +68,28 @@ test('Tournament score replay is one mutation and changed payload collides', asy
   } finally { app.dispose(); }
 });
 
+test('Tiered preliminary scoring invalidates an unlocked seed preview without rebuilding playoffs', async () => {
+  const tieredPlayoffs = {
+    schemaVersion: 1,
+    preliminary: { gamesPerTeam: 1, gameDurationMinutes: 60, transitionMinutes: 15, minimumRestMinutes: 30, maximumGamesPerTeamPerDay: 2, schedulingMethod: 'automatic' },
+    standings: { pointsEnabled: true, points: { win: 2, tie: 1, loss: 0 }, rankingRules: ['wins'], finalResolution: 'manual', maximumDifferentialPerGame: null },
+    divisions: { sizing: 'custom', definitions: [{ id: 'a', name: 'A', size: 2 }], avoidPreliminaryRematches: false },
+    seeding: { status: 'review', calculated: [{ teamId: 'alpha' }], approved: [{ teamId: 'alpha' }], standingsFingerprint: 'old', lockedAt: null, lockedBy: null },
+    playoffs: { bracketFormat: 'single_elimination', status: 'pending', publishedAt: null, publishedBy: null },
+  };
+  const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, {
+    tournamentType: 'tiered_playoffs', tieredPlayoffs,
+    tournamentGames: [baseGame({ phase: 'preliminary' })],
+  });
+  try {
+    assert.equal((await post(app, command())).status, 200);
+    const stored = records.get('teams/team-a/events/cup-a').tieredPlayoffs;
+    assert.equal(stored.seeding.status, 'pending');
+    assert.deepEqual(stored.seeding.approved, []);
+    assert.equal(stored.playoffs.status, 'pending');
+  } finally { app.dispose(); }
+});
+
 test('Tournament scoring rejects wrong or rotated code, stale versions, invalid scores, inactive state, and downgraded plans without writes', async () => {
   const cases = [
     [{ code: 'WRONG' }, 403], [{ expectedLifecycleVersion: 3 }, 409], [{ expectedScheduleVersion: 5 }, 409],
