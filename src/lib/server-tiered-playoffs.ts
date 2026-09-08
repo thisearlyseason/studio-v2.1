@@ -50,7 +50,13 @@ function currentEvent(source: DocumentData, input: TieredPlayoffsCommandInput): 
   }
   const teams = Array.isArray(source.tournamentTeamsData) ? source.tournamentTeamsData : [];
   const eligible = teams.filter((team: DocumentData) => team.eligibleForPlayoffs !== false && !['withdrawn', 'disqualified'].includes(String(team.tieredStatus || '')));
-  const validation = validateTieredPlayoffsConfig(source.tieredPlayoffs, eligible.length, input.action === 'configure-divisions' ? 'preliminary' : 'playoffs');
+  const definitions = source.tieredPlayoffs && typeof source.tieredPlayoffs === 'object' &&
+    Array.isArray(source.tieredPlayoffs.divisions?.definitions)
+    ? source.tieredPlayoffs.divisions.definitions
+    : [];
+  const divisionlessTeamStatusChange = ['withdraw-team', 'disqualify-team'].includes(input.action) && definitions.length === 0;
+  const validation = validateTieredPlayoffsConfig(source.tieredPlayoffs, eligible.length,
+    input.action === 'configure-divisions' || divisionlessTeamStatusChange ? 'preliminary' : 'playoffs');
   if (!validation.valid) fail('INVALID_TIERED_CONFIGURATION', validation.errors[0] || 'Tiered Playoffs configuration is invalid.');
   return source.tieredPlayoffs as TieredPlayoffsConfig;
 }
@@ -261,7 +267,7 @@ export async function executeTieredPlayoffsCommand(input: TieredPlayoffsCommandI
       if (config.playoffs.status === 'pending' && config.seeding.status !== 'locked' && config.seeding.status !== 'stale') {
         const remaining = teams.filter((team: DocumentData) => team.eligibleForPlayoffs !== false).length;
         if (remaining < 2) fail('INSUFFICIENT_PLAYOFF_TEAMS', 'At least two eligible teams are required to continue Tiered Playoffs.', 409);
-        nextConfig.divisions.definitions = resizeDivisions(config, remaining);
+        nextConfig.divisions.definitions = config.divisions.definitions.length ? resizeDivisions(config, remaining) : [];
         nextConfig.seeding = { status: 'pending', calculated: [], approved: [], standingsFingerprint: null, lockedAt: null, lockedBy: null };
       } else {
         let changed = true;

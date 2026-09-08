@@ -137,6 +137,24 @@ test('pre-seeding withdrawal preserves history, excludes the team, and recalcula
   assert.equal(preview.body.approved.some(row => row.teamId === 't1'), false);
 });
 
+test('pre-division withdrawal preserves the divisionless phase and lets organizers configure the remaining field', async () => {
+  const { db, records } = communicationDb(divisionlessSeed(), { serializeTransactions: true });
+  const removed = await call(db, command('withdraw-team', 1, { teamId: 't1', reason: 'Unable to attend' }));
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  const stored = records.get('teams/team-a/events/cup');
+  assert.equal(stored.tournamentTeamsData.find(team => team.id === 't1').tieredStatus, 'withdrawn');
+  assert.deepEqual(stored.tieredPlayoffs.divisions.definitions, []);
+  assert.equal(stored.tournamentGames.length, 4, 'historical preliminary games must remain');
+
+  const configured = await call(db, command('configure-divisions', 2, {
+    sizing: 'automatic', divisionNames: ['Championship'], avoidPreliminaryRematches: true,
+  }, 'tiered-configure-after-withdrawal'));
+  assert.equal(configured.status, 200, JSON.stringify(configured.body));
+  assert.deepEqual(records.get('teams/team-a/events/cup').tieredPlayoffs.divisions.definitions, [
+    { id: 'tier_1', name: 'Championship', size: 3 },
+  ]);
+});
+
 test('post-generation disqualification forfeits only playable matches without deleting bracket history', async () => {
   const { db, records } = communicationDb(seed, { serializeTransactions: true });
   assert.equal((await call(db, command('preview-seeding', 1))).status, 200);
