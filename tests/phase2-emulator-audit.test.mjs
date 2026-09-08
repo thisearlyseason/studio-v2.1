@@ -216,6 +216,25 @@ test('operations certification selection remains explicit and does not widen leg
   assert.deepEqual(configured.selectedScenarios, ['events-event-crud-recurrence']);
 });
 
+test('newly assigned local Operations rows dispatch through dedicated case-owned handlers', () => {
+  const gapIds = [
+    'games-team-score-create-edit-reset',
+    'leagues-divisions-teams-filters-forms',
+    'volunteers-opportunity-public-signup',
+    'sports-hub-rss-refresh-admin-publish',
+    'public-portals-embed-panels',
+    'administration-entitlement-account-control-plans',
+    'administration-beta-bugs-embeds-newsletter-sports-hub',
+  ];
+  const start = source.indexOf('const LOCAL_GAP_OPERATION_HANDLERS');
+  const end = source.indexOf('async function runCertificationOperationsScenarios()', start);
+  assert.ok(start >= 0 && end > start, 'dedicated local-gap handler registry must exist');
+  const registry = source.slice(start, end);
+  for (const id of gapIds) assert.match(registry, new RegExp(`'${id}':\\s*run`), id);
+  const dispatcher = source.slice(end, source.indexOf('function waiverTeam', end));
+  assert.match(dispatcher, /const localGapHandler = LOCAL_GAP_OPERATION_HANDLERS\[scenarioId\];[\s\S]*await localGapHandler\(\);[\s\S]*return;/);
+});
+
 test('managed operations dispatch keeps each emitted dimension tied to its exact assertions', () => {
   const start = source.indexOf('function recordBlockedOperationsCases(');
   const end = source.indexOf('function browserVisibleAdminNavigationAudit', start);
