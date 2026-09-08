@@ -83,3 +83,24 @@ test('replicated form definitions retain accepted IDs and fee terms with activat
   const config = replicationModule.buildTournamentReplicationConfig({ id: 'config-id', form_id: 'form-id', fee_id: 'fee-id', selected_team_waivers: ['waiver-id'], registration_cost: '125', is_active: true, applicantResponses: { private: 'answer' }, scoringCode: 'SECRET' });
   assert.deepEqual(config, { id: 'config-id', form_id: 'form-id', fee_id: 'fee-id', selected_team_waivers: ['waiver-id'], registration_cost: '125', is_active: false });
 });
+
+test('replicated Tiered Playoffs keeps rules but resets placement, locks, publication, and results', () => {
+  const sourceTiered = {
+    schemaVersion: 1,
+    preliminary: { gamesPerTeam: 4, gameDurationMinutes: 60, transitionMinutes: 15, minimumRestMinutes: 60, maximumGamesPerTeamPerDay: 3, schedulingMethod: 'automatic' },
+    standings: { pointsEnabled: true, points: { win: 2, tie: 1, loss: 0 }, rankingRules: ['wins', 'differential'], finalResolution: 'manual', maximumDifferentialPerGame: 7 },
+    divisions: { sizing: 'automatic', definitions: [{ id: 'a', name: 'A Division', size: 4 }], avoidPreliminaryRematches: true },
+    seeding: { status: 'locked', calculated: [{ teamId: 'a' }], approved: [{ teamId: 'a' }], standingsFingerprint: 'secret-state', lockedAt: '2026-09-08T00:00:00Z', lockedBy: 'owner' },
+    playoffs: { bracketFormat: 'single_elimination', status: 'published', publishedAt: '2026-09-08T01:00:00Z', publishedBy: 'owner' },
+  };
+  const replicated = replicationModule.buildTournamentReplicationEvent({
+    source: { tournamentType: 'tiered_playoffs', tieredPlayoffs: sourceTiered, date: '2026-10-01', endDate: '2026-10-02' },
+    title: 'Replica', eventId: 'replica', teamId: 'team-a', actorUid: 'owner', ownerUserId: 'owner', registrationCode: 'NEW', now: '2026-09-08T02:00:00Z',
+  });
+  assert.deepEqual(replicated.tieredPlayoffs, {
+    ...sourceTiered,
+    seeding: { status: 'pending', calculated: [], approved: [], standingsFingerprint: null, lockedAt: null, lockedBy: null },
+    playoffs: { bracketFormat: 'single_elimination', status: 'pending', publishedAt: null, publishedBy: null },
+  });
+  assert.deepEqual(replicated.tournamentGames, []);
+});
