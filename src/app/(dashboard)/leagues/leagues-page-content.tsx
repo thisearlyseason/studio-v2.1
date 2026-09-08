@@ -86,6 +86,7 @@ import {
   getLeagueDeploymentLabel,
   type LeagueCloneResult,
 } from '@/lib/server-league-cloning';
+import { leagueLifecycleClientPolicy, stageManualLeagueTeam } from '@/lib/league-lifecycle-client-policy';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -140,7 +141,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   const pendingConfigurations = useRef(new Map<string, { requestId: string; expectedVersion: number; invalidateExisting: boolean }>());
   const { user: authUser } = useUser();
   const firebaseAuth = useAuth();
-  const { db, updateLeagueSchedule, hasFeature, isSchoolMode, submitRegistrationEntry } = useTeam();
+  const { db, updateLeague, updateLeagueSchedule, hasFeature, isSchoolMode } = useTeam();
   const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const [isProcessing, setIsProcessing] = useState(false);
   const [step, setStep] = useState(1);
@@ -219,20 +220,16 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
     }
     setIsProcessing(true);
     try {
-      if (!submitRegistrationEntry) return;
-      await submitRegistrationEntry(
-        league.id,
-        'team_config',
-        {
-          teamName: newSquad.teamName.trim(),
-          name: newSquad.coachName.trim(),
-          email: newSquad.coachEmail.trim(),
-          manual_enrollment: true
-        },
-        0,
-        'Manual Staging',
-        'leagues'
-      );
+      await stageManualLeagueTeam({
+        leagueId: league.id,
+        teamId: `manual_${crypto.randomUUID()}`,
+        teamName: newSquad.teamName,
+        coachName: newSquad.coachName,
+        coachEmail: newSquad.coachEmail,
+        inviteCode: crypto.randomUUID().replace(/-/g, '').slice(0, 8),
+        createdAt: new Date().toISOString(),
+        updateLeague: (leagueId, updates) => updateLeague(leagueId, updates as Partial<League>),
+      });
       setNewSquad({ teamName: '', coachName: '', coachEmail: '' });
       toast({ title: "Squad Staged Successfully" });
     } catch (err) {
@@ -1436,6 +1433,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const leaguesLabel = isSchoolMode ? 'Programs' : 'Leagues';
   const hasLeagueCreationAccess = isPrimaryClubAuthority || userProfile?.role === 'league_creator';
   const canManageLeagues = isStaff || userProfile?.role === 'league_creator';
+  const lifecyclePolicy = leagueLifecycleClientPolicy({
+    isDemo: userProfile?.isDemo === true,
+    canManage: canManageLeagues,
+  });
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSeasonOpen, setIsSeasonOpen] = useState(false);
@@ -1662,7 +1663,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     allLeagues.some(league =>
       league.creatorId === authUser?.uid && league.demoSeeded !== true
     );
-  const canCreateLeague = hasLeagueCreationAccess && !leagueCreationLimitReached;
+  const canCreateLeague = hasLeagueCreationAccess && lifecyclePolicy.create && !leagueCreationLimitReached;
   const isLeaguesLoading = ownedLeaguesLoading || memberLeaguesLoading || tenantLeaguesLoading;
 
   const canManageLeagueRecord = useCallback((league?: League) => Boolean(league && (
@@ -2295,7 +2296,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                  {showArchived ? 'View Active Hubs' : 'View Archived Hubs'}
               </Button>
             ) : null}
-            {!activeLeague && hasLeagueCreationAccess && (
+            {!activeLeague && hasLeagueCreationAccess && lifecyclePolicy.create && (
               <Button disabled={leagueCreationLimitReached} className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
                 <Plus className="h-5 w-5 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : `Create ${leagueLabel}`}
               </Button>
@@ -2310,7 +2311,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                {showArchived ? 'Active Hubs' : 'Archived Hubs'}
             </Button>
           ) : null}
-          {!activeLeague && hasLeagueCreationAccess && (
+          {!activeLeague && hasLeagueCreationAccess && lifecyclePolicy.create && (
             <Button disabled={leagueCreationLimitReached} className="h-11 px-6 rounded-2xl font-black shadow-xl shadow-primary/20 text-xs" onClick={() => setIsCreateOpen(true)}>
               <Plus className="h-4 w-4 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : `Create ${leagueLabel}`}
             </Button>
@@ -2354,7 +2355,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">
                               {league.sport}
                             </Badge>
-                            {canManageLeagueRecord(league) && (
+                            {lifecyclePolicy.delete && canManageLeagueRecord(league) && (
                               <Button
                                 aria-label={`Delete ${league.name}`}
                                 variant="ghost"
@@ -2379,7 +2380,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                              <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center shrink-0"><Zap className="h-4 w-4 opacity-40" /></div>
                            </div>
                            <div className="flex gap-2 w-full sm:w-auto">
-                             {userProfile?.isDemo !== true && canManageLeagueRecord(league) && (
+                             {lifecyclePolicy.clone && canManageLeagueRecord(league) && (
                                <Button 
                                  variant="outline" 
                                  size="sm" 
@@ -2431,7 +2432,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg uppercase">{primaryLeague.sport}</Badge>
-                          {canManageLeagueRecord(primaryLeague) && (
+                          {lifecyclePolicy.delete && canManageLeagueRecord(primaryLeague) && (
                             <Button aria-label={`Delete entire league ${group.name}`} variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-red-500 hover:text-white" onClick={() => handleDeleteLeagueGroup(group.items, group.name)}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -2475,7 +2476,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                       {getLeagueDeploymentLabel(divLeague)}
                                     </Badge>
                                   </div>
-                                  {canManageLeagueRecord(divLeague) && (
+                                  {lifecyclePolicy.delete && canManageLeagueRecord(divLeague) && (
                                     <Button
                                       aria-label={`Delete ${divLeague.name} ${divisionName}`}
                                       variant="ghost"
@@ -2501,7 +2502,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                               </div>
                               <div className="pt-3 border-t border-black/5 flex items-center justify-between gap-2">
                                 <div className="flex gap-2">
-                                  {userProfile?.isDemo !== true && canManageLeagueRecord(divLeague) && (
+                                  {lifecyclePolicy.clone && canManageLeagueRecord(divLeague) && (
                                     <Button 
                                       variant="outline" 
                                       size="sm" 
@@ -2534,7 +2535,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </Card>
                 );
               })}
-              {canManageLeagues && !leagueCreationLimitReached && (
+              {canCreateLeague && (
               <Card 
                 className="rounded-[3rem] border-2 border-dashed border-muted bg-transparent flex flex-col items-center justify-center p-12 group hover:border-primary/40 transition-all cursor-pointer min-h-[250px]"
                 onClick={() => setIsCreateOpen(true)}
@@ -3413,6 +3414,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       </div>
                     </div>
 
+                    {(lifecyclePolicy.archive || lifecyclePolicy.delete) && (
                     <div className="pt-12 border-t border-white/10 space-y-6">
                       <div className="flex items-center justify-between">
                          <div className="space-y-1">
@@ -3458,6 +3460,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                         </div>
                       </div>
                     </div>
+                    )}
                   </div>
                 </div>
               </ScrollArea>
