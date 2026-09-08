@@ -79,7 +79,7 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
 import { deletePushDevice, registerPushDevice } from '@/lib/client-push-registration';
-import { clearBrowserSession, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
+import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markDemoExitPending, requireDemoExitRetry } from '@/lib/client-auth';
 import { isStaffPosition } from '@/lib/staff-position';
 import { canManageActiveTeamModules } from '@/lib/team-settings-authority';
 import {
@@ -328,8 +328,10 @@ export default function SettingsPage() {
 
   const handleLogout = async () => {
     const isDemoLogout = auth.currentUser?.isAnonymous === true || user?.isDemo === true;
+    let logoutCompleted = false;
+    let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
-      localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
+      markDemoExitPending();
     }
     try {
       if (user?.id && !isDemoLogout) {
@@ -337,16 +339,22 @@ export default function SettingsPage() {
       }
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
-        if (!response.ok) throw new Error('Demo cleanup failed');
+        if (!response.ok) {
+          demoCleanupRejectedBeforeMutation = response.status === 403;
+          throw new Error('Demo cleanup failed');
+        }
       }
       await clearBrowserSession();
       await signOut(auth);
+      logoutCompleted = true;
       router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
     } finally {
       if (isDemoLogout) {
-        localStorage.removeItem(DEMO_EXIT_PENDING_KEY);
+        if (logoutCompleted) clearDemoExitPending();
+        else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
+        else requireDemoExitRetry();
       }
     }
   };

@@ -17,7 +17,7 @@ import { signOut } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession } from '@/lib/client-auth';
+import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession, markDemoExitPending } from '@/lib/client-auth';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 
 
@@ -401,6 +401,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       if (remaining <= 0 && !expirySubmitted) {
         expirySubmitted = true;
         sessionStorage.removeItem(DEMO_START_KEY);
+        markDemoExitPending();
         void fetch('/api/demo/exit', { method: 'POST', keepalive: true })
           .catch(() => undefined)
           .then(() => clearBrowserSession())
