@@ -1717,10 +1717,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
   const activeLeagueRoot = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
   const activeLeaguePrivateRef = useMemoFirebase(() => (
-    db && activeLeagueRoot && canManageLeagueRecord(activeLeagueRoot)
+    db && activeLeagueRoot && lifecyclePolicy.readPrivate && canManageLeagueRecord(activeLeagueRoot)
       ? doc(db, 'leagues', activeLeagueRoot.id, 'private', 'lifecycle')
       : null
-  ), [db, activeLeagueRoot, canManageLeagueRecord]);
+  ), [db, activeLeagueRoot, lifecyclePolicy.readPrivate, canManageLeagueRecord]);
   const { data: activeLeaguePrivate } = useDoc<{
     contactEmail?: string;
     contactPhone?: string;
