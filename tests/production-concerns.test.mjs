@@ -122,7 +122,9 @@ test('production automation checks billing-backed invocation and deployed rules 
     source('../scripts/backfill-league-member-users.mjs'),
   ]);
   assert.match(health, /Function invocation failed[\s\S]*Firebase billing/);
+  assert.match(health, /response\.status !== 404/);
   assert.match(deploy, /check-firestore-rules-drift\.mjs/);
+  assert.match(deploy, /response\.status !== 404/);
   assert.match(recovery, /audit-production-recovery\.mjs/);
   assert.match(recovery, /cleanup-orphan-demo-data\.mjs/);
   assert.match(recovery, /backfill-league-member-users\.mjs --verbose/);
